@@ -90,10 +90,29 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    ctx.fillStyle = '#FDF5E6';
+    // Create a more sophisticated gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
+    gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
+    gradient.addColorStop(0.7, '#F2FCE2'); // Soft green (lower middle)
+    gradient.addColorStop(1, '#D3E4FD'); // Soft blue (bottom)
+    
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    // Add subtle texture pattern
+    ctx.globalAlpha = 0.03;
+    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
+      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
+        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
+        ctx.fillRect(i, j, 10, 10);
+      }
+    }
+    ctx.globalAlpha = 1.0;
+    
+    // Draw improved grid lines
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.3)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)'; // More subtle grid lines
     ctx.lineWidth = 0.5;
     
     // Draw vertical grid lines
@@ -101,7 +120,7 @@ const PPGSignalMeter = ({
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
       if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.8)';
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
         ctx.font = '10px Inter';
         ctx.textAlign = 'center';
         ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
@@ -113,7 +132,7 @@ const PPGSignalMeter = ({
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
       if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.8)';
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
         ctx.font = '10px Inter';
         ctx.textAlign = 'right';
         ctx.fillText(y.toString(), 15, y + 3);
@@ -121,27 +140,43 @@ const PPGSignalMeter = ({
     }
     ctx.stroke();
     
-    // Draw center line (baseline)
+    // Draw center line (baseline) with improved style
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.5)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 3]); // Dashed line for the center
     ctx.moveTo(0, CANVAS_HEIGHT / 2);
     ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
     ctx.stroke();
+    ctx.setLineDash([]); // Reset to solid line
     
-    // Draw arrhythmia status if present - INCREASED FONT SIZE
+    // Draw arrhythmia status if present
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
       if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
+        // Create a highlight box for the first arrhythmia
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        ctx.fillRect(30, 70, 350, 40);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 70, 350, 40);
+        
         ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 24px Inter'; // Increased from 20px to 24px
+        ctx.font = 'bold 24px Inter';
         ctx.textAlign = 'left';
         ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
+        // Create a highlight box for multiple arrhythmias
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        ctx.fillRect(30, 70, 250, 40);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 70, 250, 40);
+        
         ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 24px Inter'; // Increased from 20px to 24px
+        ctx.font = 'bold 24px Inter';
         ctx.textAlign = 'left';
         const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
         ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);

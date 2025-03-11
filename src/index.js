@@ -154,15 +154,12 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      // Process real heart rate from signal
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
       setHeartRate(calculatedHeartRate);
       
-      // Process real vital signs from signal
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        // Solo actualizar cuando tengamos valores reales
         setVitalSigns({
           spo2: vitals.spo2 > 0 ? vitals.spo2 : 0,
           pressure: vitals.pressure || "--/--",
@@ -173,7 +170,6 @@ const Index = () => {
       
       setSignalQuality(lastSignal.quality);
     } else {
-      // Si no hay señal válida, resetear valores
       setHeartRate(0);
       setVitalSigns({ 
         spo2: 0, 
@@ -186,14 +182,12 @@ const Index = () => {
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
-    <div 
-      className="fixed inset-0 flex flex-col bg-black" 
+    <div className="fixed inset-0 flex flex-col bg-black" 
       style={{ 
         height: 'calc(100vh + env(safe-area-inset-bottom))',
         paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'env(safe-area-inset-bottom)'
-      }}
-    >
+      }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 
@@ -213,6 +207,7 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
             />
           </div>
 
@@ -223,20 +218,24 @@ const Index = () => {
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
                   unit="BPM"
+                  calibrationProgress={vitalSigns.calibration?.progress.heartRate}
                 />
                 <VitalSign 
                   label="SPO2"
                   value={vitalSigns.spo2 || "--"}
                   unit="%"
+                  calibrationProgress={vitalSigns.calibration?.progress.spo2}
                 />
                 <VitalSign 
                   label="PRESIÓN ARTERIAL"
                   value={vitalSigns.pressure}
                   unit="mmHg"
+                  calibrationProgress={vitalSigns.calibration?.progress.pressure}
                 />
                 <VitalSign 
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
+                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
                 />
               </div>
             </div>

@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -26,13 +27,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 15,           // Aumentado para mejor estabilidad
-    MIN_RED_THRESHOLD: 40,     // Ajustado para mejor detección
-    MAX_RED_THRESHOLD: 250,    // Aumentado para captar señales más intensas
-    STABILITY_WINDOW: 6,       // Ventana más grande para mejor estabilidad
-    MIN_STABILITY_COUNT: 4,    // Más muestras para confirmar estabilidad
-    HYSTERESIS: 5,            // Nuevo: histéresis para evitar fluctuaciones
-    MIN_CONSECUTIVE_DETECTIONS: 3  // Nuevo: mínimo de detecciones consecutivas
+    BUFFER_SIZE: 15,
+    MIN_RED_THRESHOLD: 60,     // Aumentado de 40 a 60 para exigir una señal más fuerte
+    MAX_RED_THRESHOLD: 250,
+    STABILITY_WINDOW: 6,
+    MIN_STABILITY_COUNT: 6,    // Aumentado de 4 a 6 para requerir más muestras estables
+    HYSTERESIS: 5,
+    MIN_CONSECUTIVE_DETECTIONS: 3
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
