@@ -5,6 +5,8 @@ export class AudioHandler {
   private beepGainNode: GainNode | null = null;
   private audioInitialized = false;
   private humSoundFile: string;
+  private lastBeepTime = 0;
+  private minTimeBetweenBeeps = 300; // Minimum time between beeps in ms
 
   constructor(soundFile: string) {
     this.humSoundFile = soundFile;
@@ -12,16 +14,20 @@ export class AudioHandler {
 
   public async initialize(): Promise<boolean> {
     try {
+      console.log("AudioHandler: Starting initialization with sound file", this.humSoundFile);
+      
       // Create audio context first
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log("AudioHandler: Audio context created", this.audioContext.state);
       
       // Create gain node for volume control
       this.beepGainNode = this.audioContext.createGain();
-      this.beepGainNode.gain.value = 0.7; // Lower default volume
+      this.beepGainNode.gain.value = 0.85; // Higher default volume
       this.beepGainNode.connect(this.audioContext.destination);
       
       try {
         // Load audio asynchronously - handling direct URL strings
+        console.log("AudioHandler: Fetching sound file...");
         const response = await fetch(this.humSoundFile);
         
         if (!response.ok) {
@@ -29,20 +35,23 @@ export class AudioHandler {
         }
         
         const arrayBuffer = await response.arrayBuffer();
+        console.log("AudioHandler: Sound file fetched, size:", arrayBuffer.byteLength);
         
         // Resume audio context if suspended (needed for iOS and some browsers)
         if (this.audioContext.state === 'suspended') {
+          console.log("AudioHandler: Resuming suspended audio context");
           await this.audioContext.resume();
         }
         
         // Decode audio with error handling
         try {
+          console.log("AudioHandler: Decoding audio data...");
           this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
           this.audioInitialized = true;
           console.log("AudioHandler: Audio Context Initialized successfully");
           
           // Play a silent sound to unlock audio on iOS
-          this.playUnlockSound();
+          await this.playUnlockSound();
           return true;
         } catch (decodeError) {
           console.error("Audio decoding failed, trying fallback beep method:", decodeError);
@@ -68,11 +77,11 @@ export class AudioHandler {
     try {
       const silentSource = this.audioContext.createOscillator();
       const silentGain = this.audioContext.createGain();
-      silentGain.gain.value = 0.001; // Nearly silent
+      silentGain.gain.value = 0.1; // Slightly audible to ensure it works
       silentSource.connect(silentGain);
       silentGain.connect(this.audioContext.destination);
       silentSource.start(0);
-      silentSource.stop(0.1);
+      silentSource.stop(0.2);
       
       console.log("Played audio unlock sound");
     } catch (error) {
@@ -92,18 +101,26 @@ export class AudioHandler {
       return;
     }
     
+    // Throttle beeps to prevent too frequent sounds
+    const now = Date.now();
+    if (now - this.lastBeepTime < this.minTimeBetweenBeeps) {
+      return;
+    }
+    this.lastBeepTime = now;
+    
     try {
       // Ensure audio context is running
       if (this.audioContext.state !== 'running') {
+        console.log("Resuming audio context before playing beep");
         this.audioContext.resume().catch(err => console.error("Error resuming audio context:", err));
       }
       
       // Adjust volume based on confidence and quality
-      const volume = Math.min(0.9, confidence * (quality / 100 + 0.5));
+      const volume = Math.min(1.0, confidence * (quality / 100 + 0.5));
       
       if (this.audioBuffer && this.beepGainNode) {
         // Normal beep with audio buffer
-        this.beepGainNode.gain.value = Math.max(0.5, volume);
+        this.beepGainNode.gain.value = Math.max(0.7, volume);
         const source = this.audioContext.createBufferSource();
         source.buffer = this.audioBuffer;
         source.connect(this.beepGainNode);
@@ -118,7 +135,7 @@ export class AudioHandler {
     } catch (error) {
       console.error("Error playing heartbeat sound:", error);
       // Try fallback if normal playback fails
-      this.playFallbackBeep(0.5);
+      this.playFallbackBeep(0.7);
     }
   }
   
@@ -130,10 +147,11 @@ export class AudioHandler {
       const gainNode = this.audioContext.createGain();
       
       oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4 note
+      oscillator.frequency.setValueAtTime(180, this.audioContext.currentTime); // Lower frequency for heartbeat sound
       
       gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
       gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
+      gainNode.gain.linearRampToValueAtTime(volume * 0.3, this.audioContext.currentTime + 0.1);
       gainNode.gain.linearRampToValueAtTime(0, this.audioContext.currentTime + 0.3);
       
       oscillator.connect(gainNode);
