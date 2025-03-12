@@ -11,34 +11,19 @@ interface CameraViewProps {
 const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 
-  isFingerDetected = false, 
-  signalQuality = 0,
+  isFingerDetected = false,
+  signalQuality = 0 
 }: CameraViewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [torchEnabled, setTorchEnabled] = useState(false);
-  const [isStreamReady, setIsStreamReady] = useState(false);
-  const frameIntervalRef = useRef<number>(1000 / 30); // 30 FPS
-  const lastFrameTimeRef = useRef<number>(0);
-  const videoReadyRef = useRef<boolean>(false);
   const streamReadyCalledRef = useRef<boolean>(false);
-  const processingStartedRef = useRef<boolean>(false);
 
   const stopCamera = async () => {
     streamReadyCalledRef.current = false;
-    processingStartedRef.current = false;
     
     if (stream) {
-      console.log("Stopping camera stream and turning off torch");
+      console.log("Stopping camera stream");
       stream.getTracks().forEach(track => {
-        // Turn off torch if it's available
-        if (track.kind === 'video' && track.getCapabilities()?.torch) {
-          track.applyConstraints({
-            advanced: [{ torch: false }]
-          }).catch(err => console.error("Error desactivando linterna:", err));
-        }
-        
-        // Stop the track
         track.stop();
       });
       
@@ -47,9 +32,6 @@ const CameraView = ({
       }
       
       setStream(null);
-      setTorchEnabled(false);
-      setIsStreamReady(false);
-      videoReadyRef.current = false;
     }
   };
 
@@ -59,176 +41,72 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      // Primero detener cualquier stream previo para evitar conflictos
       await stopCamera();
       streamReadyCalledRef.current = false;
-      processingStartedRef.current = false;
 
       console.log("Iniciando nueva stream de cámara");
       
-      // Pequeño retraso para asegurar que todo esté limpio antes de iniciar una nueva stream
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const isAndroid = /android/i.test(navigator.userAgent);
-
-      // Configuración mejorada para la cámara
-      const baseVideoConstraints: MediaTrackConstraints = {
-        facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30, max: 30 }
-      };
-
-      if (isAndroid) {
-        Object.assign(baseVideoConstraints, {
-          resizeMode: 'crop-and-scale'
-        });
-      }
-
       const constraints: MediaStreamConstraints = {
-        video: baseVideoConstraints
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        }
       };
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const videoTrack = newStream.getVideoTracks()[0];
-
-      if (videoTrack) {
-        try {
-          // Esperar explícitamente a que el track de video esté realmente listo
-          await new Promise<void>(resolve => setTimeout(resolve, 500));
-          
-          const capabilities = videoTrack.getCapabilities();
-          const settings: MediaTrackConstraintSet = {};
-          
-          // Configurar exposición
-          if (capabilities.exposureMode?.includes('manual')) {
-            settings.exposureMode = 'manual';
-          } else if (capabilities.exposureMode?.includes('continuous')) {
-            settings.exposureMode = 'continuous';
-          }
-
-          // Configurar enfoque
-          if (capabilities.focusMode?.includes('manual')) {
-            settings.focusMode = 'manual';
-          } else if (capabilities.focusMode?.includes('continuous')) {
-            settings.focusMode = 'continuous';
-          }
-
-          // Configurar balance de blancos
-          if (capabilities.whiteBalanceMode?.includes('manual')) {
-            settings.whiteBalanceMode = 'manual';
-          } else if (capabilities.whiteBalanceMode?.includes('continuous')) {
-            settings.whiteBalanceMode = 'continuous';
-          }
-
-          // Aplicar configuraciones
-          if (Object.keys(settings).length > 0) {
-            await videoTrack.applyConstraints({
-              advanced: [settings]
-            });
-          }
-
-          // Activar linterna si está disponible
-          if (capabilities.torch) {
-            console.log("Activando linterna para mejorar la señal PPG");
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            setTorchEnabled(true);
-          }
-
-          // Optimizaciones de rendimiento para el video
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
-            videoRef.current.style.willChange = 'transform';
-          }
-        } catch (err) {
-          console.warn("No se pudieron aplicar algunas optimizaciones:", err);
-        }
-      }
-
+      
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Esperar explícitamente a que el video esté listo para reproducir
+        // Esperar a que el video esté realmente listo
         await new Promise<void>((resolve) => {
-          if (videoRef.current) {
-            const handleCanPlay = () => {
-              console.log("Video listo para reproducir (canplay event)");
-              videoRef.current?.removeEventListener('canplay', handleCanPlay);
-              videoReadyRef.current = true;
-              resolve();
-            };
-            videoRef.current.addEventListener('canplay', handleCanPlay);
-            
-            // Si ya está listo, resolver inmediatamente
-            if (videoRef.current.readyState >= 3) {
-              console.log("Video ya listo para reproducir (readyState >= 3)");
-              videoRef.current.removeEventListener('canplay', handleCanPlay);
-              videoReadyRef.current = true;
-              resolve();
-            }
-          } else {
-            resolve(); // Si no hay videoRef, resolver de todos modos
+          if (!videoRef.current) return resolve();
+          
+          const handleCanPlay = () => {
+            videoRef.current?.removeEventListener('canplay', handleCanPlay);
+            resolve();
+          };
+          
+          videoRef.current.addEventListener('canplay', handleCanPlay);
+          
+          if (videoRef.current.readyState >= 3) {
+            videoRef.current.removeEventListener('canplay', handleCanPlay);
+            resolve();
           }
         });
-      }
-
-      console.log("Stream de cámara inicializada correctamente");
-      setStream(newStream);
-      
-      // Dar tiempo adicional para que todo se estabilice antes de notificar
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Notificar que el stream está listo solo después de que el video esté listo
-      // y solo notificar una vez por cada ciclo de monitoreo
-      if (onStreamReady && !streamReadyCalledRef.current && isMonitoring) {
-        console.log("Notificando onStreamReady con stream lista");
-        streamReadyCalledRef.current = true;
-        processingStartedRef.current = true;
-        onStreamReady(newStream);
-        setIsStreamReady(true);
+        
+        // Dar tiempo adicional para estabilización
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        setStream(newStream);
+        
+        // Notificar solo si isMonitoring es true
+        if (isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
+          console.log("Notificando stream lista para procesamiento");
+          streamReadyCalledRef.current = true;
+          onStreamReady(newStream);
+        }
       }
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
     }
   };
 
-  // Efecto para manejar cambios en isMonitoring
   useEffect(() => {
     console.log("CameraView: isMonitoring cambiado a", isMonitoring);
     
-    if (isMonitoring && !stream) {
-      console.log("Starting camera because isMonitoring=true");
+    if (isMonitoring) {
       startCamera();
-    } else if (!isMonitoring && stream) {
-      console.log("Stopping camera because isMonitoring=false");
+    } else {
       stopCamera();
     }
     
     return () => {
-      console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
   }, [isMonitoring]);
-
-  // Asegurar que la linterna esté encendida cuando se detecta un dedo
-  useEffect(() => {
-    if (stream && isFingerDetected && !torchEnabled) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).then(() => {
-          setTorchEnabled(true);
-        }).catch(err => {
-          console.error("Error activando linterna:", err);
-        });
-      }
-    }
-  }, [stream, isFingerDetected, torchEnabled]);
 
   return (
     <video
@@ -237,11 +115,6 @@ const CameraView = ({
       playsInline
       muted
       className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-      style={{
-        willChange: 'transform',
-        transform: 'translateZ(0)',
-        backfaceVisibility: 'hidden'
-      }}
     />
   );
 };
