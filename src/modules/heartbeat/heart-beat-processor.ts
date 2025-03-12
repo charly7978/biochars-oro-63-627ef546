@@ -1,3 +1,4 @@
+
 import { AudioHandler } from './audio-handler';
 import { SignalProcessor } from './signal-processor';
 import { PeakDetector } from './peak-detector';
@@ -26,20 +27,22 @@ export class HeartBeatProcessor {
   private readonly MAX_RR_DATA_POINTS = 20;
   private signalBuffer: number[] = [];
   private beatsCounter = 0;
+  private lastFiveBeatsQuality: number[] = [0, 0, 0, 0, 0];
+  private falsePositiveProtection = 0;
 
   constructor() {
-    // Initialize with more sensitive parameters
+    // Initialize with more balanced parameters
     this.audioHandler = new AudioHandler(HumSoundFile);
-    this.signalProcessor = new SignalProcessor(300, 10, 0.35); // Reduced EMA alpha for smoother signal
+    this.signalProcessor = new SignalProcessor(300, 10, 0.4); // Slightly higher EMA alpha for less smoothing
     
-    // More sensitive peak detector settings
+    // More balanced peak detector settings to reduce false positives
     this.peakDetector = new PeakDetector(
-      3,       // Smaller peak window for faster detection
-      0.12,    // Lower threshold for better sensitivity
-      0.3,     // Reduced strong peak threshold
+      4,       // Increased peak window for better validation
+      0.18,    // Higher threshold to reduce false positives
+      0.35,    // Increased strong peak threshold
       0.8,     // Keep dynamic threshold
-      220,     // Lower minimum time between beats
-      1200     // Reduced max time for better responsiveness
+      250,     // Increased minimum time between beats
+      1500     // Increased max time for better accuracy
     );
     
     this.bpmAnalyzer = new BPMAnalyzer(40, 180, 5);
@@ -84,8 +87,8 @@ export class HeartBeatProcessor {
     let isBeat = false;
     let currentBpm = this.bpmAnalyzer.currentBPM;
     
-    // Only try to detect beats if we have enough samples
-    if (this.signalProcessor.bufferLength > 8) {
+    // Only try to detect beats if we have enough samples and signal quality is decent
+    if (this.signalProcessor.bufferLength > 10 && quality > 30) {
       // Enhanced beat detection with signal quality consideration
       isBeat = this.peakDetector.detectBeat(
         now, 
@@ -96,7 +99,23 @@ export class HeartBeatProcessor {
         this.lastBeatTime
       );
       
-      // If beat detected, calculate new BPM
+      // False positive protection - reduce frequent consecutive beats
+      if (isBeat) {
+        const timeSinceLastBeat = now - this.lastBeatTime;
+        
+        // If beats are coming too quickly, likely false positives
+        if (timeSinceLastBeat < 300 && this.falsePositiveProtection < 3) {
+          this.falsePositiveProtection++;
+          isBeat = false;
+          if (this.DEBUG) {
+            console.log(`False positive rejected: too soon after last beat (${timeSinceLastBeat}ms)`);
+          }
+        } else {
+          this.falsePositiveProtection = Math.max(0, this.falsePositiveProtection - 1);
+        }
+      }
+      
+      // If beat detected and passes false positive check
       if (isBeat) {
         this.beatsCounter++;
         
@@ -107,12 +126,18 @@ export class HeartBeatProcessor {
         if (this.lastBeatTime > 0) {
           const interval = now - this.lastBeatTime;
           
-          // Validate interval before using (avoid extreme outliers)
-          if (interval > 200 && interval < 2000) {
+          // More strict interval validation
+          if (interval > 300 && interval < 1800) {
             // Store RR interval data
             this.rrIntervals.push({ timestamp: now, interval });
             if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
               this.rrIntervals.shift();
+            }
+            
+            // Track quality of last 5 beats for confidence calculation
+            this.lastFiveBeatsQuality.push(quality);
+            if (this.lastFiveBeatsQuality.length > 5) {
+              this.lastFiveBeatsQuality.shift();
             }
             
             // Calculate BPM and update analyzer
@@ -123,6 +148,8 @@ export class HeartBeatProcessor {
               // Update peak detector timing parameters
               this.peakDetector.setTimingParameters(interval);
             }
+          } else if (this.DEBUG) {
+            console.log(`Beat interval outside valid range: ${interval}ms`);
           }
         }
         
@@ -130,13 +157,13 @@ export class HeartBeatProcessor {
         this.lastBeatTime = now;
         this.lastMajorBeatTime = now;
         
-        // Play beep with volume based on confidence and signal quality
-        // Adjust beep parameters based on beat strength
+        // Only play beep for strong beats with good quality
+        // to avoid constant beeping with false positives
         const beatStrength = this.peakDetector.confidence;
-        if (beatStrength > 0.3 || this.beatsCounter % 3 === 0) {
+        if ((beatStrength > 0.5 && quality > 60) || this.beatsCounter % 4 === 0) {
           this.audioHandler.playBeep(
-            Math.min(0.9, beatStrength * 1.2), 
-            Math.min(100, quality * 1.2)
+            Math.min(0.8, beatStrength), 
+            Math.min(80, quality * 0.8)
           );
         }
         
@@ -147,11 +174,11 @@ export class HeartBeatProcessor {
       
       // Missed beats handling - detect when we should have seen a beat
       const expectedBeatInterval = 60000 / (currentBpm || 75);
-      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.5 && this.lastBeatTime > 0) {
+      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.7 && this.lastBeatTime > 0) {
         this.consecutiveMissedBeats++;
         
         // After several missed beats, try to recalibrate
-        if (this.consecutiveMissedBeats > 5 && !this.forcedDetectionMode) {
+        if (this.consecutiveMissedBeats > 6 && !this.forcedDetectionMode) {
           this.forcedDetectionMode = true;
           console.log("HeartBeatProcessor: Entering forced detection mode after missed beats");
         }
@@ -159,7 +186,11 @@ export class HeartBeatProcessor {
     }
 
     // Calculate final confidence, including adjustment for forced mode
-    let finalConfidence = this.bpmAnalyzer.calculateConfidence(quality);
+    // Use average of recent beat qualities to make confidence more stable
+    const avgQuality = this.lastFiveBeatsQuality.reduce((sum, q) => sum + q, 0) / 
+                      (this.lastFiveBeatsQuality.length || 1);
+    
+    let finalConfidence = this.bpmAnalyzer.calculateConfidence(avgQuality / 100);
     
     // Adjust confidence based on peak detector's stability
     finalConfidence *= (0.7 + (0.3 * this.peakDetector.stability));
@@ -192,6 +223,8 @@ export class HeartBeatProcessor {
     this.forcedDetectionMode = false;
     this.signalBuffer = [];
     this.beatsCounter = 0;
+    this.lastFiveBeatsQuality = [0, 0, 0, 0, 0];
+    this.falsePositiveProtection = 0;
   }
 
   public getRRIntervals(): RRIntervalData {
