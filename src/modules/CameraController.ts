@@ -7,6 +7,15 @@ export class CameraController {
 
   async setupCamera(): Promise<MediaStream> {
     try {
+      // Si existe una stream previa, detenerla primero
+      if (this.stream) {
+        this.stream.getTracks().forEach(track => track.stop());
+        this.stream = null;
+        this.videoTrack = null;
+        // Pequeño retraso para asegurar que todo esté limpio
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+      
       // Intentar primero con resolución HD
       const hdConstraints: MediaStreamConstraints = {
         video: {
@@ -36,7 +45,7 @@ export class CameraController {
       this.videoTrack = this.stream.getVideoTracks()[0];
       
       // Esperar a que el track esté realmente listo
-      await new Promise<void>(resolve => setTimeout(resolve, 300));
+      await new Promise<void>(resolve => setTimeout(resolve, 500));
       
       // Forzar la configuración más alta disponible
       const capabilities = this.videoTrack.getCapabilities();
@@ -174,6 +183,16 @@ export class CameraController {
 
   async stop(): Promise<void> {
     if (this.videoTrack) {
+      // Asegurarnos de apagar la linterna primero
+      if (this.videoTrack.getCapabilities()?.torch) {
+        try {
+          await this.videoTrack.applyConstraints({
+            advanced: [{ torch: false }]
+          });
+        } catch (err) {
+          console.warn('Error al apagar la linterna:', err);
+        }
+      }
       this.videoTrack.stop();
       this.videoTrack = null;
     }

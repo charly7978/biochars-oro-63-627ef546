@@ -22,9 +22,12 @@ const CameraView = ({
   const lastFrameTimeRef = useRef<number>(0);
   const videoReadyRef = useRef<boolean>(false);
   const streamReadyCalledRef = useRef<boolean>(false);
+  const processingStartedRef = useRef<boolean>(false);
 
   const stopCamera = async () => {
     streamReadyCalledRef.current = false;
+    processingStartedRef.current = false;
+    
     if (stream) {
       console.log("Stopping camera stream and turning off torch");
       stream.getTracks().forEach(track => {
@@ -56,13 +59,23 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
+      // Primero detener cualquier stream previo para evitar conflictos
+      await stopCamera();
+      streamReadyCalledRef.current = false;
+      processingStartedRef.current = false;
+
+      console.log("Iniciando nueva stream de cámara");
+      
+      // Pequeño retraso para asegurar que todo esté limpio antes de iniciar una nueva stream
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       const isAndroid = /android/i.test(navigator.userAgent);
 
       // Configuración mejorada para la cámara
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 },  // Aumentamos la resolución
-        height: { ideal: 720 },  // HD
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
         frameRate: { ideal: 30, max: 30 }
       };
 
@@ -76,16 +89,14 @@ const CameraView = ({
         video: baseVideoConstraints
       };
 
-      // Primero detener cualquier stream previo para evitar conflictos
-      await stopCamera();
-      streamReadyCalledRef.current = false;
-
-      console.log("Iniciando nueva stream de cámara");
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack) {
         try {
+          // Esperar explícitamente a que el track de video esté realmente listo
+          await new Promise<void>(resolve => setTimeout(resolve, 500));
+          
           const capabilities = videoTrack.getCapabilities();
           const settings: MediaTrackConstraintSet = {};
           
@@ -146,6 +157,7 @@ const CameraView = ({
             const handleCanPlay = () => {
               console.log("Video listo para reproducir (canplay event)");
               videoRef.current?.removeEventListener('canplay', handleCanPlay);
+              videoReadyRef.current = true;
               resolve();
             };
             videoRef.current.addEventListener('canplay', handleCanPlay);
@@ -154,6 +166,7 @@ const CameraView = ({
             if (videoRef.current.readyState >= 3) {
               console.log("Video ya listo para reproducir (readyState >= 3)");
               videoRef.current.removeEventListener('canplay', handleCanPlay);
+              videoReadyRef.current = true;
               resolve();
             }
           } else {
@@ -164,13 +177,16 @@ const CameraView = ({
 
       console.log("Stream de cámara inicializada correctamente");
       setStream(newStream);
-      videoReadyRef.current = true;
+      
+      // Dar tiempo adicional para que todo se estabilice antes de notificar
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Notificar que el stream está listo solo después de que el video esté listo
       // y solo notificar una vez por cada ciclo de monitoreo
-      if (onStreamReady && !streamReadyCalledRef.current) {
+      if (onStreamReady && !streamReadyCalledRef.current && isMonitoring) {
         console.log("Notificando onStreamReady con stream lista");
         streamReadyCalledRef.current = true;
+        processingStartedRef.current = true;
         onStreamReady(newStream);
         setIsStreamReady(true);
       }
@@ -182,11 +198,10 @@ const CameraView = ({
   // Efecto para manejar cambios en isMonitoring
   useEffect(() => {
     console.log("CameraView: isMonitoring cambiado a", isMonitoring);
+    
     if (isMonitoring && !stream) {
       console.log("Starting camera because isMonitoring=true");
-      setTimeout(() => {
-        startCamera();
-      }, 100); // Pequeño retraso para asegurar que todo esté listo
+      startCamera();
     } else if (!isMonitoring && stream) {
       console.log("Stopping camera because isMonitoring=false");
       stopCamera();

@@ -24,6 +24,7 @@ export const useSignalProcessor = () => {
     avgValue: 0,
     totalValues: 0
   });
+  const readyToProcessRef = useRef<boolean>(false);
 
   // Inicialización del procesador con reintentos
   const initializeProcessor = useCallback(async () => {
@@ -63,7 +64,8 @@ export const useSignalProcessor = () => {
     
     processor.onSignalReady = (signal: ProcessedSignal) => {
       // Evaluación robusta de detección de dedo:
-      const robustFingerDetected = signal.fingerDetected && signal.quality >= 55; // Reducimos el umbral
+      // Reducimos ligeramente el umbral para mejorar la detección inicial
+      const robustFingerDetected = signal.fingerDetected && signal.quality >= 50; 
       const modifiedSignal = { ...signal, fingerDetected: robustFingerDetected };
       console.log("useSignalProcessor: Señal recibida detallada:", {
         timestamp: modifiedSignal.timestamp,
@@ -164,6 +166,9 @@ export const useSignalProcessor = () => {
     }
     
     setIsProcessing(true);
+    // Dar tiempo al procesador para inicializarse completamente antes de comenzar
+    await new Promise(resolve => setTimeout(resolve, 500));
+    readyToProcessRef.current = true;
     processor.start();
     
     console.log("useSignalProcessor: Procesamiento iniciado correctamente");
@@ -177,6 +182,7 @@ export const useSignalProcessor = () => {
       timestamp: new Date().toISOString()
     });
     
+    readyToProcessRef.current = false;
     setIsProcessing(false);
     processor.stop();
   }, [processor, isProcessing, framesProcessed, signalStats]);
@@ -206,37 +212,40 @@ export const useSignalProcessor = () => {
   }, [processor]);
 
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing && isInitialized) {
-      const now = Date.now();
-      // Solo procesamos si ha pasado suficiente tiempo desde el inicio
-      if (now - processingStartTimeRef.current >= 100) { // 100ms de gracia para que todo se inicialice
-        console.log("useSignalProcessor: Procesando nuevo frame", {
-          frameNum: framesProcessed + 1,
-          dimensions: `${imageData.width}x${imageData.height}`,
-          timestamp: new Date().toISOString()
-        });
-        
-        processor.processFrame(imageData);
-      } else {
-        console.log("useSignalProcessor: Frame ignorado (periodo de gracia)", {
-          timestamp: new Date().toISOString()
-        });
-      }
-    } else if (isProcessing && !isInitialized) {
-      console.log("useSignalProcessor: Frame ignorado (procesador no inicializado)", {
+    if (!isProcessing || !isInitialized) {
+      console.log("useSignalProcessor: Frame ignorado (no está procesando o no inicializado)", {
+        isProcessing,
+        isInitialized,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    
+    if (!readyToProcessRef.current) {
+      console.log("useSignalProcessor: Frame ignorado (aún no está listo para procesar)", {
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    
+    const now = Date.now();
+    
+    // Solo procesamos si ha pasado suficiente tiempo desde el inicio
+    if (now - processingStartTimeRef.current >= 500) { // 500ms de gracia para que todo se inicialice
+      console.log("useSignalProcessor: Procesando nuevo frame", {
+        frameNum: framesProcessed + 1,
+        dimensions: `${imageData.width}x${imageData.height}`,
         timestamp: new Date().toISOString()
       });
       
-      // Intentar inicializar si estamos procesando pero no inicializado
-      initializeProcessor().catch(err => {
-        console.error("Error al intentar inicializar durante processFrame:", err);
-      });
+      processor.processFrame(imageData);
     } else {
-      console.log("useSignalProcessor: Frame ignorado (no está procesando)", {
+      console.log("useSignalProcessor: Frame ignorado (periodo de gracia)", {
+        timeRemaining: 500 - (now - processingStartTimeRef.current),
         timestamp: new Date().toISOString()
       });
     }
-  }, [isProcessing, isInitialized, processor, framesProcessed, initializeProcessor]);
+  }, [isProcessing, isInitialized, processor, framesProcessed]);
 
   return {
     isProcessing,
