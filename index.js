@@ -5,6 +5,8 @@ import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
+import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
+import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -18,6 +20,7 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -28,13 +31,22 @@ const Index = () => {
     const elem = document.documentElement;
     try {
       if (elem.requestFullscreen) {
-        await elem.requestFullscreen();
+        await elem.requestFullscreen({ navigationUI: "hide" });
       } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen();
+        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
       } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen();
+        await elem.mozRequestFullScreen({ navigationUI: "hide" });
       } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen();
+        await elem.msRequestFullscreen({ navigationUI: "hide" });
+      }
+      
+      if (window.navigator.userAgent.match(/Android/i)) {
+        if (window.AndroidFullScreen) {
+          window.AndroidFullScreen.immersiveMode(
+            function() { console.log('Immersive mode enabled'); },
+            function() { console.log('Failed to enable immersive mode'); }
+          );
+        }
       }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
@@ -54,14 +66,40 @@ const Index = () => {
       }
     };
     
+    const setMaxResolution = () => {
+      if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
+        document.body.style.zoom = 1 / window.devicePixelRatio;
+      }
+    };
+    
     lockOrientation();
+    setMaxResolution();
+    enterFullScreen();
     
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
+    document.body.addEventListener('touchstart', preventScroll, { passive: false });
+    document.body.addEventListener('gesturestart', preventScroll, { passive: false });
+    document.body.addEventListener('gesturechange', preventScroll, { passive: false });
+    document.body.addEventListener('gestureend', preventScroll, { passive: false });
+    
+    window.addEventListener('orientationchange', enterFullScreen);
+    
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        setTimeout(enterFullScreen, 1000);
+      }
+    });
 
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
+      document.body.removeEventListener('touchstart', preventScroll);
+      document.body.removeEventListener('gesturestart', preventScroll);
+      document.body.removeEventListener('gesturechange', preventScroll);
+      document.body.removeEventListener('gestureend', preventScroll);
+      window.removeEventListener('orientationchange', enterFullScreen);
+      document.removeEventListener('fullscreenchange', enterFullScreen);
     };
   }, []);
 
@@ -85,6 +123,41 @@ const Index = () => {
         return prev + 1;
       });
     }, 1000);
+  };
+
+  const showMeasurementConfirmation = () => {
+    setShowConfirmDialog(true);
+  };
+
+  const confirmMeasurement = () => {
+    setShowConfirmDialog(false);
+    completeMonitoring();
+  };
+
+  const cancelMeasurement = () => {
+    setShowConfirmDialog(false);
+    stopMonitoring();
+  };
+
+  const completeMonitoring = () => {
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    stopProcessing();
+    resetVitalSigns();
+    setElapsedTime(0);
+    setHeartRate(0);
+    setVitalSigns({ 
+      spo2: 0, 
+      pressure: "--/--",
+      arrhythmiaStatus: "--" 
+    });
+    setArrhythmiaCount("--");
+    setSignalQuality(0);
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
   };
 
   const stopMonitoring = () => {
@@ -114,7 +187,17 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    if (videoTrack.getCapabilities()?.torch) {
+    const capabilities = videoTrack.getCapabilities();
+    if (capabilities.width && capabilities.height) {
+      const maxWidth = capabilities.width.max;
+      const maxHeight = capabilities.height.max;
+      
+      videoTrack.applyConstraints({
+        width: { ideal: maxWidth },
+        height: { ideal: maxHeight },
+        torch: true
+      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
+    } else if (videoTrack.getCapabilities()?.torch) {
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
       }).catch(err => console.error("Error activando linterna:", err));
@@ -170,9 +253,16 @@ const Index = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
       style={{ 
-        height: 'calc(100vh + env(safe-area-inset-bottom))',
+        height: '100%',
+        width: '100%',
+        maxWidth: '100vw',
+        maxHeight: '100vh',
         paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)'
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+        touchAction: 'none',
+        userSelect: 'none',
       }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
@@ -249,6 +339,17 @@ const Index = () => {
           </div>
         </div>
       </div>
+
+      <MeasurementConfirmationDialog
+        open={showConfirmDialog}
+        onOpenChange={setShowConfirmDialog}
+        onConfirm={confirmMeasurement}
+        onCancel={cancelMeasurement}
+        measurementTime={elapsedTime}
+        heartRate={heartRate}
+        spo2={vitalSigns.spo2}
+        pressure={vitalSigns.pressure}
+      />
     </div>
   );
 };
