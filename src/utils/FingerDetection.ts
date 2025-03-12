@@ -1,4 +1,3 @@
-
 /**
  * Utilidades para la detección de dedos en imágenes de cámara
  * Optimizado para detección PPG
@@ -40,12 +39,12 @@ export function detectFinger(
   options: DetectionOptions = {}
 ): FingerDetectionResult {
   const {
-    redThreshold = 85,             // Reducido para detectar dedos con menos luz
-    brightnessThreshold = 40,      // Reducido para trabajar en condiciones de menor luz
-    redDominanceThreshold = 20,    // Reducido para ser menos estricto
-    regionSize = 50,               // Ampliado para analizar un área mayor
-    adaptiveMode = true,           // Activado para adaptarse a diferentes condiciones
-    maxIntensityThreshold = 245    // Mantenido para evitar reflejos
+    redThreshold = 60,             // Lowered from 85 to 60 for better sensitivity
+    brightnessThreshold = 30,      // Lowered from 40 to 30 for lower light conditions
+    redDominanceThreshold = 15,    // Lowered from 20 to 15 for more permissive detection
+    regionSize = 60,               // Increased from 50 to 60 to analyze larger area
+    adaptiveMode = true,
+    maxIntensityThreshold = 245    // Keep this to avoid reflections
   } = options;
 
   // Calcular dimensiones y coordenadas de la región central
@@ -74,13 +73,13 @@ export function detectFinger(
       const g = imageData.data[idx + 1];
       const b = imageData.data[idx + 2];
       
-      // Criterios más permisivos para color de piel
+      // Make skin color detection more permissive
       const isSkinColor = (
-        r > g * 1.1 &&           // Reducido de 1.2 a 1.1
-        r > b * 1.2 &&           // Reducido de 1.3 a 1.2
-        r > 60 &&                // Reducido de 80 a 60
-        g > 30 &&                // Reducido de 40 a 30
-        b > 15                   // Reducido de 20 a 15
+        r > g * 1.05 &&           // Reduced from 1.1 to 1.05
+        r > b * 1.1 &&           // Reduced from 1.2 to 1.1
+        r > 50 &&                // Reduced from 60 to 50
+        g > 25 &&                // Reduced from 30 to 25
+        b > 10                   // Reduced from 15 to 10
       );
 
       if (isSkinColor) {
@@ -178,14 +177,14 @@ export function detectFinger(
   // Cálculo de confianza ajustado (más permisivo)
   let confidence = 0;
   
-  if (isBrightEnough) confidence += 15;
-  if (isRedDominant) confidence += 20;
-  if (isRedHighest) confidence += 15;
-  if (isRedIntenseEnough) confidence += 15;
-  if (notTooIntense) confidence += 10;
-  if (hasGoodVariation) confidence += 10;
-  if (hasHumanSkinPattern) confidence += 25;
-  if (skinColorPercentage > 40) confidence += 15; // Reducido de 60 a 40
+  if (isBrightEnough) confidence += 20;         // Increased from 15
+  if (isRedDominant) confidence += 25;          // Increased from 20
+  if (isRedHighest) confidence += 20;           // Increased from 15
+  if (isRedIntenseEnough) confidence += 15;     // Keep same
+  if (notTooIntense) confidence += 10;          // Keep same
+  if (hasGoodVariation) confidence += 15;       // Increased from 10
+  if (hasHumanSkinPattern) confidence += 25;    // Keep same
+  if (skinColorPercentage > 30) confidence += 20; // Reduced threshold from 40 to 30, increased points from 15 to 20
   
   confidence = Math.min(100, confidence);
   
