@@ -111,40 +111,6 @@ export class HeartBeatProcessor {
         if (this.DEBUG) {
           console.log(`HEARTBEAT @ ${new Date().toISOString()} - BPM: ${currentBpm}, Confidence: ${this.peakDetector.confidence.toFixed(2)}, Quality: ${quality}`);
         }
-      } else {
-        // Increment missed beats counter
-        this.consecutiveMissedBeats++;
-        
-        // After too many missed beats, enter forced detection mode
-        if (this.consecutiveMissedBeats > 15 && !this.forcedDetectionMode && quality > 40) {
-          this.forcedDetectionMode = true;
-          console.log("Entering forced beat detection mode due to missed beats");
-        }
-        
-        // In forced mode with decent quality, try to detect beats based on expected timing
-        if (this.forcedDetectionMode && quality > 40 && this.lastBeatTime > 0) {
-          const expectedInterval = 60000 / this.bpmAnalyzer.currentBPM;
-          const sinceLastBeat = now - this.lastBeatTime;
-          
-          // If we're past the expected interval and have a positive derivative, force a beat
-          if (sinceLastBeat > expectedInterval * 1.1 && 
-              derivative > 0 && 
-              signalBuffer[signalBuffer.length - 1] > signalBuffer[signalBuffer.length - 3]) {
-            
-            console.log("Forcing beat detection based on timing");
-            isBeat = true;
-            this.lastBeatTime = now;
-            
-            // Play softer beep for forced beats
-            this.audioHandler.playBeep(0.3, quality);
-            
-            // Add to RR data
-            this.rrIntervals.push({ timestamp: now, interval: sinceLastBeat });
-            if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
-              this.rrIntervals.shift();
-            }
-          }
-        }
       }
     }
 
