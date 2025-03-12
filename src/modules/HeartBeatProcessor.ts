@@ -7,14 +7,14 @@ export class HeartBeatProcessor {
   private readonly SIGNAL_THRESHOLD = 0.40; 
   private readonly MIN_CONFIDENCE = 0.60;
   private readonly DERIVATIVE_THRESHOLD = -0.03; 
-  private readonly MIN_PEAK_TIME_MS = 400; 
+  private readonly MIN_PEAK_TIME_MS = 450; 
   private readonly WARMUP_TIME_MS = 3000; 
 
   // Parámetros de filtrado
   private readonly MEDIAN_FILTER_WINDOW = 3; 
   private readonly MOVING_AVERAGE_WINDOW = 3; 
   private readonly EMA_ALPHA = 0.3; 
-  private readonly BASELINE_FACTOR = 0.8; 
+  private readonly BASELINE_FACTOR = 1.4; 
 
   // Parámetros de beep
   private readonly BEEP_PRIMARY_FREQUENCY = 880; 
