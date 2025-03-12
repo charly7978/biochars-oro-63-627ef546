@@ -1,4 +1,5 @@
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
+import { CameraController } from './CameraController';
 
 class KalmanFilter {
   private R: number = 0.01;  // Ruido de medición
@@ -54,6 +55,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
+  private cameraController: CameraController;
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,          // Buffer más pequeño para respuesta rápida
     MIN_RED_THRESHOLD: 35,    // Umbral más bajo
@@ -78,11 +80,15 @@ export class PPGSignalProcessor implements SignalProcessor {
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
+    this.cameraController = new CameraController();
     console.log("PPGSignalProcessor: Instancia creada");
   }
 
   async initialize(): Promise<void> {
     try {
+      await this.cameraController.setupCamera();
+      await this.cameraController.optimizeForPPG();
+      
       this.lastValues = [];
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
@@ -112,6 +118,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consecutiveDetections = 0;
     this.isCurrentlyDetected = false;
     this.kalmanFilter.reset();
+    this.cameraController.stop();
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -222,10 +229,11 @@ export class PPGSignalProcessor implements SignalProcessor {
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0, greenSum = 0, blueSum = 0;
+    let maxRed = 0, minRed = 255;
     let pixelCount = 0;
     
-    // ROI grande para captura fácil
-    const roiSize = Math.min(imageData.width, imageData.height) * 0.4;
+    // ROI más pequeño para evitar sobreexposición
+    const roiSize = Math.min(imageData.width, imageData.height) * 0.25; // 25% del tamaño
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
     
@@ -234,7 +242,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
     const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
 
-    // Simple promedio de colores
+    // Análisis con compensación de exposición
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const i = (y * imageData.width + x) * 4;
@@ -242,9 +250,14 @@ export class PPGSignalProcessor implements SignalProcessor {
             const g = data[i+1];
             const b = data[i+2];
             
-            redSum += r;
-            greenSum += g;
-            blueSum += b;
+            // Compensación de sobreexposición
+            const exposureFactor = Math.max(1, Math.min(2, 255 / Math.max(r, g, b)));
+            
+            redSum += r * exposureFactor;
+            greenSum += g * exposureFactor;
+            blueSum += b * exposureFactor;
+            maxRed = Math.max(maxRed, r * exposureFactor);
+            minRed = Math.min(minRed, r * exposureFactor);
             pixelCount++;
         }
     }
@@ -255,12 +268,14 @@ export class PPGSignalProcessor implements SignalProcessor {
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
 
-    // Criterios muy básicos
-    const isRedDominant = avgRed > (avgGreen * 1.1) && avgRed > (avgBlue * 1.1);
-    const isInRange = avgRed >= 35;
+    // Criterios adaptados a sobreexposición
+    const isRedDominant = avgRed > (avgGreen * 1.1);
+    const hasGoodRange = (maxRed - minRed) > 10; // Verificar que hay variación
+    const isInRange = avgRed >= 35 && avgRed <= 240; // Límite superior más bajo
 
-    if (isRedDominant && isInRange) {
-        return avgRed;
+    if (isRedDominant && hasGoodRange && isInRange) {
+        // Normalizar el valor para evitar saturación
+        return Math.min(200, avgRed);
     }
 
     return 0;
@@ -277,46 +292,40 @@ export class PPGSignalProcessor implements SignalProcessor {
       areaUnderCurve: number
     }
   } {
-    // Verificación básica
-    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD;
+    // Verificación con compensación de exposición
+    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
+                     rawValue <= 240; // Límite superior más estricto
     
     if (!isInRange) {
         this.consecutiveDetections = 0;
         return { isFingerDetected: false, quality: 0 };
     }
 
-    // Análisis simple
     if (this.lastValues.length >= 3) {
         const window = this.lastValues.slice(-3);
         
-        // Detectar cualquier variación
-        const peakToPeak = Math.max(...window) - Math.min(...window);
-        const mean = window.reduce((a, b) => a + b, 0) / window.length;
+        // Normalizar valores para compensar sobreexposición
+        const normalizedWindow = window.map(v => Math.min(200, v));
+        const peakToPeak = Math.max(...normalizedWindow) - Math.min(...normalizedWindow);
+        const mean = normalizedWindow.reduce((a, b) => a + b, 0) / normalizedWindow.length;
         
-        // Muy permisivo con la variación
+        // Ajustar sensibilidad basada en el nivel de exposición
+        const exposureLevel = mean / 200; // 0-1
+        const sensitivityFactor = Math.max(0.001, 0.005 * (1 - exposureLevel));
+        
         const normalizedVariation = peakToPeak / mean;
-        const hasVariation = normalizedVariation > 0.001;
+        const hasVariation = normalizedVariation > sensitivityFactor;
         
         if (hasVariation) {
             this.consecutiveDetections++;
-            
-            // Calidad mínima garantizada si detectamos
-            const quality = Math.max(40, Math.min(100, Math.round((normalizedVariation / 0.1) * 100)));
+            const quality = Math.min(100, Math.max(40, Math.round((normalizedVariation / 0.1) * 100)));
             
             return {
                 isFingerDetected: true,
                 quality,
-                waveformFeatures: this.extractWaveformFeatures(window, this.findPeaksAndValleys(window))
+                waveformFeatures: this.extractWaveformFeatures(normalizedWindow, this.findPeaksAndValleys(normalizedWindow))
             };
         }
-    }
-
-    // Si hay señal roja pero no variación, aún detectamos
-    if (rawValue > this.currentConfig.MIN_RED_THRESHOLD) {
-        return {
-            isFingerDetected: true,
-            quality: 40
-        };
     }
 
     return { isFingerDetected: false, quality: 0 };
@@ -434,5 +443,65 @@ class VitalSignsProcessor {
 // Hook de React
 function useVitalSignsProcessor() {
   // Interfaz para React
+}
+
+const constraints = {
+    video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 30 },
+        exposureMode: 'manual',
+        whiteBalance: 'manual'
+    }
+};
+
+async function adjustCameraSettings(videoTrack: MediaStreamTrack) {
+    const capabilities = videoTrack.getCapabilities();
+    
+    // Ajustar exposición si está disponible
+    if (capabilities.exposureMode?.includes('manual')) {
+        await videoTrack.applyConstraints({
+            advanced: [{
+                exposureMode: 'manual'
+            }]
+        });
+    }
+}
+
+class ExposureController {
+    private currentExposure: number = 1000; // valor inicial
+    private readonly MIN_EXPOSURE = 100;
+    private readonly MAX_EXPOSURE = 10000;
+
+    adjustExposure(imageData: ImageData): number {
+        const data = imageData.data;
+        let totalBrightness = 0;
+        
+        // Calcular brillo promedio
+        for(let i = 0; i < data.length; i += 4) {
+            totalBrightness += (data[i] + data[i+1] + data[i+2]) / 3;
+        }
+        
+        const avgBrightness = totalBrightness / (data.length / 4);
+        
+        // Ajustar si está fuera del rango óptimo (128-180)
+        if(avgBrightness > 180) {
+            // Reducir exposición
+            this.currentExposure = Math.max(this.MIN_EXPOSURE, this.currentExposure * 0.8);
+        } else if(avgBrightness < 128) {
+            // Aumentar exposición
+            this.currentExposure = Math.min(this.MAX_EXPOSURE, this.currentExposure * 1.2);
+        }
+        
+        return this.currentExposure;
+    }
+
+    getCurrentExposure(): number {
+        return this.currentExposure;
+    }
+
+    reset(): void {
+        this.currentExposure = 1000;
+    }
 }
 
