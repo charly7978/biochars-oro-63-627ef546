@@ -25,11 +25,17 @@ export interface DetectionOptions {
   maxIntensityThreshold?: number; // Umbral máximo para evitar brillos/reflejos
 }
 
-// Añadir variable global para suavizado temporal de la calidad de señal
-let previousConfidence = 0;
-// Histórico para estabilización de detección
+// Histórico para estabilización de detección - increased size for better stability
 const detectionHistory: boolean[] = [];
-const HISTORY_SIZE = 5;
+const HISTORY_SIZE = 10;
+let previousConfidence = 0;
+
+// Nuevo: Tracking de consistencia temporal
+let lastDetectionTime = 0;
+let consecutiveDetections = 0;
+let consecutiveNonDetections = 0;
+const REQUIRED_CONSECUTIVE_DETECTIONS = 3;
+const MAX_CONSECUTIVE_NON_DETECTIONS = 4;
 
 /**
  * Analiza una región de imagen para detectar la presencia de un dedo
@@ -40,14 +46,16 @@ export function detectFinger(
   options: DetectionOptions = {}
 ): FingerDetectionResult {
   const {
-    redThreshold = 60,             // Lowered threshold for easier detection
-    brightnessThreshold = 30,      // Lower brightness threshold for easier detection
-    redDominanceThreshold = 10,    // Reduced for easier acceptance
-    regionSize = 50,               // Focus on central region for finger tip detection
+    redThreshold = 65,             // Increased to reduce false positives
+    brightnessThreshold = 35,      // Slightly increased for better lighting requirement
+    redDominanceThreshold = 15,    // Increased for stricter red dominance
+    regionSize = 40,               // Focused region size for fingertip
     adaptiveMode = true,
-    maxIntensityThreshold = 240    // Avoid very bright reflections
+    maxIntensityThreshold = 235    // Avoid very bright reflections
   } = options;
 
+  const now = Date.now();
+  
   // Calcular dimensiones y coordenadas de la región central (focus on fingertip area)
   const width = imageData.width;
   const height = imageData.height;
@@ -88,15 +96,15 @@ export function detectFinger(
       const g = imageData.data[idx + 1];
       const b = imageData.data[idx + 2];
       
-      // Less strict skin color detection to accept fingertips better
+      // More strict skin color detection to reduce false positives
       const isSkinColor = (
-        r > g * 1.05 &&          // Reduced red-green ratio for fingertips
-        r > b * 1.15 &&          // Reduced red-blue ratio for fingertips
-        r > 45 &&                // Lower red threshold
-        g > 20 &&                // Lower green threshold
-        b > 10 &&                // Minimum blue for skin tone
-        r < 240 &&               // Avoid pure white/reflections
-        Math.abs(g - b) < 30     // Green and blue tend to be close in skin tones
+        r > g * 1.15 &&          // Increased red-green ratio
+        r > b * 1.25 &&          // Increased red-blue ratio
+        r > 55 &&                // Higher red threshold
+        g > 30 &&                // Higher green threshold
+        b > 15 &&                // Higher minimum blue for skin tone
+        r < 230 &&               // Avoid pure white/reflections
+        Math.abs(g - b) < 25     // Green and blue tend to be close in skin tones
       );
 
       if (isSkinColor) {
@@ -128,29 +136,20 @@ export function detectFinger(
   
   // Si no hay píxeles, no se puede detectar
   if (pixelCount === 0) {
-    return {
-      detected: false,
-      confidence: 0,
-      metrics: {
-        brightness: 0,
-        redDominance: 0,
-        redIntensity: 0,
-        greenIntensity: 0,
-        blueIntensity: 0
-      }
-    };
+    consecutiveNonDetections++;
+    consecutiveDetections = 0;
+    return getEmptyResult();
   }
 
-  // Analyze finger morphology
-  // 1. Check if there's a gradient pattern characteristic of a curved fingertip
+  // Analyze finger morphology - more strict requirements
   let hasFingerGradient = false;
   let fingerGradientStrength = 0;
   
-  // Process rows to detect curved fingertip pattern - more permissive for fingertips
+  // Process rows to detect curved fingertip pattern
   for (let i = 0; i < rowRedValues.length; i++) {
     const row = rowRedValues[i];
-    if (row.length > 4) {
-      // Check if the row has higher values in the center (curved finger pattern)
+    if (row.length > 5) {
+      // Analyze if the row has higher values in the center (curved finger pattern)
       const leftEdge = row.slice(0, Math.floor(row.length * 0.25));
       const center = row.slice(Math.floor(row.length * 0.25), Math.floor(row.length * 0.75));
       const rightEdge = row.slice(Math.floor(row.length * 0.75));
@@ -159,8 +158,8 @@ export function detectFinger(
       const centerAvg = center.reduce((sum, val) => sum + val, 0) / center.length;
       const rightAvg = rightEdge.reduce((sum, val) => sum + val, 0) / rightEdge.length;
       
-      // More permissive for fingertip - small gradient difference is enough
-      if (centerAvg > leftAvg * 0.95 && centerAvg > rightAvg * 0.95) {
+      // More balanced gradient requirement for fingertip
+      if (centerAvg > leftAvg * 1.05 && centerAvg > rightAvg * 1.05) {
         fingerGradientStrength += (centerAvg - ((leftAvg + rightAvg) / 2));
         hasFingerGradient = true;
         fingerShapeCount++;
@@ -179,50 +178,50 @@ export function detectFinger(
   const skinColorPercentage = (skinColorPixels / pixelCount) * 100;
   const fingerShapePercentage = (fingerShapeCount / rowRedValues.length) * 100;
   
-  // Ratios for finger detection - less strict for fingertips
+  // Ratios for finger detection - more balanced for reliable detection
   const redGreenRatio = avgRed / (avgGreen || 1);
   const redBlueRatio = avgRed / (avgBlue || 1);
   
-  // Specific patterns for human finger - more permissive
+  // Stricter patterns for human finger
   const hasHumanSkinPattern = 
-    redGreenRatio > 1.05 &&       // Less strict ratio for fingertips
-    redBlueRatio > 1.15 &&        // Less strict ratio for fingertips
-    skinColorPercentage > 30;      // Lower percentage requirement
+    redGreenRatio > 1.12 &&      // Higher ratio requirement
+    redBlueRatio > 1.20 &&       // Higher ratio requirement
+    skinColorPercentage > 40;     // Higher percentage requirement
     
-  // Finger morphology pattern - more permissive
+  // Finger morphology pattern - more balanced
   const hasFingerMorphology = 
     hasFingerGradient && 
-    fingerGradientStrength > 5 &&  // Lower threshold for fingertips
-    fingerShapePercentage > 20;    // Lower percentage for fingertips
+    fingerGradientStrength > 8 &&  // Higher strength requirement
+    fingerShapePercentage > 30;    // Higher percentage requirement
   
-  // Umbrales adaptativos - more permissive
+  // Umbrales adaptativos - less permissive
   let currentRedThreshold = redThreshold;
   let currentBrightnessThreshold = brightnessThreshold;
   let currentRedDominanceThreshold = redDominanceThreshold;
   
   if (adaptiveMode) {
-    // More permissive adaptation
+    // Less permissive adaptation
     if (brightness > 180) {
       // Bright environment: adjusted thresholds
-      currentRedThreshold *= 1.2;
-      currentRedDominanceThreshold *= 1.3;
+      currentRedThreshold *= 1.3;  // Higher red requirement
+      currentRedDominanceThreshold *= 1.4; // Higher dominance requirement
     } else if (brightness < 80) {
-      // Low light: more permissive thresholds
-      currentRedThreshold *= 0.7;
-      currentBrightnessThreshold *= 0.7;
-      currentRedDominanceThreshold *= 0.7;
+      // Low light: slightly more permissive but still strict
+      currentRedThreshold *= 0.8;
+      currentBrightnessThreshold *= 0.8;
+      currentRedDominanceThreshold *= 0.8;
     }
     
-    // More permissive with skin percentage
+    // More conservative with skin percentage
     if (skinColorPercentage > 60) {
-      currentRedDominanceThreshold *= 0.8;
+      currentRedDominanceThreshold *= 0.9; // Less reduction than before
     }
   }
 
-  // Less strict detection criteria for fingertips
+  // Stricter detection criteria
   const isBrightEnough = brightness > currentBrightnessThreshold;
   const isRedDominant = redDominance > currentRedDominanceThreshold;
-  const isRedHighest = avgRed > avgGreen * 1.05 && avgRed > avgBlue * 1.15; // Less strict
+  const isRedHighest = avgRed > avgGreen * 1.12 && avgRed > avgBlue * 1.20; // Stricter ratios
   const isRedIntenseEnough = avgRed > currentRedThreshold;
   const notTooIntense = avgRed < maxIntensityThreshold && 
                         avgGreen < maxIntensityThreshold && 
@@ -230,25 +229,25 @@ export function detectFinger(
   
   // Evaluación de variación temporal
   const redVariation = maxRed - minRed;
-  const hasGoodVariation = redVariation > 3; // Lower threshold for variation
+  const hasGoodVariation = redVariation > 5; // Higher threshold for variation
   
-  // More generous confidence calculation for fingertips
+  // More balanced confidence calculation
   let confidence = 0;
   
   if (isBrightEnough) confidence += 15;
-  if (isRedDominant) confidence += 15;
-  if (isRedHighest) confidence += 15;
+  if (isRedDominant) confidence += 20; // Higher weight for red dominance
+  if (isRedHighest) confidence += 20;
   if (isRedIntenseEnough) confidence += 15;
   if (notTooIntense) confidence += 10;
-  if (hasGoodVariation) confidence += 10;
-  if (hasHumanSkinPattern) confidence += 20;
-  if (skinColorPercentage > 30) confidence += 15; // Lower threshold
+  if (hasGoodVariation) confidence += 8;
+  if (hasHumanSkinPattern) confidence += 25; // Higher weight for skin pattern
+  if (skinColorPercentage > 40) confidence += 15;
   if (hasFingerMorphology) confidence += 25;
-  if (fingerGradientStrength > 8) confidence += 10;
+  if (fingerGradientStrength > 10) confidence += 15;
   
   confidence = Math.min(100, confidence);
   
-  // Basic detection criteria - more permissive
+  // More strict detection criteria
   const basicDetection = 
     isBrightEnough && 
     isRedDominant &&
@@ -256,37 +255,70 @@ export function detectFinger(
     isRedIntenseEnough &&
     notTooIntense;
 
-  // Lower confidence requirement for fingertip detection
-  const fingerDetected = basicDetection && hasHumanSkinPattern && confidence > 40; // Lower threshold
+  // Higher confidence requirement
+  const fingerDetected = basicDetection && hasHumanSkinPattern && confidence > 60;
 
-  // Specialized detection modes - more permissive for fingertips
-  const colorBasedDetection = isRedHighest && isRedIntenseEnough && isBrightEnough;
+  // Specialized detection modes 
+  const colorBasedDetection = isRedHighest && isRedIntenseEnough && isBrightEnough && isRedDominant;
   const morphologyBasedDetection = hasFingerMorphology && hasHumanSkinPattern && notTooIntense;
   
-  // More permissive combined detection
-  const multiMethodDetection = colorBasedDetection && (fingerGradientStrength > 5 || hasFingerMorphology);
+  // Combined detection with higher requirements
+  const multiMethodDetection = colorBasedDetection && (fingerGradientStrength > 8 || hasFingerMorphology);
 
-  // Incorporate stabilization with history
-  detectionHistory.push(fingerDetected || multiMethodDetection || morphologyBasedDetection);
+  // Incorporate temporal stability logic
+  let isFingerDetected = fingerDetected || multiMethodDetection || morphologyBasedDetection;
+  
+  // Update detection history
+  detectionHistory.push(isFingerDetected);
   if (detectionHistory.length > HISTORY_SIZE) {
     detectionHistory.shift();
   }
   
-  // More permissive stable detection
+  // Temporal consistency check
+  if (isFingerDetected) {
+    consecutiveDetections++;
+    consecutiveNonDetections = 0;
+    
+    // Only consider detected after consistent readings
+    if (consecutiveDetections < REQUIRED_CONSECUTIVE_DETECTIONS) {
+      isFingerDetected = false;
+    }
+  } else {
+    consecutiveNonDetections++;
+    // Allow a few missed frames before considering finger removed
+    if (consecutiveNonDetections < MAX_CONSECUTIVE_NON_DETECTIONS && 
+        consecutiveDetections >= REQUIRED_CONSECUTIVE_DETECTIONS) {
+      isFingerDetected = true;
+    } else {
+      consecutiveDetections = 0;
+    }
+  }
+  
+  // More conservative stable detection
   const stableDetection = 
-    detectionHistory.length >= 3 &&
-    detectionHistory.filter(d => d).length >= Math.floor(detectionHistory.length * 0.4); // Lower threshold
+    detectionHistory.length >= HISTORY_SIZE / 2 &&
+    detectionHistory.filter(d => d).length >= Math.floor(detectionHistory.length * 0.6);
 
-  // Apply temporal smoothing with slower adaptation to reduce false positives
-  const alpha = 0.3;
+  // Apply temporal smoothing with slower adaptation
+  const alpha = 0.25; // Less aggressive smoothing
   previousConfidence = alpha * confidence + (1 - alpha) * previousConfidence;
   const finalConfidence = Math.round(previousConfidence);
 
-  // Better logging with important info
-  console.log(`Finger metrics: R:${avgRed.toFixed(0)} G:${avgGreen.toFixed(0)} B:${avgBlue.toFixed(0)} Bright:${brightness.toFixed(0)} RedDom:${redDominance.toFixed(0)} Skin%:${skinColorPercentage.toFixed(0)} FShape%:${fingerShapePercentage.toFixed(0)} GradStr:${fingerGradientStrength.toFixed(1)} Conf:${finalConfidence} Detected:${stableDetection || fingerDetected || multiMethodDetection}`);
+  // Final detection decision with temporal stability
+  const finalDetection = stableDetection && isFingerDetected;
+  
+  // Update last detection time for future reference
+  if (finalDetection) {
+    lastDetectionTime = now;
+  }
+
+  // Log only significant changes to reduce console spam
+  if (finalDetection || now % 500 < 100) {
+    console.log(`Finger: R:${avgRed.toFixed(0)} G:${avgGreen.toFixed(0)} B:${avgBlue.toFixed(0)} Bright:${brightness.toFixed(0)} RedDom:${redDominance.toFixed(0)} Skin%:${skinColorPercentage.toFixed(0)} Shape%:${fingerShapePercentage.toFixed(0)} Conf:${finalConfidence} Det:${finalDetection}`);
+  }
 
   return {
-    detected: stableDetection || fingerDetected || multiMethodDetection || morphologyBasedDetection,
+    detected: finalDetection,
     confidence: finalConfidence,
     metrics: {
       brightness,
@@ -294,6 +326,21 @@ export function detectFinger(
       redIntensity: avgRed,
       greenIntensity: avgGreen,
       blueIntensity: avgBlue
+    }
+  };
+}
+
+// Helper function for empty result
+function getEmptyResult(): FingerDetectionResult {
+  return {
+    detected: false,
+    confidence: 0,
+    metrics: {
+      brightness: 0,
+      redDominance: 0,
+      redIntensity: 0,
+      greenIntensity: 0,
+      blueIntensity: 0
     }
   };
 }
@@ -310,39 +357,39 @@ export function calculateSignalQuality(detectionResult: FingerDetectionResult): 
   
   const { metrics } = detectionResult;
   
-  // Modified formula for signal quality with emphasis on fingertip detection
+  // Modified formula for signal quality with stricter requirements
   
-  // Factor de dominancia de rojo (ideal: >15) - reduced requirement
+  // Factor de dominancia de rojo (ideal: >15)
   const redDominanceFactor = Math.min(100, Math.max(0, (metrics.redDominance / 25) * 100));
   
-  // Factor de brillo (ideal: 100-200 en escala 0-255) - wider optimal range
+  // Factor de brillo (ideal: 100-200 en escala 0-255)
   const idealBrightness = 150;
   const brightnessDeviation = Math.abs(metrics.brightness - idealBrightness);
-  const brightnessFactor = Math.max(0, 100 - (brightnessDeviation / 2.0)); // More permissive
+  const brightnessFactor = Math.max(0, 100 - (brightnessDeviation / 1.5));
   
-  // Factor de intensidad de rojo (ideal: 70-200 en escala 0-255) - wider optimal range
-  const redIntensityFactor = metrics.redIntensity < 70 ? 
-    Math.min(100, (metrics.redIntensity / 70) * 90) : 
-    Math.min(100, (1 - (metrics.redIntensity - 70) / 130) * 100);
+  // Factor de intensidad de rojo (ideal: 80-200 en escala 0-255)
+  const redIntensityFactor = metrics.redIntensity < 80 ? 
+    Math.min(90, (metrics.redIntensity / 80) * 90) : 
+    Math.min(100, (1 - (metrics.redIntensity - 80) / 120) * 100);
   
   // Factor de contraste rojo-verde (importante para PPG signal)
   const redGreenContrastFactor = Math.min(100, Math.max(0, 
-    (metrics.redIntensity - metrics.greenIntensity) * 5)); // Less strict
+    (metrics.redIntensity - metrics.greenIntensity) * 4));
   
-  // More permissive ranges for fingertips
-  const greenOptimalFactor = Math.max(0, 100 - Math.abs(metrics.greenIntensity - 70) / 2.0);
-  const blueOptimalFactor = Math.max(0, 100 - Math.abs(metrics.blueIntensity - 60) / 2.0);
+  // More strict optimal ranges
+  const greenOptimalFactor = Math.max(0, 100 - Math.abs(metrics.greenIntensity - 70) / 1.5);
+  const blueOptimalFactor = Math.max(0, 100 - Math.abs(metrics.blueIntensity - 60) / 1.5);
   
-  // Ponderación de factores optimizada para dedo - increased weights for core factors
+  // Weighted formula with higher emphasis on key metrics
   const quality = (
-    redDominanceFactor * 0.25 +    
-    brightnessFactor * 0.25 +     // Increased weight
-    redIntensityFactor * 0.20 +   
+    redDominanceFactor * 0.30 +    // Increased weight
+    brightnessFactor * 0.25 +    
+    redIntensityFactor * 0.20 +  
     redGreenContrastFactor * 0.15 +
-    greenOptimalFactor * 0.08 +   // Decreased weight
-    blueOptimalFactor * 0.07      // Decreased weight
+    greenOptimalFactor * 0.05 +    // Decreased weight
+    blueOptimalFactor * 0.05       // Decreased weight
   );
   
-  // More permissive minimum quality
-  return Math.max(15, Math.round(quality));
+  // Apply minimum threshold
+  return Math.max(20, Math.round(quality));
 }
