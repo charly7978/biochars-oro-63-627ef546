@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -99,56 +100,51 @@ const PPGSignalMeter = ({
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Draw dark gray grid lines
+    ctx.globalAlpha = 0.03;
+    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
+      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
+        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
+        ctx.fillRect(i, j, 10, 10);
+      }
+    }
+    ctx.globalAlpha = 1.0;
+    
     ctx.beginPath();
-    ctx.strokeStyle = '#333333';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
     ctx.lineWidth = 0.5;
     
-    // Vertical grid lines
-    for (let x = 0; x <= CANVAS_WIDTH; x += 50) {
+    for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
+      if (x % (GRID_SIZE_X * 5) === 0) {
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
+        ctx.font = '10px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
+      }
     }
     
-    // Horizontal grid lines
-    for (let y = 0; y <= CANVAS_HEIGHT; y += 50) {
+    for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
+      if (y % (GRID_SIZE_Y * 5) === 0) {
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
+        ctx.font = '10px Inter';
+        ctx.textAlign = 'right';
+        ctx.fillText(y.toString(), 15, y + 3);
+      }
     }
-    
     ctx.stroke();
     
-    // Draw major grid lines (every 200px)
+    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = '#222222';
-    ctx.lineWidth = 1;
-    
-    for (let x = 0; x <= CANVAS_WIDTH; x += 200) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, CANVAS_HEIGHT);
-    }
-    
-    for (let y = 0; y <= CANVAS_HEIGHT; y += 200) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(CANVAS_WIDTH, y);
-    }
-    
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 3]);
+    ctx.moveTo(0, centerLineY);
+    ctx.lineTo(CANVAS_WIDTH, centerLineY);
     ctx.stroke();
-    
-    // Add grid measurements
-    ctx.font = '10px Inter';
-    ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-    ctx.textAlign = 'right';
-    
-    for (let y = 0; y <= CANVAS_HEIGHT; y += 200) {
-      ctx.fillText(y.toString(), 25, y + 10);
-    }
-    
-    ctx.textAlign = 'center';
-    for (let x = 200; x <= CANVAS_WIDTH; x += 200) {
-      ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
-    }
-
+    ctx.setLineDash([]);
     
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
