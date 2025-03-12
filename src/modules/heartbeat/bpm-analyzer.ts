@@ -6,6 +6,8 @@ export class BPMAnalyzer {
   
   private bpmValues: number[] = [];
   private prevValidBpm = 0;
+  private lastBpmUpdateTime = 0;
+  private bpmUpdateThrottle = 500; // ms
   
   constructor(minBpm = 40, maxBpm = 180, bpmWindowSize = 5) {
     this.MIN_BPM = minBpm;
@@ -14,6 +16,8 @@ export class BPMAnalyzer {
   }
   
   public addBeatInterval(interval: number): number | null {
+    const now = Date.now();
+    
     // Calculate BPM from RR interval
     const bpm = 60000 / interval;
     
@@ -25,12 +29,40 @@ export class BPMAnalyzer {
         this.bpmValues.shift();
       }
       
-      // Calculate average BPM
-      const sum = this.bpmValues.reduce((a, b) => a + b, 0);
-      const currentBpm = Math.round(sum / this.bpmValues.length);
-      this.prevValidBpm = currentBpm;
+      // Calculate average BPM with outlier filtering
+      if (this.bpmValues.length >= 3) {
+        // Sort values to find median
+        const sortedValues = [...this.bpmValues].sort((a, b) => a - b);
+        const median = sortedValues[Math.floor(sortedValues.length / 2)];
+        
+        // Filter out values that are too far from median (possible artifacts)
+        const filteredValues = this.bpmValues.filter(val => 
+          Math.abs(val - median) < Math.max(10, median * 0.15)
+        );
+        
+        if (filteredValues.length > 0) {
+          const sum = filteredValues.reduce((a, b) => a + b, 0);
+          const currentBpm = Math.round(sum / filteredValues.length);
+          
+          // Only update if significant time has passed or significant change
+          if (now - this.lastBpmUpdateTime > this.bpmUpdateThrottle || 
+              Math.abs(currentBpm - this.prevValidBpm) > 5) {
+            this.prevValidBpm = currentBpm;
+            this.lastBpmUpdateTime = now;
+            console.log(`BPM updated to ${currentBpm} from ${filteredValues.length} readings`);
+          }
+          
+          return this.prevValidBpm;
+        }
+      } else if (this.bpmValues.length > 0) {
+        // Simple average if we don't have enough data for outlier filtering
+        const sum = this.bpmValues.reduce((a, b) => a + b, 0);
+        const currentBpm = Math.round(sum / this.bpmValues.length);
+        this.prevValidBpm = currentBpm;
+        return currentBpm;
+      }
       
-      return currentBpm;
+      return this.prevValidBpm;
     }
     
     return null;
@@ -58,7 +90,7 @@ export class BPMAnalyzer {
       }
     }
     
-    return confidence;
+    return Math.min(1.0, confidence); // Cap at 1.0
   }
   
   public get currentBPM(): number {
@@ -68,5 +100,6 @@ export class BPMAnalyzer {
   public reset(): void {
     this.bpmValues = [];
     this.prevValidBpm = 0;
+    this.lastBpmUpdateTime = 0;
   }
 }

@@ -40,11 +40,13 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Constants adapted for 20:9 aspect ratio (3840 x 2160)
   const WINDOW_WIDTH_MS = 7500;
   const CANVAS_WIDTH = 3840;
   const CANVAS_HEIGHT = 2160;
-  const GRID_SIZE_X = 3840;
-  const GRID_SIZE_Y = 2160
+  // Grid size adjusted for the resolution
+  const GRID_SIZE_X = 240; // Smaller horizontal grid lines for better visibility
+  const GRID_SIZE_Y = 180;  // Smaller vertical grid lines for better visibility
   const verticalScale = 20.0;  // Sensibilidad aumentada para mejor visualización
   const SMOOTHING_FACTOR = 1.8; // Mayor suavizado para reducir ruido
   const TARGET_FPS = 90;
@@ -91,6 +93,7 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
+    // Light gradient background with subtle colors
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
     gradient.addColorStop(0.3, '#FDE1D3');
@@ -100,52 +103,76 @@ const PPGSignalMeter = ({
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    ctx.globalAlpha = 0.03;
-    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
-      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
-        ctx.fillRect(i, j, 10, 10);
+    // Draw dark gray grid pattern
+    ctx.globalAlpha = 0.08; // Very subtle grid
+    
+    // Smaller grid squares for better visual
+    for (let i = 0; i < CANVAS_WIDTH; i += 30) {
+      for (let j = 0; j < CANVAS_HEIGHT; j += 30) {
+        // Alternating pattern for better visual distinction
+        ctx.fillStyle = j % 60 === 0 ? '#333333' : '#444444';
+        ctx.fillRect(i, j, 15, 15);
       }
     }
     ctx.globalAlpha = 1.0;
     
+    // Draw main grid lines
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.25)'; // Darker grid lines
+    ctx.lineWidth = 0.8;
     
-    for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, CANVAS_HEIGHT);
-      if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
-      }
-    }
-    
+    // Horizontal grid lines
     for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
+      // Add labels every 5 grid lines
       if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.7)';
+        ctx.font = '16px Inter';
         ctx.textAlign = 'right';
-        ctx.fillText(y.toString(), 15, y + 3);
+        ctx.fillText(y.toString(), 25, y + 5);
+      }
+    }
+    
+    // Vertical grid lines
+    for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CANVAS_HEIGHT);
+      // Add labels every 5 grid lines
+      if (x % (GRID_SIZE_X * 5) === 0) {
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.7)';
+        ctx.font = '16px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 10);
       }
     }
     ctx.stroke();
     
+    // Draw primary horizontal center line (PPG baseline)
     const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.5)'; // Darker and more visible
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 3]);
+    ctx.setLineDash([8, 4]);
     ctx.moveTo(0, centerLineY);
     ctx.lineTo(CANVAS_WIDTH, centerLineY);
     ctx.stroke();
     ctx.setLineDash([]);
     
+    // Time scale indicator
+    ctx.fillStyle = 'rgba(40, 40, 40, 0.7)';
+    ctx.font = 'bold 18px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('Tiempo (ms)', 30, CANVAS_HEIGHT - 30);
+    
+    // Amplitude scale indicator
+    ctx.save();
+    ctx.translate(30, CANVAS_HEIGHT / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Amplitud', 0, -10);
+    ctx.restore();
+    
+    // Add arrhythmia alert if needed
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
@@ -306,7 +333,7 @@ const PPGSignalMeter = ({
     if (points.length > 1) {
       ctx.beginPath();
       ctx.strokeStyle = '#0EA5E9';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       
@@ -351,13 +378,13 @@ const PPGSignalMeter = ({
         
         if (x >= 0 && x <= canvas.width) {
           ctx.beginPath();
-          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.arc(x, y, 8, 0, Math.PI * 2);
           ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           ctx.fill();
           
           if (peak.isArrhythmia) {
             ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.arc(x, y, 15, 0, Math.PI * 2);
             ctx.strokeStyle = '#FEF7CD';
             ctx.lineWidth = 3;
             ctx.stroke();
@@ -450,12 +477,22 @@ const PPGSignalMeter = ({
         </div>
       </div>
 
-      {/* Added finger placement guidance */}
+      {/* Improved finger placement guidance with visual indicator */}
       {!isFingerDetected && (
         <div className="absolute top-1/4 left-0 right-0 flex justify-center">
-          <div className="bg-black/30 text-white px-4 py-2 rounded-lg text-center max-w-xs">
-            <h3 className="font-bold mb-1">Coloque la YEMA del dedo</h3>
-            <p className="text-sm">Apoye suavemente la yema (parte plana) del dedo sobre la cámara, no la punta.</p>
+          <div className="bg-black/50 text-white px-6 py-4 rounded-lg text-center max-w-xs shadow-lg">
+            <h3 className="font-bold text-lg mb-2">COLOQUE LA YEMA DEL DEDO</h3>
+            <div className="flex justify-center mb-2">
+              <div className="relative w-20 h-20">
+                {/* Finger pad illustration */}
+                <div className="absolute inset-0 bg-amber-100 rounded-full opacity-80"></div>
+                <div className="absolute inset-2 bg-amber-200 rounded-full"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-4xl animate-pulse">👇</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-sm">Apoye suavemente la PARTE PLANA (yema) del dedo sobre la cámara, no la punta. Presione con firmeza pero sin exceso.</p>
           </div>
         </div>
       )}

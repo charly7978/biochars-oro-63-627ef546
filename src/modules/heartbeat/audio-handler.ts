@@ -30,11 +30,19 @@ export class AudioHandler {
         
         const arrayBuffer = await response.arrayBuffer();
         
+        // Resume audio context if suspended (needed for iOS and some browsers)
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
+        }
+        
         // Decode audio with error handling
         try {
           this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
           this.audioInitialized = true;
           console.log("AudioHandler: Audio Context Initialized successfully");
+          
+          // Play a silent sound to unlock audio on iOS
+          this.playUnlockSound();
           return true;
         } catch (decodeError) {
           console.error("Audio decoding failed, trying fallback beep method:", decodeError);
@@ -53,6 +61,25 @@ export class AudioHandler {
     }
   }
   
+  private async playUnlockSound(): Promise<void> {
+    // Play a short silent sound to unlock audio on iOS and other browsers
+    if (!this.audioContext) return;
+    
+    try {
+      const silentSource = this.audioContext.createOscillator();
+      const silentGain = this.audioContext.createGain();
+      silentGain.gain.value = 0.001; // Nearly silent
+      silentSource.connect(silentGain);
+      silentGain.connect(this.audioContext.destination);
+      silentSource.start(0);
+      silentSource.stop(0.1);
+      
+      console.log("Played audio unlock sound");
+    } catch (error) {
+      console.error("Error playing unlock sound:", error);
+    }
+  }
+  
   private createFallbackBeepSound(): void {
     // Create a simple oscillator pattern as a fallback
     this.audioInitialized = true;
@@ -61,26 +88,33 @@ export class AudioHandler {
 
   public playBeep(confidence: number, quality: number): void {
     if (!this.audioContext || !this.audioInitialized) {
+      console.error("Cannot play beep: audio not initialized");
       return;
     }
     
     try {
+      // Ensure audio context is running
+      if (this.audioContext.state !== 'running') {
+        this.audioContext.resume().catch(err => console.error("Error resuming audio context:", err));
+      }
+      
       // Adjust volume based on confidence and quality
-      const volume = Math.min(0.8, confidence * (quality / 100 + 0.5));
+      const volume = Math.min(0.9, confidence * (quality / 100 + 0.5));
       
       if (this.audioBuffer && this.beepGainNode) {
         // Normal beep with audio buffer
-        this.beepGainNode.gain.value = Math.max(0.3, volume);
+        this.beepGainNode.gain.value = Math.max(0.5, volume);
         const source = this.audioContext.createBufferSource();
         source.buffer = this.audioBuffer;
         source.connect(this.beepGainNode);
-        source.start();
+        
+        // Start the source now
+        source.start(0);
+        console.log(`BEEP played at ${new Date().toISOString()} with volume ${volume.toFixed(2)}`);
       } else {
         // Fallback beep using oscillator
         this.playFallbackBeep(volume);
       }
-      
-      console.log(`BEEP played at ${new Date().toISOString()}`);
     } catch (error) {
       console.error("Error playing heartbeat sound:", error);
       // Try fallback if normal playback fails
@@ -107,6 +141,8 @@ export class AudioHandler {
       
       oscillator.start();
       oscillator.stop(this.audioContext.currentTime + 0.3);
+      
+      console.log(`Fallback BEEP played at ${new Date().toISOString()} with volume ${volume.toFixed(2)}`);
     } catch (error) {
       console.error("Error playing fallback beep:", error);
     }
