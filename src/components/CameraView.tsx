@@ -18,7 +18,6 @@ const CameraView = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
-  const [actualResolution, setActualResolution] = useState<{width: number, height: number} | null>(null);
   const streamErrorCount = useRef(0);
 
   const stopCamera = async () => {
@@ -47,7 +46,6 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       setCameraReady(false);
-      setActualResolution(null);
     }
   };
 
@@ -59,17 +57,17 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
-      // Reduced resolution request for better performance
+      // First try with basic configuration
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 }, // Reduced from 1920 for better performance
-        height: { ideal: 720 }  // Reduced from 1080 for better performance
+        width: { ideal: 720 },
+        height: { ideal: 480 }
       };
 
       if (isAndroid) {
-        // Simplified settings for Android
+        // Ajustes para mejorar la extracción de señal en Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30 }, // Reduced max frame rate
+          frameRate: { ideal: 15, max: 30 }, // Lower frameRate to avoid overloading
           resizeMode: 'crop-and-scale'
         });
       }
@@ -79,7 +77,7 @@ const CameraView = ({
         audio: false
       };
 
-      console.log("CameraView: Attempting to get user media");
+      console.log("CameraView: Attempting to get user media with constraints:", constraints);
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       console.log("CameraView: User media obtained successfully");
       
@@ -90,72 +88,36 @@ const CameraView = ({
       const videoTrack = newStream.getVideoTracks()[0];
       console.log("CameraView: Video track obtained:", videoTrack.label);
 
-      // Log and store the actual resolution
-      const settings = videoTrack.getSettings();
-      const actualWidth = settings.width || 0;
-      const actualHeight = settings.height || 0;
-      console.log(`CameraView: Actual camera resolution: ${actualWidth}x${actualHeight}`);
-      setActualResolution({width: actualWidth, height: actualHeight});
-
-      // Try to set a reasonable resolution based on device capabilities
-      if (videoTrack && videoTrack.getCapabilities) {
-        const capabilities = videoTrack.getCapabilities();
-        console.log("CameraView: Track capabilities:", capabilities);
-        
-        // If width/height capabilities are available, try to set a good resolution
-        // but not the maximum to avoid performance issues
-        if (capabilities.width && capabilities.height) {
-          // Request 75% of max resolution for better performance
-          const targetWidth = capabilities.width.max ? 
-            Math.min(1280, Math.floor(capabilities.width.max * 0.75)) : 1280;
-          const targetHeight = capabilities.height.max ? 
-            Math.min(720, Math.floor(capabilities.height.max * 0.75)) : 720;
-          
-          console.log(`CameraView: Setting target resolution: ${targetWidth}x${targetHeight}`);
-          
-          try {
-            await videoTrack.applyConstraints({
-              width: targetWidth,
-              height: targetHeight
-            });
-            
-            // Update actual resolution after applying constraints
-            const newSettings = videoTrack.getSettings();
-            setActualResolution({
-              width: newSettings.width || 0,
-              height: newSettings.height || 0
-            });
-            console.log(`CameraView: Applied resolution: ${newSettings.width}x${newSettings.height}`);
-          } catch (err) {
-            console.error("CameraView: Failed to set resolution:", err);
-          }
-        }
-        
-        // Simplified advanced constraints - only apply what's most important
+      if (videoTrack && isAndroid) {
         try {
+          const capabilities = videoTrack.getCapabilities();
+          console.log("CameraView: Track capabilities:", capabilities);
+          
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
+          if (capabilities.exposureMode) {
+            advancedConstraints.push({ exposureMode: 'continuous' });
+          }
           if (capabilities.focusMode) {
             advancedConstraints.push({ focusMode: 'continuous' });
           }
-          
+          if (capabilities.whiteBalanceMode) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          }
+
           if (advancedConstraints.length > 0) {
             await videoTrack.applyConstraints({
               advanced: advancedConstraints
             });
+            console.log("CameraView: Applied advanced constraints successfully");
+          }
+
+          if (videoRef.current) {
+            videoRef.current.style.transform = 'translateZ(0)';
+            videoRef.current.style.backfaceVisibility = 'hidden';
           }
         } catch (err) {
-          console.error("CameraView: Error applying advanced constraints:", err);
-        }
-
-        // Performance optimizations for video element
-        if (videoRef.current) {
-          videoRef.current.style.transform = 'translateZ(0)';
-          videoRef.current.style.backfaceVisibility = 'hidden';
-          
-          // Add playsinline explicitly again
-          videoRef.current.setAttribute('playsinline', 'true');
-          videoRef.current.setAttribute('webkit-playsinline', 'true');
+          console.log("CameraView: Could not apply some optimizations:", err);
         }
       }
 
@@ -163,17 +125,18 @@ const CameraView = ({
         videoRef.current.srcObject = newStream;
         if (isAndroid) {
           videoRef.current.style.willChange = 'transform';
+          videoRef.current.style.transform = 'translateZ(0)';
         }
       }
 
       setStream(newStream);
       
-      // Faster camera ready notification
+      // Wait for the video to be ready before notifying
       setTimeout(() => {
         setCameraReady(true);
         console.log("CameraView: Camera ready state set to true");
         
-        // Try to activate torch immediately if capabilities support it
+        // Try to activate torch with appropriate error handling
         if (videoTrack && videoTrack.getCapabilities()?.torch) {
           console.log("CameraView: Attempting to enable torch");
           videoTrack.applyConstraints({
@@ -186,28 +149,27 @@ const CameraView = ({
           });
         }
         
-        // Notify stream ready
+        // Only notify once camera is fully ready
         if (onStreamReady) {
           console.log("CameraView: Notifying stream ready");
           onStreamReady(newStream);
         }
-      }, 500); // Reduced from 1000ms for faster startup
+      }, 1000); // Give the camera a second to stabilize
       
     } catch (err) {
       console.error("CameraView: Error starting camera:", err);
       streamErrorCount.current += 1;
       
-      // If we've tried more than once, use lower resolution
-      if (streamErrorCount.current > 1) {
+      // If we've tried more than twice, use lower resolution
+      if (streamErrorCount.current > 2) {
         console.log("CameraView: Multiple failures, trying with lower resolution");
         try {
-          // Use a very low resolution as fallback for reliable performance
           const fallbackConstraints = {
             video: {
               facingMode: 'environment',
-              width: { ideal: 640 },
-              height: { ideal: 480 },
-              frameRate: { ideal: 15, max: 30 }
+              width: { ideal: 320 },
+              height: { ideal: 240 },
+              frameRate: { ideal: 15 }
             }
           };
           
@@ -218,20 +180,12 @@ const CameraView = ({
           
           setStream(fallbackStream);
           
-          // Set actual resolution for fallback
-          const fallbackTrack = fallbackStream.getVideoTracks()[0];
-          const fallbackSettings = fallbackTrack.getSettings();
-          setActualResolution({
-            width: fallbackSettings.width || 0,
-            height: fallbackSettings.height || 0
-          });
-          
           setTimeout(() => {
             setCameraReady(true);
             if (onStreamReady) {
               onStreamReady(fallbackStream);
             }
-          }, 500);
+          }, 1000);
         } catch (finalErr) {
           console.error("CameraView: Final error starting camera:", finalErr);
         }
@@ -256,7 +210,7 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    // Simplified torch handling - less frequent checks for better performance
+    // More robust torch handling
     if (stream && isFingerDetected && !torchEnabled && cameraReady) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.readyState === 'live' && videoTrack.getCapabilities()?.torch) {
@@ -271,7 +225,7 @@ const CameraView = ({
       }
     }
     
-    // Less frequent camera and torch checks - every 10 seconds instead of 5
+    // Check camera and torch every 5 seconds
     const interval = setInterval(() => {
       if (stream && cameraReady) {
         const videoTrack = stream.getVideoTracks()[0];
@@ -293,32 +247,24 @@ const CameraView = ({
             .catch(err => console.error("CameraView: Error reactivating torch:", err));
         }
       }
-    }, 10000); // Increased from 5000 to 10000 for performance
+    }, 5000);
     
     return () => clearInterval(interval);
   }, [stream, isFingerDetected, torchEnabled, cameraReady, isMonitoring]);
 
   return (
-    <>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-        style={{
-          willChange: 'transform',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden'
-        }}
-      />
-      {/* Simple resolution display for debugging */}
-      {actualResolution && (
-        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded z-10">
-          {actualResolution.width}×{actualResolution.height}
-        </div>
-      )}
-    </>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+      style={{
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden'
+      }}
+    />
   );
 };
 
