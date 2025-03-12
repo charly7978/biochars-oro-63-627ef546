@@ -18,7 +18,6 @@ const CameraView = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
-  const [cameraResolution, setCameraResolution] = useState({ width: 0, height: 0 });
   const streamErrorCount = useRef(0);
 
   const stopCamera = async () => {
@@ -58,17 +57,17 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
-      // Intentar obtener la resolución máxima disponible de la cámara
+      // First try with basic configuration
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 }, // Solicitamos resolución HD o superior
-        height: { ideal: 1080 }
+        width: { ideal: 720 },
+        height: { ideal: 480 }
       };
 
       if (isAndroid) {
         // Ajustes para mejorar la extracción de señal en Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 15, max: 30 },
+          frameRate: { ideal: 15, max: 30 }, // Lower frameRate to avoid overloading
           resizeMode: 'crop-and-scale'
         });
       }
@@ -78,59 +77,22 @@ const CameraView = ({
         audio: false
       };
 
-      console.log("CameraView: Intentando obtener la cámara con restricciones:", constraints);
+      console.log("CameraView: Attempting to get user media with constraints:", constraints);
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("CameraView: Stream de cámara obtenido correctamente");
+      console.log("CameraView: User media obtained successfully");
       
       if (!newStream || newStream.getVideoTracks().length === 0) {
         throw new Error("No se pudo obtener video track");
       }
       
       const videoTrack = newStream.getVideoTracks()[0];
-      console.log("CameraView: Video track obtenido:", videoTrack.label);
+      console.log("CameraView: Video track obtained:", videoTrack.label);
 
-      // Obtener y registrar las capacidades reales del track
-      const capabilities = videoTrack.getCapabilities();
-      console.log("CameraView: Capacidades del track:", capabilities);
-      
-      // Obtener settings actuales
-      const settings = videoTrack.getSettings();
-      console.log("CameraView: Configuración actual de la cámara:", settings);
-      
-      // Registrar la resolución actual
-      setCameraResolution({
-        width: settings.width || 0,
-        height: settings.height || 0
-      });
-      
-      // Intentar aplicar la mayor resolución disponible
-      if (capabilities.width && capabilities.height) {
-        const maxWidth = capabilities.width.max || 1920;
-        const maxHeight = capabilities.height.max || 1080;
-        
-        console.log(`CameraView: Intentando aplicar resolución máxima: ${maxWidth}x${maxHeight}`);
-        
+      if (videoTrack && isAndroid) {
         try {
-          await videoTrack.applyConstraints({
-            width: { ideal: maxWidth },
-            height: { ideal: maxHeight }
-          });
+          const capabilities = videoTrack.getCapabilities();
+          console.log("CameraView: Track capabilities:", capabilities);
           
-          // Verificar configuración después de aplicar restricciones
-          const newSettings = videoTrack.getSettings();
-          console.log("CameraView: Nueva configuración de cámara después de aplicar restricciones:", newSettings);
-          
-          setCameraResolution({
-            width: newSettings.width || 0,
-            height: newSettings.height || 0
-          });
-        } catch (constraintErr) {
-          console.error("CameraView: Error aplicando restricciones de alta resolución:", constraintErr);
-        }
-      }
-
-      if (isAndroid) {
-        try {
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
           if (capabilities.exposureMode) {
@@ -189,7 +151,7 @@ const CameraView = ({
         
         // Only notify once camera is fully ready
         if (onStreamReady) {
-          console.log(`CameraView: Notifying stream ready con resolución: ${cameraResolution.width}x${cameraResolution.height}`);
+          console.log("CameraView: Notifying stream ready");
           onStreamReady(newStream);
         }
       }, 1000); // Give the camera a second to stabilize
@@ -205,8 +167,8 @@ const CameraView = ({
           const fallbackConstraints = {
             video: {
               facingMode: 'environment',
-              width: { ideal: 640 },  // Aumentado de 320 a 640 para mejor calidad
-              height: { ideal: 480 }, // Aumentado de 240 a 480
+              width: { ideal: 320 },
+              height: { ideal: 240 },
               frameRate: { ideal: 15 }
             }
           };
@@ -218,20 +180,9 @@ const CameraView = ({
           
           setStream(fallbackStream);
           
-          // Registrar información sobre la resolución de fallback
-          const fallbackTrack = fallbackStream.getVideoTracks()[0];
-          const fallbackSettings = fallbackTrack.getSettings();
-          console.log("CameraView: Configuración de fallback:", fallbackSettings);
-          
-          setCameraResolution({
-            width: fallbackSettings.width || 0,
-            height: fallbackSettings.height || 0
-          });
-          
           setTimeout(() => {
             setCameraReady(true);
             if (onStreamReady) {
-              console.log(`CameraView: Notifying fallback stream ready con resolución: ${fallbackSettings.width}x${fallbackSettings.height}`);
               onStreamReady(fallbackStream);
             }
           }, 1000);
@@ -302,25 +253,18 @@ const CameraView = ({
   }, [stream, isFingerDetected, torchEnabled, cameraReady, isMonitoring]);
 
   return (
-    <>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-        style={{
-          willChange: 'transform',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden'
-        }}
-      />
-      {cameraReady && (
-        <div className="absolute top-2 left-2 z-20 bg-black/50 text-white text-xs p-1 rounded">
-          Res: {cameraResolution.width}x{cameraResolution.height}
-        </div>
-      )}
-    </>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+      style={{
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden'
+      }}
+    />
   );
 };
 
