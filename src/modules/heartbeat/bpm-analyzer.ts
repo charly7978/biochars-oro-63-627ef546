@@ -6,12 +6,6 @@ export class BPMAnalyzer {
   
   private bpmValues: number[] = [];
   private prevValidBpm = 0;
-  private lastBpmUpdateTime = 0;
-  private bpmUpdateThrottle = 500; // ms
-  private bpmHistory: number[] = [];
-  private consecutiveValidReadings = 0;
-  private initialDetectionPhase = true;
-  private initialReadingsCounter = 0;
   
   constructor(minBpm = 40, maxBpm = 180, bpmWindowSize = 5) {
     this.MIN_BPM = minBpm;
@@ -20,12 +14,8 @@ export class BPMAnalyzer {
   }
   
   public addBeatInterval(interval: number): number | null {
-    console.log(`BPMAnalyzer: Processing beat interval: ${interval}ms`);
-    const now = Date.now();
-    
     // Calculate BPM from RR interval
     const bpm = 60000 / interval;
-    console.log(`BPMAnalyzer: Calculated raw BPM: ${bpm.toFixed(1)}`);
     
     // Only accept physiologically plausible values
     if (bpm >= this.MIN_BPM && bpm <= this.MAX_BPM) {
@@ -35,87 +25,15 @@ export class BPMAnalyzer {
         this.bpmValues.shift();
       }
       
-      // Handle initial detection phase with less strict filtering
-      if (this.initialDetectionPhase) {
-        this.initialReadingsCounter++;
-        
-        // After a few readings, we can be more confident
-        if (this.initialReadingsCounter >= 3) {
-          this.initialDetectionPhase = false;
-          
-          // For the initial phase, use a simple average for quicker response
-          const sum = this.bpmValues.reduce((a, b) => a + b, 0);
-          const initialBpm = Math.round(sum / this.bpmValues.length);
-          
-          this.prevValidBpm = initialBpm;
-          console.log(`BPMAnalyzer: Initial detection phase complete, starting BPM: ${initialBpm}`);
-          return initialBpm;
-        }
-      }
+      // Calculate average BPM
+      const sum = this.bpmValues.reduce((a, b) => a + b, 0);
+      const currentBpm = Math.round(sum / this.bpmValues.length);
+      this.prevValidBpm = currentBpm;
       
-      // Calculate average BPM with outlier filtering
-      if (this.bpmValues.length >= 3) {
-        // Sort values to find median
-        const sortedValues = [...this.bpmValues].sort((a, b) => a - b);
-        const median = sortedValues[Math.floor(sortedValues.length / 2)];
-        
-        // More permissive outlier filtering to improve detection rate
-        const filteredValues = this.bpmValues.filter(val => 
-          Math.abs(val - median) < Math.max(15, median * 0.25) // Increased tolerance further
-        );
-        
-        if (filteredValues.length > 0) {
-          const sum = filteredValues.reduce((a, b) => a + b, 0);
-          const currentBpm = Math.round(sum / filteredValues.length);
-          
-          // Update if significant time has passed or significant change
-          const significantChange = this.prevValidBpm === 0 || 
-                                   Math.abs(currentBpm - this.prevValidBpm) > 3 ||
-                                   now - this.lastBpmUpdateTime > this.bpmUpdateThrottle;
-                                   
-          if (significantChange) {
-            this.consecutiveValidReadings++;
-            
-            // More confidence in the reading with more consecutive valid readings
-            if (this.consecutiveValidReadings >= 2 || this.prevValidBpm === 0) {
-              // Smooth the transition to new value
-              if (this.prevValidBpm > 0) {
-                // Weighted average with more weight on the new reading for faster response
-                this.prevValidBpm = Math.round(this.prevValidBpm * 0.4 + currentBpm * 0.6);
-              } else {
-                this.prevValidBpm = currentBpm;
-              }
-              
-              this.lastBpmUpdateTime = now;
-              console.log(`BPM updated to ${this.prevValidBpm} from ${filteredValues.length} readings`);
-              
-              // Update BPM history for trend analysis
-              this.bpmHistory.push(this.prevValidBpm);
-              if (this.bpmHistory.length > 10) {
-                this.bpmHistory.shift();
-              }
-            }
-          }
-          
-          return this.prevValidBpm;
-        }
-      } else if (this.bpmValues.length > 0) {
-        // Simple average if we don't have enough data for outlier filtering
-        const sum = this.bpmValues.reduce((a, b) => a + b, 0);
-        const currentBpm = Math.round(sum / this.bpmValues.length);
-        this.prevValidBpm = currentBpm;
-        this.consecutiveValidReadings = 1;
-        console.log(`Initial BPM reading: ${currentBpm}`);
-        return currentBpm;
-      }
-      
-      return this.prevValidBpm;
-    } else {
-      console.log(`BPMAnalyzer: Rejected implausible BPM: ${bpm.toFixed(1)} (outside ${this.MIN_BPM}-${this.MAX_BPM} range)`);
-      this.consecutiveValidReadings = Math.max(0, this.consecutiveValidReadings - 1);
+      return currentBpm;
     }
     
-    return this.prevValidBpm > 0 ? this.prevValidBpm : null;
+    return null;
   }
   
   public calculateConfidence(quality: number): number {
@@ -138,21 +56,9 @@ export class BPMAnalyzer {
       } else if (stdDev < 15) {
         confidence += 0.1;
       }
-      
-      // More confidence with more consecutive valid readings
-      if (this.consecutiveValidReadings >= 5) {
-        confidence += 0.2;
-      } else if (this.consecutiveValidReadings >= 3) {
-        confidence += 0.1;
-      }
-      
-      // Higher base confidence when we have any valid readings
-      if (this.prevValidBpm > 0) {
-        confidence += 0.15;
-      }
     }
     
-    return Math.min(1.0, confidence); // Cap at 1.0
+    return confidence;
   }
   
   public get currentBPM(): number {
@@ -161,11 +67,6 @@ export class BPMAnalyzer {
   
   public reset(): void {
     this.bpmValues = [];
-    this.bpmHistory = [];
     this.prevValidBpm = 0;
-    this.lastBpmUpdateTime = 0;
-    this.consecutiveValidReadings = 0;
-    this.initialDetectionPhase = true;
-    this.initialReadingsCounter = 0;
   }
 }
