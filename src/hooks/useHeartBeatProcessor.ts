@@ -85,8 +85,11 @@ export const useHeartBeatProcessor = () => {
     }
 
     try {
-      // Directly process signal without quality threshold check
-      const result = processorRef.current.processSignal(value);
+      // Apply quality threshold check
+      let qualityEstimate = 50; // Default moderate quality
+      
+      // Require reasonable signal quality
+      const result = processorRef.current.processSignal(value, qualityEstimate);
       const rrData = processorRef.current.getRRIntervals();
       
       if (shouldLog) {
@@ -99,12 +102,12 @@ export const useHeartBeatProcessor = () => {
         });
       }
       
-      // Much less strict confidence threshold - 0.2 instead of 0.4
-      if (result.confidence < 0.2) {
+      // Stricter confidence threshold - 0.4
+      if (result.confidence < 0.4) {
         stableReadingsCount.current = 0;
         // Continue using current BPM instead of returning 0
         return {
-          bpm: currentBPM > 0 ? currentBPM : result.bpm || 70, // Use fallback value if nothing else
+          bpm: currentBPM > 0 ? currentBPM : 0, 
           confidence: result.confidence,
           isPeak: result.isBeat,
           arrhythmiaCount: 0,
@@ -112,29 +115,29 @@ export const useHeartBeatProcessor = () => {
         };
       }
 
-      // More permissive BPM validation
+      // Stricter BPM validation
       let validatedBPM = result.bpm;
-      const isValidBPM = result.bpm >= 40 && result.bpm <= 200;
+      const isValidBPM = result.bpm >= 45 && result.bpm <= 180;
       
       if (!isValidBPM) {
         stableReadingsCount.current = 0;
-        validatedBPM = lastValidBPM.current || result.bpm || 70; // Fallback
+        validatedBPM = lastValidBPM.current || 0; // Don't use fallback
       } else {
-        // Less strict stability check
+        // Stricter stability check
         if (lastValidBPM.current > 0) {
           const bpmDiff = Math.abs(result.bpm - lastValidBPM.current);
           
-          // More permissive dramatic change threshold (25 instead of 15)
-          if (bpmDiff > 25) {
+          // Stricter dramatic change threshold
+          if (bpmDiff > 15) {
             stableReadingsCount.current = 0;
             
-            // Approach the new value more quickly
-            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 4 : -4);
+            // Approach the new value gradually
+            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 2 : -2);
           } else {
             stableReadingsCount.current++;
             
-            // Smoother transition with more weight on new readings (0.5 instead of 0.3)
-            validatedBPM = lastValidBPM.current * 0.5 + result.bpm * 0.5;
+            // Smoother transition with more weight on historical readings
+            validatedBPM = lastValidBPM.current * 0.7 + result.bpm * 0.3;
           }
         }
         
@@ -142,16 +145,15 @@ export const useHeartBeatProcessor = () => {
         lastValidBPM.current = validatedBPM;
       }
       
-      // Much more permissive display update - only need 2 stable readings instead of 3
-      // or much lower confidence threshold (0.65 instead of 0.85)
-      if ((stableReadingsCount.current >= 2 || result.confidence > 0.65) && validatedBPM > 0) {
+      // Stricter display update - need 3 stable readings
+      if (stableReadingsCount.current >= 3 && validatedBPM > 0) {
         setCurrentBPM(Math.round(validatedBPM));
         setConfidence(result.confidence);
       }
 
-      // Always return a value, never zero
+      // Return 0 for very low confidence
       return {
-        bpm: validatedBPM > 0 ? Math.round(validatedBPM) : (currentBPM || 70),
+        bpm: validatedBPM > 0 ? Math.round(validatedBPM) : 0,
         confidence: result.confidence,
         isPeak: result.isBeat,
         arrhythmiaCount: 0,
@@ -160,7 +162,7 @@ export const useHeartBeatProcessor = () => {
     } catch (error) {
       console.error('useHeartBeatProcessor - Error processing signal:', error);
       return {
-        bpm: currentBPM || 70,
+        bpm: currentBPM || 0,
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,

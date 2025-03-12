@@ -25,19 +25,26 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
-  private waveformBuffer: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 15,          // Aumentado para mejor análisis
-    MIN_RED_THRESHOLD: 100,   // Ajustado para mejor detección
-    MAX_RED_THRESHOLD: 230,   // Limitado para evitar saturación
-    STABILITY_WINDOW: 8,      // Aumentado para análisis más robusto
-    MIN_STABILITY_COUNT: 5    // Más estricto para evitar falsos positivos
+    BUFFER_SIZE: 15,
+    MIN_RED_THRESHOLD: 60,     // Aumentado de 40 a 60 para exigir una señal más fuerte
+    MAX_RED_THRESHOLD: 250,
+    STABILITY_WINDOW: 6,
+    MIN_STABILITY_COUNT: 6,    // Aumentado de 4 a 6 para requerir más muestras estables
+    HYSTERESIS: 5,
+    MIN_CONSECUTIVE_DETECTIONS: 3,
+    MIN_CONFIDENCE: 0.6        // Definimos MIN_CONFIDENCE que estaba faltando
   };
+
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private baselineValue: number | null = null;
-  private readonly VARIANCE_THRESHOLD = 0.15; // 15% de variación máxima permitida
+  private consecutiveDetections: number = 0;
+  private isCurrentlyDetected: boolean = false;
+  private lastDetectionTime: number = 0;
+  private readonly DETECTION_TIMEOUT = 500; // 500ms timeout
+  private signalBuffer: number[] = [];
+  private smoothedValue: number = 0;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -45,7 +52,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
-    console.log("PPGSignalProcessor: Instancia creada con nueva configuración");
+    console.log("PPGSignalProcessor: Instancia creada");
   }
 
   async initialize(): Promise<void> {
@@ -53,8 +60,9 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.lastValues = [];
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
-      this.baselineValue = null;
-      this.waveformBuffer = [];
+      this.consecutiveDetections = 0;
+      this.isCurrentlyDetected = false;
+      this.lastDetectionTime = 0;
       this.kalmanFilter.reset();
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
@@ -75,8 +83,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.lastValues = [];
     this.stableFrameCount = 0;
     this.lastStableValue = 0;
-    this.baselineValue = null;
-    this.waveformBuffer = [];
+    this.consecutiveDetections = 0;
+    this.isCurrentlyDetected = false;
     this.kalmanFilter.reset();
     console.log("PPGSignalProcessor: Detenido");
   }
@@ -94,7 +102,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
-  processFrame(imageData: ImageData): void {
+  public processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
       return;
     }
@@ -107,7 +115,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       const filtered = this.kalmanFilter.filter(redValue);
       
       // Análisis avanzado de la señal para determinar la presencia del dedo y calidad
-      const { isFingerDetected, quality, waveformQuality } = this.analyzeSignal(filtered, redValue);
+      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
       
       // Calcular coordenadas del ROI (región de interés)
       const roi = this.detectROI(redValue);
@@ -122,7 +130,6 @@ export class PPGSignalProcessor implements SignalProcessor {
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
-        waveformQuality: waveformQuality,
         fingerDetected: isFingerDetected,
         roi: roi,
         perfusionIndex: perfusionIndex
@@ -170,324 +177,238 @@ export class PPGSignalProcessor implements SignalProcessor {
     let maxRed = 0;
     let minRed = 255;
     
-    // ROI (Region of Interest) adaptativo
-    // Usar un área centrada con tamaño dinámico para mejor precisión
+    // Optimización 1: Enfocarse en el centro de la imagen donde normalmente está el dedo
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
-    
-    // Tamaño del ROI adaptativo basado en la resolución de la cámara
-    // Cámaras de mayor resolución necesitan ROIs más pequeños en proporción
-    const adaptiveRoiPercent = imageData.width > 720 ? 0.25 : 0.35; // 25% o 35% del tamaño
-    const roiSize = Math.min(imageData.width, imageData.height) * adaptiveRoiPercent;
-    
+    // Fijar ROI en 45% de la dimensión menor sin recalcular según brillo
+    const roiSize = Math.min(imageData.width, imageData.height) * 0.45; 
     const startX = Math.max(0, Math.floor(centerX - roiSize / 2));
     const endX = Math.min(imageData.width, Math.floor(centerX + roiSize / 2));
     const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
     const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
     
-    // Matrices para análisis de subregiones
-    const regionSize = 20; // Regiones de 20x20 píxeles
-    const regionsX = Math.ceil((endX - startX) / regionSize);
-    const regionsY = Math.ceil((endY - startY) / regionSize);
+    // Optimización 2: Usar una matriz para encontrar la región con mejor señal
+    const regionSize = 8; // Reducido de 10 a 8 para más regiones
+    const regions: Record<string, {redSum: number, count: number, x: number, y: number, ratio: number}> = {};
     
-    // Inicializar matrices para análisis de regiones
-    const regionRedAvg = Array(regionsY).fill(0).map(() => Array(regionsX).fill(0));
-    const regionGreenAvg = Array(regionsY).fill(0).map(() => Array(regionsX).fill(0));
-    const regionBlueAvg = Array(regionsY).fill(0).map(() => Array(regionsX).fill(0));
-    const regionCount = Array(regionsY).fill(0).map(() => Array(regionsX).fill(0));
-    
-    // Fase 1: Acumular valores por regiones
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
-        const regY = Math.floor((y - startY) / regionSize);
-        const regX = Math.floor((x - startX) / regionSize);
+        const i = (y * imageData.width + x) * 4;
+        const r = data[i];     // Canal rojo
+        const g = data[i+1];   // Canal verde
+        const b = data[i+2];   // Canal azul
         
-        if (regY >= 0 && regY < regionsY && regX >= 0 && regX < regionsX) {
-          const i = (y * imageData.width + x) * 4;
-          const r = data[i];     // Canal rojo
-          const g = data[i+1];   // Canal verde
-          const b = data[i+2];   // Canal azul
+        // Optimización 3: Mejora en criterio de detección de dominancia roja (PPG)
+        // Menos restrictivo en el factor (1.1 → 1.05) pero aún exigiendo dominancia roja
+        const redToGreen = r / Math.max(1, g);
+        const redToBlue = r / Math.max(1, b);
+        
+        if (redToGreen > 1.05 && redToBlue > 1.05) {
+          redSum += r;
+          greenSum += g;
+          blueSum += b;
+          pixelCount++;
           
-          // Acumular valores para esta región
-          regionRedAvg[regY][regX] += r;
-          regionGreenAvg[regY][regX] += g;
-          regionBlueAvg[regY][regX] += b;
-          regionCount[regY][regX]++;
+          // Registrar valores máximos y mínimos para calcular contraste
+          maxRed = Math.max(maxRed, r);
+          minRed = Math.min(minRed, r);
+          
+          // Registrar región para análisis avanzado
+          const regionX = Math.floor((x - startX) / regionSize);
+          const regionY = Math.floor((y - startY) / regionSize);
+          const regionKey = `${regionX},${regionY}`;
+          
+          if (!regions[regionKey]) {
+            regions[regionKey] = {
+              redSum: 0,
+              count: 0,
+              x: regionX,
+              y: regionY,
+              ratio: 0
+            };
+          }
+          
+          regions[regionKey].redSum += r;
+          regions[regionKey].count++;
+          // Calcular ratio R/(G+B) como indicador de calidad de PPG
+          regions[regionKey].ratio = (regions[regionKey].ratio * (regions[regionKey].count - 1) + (r / Math.max(1, g + b))) / regions[regionKey].count;
         }
       }
     }
     
-    // Fase 2: Calcular promedios por región y encontrar las mejores
-    let bestRegionScore = 0;
-    let bestRegionX = 0;
-    let bestRegionY = 0;
-    
-    for (let ry = 0; ry < regionsY; ry++) {
-      for (let rx = 0; rx < regionsX; rx++) {
-        if (regionCount[ry][rx] > 0) {
-          // Calcular promedios para esta región
-          const rAvg = regionRedAvg[ry][rx] / regionCount[ry][rx];
-          const gAvg = regionGreenAvg[ry][rx] / regionCount[ry][rx];
-          const bAvg = regionBlueAvg[ry][rx] / regionCount[ry][rx];
-          
-          // Calcular ratio de dominancia del rojo (adaptado a diferentes tonos de piel)
-          // Más alto es mejor para la detección PPG
-          const redDominance = rAvg / ((gAvg + bAvg) / 2);
-          
-          // Calculamos un score compuesto que favorece regiones con:
-          // 1. Alta dominancia de rojo
-          // 2. Nivel rojo en el rango óptimo (ni muy alto ni muy bajo)
-          // 3. Buena diferencia entre rojo y los demás canales
-          const brightnessFactor = Math.max(0, 1 - Math.abs(rAvg - 150) / 150); // Óptimo cerca de 150
-          const redDiffFactor = Math.min(1, (rAvg - Math.max(gAvg, bAvg)) / 50);
-          
-          const regionScore = redDominance * 0.5 + brightnessFactor * 0.3 + redDiffFactor * 0.2;
-          
-          if (regionScore > bestRegionScore) {
-            bestRegionScore = regionScore;
-            bestRegionX = rx;
-            bestRegionY = ry;
-          }
-        }
-      }
-    }
-    
-    // Fase 3: Procesar solo los píxeles de la mejor región para extracción final
-    if (bestRegionScore > 1.2) { // Umbral mínimo de calidad para considerar una región válida
-      // Recalcular los límites para la mejor región
-      const bestStartX = Math.max(startX, startX + bestRegionX * regionSize);
-      const bestEndX = Math.min(endX, bestStartX + regionSize);
-      const bestStartY = Math.max(startY, startY + bestRegionY * regionSize);
-      const bestEndY = Math.min(endY, bestStartY + regionSize);
-      
-      // Reiniciar contadores para el análisis final
-      redSum = 0;
-      greenSum = 0;
-      blueSum = 0;
-      pixelCount = 0;
-      
-      // Procesar la mejor región encontrada
-      for (let y = bestStartY; y < bestEndY; y++) {
-        for (let x = bestStartX; x < bestEndX; x++) {
-          const i = (y * imageData.width + x) * 4;
-          const r = data[i];
-          const g = data[i+1];
-          const b = data[i+2];
-          
-          // Verificación adicional para asegurar dominancia de rojo
-          if (r > g * 1.1 && r > b * 1.1) {
-            redSum += r;
-            greenSum += g;
-            blueSum += b;
-            pixelCount++;
-            
-            // Seguimiento de valores máximos y mínimos para análisis de variación
-            maxRed = Math.max(maxRed, r);
-            minRed = Math.min(minRed, r);
-          }
-        }
-      }
-    } else {
-      // Si no encontramos una buena región, usamos el ROI completo con criterios más laxos
-      for (let y = startY; y < endY; y++) {
-        for (let x = startX; x < endX; x++) {
-          const i = (y * imageData.width + x) * 4;
-          const r = data[i];
-          const g = data[i+1];
-          const b = data[i+2];
-          
-          // Criterio más permisivo para capturar alguna señal
-          if (r > Math.max(g, b) * 1.05) {
-            redSum += r;
-            greenSum += g;
-            blueSum += b;
-            pixelCount++;
-            
-            maxRed = Math.max(maxRed, r);
-            minRed = Math.min(minRed, r);
-          }
-        }
-      }
-    }
-    
-    // Si no encontramos suficientes píxeles, probablemente no hay un dedo
-    if (pixelCount < 10) {
+    // Optimización 4: Reducir umbral mínimo de píxeles para permitir detección con dedos más pequeños o parcialmente colocados
+    if (pixelCount < 30) { // Reducido de 50 a 30
       return 0;
     }
     
-    // Calcular el valor promedio del canal rojo
-    const avgRed = redSum / pixelCount;
-    const avgGreen = greenSum / pixelCount;
-    const avgBlue = blueSum / pixelCount;
+    // Optimización 5: Mejorar la búsqueda de la mejor región incluyendo ratio PPG
+    let bestRegion = null;
+    let bestScore = 0;
     
-    // Verificaciones finales para confirmar que es una señal válida
-    const redVariation = maxRed - minRed;
-    const isRedDominant = avgRed > avgGreen * 1.15 && avgRed > avgBlue * 1.15;
-    const hasGoodContrast = redVariation > 3 && redVariation < 60; // Evitar señales planas o ruidosas
-    const isInRange = avgRed > 40 && avgRed < 250; // Rango ampliado
+    for (const key in regions) {
+      const region = regions[key];
+      if (region.count > 8) {  // Reducido de 10 a 8
+        const avgRed = region.redSum / region.count;
+        // Puntaje que combina intensidad y calidad PPG
+        const score = avgRed * 0.7 + (region.ratio * 100) * 0.3;
+        if (score > bestScore) {
+          bestScore = score;
+          bestRegion = region;
+        }
+      }
+    }
     
-    // Retornar el valor procesado o 0 si no se detecta un dedo
-    return (isRedDominant && hasGoodContrast && isInRange) ? avgRed : 0;
+    // Optimización 6: Si encontramos una buena región, dar más peso a su valor
+    if (bestRegion && bestScore > 90) { // Reducido de 100 a 90
+      return bestScore;
+    }
+    
+    // Cálculo estándar mejorado para casos sin región óptima
+    const avgRed = redSum / Math.max(1, pixelCount);
+    const avgGreen = greenSum / Math.max(1, pixelCount);
+    const avgBlue = blueSum / Math.max(1, pixelCount);
+    
+    // Optimización 7: Criterios mejorados para detección general
+    const isRedDominant = avgRed > (avgGreen * 1.1) && avgRed > (avgBlue * 1.1);
+    const hasGoodContrast = pixelCount > 50 && (maxRed - minRed) > 10; // Reducido de 15 a 10
+    const isInRange = avgRed > 40 && avgRed < 250; // Rango ampliado (de 50-250 a 40-250)
+    
+    // Optimización 8: Combinar criterios con ponderación para mejorar sensibilidad
+    const detectionScore = 
+      (isRedDominant ? 1 : 0) * 0.5 + 
+      (hasGoodContrast ? 1 : 0) * 0.3 + 
+      (isInRange ? 1 : 0) * 0.2;
+    
+    return (detectionScore >= 0.7) ? avgRed : 0; // Umbral reducido para mayor sensibilidad
   }
 
-  private analyzeSignal(filtered: number, rawValue: number): { 
-    isFingerDetected: boolean; 
-    quality: number;
-    waveformQuality: number;
-  } {
-    // Actualizar buffer de valores
+  private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
+    const currentTime = Date.now();
+    const timeSinceLastDetection = currentTime - this.lastDetectionTime;
+    
+    // Si el valor de entrada es 0 (no se detectó dominancia de rojo), definitivamente no hay dedo
+    if (rawValue <= 0) {
+      this.consecutiveDetections = 0;
+      this.stableFrameCount = 0;
+      this.isCurrentlyDetected = false;
+      return { isFingerDetected: false, quality: 0 };
+    }
+    
+    // Verificar si el valor está dentro del rango válido con histéresis para evitar oscilaciones
+    // La histéresis permite mantener la detección incluso con pequeñas fluctuaciones
+    const inRange = this.isCurrentlyDetected
+      ? rawValue >= (this.currentConfig.MIN_RED_THRESHOLD - this.currentConfig.HYSTERESIS) &&
+        rawValue <= (this.currentConfig.MAX_RED_THRESHOLD + this.currentConfig.HYSTERESIS)
+      : rawValue >= this.currentConfig.MIN_RED_THRESHOLD &&
+        rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
+
+    if (!inRange) {
+      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+      
+      // Solo cancelamos la detección después de un tiempo para evitar falsos negativos por fluctuaciones
+      if (timeSinceLastDetection > this.DETECTION_TIMEOUT && this.consecutiveDetections === 0) {
+        this.isCurrentlyDetected = false;
+      }
+      
+      // Si aún tenemos detección pero la calidad es baja, reportamos calidad reducida
+      const quality = this.isCurrentlyDetected ? Math.max(10, this.calculateStability() * 50) : 0;
+      return { isFingerDetected: this.isCurrentlyDetected, quality };
+    }
+
+    // Calcular estabilidad temporal de la señal
+    const stability = this.calculateStability();
+    
+    // Añadir el valor a nuestro historial para análisis
     this.lastValues.push(filtered);
-    if (this.lastValues.length > this.currentConfig.STABILITY_WINDOW) {
+    if (this.lastValues.length > this.currentConfig.BUFFER_SIZE) {
       this.lastValues.shift();
     }
-
-    // Actualizar buffer de forma de onda
-    this.waveformBuffer.push(rawValue);
-    if (this.waveformBuffer.length > 10) {
-      this.waveformBuffer.shift();
-    }
-
-    // Verificación básica de rango
-    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
-                     rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
-
-    if (!isInRange) {
-      this.resetDetectionState();
-      return { 
-        isFingerDetected: false, 
-        quality: 0,
-        waveformQuality: 0
-      };
-    }
-
-    // Análisis estadístico de la señal
-    const stats = this.calculateSignalStats();
     
-    // Actualizar línea base
-    if (this.baselineValue === null) {
-      this.baselineValue = stats.mean;
-    } else {
-      this.baselineValue = this.baselineValue * 0.95 + stats.mean * 0.05;
-    }
-
-    // Análisis de estabilidad
-    const normalizedVariance = stats.variance / (stats.mean * stats.mean);
-    const isStable = normalizedVariance < this.VARIANCE_THRESHOLD;
-
-    // Análisis de tendencia
-    const trend = this.analyzeTrend();
-
-    // Análisis de forma de onda
-    const waveformQuality = this.analyzeWaveform();
-
-    // Actualizar contador de estabilidad
-    if (isStable && trend.isValid && waveformQuality > 0.6) {
+    // Actualizar contadores de estabilidad según la calidad de la señal
+    if (stability > 0.8) {
+      // Señal muy estable, incrementamos rápidamente
+      this.stableFrameCount = Math.min(
+        this.stableFrameCount + 1.5,
+        this.currentConfig.MIN_STABILITY_COUNT * 2
+      );
+    } else if (stability > 0.6) {
+      // Señal moderadamente estable
       this.stableFrameCount = Math.min(
         this.stableFrameCount + 1,
         this.currentConfig.MIN_STABILITY_COUNT * 2
       );
+    } else if (stability > 0.4) {
+      // Señal con estabilidad media, incremento lento
+      this.stableFrameCount = Math.min(
+        this.stableFrameCount + 0.5,
+        this.currentConfig.MIN_STABILITY_COUNT * 2
+      );
     } else {
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+      // Señal inestable
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
     }
 
-    // Calcular calidad general de la señal
-    const quality = this.calculateSignalQuality(stats, trend, waveformQuality);
+    // Actualizar estado de detección
+    const isStableNow = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
 
-    // Determinar si el dedo está detectado
-    const isFingerDetected = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
+    if (isStableNow) {
+      this.consecutiveDetections++;
+      if (this.consecutiveDetections >= this.currentConfig.MIN_CONSECUTIVE_DETECTIONS) {
+        this.isCurrentlyDetected = true;
+        this.lastDetectionTime = currentTime;
+        this.lastStableValue = filtered; // Guardar el último valor estable
+      }
+    } else {
+      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 0.5);
+    }
 
-    return { 
-      isFingerDetected, 
-      quality,
-      waveformQuality
-    };
-  }
-
-  private calculateSignalStats() {
-    const mean = this.lastValues.reduce((a, b) => a + b, 0) / this.lastValues.length;
-    const variance = this.lastValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / this.lastValues.length;
-    return { mean, variance };
-  }
-
-  private analyzeTrend() {
-    if (this.lastValues.length < 3) return { isValid: false, direction: 0 };
-
-    const recent = this.lastValues.slice(-3);
-    const differences = recent.slice(1).map((v, i) => v - recent[i]);
-    const consistentDirection = differences.every(d => Math.sign(d) === Math.sign(differences[0]));
-    const reasonableMagnitude = differences.every(d => Math.abs(d) < this.lastValues[0] * 0.3);
-
-    return {
-      isValid: consistentDirection && reasonableMagnitude,
-      direction: consistentDirection ? Math.sign(differences[0]) : 0
-    };
-  }
-
-  private analyzeWaveform(): number {
-    if (this.waveformBuffer.length < 10) return 0;
-
-    // Dividir la forma de onda en fase ascendente y descendente
-    const midPoint = Math.floor(this.waveformBuffer.length / 2);
-    const rising = this.waveformBuffer.slice(0, midPoint);
-    const falling = this.waveformBuffer.slice(midPoint);
-
-    // Verificar características de la onda PPG
-    const risingScore = this.analyzeWaveformSegment(rising, true);
-    const fallingScore = this.analyzeWaveformSegment(falling, false);
-
-    return (risingScore + fallingScore) / 2;
-  }
-
-  private analyzeWaveformSegment(segment: number[], isRising: boolean): number {
-    let validPoints = 0;
+    // Calcular calidad de la señal considerando varios factores
+    const stabilityScore = Math.min(1, this.stableFrameCount / (this.currentConfig.MIN_STABILITY_COUNT * 2));
     
-    for (let i = 1; i < segment.length; i++) {
-      const diff = segment[i] - segment[i-1];
-      const isValid = isRising ? 
-        diff >= 0 && diff < segment[i-1] * 0.3 : // Subida gradual
-        diff <= 0 && Math.abs(diff) < segment[i-1] * 0.3; // Bajada gradual
+    // Puntaje por intensidad - evaluar si está en un rango óptimo (ni muy bajo ni saturado)
+    const optimalValue = (this.currentConfig.MAX_RED_THRESHOLD + this.currentConfig.MIN_RED_THRESHOLD) / 2;
+    const distanceFromOptimal = Math.abs(rawValue - optimalValue) / optimalValue;
+    const intensityScore = Math.max(0, 1 - distanceFromOptimal);
+    
+    // Puntaje por variabilidad - una buena señal PPG debe tener cierta variabilidad periódica
+    let variabilityScore = 0;
+    if (this.lastValues.length >= 5) {
+      const variations = [];
+      for (let i = 1; i < this.lastValues.length; i++) {
+        variations.push(Math.abs(this.lastValues[i] - this.lastValues[i-1]));
+      }
       
-      if (isValid) validPoints++;
+      const avgVariation = variations.reduce((sum, val) => sum + val, 0) / variations.length;
+      // La variación óptima para PPG está entre 0.5 y 4 unidades
+      variabilityScore = avgVariation > 0.5 && avgVariation < 4 ? 1 : 
+                         avgVariation < 0.2 ? 0 : 
+                         avgVariation > 10 ? 0 : 
+                         0.5;
     }
-
-    return validPoints / (segment.length - 1);
+    
+    // Combinar los puntajes con diferentes pesos
+    const qualityRaw = stabilityScore * 0.5 + intensityScore * 0.3 + variabilityScore * 0.2;
+    
+    // Escalar a 0-100 y redondear
+    const quality = Math.round(qualityRaw * 100);
+    
+    // Aplicar umbral final - solo reportamos calidad si hay detección confirmada
+    return {
+      isFingerDetected: this.isCurrentlyDetected,
+      quality: this.isCurrentlyDetected ? quality : 0
+    };
   }
 
-  private calculateSignalQuality(
-    stats: { mean: number; variance: number },
-    trend: { isValid: boolean; direction: number },
-    waveformQuality: number
-  ): number {
-    // Puntuación basada en la amplitud de la señal
-    const amplitudeScore = Math.min(
-      (stats.mean - this.currentConfig.MIN_RED_THRESHOLD) / 
-      (this.currentConfig.MAX_RED_THRESHOLD - this.currentConfig.MIN_RED_THRESHOLD),
-      1
+  private calculateStability(): number {
+    if (this.lastValues.length < 2) return 0;
+    
+    const variations = this.lastValues.slice(1).map((val, i) => 
+      Math.abs(val - this.lastValues[i])
     );
-
-    // Puntuación basada en la estabilidad
-    const stabilityScore = Math.max(0, 1 - Math.sqrt(stats.variance) / stats.mean);
-
-    // Puntuación basada en la tendencia
-    const trendScore = trend.isValid ? 1 : 0.5;
-
-    // Ponderación de los diferentes factores
-    const quality = Math.round(
-      (amplitudeScore * 0.3 + 
-       stabilityScore * 0.3 + 
-       trendScore * 0.2 + 
-       waveformQuality * 0.2) * 100
-    );
-
-    return Math.max(0, Math.min(100, quality));
-  }
-
-  private resetDetectionState() {
-    this.stableFrameCount = 0;
-    this.lastStableValue = 0;
-    this.baselineValue = null;
-    this.lastValues = [];
-    this.waveformBuffer = [];
+    
+    const avgVariation = variations.reduce((sum, val) => sum + val, 0) / variations.length;
+    return Math.max(0, Math.min(1, 1 - (avgVariation / 50)));
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
@@ -507,5 +428,11 @@ export class PPGSignalProcessor implements SignalProcessor {
       timestamp: Date.now()
     };
     this.onError?.(error);
+  }
+
+  private calculateEMA(value: number): number {
+    const alpha = 0.25; // Ajustado de 0.35 a 0.25 para respuesta más rápida
+    this.smoothedValue = alpha * value + (1 - alpha) * this.smoothedValue;
+    return this.smoothedValue;
   }
 }
