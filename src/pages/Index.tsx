@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -36,6 +37,10 @@ const Index = () => {
     rrVariation: number;
   } | null>(null);
   
+  // Refs for camera/video handling
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const frameRequestIdRef = useRef<number | null>(null);
+  
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
   const { 
@@ -46,6 +51,33 @@ const Index = () => {
     startCalibration,
     forceCalibrationCompletion
   } = useVitalSignsProcessor();
+
+  // Clean up function to properly release camera resources
+  const cleanupCameraResources = () => {
+    console.log("Cleaning up camera resources");
+    
+    if (frameRequestIdRef.current) {
+      cancelAnimationFrame(frameRequestIdRef.current);
+      frameRequestIdRef.current = null;
+    }
+    
+    if (videoTrackRef.current && videoTrackRef.current.readyState === 'live') {
+      try {
+        // Turn off torch if available
+        if (videoTrackRef.current.getCapabilities()?.torch) {
+          videoTrackRef.current.applyConstraints({
+            advanced: [{ torch: false }]
+          }).catch(err => console.error("Error turning off torch:", err));
+        }
+        
+        // Stop the track
+        videoTrackRef.current.stop();
+      } catch (err) {
+        console.error("Error stopping video track:", err);
+      }
+      videoTrackRef.current = null;
+    }
+  };
 
   const enterFullScreen = async () => {
     try {
@@ -65,6 +97,17 @@ const Index = () => {
       document.body.removeEventListener('scroll', preventScroll);
     };
   }, []);
+  
+  // Clean up camera resources when component unmounts or monitoring stops
+  useEffect(() => {
+    if (!isMonitoring) {
+      cleanupCameraResources();
+    }
+    
+    return () => {
+      cleanupCameraResources();
+    };
+  }, [isMonitoring]);
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
@@ -254,6 +297,9 @@ const Index = () => {
     setElapsedTime(0);
     setSignalQuality(0);
     setCalibrationProgress(undefined);
+    
+    // Clean up camera resources
+    cleanupCameraResources();
   };
 
   const handleReset = () => {
@@ -287,6 +333,9 @@ const Index = () => {
     setSignalQuality(0);
     setLastArrhythmiaData(null);
     setCalibrationProgress(undefined);
+    
+    // Clean up camera resources
+    cleanupCameraResources();
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -298,27 +347,9 @@ const Index = () => {
       return;
     }
 
-    const cleanup = () => {
-      if (videoTrack.readyState === 'live') {
-        try {
-          videoTrack.stop();
-        } catch (err) {
-          console.warn('Error stopping video track:', err);
-        }
-      }
-    };
-
-    // Cleanup on component unmount or when monitoring stops
-    useEffect(() => {
-      return cleanup;
-    }, []);
-
-    useEffect(() => {
-      if (!isMonitoring) {
-        cleanup();
-      }
-    }, [isMonitoring]);
-
+    // Store the video track in a ref for later cleanup
+    videoTrackRef.current = videoTrack;
+    
     try {
       const imageCapture = new ImageCapture(videoTrack);
       
@@ -337,13 +368,13 @@ const Index = () => {
       }
       
       let isProcessing = false;
-      let frameRequestId: number | null = null;
       
       const processImage = async () => {
+        // Skip if we're not monitoring or another frame is already being processed
         if (!isMonitoring || isProcessing) {
-          if (frameRequestId) {
-            cancelAnimationFrame(frameRequestId);
-            frameRequestId = null;
+          if (frameRequestIdRef.current) {
+            cancelAnimationFrame(frameRequestIdRef.current);
+            frameRequestIdRef.current = null;
           }
           return;
         }
@@ -352,7 +383,7 @@ const Index = () => {
           isProcessing = true;
           
           // Check track state before capturing
-          if (videoTrack.readyState !== 'live') {
+          if (!videoTrack || videoTrack.readyState !== 'live') {
             console.warn('Video track is not live, skipping frame');
             isProcessing = false;
             return;
@@ -369,30 +400,24 @@ const Index = () => {
         } catch (error) {
           console.error("Error capturing frame:", error);
           if (error instanceof Error && error.name === 'InvalidStateError') {
-            // If we get an invalid state error, stop processing
-            cleanup();
+            // If we get an invalid state error, stop trying to process frames
+            console.error("Invalid state error - track may have been stopped");
             return;
           }
         } finally {
           isProcessing = false;
-          if (isMonitoring && videoTrack.readyState === 'live') {
-            frameRequestId = requestAnimationFrame(processImage);
+          // Only request another frame if we're still monitoring and track is live
+          if (isMonitoring && videoTrack && videoTrack.readyState === 'live') {
+            frameRequestIdRef.current = requestAnimationFrame(processImage);
           }
         }
       };
 
+      // Start processing frames
       processImage();
-      
-      // Cleanup when monitoring stops
-      return () => {
-        if (frameRequestId) {
-          cancelAnimationFrame(frameRequestId);
-        }
-        cleanup();
-      };
     } catch (error) {
       console.error("Error in stream setup:", error);
-      cleanup();
+      cleanupCameraResources();
     }
   };
 
