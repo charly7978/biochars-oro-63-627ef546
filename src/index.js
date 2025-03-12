@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -376,33 +375,25 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+    if (lastSignal) {
+      // Procesar aunque fingerDetected sea false para mejor detección
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
-      setHeartRate(calculatedHeartRate);
       
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns({
-          spo2: vitals.spo2 > 0 ? vitals.spo2 : 0,
-          pressure: vitals.pressure || "--/--",
-          arrhythmiaStatus: vitals.arrhythmiaStatus || "--"
-        });
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+      // Solo actualizar si tenemos un BPM válido
+      if (heartBeatResult.bpm > 0) {
+        setHeartRate(heartBeatResult.bpm);
+        
+        const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+        if (vitals) {
+          setVitalSigns(vitals);
+          setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        }
       }
       
+      // Actualizar calidad de señal independientemente
       setSignalQuality(lastSignal.quality);
-    } else {
-      setHeartRate(0);
-      setVitalSigns({ 
-        spo2: 0, 
-        pressure: "--/--",
-        arrhythmiaStatus: "--" 
-      });
-      setArrhythmiaCount("--");
-      setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
