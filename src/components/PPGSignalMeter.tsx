@@ -43,11 +43,11 @@ const PPGSignalMeter = ({
   const WINDOW_WIDTH_MS = 2800;
   const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 900;
-  const GRID_SIZE_X = 50;
-  const GRID_SIZE_Y = 10;
-  const verticalScale = 35.0;
+  const GRID_SIZE_X = 40;
+  const GRID_SIZE_Y = 45;
+  const verticalScale = 28.0;
   const SMOOTHING_FACTOR = 1.5;
-  const TARGET_FPS = 90;
+  const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
@@ -94,8 +94,8 @@ const PPGSignalMeter = ({
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
     gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
-    gradient.addColorStop(0.7, '#B3CCFF'); // Soft green (lower middle)
-    gradient.addColorStop(1, '#08E8DE'); // Soft blue (bottom)
+    gradient.addColorStop(0.7, '#F2FCE2'); // Soft green (lower middle)
+    gradient.addColorStop(1, '#D3E4FD'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -165,7 +165,7 @@ const PPGSignalMeter = ({
         ctx.fillStyle = '#ef4444';
         ctx.font = 'bold 24px Inter';
         ctx.textAlign = 'left';
-        ctx.fillText('¡ARRITMIA DETECTADA!', 45, 95);
+        ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
         // Create a highlight box for multiple arrhythmias
@@ -451,7 +451,7 @@ const PPGSignalMeter = ({
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[10px] text-center font-medium text-black/80">
+          <span className="text-[8px] text-center font-medium text-black/80">
             {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
