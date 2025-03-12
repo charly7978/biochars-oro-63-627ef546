@@ -27,9 +27,9 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 10,
-    MIN_RED_THRESHOLD: 80,  // Reducido de 85 a 80 para mayor sensibilidad
+    MIN_RED_THRESHOLD: 70,  // Reducido de 85 a 80 para mayor sensibilidad
     MAX_RED_THRESHOLD: 245,
-    STABILITY_WINDOW: 4,    // Reducido de 5 a 4 para detección más rápida
+    STABILITY_WINDOW: 3,    // Reducido de 5 a 4 para detección más rápida
     MIN_STABILITY_COUNT: 3  // Mantenido en 3 para evitar falsos positivos
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -40,7 +40,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly MIN_STABILITY_COUNT = 3;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Ajustado de 0.05 a 0.045 para mejor sensibilidad sin comprometer precisión
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.040; // Ajustado de 0.05 a 0.045 para mejor sensibilidad sin comprometer precisión
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
