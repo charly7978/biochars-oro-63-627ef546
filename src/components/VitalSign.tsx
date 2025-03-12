@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -292,7 +293,7 @@ const VitalSign = ({
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
-            <span className="text-gradient-soft">
+            <span className="golden-value animate-value-glow">
               {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
@@ -337,7 +338,9 @@ const VitalSign = ({
               <span className={`text-xl px-3 py-1 rounded-full ${
                 riskLabel ? riskColor.replace('text-', 'bg-').replace('[#', 'rgba(').replace(']', ', 0.1)') : 'bg-green-500/10'
               }`}>
-                {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
+                <span className="golden-value">
+                  {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
+                </span>
                 {unit && unit}
               </span>
             </div>

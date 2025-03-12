@@ -89,14 +89,19 @@ export default {
           "50%": { height: "0.5rem" }
         },
         "value-glow": {
-          "0%, 100%": { textShadow: "0 0 1px rgba(255,255,255,0.2)" },
-          "50%": { textShadow: "0 0 20px rgba(255,255,255,0.9), 0 0 10px rgba(255,255,255,0.6)" }
+          "0%, 100%": { textShadow: "0 0 1px rgba(255,215,0,0.2)" },
+          "50%": { textShadow: "0 0 20px rgba(255,215,0,0.9), 0 0 10px rgba(255,215,0,0.6)" }
+        },
+        "golden-shimmer": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "100%": { backgroundPosition: "100% 50%" }
         }
       },
       animation: {
         "heart-beat": "heart-beat 1s ease-in-out infinite",
         "flip": "card-flip 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
-        "value-glow": "value-glow 3s ease-in-out infinite"
+        "value-glow": "value-glow 3s ease-in-out infinite",
+        "golden-shimmer": "golden-shimmer 3s ease-in-out infinite alternate"
       }
     },
   },
@@ -110,6 +115,13 @@ export default {
           'background-clip': 'text',
           'color': 'transparent',
           'text-shadow': '0 0 5px rgba(255,255,255,0.3)'
+        },
+        '.text-gradient-gold': {
+          background: 'linear-gradient(to bottom, #FEF7CD, #D4AF37, #FEF7CD)',
+          '-webkit-background-clip': 'text',
+          'background-clip': 'text',
+          'color': 'transparent',
+          'text-shadow': '0 0 5px rgba(255,215,0,0.5)'
         },
       }
       addUtilities(newUtilities)
