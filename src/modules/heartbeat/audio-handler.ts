@@ -1,4 +1,3 @@
-
 export class AudioHandler {
   private audioContext: AudioContext | null = null;
   private audioBuffer: AudioBuffer | null = null;
@@ -90,33 +89,31 @@ export class AudioHandler {
     }
     
     try {
-      // Always try to resume the audio context if it's suspended
+      // Always try to resume the audio context
       if (this.audioContext.state === 'suspended') {
         this.audioContext.resume().catch(err => 
           console.warn("Failed to resume audio context:", err)
         );
       }
       
-      // Increase base volume and adjust based on confidence and quality
-      const volume = Math.min(1.0, 0.4 + (confidence * 0.6) * (quality / 100 + 0.5));
+      // Increase base volume for better audibility
+      const volume = Math.min(1.0, 0.6 + (confidence * 0.4) * (quality / 100));
       
       if (this.audioBuffer && this.beepGainNode) {
-        // Play loaded audio file
-        this.beepGainNode.gain.value = Math.max(0.4, volume);
+        // Play loaded audio file with higher volume
+        this.beepGainNode.gain.value = Math.max(0.5, volume);
         const source = this.audioContext.createBufferSource();
         source.buffer = this.audioBuffer;
         source.connect(this.beepGainNode);
         source.start();
         console.log("Playing heartbeat audio sample, volume:", this.beepGainNode.gain.value);
       } else {
-        // Fallback beep using oscillator - make it more audible
-        this.playFallbackBeep(Math.max(0.5, volume));
-        console.log("Playing fallback beep, volume:", volume);
+        // Fallback beep with higher volume
+        this.playFallbackBeep(Math.max(0.6, volume));
       }
     } catch (error) {
       console.error("Error playing heartbeat sound:", error);
-      // Try fallback if normal playback fails
-      this.playFallbackBeep(0.7);
+      this.playFallbackBeep(0.8); // Higher volume fallback
     }
   }
   

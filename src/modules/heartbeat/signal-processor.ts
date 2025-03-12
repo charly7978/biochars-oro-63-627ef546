@@ -21,35 +21,33 @@ export class SignalProcessor {
     derivative: number;
     signalBuffer: number[];
   } {
-    // Add signal to buffer with EMA smoothing for noise reduction
-    // Higher EMA_ALPHA means less smoothing, which keeps more of the original signal
+    // Add signal to buffer with less aggressive smoothing
     let smoothedValue: number;
     
     if (this.signalBuffer.length === 0) {
       smoothedValue = value;
       this.signalBuffer.push(value);
     } else {
-      // Apply less smoothing to preserve more detail in the signal
+      // Reduce smoothing to preserve more signal detail
       smoothedValue = this.lastProcessedValue + 
-        this.EMA_ALPHA * (value - this.lastProcessedValue);
+        (this.EMA_ALPHA * 1.5) * (value - this.lastProcessedValue);
       this.signalBuffer.push(smoothedValue);
       this.lastProcessedValue = smoothedValue;
     }
     
-    // Calculate first derivative (slope) with more emphasis on rapid changes
+    // Calculate derivative with higher sensitivity
     if (this.signalBuffer.length >= 2) {
       const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
       const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
-      const newDerivative = currentValue - prevValue;
+      const newDerivative = (currentValue - prevValue) * 1.25; // Amplify changes
       
-      // Less smoothing for derivative to better capture rapid changes
+      // Less smoothing on derivative
       if (this.derivativeBuffer.length === 0) {
         this.valueDerivative = newDerivative;
       } else {
-        this.valueDerivative = this.valueDerivative * 0.6 + newDerivative * 0.4;
+        this.valueDerivative = this.valueDerivative * 0.4 + newDerivative * 0.6;
       }
       
-      // Store derivative for trend analysis
       this.derivativeBuffer.push(this.valueDerivative);
       if (this.derivativeBuffer.length > this.DERIVATIVE_BUFFER_SIZE) {
         this.derivativeBuffer.shift();
