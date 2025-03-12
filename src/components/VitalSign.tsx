@@ -270,10 +270,18 @@ const VitalSign = ({
     return info;
   };
 
+  const displayValue = (label: string, value: string | number) => {
+    if (label === 'HEMOGLOBINA' && typeof value === 'number') {
+      return Math.round(value);
+    }
+    return value;
+  };
+
   const riskLabel = getRiskLabel(label, value);
   const riskColor = getRiskColor(riskLabel);
   const isArrhytmia = label === 'ARRITMIAS';
   const detailedInfo = getDetailedInfo(label, value);
+  const formattedValue = displayValue(label, value);
 
   return (
     <Sheet>
@@ -285,7 +293,7 @@ const VitalSign = ({
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
             <span className="text-gradient-soft">
-              {isArrhytmia && typeof value === 'string' ? value.split('|')[0] : value}
+              {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
           </div>
@@ -329,7 +337,7 @@ const VitalSign = ({
               <span className={`text-xl px-3 py-1 rounded-full ${
                 riskLabel ? riskColor.replace('text-', 'bg-').replace('[#', 'rgba(').replace(']', ', 0.1)') : 'bg-green-500/10'
               }`}>
-                {isArrhytmia && typeof value === 'string' ? value.split('|')[0] : value}
+                {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
                 {unit && unit}
               </span>
             </div>
