@@ -30,24 +30,23 @@ export class HeartBeatProcessor {
   private falsePositiveProtection = 0;
   private lastProcessedTimestamp = 0;
   private initializationAttempts = 0;
-  private forceInitialBeatsCount = 0;
 
   constructor() {
-    // Initialize with much more sensitive parameters for better detection
+    // Balanced parameters for reliable detection
     this.audioHandler = new AudioHandler(HumSoundFile);
-    this.signalProcessor = new SignalProcessor(200, 6, 0.6); // Much higher EMA alpha for less smoothing
+    this.signalProcessor = new SignalProcessor(200, 8, 0.3); // Balanced smoothing
     
-    // Extremely sensitive peak detector settings
+    // Balanced peak detector settings
     this.peakDetector = new PeakDetector(
-      2,       // Much smaller peak window for better sensitivity
-      0.1,     // Much lower threshold to detect more peaks
-      0.2,     // Much lower strong peak threshold for better detection
-      0.6,     // Lower dynamic threshold
-      150,     // Even shorter minimum time between beats
-      1800     // Longer max time for better coverage
+      3,       // Balanced peak window
+      0.2,     // Moderate threshold
+      0.35,    // Moderate strong peak threshold
+      0.65,    // Moderate dynamic threshold
+      250,     // Realistic minimum time between beats (250ms = 240bpm max)
+      1500     // Realistic maximum time (1500ms = 40bpm min)
     );
     
-    this.bpmAnalyzer = new BPMAnalyzer(40, 200, 3); // Shorter window for faster adaptation
+    this.bpmAnalyzer = new BPMAnalyzer(40, 200, 5); // Standard physiological range with good window
     
     this.initialize();
   }
@@ -59,7 +58,7 @@ export class HeartBeatProcessor {
     console.log(`HeartBeatProcessor initialization attempt #${this.initializationAttempts}`);
 
     try {
-      // Initialize audio handler first (with additional attempts if needed)
+      // Initialize audio handler first
       let audioInit = await this.audioHandler.initialize();
       
       // Retry audio initialization if it fails
@@ -67,13 +66,6 @@ export class HeartBeatProcessor {
         console.log("Retrying audio initialization after short delay...");
         await new Promise(resolve => setTimeout(resolve, 500));
         audioInit = await this.audioHandler.initialize();
-        
-        // Try one more time with a different approach if still failing
-        if (!audioInit) {
-          console.log("Second retry for audio initialization...");
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          audioInit = await this.audioHandler.initialize();
-        }
       }
       
       this.isInitialized = true;
@@ -101,11 +93,11 @@ export class HeartBeatProcessor {
     const now = Date.now();
     
     // Throttle processing rate to prevent overwhelming the system
-    if (now - this.lastProcessedTimestamp < 16 && this.lastProcessedTimestamp !== 0) {
+    if (now - this.lastProcessedTimestamp < 20 && this.lastProcessedTimestamp !== 0) {
       // Return last result if we're processing too frequently
       return {
         bpm: this.bpmAnalyzer.currentBPM,
-        confidence: 0.3, // Higher baseline confidence
+        confidence: 0.2, // Balanced confidence
         isBeat: false,
         lastBeatTime: this.lastBeatTime,
         rrData: [...this.rrIntervals]
@@ -114,8 +106,8 @@ export class HeartBeatProcessor {
     
     this.lastProcessedTimestamp = now;
     
-    // Boost quality dramatically for better detection - never go below 40
-    this.lastSignalQuality = Math.max(40, quality);
+    // Use signal quality as provided, with balanced minimum
+    this.lastSignalQuality = Math.max(30, quality);
     
     // Keep a short buffer of raw values for anomaly detection
     this.signalBuffer.push(value);
@@ -126,43 +118,33 @@ export class HeartBeatProcessor {
     // Process the signal through our signal processor
     const { smoothedValue, derivative, signalBuffer } = this.signalProcessor.processSignal(value);
     
-    // Update the adaptive threshold more frequently
+    // Update the adaptive threshold periodically
     this.peakDetector.updateAdaptiveThreshold(signalBuffer, now, this.DEBUG && this.beatsCounter % 10 === 0);
 
     // Beat detection logic
     let isBeat = false;
     let currentBpm = this.bpmAnalyzer.currentBPM;
     
-    // Process all signals regardless of buffer length
-    if (this.signalProcessor.bufferLength > 2) { // Start detecting much earlier
-      // Force some initial beats to jumpstart the algorithm
-      if (this.beatsCounter === 0 && this.forceInitialBeatsCount < 3) {
-        console.log("Forcing initial beat to jumpstart algorithm");
-        isBeat = true;
-        this.forceInitialBeatsCount++;
-        // Use a typical heart rate interval
-        const typicalInterval = 800; // ~75 BPM
-        this.bpmAnalyzer.addBeatInterval(typicalInterval);
-        this.audioHandler.playBeep(0.8, 80);
-      } else {
-        // Enhanced beat detection with much higher sensitivity
-        isBeat = this.peakDetector.detectBeat(
-          now, 
-          smoothedValue, 
-          this.lastSignalQuality, 
-          signalBuffer, 
-          derivative, 
-          this.lastBeatTime
-        );
-      }
+    // Only start detecting with sufficient buffer
+    if (this.signalProcessor.bufferLength > 5) {
+      // Standard beat detection
+      isBeat = this.peakDetector.detectBeat(
+        now, 
+        smoothedValue, 
+        this.lastSignalQuality, 
+        signalBuffer, 
+        derivative, 
+        this.lastBeatTime
+      );
       
-      // Minimal false positive protection - be very permissive
+      // Basic false positive protection
       if (isBeat) {
         const timeSinceLastBeat = now - this.lastBeatTime;
         
-        // Only block extremely frequent beats - much shorter window
-        if (timeSinceLastBeat < 150 && this.falsePositiveProtection > 5) {
+        // Block extremely frequent beats
+        if (timeSinceLastBeat < 200) {
           isBeat = false;
+          this.falsePositiveProtection++;
           if (this.DEBUG) {
             console.log(`False positive rejected: extremely short interval (${timeSinceLastBeat}ms)`);
           }
@@ -182,8 +164,8 @@ export class HeartBeatProcessor {
         if (this.lastBeatTime > 0) {
           const interval = now - this.lastBeatTime;
           
-          // Much more relaxed interval validation for better beat detection
-          if (interval > 150 && interval < 3000) {
+          // Validate interval is physiologically plausible
+          if (interval > 250 && interval < 1800) {
             // Store RR interval data
             this.rrIntervals.push({ timestamp: now, interval });
             if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
@@ -213,11 +195,11 @@ export class HeartBeatProcessor {
         this.lastBeatTime = now;
         this.lastMajorBeatTime = now;
         
-        // Play sound on ALL beats with higher volume
+        // Play sound with balanced volume based on confidence
         const beatStrength = this.peakDetector.confidence;
         this.audioHandler.playBeep(
-          Math.min(1.0, beatStrength + 0.6), // Much higher volume 
-          Math.min(100, this.lastSignalQuality * 1.5)  // Much higher quality boost
+          Math.min(0.8, beatStrength + 0.3), // Balanced volume
+          Math.min(80, this.lastSignalQuality)  // Quality-based tone
         );
           
         if (this.DEBUG) {
@@ -229,42 +211,42 @@ export class HeartBeatProcessor {
         }
       }
       
-      // More aggressive missed beats handling - force beats much sooner
+      // Missed beats handling - balanced approach
       const expectedBeatInterval = 60000 / (currentBpm || 75);
-      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.1 && this.lastBeatTime > 0) {
+      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.5 && this.lastBeatTime > 0) {
         this.consecutiveMissedBeats++;
         
-        // After fewer missed beats, try to recalibrate
-        if (this.consecutiveMissedBeats > 2 && !this.forcedDetectionMode) {
+        // After several missed beats, try to recalibrate
+        if (this.consecutiveMissedBeats > 4 && !this.forcedDetectionMode) {
           this.forcedDetectionMode = true;
           console.log("HeartBeatProcessor: Entering forced detection mode after missed beats");
           
-          // Force a beat if we're missing too many - be more aggressive
-          if (this.consecutiveMissedBeats > 3) {
+          // Force a beat only after a significant period with no beats
+          if (this.consecutiveMissedBeats > 6 && now - this.lastBeatTime > expectedBeatInterval * 2) {
             isBeat = true;
             this.lastBeatTime = now;
             this.beatsCounter++;
             
-            // Play a forced beat sound at higher volume
-            this.audioHandler.playBeep(0.8, 70);
-            console.log("Forced beat generated after missed beats");
+            // Play a forced beat sound at moderate volume
+            this.audioHandler.playBeep(0.5, 50);
+            console.log("Forced beat generated after missing multiple beats");
           }
         }
       }
     }
 
-    // Calculate final confidence with much higher baseline
+    // Calculate confidence with balanced approach
     const avgQuality = this.lastFiveBeatsQuality.reduce((sum, q) => sum + q, 0) / 
-                      (this.lastFiveBeatsQuality.length || 1);
+                     (this.lastFiveBeatsQuality.length || 1);
     
     let finalConfidence = this.bpmAnalyzer.calculateConfidence(avgQuality / 100);
     
-    // Boost confidence dramatically
-    finalConfidence *= (1.0 + (0.5 * this.peakDetector.stability));
-    finalConfidence = Math.min(1.0, finalConfidence + 0.3); // Much higher baseline boost
+    // Moderate confidence boost based on stability
+    finalConfidence *= (1.0 + (0.3 * this.peakDetector.stability));
+    finalConfidence = Math.min(1.0, finalConfidence + 0.15); // Reasonable baseline
     
     if (this.forcedDetectionMode) {
-      finalConfidence *= 0.95; // Less penalty
+      finalConfidence *= 0.7; // Significant penalty for forced mode
     }
 
     return {
@@ -291,7 +273,6 @@ export class HeartBeatProcessor {
     this.lastFiveBeatsQuality = [0, 0, 0, 0, 0];
     this.falsePositiveProtection = 0;
     this.lastProcessedTimestamp = 0;
-    this.forceInitialBeatsCount = 0;
   }
 
   public getRRIntervals(): RRIntervalData {

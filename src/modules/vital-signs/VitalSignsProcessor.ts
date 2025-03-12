@@ -38,9 +38,9 @@ export class VitalSignsProcessor {
   
   private lastValidResults: VitalSignsResult | null = null;
   
-  // Umbrales de señal mínima para considerar mediciones válidas
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
+  // Balanced thresholds for measurement validation
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.03;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.35;
 
   constructor() {
     this.spo2Processor = new SpO2Processor();
@@ -61,7 +61,7 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Verificar calidad mínima de señal
+    // Verificar calidad mínima de señal - balanced threshold
     if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
       return this.getLastValidResults() || {
         spo2: 0,
@@ -85,8 +85,8 @@ export class VitalSignsProcessor {
     // Obtener los valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
     
-    // Solo procesar si hay suficientes datos de PPG
-    if (ppgValues.length < 100) {
+    // Solo procesar con suficientes datos - balanced minimum
+    if (ppgValues.length < 60) {
       return this.getLastValidResults() || {
         spo2: 0,
         pressure: "--/--",
@@ -109,18 +109,18 @@ export class VitalSignsProcessor {
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calcular glucosa con validación de confianza
+    // Calcular glucosa con validación estándar
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calcular lípidos con validación de confianza
+    // Calcular lípidos
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
     // Calcular hemoglobina
     const hemoglobin = this.calculateHemoglobin(ppgValues);
     
-    // Calcular confianza general basada en promedios ponderados
+    // Balanced confidence calculation
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
     // Preparar resultado con todas las métricas calculadas
@@ -134,7 +134,7 @@ export class VitalSignsProcessor {
       hemoglobin
     };
     
-    // Solo actualizar resultados válidos si hay suficiente confianza
+    // Actualizar resultados válidos con threshold balanced
     if (overallConfidence >= this.MIN_CONFIDENCE_THRESHOLD &&
         spo2 > 0 && 
         bp.systolic > 0 && bp.diastolic > 0 && 
@@ -147,28 +147,27 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Calcula nivel de hemoglobina estimado basado en características de la señal PPG
-   * Implementa un enfoque conservador basado en múltiples estudios
+   * Calcula nivel de hemoglobina estimado con parámetros balanceados
    */
   private calculateHemoglobin(ppgValues: number[]): number {
-    if (ppgValues.length < 120) return 0;
+    if (ppgValues.length < 80) return 0;
     
     // Normalizar valores
     const min = Math.min(...ppgValues);
     const max = Math.max(...ppgValues);
-    if (max - min < 0.05) return 0; // Amplitud insuficiente
+    if (max - min < 0.03) return 0; // Balanced minimum amplitude
     
     const normalized = ppgValues.map(v => (v - min) / (max - min));
     
-    // Calcular área bajo la curva como indicador de contenido de hemoglobina
+    // Calcular área bajo la curva
     const auc = normalized.reduce((sum, val) => sum + val, 0) / normalized.length;
     
-    // Aplicar modelo conservador basado en investigación óptica
-    const baseHemoglobin = 14.5; // g/dL (valor promedio normal)
-    const hemoglobin = baseHemoglobin - ((0.6 - auc) * 8);
+    // Modelo balanceado
+    const baseHemoglobin = 14.0; // g/dL (valor normal promedio)
+    const hemoglobin = baseHemoglobin - ((0.55 - auc) * 6);
     
     // Limitar a rango fisiológico normal
-    return Math.max(10, Math.min(17, hemoglobin));
+    return Math.max(11, Math.min(16, hemoglobin));
   }
 
   /**
