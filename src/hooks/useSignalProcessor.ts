@@ -14,17 +14,21 @@ export const useSignalProcessor = () => {
   const calibrationRef = useRef<boolean>(false);
   const frameCountRef = useRef<number>(0);
   
-  // Parámetros de procesamiento
-  const MAX_BUFFER_SIZE = 200;
-  const QUALITY_THRESHOLD = 50;
-  const FINGER_DETECTION_FRAMES = 8; // Frames consecutivos necesarios para confirmar detección
-  const MIN_SIGNAL_AMPLITUDE = 0.01;
+  // Parámetros de procesamiento ajustados
+  const MAX_BUFFER_SIZE = 300; // Aumentado para capturar más historia de señal
+  const QUALITY_THRESHOLD = 40; // Reducido para ser más sensible
+  const FINGER_DETECTION_FRAMES = 5; // Reducido para respuesta más rápida
+  const MIN_SIGNAL_AMPLITUDE = 0.005; // Reducido para detectar señales más sutiles
   const fingerDetectionCounterRef = useRef<number>(0);
   
-  // Ajustes de filtrado
-  const LP_ALPHA = 0.05; // Constante para filtro paso bajo (0-1), más bajo = más suavizado
-  const SMA_WINDOW = 5;  // Tamaño de ventana para promedio móvil simple
+  // Ajustes de filtrado optimizados para señales cardíacas
+  const LP_ALPHA = 0.08; // Ajustado para mayor sensibilidad a cambios
+  const SMA_WINDOW = 8;  // Aumentado para mejor suavizado
   const lastFilteredValueRef = useRef<number | null>(null);
+  
+  // Control de amplificación dinámica
+  const amplificationFactorRef = useRef<number>(50.0); // Factor inicial de amplificación
+  const previousSignalLevelsRef = useRef<number[]>([]);
   
   useEffect(() => {
     return () => {
@@ -32,6 +36,41 @@ export const useSignalProcessor = () => {
       setIsProcessing(false);
       readyToProcessRef.current = false;
     };
+  }, []);
+
+  // Nueva función para ajustar la amplificación basada en la intensidad de la señal
+  const adjustAmplification = useCallback((value: number) => {
+    const MAX_BUFFER = 10;
+    previousSignalLevelsRef.current.push(Math.abs(value));
+    if (previousSignalLevelsRef.current.length > MAX_BUFFER) {
+      previousSignalLevelsRef.current.shift();
+    }
+    
+    if (previousSignalLevelsRef.current.length >= 5) {
+      // Calcular amplitud promedio reciente
+      const avgAmplitude = previousSignalLevelsRef.current.reduce((sum, val) => sum + val, 0) / 
+                          previousSignalLevelsRef.current.length;
+      
+      // Ajustar factor de amplificación inversamente a la amplitud
+      // Para señales débiles, aumentar la amplificación
+      if (avgAmplitude < 0.01) {
+        amplificationFactorRef.current = Math.min(120, amplificationFactorRef.current * 1.05);
+      } 
+      // Para señales muy fuertes, reducir la amplificación
+      else if (avgAmplitude > 0.2) {
+        amplificationFactorRef.current = Math.max(20, amplificationFactorRef.current * 0.95);
+      }
+      // Para señales en rango ideal, ajustar gradualmente
+      else if (avgAmplitude > 0.05) {
+        amplificationFactorRef.current = Math.max(30, amplificationFactorRef.current * 0.99);
+      } else {
+        amplificationFactorRef.current = Math.min(80, amplificationFactorRef.current * 1.01);
+      }
+      
+      console.log(`Señal: ${avgAmplitude.toFixed(4)}, Amplificación: ${amplificationFactorRef.current.toFixed(1)}`);
+    }
+    
+    return value * amplificationFactorRef.current;
   }, []);
 
   const startProcessing = useCallback(() => {
@@ -46,6 +85,8 @@ export const useSignalProcessor = () => {
     signalQualityRef.current = 0;
     frameCountRef.current = 0;
     fingerDetectionCounterRef.current = 0;
+    previousSignalLevelsRef.current = [];
+    amplificationFactorRef.current = 50.0; // Reiniciar amplificación
     setLastSignal(null);
     
     // Esperar un momento antes de permitir procesamiento
@@ -84,14 +125,15 @@ export const useSignalProcessor = () => {
     return sum / windowSize;
   }, []);
 
+  // Mejora de extracción de canal rojo con normalización
   const extractRedChannel = useCallback((imageData: ImageData): number => {
     const width = imageData.width;
     const height = imageData.height;
     
-    // Usar región central de la imagen
+    // Usar región central de la imagen (más pequeña para mayor precisión)
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
-    const regionSize = Math.min(100, Math.floor(width / 4));
+    const regionSize = Math.min(80, Math.floor(width / 5)); // Región más pequeña para mayor precisión
     
     const startX = centerX - Math.floor(regionSize / 2);
     const startY = centerY - Math.floor(regionSize / 2);
@@ -99,18 +141,32 @@ export const useSignalProcessor = () => {
     const endY = startY + regionSize;
     
     let redSum = 0;
+    let greenSum = 0;
+    let blueSum = 0;
     let pixelCount = 0;
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const idx = (y * width + x) * 4;
-        redSum += imageData.data[idx]; // Índice 0 para canal rojo
+        redSum += imageData.data[idx]; // Canal rojo
+        greenSum += imageData.data[idx + 1]; // Canal verde
+        blueSum += imageData.data[idx + 2]; // Canal azul
         pixelCount++;
       }
     }
     
     if (pixelCount === 0) return 0;
-    return redSum / pixelCount;
+    
+    // Extraer la señal con normalización de color
+    const avgRed = redSum / pixelCount;
+    const avgGreen = greenSum / pixelCount;
+    const avgBlue = blueSum / pixelCount;
+    
+    // Calcular la señal normalizada para maximizar componente pulsátil
+    // Esta técnica resalta las variaciones de sangre oxigenada
+    const redNormalized = avgRed - (0.7 * avgGreen + 0.3 * avgBlue);
+    
+    return redNormalized;
   }, []);
 
   const processFrame = useCallback((imageData: ImageData, fingerDetectedOverride?: boolean) => {
@@ -123,10 +179,11 @@ export const useSignalProcessor = () => {
     
     // Sistema mejorado de detección de dedo utilizando el módulo especializado
     const detectionResult = detectFinger(imageData, {
-      redThreshold: 60,             // Más sensible
-      brightnessThreshold: 35,      // Más sensible
-      redDominanceThreshold: 8,     // Más estricto para evitar falsos positivos
-      regionSize: 40                // Región más grande para análisis
+      redThreshold: 75,             // Ajustado para mejor equilibrio
+      brightnessThreshold: 40,      // Más sensible
+      redDominanceThreshold: 12,    // Más estricto para evitar falsos positivos
+      regionSize: 35,               // Región óptima para análisis
+      adaptiveMode: true            // Usar detección adaptativa
     });
     
     let fingerDetected = detectionResult.detected;
@@ -137,7 +194,6 @@ export const useSignalProcessor = () => {
     }
     
     // Lógica para evitar cambios rápidos entre estados de detección
-    // Requiere varios frames consecutivos para cambiar de estado
     if (fingerDetected !== lastFingerDetectedRef.current) {
       if (fingerDetected) {
         fingerDetectionCounterRef.current++;
@@ -177,17 +233,21 @@ export const useSignalProcessor = () => {
         signalBufferRef.current.shift();
       }
       
-      // Aplicar filtros para limpiar la señal
-      let filteredValue = applyLowPassFilter(
-        applySMAFilter(signalBufferRef.current),
-        lastFilteredValueRef.current
-      );
+      // Aplicar filtros para limpiar y amplificar la señal
+      // 1. Primero SMA para suavizar ruido
+      const smoothedValue = applySMAFilter(signalBufferRef.current);
       
-      lastFilteredValueRef.current = filteredValue;
+      // 2. Después filtro paso bajo para continuidad temporal
+      const basicFiltered = applyLowPassFilter(smoothedValue, lastFilteredValueRef.current);
       
-      // Verificar que haya suficiente amplitud en la señal
+      // 3. Finalmente, amplificación dinámica para visualización
+      const amplifiedValue = adjustAmplification(basicFiltered);
+      
+      lastFilteredValueRef.current = basicFiltered; // Guardar valor sin amplificar
+      
+      // Verificar que haya suficiente amplitud en la señal o calidad
       const signalValid = signalQuality > QUALITY_THRESHOLD || 
-                          Math.abs(filteredValue) > MIN_SIGNAL_AMPLITUDE;
+                         Math.abs(amplifiedValue) > MIN_SIGNAL_AMPLITUDE;
       
       if (signalValid) {
         const now = Date.now();
@@ -196,7 +256,7 @@ export const useSignalProcessor = () => {
         const processedSignal: ProcessedSignal = {
           timestamp: now,
           rawValue: redValue,
-          filteredValue,
+          filteredValue: amplifiedValue, // Usar valor amplificado
           quality: signalQuality,
           fingerDetected,
           roi: {
@@ -230,8 +290,10 @@ export const useSignalProcessor = () => {
       // Limpiar buffer y valores previos para evitar contaminación
       signalBufferRef.current = [];
       lastFilteredValueRef.current = null;
+      previousSignalLevelsRef.current = [];
+      amplificationFactorRef.current = 50.0; // Reiniciar amplificación
     }
-  }, [isProcessing, applyLowPassFilter, applySMAFilter, extractRedChannel]);
+  }, [isProcessing, applyLowPassFilter, applySMAFilter, extractRedChannel, adjustAmplification]);
 
   return {
     lastSignal,

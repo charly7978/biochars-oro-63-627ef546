@@ -19,10 +19,17 @@ const CameraView = ({
   const streamReadyCalledRef = useRef<boolean>(false);
   const mountedRef = useRef<boolean>(true);
   const initializingRef = useRef<boolean>(false);
+  const stabilizationTimerRef = useRef<number | null>(null);
 
   const stopCamera = async () => {
     console.log("CameraView: Deteniendo cámara");
     streamReadyCalledRef.current = false;
+    
+    // Limpiar cualquier temporizador pendiente
+    if (stabilizationTimerRef.current) {
+      clearTimeout(stabilizationTimerRef.current);
+      stabilizationTimerRef.current = null;
+    }
     
     if (stream) {
       stream.getTracks().forEach(track => {
@@ -59,7 +66,7 @@ const CameraView = ({
       streamReadyCalledRef.current = false;
 
       // Esperar un momento antes de iniciar la cámara para asegurar que los recursos anteriores se liberaron
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       if (!mountedRef.current) {
         console.log("CameraView: El componente fue desmontado durante la inicialización");
@@ -70,8 +77,8 @@ const CameraView = ({
       const constraints: MediaStreamConstraints = {
         video: {
           facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 640 }, // Resolución más conservadora para evitar problemas
+          height: { ideal: 480 },
           frameRate: { ideal: 30 }
         }
       };
@@ -109,34 +116,48 @@ const CameraView = ({
           }
         });
         
-        // Período de estabilización de la cámara
-        console.log("CameraView: Esperando período de estabilización de cámara");
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Extender período de estabilización de la cámara
+        console.log("CameraView: Esperando período de estabilización de cámara (ampliado)");
         
-        if (!mountedRef.current) {
-          console.log("CameraView: El componente fue desmontado durante la estabilización");
-          newStream.getTracks().forEach(track => track.stop());
-          initializingRef.current = false;
-          return;
+        // Limpiar cualquier temporizador previo
+        if (stabilizationTimerRef.current) {
+          clearTimeout(stabilizationTimerRef.current);
         }
-
-        setStream(newStream);
         
-        // Verificar que los tracks todavía están activos
-        const allTracksActive = newStream.getVideoTracks().every(track => track.readyState === 'live');
-        
-        if (allTracksActive && isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
-          console.log("CameraView: Todos los tracks activos, notificando stream lista para procesamiento");
-          streamReadyCalledRef.current = true;
-          onStreamReady(newStream);
-        } else {
-          console.log("CameraView: Condiciones para notificar stream no cumplidas:", {
-            allTracksActive,
-            isMonitoring,
-            hasCallback: !!onStreamReady,
-            alreadyCalled: streamReadyCalledRef.current
-          });
-        }
+        // Usar un temporizador más largo para estabilización completa
+        stabilizationTimerRef.current = window.setTimeout(() => {
+          if (!mountedRef.current) {
+            console.log("CameraView: El componente fue desmontado durante la estabilización");
+            return;
+          }
+          
+          // Verificar que los tracks siguen activos
+          const allTracksActive = newStream.getVideoTracks().every(track => track.readyState === 'live');
+          
+          if (allTracksActive) {
+            console.log("CameraView: Cámara estabilizada completamente, notificando stream lista");
+            setStream(newStream);
+            
+            if (isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
+              console.log("CameraView: Todos los tracks activos, notificando stream lista para procesamiento");
+              streamReadyCalledRef.current = true;
+              
+              // Notificar que la stream está lista para procesamiento
+              onStreamReady(newStream);
+            }
+          } else {
+            console.error("CameraView: Después de estabilización, los tracks no están activos");
+            // Intentar reiniciar cámara
+            stopCamera();
+            setTimeout(() => {
+              if (mountedRef.current && isMonitoring) {
+                startCamera();
+              }
+            }, 1000);
+          }
+          
+          stabilizationTimerRef.current = null;
+        }, 3500); // Período de estabilización más largo (3.5 segundos)
       }
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
