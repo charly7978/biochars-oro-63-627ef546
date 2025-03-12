@@ -1,529 +1,454 @@
 
+import HumSoundFile from '../assets/sounds/heartbeat-low.mp3';
+
+export interface HeartBeatResult {
+  bpm: number;
+  confidence: number;
+  isBeat: boolean;
+  lastBeatTime: number;
+  rrData: { timestamp: number; interval: number }[];
+}
+
 export class HeartBeatProcessor {
-  // ────────── CONFIGURACIONES PRINCIPALES ──────────
-  private readonly SAMPLE_RATE = 30;
-  private readonly WINDOW_SIZE = 20;          // Reducido para mayor velocidad de respuesta
+  // Debug mode
+  private DEBUG = true;
+
+  // Signal processing parameters
+  private readonly MAX_BUFFER_SIZE = 300;
+  private readonly MIN_CONFIDENCE_FOR_BPM = 0.2; // Much lower to detect weak signals
   private readonly MIN_BPM = 40;
-  private readonly MAX_BPM = 200;
-  private readonly SIGNAL_THRESHOLD = 0.08;   // Reducido drásticamente para máxima sensibilidad
-  private readonly MIN_CONFIDENCE = 0.25;     // Valor mínimo para aceptar cualquier pico
-  private readonly DERIVATIVE_THRESHOLD = -0.002; // Mucho menos restrictivo
-  private readonly MIN_PEAK_TIME_MS = 150;    // Reducido para captar incluso latidos rápidos
-  private readonly WARMUP_TIME_MS = 500;      // Reducido al mínimo para respuesta inmediata
+  private readonly MAX_BPM = 180;
+  private readonly SIGNAL_WINDOW = 3.0; // seconds
+  private readonly PEAK_DETECTION_WINDOW = 4; // Much smaller for faster detection
+  private readonly BPM_WINDOW_SIZE = 5; // Average over 5 beats
+  private readonly MAX_RR_DATA_POINTS = 20;
 
-  // Parámetros de filtrado optimizados para máxima sensibilidad
-  private readonly MEDIAN_FILTER_WINDOW = 3;  // Ventana más pequeña
-  private readonly MOVING_AVERAGE_WINDOW = 3; // Ventana más pequeña
-  private readonly EMA_ALPHA = 0.7;          // Valor muy alto para seguir cambios instantáneamente
-  private readonly BASELINE_FACTOR = 0.98;    // Adaptación de línea base más rápida
+  // Adaptive thresholds
+  private readonly MIN_PEAK_THRESHOLD_FACTOR = 0.15; // Much lower to detect subtle peaks
+  private readonly STRONG_PEAK_THRESHOLD_FACTOR = 0.4; // For definite peaks
+  private readonly DYNAMIC_THRESHOLD_FACTOR = 0.8; // Adapt threshold more quickly
+  private baselineThreshold = 1.0;
+  private lastThresholdUpdate = 0;
+  private thresholdUpdateInterval = 500; // ms between threshold updates
 
-  // Parámetros de beep ajustados para máxima audibilidad
-  private readonly BEEP_PRIMARY_FREQUENCY = 880;
-  private readonly BEEP_SECONDARY_FREQUENCY = 440;
-  private readonly BEEP_DURATION = 40;        // Beep más corto
-  private readonly BEEP_VOLUME = 0.9;         // Volumen máximo sin distorsión
-  private readonly MIN_BEEP_INTERVAL_MS = 150; // Intervalo mínimo reducido
+  // Adaptive timing
+  private readonly MIN_TIME_BETWEEN_BEATS = 250; // ms - corresponds to 240 BPM (maximum)
+  private shouldReduceTimeBetweenBeats = false;
 
-  // ────────── AUTO-RESET SI LA SEÑAL ES MUY BAJA ──────────
-  private readonly LOW_SIGNAL_THRESHOLD = 0.01; // Extremadamente permisivo
-  private readonly LOW_SIGNAL_FRAMES = 30;      // Dar más tiempo antes de resetear
-  private lowSignalCount = 0;
-
-  // Variables internas
+  // State
   private signalBuffer: number[] = [];
-  private medianBuffer: number[] = [];
-  private movingAverageBuffer: number[] = [];
-  private smoothedValue: number = 0;
+  private bpmValues: number[] = [];
+  private lastBeatTime = 0;
+  private lastMajorBeatTime = 0;
+  private prevValidBpm = 0;
+  private rrIntervals: { timestamp: number; interval: number }[] = [];
   private audioContext: AudioContext | null = null;
-  private lastBeepTime = 0;
-  private lastPeakTime: number | null = null;
-  private previousPeakTime: number | null = null;
-  private bpmHistory: number[] = [];
-  private baseline: number = 0;
-  private lastValue: number = 0;
-  private values: number[] = [];
-  private startTime: number = 0;
-  private peakConfirmationBuffer: number[] = [];
-  private lastConfirmedPeak: boolean = false;
-  private smoothBPM: number = 0;
-  private readonly BPM_ALPHA = 0.5; // Extremadamente sensible a cambios recientes
-  private peakCandidateIndex: number | null = null;
-  private peakCandidateValue: number = 0;
-  private recentSignalAmplitude: number = 0; // Para cálculo adaptativo de umbrales
-  private potentialPeaksQueue: {value: number, time: number}[] = []; // Cola de picos potenciales
+  private audioBuffer: AudioBuffer | null = null;
+  private beepGainNode: GainNode | null = null;
+  private isInitialized = false;
+  private potentialPeakQueue: { time: number; value: number }[] = [];
+  private lastProcessedValue = 0;
+  private valueDerivative = 0;
+  private consecutiveMissedBeats = 0;
+  private forcedDetectionMode = false;
+  private lastSignalQuality = 0;
+  private beatConfidence = 0;
+  private audioInitialized = false;
+  
+  // Derivative processing
+  private derivativeBuffer: number[] = []; 
+  private readonly DERIVATIVE_BUFFER_SIZE = 10;
+
+  // Adaptive EMA smoothing
+  private readonly EMA_ALPHA = 0.4; // Higher for faster response
 
   constructor() {
-    this.initAudio();
-    this.startTime = Date.now();
+    this.initialize();
   }
 
-  private async initAudio() {
-    try {
-      this.audioContext = new AudioContext();
-      await this.audioContext.resume();
-      await this.playBeep(0.01);
-      console.log("HeartBeatProcessor: Audio Context Initialized");
-    } catch (error) {
-      console.error("HeartBeatProcessor: Error initializing audio", error);
-    }
-  }
-
-  private async playBeep(volume: number = this.BEEP_VOLUME) {
-    if (!this.audioContext) return;
-
-    const now = Date.now();
-    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) return;
+  public async initialize(): Promise<void> {
+    if (this.isInitialized) return;
 
     try {
-      const primaryOscillator = this.audioContext.createOscillator();
-      const primaryGain = this.audioContext.createGain();
+      // Load audio asynchronously
+      const response = await fetch(HumSoundFile);
+      const arrayBuffer = await response.arrayBuffer();
 
-      const secondaryOscillator = this.audioContext.createOscillator();
-      const secondaryGain = this.audioContext.createGain();
-
-      primaryOscillator.type = "sine";
-      primaryOscillator.frequency.setValueAtTime(
-        this.BEEP_PRIMARY_FREQUENCY,
-        this.audioContext.currentTime
-      );
-
-      secondaryOscillator.type = "sine";
-      secondaryOscillator.frequency.setValueAtTime(
-        this.BEEP_SECONDARY_FREQUENCY,
-        this.audioContext.currentTime
-      );
-
-      // Envelope del sonido principal
-      primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-      primaryGain.gain.linearRampToValueAtTime(
-        volume,
-        this.audioContext.currentTime + 0.01
-      );
-      primaryGain.gain.exponentialRampToValueAtTime(
-        0.01,
-        this.audioContext.currentTime + this.BEEP_DURATION / 1000
-      );
-
-      // Envelope del sonido secundario
-      secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-      secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.3,
-        this.audioContext.currentTime + 0.01
-      );
-      secondaryGain.gain.exponentialRampToValueAtTime(
-        0.01,
-        this.audioContext.currentTime + this.BEEP_DURATION / 1000
-      );
-
-      primaryOscillator.connect(primaryGain);
-      secondaryOscillator.connect(secondaryGain);
-      primaryGain.connect(this.audioContext.destination);
-      secondaryGain.connect(this.audioContext.destination);
-
-      primaryOscillator.start();
-      secondaryOscillator.start();
-
-      primaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.05);
-      secondaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.05);
-
-      this.lastBeepTime = now;
+      // Initialize audio context
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       
-      // Para debugging - imprimir cuando se reproduce un beep
-      console.log("BEEP played at", new Date().toISOString());
+      // Create gain node for volume control
+      this.beepGainNode = this.audioContext.createGain();
+      this.beepGainNode.gain.value = 0.7; // Lower default volume
+      this.beepGainNode.connect(this.audioContext.destination);
+      
+      // Decode audio
+      this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      
+      this.audioInitialized = true;
+      console.log("HeartBeatProcessor: Audio Context Initialized");
+      this.isInitialized = true;
     } catch (error) {
-      console.error("HeartBeatProcessor: Error playing beep", error);
+      console.error("Error initializing HeartBeatProcessor:", error);
     }
   }
 
-  private isInWarmup(): boolean {
-    return Date.now() - this.startTime < this.WARMUP_TIME_MS;
-  }
-
-  private medianFilter(value: number): number {
-    this.medianBuffer.push(value);
-    if (this.medianBuffer.length > this.MEDIAN_FILTER_WINDOW) {
-      this.medianBuffer.shift();
-    }
-    const sorted = [...this.medianBuffer].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
-  }
-
-  private calculateMovingAverage(value: number): number {
-    this.movingAverageBuffer.push(value);
-    if (this.movingAverageBuffer.length > this.MOVING_AVERAGE_WINDOW) {
-      this.movingAverageBuffer.shift();
-    }
-    const sum = this.movingAverageBuffer.reduce((a, b) => a + b, 0);
-    return sum / this.movingAverageBuffer.length;
-  }
-
-  private calculateEMA(value: number): number {
-    this.smoothedValue =
-      this.EMA_ALPHA * value + (1 - this.EMA_ALPHA) * this.smoothedValue;
-    return this.smoothedValue;
-  }
-
-  public processSignal(value: number): {
-    bpm: number;
-    confidence: number;
-    isPeak: boolean;
-    filteredValue: number;
-    arrhythmiaCount: number;
-  } {
-    // Imprimir valor de entrada para debugging
-    // console.log("Input signal value:", value.toFixed(4));
+  public processSignal(value: number, quality: number = 0): HeartBeatResult {
+    const now = Date.now();
+    this.lastSignalQuality = quality;
     
-    // Filtros sucesivos para mejorar la señal
-    const medVal = this.medianFilter(value);
-    const movAvgVal = this.calculateMovingAverage(medVal);
-    const smoothed = this.calculateEMA(movAvgVal);
-
-    this.signalBuffer.push(smoothed);
-    if (this.signalBuffer.length > this.WINDOW_SIZE) {
+    // Add signal to buffer with EMA smoothing for noise reduction
+    if (this.signalBuffer.length === 0) {
+      this.signalBuffer.push(value);
+    } else {
+      // Smooth signal using EMA
+      const smoothedValue = this.lastProcessedValue + 
+        this.EMA_ALPHA * (value - this.lastProcessedValue);
+      this.signalBuffer.push(smoothedValue);
+      this.lastProcessedValue = smoothedValue;
+    }
+    
+    // Calculate first derivative (slope) - important for peak detection
+    if (this.signalBuffer.length >= 2) {
+      const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
+      const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
+      const newDerivative = currentValue - prevValue;
+      
+      // Smooth derivative using EMA
+      if (this.derivativeBuffer.length === 0) {
+        this.valueDerivative = newDerivative;
+      } else {
+        this.valueDerivative = this.valueDerivative * 0.7 + newDerivative * 0.3;
+      }
+      
+      // Store derivative for trend analysis
+      this.derivativeBuffer.push(this.valueDerivative);
+      if (this.derivativeBuffer.length > this.DERIVATIVE_BUFFER_SIZE) {
+        this.derivativeBuffer.shift();
+      }
+    }
+    
+    // Limit buffer size
+    if (this.signalBuffer.length > this.MAX_BUFFER_SIZE) {
       this.signalBuffer.shift();
     }
 
-    if (this.signalBuffer.length < 10) { // Reducido a 10 para detección más temprana
-      return {
-        bpm: 0,
-        confidence: 0,
-        isPeak: false,
-        filteredValue: smoothed,
-        arrhythmiaCount: 0
-      };
-    }
-
-    // Actualizar la amplitud reciente de la señal para umbral adaptativo
-    const recentValues = this.signalBuffer.slice(-8); // Ventana más corta
-    const minValue = Math.min(...recentValues);
-    const maxValue = Math.max(...recentValues);
-    this.recentSignalAmplitude = maxValue - minValue;
-
-    // Adaptación de línea base más sensible
-    this.baseline =
-      this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
-
-    const normalizedValue = smoothed - this.baseline;
-    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
-
-    this.values.push(smoothed);
-    if (this.values.length > 3) {
-      this.values.shift();
-    }
-
-    // Derivada mejorada con más peso en cambios recientes
-    let smoothDerivative = 0;
-    if (this.values.length >= 2) {
-      smoothDerivative = this.values[this.values.length - 1] - this.values[this.values.length - 2];
-    }
-    this.lastValue = smoothed;
-
-    // Detección de pico mejorada con sistema de confianza ponderada
-    const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
+    // Beat detection logic
+    let isBeat = false;
+    let currentBpm = this.prevValidBpm || 75; // Default to 75 BPM if no history
     
-    // Sistema de confirmación de pico simplificado y con memoria
-    const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
-
-    // Sonido de beep mejorado al detectar pico
-    if (isConfirmedPeak) {
-      const now = Date.now();
-      const timeSinceLastPeak = this.lastPeakTime
-        ? now - this.lastPeakTime
-        : Number.MAX_VALUE;
-
-      // Permitir detección de pico con menor intervalo mínimo
-      if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
-        this.previousPeakTime = this.lastPeakTime;
-        this.lastPeakTime = now;
+    // Only try to detect beats if we have enough samples
+    if (this.signalBuffer.length > this.PEAK_DETECTION_WINDOW * 2) {
+      isBeat = this.detectBeat(now, value, quality);
+      
+      // If beat detected, calculate new BPM
+      if (isBeat) {
+        // Reset counter for forced mode
+        this.consecutiveMissedBeats = 0;
+        this.forcedDetectionMode = false;
         
-        // Volumen de beep proporcional a la confianza y amplitud de la señal
-        // Aumentado para mayor audibilidad
-        const beepVolume = Math.min(1.0, 0.5 + confidence * 0.5);
+        if (this.lastBeatTime > 0) {
+          const interval = now - this.lastBeatTime;
+          
+          // Calculate BPM from RR interval
+          const bpm = 60000 / interval;
+          
+          // Only accept physiologically plausible values
+          if (bpm >= this.MIN_BPM && bpm <= this.MAX_BPM) {
+            // Store RR interval data
+            this.rrIntervals.push({ timestamp: now, interval });
+            if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
+              this.rrIntervals.shift();
+            }
+            
+            // Add to BPM history
+            this.bpmValues.push(bpm);
+            if (this.bpmValues.length > this.BPM_WINDOW_SIZE) {
+              this.bpmValues.shift();
+            }
+            
+            // Calculate average BPM
+            const sum = this.bpmValues.reduce((a, b) => a + b, 0);
+            currentBpm = Math.round(sum / this.bpmValues.length);
+            this.prevValidBpm = currentBpm;
+            
+            // Check if we need to adjust timing parameters
+            if (interval < 400) { // Very fast heart rate
+              this.shouldReduceTimeBetweenBeats = true;
+            } else if (interval > 1000) { // Slow heart rate
+              this.shouldReduceTimeBetweenBeats = false;
+            }
+          }
+        }
         
-        // Debug info
-        console.log("PEAK detected!", {
-          confidence: confidence.toFixed(2),
-          normalizedValue: normalizedValue.toFixed(4),
-          timeSinceLastPeak
-        });
+        // Update last beat time
+        this.lastBeatTime = now;
+        this.lastMajorBeatTime = now;
         
-        this.playBeep(beepVolume);
-        this.updateBPM();
+        // Play beep with volume based on confidence and signal quality
+        this.playBeep(this.beatConfidence, quality);
+        
+        if (this.DEBUG) {
+          console.log(`HEARTBEAT @ ${new Date().toISOString()} - BPM: ${currentBpm}, Confidence: ${this.beatConfidence.toFixed(2)}, Quality: ${quality}`);
+        }
+      } else {
+        // Increment missed beats counter
+        this.consecutiveMissedBeats++;
+        
+        // After too many missed beats, enter forced detection mode
+        if (this.consecutiveMissedBeats > 15 && !this.forcedDetectionMode && quality > 40) {
+          this.forcedDetectionMode = true;
+          console.log("Entering forced beat detection mode due to missed beats");
+        }
+        
+        // In forced mode with decent quality, try to detect beats based on expected timing
+        if (this.forcedDetectionMode && quality > 40 && this.lastBeatTime > 0) {
+          const expectedInterval = 60000 / (this.prevValidBpm || 75);
+          const sinceLastBeat = now - this.lastBeatTime;
+          
+          // If we're past the expected interval and have a positive derivative, force a beat
+          if (sinceLastBeat > expectedInterval * 1.1 && this.valueDerivative > 0 && 
+              this.signalBuffer[this.signalBuffer.length - 1] > this.signalBuffer[this.signalBuffer.length - 3]) {
+            
+            console.log("Forcing beat detection based on timing");
+            isBeat = true;
+            this.lastBeatTime = now;
+            
+            // Play softer beep for forced beats
+            this.playBeep(0.3, quality);
+            
+            // Add to RR data
+            this.rrIntervals.push({ timestamp: now, interval: sinceLastBeat });
+            if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
+              this.rrIntervals.shift();
+            }
+          }
+        }
       }
     }
+
+    // Update threshold periodically
+    if (now - this.lastThresholdUpdate > this.thresholdUpdateInterval) {
+      this.updateAdaptiveThreshold();
+      this.lastThresholdUpdate = now;
+    }
+
+    // Adjust time between beats dynamically
+    const minTimeBetweenBeats = this.shouldReduceTimeBetweenBeats ? 
+      this.MIN_TIME_BETWEEN_BEATS * 0.8 : this.MIN_TIME_BETWEEN_BEATS;
 
     return {
-      bpm: Math.round(this.getSmoothBPM()),
-      confidence,
-      isPeak: isConfirmedPeak,
-      filteredValue: smoothed,
-      arrhythmiaCount: 0
+      bpm: currentBpm,
+      confidence: this.calculateConfidence(quality),
+      isBeat,
+      lastBeatTime: this.lastBeatTime,
+      rrData: [...this.rrIntervals]
     };
   }
 
-  private autoResetIfSignalIsLow(amplitude: number) {
-    if (amplitude < this.LOW_SIGNAL_THRESHOLD) {
-      this.lowSignalCount++;
-      if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
-        this.resetDetectionStates();
-      }
-    } else {
-      this.lowSignalCount = Math.max(0, this.lowSignalCount - 2); // Decrementar más rápido
-    }
-  }
-
-  private resetDetectionStates() {
-    this.lastPeakTime = null;
-    this.previousPeakTime = null;
-    this.lastConfirmedPeak = false;
-    this.peakCandidateIndex = null;
-    this.peakCandidateValue = 0;
-    this.peakConfirmationBuffer = [];
-    this.potentialPeaksQueue = [];
-    this.values = [];
-    console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
-  }
-
-  private detectPeak(normalizedValue: number, derivative: number): {
-    isPeak: boolean;
-    confidence: number;
-  } {
-    const now = Date.now();
-    const timeSinceLastPeak = this.lastPeakTime
-      ? now - this.lastPeakTime
-      : Number.MAX_VALUE;
-
-    // Permitimos detección más temprana
-    if (timeSinceLastPeak < this.MIN_PEAK_TIME_MS * 0.4) { // Reducido para detección más rápida
-      return { isPeak: false, confidence: 0 };
-    }
-
-    // Umbrales adaptativos extremadamente sensibles
-    // Usar un porcentaje bajo de la amplitud reciente para el umbral
-    const adaptiveThreshold = Math.max(
-      this.SIGNAL_THRESHOLD * 0.5, // Aún más bajo
-      this.recentSignalAmplitude * 0.15  // Solo 15% de la amplitud reciente
-    );
+  private detectBeat(now: number, value: number, quality: number): boolean {
+    // Skip if too soon after last beat
+    const timeSinceLastBeat = now - this.lastBeatTime;
+    const minTimeBetweenBeats = this.shouldReduceTimeBetweenBeats ? 
+      this.MIN_TIME_BETWEEN_BEATS * 0.8 : this.MIN_TIME_BETWEEN_BEATS;
     
-    const adaptiveDerivativeThreshold = Math.min(
-      this.DERIVATIVE_THRESHOLD,
-      -0.001 - this.recentSignalAmplitude * 0.005 // Mucho menos restrictivo
-    );
-
-    // Detección de pico con condiciones mucho más flexibles
-    // AHORA ES CASI SEGURO QUE DETECTE CUALQUIER CAMBIO SIGNIFICATIVO
-    const isOverThreshold = 
-      (derivative < adaptiveDerivativeThreshold * 0.5 && normalizedValue > adaptiveThreshold * 0.5) ||
-      (derivative < 0 && normalizedValue > adaptiveThreshold * 0.8) ||
-      (Math.abs(derivative) > 0.01 && normalizedValue > 0); // Cualquier cambio brusco
-
-    // Al menos considerar cualquier pico que tenga amplitud suficiente
-    if (normalizedValue > this.recentSignalAmplitude * 0.4) {
-      this.potentialPeaksQueue.push({
-        value: normalizedValue,
-        time: now
-      });
-      
-      // Mantener cola de tamaño razonable
-      if (this.potentialPeaksQueue.length > 10) {
-        this.potentialPeaksQueue.shift();
+    if (timeSinceLastBeat < minTimeBetweenBeats) {
+      return false;
+    }
+    
+    // Current window for peak detection
+    const recentValues = this.signalBuffer.slice(-this.PEAK_DETECTION_WINDOW * 2);
+    if (recentValues.length < this.PEAK_DETECTION_WINDOW * 2) {
+      return false;
+    }
+    
+    // Get indices for window
+    const midIdx = Math.floor(recentValues.length / 2);
+    const currentValue = recentValues[midIdx];
+    
+    // Check if current value is a potential peak
+    let isPotentialPeak = true;
+    for (let i = 1; i <= this.PEAK_DETECTION_WINDOW; i++) {
+      if (midIdx - i >= 0 && recentValues[midIdx - i] >= currentValue) {
+        isPotentialPeak = false;
+        break;
       }
     }
-
-    // Cálculo de confianza mejorado con mayor peso a cualquier cambio
-    const amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (adaptiveThreshold * 0.5), 0),
-      1
-    ) * 0.8; // 80% del peso a la amplitud
     
-    const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(adaptiveDerivativeThreshold * 0.3), 0),
-      1
-    ) * 0.2; // 20% del peso a la derivada
-    
-    // Sumar ambas para mayor probabilidad de detección
-    const confidence = amplitudeConfidence + derivativeConfidence;
-
-    // Agregar bonificación por tiempo transcurrido desde último pico
-    // Si ha pasado suficiente tiempo, aumentar la confianza
-    let timeBonus = 0;
-    if (timeSinceLastPeak > 500) {
-      timeBonus = Math.min((timeSinceLastPeak - 500) / 1000, 0.3);
-    }
-
-    return { 
-      isPeak: isOverThreshold, 
-      confidence: Math.max((confidence + timeBonus) * 0.95, 0)
-    };
-  }
-
-  private confirmPeak(
-    isPeak: boolean,
-    normalizedValue: number,
-    confidence: number
-  ): boolean {
-    // Buffer más pequeño para confirmación más rápida
-    this.peakConfirmationBuffer.push(normalizedValue);
-    if (this.peakConfirmationBuffer.length > 3) {
-      this.peakConfirmationBuffer.shift();
+    // Look ahead to confirm peak
+    if (isPotentialPeak) {
+      for (let i = 1; i <= this.PEAK_DETECTION_WINDOW; i++) {
+        if (midIdx + i < recentValues.length && recentValues[midIdx + i] > currentValue) {
+          isPotentialPeak = false;
+          break;
+        }
+      }
     }
     
-    // Criterios de confirmación extremadamente simplificados
-    // Prácticamente cualquier señal con confianza mínima se acepta como pico
-    if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE) {
-      this.lastConfirmedPeak = true;
-      return true;
-    } 
-    
-    // También confirmar pico si hay un cambio de dirección marcado
-    // después de una subida significativa
-    if (!this.lastConfirmedPeak && this.peakConfirmationBuffer.length >= 3) {
-      const rising = this.peakConfirmationBuffer[1] > this.peakConfirmationBuffer[0];
-      const falling = this.peakConfirmationBuffer[2] < this.peakConfirmationBuffer[1];
+    // If not a peak at this point, check the derivative for rapid upswing
+    if (!isPotentialPeak && this.derivativeBuffer.length >= 3) {
+      const recentDerivatives = this.derivativeBuffer.slice(-3);
+      const avgDerivative = recentDerivatives.reduce((sum, val) => sum + val, 0) / recentDerivatives.length;
       
-      if (rising && falling && this.peakConfirmationBuffer[1] > 0.05) {
-        this.lastConfirmedPeak = true;
+      // Strong positive derivative indicates start of upstroke (potential beat)
+      if (avgDerivative > 0.3 && timeSinceLastBeat > minTimeBetweenBeats * 1.5) {
+        this.potentialPeakQueue.push({ time: now, value });
+        console.log(`Derivative-based potential peak queued, derivative: ${avgDerivative.toFixed(2)}`);
+      }
+    }
+    
+    // Process the potential peak queue
+    if (this.potentialPeakQueue.length > 0) {
+      // Process oldest peaks first
+      const potentialPeak = this.potentialPeakQueue[0];
+      this.potentialPeakQueue.shift();
+      
+      // If this peak is still relevant (not too old)
+      if (now - potentialPeak.time < 300) {
+        // Calculate dynamic threshold based on signal quality
+        let effectiveThreshold = this.baselineThreshold;
+        if (quality < 50) {
+          // Lower threshold for low quality signals
+          effectiveThreshold *= Math.max(0.3, quality / 100);
+        }
+        
+        // Check if the peak is strong enough
+        if (Math.abs(potentialPeak.value) > effectiveThreshold * this.MIN_PEAK_THRESHOLD_FACTOR) {
+          // Strong signals need to meet a higher threshold
+          const isStrongPeak = Math.abs(potentialPeak.value) > effectiveThreshold * this.STRONG_PEAK_THRESHOLD_FACTOR;
+          
+          // Higher confidence for stronger peaks
+          this.beatConfidence = isStrongPeak ? 0.8 : 0.5;
+          
+          // Additional boost for good quality signals
+          if (quality > 60) {
+            this.beatConfidence = Math.min(1.0, this.beatConfidence + 0.2);
+          }
+          
+          return true;
+        }
+      }
+    }
+    
+    // Process immediate peaks for high quality signals
+    if (isPotentialPeak && Math.abs(currentValue) > this.baselineThreshold * this.MIN_PEAK_THRESHOLD_FACTOR) {
+      // For high quality signals, be more generous with peak detection
+      if (quality > 60) {
+        this.beatConfidence = 0.9;
         return true;
       }
-    }
-    
-    // También forzar detección periódica si hay potenciales picos
-    // y ha pasado demasiado tiempo sin uno confirmado
-    const now = Date.now();
-    if (!this.lastConfirmedPeak && 
-        this.potentialPeaksQueue.length > 0 && 
-        this.lastPeakTime && 
-        (now - this.lastPeakTime > 1200)) { // Forzar si pasan > 1.2 segundos
       
-      // Tomar el pico potencial más reciente con valor más alto
-      const bestPeak = [...this.potentialPeaksQueue].sort((a, b) => b.value - a.value)[0];
-      
-      if (bestPeak && bestPeak.value > 0.03) {
-        this.lastConfirmedPeak = true;
-        this.potentialPeaksQueue = []; // Limpiar cola después de usar
+      // For lower quality, require stronger peaks
+      const isStrongPeak = Math.abs(currentValue) > this.baselineThreshold * this.STRONG_PEAK_THRESHOLD_FACTOR;
+      if (isStrongPeak || (quality > 40 && Math.abs(currentValue) > this.baselineThreshold * 0.3)) {
+        this.beatConfidence = isStrongPeak ? 0.7 : 0.4;
         return true;
       }
-    }
-    
-    // Reset de estado
-    if (!isPeak) {
-      this.lastConfirmedPeak = false;
     }
     
     return false;
   }
 
-  private updateBPM() {
-    if (!this.lastPeakTime) return;
+  private updateAdaptiveThreshold(): void {
+    // If buffer is too small, use a default threshold
+    if (this.signalBuffer.length < 10) {
+      this.baselineThreshold = 2.0;
+      return;
+    }
     
-    // Si no hay previousPeakTime, no podemos calcular intervalo aún
-    if (!this.previousPeakTime) return;
+    // Calculate threshold based on recent signal amplitude
+    const recentValues = this.signalBuffer.slice(-30); // Last 30 samples
+    if (recentValues.length === 0) return;
     
-    const interval = this.lastPeakTime - this.previousPeakTime;
-    if (interval <= 0) return;
+    // Find min, max, and average
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Calculate amplitude and set threshold
+    const amplitude = max - min;
+    
+    // Adapt threshold more gradually
+    this.baselineThreshold = this.baselineThreshold * (1 - this.DYNAMIC_THRESHOLD_FACTOR) + 
+                            amplitude * this.DYNAMIC_THRESHOLD_FACTOR;
+    
+    // Ensure threshold doesn't go too low
+    this.baselineThreshold = Math.max(0.5, this.baselineThreshold);
+    
+    if (this.DEBUG) {
+      console.log(`Updated threshold: ${this.baselineThreshold.toFixed(2)}, Amplitude: ${amplitude.toFixed(2)}`);
+    }
+  }
 
-    const instantBPM = 60000 / interval;
+  private calculateConfidence(quality: number): number {
+    // Start with quality-based confidence
+    let confidence = quality / 100;
     
-    // Validación más permisiva del BPM
-    if (instantBPM >= this.MIN_BPM * 0.9 && instantBPM <= this.MAX_BPM * 1.1) {
-      this.bpmHistory.push(instantBPM);
+    // Boost confidence if we have consistent BPM readings
+    if (this.bpmValues.length >= 3) {
+      const avg = this.bpmValues.reduce((sum, val) => sum + val, 0) / this.bpmValues.length;
       
-      // Mantener historia más corta para respuesta más rápida
-      if (this.bpmHistory.length > 5) {
-        this.bpmHistory.shift();
+      // Calculate standard deviation
+      const variance = this.bpmValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / this.bpmValues.length;
+      const stdDev = Math.sqrt(variance);
+      
+      // Low standard deviation means consistent readings (higher confidence)
+      if (stdDev < 5) {
+        confidence += 0.3;
+      } else if (stdDev < 10) {
+        confidence += 0.2;
+      } else if (stdDev < 15) {
+        confidence += 0.1;
       }
+    }
+    
+    // Reduce confidence for forced detection mode
+    if (this.forcedDetectionMode) {
+      confidence *= 0.7;
+    }
+    
+    // Cap at 100%
+    return Math.min(1.0, confidence);
+  }
+
+  private playBeep(confidence: number, quality: number): void {
+    // Skip if audio not initialized
+    if (!this.audioContext || !this.audioBuffer || !this.beepGainNode || !this.audioInitialized) {
+      return;
+    }
+    
+    try {
+      // Adjust volume based on confidence and quality
+      const volume = Math.min(1.0, confidence * (quality / 100 + 0.5));
+      this.beepGainNode.gain.value = Math.max(0.3, volume);
       
-      // Debug info
-      console.log("BPM updated:", instantBPM.toFixed(1), "history:", this.bpmHistory.map(b => b.toFixed(1)));
+      // Create and configure source
+      const source = this.audioContext.createBufferSource();
+      source.buffer = this.audioBuffer;
+      source.connect(this.beepGainNode);
+      
+      // Start playback
+      source.start();
+      console.log(`BEEP played at ${new Date().toISOString()}`);
+    } catch (error) {
+      console.error("Error playing heartbeat sound:", error);
     }
   }
 
-  private getSmoothBPM(): number {
-    const rawBPM = this.calculateCurrentBPM();
-    if (rawBPM === 0) return 0;
-    
-    if (this.smoothBPM === 0) {
-      this.smoothBPM = rawBPM;
-      return rawBPM;
-    }
-    
-    // Suavizado más rápido para seguir cambios en BPM
-    this.smoothBPM =
-      this.BPM_ALPHA * rawBPM + (1 - this.BPM_ALPHA) * this.smoothBPM;
-    return this.smoothBPM;
-  }
-
-  private calculateCurrentBPM(): number {
-    // Incluso con un solo valor, devolver algo
-    if (this.bpmHistory.length == 0) {
-      return 0;
-    }
-    
-    if (this.bpmHistory.length == 1) {
-      return this.bpmHistory[0];
-    }
-    
-    // Con pocos valores, usar promedio simple
-    if (this.bpmHistory.length < 4) {
-      const avg = this.bpmHistory.reduce((a, b) => a + b, 0) / this.bpmHistory.length;
-      return avg;
-    }
-    
-    // Con más valores, usar mediana para mayor robustez
-    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    const medianBPM = sorted[Math.floor(sorted.length / 2)];
-    return medianBPM;
-  }
-
-  public getFinalBPM(): number {
-    // Incluso con pocos valores, intentar devolver algo útil
-    if (this.bpmHistory.length == 0) {
-      return 0;
-    }
-    
-    if (this.bpmHistory.length < 3) {
-      return this.bpmHistory.reduce((a, b) => a + b, 0) / this.bpmHistory.length;
-    }
-    
-    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    
-    // Con al menos 3 valores, usar el rango central
-    const finalSet = sorted.slice(Math.floor(sorted.length * 0.2), Math.ceil(sorted.length * 0.8));
-    
-    if (!finalSet.length) return sorted[Math.floor(sorted.length / 2)];
-    
-    const sum = finalSet.reduce((acc, val) => acc + val, 0);
-    return Math.round(sum / finalSet.length);
-  }
-
-  public reset() {
-    console.log("HeartBeatProcessor: reset llamado manualmente");
+  public reset(): void {
     this.signalBuffer = [];
-    this.medianBuffer = [];
-    this.movingAverageBuffer = [];
-    this.peakConfirmationBuffer = [];
-    this.bpmHistory = [];
-    this.values = [];
-    this.smoothBPM = 0;
-    this.lastPeakTime = null;
-    this.previousPeakTime = null;
-    this.lastConfirmedPeak = false;
-    this.lastBeepTime = 0;
-    this.baseline = 0;
-    this.lastValue = 0;
-    this.smoothedValue = 0;
-    this.startTime = Date.now();
-    this.peakCandidateIndex = null;
-    this.peakCandidateValue = 0;
-    this.lowSignalCount = 0;
-    this.recentSignalAmplitude = 0;
-    this.potentialPeaksQueue = [];
-  }
-
-  public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {
-    return {
-      intervals: [...this.bpmHistory],
-      lastPeakTime: this.lastPeakTime
-    };
+    this.bpmValues = [];
+    this.lastBeatTime = 0;
+    this.lastMajorBeatTime = 0;
+    this.prevValidBpm = 0;
+    this.rrIntervals = [];
+    this.baselineThreshold = 1.0;
+    this.lastThresholdUpdate = 0;
+    this.potentialPeakQueue = [];
+    this.lastProcessedValue = 0;
+    this.valueDerivative = 0;
+    this.derivativeBuffer = [];
+    this.consecutiveMissedBeats = 0;
+    this.forcedDetectionMode = false;
   }
 }

@@ -13,30 +13,44 @@ export const useSignalProcessor = () => {
   const signalQualityRef = useRef<number>(0);
   const calibrationRef = useRef<boolean>(false);
   const frameCountRef = useRef<number>(0);
+  const rawSignalHistoryRef = useRef<number[]>([]);
   
-  // Parámetros de procesamiento ajustados para mayor sensibilidad a dedo humano
+  // Enhanced parameters for better signal extraction
   const MAX_BUFFER_SIZE = 300;
-  const QUALITY_THRESHOLD = 35; // Reducido para detectar señales más tenues
-  const FINGER_DETECTION_FRAMES = 3; // Reducido para respuesta más rápida a presencia de dedo
-  const MIN_SIGNAL_AMPLITUDE = 0.003; // Reducido para captar señales más sutiles
+  const QUALITY_THRESHOLD = 25; // Significantly reduced to capture weaker signals
+  const FINGER_DETECTION_FRAMES = 2; // Faster finger detection
+  const MIN_SIGNAL_AMPLITUDE = 0.001; // Much more sensitive to amplitude changes
   const fingerDetectionCounterRef = useRef<number>(0);
   
-  // Ajustes de filtrado optimizados para señales cardíacas humanas
-  const LP_ALPHA = 0.1; // Ajustado para mayor sensibilidad a cambios rápidos
-  const SMA_WINDOW = 6; // Reducido para mejor respuesta a cambios
+  // Improved filtering for human cardiac signals
+  const LP_ALPHA = 0.2; // Increased for faster response to signal changes
+  const SMA_WINDOW = 4; // Reduced for better responsiveness
   const lastFilteredValueRef = useRef<number | null>(null);
   
-  // Control de amplificación dinámica mejorado
-  const amplificationFactorRef = useRef<number>(80.0); // Factor inicial de amplificación aumentado
+  // Dynamic amplification control
+  const amplificationFactorRef = useRef<number>(100.0); // Increased initial amplification
   const previousSignalLevelsRef = useRef<number[]>([]);
   
-  // Sistema de memoria de señal para mejor continuidad
+  // Signal memory for continuity
   const validSignalMemoryRef = useRef<{value: number, quality: number}[]>([]);
-  const MAX_MEMORY_SIZE = 20;
+  const MAX_MEMORY_SIZE = 30; // Increased for better history tracking
   
-  // Estabilidad de detección
+  // Detection stability management
   const consecutiveDetectionsRef = useRef<number>(0);
-  const MAX_CONSECUTIVE_DETECTIONS = 30; // Para evitar sobredetección
+  const MAX_CONSECUTIVE_DETECTIONS = 30;
+
+  // Debug information
+  const debugInfoRef = useRef<{
+    avgSignalStrength: number,
+    signalNoise: number,
+    frameRate: number,
+    lastFrameTime: number
+  }>({
+    avgSignalStrength: 0,
+    signalNoise: 0,
+    frameRate: 0,
+    lastFrameTime: 0
+  });
   
   useEffect(() => {
     return () => {
@@ -46,46 +60,59 @@ export const useSignalProcessor = () => {
     };
   }, []);
 
-  // Función mejorada para ajustar la amplificación basada en la intensidad real de sangre oxigenada
+  // Enhanced amplification function with better sensitivity
   const adjustAmplification = useCallback((value: number) => {
-    const MAX_BUFFER = 10;
+    const MAX_BUFFER = 15; // Increased buffer for better adaptation
     previousSignalLevelsRef.current.push(Math.abs(value));
     if (previousSignalLevelsRef.current.length > MAX_BUFFER) {
       previousSignalLevelsRef.current.shift();
     }
     
     if (previousSignalLevelsRef.current.length >= 5) {
-      // Calcular amplitud promedio reciente
+      // Calculate recent average amplitude
       const avgAmplitude = previousSignalLevelsRef.current.reduce((sum, val) => sum + val, 0) / 
                           previousSignalLevelsRef.current.length;
       
-      // Estrategia adaptativa específica para dedo humano
-      if (avgAmplitude < 0.008) {
-        // Señal muy débil, posiblemente dedo mal colocado - aumentar amplificación significativamente
-        amplificationFactorRef.current = Math.min(150, amplificationFactorRef.current * 1.08);
+      // Calculate signal variation/noise (important for heartbeat detection)
+      const variationSum = previousSignalLevelsRef.current.reduce((sum, val) => 
+        sum + Math.abs(val - avgAmplitude), 0);
+      const avgVariation = variationSum / previousSignalLevelsRef.current.length;
+      
+      // Update debug information
+      debugInfoRef.current.avgSignalStrength = avgAmplitude;
+      debugInfoRef.current.signalNoise = avgVariation;
+      
+      // Much more aggressive adaptive strategy
+      if (avgAmplitude < 0.004) {
+        // Very weak signal - amplify significantly more
+        amplificationFactorRef.current = Math.min(200, amplificationFactorRef.current * 1.15);
       } 
+      else if (avgAmplitude < 0.01) {
+        // Weak signal - increase amplification
+        amplificationFactorRef.current = Math.min(160, amplificationFactorRef.current * 1.08);
+      }
       else if (avgAmplitude < 0.02) {
-        // Señal débil pero probablemente válida - aumentar gradualmente
-        amplificationFactorRef.current = Math.min(120, amplificationFactorRef.current * 1.03);
+        // Signal present but weak - gradually increase
+        amplificationFactorRef.current = Math.min(140, amplificationFactorRef.current * 1.04);
       }
-      // Para señales muy fuertes, reducir la amplificación
-      else if (avgAmplitude > 0.25) {
-        amplificationFactorRef.current = Math.max(20, amplificationFactorRef.current * 0.92);
+      // For very strong signals, reduce amplification
+      else if (avgAmplitude > 0.3) {
+        amplificationFactorRef.current = Math.max(20, amplificationFactorRef.current * 0.90);
       }
-      // Para señales en rango alto pero aceptable
-      else if (avgAmplitude > 0.1) {
-        amplificationFactorRef.current = Math.max(30, amplificationFactorRef.current * 0.97);
+      // For strong signals, slightly reduce
+      else if (avgAmplitude > 0.15) {
+        amplificationFactorRef.current = Math.max(30, amplificationFactorRef.current * 0.95);
       } 
-      // Para señales en rango ideal, mantener estabilidad
-      else if (avgAmplitude > 0.05) {
-        // No ajustar - estamos en el rango óptimo
+      // For signals in ideal range, make minor adjustments
+      else if (avgAmplitude > 0.06) {
+        amplificationFactorRef.current = Math.max(50, amplificationFactorRef.current * 0.98);
       } 
       else {
-        // Señal ligeramente débil pero detectada - aumentar ligeramente
-        amplificationFactorRef.current = Math.min(100, amplificationFactorRef.current * 1.01);
+        // Slightly weak signal - minor increase
+        amplificationFactorRef.current = Math.min(120, amplificationFactorRef.current * 1.02);
       }
       
-      console.log(`Señal: ${avgAmplitude.toFixed(4)}, Amplificación: ${amplificationFactorRef.current.toFixed(1)}`);
+      console.log(`Signal Amplitude: ${avgAmplitude.toFixed(4)}, Variation: ${avgVariation.toFixed(4)}, Amplification: ${amplificationFactorRef.current.toFixed(1)}`);
     }
     
     return value * amplificationFactorRef.current;
@@ -95,8 +122,9 @@ export const useSignalProcessor = () => {
     console.log("Signal processor: iniciando procesamiento");
     setIsProcessing(true);
     
-    // Resetear todos los buffers y estados
+    // Reset all buffers and states
     signalBufferRef.current = [];
+    rawSignalHistoryRef.current = [];
     lastTimeRef.current = Date.now();
     lastFingerDetectedRef.current = false;
     lastFilteredValueRef.current = null;
@@ -106,20 +134,26 @@ export const useSignalProcessor = () => {
     previousSignalLevelsRef.current = [];
     validSignalMemoryRef.current = [];
     consecutiveDetectionsRef.current = 0;
-    amplificationFactorRef.current = 80.0; // Amplificación inicial mayor para mejor respuesta
+    amplificationFactorRef.current = 100.0; // Higher initial amplification
+    debugInfoRef.current = {
+      avgSignalStrength: 0,
+      signalNoise: 0,
+      frameRate: 0,
+      lastFrameTime: 0
+    };
     setLastSignal(null);
     
-    // Esperar un momento más corto antes de permitir procesamiento para respuesta más rápida
+    // Faster startup
     setTimeout(() => {
       console.log("Signal processor: listo para procesar");
       readyToProcessRef.current = true;
       calibrationRef.current = true;
       
-      // Tiempo de calibración
+      // Reduced calibration time
       setTimeout(() => {
         calibrationRef.current = false;
-      }, 2500); // Tiempo de calibración reducido para respuesta más rápida
-    }, 1500);
+      }, 2000);
+    }, 1000);
   }, []);
 
   const stopProcessing = useCallback(() => {
@@ -128,212 +162,233 @@ export const useSignalProcessor = () => {
     readyToProcessRef.current = false;
   }, []);
 
-  // Aplicar un filtro paso bajo para suavizar la señal
+  // Improved low-pass filter with better parameters
   const applyLowPassFilter = useCallback((newValue: number, previousValue: number | null): number => {
     if (previousValue === null) return newValue;
     return previousValue + LP_ALPHA * (newValue - previousValue);
   }, []);
   
-  // Aplicar un filtro de promedio móvil simple
+  // Enhanced SMA filter with weighted recent values
   const applySMAFilter = useCallback((buffer: number[]): number => {
     if (buffer.length === 0) return 0;
     if (buffer.length === 1) return buffer[0];
     
     const windowSize = Math.min(SMA_WINDOW, buffer.length);
     const recentValues = buffer.slice(-windowSize);
-    const sum = recentValues.reduce((acc, val) => acc + val, 0);
-    return sum / windowSize;
+    
+    // Weight recent values more (triangular weighting)
+    let weightedSum = 0;
+    let weightSum = 0;
+    
+    for (let i = 0; i < recentValues.length; i++) {
+      const weight = i + 1; // More recent values get higher weights
+      weightedSum += recentValues[i] * weight;
+      weightSum += weight;
+    }
+    
+    return weightedSum / weightSum;
   }, []);
 
-  // Mejora de extracción de canal rojo específica para sangre oxigenada
+  // Significantly improved red channel extraction with focus on PPG signal
   const extractRedChannel = useCallback((imageData: ImageData): number => {
     const width = imageData.width;
     const height = imageData.height;
     
-    // Usar región central con detección de mejor área de señal
+    // Create multiple sampling regions to find best PPG signal
+    const REGION_COUNT = 3; // Sample from multiple regions
+    const regionSize = Math.min(120, Math.floor(width / 3)); // Larger region
+    
+    // Center coordinates
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
-    const regionSize = Math.min(100, Math.floor(width / 4)); // Región ajustada para mayor precisión
     
-    const startX = centerX - Math.floor(regionSize / 2);
-    const startY = centerY - Math.floor(regionSize / 2);
-    const endX = startX + regionSize;
-    const endY = startY + regionSize;
+    // Define multiple sampling regions
+    const regions = [
+      // Central region (primary)
+      {
+        startX: centerX - Math.floor(regionSize / 2),
+        startY: centerY - Math.floor(regionSize / 2),
+        endX: centerX + Math.floor(regionSize / 2),
+        endY: centerY + Math.floor(regionSize / 2),
+        weight: 0.6 // Primary weight
+      },
+      // Top region (secondary)
+      {
+        startX: centerX - Math.floor(regionSize / 2),
+        startY: centerY - regionSize - Math.floor(regionSize / 2),
+        endX: centerX + Math.floor(regionSize / 2),
+        endY: centerY - Math.floor(regionSize / 2),
+        weight: 0.2 // Secondary weight
+      },
+      // Bottom region (secondary)
+      {
+        startX: centerX - Math.floor(regionSize / 2),
+        startY: centerY + Math.floor(regionSize / 2),
+        endX: centerX + Math.floor(regionSize / 2),
+        endY: centerY + regionSize + Math.floor(regionSize / 2),
+        weight: 0.2 // Secondary weight
+      }
+    ];
     
-    // Dividir la región en subregiones para encontrar la mejor señal
-    const GRID_SIZE = 3; // 3x3 grid
-    const subRegionWidth = regionSize / GRID_SIZE;
-    const subRegionHeight = regionSize / GRID_SIZE;
-    const subRegions: {red: number, green: number, blue: number, quality: number}[] = [];
+    let weightedRedValue = 0;
+    let totalWeight = 0;
     
-    // Analizar cada subregión
-    for (let i = 0; i < GRID_SIZE; i++) {
-      for (let j = 0; j < GRID_SIZE; j++) {
-        const subStartX = startX + (i * subRegionWidth);
-        const subStartY = startY + (j * subRegionHeight);
-        
-        let redSum = 0;
-        let greenSum = 0;
-        let blueSum = 0;
-        let pixelCount = 0;
-        
-        // Analizar píxeles en la subregión
-        for (let y = subStartY; y < subStartY + subRegionHeight; y++) {
-          for (let x = subStartX; x < subStartX + subRegionWidth; x++) {
-            if (x >= 0 && x < width && y >= 0 && y < height) {
-              const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
-              redSum += imageData.data[idx]; // Canal rojo
-              greenSum += imageData.data[idx + 1]; // Canal verde
-              blueSum += imageData.data[idx + 2]; // Canal azul
-              pixelCount++;
-            }
+    // Process each region
+    for (const region of regions) {
+      let redSum = 0;
+      let greenSum = 0;
+      let blueSum = 0;
+      let pixelCount = 0;
+      
+      // Analyze pixels in this region
+      for (let y = region.startY; y < region.endY; y++) {
+        for (let x = region.startX; x < region.endX; x++) {
+          if (x >= 0 && x < width && y >= 0 && y < height) {
+            const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
+            redSum += imageData.data[idx]; // Red channel
+            greenSum += imageData.data[idx + 1]; // Green channel
+            blueSum += imageData.data[idx + 2]; // Blue channel
+            pixelCount++;
           }
         }
+      }
+      
+      if (pixelCount > 0) {
+        const avgRed = redSum / pixelCount;
+        const avgGreen = greenSum / pixelCount;
+        const avgBlue = blueSum / pixelCount;
         
-        if (pixelCount > 0) {
-          const avgRed = redSum / pixelCount;
-          const avgGreen = greenSum / pixelCount;
-          const avgBlue = blueSum / pixelCount;
-          
-          // Calcular calidad de la subregión basada en dominancia de rojo y brillo
-          // La mejor región para PPG tiene alto rojo y diferencia adecuada con otros canales
-          const redDominance = avgRed - ((avgGreen + avgBlue) / 2);
-          const brightness = (avgRed + avgGreen + avgBlue) / 3;
-          
-          // La calidad es mejor cuando el rojo domina pero no hay saturación
-          const quality = redDominance * (avgRed > 50 && avgRed < 220 ? 1.0 : 0.5);
-          
-          subRegions.push({
-            red: avgRed,
-            green: avgGreen,
-            blue: avgBlue,
-            quality: quality
-          });
-        }
+        // Enhanced PPG extraction formula - prioritize red and suppress other channels
+        // This formula is optimized for detecting blood volume changes
+        const ppgValue = avgRed - (0.68 * avgGreen + 0.32 * avgBlue);
+        
+        // Add weighted contribution from this region
+        weightedRedValue += ppgValue * region.weight;
+        totalWeight += region.weight;
       }
     }
     
-    // Seleccionar la mejor subregión para extraer la señal PPG
-    let bestSubRegion = {red: 0, green: 0, blue: 0, quality: -1};
-    for (const region of subRegions) {
-      if (region.quality > bestSubRegion.quality) {
-        bestSubRegion = region;
+    // Return weighted average of all regions
+    if (totalWeight > 0) {
+      // Store raw value in history for trend analysis
+      rawSignalHistoryRef.current.push(weightedRedValue / totalWeight);
+      if (rawSignalHistoryRef.current.length > 60) { // Keep last second at 60fps
+        rawSignalHistoryRef.current.shift();
       }
+      
+      return weightedRedValue / totalWeight;
     }
     
-    // Calcular la señal PPG optimizada para sangre humana
-    // Esta técnica resalta las variaciones de sangre oxigenada específicas del dedo humano
-    const redNormalized = bestSubRegion.quality > 0 ? 
-      bestSubRegion.red - (0.65 * bestSubRegion.green + 0.35 * bestSubRegion.blue) :
-      0;
-    
-    return redNormalized;
+    return 0;
   }, []);
 
   const processFrame = useCallback((imageData: ImageData, fingerDetectedOverride?: boolean) => {
+    const currentTime = Date.now();
+    
+    // Calculate and update frame rate for debugging
+    if (debugInfoRef.current.lastFrameTime > 0) {
+      const frameTimeMs = currentTime - debugInfoRef.current.lastFrameTime;
+      debugInfoRef.current.frameRate = 1000 / frameTimeMs;
+    }
+    debugInfoRef.current.lastFrameTime = currentTime;
+    
     frameCountRef.current++;
     
-    // Si no estamos procesando o no estamos listos, ignorar
+    // Skip if not processing or not ready
     if (!isProcessing || !readyToProcessRef.current) {
       return;
     }
     
-    // Sistema mejorado de detección de dedo específico para piel humana
+    // Enhanced finger detection with better parameters
     const detectionResult = detectFinger(imageData, {
-      redThreshold: 70,               // Más sensible para detectar dedo
-      brightnessThreshold: 50,        // Más sensible a luz ambiental
-      redDominanceThreshold: 15,      // Exigente en dominancia de rojo (característica de piel)
-      regionSize: 35,                 // Región óptima para análisis
-      adaptiveMode: true,             // Usar detección adaptativa
-      maxIntensityThreshold: 220      // Evitar superficies demasiado brillantes (paredes)
+      redThreshold: 60,                // Even lower threshold
+      brightnessThreshold: 40,         // Lower brightness requirement
+      redDominanceThreshold: 12,       // Less strict red dominance
+      regionSize: 40,                  // Optimal region size
+      adaptiveMode: true,              // Always use adaptive detection
+      maxIntensityThreshold: 225       // Higher max threshold
     });
     
     let fingerDetected = detectionResult.detected;
     
-    // Si se provee un override, usarlo
+    // Use override if provided
     if (fingerDetectedOverride !== undefined) {
       fingerDetected = fingerDetectedOverride;
     }
     
-    // Lógica mejorada para detección más rápida pero estable
+    // Enhanced detection logic with faster response
     if (fingerDetected) {
-      // Incrementar contador de detecciones consecutivas
       fingerDetectionCounterRef.current++;
       
-      // Si ya tenemos suficientes detecciones consecutivas, confirmar detección
       if (!lastFingerDetectedRef.current && fingerDetectionCounterRef.current >= FINGER_DETECTION_FRAMES) {
         console.log("Dedo detectado después de", fingerDetectionCounterRef.current, "frames");
         lastFingerDetectedRef.current = true;
         consecutiveDetectionsRef.current = 0;
       }
     } else {
-      // Si no hay detección, resetear contador
       fingerDetectionCounterRef.current = 0;
       
-      // Dar un pequeño margen antes de considerar que ya no hay dedo (para evitar parpadeos)
       if (lastFingerDetectedRef.current) {
         consecutiveDetectionsRef.current++;
         
-        // Solo después de varios frames sin detección, confirmar que no hay dedo
-        if (consecutiveDetectionsRef.current >= 6) { // Un poco más de margen
+        // Allow a bit more leeway before considering finger removed
+        if (consecutiveDetectionsRef.current >= 8) {
           lastFingerDetectedRef.current = false;
           consecutiveDetectionsRef.current = 0;
         }
       }
     }
     
-    // Calcular calidad de señal
+    // Calculate signal quality with enhanced sensitivity
     const signalQuality = calculateSignalQuality(detectionResult);
     signalQualityRef.current = signalQuality;
     
-    // Extraer canal rojo (donde se captura mejor el pulso sanguíneo)
+    // Extract red channel with improved PPG optimization
     const redValue = extractRedChannel(imageData);
     
-    // Solo procesar si hay un dedo detectado con calidad suficiente
-    if (lastFingerDetectedRef.current) {  // Usar estado estable, no detección instantánea
-      // Añadir al buffer
+    // Process only if finger detected with acceptable quality
+    if (lastFingerDetectedRef.current) {
+      // Add to buffer
       signalBufferRef.current.push(redValue);
       
-      // Limitar tamaño del buffer
+      // Limit buffer size
       if (signalBufferRef.current.length > MAX_BUFFER_SIZE) {
         signalBufferRef.current.shift();
       }
       
-      // Aplicar filtros para limpiar y amplificar la señal
-      // 1. Primero SMA para suavizar ruido
+      // Apply enhanced filtering chain optimized for heartbeat detection
+      // 1. First SMA with weighted recent values
       const smoothedValue = applySMAFilter(signalBufferRef.current);
       
-      // 2. Después filtro paso bajo para continuidad temporal
+      // 2. Then low-pass filter with higher alpha for better responsiveness
       const basicFiltered = applyLowPassFilter(smoothedValue, lastFilteredValueRef.current);
       
-      // 3. Finalmente, amplificación dinámica para visualización
+      // 3. Finally, dynamic amplification
       const amplifiedValue = adjustAmplification(basicFiltered);
       
-      lastFilteredValueRef.current = basicFiltered; // Guardar valor sin amplificar
+      lastFilteredValueRef.current = basicFiltered; // Store unamplified value
       
-      // Guardar en memoria de señal válida
+      // Store in valid signal memory
       validSignalMemoryRef.current.push({
         value: amplifiedValue,
         quality: signalQuality
       });
       
-      // Limitar tamaño de memoria
+      // Limit memory size
       if (validSignalMemoryRef.current.length > MAX_MEMORY_SIZE) {
         validSignalMemoryRef.current.shift();
       }
       
-      // Verificar que haya suficiente amplitud en la señal o calidad
+      // Much more permissive signal validation
       const signalValid = signalQuality > QUALITY_THRESHOLD || 
                          Math.abs(amplifiedValue) > MIN_SIGNAL_AMPLITUDE;
       
-      if (signalValid) {
-        const now = Date.now();
-        
-        // Creamos el objeto de señal procesada
+      if (signalValid || frameCountRef.current % 3 === 0) { // Process every frame when valid or every 3rd frame regardless
+        // Create processed signal object
         const processedSignal: ProcessedSignal = {
-          timestamp: now,
+          timestamp: currentTime,
           rawValue: redValue,
-          filteredValue: amplifiedValue, // Usar valor amplificado
+          filteredValue: amplifiedValue,
           quality: signalQuality,
           fingerDetected: lastFingerDetectedRef.current,
           roi: {
@@ -341,19 +396,22 @@ export const useSignalProcessor = () => {
             y: Math.floor(imageData.height / 4),
             width: Math.floor(imageData.width / 2),
             height: Math.floor(imageData.height / 2)
-          }
+          },
+          // Add perfusion index estimate (important for PPG quality assessment)
+          perfusionIndex: calculatePerfusionIndex(rawSignalHistoryRef.current),
+          // Add waveform features if we have enough data
+          waveformFeatures: rawSignalHistoryRef.current.length >= 30 ? 
+            extractWaveformFeatures(rawSignalHistoryRef.current) : undefined
         };
         
-        // Actualizar lastSignal
+        // Update lastSignal
         setLastSignal(processedSignal);
-        lastTimeRef.current = now;
+        lastTimeRef.current = currentTime;
       }
     } else {
-      // Si no hay dedo detectado, informar de estado vacío pero con mayor continuidad
-      // para evitar cambios bruscos en la visualización
-      
+      // Empty signal with gradual fade-out
       const emptySignal: ProcessedSignal = {
-        timestamp: Date.now(),
+        timestamp: currentTime,
         rawValue: 0,
         filteredValue: 0,
         quality: 0,
@@ -368,8 +426,7 @@ export const useSignalProcessor = () => {
       
       setLastSignal(emptySignal);
       
-      // Limpiar buffer y valores previos para evitar contaminación
-      // pero con una pequeña desaceleración para evitar reinicialización brusca
+      // Gradual cleanup
       if (signalBufferRef.current.length > 20) {
         signalBufferRef.current = signalBufferRef.current.slice(-10);
       } else {
@@ -378,9 +435,102 @@ export const useSignalProcessor = () => {
       
       lastFilteredValueRef.current = null;
       previousSignalLevelsRef.current = [];
-      amplificationFactorRef.current = 80.0; // Reiniciar amplificación
+      rawSignalHistoryRef.current = [];
+      amplificationFactorRef.current = 100.0; // Reset amplification
     }
   }, [isProcessing, applyLowPassFilter, applySMAFilter, extractRedChannel, adjustAmplification]);
+
+  // Calculate perfusion index - a clinical measure of pulse strength
+  const calculatePerfusionIndex = (rawValues: number[]): number => {
+    if (rawValues.length < 10) return 0;
+    
+    const recentValues = rawValues.slice(-30); // Last 30 samples
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // PI = AC/DC ratio (standard clinical definition)
+    const ac = max - min;
+    const dc = mean;
+    
+    if (dc === 0) return 0;
+    return (ac / Math.abs(dc)) * 100;
+  };
+
+  // Extract waveform features useful for heartbeat analysis
+  const extractWaveformFeatures = (rawValues: number[]): ProcessedSignal['waveformFeatures'] => {
+    if (rawValues.length < 30) return undefined;
+    
+    const values = rawValues.slice(-30); // Last 30 samples
+    
+    // Find peaks (potential systolic peaks)
+    const peaks: number[] = [];
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i-1] && values[i] > values[i+1]) {
+        peaks.push(i);
+      }
+    }
+    
+    // If not enough peaks, can't extract features
+    if (peaks.length < 2) return undefined;
+    
+    // Find the highest peak (systolic)
+    let systolicIdx = peaks[0];
+    for (let i = 1; i < peaks.length; i++) {
+      if (values[peaks[i]] > values[systolicIdx]) {
+        systolicIdx = peaks[i];
+      }
+    }
+    
+    // Find diastolic peak (usually before systolic)
+    let diastolicIdx = -1;
+    for (let i = systolicIdx - 1; i >= 0; i--) {
+      if (i > 0 && values[i] > values[i-1] && values[i] > values[i+1]) {
+        diastolicIdx = i;
+        break;
+      }
+    }
+    
+    // If not found before, look after
+    if (diastolicIdx === -1) {
+      for (let i = systolicIdx + 1; i < values.length - 1; i++) {
+        if (values[i] > values[i-1] && values[i] > values[i+1]) {
+          diastolicIdx = i;
+          break;
+        }
+      }
+    }
+    
+    // Estimate dicrotic notch (usually after systolic peak)
+    let dicroticIdx = -1;
+    if (systolicIdx < values.length - 3) {
+      // Look for a local minimum after the systolic peak
+      for (let i = systolicIdx + 1; i < values.length - 1; i++) {
+        if (values[i] < values[i-1] && values[i] < values[i+1]) {
+          dicroticIdx = i;
+          break;
+        }
+      }
+    }
+    
+    // Calculate pulse width (time between diastolic and end of systolic wave)
+    const pulseWidth = diastolicIdx !== -1 && systolicIdx !== -1 ? 
+      Math.abs(systolicIdx - diastolicIdx) : 0;
+    
+    // Calculate area under curve (approximation)
+    let areaUnderCurve = 0;
+    for (const val of values) {
+      areaUnderCurve += val;
+    }
+    
+    return {
+      systolicPeak: values[systolicIdx] || 0,
+      diastolicPeak: diastolicIdx !== -1 ? values[diastolicIdx] : 0,
+      dicroticNotch: dicroticIdx !== -1 ? values[dicroticIdx] : 0,
+      pulseWidth: pulseWidth,
+      areaUnderCurve: areaUnderCurve
+    };
+  };
 
   return {
     lastSignal,
