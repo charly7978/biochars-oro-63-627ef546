@@ -56,12 +56,12 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 60,     // Aumentado de 40 a 60 para exigir una señal más fuerte
-    MAX_RED_THRESHOLD: 250,
-    STABILITY_WINDOW: 6,
-    MIN_STABILITY_COUNT: 6,    // Aumentado de 4 a 6 para requerir más muestras estables
-    HYSTERESIS: 5,
-    MIN_CONSECUTIVE_DETECTIONS: 3
+    MIN_RED_THRESHOLD: 40,     // Bajado a 40
+    MAX_RED_THRESHOLD: 250,    // Mantenido en 250
+    STABILITY_WINDOW: 4,       // Reducido a 4
+    MIN_STABILITY_COUNT: 3,    // Reducido a 3
+    HYSTERESIS: 8,            // Aumentado a 8
+    MIN_CONSECUTIVE_DETECTIONS: 2  // Reducido a 2
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -197,104 +197,73 @@ export class PPGSignalProcessor implements SignalProcessor {
 
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
-    let redSum = 0;
-    let greenSum = 0;
-    let blueSum = 0;
+    let redSum = 0, greenSum = 0, blueSum = 0;
     let pixelCount = 0;
-    let maxRed = 0;
-    let minRed = 255;
+    let maxRed = 0, minRed = 255;
     
-    // ROI (Region of Interest) central
-    // Usar un área más pequeña y centrada para mejor precisión
+    // Volvemos a un ROI del 30% pero con mejor análisis
+    const roiSize = Math.min(imageData.width, imageData.height) * 0.3;
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
-    const roiSize = Math.min(imageData.width, imageData.height) * 0.3; // 30% del tamaño más pequeño
     
     const startX = Math.max(0, Math.floor(centerX - roiSize / 2));
     const endX = Math.min(imageData.width, Math.floor(centerX + roiSize / 2));
     const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
     const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
-    
-    // Matriz para acumular valores por regiones y detectar la mejor área
-    const regionSize = 10; // Dividir el ROI en regiones de 10x10 píxeles
-    const regions = [];
-    
+
+    // Análisis inicial básico
     for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        const r = data[i];     // Canal rojo
-        const g = data[i+1];   // Canal verde
-        const b = data[i+2];   // Canal azul
-        
-        // Solo incluir píxeles que tengan una predominancia clara del rojo
-        // Esto ayuda a filtrar áreas que no son del dedo o están mal iluminadas
-        if (r > g * 1.1 && r > b * 1.1) {
-          redSum += r;
-          greenSum += g;
-          blueSum += b;
-          pixelCount++;
-          
-          // Registrar valores máximos y mínimos para calcular contraste
-          maxRed = Math.max(maxRed, r);
-          minRed = Math.min(minRed, r);
-          
-          // Registrar región para análisis avanzado
-          const regionX = Math.floor((x - startX) / regionSize);
-          const regionY = Math.floor((y - startY) / regionSize);
-          const regionKey = `${regionX},${regionY}`;
-          
-          if (!regions[regionKey]) {
-            regions[regionKey] = {
-              redSum: 0,
-              count: 0,
-              x: regionX,
-              y: regionY
-            };
-          }
-          
-          regions[regionKey].redSum += r;
-          regions[regionKey].count++;
+        for (let x = startX; x < endX; x++) {
+            const i = (y * imageData.width + x) * 4;
+            const r = data[i];
+            const g = data[i+1];
+            const b = data[i+2];
+            
+            // Criterios más permisivos inicialmente
+            if (r > (g * 1.1) && r > (b * 1.1)) { // Bajado a 1.1 para detección inicial
+                redSum += r;
+                greenSum += g;
+                blueSum += b;
+                pixelCount++;
+                maxRed = Math.max(maxRed, r);
+                minRed = Math.min(minRed, r);
+            }
         }
-      }
     }
-    
-    // Si no hay suficientes píxeles con dominancia roja, no hay dedo
+
+    // Primera validación básica
     if (pixelCount < 50) {
-      return 0;
+        return 0; // No hay suficientes píxeles válidos
     }
-    
-    // Encontrar la región con la mayor intensidad de rojo
-    let bestRegion = null;
-    let bestAvgRed = 0;
-    
-    for (const key in regions) {
-      const region = regions[key];
-      if (region.count > 10) {  // Ignorar regiones con muy pocos píxeles
-        const avgRed = region.redSum / region.count;
-        if (avgRed > bestAvgRed) {
-          bestAvgRed = avgRed;
-          bestRegion = region;
-        }
-      }
-    }
-    
-    // Si encontramos una buena región, usar ese valor
-    if (bestRegion && bestAvgRed > 100) {
-      return bestAvgRed;
-    }
-    
-    // Cálculo estándar si no podemos encontrar una región óptima
+
     const avgRed = redSum / pixelCount;
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
-    
-    // Métricas mejoradas de detección del dedo
-    const isRedDominant = avgRed > (avgGreen * 1.2) && avgRed > (avgBlue * 1.2);
-    const hasGoodContrast = pixelCount > 100 && (maxRed - minRed) > 15;
-    const isInRange = avgRed > 50 && avgRed < 250; // Evitar valores extremos
-    
-    // Devolver el valor procesado o 0 si no se detecta un dedo
-    return (isRedDominant && hasGoodContrast && isInRange) ? avgRed : 0;
+
+    // Criterios de validación ajustados
+    const isRedDominant = avgRed > (avgGreen * 1.1) && avgRed > (avgBlue * 1.1);
+    const hasGoodContrast = (maxRed - minRed) > 10; // Bajado a 10
+    const isInRange = avgRed > 40 && avgRed < 250; // Rango más permisivo
+
+    // Verificación de señal válida
+    if (isRedDominant && hasGoodContrast && isInRange) {
+        // Calcular índice de calidad
+        const contrastQuality = (maxRed - minRed) / 255;
+        const dominanceQuality = Math.min(
+            (avgRed / avgGreen - 1),
+            (avgRed / avgBlue - 1)
+        );
+        
+        // Si la calidad es muy baja, aún retornamos 0
+        const qualityScore = contrastQuality * dominanceQuality;
+        if (qualityScore < 0.01) { // Umbral muy bajo para empezar
+            return 0;
+        }
+
+        return avgRed;
+    }
+
+    return 0;
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { 
