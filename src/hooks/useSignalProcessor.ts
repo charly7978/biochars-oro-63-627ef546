@@ -17,6 +17,7 @@ export const useSignalProcessor = () => {
   const [framesProcessed, setFramesProcessed] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
   const initAttemptRef = useRef(false);
+  const processingStartTimeRef = useRef<number>(0);
   const [signalStats, setSignalStats] = useState({
     minValue: Infinity,
     maxValue: -Infinity,
@@ -62,7 +63,7 @@ export const useSignalProcessor = () => {
     
     processor.onSignalReady = (signal: ProcessedSignal) => {
       // Evaluación robusta de detección de dedo:
-      const robustFingerDetected = signal.fingerDetected && signal.quality >= 60;
+      const robustFingerDetected = signal.fingerDetected && signal.quality >= 55; // Reducimos el umbral
       const modifiedSignal = { ...signal, fingerDetected: robustFingerDetected };
       console.log("useSignalProcessor: Señal recibida detallada:", {
         timestamp: modifiedSignal.timestamp,
@@ -149,6 +150,9 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
+    // Guardar el tiempo de inicio del procesamiento
+    processingStartTimeRef.current = Date.now();
+    
     // Forzar una calibración antes de iniciar el procesamiento
     try {
       console.log("useSignalProcessor: Realizando calibración previa al inicio");
@@ -203,13 +207,21 @@ export const useSignalProcessor = () => {
 
   const processFrame = useCallback((imageData: ImageData) => {
     if (isProcessing && isInitialized) {
-      console.log("useSignalProcessor: Procesando nuevo frame", {
-        frameNum: framesProcessed + 1,
-        dimensions: `${imageData.width}x${imageData.height}`,
-        timestamp: new Date().toISOString()
-      });
-      
-      processor.processFrame(imageData);
+      const now = Date.now();
+      // Solo procesamos si ha pasado suficiente tiempo desde el inicio
+      if (now - processingStartTimeRef.current >= 100) { // 100ms de gracia para que todo se inicialice
+        console.log("useSignalProcessor: Procesando nuevo frame", {
+          frameNum: framesProcessed + 1,
+          dimensions: `${imageData.width}x${imageData.height}`,
+          timestamp: new Date().toISOString()
+        });
+        
+        processor.processFrame(imageData);
+      } else {
+        console.log("useSignalProcessor: Frame ignorado (periodo de gracia)", {
+          timestamp: new Date().toISOString()
+        });
+      }
     } else if (isProcessing && !isInitialized) {
       console.log("useSignalProcessor: Frame ignorado (procesador no inicializado)", {
         timestamp: new Date().toISOString()

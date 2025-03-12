@@ -21,8 +21,10 @@ const CameraView = ({
   const frameIntervalRef = useRef<number>(1000 / 30); // 30 FPS
   const lastFrameTimeRef = useRef<number>(0);
   const videoReadyRef = useRef<boolean>(false);
+  const streamReadyCalledRef = useRef<boolean>(false);
 
   const stopCamera = async () => {
+    streamReadyCalledRef.current = false;
     if (stream) {
       console.log("Stopping camera stream and turning off torch");
       stream.getTracks().forEach(track => {
@@ -76,6 +78,7 @@ const CameraView = ({
 
       // Primero detener cualquier stream previo para evitar conflictos
       await stopCamera();
+      streamReadyCalledRef.current = false;
 
       console.log("Iniciando nueva stream de cámara");
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -136,6 +139,7 @@ const CameraView = ({
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
+        
         // Esperar explícitamente a que el video esté listo para reproducir
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
@@ -163,8 +167,10 @@ const CameraView = ({
       videoReadyRef.current = true;
       
       // Notificar que el stream está listo solo después de que el video esté listo
-      if (onStreamReady) {
+      // y solo notificar una vez por cada ciclo de monitoreo
+      if (onStreamReady && !streamReadyCalledRef.current) {
         console.log("Notificando onStreamReady con stream lista");
+        streamReadyCalledRef.current = true;
         onStreamReady(newStream);
         setIsStreamReady(true);
       }
@@ -178,7 +184,9 @@ const CameraView = ({
     console.log("CameraView: isMonitoring cambiado a", isMonitoring);
     if (isMonitoring && !stream) {
       console.log("Starting camera because isMonitoring=true");
-      startCamera();
+      setTimeout(() => {
+        startCamera();
+      }, 100); // Pequeño retraso para asegurar que todo esté listo
     } else if (!isMonitoring && stream) {
       console.log("Stopping camera because isMonitoring=false");
       stopCamera();

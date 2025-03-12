@@ -35,6 +35,9 @@ export class CameraController {
 
       this.videoTrack = this.stream.getVideoTracks()[0];
       
+      // Esperar a que el track esté realmente listo
+      await new Promise<void>(resolve => setTimeout(resolve, 300));
+      
       // Forzar la configuración más alta disponible
       const capabilities = this.videoTrack.getCapabilities();
       const settings: MediaTrackConstraintSet = {};
@@ -93,7 +96,6 @@ export class CameraController {
       });
 
       // Verificar si podemos ajustar la exposición
-      // Nota: Corregido el uso de exposureMode en lugar de exposureTime
       if (capabilities.exposureMode) {
         await this.videoTrack.applyConstraints({
           advanced: [{
@@ -180,4 +182,4 @@ export class CameraController {
       this.stream = null;
     }
   }
-} 
+}
