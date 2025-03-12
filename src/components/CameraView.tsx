@@ -20,10 +20,12 @@ const CameraView = ({
   const mountedRef = useRef<boolean>(true);
   const initializingRef = useRef<boolean>(false);
   const stabilizationTimerRef = useRef<number | null>(null);
+  const videoTrackConstraintsAppliedRef = useRef<boolean>(false);
 
   const stopCamera = async () => {
     console.log("CameraView: Deteniendo cámara");
     streamReadyCalledRef.current = false;
+    videoTrackConstraintsAppliedRef.current = false;
     
     // Limpiar cualquier temporizador pendiente
     if (stabilizationTimerRef.current) {
@@ -74,11 +76,12 @@ const CameraView = ({
         return;
       }
       
+      // Configuración optimizada para detección de dedo
       const constraints: MediaStreamConstraints = {
         video: {
           facingMode: 'environment',
-          width: { ideal: 640 }, // Resolución más conservadora para evitar problemas
-          height: { ideal: 480 },
+          width: { ideal: 1280 }, // Resolución más alta para mejor detalle de piel
+          height: { ideal: 720 },
           frameRate: { ideal: 30 }
         }
       };
@@ -116,15 +119,63 @@ const CameraView = ({
           }
         });
         
-        // Extender período de estabilización de la cámara
-        console.log("CameraView: Esperando período de estabilización de cámara (ampliado)");
+        // Configuración inmediata de la cámara para procesamiento rápido
+        if (newStream.getVideoTracks().length > 0) {
+          const videoTrack = newStream.getVideoTracks()[0];
+          
+          try {
+            // Activar la linterna si está disponible
+            if (videoTrack.getCapabilities()?.torch) {
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              }).catch(err => console.error("Error activando linterna:", err));
+              console.log("Linterna activada");
+            }
+            
+            // Configurar enfoque cercano para mejor captura de detalles
+            if (videoTrack.getCapabilities()?.focusMode) {
+              await videoTrack.applyConstraints({
+                advanced: [{ focusMode: "continuous" }]
+              }).catch(err => console.error("Error configurando enfoque:", err));
+            }
+            
+            // Configurar exposición para maximizar detección de dedo
+            if (videoTrack.getCapabilities()?.exposureMode) {
+              await videoTrack.applyConstraints({
+                advanced: [{ exposureMode: "continuous" }]
+              }).catch(err => console.error("Error configurando exposición:", err));
+            }
+            
+            videoTrackConstraintsAppliedRef.current = true;
+          } catch (err) {
+            console.error("Error aplicando configuraciones avanzadas a la cámara:", err);
+          }
+        }
+        
+        // Período de estabilización escalonado:
+        // 1. Notificar rápidamente para comenzar procesamiento preliminar
+        // 2. Continuar optimizando la cámara en segundo plano
+        console.log("CameraView: Notificando stream inicial disponible");
         
         // Limpiar cualquier temporizador previo
         if (stabilizationTimerRef.current) {
           clearTimeout(stabilizationTimerRef.current);
         }
         
-        // Usar un temporizador más largo para estabilización completa
+        // Respuesta rápida para iniciar procesamiento básico
+        setTimeout(() => {
+          if (!mountedRef.current) return;
+          
+          setStream(newStream);
+          
+          if (isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
+            console.log("CameraView: Notificando primera stream lista (respuesta rápida)");
+            streamReadyCalledRef.current = true;
+            onStreamReady(newStream);
+          }
+        }, 500); // Notificación rápida (500ms)
+        
+        // Período de estabilización completa para mejor calidad
         stabilizationTimerRef.current = window.setTimeout(() => {
           if (!mountedRef.current) {
             console.log("CameraView: El componente fue desmontado durante la estabilización");
@@ -135,14 +186,12 @@ const CameraView = ({
           const allTracksActive = newStream.getVideoTracks().every(track => track.readyState === 'live');
           
           if (allTracksActive) {
-            console.log("CameraView: Cámara estabilizada completamente, notificando stream lista");
-            setStream(newStream);
+            console.log("CameraView: Cámara estabilizada completamente");
             
-            if (isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
-              console.log("CameraView: Todos los tracks activos, notificando stream lista para procesamiento");
+            // Si ya se ha notificado anteriormente, no volver a notificar
+            if (!streamReadyCalledRef.current && isMonitoring && onStreamReady) {
+              console.log("CameraView: Notificando stream completamente estabilizada");
               streamReadyCalledRef.current = true;
-              
-              // Notificar que la stream está lista para procesamiento
               onStreamReady(newStream);
             }
           } else {
@@ -157,7 +206,7 @@ const CameraView = ({
           }
           
           stabilizationTimerRef.current = null;
-        }, 3500); // Período de estabilización más largo (3.5 segundos)
+        }, 2500); // Período de estabilización más corto (2.5 segundos) para respuesta más rápida
       }
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);

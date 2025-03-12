@@ -22,6 +22,7 @@ export interface DetectionOptions {
   redDominanceThreshold?: number; // Diferencia mínima entre rojo y otros canales
   regionSize?: number;        // Tamaño de la región central a analizar (porcentaje)
   adaptiveMode?: boolean;     // Usar modo adaptativo que ajusta umbrales automáticamente
+  maxIntensityThreshold?: number; // Umbral máximo para evitar brillos/reflejos
 }
 
 /**
@@ -32,13 +33,14 @@ export function detectFinger(
   imageData: ImageData, 
   options: DetectionOptions = {}
 ): FingerDetectionResult {
-  // Valores predeterminados más exigentes para reducir falsos positivos
+  // Valores predeterminados optimizados para detección de piel humana
   const {
-    redThreshold = 85,            // Valor mínimo para canal rojo (más alto = menos falsos positivos)
-    brightnessThreshold = 50,     // Brillo mínimo (más alto = menos falsos positivos)
-    redDominanceThreshold = 12,   // Diferencia mínima entre rojo y otros canales (más alto = menos falsos positivos)
-    regionSize = 25,              // Porcentaje del centro de la imagen a analizar (más pequeño = más preciso)
-    adaptiveMode = true           // Activar por defecto el modo adaptativo
+    redThreshold = 80,            // Valor mínimo para canal rojo (más específico para piel) 
+    brightnessThreshold = 60,     // Brillo mínimo (piel humana tiene cierto nivel de brillo)
+    redDominanceThreshold = 15,   // Diferencia entre rojo y otros (piel humana tiene alta dominancia roja)
+    regionSize = 25,              // Porcentaje del centro de la imagen a analizar
+    adaptiveMode = true,          // Activar por defecto el modo adaptativo
+    maxIntensityThreshold = 230   // Máximo para evitar superficies muy brillantes (paredes, etc)
   } = options;
 
   // Calcular dimensiones y coordenadas de la región central
@@ -61,6 +63,10 @@ export function detectFinger(
   let minRed = 255;
   let varianceSum = 0;
   let lastRedValue = -1;
+  
+  // Variables para análisis de textura (importante para diferenciar piel de superficies)
+  let redVariance = 0;
+  let colorVariance = 0;
   
   // Analizar solo la región central
   for (let y = startY; y < startY + regionHeightPx; y++) {
@@ -86,6 +92,10 @@ export function detectFinger(
       if (lastRedValue >= 0) {
         const diff = r - lastRedValue;
         varianceSum += diff * diff;
+        
+        // Acumulación para varianza de color (la piel humana tiene patrones específicos)
+        redVariance += Math.abs(r - totalRed / (pixelCount || 1));
+        colorVariance += Math.abs(r - g) + Math.abs(r - b) + Math.abs(g - b);
       }
       lastRedValue = r;
       
@@ -116,16 +126,29 @@ export function detectFinger(
   // Calcular brillo general
   const brightness = (avgRed + avgGreen + avgBlue) / 3;
   
-  // Calcular dominancia del rojo
+  // Calcular dominancia del rojo (característica clave de la piel humana)
   const redDominance = avgRed - ((avgGreen + avgBlue) / 2);
   
   // Calcular variabilidad temporal (indicador de pulso)
   const redVariation = maxRed - minRed;
-  const localVariance = varianceSum / (pixelCount - 1);
+  const localVariance = varianceSum / (pixelCount - 1 || 1);
   
-  // Umbral de textura (la piel humana tiene una varianza local baja)
-  const textureThreshold = 100;
-  const hasNaturalTexture = localVariance < textureThreshold;
+  // Calcular características texturales promedio
+  const avgRedVariance = redVariance / pixelCount;
+  const avgColorVariance = colorVariance / pixelCount;
+  
+  // Umbral de textura (la piel humana tiene una varianza local específica)
+  // Niveles muy altos o muy bajos indican superficies que no son piel
+  const hasNaturalTexture = localVariance > 5 && localVariance < 100;
+  
+  // Calcular ratio entre canales (específico para piel humana)
+  const redGreenRatio = avgRed / (avgGreen || 1);
+  const redBlueRatio = avgRed / (avgBlue || 1);
+  
+  // Patrones típicos de color para piel humana
+  const hasHumanSkinPattern = 
+    redGreenRatio > 1.15 && redGreenRatio < 1.8 &&
+    redBlueRatio > 1.15 && redBlueRatio < 2.0;
   
   // Usar umbrales adaptativos si está habilitado
   let currentRedThreshold = redThreshold;
@@ -134,53 +157,69 @@ export function detectFinger(
   
   if (adaptiveMode) {
     // Ajustar umbrales basados en las características observadas
-    // Esto permite adaptarse a diferentes cámaras y condiciones de luz
-    if (brightness > 200) {
+    if (brightness > 190) {
       // En condiciones muy brillantes, aumentar los umbrales
-      currentRedThreshold = redThreshold * 1.2;
-      currentRedDominanceThreshold = redDominanceThreshold * 1.3;
-    } else if (brightness < 80) {
+      currentRedThreshold = redThreshold * 1.3;
+      currentRedDominanceThreshold = redDominanceThreshold * 1.5;
+    } else if (brightness < 100) {
       // En condiciones oscuras, reducir los umbrales
-      currentRedThreshold = redThreshold * 0.8;
+      currentRedThreshold = redThreshold * 0.7;
       currentBrightnessThreshold = brightnessThreshold * 0.7;
     }
     
     // Ajustar en base a contraste observado
-    if (redVariation > 30) {
+    if (redVariation > 20) {
       // Buen contraste indica posible presencia de pulso
-      currentRedDominanceThreshold = redDominanceThreshold * 0.85;
+      currentRedDominanceThreshold = redDominanceThreshold * 0.8;
     }
   }
   
-  // Criterios de detección con umbral mejorado
+  // Criterios de detección con umbral mejorado específico para piel
   const isBrightEnough = brightness > currentBrightnessThreshold;
   const isRedDominant = redDominance > currentRedDominanceThreshold;
   const isRedHighest = avgRed > avgGreen && avgRed > avgBlue;
   const isRedIntenseEnough = avgRed > currentRedThreshold;
-  const hasRealisticColors = avgRed < 245 && avgGreen < 245 && avgBlue < 245; // Evitar saturación
+  
+  // Evitar superficies demasiado brillantes (paredes, reflejos)
+  const notTooIntense = avgRed < maxIntensityThreshold && 
+                       avgGreen < maxIntensityThreshold && 
+                       avgBlue < maxIntensityThreshold;
   
   // Evaluación estadística de la señal
-  const hasGoodVariation = redVariation > 8; // Debe haber cierta variación para detectar pulso
+  const hasGoodVariation = redVariation > 5; // Debe haber cierta variación para detectar pulso
   
-  // Calcular confianza (0-100) con ponderación mejorada
+  // Descarta superficies con colores demasiado uniformes (paredes)
+  const notTooPerfect = avgRedVariance > 2.5;
+  
+  // Calcular confianza (0-100) con ponderación mejorada para piel humana
   let confidence = 0;
   
-  if (isBrightEnough) confidence += 20;
-  if (isRedDominant) confidence += 25;
-  if (isRedHighest) confidence += 20;
+  if (isBrightEnough) confidence += 15;
+  if (isRedDominant) confidence += 20;
+  if (isRedHighest) confidence += 15;
   if (isRedIntenseEnough) confidence += 15;
-  if (hasNaturalTexture) confidence += 10;
-  if (hasRealisticColors) confidence += 5;
+  if (hasNaturalTexture) confidence += 15;
+  if (notTooIntense) confidence += 10;
   if (hasGoodVariation) confidence += 5;
+  if (hasHumanSkinPattern) confidence += 20; // Gran peso a patrones de piel humana
+  if (notTooPerfect) confidence += 10;
   
-  // Detección final basada en criterios críticos
-  // Con umbrales más exigentes para reducir falsos positivos
+  // Limitar a 100%
+  confidence = Math.min(100, confidence);
+  
+  // Detección final basada en criterios críticos específicos para piel humana
   const fingerDetected = 
     isBrightEnough && 
     isRedDominant && 
     isRedHighest && 
     isRedIntenseEnough &&
-    hasRealisticColors;
+    notTooIntense &&
+    notTooPerfect &&
+    // Exigir al menos dos de estas características adicionales 
+    // para reducir drásticamente falsos positivos
+    ((hasNaturalTexture && hasHumanSkinPattern) ||
+     (hasNaturalTexture && hasGoodVariation) ||
+     (hasHumanSkinPattern && hasGoodVariation));
   
   return {
     detected: fingerDetected,
