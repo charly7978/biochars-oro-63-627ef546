@@ -34,9 +34,9 @@ export function detectFinger(
 ): FingerDetectionResult {
   const {
     redThreshold = 100,            // Aumentado para exigir más rojo (característico de piel)
-    brightnessThreshold = 70,      // Aumentado para requerir mejor iluminación
+    brightnessThreshold = 50,      // Aumentado para requerir mejor iluminación
     redDominanceThreshold = 25,    // Aumentado para exigir mayor diferencia rojo vs otros
-    regionSize = 25,               // Mantener región de análisis
+    regionSize = 30,               // Mantener región de análisis
     adaptiveMode = true,           // Mantener modo adaptativo
     maxIntensityThreshold = 245    // Aumentado para evitar reflejos más eficientemente
   } = options;
