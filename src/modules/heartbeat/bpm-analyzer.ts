@@ -7,7 +7,7 @@ export class BPMAnalyzer {
   private bpmValues: number[] = [];
   private prevValidBpm = 0;
   
-  constructor(minBpm = 40, maxBpm = 180, bpmWindowSize = 5) {
+  constructor(minBpm = 30, maxBpm = 200, bpmWindowSize = 3) {  // More permissive BPM range and shorter window
     this.MIN_BPM = minBpm;
     this.MAX_BPM = maxBpm;
     this.BPM_WINDOW_SIZE = bpmWindowSize;
@@ -17,7 +17,7 @@ export class BPMAnalyzer {
     // Calculate BPM from RR interval
     const bpm = 60000 / interval;
     
-    // Only accept physiologically plausible values, but with wider range
+    // More permissive physiological range
     if (bpm >= this.MIN_BPM && bpm <= this.MAX_BPM) {
       // Add to BPM history
       this.bpmValues.push(bpm);
@@ -25,13 +25,13 @@ export class BPMAnalyzer {
         this.bpmValues.shift();
       }
       
-      // Calculate average BPM with more weight on recent values
+      // Much stronger weight on recent values
       let weightedSum = 0;
       let weightSum = 0;
       
-      // Apply weights: more recent values have higher weights
+      // Apply weights: much higher weight on recent values
       for (let i = 0; i < this.bpmValues.length; i++) {
-        const weight = i + 1; // Weight increases for more recent values
+        const weight = Math.pow(2, i); // Exponential weights for better responsiveness
         weightedSum += this.bpmValues[i] * weight;
         weightSum += weight;
       }
@@ -42,41 +42,40 @@ export class BPMAnalyzer {
       return currentBpm;
     }
     
-    return this.prevValidBpm > 0 ? this.prevValidBpm : 75; // Always return a value
+    return this.prevValidBpm > 0 ? this.prevValidBpm : 75;
   }
   
   public calculateConfidence(quality: number): number {
-    // Start with much higher quality-based confidence
-    let confidence = (quality / 100) + 0.2; // Add 0.2 base confidence
+    // Much higher base confidence
+    let confidence = (quality / 100) + 0.35;
     
-    // Boost confidence if we have consistent BPM readings - with just 2 readings
+    // Much higher boosts for consistent readings - only need 2 readings
     if (this.bpmValues.length >= 2) {
       const avg = this.bpmValues.reduce((sum, val) => sum + val, 0) / this.bpmValues.length;
       
-      // Calculate standard deviation
       const variance = this.bpmValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / this.bpmValues.length;
       const stdDev = Math.sqrt(variance);
       
-      // Much higher boosts for consistent readings
-      if (stdDev < 5) {
-        confidence += 0.4;
-      } else if (stdDev < 10) {
-        confidence += 0.3;
+      // Much higher boosts for consistency
+      if (stdDev < 8) {
+        confidence += 0.5;
       } else if (stdDev < 15) {
-        confidence += 0.2;
+        confidence += 0.4;
+      } else if (stdDev < 25) {
+        confidence += 0.3;
       }
     }
     
-    // Add confidence just for having values
+    // Higher confidence just for having values
     if (this.bpmValues.length > 0) {
-      confidence += 0.1 * Math.min(1, this.bpmValues.length / 3);
+      confidence += 0.15 * Math.min(1, this.bpmValues.length / 2);
     }
     
-    return Math.min(1.0, confidence); // Cap at 1.0
+    return Math.min(1.0, confidence);
   }
   
   public get currentBPM(): number {
-    return this.prevValidBpm || 75; // Default to 75 BPM if no history
+    return this.prevValidBpm || 75;
   }
   
   public reset(): void {

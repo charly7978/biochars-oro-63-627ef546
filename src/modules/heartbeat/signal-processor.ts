@@ -1,3 +1,4 @@
+
 export class SignalProcessor {
   // Buffer and signal parameters
   private readonly MAX_BUFFER_SIZE: number;
@@ -21,16 +22,16 @@ export class SignalProcessor {
     derivative: number;
     signalBuffer: number[];
   } {
-    // Add signal to buffer with less aggressive smoothing
+    // Minimal smoothing to preserve signal detail
     let smoothedValue: number;
     
     if (this.signalBuffer.length === 0) {
       smoothedValue = value;
       this.signalBuffer.push(value);
     } else {
-      // Reduce smoothing to preserve more signal detail
+      // Very light smoothing to preserve peaks
       smoothedValue = this.lastProcessedValue + 
-        (this.EMA_ALPHA * 1.5) * (value - this.lastProcessedValue);
+        (this.EMA_ALPHA * 2.0) * (value - this.lastProcessedValue);
       this.signalBuffer.push(smoothedValue);
       this.lastProcessedValue = smoothedValue;
     }
@@ -39,13 +40,13 @@ export class SignalProcessor {
     if (this.signalBuffer.length >= 2) {
       const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
       const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
-      const newDerivative = (currentValue - prevValue) * 1.25; // Amplify changes
+      const newDerivative = (currentValue - prevValue) * 1.5; // Amplify changes more
       
-      // Less smoothing on derivative
+      // Minimal smoothing on derivative
       if (this.derivativeBuffer.length === 0) {
         this.valueDerivative = newDerivative;
       } else {
-        this.valueDerivative = this.valueDerivative * 0.4 + newDerivative * 0.6;
+        this.valueDerivative = this.valueDerivative * 0.3 + newDerivative * 0.7;
       }
       
       this.derivativeBuffer.push(this.valueDerivative);
