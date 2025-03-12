@@ -57,17 +57,17 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
-      // First try with basic configuration
+      // Usar resolución más baja para mejor rendimiento
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
+        width: { ideal: 640 },
         height: { ideal: 480 }
       };
 
       if (isAndroid) {
-        // Ajustes para mejorar la extracción de señal en Android
+        // Ajustes para mejorar rendimiento en Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 15, max: 30 }, // Lower frameRate to avoid overloading
+          frameRate: { ideal: 15, max: 20 }, // Lower frameRate
           resizeMode: 'crop-and-scale'
         });
       }
@@ -93,25 +93,7 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("CameraView: Track capabilities:", capabilities);
           
-          const advancedConstraints: MediaTrackConstraintSet[] = [];
-          
-          if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
-          }
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-
-          if (advancedConstraints.length > 0) {
-            await videoTrack.applyConstraints({
-              advanced: advancedConstraints
-            });
-            console.log("CameraView: Applied advanced constraints successfully");
-          }
-
+          // Aplicar configuraciones básicas sin auto-calibración
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
             videoRef.current.style.backfaceVisibility = 'hidden';
@@ -136,7 +118,7 @@ const CameraView = ({
         setCameraReady(true);
         console.log("CameraView: Camera ready state set to true");
         
-        // Try to activate torch with appropriate error handling
+        // Try to activate torch immediately
         if (videoTrack && videoTrack.getCapabilities()?.torch) {
           console.log("CameraView: Attempting to enable torch");
           videoTrack.applyConstraints({
@@ -154,7 +136,7 @@ const CameraView = ({
           console.log("CameraView: Notifying stream ready");
           onStreamReady(newStream);
         }
-      }, 1000); // Give the camera a second to stabilize
+      }, 500); // Reduced timeout for faster startup
       
     } catch (err) {
       console.error("CameraView: Error starting camera:", err);
@@ -167,8 +149,8 @@ const CameraView = ({
           const fallbackConstraints = {
             video: {
               facingMode: 'environment',
-              width: { ideal: 320 },
-              height: { ideal: 240 },
+              width: { ideal: 480 },  // Higher than before but still low
+              height: { ideal: 320 },
               frameRate: { ideal: 15 }
             }
           };
@@ -185,7 +167,7 @@ const CameraView = ({
             if (onStreamReady) {
               onStreamReady(fallbackStream);
             }
-          }, 1000);
+          }, 500);
         } catch (finalErr) {
           console.error("CameraView: Final error starting camera:", finalErr);
         }
@@ -210,7 +192,7 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    // More robust torch handling
+    // Simplified torch handling - just ensure it's on when finger detected
     if (stream && isFingerDetected && !torchEnabled && cameraReady) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.readyState === 'live' && videoTrack.getCapabilities()?.torch) {
@@ -225,11 +207,10 @@ const CameraView = ({
       }
     }
     
-    // Check camera and torch every 5 seconds
+    // Check camera less frequently for better performance
     const interval = setInterval(() => {
       if (stream && cameraReady) {
         const videoTrack = stream.getVideoTracks()[0];
-        // First verify the track is still valid
         if (!videoTrack || videoTrack.readyState !== 'live') {
           console.log("CameraView: Track no longer valid, restarting camera");
           stopCamera();
@@ -239,7 +220,6 @@ const CameraView = ({
             }
           }, 500);
         } 
-        // Then check if torch should be enabled
         else if (isFingerDetected && !torchEnabled && videoTrack.getCapabilities()?.torch) {
           videoTrack.applyConstraints({
             advanced: [{ torch: true }]
@@ -247,7 +227,7 @@ const CameraView = ({
             .catch(err => console.error("CameraView: Error reactivating torch:", err));
         }
       }
-    }, 5000);
+    }, 10000); // Check less frequently (10 seconds) for better performance
     
     return () => clearInterval(interval);
   }, [stream, isFingerDetected, torchEnabled, cameraReady, isMonitoring]);

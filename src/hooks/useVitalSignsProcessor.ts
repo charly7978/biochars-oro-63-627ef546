@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 
@@ -47,30 +48,6 @@ export const useVitalSignsProcessor = () => {
     };
   }, []);
   
-  /**
-   * Start calibration for all vital signs
-   */
-  const startCalibration = useCallback(() => {
-    console.log("useVitalSignsProcessor: Iniciando calibración de todos los parámetros", {
-      timestamp: new Date().toISOString(),
-      sessionId: sessionId.current
-    });
-    
-    processor.startCalibration();
-  }, [processor]);
-  
-  /**
-   * Force calibration to complete immediately
-   */
-  const forceCalibrationCompletion = useCallback(() => {
-    console.log("useVitalSignsProcessor: Forzando finalización de calibración", {
-      timestamp: new Date().toISOString(),
-      sessionId: sessionId.current
-    });
-    
-    processor.forceCalibrationCompletion();
-  }, [processor]);
-  
   // Process the signal with improved algorithms
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     processedSignals.current++;
@@ -83,9 +60,7 @@ export const useVitalSignsProcessor = () => {
       contadorArritmias: arrhythmiaCounter,
       señalNúmero: processedSignals.current,
       sessionId: sessionId.current,
-      timestamp: new Date().toISOString(),
-      calibrando: processor.isCurrentlyCalibrating(),
-      progresoCalibración: processor.getCalibrationProgress()
+      timestamp: new Date().toISOString()
     });
     
     // Process signal through the vital signs processor
@@ -299,8 +274,8 @@ export const useVitalSignsProcessor = () => {
     processSignal,
     reset,
     fullReset,
-    startCalibration,
-    forceCalibrationCompletion,
+    startCalibration: () => {}, // Función vacía - auto-calibración removida
+    forceCalibrationCompletion: () => {}, // Función vacía - auto-calibración removida
     arrhythmiaCounter,
     lastValidResults,
     debugInfo: {
