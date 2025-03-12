@@ -5,6 +5,7 @@ export class AudioHandler {
   private beepGainNode: GainNode | null = null;
   private audioInitialized = false;
   private humSoundFile: string;
+  private oscillator: OscillatorNode | null = null;
 
   constructor(soundFile: string) {
     this.humSoundFile = soundFile;
@@ -20,36 +21,44 @@ export class AudioHandler {
       this.beepGainNode.gain.value = 0.7; // Lower default volume
       this.beepGainNode.connect(this.audioContext.destination);
       
-      try {
-        // Load audio asynchronously - handling direct URL strings
-        const response = await fetch(this.humSoundFile);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch sound file: ${response.status} ${response.statusText}`);
-        }
-        
-        const arrayBuffer = await response.arrayBuffer();
-        
-        // Decode audio with error handling
-        try {
-          this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-          this.audioInitialized = true;
-          console.log("AudioHandler: Audio Context Initialized successfully");
-          return true;
-        } catch (decodeError) {
-          console.error("Audio decoding failed, trying fallback beep method:", decodeError);
-          // Create a simple oscillator as fallback
-          this.createFallbackBeepSound();
-          return true;
-        }
-      } catch (fetchError) {
-        console.error("Error fetching audio file, using fallback beep:", fetchError);
-        this.createFallbackBeepSound();
-        return true;
-      }
+      // Always set up fallback beep sound to ensure sound works
+      this.createFallbackBeepSound();
+      this.audioInitialized = true;
+      
+      // Try to load the actual sound file, but don't block initialization on it
+      this.loadSoundFile().catch(err => {
+        console.log("Failed to load sound file, using fallback beep", err);
+      });
+      
+      return true;
     } catch (error) {
       console.error("Critical error initializing AudioHandler:", error);
       return false;
+    }
+  }
+  
+  private async loadSoundFile(): Promise<void> {
+    try {
+      // Convert GitHub URL to raw content if needed
+      const soundUrl = this.humSoundFile.includes('github.com') && !this.humSoundFile.includes('raw') 
+        ? this.humSoundFile.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/') 
+        : this.humSoundFile;
+      
+      const response = await fetch(soundUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sound file: ${response.status} ${response.statusText}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      
+      if (this.audioContext) {
+        this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        console.log("Audio file loaded successfully");
+      }
+    } catch (error) {
+      console.error("Error loading audio file:", error);
+      throw error;
     }
   }
   
@@ -69,18 +78,18 @@ export class AudioHandler {
       const volume = Math.min(0.8, confidence * (quality / 100 + 0.5));
       
       if (this.audioBuffer && this.beepGainNode) {
-        // Normal beep with audio buffer
+        // Play loaded audio file
         this.beepGainNode.gain.value = Math.max(0.3, volume);
         const source = this.audioContext.createBufferSource();
         source.buffer = this.audioBuffer;
         source.connect(this.beepGainNode);
         source.start();
+        console.log("Playing heartbeat audio sample");
       } else {
         // Fallback beep using oscillator
         this.playFallbackBeep(volume);
+        console.log("Playing fallback beep");
       }
-      
-      console.log(`BEEP played at ${new Date().toISOString()}`);
     } catch (error) {
       console.error("Error playing heartbeat sound:", error);
       // Try fallback if normal playback fails
@@ -92,6 +101,11 @@ export class AudioHandler {
     if (!this.audioContext) return;
     
     try {
+      // Resume audio context if it's suspended (needed for newer browsers)
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+      
       const oscillator = this.audioContext.createOscillator();
       const gainNode = this.audioContext.createGain();
       
