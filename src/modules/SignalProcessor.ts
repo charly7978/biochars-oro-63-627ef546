@@ -55,13 +55,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 25,          // Buffer más grande para mejor análisis
-    MIN_RED_THRESHOLD: 45,    // Umbral mínimo más alto
-    MAX_RED_THRESHOLD: 250,   // Límite superior razonable
-    STABILITY_WINDOW: 6,      // Ventana más grande para mejor estabilidad
-    MIN_STABILITY_COUNT: 3,   // Requiere más frames estables
-    HYSTERESIS: 10,          // Mayor histéresis para evitar parpadeos
-    MIN_CONSECUTIVE_DETECTIONS: 2  // Requiere confirmación
+    BUFFER_SIZE: 15,          // Buffer más pequeño para respuesta rápida
+    MIN_RED_THRESHOLD: 35,    // Umbral más bajo
+    MAX_RED_THRESHOLD: 255,   // Máximo permitido
+    STABILITY_WINDOW: 3,      // Ventana pequeña
+    MIN_STABILITY_COUNT: 2,   // Pocos frames necesarios
+    HYSTERESIS: 5,           // Poca histéresis
+    MIN_CONSECUTIVE_DETECTIONS: 1  // Detección inmediata
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -129,87 +129,103 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   processFrame(imageData: ImageData): void {
-    if (!this.isProcessing) {
-      return;
-    }
+    if (!this.isProcessing) return;
 
     try {
-      console.log("--- Nuevo Frame ---");
-      const redValue = this.extractRedChannel(imageData);
-      console.log("Valor rojo extraído:", redValue);
-      
-      const filtered = this.kalmanFilter.filter(redValue);
-      console.log("Valor filtrado:", filtered);
+        // Log de entrada
+        console.log("=== INICIO FRAME ===");
+        console.log("Dimensiones imagen:", imageData.width, "x", imageData.height);
+        
+        const redValue = this.extractRedChannel(imageData);
+        console.log("Valor rojo (raw):", redValue);
+        
+        // Log de valores RGB en el centro
+        const centerX = Math.floor(imageData.width / 2);
+        const centerY = Math.floor(imageData.height / 2);
+        const centerIndex = (centerY * imageData.width + centerX) * 4;
+        console.log("RGB Centro:", {
+            r: imageData.data[centerIndex],
+            g: imageData.data[centerIndex + 1],
+            b: imageData.data[centerIndex + 2]
+        });
 
-      // Guardar el valor filtrado para análisis
-      this.lastValues.push(filtered);
-      if (this.lastValues.length > this.currentConfig.BUFFER_SIZE) {
-        this.lastValues.shift();
-      }
-      
-      const { isFingerDetected, quality, waveformFeatures } = this.analyzeSignal(filtered, redValue);
-      console.log("Análisis de señal:", { isFingerDetected, quality });
-      
-      // Calcular coordenadas del ROI (región de interés)
-      const roi = this.detectROI(redValue);
-      
-      // Métricas adicionales para debugging y análisis
-      const perfusionIndex = redValue > 0 ? 
-        Math.abs(filtered - this.lastStableValue) / Math.max(1, redValue) : 0;
-      
-      // Crear objeto de señal procesada con todos los datos relevantes
-      const processedSignal: ProcessedSignal = {
-        timestamp: Date.now(),
-        rawValue: redValue,
-        filteredValue: filtered,
-        quality: quality,
-        fingerDetected: isFingerDetected,
-        roi: roi,
-        perfusionIndex: perfusionIndex,
-        waveformFeatures: waveformFeatures
-      };
-      
-      // Enviar feedback sobre el uso de la linterna cuando es necesario
-      if (isFingerDetected && quality < 40 && redValue < 120 && this.onError) {
-        // Señal detectada pero débil - podría indicar poca iluminación
-        this.onError({
-          code: "LOW_LIGHT",
-          message: "Señal débil. Por favor asegúrese de que la linterna esté encendida y el dedo cubra completamente la cámara.",
-          timestamp: Date.now()
-        });
-      }
-      
-      // Advertir si hay sobreexposición (saturación) que afecta la calidad
-      if (isFingerDetected && redValue > 240 && this.onError) {
-        this.onError({
-          code: "OVEREXPOSED",
-          message: "La imagen está sobreexpuesta. Intente ajustar la posición del dedo para reducir el brillo.",
-          timestamp: Date.now()
-        });
-      }
-      
-      // Enviar la señal procesada al callback
-      if (this.onSignalReady) {
-        this.onSignalReady(processedSignal);
-      }
-      
-      // Almacenar el último valor procesado para cálculos futuros
-      this.lastStableValue = isFingerDetected ? filtered : this.lastStableValue;
+        const filtered = this.kalmanFilter.filter(redValue);
+        console.log("Valor filtrado:", filtered);
+        console.log("Buffer actual:", this.lastValues);
+        
+        const result = this.analyzeSignal(filtered, redValue);
+        console.log("Resultado análisis:", result);
+        
+        console.log("=== FIN FRAME ===");
+        
+        // Guardar el valor filtrado para análisis
+        this.lastValues.push(filtered);
+        if (this.lastValues.length > this.currentConfig.BUFFER_SIZE) {
+          this.lastValues.shift();
+        }
+        
+        const { isFingerDetected, quality, waveformFeatures } = result;
+        console.log("Análisis de señal:", { isFingerDetected, quality });
+        
+        // Calcular coordenadas del ROI (región de interés)
+        const roi = this.detectROI(redValue);
+        
+        // Métricas adicionales para debugging y análisis
+        const perfusionIndex = redValue > 0 ? 
+          Math.abs(filtered - this.lastStableValue) / Math.max(1, redValue) : 0;
+        
+        // Crear objeto de señal procesada con todos los datos relevantes
+        const processedSignal: ProcessedSignal = {
+          timestamp: Date.now(),
+          rawValue: redValue,
+          filteredValue: filtered,
+          quality: quality,
+          fingerDetected: isFingerDetected,
+          roi: roi,
+          perfusionIndex: perfusionIndex,
+          waveformFeatures: waveformFeatures
+        };
+        
+        // Enviar feedback sobre el uso de la linterna cuando es necesario
+        if (isFingerDetected && quality < 40 && redValue < 120 && this.onError) {
+          // Señal detectada pero débil - podría indicar poca iluminación
+          this.onError({
+            code: "LOW_LIGHT",
+            message: "Señal débil. Por favor asegúrese de que la linterna esté encendida y el dedo cubra completamente la cámara.",
+            timestamp: Date.now()
+          });
+        }
+        
+        // Advertir si hay sobreexposición (saturación) que afecta la calidad
+        if (isFingerDetected && redValue > 240 && this.onError) {
+          this.onError({
+            code: "OVEREXPOSED",
+            message: "La imagen está sobreexpuesta. Intente ajustar la posición del dedo para reducir el brillo.",
+            timestamp: Date.now()
+          });
+        }
+        
+        // Enviar la señal procesada al callback
+        if (this.onSignalReady) {
+          this.onSignalReady(processedSignal);
+        }
+        
+        // Almacenar el último valor procesado para cálculos futuros
+        this.lastStableValue = isFingerDetected ? filtered : this.lastStableValue;
 
     } catch (error) {
-      console.error("Error en processFrame:", error);
-      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
+        console.error("Error en processFrame:", error);
+        this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
   }
 
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0, greenSum = 0, blueSum = 0;
-    let maxRed = 0, minRed = 255;
     let pixelCount = 0;
     
-    // ROI mediano
-    const roiSize = Math.min(imageData.width, imageData.height) * 0.35;
+    // ROI grande para captura fácil
+    const roiSize = Math.min(imageData.width, imageData.height) * 0.4;
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
     
@@ -218,7 +234,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
     const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
 
-    // Primera pasada: acumular valores y encontrar rango
+    // Simple promedio de colores
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const i = (y * imageData.width + x) * 4;
@@ -229,8 +245,6 @@ export class PPGSignalProcessor implements SignalProcessor {
             redSum += r;
             greenSum += g;
             blueSum += b;
-            maxRed = Math.max(maxRed, r);
-            minRed = Math.min(minRed, r);
             pixelCount++;
         }
     }
@@ -240,17 +254,12 @@ export class PPGSignalProcessor implements SignalProcessor {
     const avgRed = redSum / pixelCount;
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
-    const contrast = maxRed - minRed;
 
-    // Criterios más específicos para dedo
-    const isRedDominant = avgRed > (avgGreen * 1.15) && avgRed > (avgBlue * 1.15);
-    const hasGoodContrast = contrast >= 20; // Requiere buen contraste
-    const isInRange = avgRed >= 45 && avgRed <= 250;
-    const hasReasonableIntensity = avgRed + avgGreen + avgBlue > 150;
-    const colorBalance = Math.abs(avgGreen - avgBlue) < 30; // Los canales G y B deberían ser similares
+    // Criterios muy básicos
+    const isRedDominant = avgRed > (avgGreen * 1.1) && avgRed > (avgBlue * 1.1);
+    const isInRange = avgRed >= 35;
 
-    // Todos los criterios deben cumplirse
-    if (isRedDominant && hasGoodContrast && isInRange && hasReasonableIntensity && colorBalance) {
+    if (isRedDominant && isInRange) {
         return avgRed;
     }
 
@@ -268,60 +277,46 @@ export class PPGSignalProcessor implements SignalProcessor {
       areaUnderCurve: number
     }
   } {
-    // Verificación del rango con histéresis
-    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
-                     rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
+    // Verificación básica
+    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD;
     
     if (!isInRange) {
-        this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
-        this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+        this.consecutiveDetections = 0;
         return { isFingerDetected: false, quality: 0 };
     }
 
-    // Análisis de la señal con más criterios
-    if (this.lastValues.length >= 5) {
-        const window = this.lastValues.slice(-5);
+    // Análisis simple
+    if (this.lastValues.length >= 3) {
+        const window = this.lastValues.slice(-3);
         
-        // Calcular estadísticas de la señal
+        // Detectar cualquier variación
         const peakToPeak = Math.max(...window) - Math.min(...window);
         const mean = window.reduce((a, b) => a + b, 0) / window.length;
+        
+        // Muy permisivo con la variación
         const normalizedVariation = peakToPeak / mean;
+        const hasVariation = normalizedVariation > 0.001;
         
-        // Calcular estabilidad
-        const differences = [];
-        for (let i = 1; i < window.length; i++) {
-            differences.push(Math.abs(window[i] - window[i-1]));
-        }
-        const avgDifference = differences.reduce((a, b) => a + b, 0) / differences.length;
-        const isStable = avgDifference < mean * 0.2;
-        
-        // Verificar patrón fisiológico
-        const hasPhysiologicalPattern = normalizedVariation >= 0.01 && normalizedVariation <= 0.15;
-        
-        if (hasPhysiologicalPattern && isStable) {
+        if (hasVariation) {
             this.consecutiveDetections++;
-            this.stableFrameCount++;
             
-            if (this.consecutiveDetections >= this.currentConfig.MIN_CONSECUTIVE_DETECTIONS &&
-                this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT) {
-                
-                const quality = Math.min(100, Math.max(40, Math.round((normalizedVariation / 0.15) * 100)));
-                
-                // Solo incluir características de la forma de onda si la calidad es buena
-                const waveformFeatures = quality >= 60 ? 
-                    this.extractWaveformFeatures(window, this.findPeaksAndValleys(window)) : 
-                    undefined;
-                
-                return {
-                    isFingerDetected: true,
-                    quality,
-                    waveformFeatures
-                };
-            }
-        } else {
-            this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
-            this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+            // Calidad mínima garantizada si detectamos
+            const quality = Math.max(40, Math.min(100, Math.round((normalizedVariation / 0.1) * 100)));
+            
+            return {
+                isFingerDetected: true,
+                quality,
+                waveformFeatures: this.extractWaveformFeatures(window, this.findPeaksAndValleys(window))
+            };
         }
+    }
+
+    // Si hay señal roja pero no variación, aún detectamos
+    if (rawValue > this.currentConfig.MIN_RED_THRESHOLD) {
+        return {
+            isFingerDetected: true,
+            quality: 40
+        };
     }
 
     return { isFingerDetected: false, quality: 0 };
