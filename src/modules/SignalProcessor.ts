@@ -59,9 +59,9 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,          // Buffer más pequeño para respuesta rápida
     MIN_RED_THRESHOLD: 35,    // Umbral más bajo
-    MAX_RED_THRESHOLD: 270,   // Máximo permitido
+    MAX_RED_THRESHOLD: 210,   // Máximo permitido
     STABILITY_WINDOW: 4,      // Ventana pequeña
-    MIN_STABILITY_COUNT: 2,   // Pocos frames necesarios
+    MIN_STABILITY_COUNT: 3,   // Pocos frames necesarios
     HYSTERESIS: 5,           // Poca histéresis
     MIN_CONSECUTIVE_DETECTIONS: 1  // Detección inmediata
   };
