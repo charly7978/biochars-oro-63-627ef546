@@ -25,23 +25,19 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
+  private waveformBuffer: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 60,     // Aumentado de 40 a 60 para exigir una señal más fuerte
-    MAX_RED_THRESHOLD: 250,
-    STABILITY_WINDOW: 6,
-    MIN_STABILITY_COUNT: 6,    // Aumentado de 4 a 6 para requerir más muestras estables
-    HYSTERESIS: 5,
-    MIN_CONSECUTIVE_DETECTIONS: 3
+    BUFFER_SIZE: 15,          // Aumentado para mejor análisis
+    MIN_RED_THRESHOLD: 100,   // Ajustado para mejor detección
+    MAX_RED_THRESHOLD: 230,   // Limitado para evitar saturación
+    STABILITY_WINDOW: 8,      // Aumentado para análisis más robusto
+    MIN_STABILITY_COUNT: 5    // Más estricto para evitar falsos positivos
   };
-
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private consecutiveDetections: number = 0;
-  private isCurrentlyDetected: boolean = false;
-  private lastDetectionTime: number = 0;
-  private readonly DETECTION_TIMEOUT = 500; // 500ms timeout
+  private baselineValue: number | null = null;
+  private readonly VARIANCE_THRESHOLD = 0.15; // 15% de variación máxima permitida
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -49,7 +45,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
-    console.log("PPGSignalProcessor: Instancia creada");
+    console.log("PPGSignalProcessor: Instancia creada con nueva configuración");
   }
 
   async initialize(): Promise<void> {
@@ -57,9 +53,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.lastValues = [];
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
-      this.consecutiveDetections = 0;
-      this.isCurrentlyDetected = false;
-      this.lastDetectionTime = 0;
+      this.baselineValue = null;
+      this.waveformBuffer = [];
       this.kalmanFilter.reset();
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
@@ -80,8 +75,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.lastValues = [];
     this.stableFrameCount = 0;
     this.lastStableValue = 0;
-    this.consecutiveDetections = 0;
-    this.isCurrentlyDetected = false;
+    this.baselineValue = null;
+    this.waveformBuffer = [];
     this.kalmanFilter.reset();
     console.log("PPGSignalProcessor: Detenido");
   }
@@ -112,7 +107,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       const filtered = this.kalmanFilter.filter(redValue);
       
       // Análisis avanzado de la señal para determinar la presencia del dedo y calidad
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
+      const { isFingerDetected, quality, waveformQuality } = this.analyzeSignal(filtered, redValue);
       
       // Calcular coordenadas del ROI (región de interés)
       const roi = this.detectROI(redValue);
@@ -127,6 +122,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
+        waveformQuality: waveformQuality,
         fingerDetected: isFingerDetected,
         roi: roi,
         perfusionIndex: perfusionIndex
@@ -334,224 +330,164 @@ export class PPGSignalProcessor implements SignalProcessor {
     return (isRedDominant && hasGoodContrast && isInRange) ? avgRed : 0;
   }
 
-  private calculateStability(): number {
-    if (this.lastValues.length < 3) {
-      return 0;
-    }
-    
-    // Calculamos variaciones a corto y largo plazo
-    const shortTermVariations = [];
-    const longTermTrend = [];
-    
-    // Variaciones a corto plazo (frame a frame)
-    for (let i = 1; i < this.lastValues.length; i++) {
-      shortTermVariations.push(Math.abs(this.lastValues[i] - this.lastValues[i-1]));
-    }
-    
-    // Tendencia a largo plazo (comparar con la media móvil)
-    const movingAvg = this.lastValues.reduce((sum, val) => sum + val, 0) / this.lastValues.length;
-    for (let i = 0; i < this.lastValues.length; i++) {
-      longTermTrend.push(Math.abs(this.lastValues[i] - movingAvg));
-    }
-    
-    // Calcular las medias de variaciones
-    const avgShortTerm = shortTermVariations.reduce((sum, val) => sum + val, 0) / shortTermVariations.length;
-    const avgLongTerm = longTermTrend.reduce((sum, val) => sum + val, 0) / longTermTrend.length;
-    
-    // Análisis de periodicidad (importante para señales PPG)
-    let periodicityScore = 0;
-    if (this.lastValues.length > 6) {
-      const peaks = [];
-      const valleys = [];
-      
-      // Detección simple de picos y valles
-      for (let i = 1; i < this.lastValues.length - 1; i++) {
-        if (this.lastValues[i] > this.lastValues[i-1] && this.lastValues[i] > this.lastValues[i+1]) {
-          peaks.push(i);
-        } else if (this.lastValues[i] < this.lastValues[i-1] && this.lastValues[i] < this.lastValues[i+1]) {
-          valleys.push(i);
-        }
-      }
-      
-      // Una buena señal PPG debe tener tanto picos como valles en intervalos regulares
-      if (peaks.length >= 1 && valleys.length >= 1) {
-        // La presencia de picos y valles aumenta la puntuación de periodicidad
-        periodicityScore = 0.5 + (Math.min(peaks.length, valleys.length) * 0.1);
-        
-        // Si tenemos varios picos, verificamos si tienen intervalos regulares
-        if (peaks.length > 1) {
-          const peakIntervals = [];
-          for (let i = 1; i < peaks.length; i++) {
-            peakIntervals.push(peaks[i] - peaks[i-1]);
-          }
-          
-          // Calcular variación de intervalos (menor variación = más regular)
-          if (peakIntervals.length > 0) {
-            const avgInterval = peakIntervals.reduce((sum, val) => sum + val, 0) / peakIntervals.length;
-            const intervalVariation = peakIntervals.map(interval => Math.abs(interval - avgInterval) / avgInterval);
-            const avgVariation = intervalVariation.reduce((sum, val) => sum + val, 0) / intervalVariation.length;
-            
-            // Si la variación es baja, la señal es más regular
-            if (avgVariation < 0.3) {
-              periodicityScore += 0.3;
-            }
-          }
-        }
-      }
-    }
-    
-    // Pesos para diferentes componentes de estabilidad
-    // - Variaciones a corto plazo: queremos que sean pequeñas pero no cero
-    // - Variaciones a largo plazo: preferimos que sigan un patrón periódico
-    const shortTermScore = avgShortTerm > 0.1 && avgShortTerm < 3 ? 
-                          1 - (Math.min(avgShortTerm, 3) / 3) : 0;
-                          
-    const longTermScore = avgLongTerm > 0.2 && avgLongTerm < 10 ? 
-                         0.8 - (Math.min(avgLongTerm, 10) / 15) : 0;
-    
-    // Combinamos los puntajes, dando mayor importancia a periodicidad y variaciones a corto plazo
-    return (shortTermScore * 0.4) + (longTermScore * 0.2) + (periodicityScore * 0.4);
-  }
-
-  private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    const currentTime = Date.now();
-    const timeSinceLastDetection = currentTime - this.lastDetectionTime;
-    
-    // Si el valor de entrada es muy bajo, definitivamente no hay dedo
-    // Incrementamos el umbral mínimo de 0 a 10 para evitar falsos positivos por ruido
-    if (rawValue <= 10) {
-      this.consecutiveDetections = 0;
-      this.stableFrameCount = 0;
-      this.isCurrentlyDetected = false;
-      return { isFingerDetected: false, quality: 0 };
-    }
-    
-    // Ampliamos el rango de detección para adaptarse a más tipos de piel y condiciones de iluminación
-    // Implementamos una histéresis dinámica basada en la estabilidad de las últimas lecturas
-    const dynamicHysteresis = this.isCurrentlyDetected ? 
-      Math.max(this.currentConfig.HYSTERESIS, 15 * (1 - this.calculateStability())) : 
-      this.currentConfig.HYSTERESIS;
-    
-    // Verificar si el valor está dentro del rango válido con histéresis adaptativa
-    const inRange = this.isCurrentlyDetected
-      ? rawValue >= (this.currentConfig.MIN_RED_THRESHOLD - dynamicHysteresis) &&
-        rawValue <= (this.currentConfig.MAX_RED_THRESHOLD + dynamicHysteresis)
-      : rawValue >= this.currentConfig.MIN_RED_THRESHOLD &&
-        rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
-
-    if (!inRange) {
-      // Reducimos la penalización para fluctuaciones breves
-      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 0.5);
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
-      
-      // Incrementamos el tiempo de timeout para evitar falsos negativos en dedos con circulación pobre
-      if (timeSinceLastDetection > this.DETECTION_TIMEOUT * 1.5 && this.consecutiveDetections < 1) {
-        this.isCurrentlyDetected = false;
-      }
-      
-      // Calidad gradual incluso con señal débil
-      const quality = this.isCurrentlyDetected ? 
-        Math.max(15, this.calculateStability() * 60) : 0;
-      return { isFingerDetected: this.isCurrentlyDetected, quality };
-    }
-
-    // Actualizamos el tiempo de última detección
-    this.lastDetectionTime = currentTime;
-    
-    // Calcular estabilidad temporal de la señal con mayor peso en la consistencia de amplitud
-    const stability = this.calculateStability();
-    
-    // Añadir el valor a nuestro historial para análisis
+  private analyzeSignal(filtered: number, rawValue: number): { 
+    isFingerDetected: boolean; 
+    quality: number;
+    waveformQuality: number;
+  } {
+    // Actualizar buffer de valores
     this.lastValues.push(filtered);
-    if (this.lastValues.length > this.currentConfig.BUFFER_SIZE) {
+    if (this.lastValues.length > this.currentConfig.STABILITY_WINDOW) {
       this.lastValues.shift();
     }
+
+    // Actualizar buffer de forma de onda
+    this.waveformBuffer.push(rawValue);
+    if (this.waveformBuffer.length > 10) {
+      this.waveformBuffer.shift();
+    }
+
+    // Verificación básica de rango
+    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
+                     rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
+
+    if (!isInRange) {
+      this.resetDetectionState();
+      return { 
+        isFingerDetected: false, 
+        quality: 0,
+        waveformQuality: 0
+      };
+    }
+
+    // Análisis estadístico de la señal
+    const stats = this.calculateSignalStats();
     
-    // Actualizamos contadores de estabilidad con más margen para variaciones naturales
-    if (stability > 0.6) { // Reducimos aún más el umbral para captar más tipos de señales
-      // Señal estable, incrementamos constante
+    // Actualizar línea base
+    if (this.baselineValue === null) {
+      this.baselineValue = stats.mean;
+    } else {
+      this.baselineValue = this.baselineValue * 0.95 + stats.mean * 0.05;
+    }
+
+    // Análisis de estabilidad
+    const normalizedVariance = stats.variance / (stats.mean * stats.mean);
+    const isStable = normalizedVariance < this.VARIANCE_THRESHOLD;
+
+    // Análisis de tendencia
+    const trend = this.analyzeTrend();
+
+    // Análisis de forma de onda
+    const waveformQuality = this.analyzeWaveform();
+
+    // Actualizar contador de estabilidad
+    if (isStable && trend.isValid && waveformQuality > 0.6) {
       this.stableFrameCount = Math.min(
         this.stableFrameCount + 1,
         this.currentConfig.MIN_STABILITY_COUNT * 2
       );
-    } else if (stability > 0.4) { // Añadimos un nivel intermedio
-      // Señal moderadamente estable
-      this.stableFrameCount = Math.min(
-        this.stableFrameCount + 0.5,
-        this.currentConfig.MIN_STABILITY_COUNT * 2
-      );
     } else {
-      // Señal inestable, pero reducimos la penalización
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.3);
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
     }
 
-    // Actualizar estado de detección con umbral más bajo para captar más señales
-    const isStableNow = this.stableFrameCount >= (this.currentConfig.MIN_STABILITY_COUNT * 0.8);
+    // Calcular calidad general de la señal
+    const quality = this.calculateSignalQuality(stats, trend, waveformQuality);
 
-    if (isStableNow) {
-      // Incremento gradual basado en la calidad
-      const detectionIncrement = stability > 0.8 ? 1.5 : stability > 0.6 ? 1.0 : 0.5;
-      this.consecutiveDetections += detectionIncrement;
-      
-      if (this.consecutiveDetections >= this.currentConfig.MIN_CONSECUTIVE_DETECTIONS) {
-        this.isCurrentlyDetected = true;
-        this.lastStableValue = filtered; // Guardar el último valor estable
-      }
-    } else {
-      // Reducción gradual para evitar falsos negativos
-      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 0.3);
-    }
+    // Determinar si el dedo está detectado
+    const isFingerDetected = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
 
-    // Calcular calidad de la señal considerando varios factores con mayor peso en la estabilidad y periodicidad
-    const stabilityScore = Math.min(1, stability * 1.2); // Amplificar ligeramente la estabilidad
-    
-    // Puntaje por intensidad - evaluar si está en un rango óptimo (ni muy bajo ni saturado)
-    // Rango óptimo más amplio para adaptarse a diferentes tonos de piel
-    const lowOptimal = this.currentConfig.MIN_RED_THRESHOLD + 20;
-    const highOptimal = this.currentConfig.MAX_RED_THRESHOLD - 30;
-    const midOptimal = (lowOptimal + highOptimal) / 2;
-    
-    // Distancia normalizada al valor óptimo (más cerca = mejor)
-    const distanceFromOptimal = Math.abs(rawValue - midOptimal) / (highOptimal - lowOptimal);
-    const intensityScore = Math.max(0, 1 - (distanceFromOptimal * 2));
-    
-    // Puntaje por variabilidad - una buena señal PPG debe tener cierta variabilidad periódica
-    let variabilityScore = 0;
-    if (this.lastValues.length >= 5) {
-      const variations = [];
-      for (let i = 1; i < this.lastValues.length; i++) {
-        variations.push(Math.abs(this.lastValues[i] - this.lastValues[i-1]));
-      }
-      
-      const avgVariation = variations.reduce((sum, val) => sum + val, 0) / variations.length;
-      
-      // Rango de variación óptimo más amplio para adaptarse a diferentes señales
-      if (avgVariation >= 0.3 && avgVariation <= 5) {
-        // Escalar la variabilidad para que los valores medios (1-3) obtengan la puntuación más alta
-        const normalizedVariation = Math.min(avgVariation, 5) / 5;
-        variabilityScore = normalizedVariation < 0.2 ? normalizedVariation * 2.5 : 
-                           normalizedVariation < 0.6 ? 1.0 : 
-                           1.0 - ((normalizedVariation - 0.6) * 2.5);
-      } else if (avgVariation > 0 && avgVariation < 0.3) {
-        // Señal presente pero muy débil
-        variabilityScore = 0.3;
-      }
-    }
-    
-    // Combinar los puntajes con pesos ajustados para priorizar estabilidad y periodicidad
-    const qualityRaw = (stabilityScore * 0.5) + (intensityScore * 0.2) + (variabilityScore * 0.3);
-    
-    // Bonus de calidad para señales que ya han sido confirmadas por un tiempo
-    const confirmationBonus = this.isCurrentlyDetected && this.consecutiveDetections > this.currentConfig.MIN_CONSECUTIVE_DETECTIONS * 2 ? 0.1 : 0;
-    
-    // Escalar a 0-100 y redondear, con un bonus para señales confirmadas
-    const quality = Math.round(Math.min(1, qualityRaw + confirmationBonus) * 100);
-    
-    // Aplicar umbral final - reportamos calidad incluso con detección parcial para feedback
-    return {
-      isFingerDetected: this.isCurrentlyDetected,
-      quality: this.isCurrentlyDetected ? quality : Math.round(quality * 0.3) // Calidad reducida si no está completamente confirmado
+    return { 
+      isFingerDetected, 
+      quality,
+      waveformQuality
     };
+  }
+
+  private calculateSignalStats() {
+    const mean = this.lastValues.reduce((a, b) => a + b, 0) / this.lastValues.length;
+    const variance = this.lastValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / this.lastValues.length;
+    return { mean, variance };
+  }
+
+  private analyzeTrend() {
+    if (this.lastValues.length < 3) return { isValid: false, direction: 0 };
+
+    const recent = this.lastValues.slice(-3);
+    const differences = recent.slice(1).map((v, i) => v - recent[i]);
+    const consistentDirection = differences.every(d => Math.sign(d) === Math.sign(differences[0]));
+    const reasonableMagnitude = differences.every(d => Math.abs(d) < this.lastValues[0] * 0.3);
+
+    return {
+      isValid: consistentDirection && reasonableMagnitude,
+      direction: consistentDirection ? Math.sign(differences[0]) : 0
+    };
+  }
+
+  private analyzeWaveform(): number {
+    if (this.waveformBuffer.length < 10) return 0;
+
+    // Dividir la forma de onda en fase ascendente y descendente
+    const midPoint = Math.floor(this.waveformBuffer.length / 2);
+    const rising = this.waveformBuffer.slice(0, midPoint);
+    const falling = this.waveformBuffer.slice(midPoint);
+
+    // Verificar características de la onda PPG
+    const risingScore = this.analyzeWaveformSegment(rising, true);
+    const fallingScore = this.analyzeWaveformSegment(falling, false);
+
+    return (risingScore + fallingScore) / 2;
+  }
+
+  private analyzeWaveformSegment(segment: number[], isRising: boolean): number {
+    let validPoints = 0;
+    
+    for (let i = 1; i < segment.length; i++) {
+      const diff = segment[i] - segment[i-1];
+      const isValid = isRising ? 
+        diff >= 0 && diff < segment[i-1] * 0.3 : // Subida gradual
+        diff <= 0 && Math.abs(diff) < segment[i-1] * 0.3; // Bajada gradual
+      
+      if (isValid) validPoints++;
+    }
+
+    return validPoints / (segment.length - 1);
+  }
+
+  private calculateSignalQuality(
+    stats: { mean: number; variance: number },
+    trend: { isValid: boolean; direction: number },
+    waveformQuality: number
+  ): number {
+    // Puntuación basada en la amplitud de la señal
+    const amplitudeScore = Math.min(
+      (stats.mean - this.currentConfig.MIN_RED_THRESHOLD) / 
+      (this.currentConfig.MAX_RED_THRESHOLD - this.currentConfig.MIN_RED_THRESHOLD),
+      1
+    );
+
+    // Puntuación basada en la estabilidad
+    const stabilityScore = Math.max(0, 1 - Math.sqrt(stats.variance) / stats.mean);
+
+    // Puntuación basada en la tendencia
+    const trendScore = trend.isValid ? 1 : 0.5;
+
+    // Ponderación de los diferentes factores
+    const quality = Math.round(
+      (amplitudeScore * 0.3 + 
+       stabilityScore * 0.3 + 
+       trendScore * 0.2 + 
+       waveformQuality * 0.2) * 100
+    );
+
+    return Math.max(0, Math.min(100, quality));
+  }
+
+  private resetDetectionState() {
+    this.stableFrameCount = 0;
+    this.lastStableValue = 0;
+    this.baselineValue = null;
+    this.lastValues = [];
+    this.waveformBuffer = [];
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
