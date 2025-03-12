@@ -317,7 +317,14 @@ export class HeartBeatProcessor {
   }
 
   private updateBPM() {
-    if (!this.lastPeakTime || !this.previousPeakTime) return;
+    // Se elimina la condición que revisaba previousPeakTime
+    if (!this.lastPeakTime) return;
+    // Si no hay previousPeakTime, lo igualamos para permitir el cálculo
+    if (!this.previousPeakTime) {
+      this.previousPeakTime = this.lastPeakTime;
+      // Opcional: asignar un valor predeterminado o retornar para esperar el próximo latido
+      return;
+    }
     const interval = this.lastPeakTime - this.previousPeakTime;
     if (interval <= 0) return;
 
