@@ -55,13 +55,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 20,          // Buffer más grande para mejor análisis
-    MIN_RED_THRESHOLD: 30,    // Muy permisivo para detección inicial
-    MAX_RED_THRESHOLD: 255,   // Máximo valor posible
-    STABILITY_WINDOW: 5,      // Ventana razonable
-    MIN_STABILITY_COUNT: 2,   // Muy permisivo
-    HYSTERESIS: 5,           // Histéresis moderada
-    MIN_CONSECUTIVE_DETECTIONS: 1  // Inmediata detección si cumple criterios
+    BUFFER_SIZE: 25,          // Buffer más grande para mejor análisis
+    MIN_RED_THRESHOLD: 45,    // Umbral mínimo más alto
+    MAX_RED_THRESHOLD: 250,   // Límite superior razonable
+    STABILITY_WINDOW: 6,      // Ventana más grande para mejor estabilidad
+    MIN_STABILITY_COUNT: 3,   // Requiere más frames estables
+    HYSTERESIS: 10,          // Mayor histéresis para evitar parpadeos
+    MIN_CONSECUTIVE_DETECTIONS: 2  // Requiere confirmación
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -205,10 +205,11 @@ export class PPGSignalProcessor implements SignalProcessor {
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0, greenSum = 0, blueSum = 0;
+    let maxRed = 0, minRed = 255;
     let pixelCount = 0;
     
-    // ROI grande para mejor captura
-    const roiSize = Math.min(imageData.width, imageData.height) * 0.4; // 40%
+    // ROI mediano
+    const roiSize = Math.min(imageData.width, imageData.height) * 0.35;
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
     
@@ -217,7 +218,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
     const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
 
-    // Análisis directo de píxeles
+    // Primera pasada: acumular valores y encontrar rango
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const i = (y * imageData.width + x) * 4;
@@ -228,6 +229,8 @@ export class PPGSignalProcessor implements SignalProcessor {
             redSum += r;
             greenSum += g;
             blueSum += b;
+            maxRed = Math.max(maxRed, r);
+            minRed = Math.min(minRed, r);
             pixelCount++;
         }
     }
@@ -237,13 +240,17 @@ export class PPGSignalProcessor implements SignalProcessor {
     const avgRed = redSum / pixelCount;
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
+    const contrast = maxRed - minRed;
 
-    // Criterios más permisivos
-    const isRedDominant = avgRed > (avgGreen * 1.1) && avgRed > (avgBlue * 1.1);
-    const isInRange = avgRed >= 30 && avgRed <= 255;
-    const hasReasonableIntensity = avgRed + avgGreen + avgBlue > 100;
+    // Criterios más específicos para dedo
+    const isRedDominant = avgRed > (avgGreen * 1.15) && avgRed > (avgBlue * 1.15);
+    const hasGoodContrast = contrast >= 20; // Requiere buen contraste
+    const isInRange = avgRed >= 45 && avgRed <= 250;
+    const hasReasonableIntensity = avgRed + avgGreen + avgBlue > 150;
+    const colorBalance = Math.abs(avgGreen - avgBlue) < 30; // Los canales G y B deberían ser similares
 
-    if (isRedDominant && isInRange && hasReasonableIntensity) {
+    // Todos los criterios deben cumplirse
+    if (isRedDominant && hasGoodContrast && isInRange && hasReasonableIntensity && colorBalance) {
         return avgRed;
     }
 
@@ -261,47 +268,60 @@ export class PPGSignalProcessor implements SignalProcessor {
       areaUnderCurve: number
     }
   } {
-    // Verificación básica del rango
-    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD;
+    // Verificación del rango con histéresis
+    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
+                     rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
-        this.consecutiveDetections = 0;
+        this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
+        this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
         return { isFingerDetected: false, quality: 0 };
     }
 
-    // Análisis de la señal más permisivo
-    if (this.lastValues.length >= 3) { // Solo necesitamos 3 valores
-        const window = this.lastValues.slice(-3);
+    // Análisis de la señal con más criterios
+    if (this.lastValues.length >= 5) {
+        const window = this.lastValues.slice(-5);
         
-        // Calcular variación
+        // Calcular estadísticas de la señal
         const peakToPeak = Math.max(...window) - Math.min(...window);
         const mean = window.reduce((a, b) => a + b, 0) / window.length;
-        
-        // Criterios muy permisivos
         const normalizedVariation = peakToPeak / mean;
-        const hasVariation = normalizedVariation > 0.001; // Cualquier variación es válida
         
-        if (hasVariation) {
+        // Calcular estabilidad
+        const differences = [];
+        for (let i = 1; i < window.length; i++) {
+            differences.push(Math.abs(window[i] - window[i-1]));
+        }
+        const avgDifference = differences.reduce((a, b) => a + b, 0) / differences.length;
+        const isStable = avgDifference < mean * 0.2;
+        
+        // Verificar patrón fisiológico
+        const hasPhysiologicalPattern = normalizedVariation >= 0.01 && normalizedVariation <= 0.15;
+        
+        if (hasPhysiologicalPattern && isStable) {
             this.consecutiveDetections++;
-            if (this.consecutiveDetections >= this.currentConfig.MIN_CONSECUTIVE_DETECTIONS) {
-                const quality = Math.min(100, Math.max(40, Math.round((normalizedVariation / 0.1) * 100)));
+            this.stableFrameCount++;
+            
+            if (this.consecutiveDetections >= this.currentConfig.MIN_CONSECUTIVE_DETECTIONS &&
+                this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT) {
+                
+                const quality = Math.min(100, Math.max(40, Math.round((normalizedVariation / 0.15) * 100)));
+                
+                // Solo incluir características de la forma de onda si la calidad es buena
+                const waveformFeatures = quality >= 60 ? 
+                    this.extractWaveformFeatures(window, this.findPeaksAndValleys(window)) : 
+                    undefined;
+                
                 return {
                     isFingerDetected: true,
                     quality,
-                    waveformFeatures: this.extractWaveformFeatures(window, this.findPeaksAndValleys(window))
+                    waveformFeatures
                 };
             }
         } else {
             this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
+            this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
         }
-    }
-
-    // Si hay valor rojo pero no suficientes muestras, aún así detectamos
-    if (rawValue > this.currentConfig.MIN_RED_THRESHOLD) {
-        return {
-            isFingerDetected: true,
-            quality: 40 // Calidad mínima
-        };
     }
 
     return { isFingerDetected: false, quality: 0 };
