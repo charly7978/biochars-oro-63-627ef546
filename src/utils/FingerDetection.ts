@@ -1,3 +1,4 @@
+
 /**
  * Utilidades para la detección de dedos en imágenes de cámara
  * Optimizado para detección PPG
@@ -39,12 +40,12 @@ export function detectFinger(
   options: DetectionOptions = {}
 ): FingerDetectionResult {
   const {
-    redThreshold = 50,             // Increased from 40 to reduce false positives
-    brightnessThreshold = 30,      // Increased from 20 for better detection
-    redDominanceThreshold = 15,    // Increased from 10 for more specificity to finger
-    regionSize = 60,               // Reduced from 70 to focus more on center
+    redThreshold = 40,             // Much lower threshold for better sensitivity
+    brightnessThreshold = 20,      // Much lower for better detection in low light
+    redDominanceThreshold = 10,    // Lower for more permissive detection
+    regionSize = 70,               // Larger region for better analysis
     adaptiveMode = true,
-    maxIntensityThreshold = 240    // Slightly reduced to avoid reflections
+    maxIntensityThreshold = 245    // Keep this to avoid reflections
   } = options;
 
   // Calcular dimensiones y coordenadas de la región central
@@ -73,13 +74,13 @@ export function detectFinger(
       const g = imageData.data[idx + 1];
       const b = imageData.data[idx + 2];
       
-      // More specific skin color detection
+      // Make skin color detection much more permissive
       const isSkinColor = (
-        r > g * 1.05 &&           // Slightly increased ratio from 1.02
-        r > b * 1.10 &&           // Increased from 1.05 for better finger specificity
-        r > 35 &&                 // Slightly increased minimum red
-        g > 20 &&                 // Slightly increased minimum green
-        b > 10                    // Slightly increased minimum blue
+        r > g * 1.02 &&           // Almost equal is fine
+        r > b * 1.05 &&           // Much more permissive
+        r > 30 &&                 // Very low minimum red
+        g > 15 &&                 // Very low minimum green
+        b > 5                     // Very low minimum blue
       );
 
       if (isSkinColor) {
@@ -121,15 +122,15 @@ export function detectFinger(
   const redDominance = avgRed - ((avgGreen + avgBlue) / 2);
   const skinColorPercentage = (skinColorPixels / pixelCount) * 100;
   
-  // More specific ratios for human skin
+  // Ratios de color específicos para piel humana - much more permissive
   const redGreenRatio = avgRed / (avgGreen || 1);
   const redBlueRatio = avgRed / (avgBlue || 1);
   
-  // More specific ranges for human skin
+  // Rangos extremadamente permisivos para piel humana
   const hasHumanSkinPattern = 
-    redGreenRatio > 1.05 &&         // Increased from 1.02
-    redBlueRatio > 1.10 &&          // Increased from 1.05
-    skinColorPercentage > 25;       // Increased from 20 for more specificity
+    redGreenRatio > 1.02 &&         // Almost equal colors are acceptable
+    redBlueRatio > 1.05 &&          // Very permissive
+    skinColorPercentage > 20;       // Very low requirement
     
   // Umbrales adaptativos
   let currentRedThreshold = redThreshold;
@@ -137,34 +138,34 @@ export function detectFinger(
   let currentRedDominanceThreshold = redDominanceThreshold;
   
   if (adaptiveMode) {
-    // Adaptar a condiciones de luz de manera más específica
+    // Adaptar a condiciones de luz de manera más permisiva
     if (brightness > 180) {
-      // Ambiente muy brillante: ser más exigente
-      currentRedThreshold *= 1.3;     // Increased from 1.2
-      currentRedDominanceThreshold *= 1.4; // Increased from 1.3
+      // Ambiente muy brillante: ser un poco más exigente
+      currentRedThreshold *= 1.2;
+      currentRedDominanceThreshold *= 1.3;
     } else if (brightness < 80) {
-      // Ambiente con poca luz: ser moderadamente permisivo
-      currentRedThreshold *= 0.7;     // Increased from 0.5 (less permissive)
-      currentBrightnessThreshold *= 0.6; // Increased from 0.5 (less permissive)
-      currentRedDominanceThreshold *= 0.7; // Increased from 0.6 (less permissive)
+      // Ambiente con poca luz: ser mucho más permisivo
+      currentRedThreshold *= 0.5;
+      currentBrightnessThreshold *= 0.5;
+      currentRedDominanceThreshold *= 0.6;
     }
     
     // Si detectamos muchos píxeles de piel, podemos ser menos exigentes
-    if (skinColorPercentage > 60) {  // Increased from 50
-      currentRedDominanceThreshold *= 0.8; // Increased from 0.7 (less permissive)
+    if (skinColorPercentage > 50) {
+      currentRedDominanceThreshold *= 0.7;
     }
     
-    // Si la imagen es muy oscura, reducir aún más los umbrales pero con límites
+    // Si la imagen es muy oscura, reducir aún más los umbrales
     if (brightness < 50) {
-      currentBrightnessThreshold = Math.max(15, currentBrightnessThreshold * 0.5); // Higher min (15 vs 10)
-      currentRedThreshold = Math.max(25, currentRedThreshold * 0.5); // Higher min (25 vs 20)
+      currentBrightnessThreshold = Math.max(10, currentBrightnessThreshold * 0.4);
+      currentRedThreshold = Math.max(20, currentRedThreshold * 0.4);
     }
   }
 
-  // Criterios de detección más específicos
+  // Criterios de detección extremadamente permisivos
   const isBrightEnough = brightness > currentBrightnessThreshold;
   const isRedDominant = redDominance > currentRedDominanceThreshold;
-  const isRedHighest = avgRed > avgGreen * 1.08 && avgRed > avgBlue * 1.12; // Increased ratios
+  const isRedHighest = avgRed > avgGreen * 1.05 && avgRed > avgBlue * 1.08; // Barely higher
   const isRedIntenseEnough = avgRed > currentRedThreshold;
   const notTooIntense = avgRed < maxIntensityThreshold && 
                         avgGreen < maxIntensityThreshold && 
@@ -172,32 +173,32 @@ export function detectFinger(
   
   // Evaluación de variación temporal
   const redVariation = maxRed - minRed;
-  const hasGoodVariation = redVariation > 5; // Increased from 3 for higher quality signal
+  const hasGoodVariation = redVariation > 3; // Very small variation is acceptable
   
-  // Cálculo de confianza ajustado (más balanceado)
+  // Cálculo de confianza ajustado (extremadamente permisivo)
   let confidence = 0;
   
-  if (isBrightEnough) confidence += 20;         // Decreased from 25
-  if (isRedDominant) confidence += 25;          // Kept same
-  if (isRedHighest) confidence += 22;           // Increased slightly from 20
-  if (isRedIntenseEnough) confidence += 22;     // Increased slightly from 20
-  if (notTooIntense) confidence += 10;          // Kept same
-  if (hasGoodVariation) confidence += 18;       // Increased from 15
-  if (hasHumanSkinPattern) confidence += 35;    // Increased from 30
-  if (skinColorPercentage > 25) confidence += 20; // Decreased threshold, decreased points (25 from 20, 20 from 25)
+  if (isBrightEnough) confidence += 25;         // Increased significantly
+  if (isRedDominant) confidence += 25;          // Increased
+  if (isRedHighest) confidence += 20;           // Increased
+  if (isRedIntenseEnough) confidence += 20;     // Increased
+  if (notTooIntense) confidence += 10;          // Keep same
+  if (hasGoodVariation) confidence += 15;       // Increased
+  if (hasHumanSkinPattern) confidence += 30;    // Increased significantly
+  if (skinColorPercentage > 20) confidence += 25; // Very low threshold, high points
   
   confidence = Math.min(100, confidence);
   
-  // Criterios de detección más específicos
+  // Criterios de detección extremadamente permisivos
   const basicDetection = 
     isBrightEnough && 
-    (isRedDominant || isRedHighest) && 
+    (isRedDominant || isRedHighest) && // Only one of these needed
     isRedIntenseEnough &&
     notTooIntense;
 
-  // Higher confidence threshold
-  const fingerDetected = basicDetection && confidence > 40; // Increased from 30
-  
+  // Require much lower confidence
+  const fingerDetected = basicDetection && confidence > 30; // Extremely low threshold
+
   // Incorporate multiple detection modes for better reliability
   const colorBasedDetection = isRedHighest && isRedIntenseEnough && isBrightEnough;
   const patternBasedDetection = hasHumanSkinPattern && notTooIntense;
@@ -211,13 +212,13 @@ export function detectFinger(
     detectionHistory.shift();
   }
   
-  // La detección final es estable con criterio más específico
+  // La detección final es estable con criterio más permisivo
   const stableDetection = 
     detectionHistory.length >= 3 &&
-    detectionHistory.filter(d => d).length > (detectionHistory.length * 0.4); // Require 40% positive vs 33%
+    detectionHistory.filter(d => d).length > (detectionHistory.length / 3); // Only need 1/3 positive
   
-  // Apply temporal smoothing with moderate adaptation
-  const alpha = 0.3; // Decreased from 0.4 for more stability
+  // Apply temporal smoothing with faster adaptation
+  const alpha = 0.4; // Faster adaptation
   previousConfidence = alpha * confidence + (1 - alpha) * previousConfidence;
   const finalConfidence = Math.round(previousConfidence);
 
