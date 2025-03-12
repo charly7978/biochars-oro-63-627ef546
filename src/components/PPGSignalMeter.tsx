@@ -45,8 +45,8 @@ const PPGSignalMeter = ({
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   // Grid size adjusted for the resolution
-  const GRID_SIZE_X = 240; // Smaller horizontal grid lines for better visibility
-  const GRID_SIZE_Y = 180;  // Smaller vertical grid lines for better visibility
+  const GRID_SIZE_X = 2400; // Smaller horizontal grid lines for better visibility
+  const GRID_SIZE_Y = 1080;  // Smaller vertical grid lines for better visibility
   const verticalScale = 20.0;  // Sensibilidad aumentada para mejor visualización
   const SMOOTHING_FACTOR = 1.8; // Mayor suavizado para reducir ruido
   const TARGET_FPS = 90;
