@@ -165,7 +165,7 @@ const PPGSignalMeter = ({
         ctx.fillStyle = '#ef4444';
         ctx.font = 'bold 24px Inter';
         ctx.textAlign = 'left';
-        ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
+        ctx.fillText('¡ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
         // Create a highlight box for multiple arrhythmias
@@ -451,7 +451,7 @@ const PPGSignalMeter = ({
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[8px] text-center font-medium text-black/80">
+          <span className="text-[10px] text-center font-medium text-black/80">
             {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
