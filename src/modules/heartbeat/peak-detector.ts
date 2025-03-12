@@ -12,20 +12,29 @@ export class PeakDetector {
   private beatConfidence: number = 0.0;
   private lastBeatTime: number = 0;
   private shouldReduceTimeBetweenBeats: boolean = false;
+  private adaptivePeakWindow: number;
+  private signalStability: number = 0.5;
+  private recentAmplitudes: number[] = [];
   
   constructor(
     peakWindow: number = 4,
-    minPeakThreshold: number = 0.15,
-    strongPeakThreshold: number = 0.4,
+    minPeakThreshold: number = 0.12, // Reduced from 0.15 for better sensitivity
+    strongPeakThreshold: number = 0.3, // Reduced from 0.4 for better sensitivity
     dynamicThreshold: number = 0.8,
-    minTimeBetweenBeats: number = 250,
+    minTimeBetweenBeats: number = 220, // Reduced from 250 for more responsive detection
     maxTimeBetweenBeats: number = 1500
   ) {
     this.PEAK_WINDOW_SIZE = peakWindow;
+    this.adaptivePeakWindow = peakWindow;
     this.MIN_PEAK_THRESHOLD_FACTOR = minPeakThreshold;
     this.STRONG_PEAK_THRESHOLD_FACTOR = strongPeakThreshold;
     this.MIN_TIME_BETWEEN_BEATS = minTimeBetweenBeats;
     this.MAX_TIME_BETWEEN_BEATS = maxTimeBetweenBeats;
+    
+    // Initialize amplitude buffer
+    for (let i = 0; i < 10; i++) {
+      this.recentAmplitudes.push(1.0);
+    }
   }
   
   public detectBeat(
@@ -46,22 +55,40 @@ export class PeakDetector {
     }
 
     // Need enough samples for detection
-    if (signalBuffer.length < this.PEAK_WINDOW_SIZE * 2) {
+    if (signalBuffer.length < this.adaptivePeakWindow * 2) {
       return false;
     }
 
-    // Check for peak
+    // Adjust peak window based on signal stability
+    this.adaptivePeakWindow = Math.max(2, Math.min(6, Math.round(this.PEAK_WINDOW_SIZE * (1 + (1 - this.signalStability)))));
+
+    // Check for peak with adaptive window size
     const isPeak = this.isPeakValue(value, signalBuffer);
     
-    // Stronger validation for peaks based on signal quality
+    // Enhanced validation for peaks
     if (isPeak) {
+      // Calculate peak strength more robustly
       const peakStrength = Math.abs(value);
-      const qualityFactor = quality / 100;
-      const threshold = this.baselineThreshold * 
+      this.recentAmplitudes.push(peakStrength);
+      if (this.recentAmplitudes.length > 10) {
+        this.recentAmplitudes.shift();
+      }
+      
+      // Get quality-adjusted threshold
+      const qualityFactor = Math.max(0.3, quality / 100);
+      const avgAmplitude = this.recentAmplitudes.reduce((sum, val) => sum + val, 0) / this.recentAmplitudes.length;
+      const adaptiveThreshold = this.baselineThreshold * 
         (qualityFactor > 0.6 ? this.MIN_PEAK_THRESHOLD_FACTOR : this.STRONG_PEAK_THRESHOLD_FACTOR);
+      
+      // More sensitive threshold for higher quality signals
+      const effectiveThreshold = adaptiveThreshold * (1 - (qualityFactor * 0.3));
 
-      if (peakStrength > threshold) {
-        this.beatConfidence = Math.min(1.0, (peakStrength / threshold) * qualityFactor);
+      if (peakStrength > effectiveThreshold) {
+        // Calculate more nuanced confidence based on peak strength and signal quality
+        this.beatConfidence = Math.min(1.0, 
+          (peakStrength / (adaptiveThreshold * 1.2)) * qualityFactor * (this.signalStability + 0.5)
+        );
+        
         this.lastBeatTime = now;
         
         // Update timing parameters
@@ -76,32 +103,54 @@ export class PeakDetector {
     }
 
     // Consider derivative-based detection for missed beats
-    if (!isPeak && derivative > 0.3 && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS) {
-      this.beatConfidence = 0.3;
-      this.lastBeatTime = now;
-      return true;
+    if (!isPeak && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS * 0.7) {
+      // Only consider derivative-based detection when quality is decent
+      if (derivative > 0.25 && quality > 40) {
+        this.beatConfidence = 0.3;
+        this.lastBeatTime = now;
+        return true;
+      }
+      
+      // Secondary derivative check for very long gaps
+      if (derivative > 0.15 && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS && quality > 30) {
+        this.beatConfidence = 0.2;
+        this.lastBeatTime = now;
+        return true;
+      }
     }
 
     return false;
   }
   
   private isPeakValue(value: number, buffer: number[]): boolean {
-    const windowSize = this.PEAK_WINDOW_SIZE;
+    const windowSize = this.adaptivePeakWindow;
     const midPoint = Math.floor(buffer.length / 2);
     
-    // Check if current value is local maximum
+    // Skip if value is too small to be a meaningful peak
+    if (Math.abs(value) < 0.1) return false;
+    
+    // Check if current value is local maximum with hysteresis
+    let peakConfirmed = true;
+    
+    // Check before current value with slight hysteresis
     for (let i = 1; i <= windowSize; i++) {
-      // Check before current value
-      if (midPoint - i >= 0 && buffer[midPoint - i] >= value) {
-        return false;
-      }
-      // Check after current value
-      if (midPoint + i < buffer.length && buffer[midPoint + i] > value) {
-        return false;
+      if (midPoint - i >= 0 && buffer[midPoint - i] >= value - 0.05) {
+        peakConfirmed = false;
+        break;
       }
     }
     
-    return true;
+    if (peakConfirmed) {
+      // Check after current value with hysteresis
+      for (let i = 1; i <= windowSize; i++) {
+        if (midPoint + i < buffer.length && buffer[midPoint + i] > value - 0.05) {
+          peakConfirmed = false;
+          break;
+        }
+      }
+    }
+    
+    return peakConfirmed;
   }
   
   public updateAdaptiveThreshold(buffer: number[], now: number, debug: boolean = false): void {
@@ -112,14 +161,24 @@ export class PeakDetector {
     const max = Math.max(...recentValues);
     const amplitude = max - min;
     
-    // More reactive threshold adjustment
+    // Update signal stability metric
+    const sorted = [...recentValues].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    
+    // Normalized stability metric (0-1 where 1 is most stable)
+    this.signalStability = Math.min(1, Math.max(0, 1 - (iqr / (amplitude || 1))));
+    
+    // More reactive threshold adjustment with stability factor
+    const adaptationRate = 0.3 + (0.4 * this.signalStability);
     this.baselineThreshold = Math.max(
-      0.5,
-      this.baselineThreshold * 0.7 + amplitude * 0.3
+      0.3,
+      this.baselineThreshold * (1 - adaptationRate) + amplitude * adaptationRate
     );
     
     if (debug) {
-      console.log(`Peak detector threshold updated: ${this.baselineThreshold.toFixed(2)}`);
+      console.log(`Peak detector updated: threshold=${this.baselineThreshold.toFixed(2)}, stability=${this.signalStability.toFixed(2)}, window=${this.adaptivePeakWindow}`);
     }
   }
   
@@ -135,10 +194,17 @@ export class PeakDetector {
     return this.beatConfidence;
   }
   
+  public get stability(): number {
+    return this.signalStability;
+  }
+  
   public reset(): void {
     this.lastBeatTime = 0;
     this.beatConfidence = 0;
     this.baselineThreshold = 1.0;
     this.shouldReduceTimeBetweenBeats = false;
+    this.adaptivePeakWindow = this.PEAK_WINDOW_SIZE;
+    this.signalStability = 0.5;
+    this.recentAmplitudes = Array(10).fill(1.0);
   }
 }
