@@ -13,8 +13,8 @@ export class HeartBeatProcessor {
   // Parámetros de filtrado
   private readonly MEDIAN_FILTER_WINDOW = 3; 
   private readonly MOVING_AVERAGE_WINDOW = 3; 
-  private readonly EMA_ALPHA = 0.4; 
-  private readonly BASELINE_FACTOR = 0.9; 
+  private readonly EMA_ALPHA = 0.5; 
+  private readonly BASELINE_FACTOR = 0.8; 
 
   // Parámetros de beep
   private readonly BEEP_PRIMARY_FREQUENCY = 880; 
