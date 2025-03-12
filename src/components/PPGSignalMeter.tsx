@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -40,7 +39,6 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Constants for 20:9 aspect ratio at 2400 x 1080 resolution
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
@@ -90,20 +88,18 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawSophisticatedBackground = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Sophisticated background with subtle gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#0a1929');
-    gradient.addColorStop(0.5, '#0c1f30');
-    gradient.addColorStop(1, '#0a1929');
+    gradient.addColorStop(0, '#040e18');
+    gradient.addColorStop(0.3, '#071324');
+    gradient.addColorStop(0.7, '#061221');
+    gradient.addColorStop(1, '#030d17');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Create subtle horizontal lines for a professional look
-    ctx.strokeStyle = 'rgba(20, 120, 180, 0.08)';
+    ctx.strokeStyle = 'rgba(30, 144, 255, 0.05)';
     ctx.lineWidth = 1;
     
-    // Major horizontal lines
     for (let y = 0; y < CANVAS_HEIGHT; y += 100) {
       ctx.beginPath();
       ctx.moveTo(0, y);
@@ -111,10 +107,9 @@ const PPGSignalMeter = ({
       ctx.stroke();
     }
     
-    // Minor horizontal lines
-    ctx.strokeStyle = 'rgba(20, 120, 180, 0.04)';
+    ctx.strokeStyle = 'rgba(30, 144, 255, 0.02)';
     for (let y = 0; y < CANVAS_HEIGHT; y += 25) {
-      if (y % 100 !== 0) { // Skip where major lines are
+      if (y % 100 !== 0) {
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(CANVAS_WIDTH, y);
@@ -122,17 +117,15 @@ const PPGSignalMeter = ({
       }
     }
     
-    // Vertical time markers
-    ctx.strokeStyle = 'rgba(20, 120, 180, 0.08)';
+    ctx.strokeStyle = 'rgba(30, 144, 255, 0.05)';
     for (let x = 0; x < CANVAS_WIDTH; x += 200) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
       ctx.stroke();
       
-      // Time markers
       if (x > 0) {
-        ctx.fillStyle = 'rgba(140, 200, 255, 0.4)';
+        ctx.fillStyle = 'rgba(140, 200, 255, 0.2)';
         ctx.font = '14px Inter';
         ctx.textAlign = 'center';
         const timeMs = Math.round((WINDOW_WIDTH_MS * x) / CANVAS_WIDTH);
@@ -140,20 +133,8 @@ const PPGSignalMeter = ({
       }
     }
     
-    // Add softer vertical lines between markers
-    ctx.strokeStyle = 'rgba(20, 120, 180, 0.03)';
-    for (let x = 0; x < CANVAS_WIDTH; x += 50) {
-      if (x % 200 !== 0) { // Skip where major lines are
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, CANVAS_HEIGHT);
-        ctx.stroke();
-      }
-    }
-    
-    // Central horizontal line for the ECG baseline
     const centerY = CANVAS_HEIGHT / 2;
-    ctx.strokeStyle = 'rgba(0, 180, 220, 0.3)';
+    ctx.strokeStyle = 'rgba(0, 180, 220, 0.2)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.setLineDash([5, 5]);
@@ -162,36 +143,27 @@ const PPGSignalMeter = ({
     ctx.stroke();
     ctx.setLineDash([]);
     
-    // Add subtle glow effect around the center line
     const glowGradient = ctx.createLinearGradient(0, centerY - 15, 0, centerY + 15);
     glowGradient.addColorStop(0, 'rgba(0, 180, 220, 0)');
-    glowGradient.addColorStop(0.5, 'rgba(0, 180, 220, 0.05)');
+    glowGradient.addColorStop(0.5, 'rgba(0, 180, 220, 0.03)');
     glowGradient.addColorStop(1, 'rgba(0, 180, 220, 0)');
     
     ctx.fillStyle = glowGradient;
     ctx.fillRect(0, centerY - 15, CANVAS_WIDTH, 30);
     
-    // Add elegant scale indicators
-    ctx.fillStyle = 'rgba(140, 200, 255, 0.5)';
-    ctx.font = '16px Inter';
-    
-    // Add arrhythmia alert if needed
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
       if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
-        // Create a more elegant alert box with glass effect
         ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
         ctx.fillRect(30, 70, 350, 40);
         
-        // Add subtle glow around the alert
         const alertGlow = ctx.createRadialGradient(205, 90, 10, 205, 90, 200);
         alertGlow.addColorStop(0, 'rgba(220, 38, 38, 0.1)');
         alertGlow.addColorStop(1, 'rgba(220, 38, 38, 0)');
         ctx.fillStyle = alertGlow;
         ctx.fillRect(0, 50, 410, 80);
         
-        // Add border and text
         ctx.strokeStyle = 'rgba(220, 38, 38, 0.4)';
         ctx.lineWidth = 1;
         ctx.strokeRect(30, 70, 350, 40);
@@ -202,7 +174,6 @@ const PPGSignalMeter = ({
         ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
-        // Similar styling for ongoing arrhythmia alerts
         ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
         ctx.fillRect(30, 70, 250, 40);
         
@@ -351,10 +322,8 @@ const PPGSignalMeter = ({
     detectPeaks(points, now);
     
     if (points.length > 1) {
-      // Draw ECG-like waveform with glow effect
       const centerY = canvas.height / 2;
       
-      // Draw glow effect
       ctx.beginPath();
       ctx.strokeStyle = 'rgba(0, 200, 255, 0.4)';
       ctx.lineWidth = 6;
@@ -382,7 +351,6 @@ const PPGSignalMeter = ({
       }
       ctx.stroke();
       
-      // Draw main line with sharper definition
       ctx.beginPath();
       ctx.strokeStyle = '#00e1ff';
       ctx.lineWidth = 3;
@@ -422,13 +390,11 @@ const PPGSignalMeter = ({
       
       ctx.stroke();
       
-      // Mark peaks with elegant circles and glow
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = centerY - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
-          // Draw glow
           const glow = ctx.createRadialGradient(x, y, 0, x, y, 25);
           glow.addColorStop(0, peak.isArrhythmia ? 'rgba(255, 80, 80, 0.7)' : 'rgba(0, 225, 255, 0.7)');
           glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
@@ -436,20 +402,17 @@ const PPGSignalMeter = ({
           ctx.fillStyle = glow;
           ctx.fillRect(x - 25, y - 25, 50, 50);
           
-          // Draw main circle
           ctx.beginPath();
           ctx.arc(x, y, 8, 0, Math.PI * 2);
           ctx.fillStyle = peak.isArrhythmia ? '#FF4040' : '#00e1ff';
           ctx.fill();
           
-          // Add white center dot
           ctx.beginPath();
           ctx.arc(x, y, 3, 0, Math.PI * 2);
           ctx.fillStyle = '#FFFFFF';
           ctx.fill();
           
           if (peak.isArrhythmia) {
-            // Add warning indicator
             ctx.beginPath();
             ctx.arc(x, y, 15, 0, Math.PI * 2);
             ctx.strokeStyle = '#FF8080';
@@ -462,7 +425,6 @@ const PPGSignalMeter = ({
             ctx.fillText('ARRITMIA', x, y - 25);
           }
           
-          // Show value with better styling
           ctx.font = 'bold 16px Inter';
           ctx.fillStyle = peak.isArrhythmia ? '#FF8080' : '#80E0FF';
           ctx.textAlign = 'center';
@@ -532,14 +494,12 @@ const PPGSignalMeter = ({
         </div>
       </div>
 
-      {/* Improved finger placement guidance with visual indicator */}
       {!isFingerDetected && (
         <div className="absolute top-1/4 left-0 right-0 flex justify-center">
           <div className="bg-black/60 text-white px-6 py-4 rounded-lg text-center max-w-xs shadow-lg border border-cyan-500/20">
             <h3 className="font-bold text-lg mb-2">COLOQUE LA YEMA DEL DEDO</h3>
             <div className="flex justify-center mb-2">
               <div className="relative w-20 h-20">
-                {/* Finger pad illustration with glowing effect */}
                 <div className="absolute inset-0 bg-amber-100 rounded-full opacity-80 animate-pulse"></div>
                 <div className="absolute inset-2 bg-amber-200 rounded-full"></div>
                 <div className="absolute inset-0 flex items-center justify-center">

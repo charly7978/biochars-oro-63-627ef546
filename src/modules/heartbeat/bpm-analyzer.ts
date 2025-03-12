@@ -10,6 +10,8 @@ export class BPMAnalyzer {
   private bpmUpdateThrottle = 500; // ms
   private bpmHistory: number[] = [];
   private consecutiveValidReadings = 0;
+  private initialDetectionPhase = true;
+  private initialReadingsCounter = 0;
   
   constructor(minBpm = 40, maxBpm = 180, bpmWindowSize = 5) {
     this.MIN_BPM = minBpm;
@@ -33,15 +35,33 @@ export class BPMAnalyzer {
         this.bpmValues.shift();
       }
       
+      // Handle initial detection phase with less strict filtering
+      if (this.initialDetectionPhase) {
+        this.initialReadingsCounter++;
+        
+        // After a few readings, we can be more confident
+        if (this.initialReadingsCounter >= 3) {
+          this.initialDetectionPhase = false;
+          
+          // For the initial phase, use a simple average for quicker response
+          const sum = this.bpmValues.reduce((a, b) => a + b, 0);
+          const initialBpm = Math.round(sum / this.bpmValues.length);
+          
+          this.prevValidBpm = initialBpm;
+          console.log(`BPMAnalyzer: Initial detection phase complete, starting BPM: ${initialBpm}`);
+          return initialBpm;
+        }
+      }
+      
       // Calculate average BPM with outlier filtering
       if (this.bpmValues.length >= 3) {
         // Sort values to find median
         const sortedValues = [...this.bpmValues].sort((a, b) => a - b);
         const median = sortedValues[Math.floor(sortedValues.length / 2)];
         
-        // Filter out values that are too far from median (possible artifacts)
+        // More permissive outlier filtering to improve detection rate
         const filteredValues = this.bpmValues.filter(val => 
-          Math.abs(val - median) < Math.max(10, median * 0.2) // Increased tolerance
+          Math.abs(val - median) < Math.max(15, median * 0.25) // Increased tolerance further
         );
         
         if (filteredValues.length > 0) {
@@ -49,20 +69,28 @@ export class BPMAnalyzer {
           const currentBpm = Math.round(sum / filteredValues.length);
           
           // Update if significant time has passed or significant change
-          if (now - this.lastBpmUpdateTime > this.bpmUpdateThrottle || 
-              Math.abs(currentBpm - this.prevValidBpm) > 3 || 
-              this.prevValidBpm === 0) {
-            
+          const significantChange = this.prevValidBpm === 0 || 
+                                   Math.abs(currentBpm - this.prevValidBpm) > 3 ||
+                                   now - this.lastBpmUpdateTime > this.bpmUpdateThrottle;
+                                   
+          if (significantChange) {
             this.consecutiveValidReadings++;
             
             // More confidence in the reading with more consecutive valid readings
-            if (this.consecutiveValidReadings >= 3 || this.prevValidBpm === 0) {
-              this.prevValidBpm = currentBpm;
+            if (this.consecutiveValidReadings >= 2 || this.prevValidBpm === 0) {
+              // Smooth the transition to new value
+              if (this.prevValidBpm > 0) {
+                // Weighted average with more weight on the new reading for faster response
+                this.prevValidBpm = Math.round(this.prevValidBpm * 0.4 + currentBpm * 0.6);
+              } else {
+                this.prevValidBpm = currentBpm;
+              }
+              
               this.lastBpmUpdateTime = now;
-              console.log(`BPM updated to ${currentBpm} from ${filteredValues.length} readings`);
+              console.log(`BPM updated to ${this.prevValidBpm} from ${filteredValues.length} readings`);
               
               // Update BPM history for trend analysis
-              this.bpmHistory.push(currentBpm);
+              this.bpmHistory.push(this.prevValidBpm);
               if (this.bpmHistory.length > 10) {
                 this.bpmHistory.shift();
               }
@@ -84,7 +112,7 @@ export class BPMAnalyzer {
       return this.prevValidBpm;
     } else {
       console.log(`BPMAnalyzer: Rejected implausible BPM: ${bpm.toFixed(1)} (outside ${this.MIN_BPM}-${this.MAX_BPM} range)`);
-      this.consecutiveValidReadings = 0;
+      this.consecutiveValidReadings = Math.max(0, this.consecutiveValidReadings - 1);
     }
     
     return this.prevValidBpm > 0 ? this.prevValidBpm : null;
@@ -117,6 +145,11 @@ export class BPMAnalyzer {
       } else if (this.consecutiveValidReadings >= 3) {
         confidence += 0.1;
       }
+      
+      // Higher base confidence when we have any valid readings
+      if (this.prevValidBpm > 0) {
+        confidence += 0.15;
+      }
     }
     
     return Math.min(1.0, confidence); // Cap at 1.0
@@ -132,5 +165,7 @@ export class BPMAnalyzer {
     this.prevValidBpm = 0;
     this.lastBpmUpdateTime = 0;
     this.consecutiveValidReadings = 0;
+    this.initialDetectionPhase = true;
+    this.initialReadingsCounter = 0;
   }
 }
