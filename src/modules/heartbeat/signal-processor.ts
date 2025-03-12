@@ -11,7 +11,7 @@ export class SignalProcessor {
   private lastProcessedValue = 0;
   private valueDerivative = 0;
   
-  constructor(maxBufferSize = 300, derivativeBufferSize = 10, emaAlpha = 0.3) {
+  constructor(maxBufferSize = 300, derivativeBufferSize = 10, emaAlpha = 0.5) {
     this.MAX_BUFFER_SIZE = maxBufferSize;
     this.DERIVATIVE_BUFFER_SIZE = derivativeBufferSize;
     this.EMA_ALPHA = emaAlpha;
@@ -22,31 +22,31 @@ export class SignalProcessor {
     derivative: number;
     signalBuffer: number[];
   } {
-    // Strong smoothing to filter noise
+    // Minimal smoothing to preserve signal detail
     let smoothedValue: number;
     
     if (this.signalBuffer.length === 0) {
       smoothedValue = value;
       this.signalBuffer.push(value);
     } else {
-      // Heavier smoothing to reduce noise
+      // Very light smoothing to preserve peaks
       smoothedValue = this.lastProcessedValue + 
-        (this.EMA_ALPHA) * (value - this.lastProcessedValue);
+        (this.EMA_ALPHA * 2.0) * (value - this.lastProcessedValue);
       this.signalBuffer.push(smoothedValue);
       this.lastProcessedValue = smoothedValue;
     }
     
-    // Calculate derivative with reduced sensitivity
+    // Calculate derivative with higher sensitivity
     if (this.signalBuffer.length >= 2) {
       const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
       const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
-      const newDerivative = (currentValue - prevValue) * 0.7; // Reduce change amplification
+      const newDerivative = (currentValue - prevValue) * 1.5; // Amplify changes more
       
-      // Stronger smoothing on derivative
+      // Minimal smoothing on derivative
       if (this.derivativeBuffer.length === 0) {
         this.valueDerivative = newDerivative;
       } else {
-        this.valueDerivative = this.valueDerivative * 0.7 + newDerivative * 0.3;
+        this.valueDerivative = this.valueDerivative * 0.3 + newDerivative * 0.7;
       }
       
       this.derivativeBuffer.push(this.valueDerivative);
