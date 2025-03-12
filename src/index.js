@@ -5,6 +5,8 @@ import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
+import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
+import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -18,6 +20,7 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -79,12 +82,46 @@ const Index = () => {
     measurementTimerRef.current = window.setInterval(() => {
       setElapsedTime(prev => {
         if (prev >= 30) {
-          stopMonitoring();
+          showMeasurementConfirmation();
           return 30;
         }
         return prev + 1;
       });
     }, 1000);
+  };
+
+  const showMeasurementConfirmation = () => {
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
+    
+    setShowConfirmDialog(true);
+  };
+
+  const confirmMeasurement = () => {
+    toast.success("Medición guardada correctamente", {
+      description: "Los resultados han sido registrados con éxito",
+      duration: 3000,
+    });
+    setShowConfirmDialog(false);
+    completeMonitoring();
+  };
+
+  const cancelMeasurement = () => {
+    setShowConfirmDialog(false);
+    startMonitoring();
+  };
+
+  const completeMonitoring = () => {
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    stopProcessing();
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
   };
 
   const stopMonitoring = () => {
@@ -263,6 +300,17 @@ const Index = () => {
           </div>
         </div>
       </div>
+
+      <MeasurementConfirmationDialog
+        open={showConfirmDialog}
+        onOpenChange={setShowConfirmDialog}
+        onConfirm={confirmMeasurement}
+        onCancel={cancelMeasurement}
+        measurementTime={elapsedTime}
+        heartRate={heartRate}
+        spo2={vitalSigns.spo2}
+        pressure={vitalSigns.pressure}
+      />
     </div>
   );
 };
