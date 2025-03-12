@@ -1,4 +1,3 @@
-
 import HumSoundFile from '../assets/sounds/heartbeat-low.mp3';
 
 export interface HeartBeatResult {
@@ -452,7 +451,6 @@ export class HeartBeatProcessor {
     this.forcedDetectionMode = false;
   }
 
-  // Add the missing getRRIntervals method
   public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {
     // Convert RR interval data to a simple array of intervals
     const intervals = this.rrIntervals.map(rr => rr.interval);
