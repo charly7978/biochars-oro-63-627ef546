@@ -2,26 +2,25 @@
 import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
-  private readonly SPO2_CALIBRATION_FACTOR = 1.05; // Ajustado para mayor precisión
-  // Umbral de perfusión más exigente para descartar señales débiles o falsas
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.08; // Aumentado significativamente 
-  private readonly SPO2_BUFFER_SIZE = 15; // Aumentado para mejor estabilidad
+  private readonly SPO2_CALIBRATION_FACTOR = 1.05; 
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // Reduced for fingertip signals
+  private readonly SPO2_BUFFER_SIZE = 15; 
   private spo2Buffer: number[] = [];
-  private perfusionBuffer: number[] = []; // Buffer para rastrear perfusión
+  private perfusionBuffer: number[] = []; 
   private readonly PERFUSION_BUFFER_SIZE = 10;
   
-  // Factores de normalización específicos para mediciones en dedo humano
-  private readonly FINGER_AC_NORMALIZATION = 1.2;
-  private readonly FINGER_DC_NORMALIZATION = 0.95;
-  private readonly MIN_VALID_PERFUSION_INDEX = 0.04; // Mínimo para aceptar mediciones
+  // Normalized factors for fingertip measurements
+  private readonly FINGER_AC_NORMALIZATION = 1.25; // Increased for fingertips
+  private readonly FINGER_DC_NORMALIZATION = 0.90; // Adjusted for fingertips
+  private readonly MIN_VALID_PERFUSION_INDEX = 0.03; // Lower minimum for fingertips
 
   /**
    * Calculates the oxygen saturation (SpO2) from PPG values
-   * with enhanced false detection prevention
+   * with enhanced false detection prevention and fingertip optimization
    */
   public calculateSpO2(values: number[]): number {
-    // Requerir más valores para análisis más sólido
-    if (values.length < 40) {
+    // Require fewer values for fingertip analysis
+    if (values.length < 35) { // Reduced requirement
       if (this.spo2Buffer.length > 0) {
         const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
         return Math.max(0, lastValid - 1);
@@ -52,10 +51,10 @@ export class SpO2Processor {
     const avgPerfusion = this.perfusionBuffer.reduce((sum, val) => sum + val, 0) / 
                          this.perfusionBuffer.length;
     
-    // Umbral de perfusión adaptativo para mejor respuesta a diferentes personas
+    // More permissive adaptive threshold for fingertips
     const adaptiveThreshold = Math.max(
       this.MIN_VALID_PERFUSION_INDEX,
-      this.PERFUSION_INDEX_THRESHOLD * (avgPerfusion > 0.12 ? 0.8 : 1.0)
+      this.PERFUSION_INDEX_THRESHOLD * (avgPerfusion > 0.1 ? 0.7 : 0.9) // More permissive
     );
     
     // Verificar si la perfusión es suficiente para una medición válida
@@ -72,8 +71,7 @@ export class SpO2Processor {
     // Calcular SpO2 usando ratio R
     const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
     
-    // Algoritmo de cálculo de SpO2 mejorado para mayor precisión
-    // Basado en estudios clínicos de oximetría
+    // Algoritmo de cálculo de SpO2 para fingertips
     let spO2 = 0;
     
     if (R <= 0.4) {
@@ -86,10 +84,10 @@ export class SpO2Processor {
       spO2 = Math.round(100 - (20 * R));
     }
     
-    // Ajustes basados en perfusión para mayor precisión
-    if (perfusionIndex > 0.15) {
+    // Ajustes basados en perfusión más permisivos
+    if (perfusionIndex > 0.12) { // Reduced threshold
       spO2 = Math.min(99, spO2 + 1);
-    } else if (perfusionIndex < 0.06) {
+    } else if (perfusionIndex < 0.05) { // Reduced threshold
       spO2 = Math.max(0, spO2 - 1);
     }
 

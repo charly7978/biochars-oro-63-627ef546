@@ -11,7 +11,7 @@ export class SignalProcessor {
   private lastProcessedValue = 0;
   private valueDerivative = 0;
   
-  constructor(maxBufferSize = 300, derivativeBufferSize = 15, emaAlpha = 0.3) {
+  constructor(maxBufferSize = 300, derivativeBufferSize = 15, emaAlpha = 0.25) { // Reduced EMA_ALPHA for smoother signal
     this.MAX_BUFFER_SIZE = maxBufferSize;
     this.DERIVATIVE_BUFFER_SIZE = derivativeBufferSize;
     this.EMA_ALPHA = emaAlpha;
@@ -29,7 +29,7 @@ export class SignalProcessor {
       smoothedValue = value;
       this.signalBuffer.push(value);
     } else {
-      // Increase smoothing to remove noise
+      // Increased smoothing for fingertip readings (which tend to be noisier)
       smoothedValue = this.lastProcessedValue + 
         this.EMA_ALPHA * (value - this.lastProcessedValue);
       this.signalBuffer.push(smoothedValue);
@@ -40,13 +40,13 @@ export class SignalProcessor {
     if (this.signalBuffer.length >= 2) {
       const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
       const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
-      const newDerivative = (currentValue - prevValue); // Normal sensitivity
+      const newDerivative = (currentValue - prevValue); 
       
-      // More smoothing on derivative to reduce noise
+      // More smoothing on derivative to reduce fingertip noise
       if (this.derivativeBuffer.length === 0) {
         this.valueDerivative = newDerivative;
       } else {
-        this.valueDerivative = this.valueDerivative * 0.7 + newDerivative * 0.3;
+        this.valueDerivative = this.valueDerivative * 0.75 + newDerivative * 0.25; // More smoothing
       }
       
       this.derivativeBuffer.push(this.valueDerivative);
