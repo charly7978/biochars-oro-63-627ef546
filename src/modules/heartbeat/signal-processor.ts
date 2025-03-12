@@ -1,3 +1,4 @@
+
 export class SignalProcessor {
   // Buffer and signal parameters
   private readonly MAX_BUFFER_SIZE: number;
@@ -10,7 +11,7 @@ export class SignalProcessor {
   private lastProcessedValue = 0;
   private valueDerivative = 0;
   
-  constructor(maxBufferSize = 300, derivativeBufferSize = 10, emaAlpha = 0.5) {
+  constructor(maxBufferSize = 300, derivativeBufferSize = 15, emaAlpha = 0.3) {
     this.MAX_BUFFER_SIZE = maxBufferSize;
     this.DERIVATIVE_BUFFER_SIZE = derivativeBufferSize;
     this.EMA_ALPHA = emaAlpha;
@@ -21,31 +22,31 @@ export class SignalProcessor {
     derivative: number;
     signalBuffer: number[];
   } {
-    // Add signal to buffer with less aggressive smoothing
+    // Add signal to buffer with more aggressive smoothing to reduce noise
     let smoothedValue: number;
     
     if (this.signalBuffer.length === 0) {
       smoothedValue = value;
       this.signalBuffer.push(value);
     } else {
-      // Reduce smoothing to preserve more signal detail
+      // Increase smoothing to remove noise
       smoothedValue = this.lastProcessedValue + 
-        (this.EMA_ALPHA * 1.5) * (value - this.lastProcessedValue);
+        this.EMA_ALPHA * (value - this.lastProcessedValue);
       this.signalBuffer.push(smoothedValue);
       this.lastProcessedValue = smoothedValue;
     }
     
-    // Calculate derivative with higher sensitivity
+    // Calculate derivative with moderate sensitivity
     if (this.signalBuffer.length >= 2) {
       const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
       const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
-      const newDerivative = (currentValue - prevValue) * 1.25; // Amplify changes
+      const newDerivative = (currentValue - prevValue); // Normal sensitivity
       
-      // Less smoothing on derivative
+      // More smoothing on derivative to reduce noise
       if (this.derivativeBuffer.length === 0) {
         this.valueDerivative = newDerivative;
       } else {
-        this.valueDerivative = this.valueDerivative * 0.4 + newDerivative * 0.6;
+        this.valueDerivative = this.valueDerivative * 0.7 + newDerivative * 0.3;
       }
       
       this.derivativeBuffer.push(this.valueDerivative);
@@ -66,7 +67,7 @@ export class SignalProcessor {
     };
   }
   
-  public getRecentDerivatives(count: number = 3): number[] {
+  public getRecentDerivatives(count: number = 5): number[] {
     return this.derivativeBuffer.slice(-count);
   }
   
