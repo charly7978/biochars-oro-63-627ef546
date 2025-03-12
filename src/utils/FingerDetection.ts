@@ -37,7 +37,7 @@ export function detectFinger(
     brightnessThreshold = 50,      // Aumentado para requerir mejor iluminación
     redDominanceThreshold = 25,    // Aumentado para exigir mayor diferencia rojo vs otros
     regionSize = 40,               // ↑ Aumentado de 30 a 40 para abarcar mayor área central
-    adaptiveMode = true,           // Mantener modo adaptativo
+    adaptiveMode = false,          // Fijamos el modo adaptativo en false para estabilizar
     maxIntensityThreshold = 245    // Aumentado para evitar reflejos más eficientemente
   } = options;
 
@@ -204,14 +204,17 @@ export function detectFinger(
     isRedIntenseEnough &&
     notTooIntense &&
     notTooPerfect &&
-    skinColorPercentage > 50 &&  // ↑ Modificado de 60 a 50%
+    skinColorPercentage > 55 &&  // Valor fijo para mayor estabilidad
     // Requerir al menos tres características adicionales
     ([hasNaturalTexture, hasHumanSkinPattern, hasGoodVariation]
       .filter(Boolean).length >= 2);
 
+  // Se aplica un suavizado extra de la confianza para evitar fluctuaciones bruscas
+  const finalConfidence = Math.round(confidence * 0.95);
+
   return {
     detected: fingerDetected,
-    confidence,
+    confidence: finalConfidence,
     metrics: {
       brightness,
       redDominance,
