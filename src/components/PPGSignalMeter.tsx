@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -91,91 +90,42 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E5DEFF');
-    gradient.addColorStop(0.3, '#FDE1D3');
-    gradient.addColorStop(0.7, '#F2FCE2');
-    gradient.addColorStop(1, '#D3E4FD');
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    
-    ctx.globalAlpha = 0.03;
-    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
-      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
-        ctx.fillRect(i, j, 10, 10);
-      }
-    }
-    ctx.globalAlpha = 1.0;
-    
+    // Draw major grid lines
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
+    ctx.strokeStyle = '#333333';
     ctx.lineWidth = 0.5;
     
-    for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
+    // Vertical lines
+    for (let x = 0; x <= CANVAS_WIDTH; x += 50) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
-      if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
-      }
     }
     
-    for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
+    // Horizontal lines
+    for (let y = 0; y <= CANVAS_HEIGHT; y += 50) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
-      if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'right';
-        ctx.fillText(y.toString(), 15, y + 3);
-      }
     }
     ctx.stroke();
     
-    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
+    // Draw darker major grid lines
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, centerLineY);
-    ctx.lineTo(CANVAS_WIDTH, centerLineY);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle = '#222222';
+    ctx.lineWidth = 1;
     
-    if (arrhythmiaStatus) {
-      const [status, count] = arrhythmiaStatus.split('|');
-      
-      if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-        ctx.fillRect(30, 70, 350, 40);
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(30, 70, 350, 40);
-        
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 24px Inter';
-        ctx.textAlign = 'left';
-        ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
-        setShowArrhythmiaAlert(true);
-      } else if (status.includes("ARRITMIA") && Number(count) > 1) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-        ctx.fillRect(30, 70, 250, 40);
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(30, 70, 250, 40);
-        
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 24px Inter';
-        ctx.textAlign = 'left';
-        const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
-        ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
-      }
+    // Major vertical lines
+    for (let x = 0; x <= CANVAS_WIDTH; x += 200) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CANVAS_HEIGHT);
     }
-  }, [arrhythmiaStatus, showArrhythmiaAlert]);
+    
+    // Major horizontal lines
+    for (let y = 0; y <= CANVAS_HEIGHT; y += 200) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(CANVAS_WIDTH, y);
+    }
+    ctx.stroke();
+  }, []);
 
   const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
@@ -264,6 +214,11 @@ const PPGSignalMeter = ({
     
     const now = Date.now();
     
+    // Clear canvas with the existing gradient background
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw the grid
     drawGrid(ctx);
     
     if (preserveResults && !isFingerDetected) {
