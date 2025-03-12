@@ -41,11 +41,11 @@ const PPGSignalMeter = ({
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const WINDOW_WIDTH_MS = 3500;
-  const CANVAS_WIDTH = 1024;
-  const CANVAS_HEIGHT = 768;
+  const CANVAS_WIDTH = 1920;
+  const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 30.0;  // Sensibilidad aumentada para mejor visualización
+  const verticalScale = 20.0;  // Sensibilidad aumentada para mejor visualización
   const SMOOTHING_FACTOR = 1.8; // Mayor suavizado para reducir ruido
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
