@@ -18,6 +18,7 @@ const CameraView = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamReadyCalledRef = useRef<boolean>(false);
   const mountedRef = useRef<boolean>(true);
+  const initializingRef = useRef<boolean>(false);
 
   const stopCamera = async () => {
     console.log("CameraView: Deteniendo cámara");
@@ -41,7 +42,15 @@ const CameraView = ({
   };
 
   const startCamera = async () => {
+    if (initializingRef.current) {
+      console.log("CameraView: Ya hay una inicialización en curso");
+      return;
+    }
+
     try {
+      initializingRef.current = true;
+      console.log("CameraView: Iniciando nueva stream de cámara");
+      
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
@@ -49,7 +58,14 @@ const CameraView = ({
       await stopCamera();
       streamReadyCalledRef.current = false;
 
-      console.log("CameraView: Iniciando nueva stream de cámara");
+      // Esperar un momento antes de iniciar la cámara para asegurar que los recursos anteriores se liberaron
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      if (!mountedRef.current) {
+        console.log("CameraView: El componente fue desmontado durante la inicialización");
+        initializingRef.current = false;
+        return;
+      }
       
       const constraints: MediaStreamConstraints = {
         video: {
@@ -60,21 +76,26 @@ const CameraView = ({
         }
       };
 
+      console.log("CameraView: Solicitando permiso de cámara con constraints:", constraints);
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       
       // Only proceed if component is still mounted
       if (!mountedRef.current) {
+        console.log("CameraView: El componente fue desmontado después de getUserMedia");
         newStream.getTracks().forEach(track => track.stop());
+        initializingRef.current = false;
         return;
       }
 
       if (videoRef.current) {
+        console.log("CameraView: Asignando stream a elemento de video");
         videoRef.current.srcObject = newStream;
         
         await new Promise<void>((resolve) => {
           if (!videoRef.current) return resolve();
           
           const handleCanPlay = () => {
+            console.log("CameraView: Video puede reproducirse ahora");
             videoRef.current?.removeEventListener('canplay', handleCanPlay);
             resolve();
           };
@@ -82,29 +103,45 @@ const CameraView = ({
           videoRef.current.addEventListener('canplay', handleCanPlay);
           
           if (videoRef.current.readyState >= 3) {
+            console.log("CameraView: Video ya está listo para reproducirse");
             videoRef.current.removeEventListener('canplay', handleCanPlay);
             resolve();
           }
         });
         
-        // Additional stabilization wait
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Período de estabilización de la cámara
+        console.log("CameraView: Esperando período de estabilización de cámara");
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         if (!mountedRef.current) {
+          console.log("CameraView: El componente fue desmontado durante la estabilización");
           newStream.getTracks().forEach(track => track.stop());
+          initializingRef.current = false;
           return;
         }
 
         setStream(newStream);
         
-        if (isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
-          console.log("CameraView: Notificando stream lista para procesamiento");
+        // Verificar que los tracks todavía están activos
+        const allTracksActive = newStream.getVideoTracks().every(track => track.readyState === 'live');
+        
+        if (allTracksActive && isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
+          console.log("CameraView: Todos los tracks activos, notificando stream lista para procesamiento");
           streamReadyCalledRef.current = true;
           onStreamReady(newStream);
+        } else {
+          console.log("CameraView: Condiciones para notificar stream no cumplidas:", {
+            allTracksActive,
+            isMonitoring,
+            hasCallback: !!onStreamReady,
+            alreadyCalled: streamReadyCalledRef.current
+          });
         }
       }
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
+    } finally {
+      initializingRef.current = false;
     }
   };
 
@@ -119,6 +156,7 @@ const CameraView = ({
     }
     
     return () => {
+      console.log("CameraView: Componente desmontado, limpiando recursos");
       mountedRef.current = false;
       stopCamera();
     };
