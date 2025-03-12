@@ -89,20 +89,6 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
-  
-  .golden-value {
-    background: linear-gradient(to bottom, #fef9d7 0%, #d1b464 50%, #fef7cd 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    display: inline-block;
-    position: relative;
-  }
-  
-  /* Remove the ::after element and animations */
-  
-  /* Remove the keyframes for shine animation */
-
 
 @layer base {
   * {

@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -87,10 +88,15 @@ export default {
           "0%, 100%": { height: "2rem" },
           "50%": { height: "0.5rem" }
         },
+        "value-glow": {
+          "0%, 100%": { textShadow: "0 0 1px rgba(255,255,255,0.2)" },
+          "50%": { textShadow: "0 0 20px rgba(255,255,255,0.9), 0 0 10px rgba(255,255,255,0.6)" }
+        }
       },
       animation: {
         "heart-beat": "heart-beat 1s ease-in-out infinite",
         "flip": "card-flip 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
+        "value-glow": "value-glow 3s ease-in-out infinite"
       }
     },
   },
@@ -103,12 +109,7 @@ export default {
           '-webkit-background-clip': 'text',
           'background-clip': 'text',
           'color': 'transparent',
-        },
-        '.text-gradient-gold': {
-          background: 'linear-gradient(to bottom, #FEF7CD, #D4AF37, #FEF7CD)',
-          '-webkit-background-clip': 'text',
-          'background-clip': 'text',
-          'color': 'transparent',
+          'text-shadow': '0 0 5px rgba(255,255,255,0.3)'
         },
       }
       addUtilities(newUtilities)
