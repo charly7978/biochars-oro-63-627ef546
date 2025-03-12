@@ -116,7 +116,6 @@ const Index = () => {
       clearTimeout(cameraStabilizationTimerRef.current);
     }
     
-    // Toast informando al usuario
     toast.info("Sitúa tu dedo sobre la cámara", {
       description: "Cubre completamente la lente para una mejor señal",
       duration: 5000
@@ -213,7 +212,6 @@ const Index = () => {
       return;
     }
 
-    // Esperamos un tiempo para que la cámara se estabilice completamente
     if (cameraStabilizationTimerRef.current) {
       clearTimeout(cameraStabilizationTimerRef.current);
     }
@@ -227,16 +225,9 @@ const Index = () => {
           return;
         }
         
-        // Verificar que el track sigue activo
-        if (videoTrack.readyState !== 'live') {
-          console.error("Video track no está activo después de estabilización");
-          return;
-        }
-        
         const imageCapture = new ImageCapture(videoTrack);
         
         try {
-          // Activar la linterna si está disponible
           if (videoTrack.getCapabilities()?.torch) {
             await videoTrack.applyConstraints({
               advanced: [{ torch: true }]
@@ -246,7 +237,6 @@ const Index = () => {
             console.log("La linterna no está disponible en este dispositivo");
           }
           
-          // Configurar alta resolución
           const capabilities = videoTrack.getCapabilities();
           if (capabilities?.width && capabilities?.height) {
             const maxWidth = capabilities.width.max;
@@ -260,7 +250,6 @@ const Index = () => {
           }
         } catch (constraintError) {
           console.error("Error al aplicar configuraciones avanzadas:", constraintError);
-          // Continuamos de todos modos
         }
         
         const tempCanvas = document.createElement('canvas');
@@ -270,9 +259,8 @@ const Index = () => {
           return;
         }
         
-        // Umbrales ajustados para mejor detección
-        const DETECTION_THRESHOLD = 50;  // Valor mínimo para detección de dedo (más bajo = más sensible)
-        const MIN_RED_DIFF = 15;         // Diferencia mínima entre canales rojo y otros
+        const DETECTION_THRESHOLD = 50;
+        const MIN_RED_DIFF = 15;
         
         const processImage = async () => {
           if (!isMonitoring) {
@@ -288,7 +276,6 @@ const Index = () => {
           try {
             setIsProcessingFrame(true);
             
-            // Verificar que el track sigue activo antes de cada captura
             if (videoTrack.readyState !== 'live') {
               console.error("Video track no está activo durante processImage");
               setIsProcessingFrame(false);
@@ -300,12 +287,10 @@ const Index = () => {
             tempCanvas.height = frame.height;
             tempCtx.drawImage(frame, 0, 0);
             
-            // Región central de la imagen (donde suele estar el dedo)
             const centerX = Math.floor(frame.width / 2);
             const centerY = Math.floor(frame.height / 2);
             const regionSize = Math.min(100, Math.floor(frame.width / 4));
             
-            // Analizar la región central para determinar si hay un dedo
             const centerRegion = tempCtx.getImageData(
               centerX - regionSize/2, 
               centerY - regionSize/2,
@@ -315,10 +300,9 @@ const Index = () => {
             
             const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
             
-            // Verificación básica de presencia de dedo (canal rojo elevado)
-            let totalRed = 0;
-            let totalGreen = 0;
-            let totalBlue = 0;
+            const totalRed = 0;
+            const totalGreen = 0;
+            const totalBlue = 0;
             
             for (let i = 0; i < centerRegion.data.length; i += 4) {
               totalRed += centerRegion.data[i];
@@ -334,11 +318,10 @@ const Index = () => {
             const brightness = (avgRed + avgGreen + avgBlue) / 3;
             const redDiff = avgRed - ((avgGreen + avgBlue) / 2);
             
-            // Mejor algoritmo de detección de dedo
             const fingerDetected = 
-              brightness > DETECTION_THRESHOLD && // Hay suficiente luz
-              redDiff > MIN_RED_DIFF &&           // Canal rojo dominante (característica de la piel/sangre)
-              avgRed > Math.max(avgGreen, avgBlue); // Rojo es el canal más fuerte
+              brightness > DETECTION_THRESHOLD &&
+              redDiff > MIN_RED_DIFF &&
+              avgRed > Math.max(avgGreen, avgBlue);
             
             if (fingerDetected) {
               console.log("Dedo detectado en frame, procesando señal", { 
@@ -350,7 +333,6 @@ const Index = () => {
               });
             }
             
-            // Procesar frame con el algoritmo PPG
             processFrame(imageData, fingerDetected);
           } catch (error) {
             console.error("Error capturando frame:", error);
@@ -361,8 +343,7 @@ const Index = () => {
             }
           }
         };
-
-        // Iniciar el procesamiento de frames
+        
         processImage();
       } catch (error) {
         console.error("Error en configuración de stream:", error);
@@ -371,16 +352,18 @@ const Index = () => {
           duration: 3000
         });
       }
-    }, 3000); // Esperar 3 segundos para estabilización completa
+    }, 3000);
   };
 
   useEffect(() => {
     if (lastSignal) {
-      // Procesar aunque fingerDetected sea false para mejor detección
+      console.log("Processing signal for BPM update, fingerDetected:", lastSignal.fingerDetected, 
+                 "quality:", lastSignal.quality, "value:", lastSignal.filteredValue);
+      
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
-      // Solo actualizar si tenemos un BPM válido
       if (heartBeatResult.bpm > 0) {
+        console.log("Valid BPM detected:", heartBeatResult.bpm);
         setHeartRate(heartBeatResult.bpm);
         
         const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -388,9 +371,10 @@ const Index = () => {
           setVitalSigns(vitals);
           setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
         }
+      } else {
+        console.log("No valid BPM in current signal");
       }
       
-      // Actualizar calidad de señal independientemente
       setSignalQuality(lastSignal.quality);
     }
   }, [lastSignal, processHeartBeat, processVitalSigns]);

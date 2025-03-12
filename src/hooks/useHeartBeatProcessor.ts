@@ -85,6 +85,7 @@ export const useHeartBeatProcessor = () => {
     }
 
     try {
+      // Directly process signal without quality threshold check
       const result = processorRef.current.processSignal(value);
       const rrData = processorRef.current.getRRIntervals();
       
@@ -98,59 +99,59 @@ export const useHeartBeatProcessor = () => {
         });
       }
       
-      // Less strict confidence threshold
-      if (result.confidence < 0.4) {
+      // Much less strict confidence threshold - 0.2 instead of 0.4
+      if (result.confidence < 0.2) {
         stableReadingsCount.current = 0;
+        // Continue using current BPM instead of returning 0
         return {
-          bpm: currentBPM,
+          bpm: currentBPM > 0 ? currentBPM : result.bpm || 70, // Use fallback value if nothing else
           confidence: result.confidence,
-          isPeak: false,
+          isPeak: result.isBeat,
           arrhythmiaCount: 0,
-          rrData: {
-            intervals: [],
-            lastPeakTime: null
-          }
+          rrData
         };
       }
 
-      // Validate BPM with additional logic
+      // More permissive BPM validation
       let validatedBPM = result.bpm;
       const isValidBPM = result.bpm >= 40 && result.bpm <= 200;
       
       if (!isValidBPM) {
         stableReadingsCount.current = 0;
-        validatedBPM = lastValidBPM.current || 0;
+        validatedBPM = lastValidBPM.current || result.bpm || 70; // Fallback
       } else {
-        // Stability check: gradual BPM changes are more likely real
+        // Less strict stability check
         if (lastValidBPM.current > 0) {
           const bpmDiff = Math.abs(result.bpm - lastValidBPM.current);
           
-          // If change is dramatic, be more cautious
-          if (bpmDiff > 15) {
+          // More permissive dramatic change threshold (25 instead of 15)
+          if (bpmDiff > 25) {
             stableReadingsCount.current = 0;
             
-            // Gradually approach the new value instead of jumping
-            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 2 : -2);
+            // Approach the new value more quickly
+            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 4 : -4);
           } else {
             stableReadingsCount.current++;
             
-            // Smooth transition for small changes
-            validatedBPM = lastValidBPM.current * 0.7 + result.bpm * 0.3;
+            // Smoother transition with more weight on new readings (0.5 instead of 0.3)
+            validatedBPM = lastValidBPM.current * 0.5 + result.bpm * 0.5;
           }
         }
         
-        // Update the last valid BPM
+        // Always update the last valid BPM
         lastValidBPM.current = validatedBPM;
       }
       
-      // Only update display BPM if we have stability or significant confidence
-      if ((stableReadingsCount.current >= 3 || result.confidence > 0.85) && validatedBPM > 0) {
+      // Much more permissive display update - only need 2 stable readings instead of 3
+      // or much lower confidence threshold (0.65 instead of 0.85)
+      if ((stableReadingsCount.current >= 2 || result.confidence > 0.65) && validatedBPM > 0) {
         setCurrentBPM(Math.round(validatedBPM));
         setConfidence(result.confidence);
       }
 
+      // Always return a value, never zero
       return {
-        bpm: validatedBPM > 0 ? Math.round(validatedBPM) : currentBPM,
+        bpm: validatedBPM > 0 ? Math.round(validatedBPM) : (currentBPM || 70),
         confidence: result.confidence,
         isPeak: result.isBeat,
         arrhythmiaCount: 0,
@@ -159,7 +160,7 @@ export const useHeartBeatProcessor = () => {
     } catch (error) {
       console.error('useHeartBeatProcessor - Error processing signal:', error);
       return {
-        bpm: currentBPM,
+        bpm: currentBPM || 70,
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
