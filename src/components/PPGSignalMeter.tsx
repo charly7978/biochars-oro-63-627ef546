@@ -445,10 +445,20 @@ const PPGSignalMeter = ({
             strokeWidth={1.5}
           />
           <span className="text-[8px] text-center font-medium text-black/80">
-            {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+            {isFingerDetected ? "Dedo detectado" : "Coloque la YEMA del dedo"}
           </span>
         </div>
       </div>
+
+      {/* Added finger placement guidance */}
+      {!isFingerDetected && (
+        <div className="absolute top-1/4 left-0 right-0 flex justify-center">
+          <div className="bg-black/30 text-white px-4 py-2 rounded-lg text-center max-w-xs">
+            <h3 className="font-bold mb-1">Coloque la YEMA del dedo</h3>
+            <p className="text-sm">Apoye suavemente la yema (parte plana) del dedo sobre la cámara, no la punta.</p>
+          </div>
+        </div>
+      )}
 
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
