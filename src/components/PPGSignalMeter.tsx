@@ -43,9 +43,9 @@ const PPGSignalMeter = ({
   const WINDOW_WIDTH_MS = 2800;
   const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 900;
-  const GRID_SIZE_X = 50;
+  const GRID_SIZE_X = 20;
   const GRID_SIZE_Y = 10;
-  const verticalScale = 35.0;
+  const verticalScale = 35;
   const SMOOTHING_FACTOR = 1.5;
   const TARGET_FPS = 90;
   const FRAME_TIME = 1000 / TARGET_FPS;
@@ -95,7 +95,7 @@ const PPGSignalMeter = ({
     gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
     gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
     gradient.addColorStop(0.7, '#B3CCFF'); // Soft green (lower middle)
-    gradient.addColorStop(1, '#C7B750'); // Soft blue (bottom)
+    gradient.addColorStop(1, '#4D70FF'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
