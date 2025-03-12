@@ -40,14 +40,14 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 7500;
+  const WINDOW_WIDTH_MS = 6500;
   const CANVAS_WIDTH = 2560;
   const CANVAS_HEIGHT = 1440;
   const GRID_SIZE_X = 2560;
   const GRID_SIZE_Y = 1440
   const verticalScale = 20.0;  // Sensibilidad aumentada para mejor visualización
   const SMOOTHING_FACTOR = 1.8; // Mayor suavizado para reducir ruido
-  const TARGET_FPS = 90;
+  const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
@@ -445,20 +445,10 @@ const PPGSignalMeter = ({
             strokeWidth={1.5}
           />
           <span className="text-[8px] text-center font-medium text-black/80">
-            {isFingerDetected ? "Dedo detectado" : "Coloque la YEMA del dedo"}
+            {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
       </div>
-
-      {/* Added finger placement guidance */}
-      {!isFingerDetected && (
-        <div className="absolute top-1/4 left-0 right-0 flex justify-center">
-          <div className="bg-black/30 text-white px-4 py-2 rounded-lg text-center max-w-xs">
-            <h3 className="font-bold mb-1">Coloque la YEMA del dedo</h3>
-            <p className="text-sm">Apoye suavemente la yema (parte plana) del dedo sobre la cámara, no la punta.</p>
-          </div>
-        </div>
-      )}
 
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
