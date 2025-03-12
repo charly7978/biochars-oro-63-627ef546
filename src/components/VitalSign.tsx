@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp, X } from 'lucide-react';
+import { ChevronUp, X, Lock } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
@@ -10,6 +11,7 @@ interface VitalSignProps {
   unit?: string;
   highlighted?: boolean;
   calibrationProgress?: number;
+  readOnly?: boolean; // Esta propiedad ya existe implícitamente
 }
 
 const VitalSign = ({ 
@@ -17,7 +19,8 @@ const VitalSign = ({
   value, 
   unit, 
   highlighted = false,
-  calibrationProgress 
+  calibrationProgress,
+  readOnly = true // Por defecto, todos los valores serán de solo lectura
 }: VitalSignProps) => {
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
@@ -287,8 +290,9 @@ const VitalSign = ({
     <Sheet>
       <SheetTrigger asChild>
         <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1 flex items-center justify-center">
             {label}
+            <Lock size={10} className="ml-1 text-gray-500" /> {/* Añadir icono de bloqueo */}
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
@@ -331,6 +335,7 @@ const VitalSign = ({
           <SheetTitle className="text-2xl font-bold flex items-center justify-between">
             <div className="flex items-center">
               {label}
+              <Lock size={12} className="ml-1 text-gray-500" /> {/* Añadir icono de bloqueo */}
               {unit && <span className="text-sm text-gray-500 ml-2">({unit})</span>}
             </div>
             <div className="flex space-x-2">
@@ -348,7 +353,10 @@ const VitalSign = ({
           <div className="space-y-6">
             <Card>
               <CardContent className="pt-6">
-                <h3 className="text-lg font-semibold mb-2">Rango Normal</h3>
+                <h3 className="text-lg font-semibold mb-2 flex items-center">
+                  Rango Normal 
+                  <Lock size={12} className="ml-1 text-gray-500" /> {/* Añadir icono de bloqueo */}
+                </h3>
                 <p className="text-gray-700">{detailedInfo.normalRange}</p>
               </CardContent>
             </Card>
@@ -362,7 +370,10 @@ const VitalSign = ({
 
             <Card>
               <CardContent className="pt-6">
-                <h3 className="text-lg font-semibold mb-2">Estado Actual</h3>
+                <h3 className="text-lg font-semibold mb-2 flex items-center">
+                  Estado Actual
+                  <Lock size={12} className="ml-1 text-gray-500" /> {/* Añadir icono de bloqueo */}
+                </h3>
                 <div className={`text-lg font-medium ${riskLabel ? riskColor : 'text-green-500'}`}>
                   {riskLabel || 'Normal'}
                 </div>
