@@ -25,10 +25,10 @@ export class PeakDetector {
   
   constructor(
     peakWindow: number = 3,
-    minPeakThreshold: number = 0.2,
-    strongPeakThreshold: number = 0.35,
+    minPeakThreshold: number = 0.25,     // Slightly increased
+    strongPeakThreshold: number = 0.4,   // Increased for more reliable detection
     dynamicThreshold: number = 0.65,
-    minTimeBetweenBeats: number = 250,
+    minTimeBetweenBeats: number = 300,   // Increased to reduce false positives
     maxTimeBetweenBeats: number = 1500
   ) {
     this.PEAK_WINDOW_SIZE = peakWindow;
@@ -66,8 +66,8 @@ export class PeakDetector {
       return false;
     }
 
-    // Standard quality threshold
-    if (quality < 30) {
+    // Higher quality threshold for more reliable peaks
+    if (quality < 40) {
       this.consecutiveDetectionsCount = Math.max(0, this.consecutiveDetectionsCount - 1);
       return false;
     }
@@ -92,41 +92,41 @@ export class PeakDetector {
         this.recentAmplitudes.shift();
       }
       
-      // Balanced quality-adjusted threshold
-      const qualityFactor = Math.max(0.5, quality / 100);
+      // Stronger quality-adjusted threshold
+      const qualityFactor = Math.max(0.6, quality / 100);
       const avgAmplitude = this.recentAmplitudes.reduce((sum, val) => sum + val, 0) / this.recentAmplitudes.length;
       
       // Calculate adaptive threshold
       const avgPeakStrength = this.peakHistory.length > 0 ? 
         this.peakHistory.reduce((sum, val) => sum + val, 0) / this.peakHistory.length : 0;
       
-      // Balanced threshold
-      const adaptiveThreshold = this.baselineThreshold * this.MIN_PEAK_THRESHOLD_FACTOR;
+      // Increased threshold for better reliability
+      const adaptiveThreshold = this.baselineThreshold * this.MIN_PEAK_THRESHOLD_FACTOR * 1.1;
       
-      // Consider relative peak strength
+      // Consider relative peak strength with higher requirements
       const relativePeakStrength = avgPeakStrength > 0 ? peakStrength / avgPeakStrength : 1;
       
-      // Apply threshold
-      const effectiveThreshold = relativePeakStrength < 0.7 ? 
-        adaptiveThreshold * 1.1 : adaptiveThreshold;
+      // Apply threshold with stricter criteria
+      const effectiveThreshold = relativePeakStrength < 0.75 ? 
+        adaptiveThreshold * 1.2 : adaptiveThreshold;
 
       // Check if peak surpasses threshold
       if (peakStrength > effectiveThreshold) {
-        // Beat interval validation
+        // Beat interval validation with stricter criteria
         if (this.beatIntervalHistory.length > 2) {
           // Calculate average interval
           const avgInterval = this.beatIntervalHistory.reduce((sum, val) => sum + val, 0) / 
                              this.beatIntervalHistory.length;
           
-          // Prevent premature beats
-          if (timeSinceLastBeat < avgInterval * 0.6) {
+          // Prevent premature beats with stronger threshold
+          if (timeSinceLastBeat < avgInterval * 0.65) {
             return false;
           }
         }
         
-        // Balanced confidence calculation
-        this.beatConfidence = Math.min(0.85, 
-          (peakStrength / (adaptiveThreshold * 1.1)) * qualityFactor * (this.signalStability + 0.6)
+        // More conservative confidence calculation
+        this.beatConfidence = Math.min(0.8, 
+          (peakStrength / (adaptiveThreshold * 1.2)) * qualityFactor * (this.signalStability + 0.5)
         );
         
         // Standard confidence boost with consecutive detections
@@ -150,7 +150,7 @@ export class PeakDetector {
         this.lastBeatTime = now;
         
         // Update timing parameters
-        if (timeSinceLastBeat < 500) {
+        if (timeSinceLastBeat < 600) {  // Increased threshold for high heart rates
           this.shouldReduceTimeBetweenBeats = true;
         } else if (timeSinceLastBeat > 1000) {
           this.shouldReduceTimeBetweenBeats = false;
@@ -163,18 +163,18 @@ export class PeakDetector {
       this.consecutiveDetectionsCount = Math.max(0, this.consecutiveDetectionsCount - 0.5);
     }
 
-    // Balanced derivative-based fallback detection
-    if (!isPeak && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS * 0.7) {
-      // Only use with moderate quality signals
-      if (derivative > 0.25 && quality > 50) {
-        this.beatConfidence = 0.4;
+    // More conservative derivative-based fallback detection
+    if (!isPeak && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS * 0.8) {
+      // Only use with higher quality signals
+      if (derivative > 0.3 && quality > 60) {  // Increased thresholds
+        this.beatConfidence = 0.35;  // Lower confidence for derivative detection
         this.lastBeatTime = now;
         return true;
       }
       
-      // Last resort for very long gaps
-      if (derivative > 0.3 && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS && quality > 60) {
-        this.beatConfidence = 0.3;
+      // Last resort for very long gaps with very strict conditions
+      if (derivative > 0.35 && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS && quality > 70) {
+        this.beatConfidence = 0.25;  // Even lower confidence
         this.lastBeatTime = now;
         return true;
       }
@@ -187,8 +187,8 @@ export class PeakDetector {
     const windowSize = this.adaptivePeakWindow;
     const midPoint = Math.floor(buffer.length / 2);
     
-    // Moderate minimum value requirement
-    if (Math.abs(value) < 0.1) return false;
+    // Slightly higher minimum value requirement
+    if (Math.abs(value) < 0.15) return false;
     
     // Check if current value is local maximum
     let peakConfirmed = true;
@@ -232,9 +232,9 @@ export class PeakDetector {
     this.signalStability = Math.min(1, Math.max(0, 1 - (iqr / (amplitude || 1))));
     
     // Balanced threshold adjustment rate
-    const adaptationRate = 0.15 + (0.15 * this.signalStability);
+    const adaptationRate = 0.12 + (0.13 * this.signalStability);  // Slightly reduced for more stability
     this.baselineThreshold = Math.max(
-      0.3,  
+      0.35,  // Increased minimum threshold
       this.baselineThreshold * (1 - adaptationRate) + amplitude * adaptationRate
     );
     
@@ -244,7 +244,7 @@ export class PeakDetector {
   }
   
   public setTimingParameters(interval: number): void {
-    if (interval < 600) {
+    if (interval < 600) {  // Adjusted threshold
       this.shouldReduceTimeBetweenBeats = true;
     } else if (interval > 1000) {
       this.shouldReduceTimeBetweenBeats = false;
