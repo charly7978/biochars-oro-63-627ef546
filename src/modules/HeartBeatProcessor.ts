@@ -3,7 +3,7 @@ export class HeartBeatProcessor {
   private readonly SAMPLE_RATE = 30;
   private readonly WINDOW_SIZE = 60;
   private readonly MIN_BPM = 20;
-  private readonly MAX_BPM = 220; // Se mantiene amplio para no perder picos fuera de rango
+  private readonly MAX_BPM = 200; // Se mantiene amplio para no perder picos fuera de rango
   private readonly SIGNAL_THRESHOLD = 0.40; 
   private readonly MIN_CONFIDENCE = 0.60;
   private readonly DERIVATIVE_THRESHOLD = -0.03; 
