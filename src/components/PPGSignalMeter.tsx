@@ -407,12 +407,12 @@ const PPGSignalMeter = ({
   }, [onReset]);
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px]">
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-[100vh] absolute inset-0 z-0 object-contain"
+        className="w-full h-full absolute inset-0 z-0 object-cover"
       />
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
