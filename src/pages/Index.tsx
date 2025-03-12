@@ -293,113 +293,107 @@ const Index = () => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    // Asegurar que la linterna esté encendida para mediciones de PPG
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
-    
-    // Crear un canvas de tamaño óptimo para el procesamiento
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
+    if (!videoTrack) {
+      console.error("No video track available");
       return;
     }
-    
-    // Variables para controlar el rendimiento y la tasa de frames
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30; // Apuntar a 30 FPS para precisión
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
-    
-    // Crearemos un contexto dedicado para el procesamiento de imagen
-    const enhanceCanvas = document.createElement('canvas');
-    const enhanceCtx = enhanceCanvas.getContext('2d', {willReadFrequently: true});
-    enhanceCanvas.width = 320;  // Tamaño óptimo para procesamiento PPG
-    enhanceCanvas.height = 240;
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
-      
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
-      
-      // Control de tasa de frames para no sobrecargar el dispositivo
-      if (timeSinceLastProcess >= targetFrameInterval) {
+
+    const cleanup = () => {
+      if (videoTrack.readyState === 'live') {
         try {
-          // Capturar frame 
-          const frame = await imageCapture.grabFrame();
-          
-          // Configurar tamaño adecuado del canvas para procesamiento
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          // Dibujar el frame en el canvas
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          // Mejorar la imagen para detección PPG
-          if (enhanceCtx) {
-            // Resetear canvas
-            enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            
-            // Dibujar en el canvas de mejora
-            enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
-            
-            // Opcionales: Ajustes para mejorar la señal roja
-            enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';  // Sutil refuerzo del canal rojo
-            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            enhanceCtx.globalCompositeOperation = 'source-over';
-          
-            // Obtener datos de la imagen mejorada
-            const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            
-            // Procesar el frame mejorado
-            processFrame(imageData);
-          } else {
-            // Fallback a procesamiento normal
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-          }
-          
-          // Actualizar contadores para monitoreo de rendimiento
-          frameCount++;
-          lastProcessTime = now;
-          
-          // Calcular FPS cada segundo
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-          }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
+          videoTrack.stop();
+        } catch (err) {
+          console.warn('Error stopping video track:', err);
         }
-      }
-      
-      // Programar el siguiente frame
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
       }
     };
 
-    processImage();
+    // Cleanup on component unmount or when monitoring stops
+    useEffect(() => {
+      return cleanup;
+    }, []);
+
+    useEffect(() => {
+      if (!isMonitoring) {
+        cleanup();
+      }
+    }, [isMonitoring]);
+
+    try {
+      const imageCapture = new ImageCapture(videoTrack);
+      
+      if (videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna para mejorar la señal PPG");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error activando linterna:", err));
+      }
+      
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+      if (!tempCtx) {
+        console.error("Could not get 2D context");
+        return;
+      }
+      
+      let isProcessing = false;
+      let frameRequestId: number | null = null;
+      
+      const processImage = async () => {
+        if (!isMonitoring || isProcessing) {
+          if (frameRequestId) {
+            cancelAnimationFrame(frameRequestId);
+            frameRequestId = null;
+          }
+          return;
+        }
+        
+        try {
+          isProcessing = true;
+          
+          // Check track state before capturing
+          if (videoTrack.readyState !== 'live') {
+            console.warn('Video track is not live, skipping frame');
+            isProcessing = false;
+            return;
+          }
+
+          const frame = await imageCapture.grabFrame();
+          tempCanvas.width = frame.width;
+          tempCanvas.height = frame.height;
+          tempCtx.drawImage(frame, 0, 0);
+          const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+          processFrame(imageData);
+          
+          frame.close(); // Properly release the frame
+        } catch (error) {
+          console.error("Error capturing frame:", error);
+          if (error instanceof Error && error.name === 'InvalidStateError') {
+            // If we get an invalid state error, stop processing
+            cleanup();
+            return;
+          }
+        } finally {
+          isProcessing = false;
+          if (isMonitoring && videoTrack.readyState === 'live') {
+            frameRequestId = requestAnimationFrame(processImage);
+          }
+        }
+      };
+
+      processImage();
+      
+      // Cleanup when monitoring stops
+      return () => {
+        if (frameRequestId) {
+          cancelAnimationFrame(frameRequestId);
+        }
+        cleanup();
+      };
+    } catch (error) {
+      console.error("Error in stream setup:", error);
+      cleanup();
+    }
   };
 
   useEffect(() => {
@@ -541,4 +535,3 @@ const Index = () => {
 };
 
 export default Index;
-
