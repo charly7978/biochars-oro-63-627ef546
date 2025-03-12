@@ -90,41 +90,66 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Draw major grid lines
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
     ctx.beginPath();
     ctx.strokeStyle = '#333333';
     ctx.lineWidth = 0.5;
     
-    // Vertical lines
-    for (let x = 0; x <= CANVAS_WIDTH; x += 50) {
+    const minorGridStep = 24;
+    for (let x = 0; x <= CANVAS_WIDTH; x += minorGridStep) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
     }
     
-    // Horizontal lines
-    for (let y = 0; y <= CANVAS_HEIGHT; y += 50) {
+    for (let y = 0; y <= CANVAS_HEIGHT; y += minorGridStep) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
     }
     ctx.stroke();
     
-    // Draw darker major grid lines
     ctx.beginPath();
     ctx.strokeStyle = '#222222';
     ctx.lineWidth = 1;
     
-    // Major vertical lines
-    for (let x = 0; x <= CANVAS_WIDTH; x += 200) {
+    const majorGridStep = minorGridStep * 5;
+    for (let x = 0; x <= CANVAS_WIDTH; x += majorGridStep) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
     }
     
-    // Major horizontal lines
-    for (let y = 0; y <= CANVAS_HEIGHT; y += 200) {
+    for (let y = 0; y <= CANVAS_HEIGHT; y += majorGridStep) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
     }
     ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.strokeStyle = '#403E43';
+    ctx.lineWidth = 1.5;
+    
+    const highlightStep = majorGridStep * 5;
+    for (let x = 0; x <= CANVAS_WIDTH; x += highlightStep) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CANVAS_HEIGHT);
+    }
+    
+    for (let y = 0; y <= CANVAS_HEIGHT; y += highlightStep) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(CANVAS_WIDTH, y);
+    }
+    ctx.stroke();
+    
+    const centerY = CANVAS_HEIGHT / 2;
+    ctx.beginPath();
+    ctx.strokeStyle = '#555555';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(CANVAS_WIDTH, centerY);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }, []);
 
   const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
@@ -214,11 +239,9 @@ const PPGSignalMeter = ({
     
     const now = Date.now();
     
-    // Clear canvas with the existing gradient background
-    ctx.fillStyle = '#F8FAFC';
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Draw the grid
     drawGrid(ctx);
     
     if (preserveResults && !isFingerDetected) {
