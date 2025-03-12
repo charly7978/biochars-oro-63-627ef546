@@ -94,7 +94,7 @@ const PPGSignalMeter = ({
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
     gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
-    gradient.addColorStop(0.7, '#F2FCE2'); // Soft green (lower middle)
+    gradient.addColorStop(0.7, '#B3CCFF'); // Soft green (lower middle)
     gradient.addColorStop(1, '#08E8DE'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
