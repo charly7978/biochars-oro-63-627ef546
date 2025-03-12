@@ -1,4 +1,3 @@
-
 export class SignalProcessor {
   // Buffer and signal parameters
   private readonly MAX_BUFFER_SIZE: number;
@@ -11,7 +10,7 @@ export class SignalProcessor {
   private lastProcessedValue = 0;
   private valueDerivative = 0;
   
-  constructor(maxBufferSize = 300, derivativeBufferSize = 10, emaAlpha = 0.4) {
+  constructor(maxBufferSize = 300, derivativeBufferSize = 10, emaAlpha = 0.5) {
     this.MAX_BUFFER_SIZE = maxBufferSize;
     this.DERIVATIVE_BUFFER_SIZE = derivativeBufferSize;
     this.EMA_ALPHA = emaAlpha;
@@ -23,30 +22,31 @@ export class SignalProcessor {
     signalBuffer: number[];
   } {
     // Add signal to buffer with EMA smoothing for noise reduction
+    // Higher EMA_ALPHA means less smoothing, which keeps more of the original signal
     let smoothedValue: number;
     
     if (this.signalBuffer.length === 0) {
       smoothedValue = value;
       this.signalBuffer.push(value);
     } else {
-      // Smooth signal using EMA
+      // Apply less smoothing to preserve more detail in the signal
       smoothedValue = this.lastProcessedValue + 
         this.EMA_ALPHA * (value - this.lastProcessedValue);
       this.signalBuffer.push(smoothedValue);
       this.lastProcessedValue = smoothedValue;
     }
     
-    // Calculate first derivative (slope) - important for peak detection
+    // Calculate first derivative (slope) with more emphasis on rapid changes
     if (this.signalBuffer.length >= 2) {
       const currentValue = this.signalBuffer[this.signalBuffer.length - 1];
       const prevValue = this.signalBuffer[this.signalBuffer.length - 2];
       const newDerivative = currentValue - prevValue;
       
-      // Smooth derivative using EMA
+      // Less smoothing for derivative to better capture rapid changes
       if (this.derivativeBuffer.length === 0) {
         this.valueDerivative = newDerivative;
       } else {
-        this.valueDerivative = this.valueDerivative * 0.7 + newDerivative * 0.3;
+        this.valueDerivative = this.valueDerivative * 0.6 + newDerivative * 0.4;
       }
       
       // Store derivative for trend analysis
