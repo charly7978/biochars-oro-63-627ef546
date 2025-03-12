@@ -1,3 +1,4 @@
+
 export class CameraController {
   private stream: MediaStream | null = null;
   private videoTrack: MediaStreamTrack | null = null;
@@ -92,17 +93,11 @@ export class CameraController {
       });
 
       // Verificar si podemos ajustar la exposición
-      if (capabilities.exposureTime) {
-        const exposureRange = capabilities.exposureTime;
-        const targetExposure = Math.min(
-          exposureRange.max || 1000,
-          Math.max(exposureRange.min || 100, 500)
-        );
-        
+      // Nota: Corregido el uso de exposureMode en lugar de exposureTime
+      if (capabilities.exposureMode) {
         await this.videoTrack.applyConstraints({
           advanced: [{
-            exposureMode: 'manual',
-            exposureTime: targetExposure
+            exposureMode: 'manual'
           }]
         });
       }

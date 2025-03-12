@@ -16,6 +16,7 @@ export const useSignalProcessor = () => {
   const [error, setError] = useState<ProcessingError | null>(null);
   const [framesProcessed, setFramesProcessed] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const initAttemptRef = useRef(false);
   const [signalStats, setSignalStats] = useState({
     minValue: Infinity,
     maxValue: -Infinity,
@@ -26,6 +27,9 @@ export const useSignalProcessor = () => {
   // Inicialización del procesador con reintentos
   const initializeProcessor = useCallback(async () => {
     if (isInitialized) return true;
+    if (initAttemptRef.current) return false;
+    
+    initAttemptRef.current = true;
     
     try {
       console.log("useSignalProcessor: Inicializando procesador", {
@@ -36,6 +40,7 @@ export const useSignalProcessor = () => {
       
       console.log("useSignalProcessor: Procesador inicializado correctamente");
       setIsInitialized(true);
+      initAttemptRef.current = false;
       return true;
     } catch (error) {
       console.error("useSignalProcessor: Error de inicialización detallado:", {
@@ -44,6 +49,7 @@ export const useSignalProcessor = () => {
         timestamp: new Date().toISOString()
       });
       
+      initAttemptRef.current = false;
       return false;
     }
   }, [processor, isInitialized]);
@@ -134,7 +140,7 @@ export const useSignalProcessor = () => {
       }
     }
     
-    setIsProcessing(true);
+    // Reiniciar estado para asegurar una medición limpia
     setFramesProcessed(0);
     setSignalStats({
       minValue: Infinity,
@@ -143,12 +149,20 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
+    // Forzar una calibración antes de iniciar el procesamiento
+    try {
+      console.log("useSignalProcessor: Realizando calibración previa al inicio");
+      await processor.calibrate();
+      console.log("useSignalProcessor: Calibración previa completada con éxito");
+    } catch (err) {
+      console.warn("Error en calibración previa:", err);
+      // Continuar de todos modos
+    }
+    
+    setIsProcessing(true);
     processor.start();
     
-    // Forzar una recalibración inicial para mejorar la detección
-    processor.calibrate().catch(err => {
-      console.warn("Error en calibración inicial:", err);
-    });
+    console.log("useSignalProcessor: Procesamiento iniciado correctamente");
   }, [processor, isProcessing, isInitialized, initializeProcessor]);
 
   const stopProcessing = useCallback(() => {
@@ -200,12 +214,17 @@ export const useSignalProcessor = () => {
       console.log("useSignalProcessor: Frame ignorado (procesador no inicializado)", {
         timestamp: new Date().toISOString()
       });
+      
+      // Intentar inicializar si estamos procesando pero no inicializado
+      initializeProcessor().catch(err => {
+        console.error("Error al intentar inicializar durante processFrame:", err);
+      });
     } else {
       console.log("useSignalProcessor: Frame ignorado (no está procesando)", {
         timestamp: new Date().toISOString()
       });
     }
-  }, [isProcessing, isInitialized, processor, framesProcessed]);
+  }, [isProcessing, isInitialized, processor, framesProcessed, initializeProcessor]);
 
   return {
     isProcessing,

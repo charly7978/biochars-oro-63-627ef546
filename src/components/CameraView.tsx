@@ -20,6 +20,7 @@ const CameraView = ({
   const [isStreamReady, setIsStreamReady] = useState(false);
   const frameIntervalRef = useRef<number>(1000 / 30); // 30 FPS
   const lastFrameTimeRef = useRef<number>(0);
+  const videoReadyRef = useRef<boolean>(false);
 
   const stopCamera = async () => {
     if (stream) {
@@ -43,6 +44,7 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       setIsStreamReady(false);
+      videoReadyRef.current = false;
     }
   };
 
@@ -72,6 +74,10 @@ const CameraView = ({
         video: baseVideoConstraints
       };
 
+      // Primero detener cualquier stream previo para evitar conflictos
+      await stopCamera();
+
+      console.log("Iniciando nueva stream de cámara");
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = newStream.getVideoTracks()[0];
 
@@ -130,45 +136,46 @@ const CameraView = ({
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
+        // Esperar explícitamente a que el video esté listo para reproducir
+        await new Promise<void>((resolve) => {
+          if (videoRef.current) {
+            const handleCanPlay = () => {
+              console.log("Video listo para reproducir (canplay event)");
+              videoRef.current?.removeEventListener('canplay', handleCanPlay);
+              resolve();
+            };
+            videoRef.current.addEventListener('canplay', handleCanPlay);
+            
+            // Si ya está listo, resolver inmediatamente
+            if (videoRef.current.readyState >= 3) {
+              console.log("Video ya listo para reproducir (readyState >= 3)");
+              videoRef.current.removeEventListener('canplay', handleCanPlay);
+              resolve();
+            }
+          } else {
+            resolve(); // Si no hay videoRef, resolver de todos modos
+          }
+        });
       }
 
+      console.log("Stream de cámara inicializada correctamente");
       setStream(newStream);
+      videoReadyRef.current = true;
       
-      // No notificamos que el stream está listo inmediatamente,
-      // esperamos a que el video realmente esté listo
+      // Notificar que el stream está listo solo después de que el video esté listo
+      if (onStreamReady) {
+        console.log("Notificando onStreamReady con stream lista");
+        onStreamReady(newStream);
+        setIsStreamReady(true);
+      }
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
     }
   };
 
-  // Añadir evento para detectar cuando el video realmente está listo
+  // Efecto para manejar cambios en isMonitoring
   useEffect(() => {
-    const videoElement = videoRef.current;
-    
-    if (videoElement && stream && !isStreamReady) {
-      const handleVideoReady = () => {
-        console.log("Video realmente listo para usar, notificando onStreamReady");
-        setIsStreamReady(true);
-        
-        if (onStreamReady) {
-          onStreamReady(stream);
-        }
-      };
-      
-      // Verificar si el video ya tiene datos
-      if (videoElement.readyState >= 2) {
-        handleVideoReady();
-      } else {
-        // Esperar a que los datos del video estén disponibles
-        videoElement.addEventListener('loadeddata', handleVideoReady);
-        return () => {
-          videoElement.removeEventListener('loadeddata', handleVideoReady);
-        };
-      }
-    }
-  }, [stream, onStreamReady, isStreamReady]);
-
-  useEffect(() => {
+    console.log("CameraView: isMonitoring cambiado a", isMonitoring);
     if (isMonitoring && !stream) {
       console.log("Starting camera because isMonitoring=true");
       startCamera();
