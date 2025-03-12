@@ -43,6 +43,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isCurrentlyDetected: boolean = false;
   private lastDetectionTime: number = 0;
   private readonly DETECTION_TIMEOUT = 500; // 500ms timeout
+  private signalBuffer: number[] = [];
+  private smoothedValue: number = 0;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -100,7 +102,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
-  processFrame(imageData: ImageData): void {
+  public processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
       return;
     }
@@ -426,5 +428,11 @@ export class PPGSignalProcessor implements SignalProcessor {
       timestamp: Date.now()
     };
     this.onError?.(error);
+  }
+
+  private calculateEMA(value: number): number {
+    const alpha = 0.25; // Ajustado de 0.35 a 0.25 para respuesta más rápida
+    this.smoothedValue = alpha * value + (1 - alpha) * this.smoothedValue;
+    return this.smoothedValue;
   }
 }

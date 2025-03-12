@@ -99,7 +99,7 @@ export const useHeartBeatProcessor = () => {
       timestamp: new Date().toISOString()
     });
     
-    if (result.confidence < 0.7) {
+    if (result.confidence < 0.5) { // Antes se usaba 0.7
       console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
         bpm: currentBPM,

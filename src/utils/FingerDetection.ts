@@ -24,6 +24,9 @@ export interface DetectionOptions {
   maxIntensityThreshold?: number; // Umbral máximo para evitar brillos/reflejos
 }
 
+// Añadir variable global para suavizado temporal de la calidad de señal
+let previousConfidence = 0;
+
 /**
  * Analiza una región de imagen para detectar la presencia de un dedo
  * Utiliza múltiples métricas para una detección más precisa
@@ -209,8 +212,10 @@ export function detectFinger(
     ([hasNaturalTexture, hasHumanSkinPattern, hasGoodVariation]
       .filter(Boolean).length >= 2);
 
-  // Se aplica un suavizado extra de la confianza para evitar fluctuaciones bruscas
-  const finalConfidence = Math.round(confidence * 0.95);
+  // Aplicar suavizado temporal de la calidad mediante EMA
+  const alpha = 0.2; // Factor de suavizado
+  previousConfidence = alpha * confidence + (1 - alpha) * previousConfidence;
+  const finalConfidence = Math.round(previousConfidence);
 
   return {
     detected: fingerDetected,
