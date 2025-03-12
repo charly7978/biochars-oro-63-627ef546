@@ -339,8 +339,8 @@ const Index = () => {
           const frame = await imageCapture.grabFrame();
           
           // Configurar tamaño adecuado del canvas para procesamiento
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
+          const targetWidth = Math.min(640, frame.width); // Aumentado de 320 a 640 para mejor resolución
+          const targetHeight = Math.min(480, frame.height); // Aumentado de 240 a 480
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
@@ -352,22 +352,75 @@ const Index = () => {
             0, 0, targetWidth, targetHeight
           );
           
-          // Mejorar la imagen para detección PPG
+          // OPTIMIZACIÓN: Mejorar la imagen para detección PPG
           if (enhanceCtx) {
+            // Ajustar tamaño del canvas de mejora
+            enhanceCanvas.width = targetWidth;
+            enhanceCanvas.height = targetHeight;
+            
             // Resetear canvas
             enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
             
             // Dibujar en el canvas de mejora
             enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
             
-            // Opcionales: Ajustes para mejorar la señal roja
+            // OPTIMIZACIÓN: Aumentar contraste del canal rojo para mejorar señal PPG
+            // Aplicar un filtro que favorece el canal rojo y mejora la detección de vasos sanguíneos
             enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';  // Sutil refuerzo del canal rojo
+            enhanceCtx.fillStyle = 'rgba(255,0,0,0.15)';  // Aumento del refuerzo del canal rojo
             enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            
+            // Ajustar el nivel de contraste para mejorar la detección de pulso
+            enhanceCtx.globalCompositeOperation = 'lighter';
+            enhanceCtx.fillStyle = 'rgba(50,0,0,0.05)';
+            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            
+            // Restaurar modo de composición normal
             enhanceCtx.globalCompositeOperation = 'source-over';
           
             // Obtener datos de la imagen mejorada
             const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            
+            // DIAGNÓSTICO: Analizar distribución de color (solo en modo desarrollo)
+            if (process.env.NODE_ENV === 'development' && frameCount % 30 === 0) {
+              const data = imageData.data;
+              let redSum = 0, greenSum = 0, blueSum = 0;
+              let pixelCount = 0;
+              
+              // Analizar solo el centro (25%)
+              const centerX = Math.floor(imageData.width / 2);
+              const centerY = Math.floor(imageData.height / 2);
+              const radius = Math.min(imageData.width, imageData.height) / 4;
+              
+              for (let y = 0; y < imageData.height; y++) {
+                for (let x = 0; x < imageData.width; x++) {
+                  // Solo analizar píxeles en el centro
+                  const distanceFromCenter = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                  if (distanceFromCenter < radius) {
+                    const i = (y * imageData.width + x) * 4;
+                    redSum += data[i];
+                    greenSum += data[i + 1];
+                    blueSum += data[i + 2];
+                    pixelCount++;
+                  }
+                }
+              }
+              
+              if (pixelCount > 0) {
+                const avgRed = redSum / pixelCount;
+                const avgGreen = greenSum / pixelCount;
+                const avgBlue = blueSum / pixelCount;
+                
+                console.log("Diagnóstico PPG:", {
+                  avgRed: avgRed.toFixed(1),
+                  avgGreen: avgGreen.toFixed(1),
+                  avgBlue: avgBlue.toFixed(1),
+                  redGreenRatio: (avgRed / avgGreen).toFixed(2),
+                  redBlueRatio: (avgRed / avgBlue).toFixed(2),
+                  processingFps
+                });
+              }
+            }
             
             // Procesar el frame mejorado
             processFrame(imageData);

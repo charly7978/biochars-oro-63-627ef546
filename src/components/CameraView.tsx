@@ -50,94 +50,95 @@ const CameraView = ({
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
+      const isIOS = /ipad|iphone|ipod/i.test(navigator.userAgent);
 
-      // Configuración mejorada para la cámara
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 },  // Aumentamos la resolución
-        height: { ideal: 720 },  // HD
-        frameRate: { ideal: 30, max: 30 }
+        width: { ideal: 1280 },  // Mayor resolución para mejor detalle
+        height: { ideal: 720 }
       };
 
       if (isAndroid) {
+        // Ajustes para mejorar la extracción de señal en Android
         Object.assign(baseVideoConstraints, {
-          resizeMode: 'crop-and-scale'
+          frameRate: { ideal: 30, max: 30 }, // Mantener 30 FPS estables
+          // En algunos Android, estos ajustes pueden mejorar la señal PPG
+          exposureMode: "manual",
+          focusMode: "continuous"
+        });
+      } else if (isIOS) {
+        // Ajustes específicos para iOS
+        Object.assign(baseVideoConstraints, {
+          frameRate: { min: 25, ideal: 30 }, // iOS funciona mejor con framerates altos
         });
       }
 
-      const constraints: MediaStreamConstraints = {
-        video: baseVideoConstraints
-      };
+      // Solicitar acceso a la cámara con las restricciones configuradas
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: baseVideoConstraints,
+        audio: false
+      });
 
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const videoTrack = newStream.getVideoTracks()[0];
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
 
-      if (videoTrack) {
+      setStream(stream);
+
+      if (onStreamReady) {
+        onStreamReady(stream);
+      }
+
+      // Activar la linterna automáticamente para mejorar la señal
+      setTimeout(() => enableTorch(true), 500);
+
+      console.log("Cámara iniciada con configuración optimizada para PPG");
+    } catch (error) {
+      console.error("Error al iniciar la cámara:", error);
+    }
+  };
+
+  const enableTorch = async (enable: boolean) => {
+    if (!stream) return;
+
+    const videoTracks = stream.getVideoTracks();
+    if (videoTracks.length === 0) return;
+
+    try {
+      const track = videoTracks[0];
+      if (!track.getCapabilities().torch) {
+        console.log("Este dispositivo no soporta el control de linterna");
+        return;
+      }
+
+      // Aplicar modo de linterna
+      await track.applyConstraints({
+        advanced: [{ torch: enable }]
+      });
+
+      // Si estamos activando la linterna, también optimizamos otros parámetros
+      if (enable) {
+        // Intentar aplicar configuraciones adicionales que pueden mejorar la señal
         try {
-          const capabilities = videoTrack.getCapabilities();
-          const settings: MediaTrackConstraintSet = {};
-          
-          // Configurar exposición
-          if (capabilities.exposureMode?.includes('manual')) {
-            settings.exposureMode = 'manual';
-          } else if (capabilities.exposureMode?.includes('continuous')) {
-            settings.exposureMode = 'continuous';
-          }
-
-          // Configurar enfoque
-          if (capabilities.focusMode?.includes('manual')) {
-            settings.focusMode = 'manual';
-          } else if (capabilities.focusMode?.includes('continuous')) {
-            settings.focusMode = 'continuous';
-          }
-
-          // Configurar balance de blancos
-          if (capabilities.whiteBalanceMode?.includes('manual')) {
-            settings.whiteBalanceMode = 'manual';
-          } else if (capabilities.whiteBalanceMode?.includes('continuous')) {
-            settings.whiteBalanceMode = 'continuous';
-          }
-
-          // Aplicar configuraciones
-          if (Object.keys(settings).length > 0) {
-            await videoTrack.applyConstraints({
-              advanced: [settings]
-            });
-          }
-
-          // Activar linterna si está disponible
-          if (capabilities.torch) {
-            console.log("Activando linterna para mejorar la señal PPG");
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            setTorchEnabled(true);
-          }
-
-          // Optimizaciones de rendimiento para el video
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
-            videoRef.current.style.willChange = 'transform';
-          }
+          // Algunos dispositivos soportan estos parámetros adicionales
+          await track.applyConstraints({
+            advanced: [{ 
+              exposureMode: "manual",       // Exposición manual
+              exposureTime: 2000,           // Tiempo de exposición moderado (microsegundos)
+              whiteBalanceMode: "manual",   // Balance de blancos manual
+              colorTemperature: 3300        // Temperatura de color cálida (favorece rojos)
+            }]
+          });
         } catch (err) {
-          console.warn("No se pudieron aplicar algunas optimizaciones:", err);
+          // Estos parámetros son opcionales, así que ignoramos errores
+          console.log("Parámetros avanzados de cámara no soportados");
         }
       }
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
-      }
-
-      setStream(newStream);
-      
-      if (onStreamReady) {
-        onStreamReady(newStream);
-      }
-
-      console.log("Resolución final de la cámara:", videoTrack?.getCapabilities());
+      setTorchEnabled(enable);
+      console.log(`Linterna ${enable ? 'activada' : 'desactivada'}`);
     } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
+      console.error("Error al controlar la linterna:", err);
     }
   };
 
@@ -172,6 +173,9 @@ const CameraView = ({
       }
     }
   }, [stream, isFingerDetected, torchEnabled]);
+
+  // Cambiar la tasa de cuadros a, por ejemplo, 12 FPS:
+  const targetFrameInterval = 1000/12; // Apunta a 12 FPS para menor consumo
 
   return (
     <video
