@@ -40,7 +40,7 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 3500;
+  const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 2560;
   const CANVAS_HEIGHT = 1440;
   const GRID_SIZE_X = 25;
