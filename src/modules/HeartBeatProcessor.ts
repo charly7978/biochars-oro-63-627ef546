@@ -451,4 +451,15 @@ export class HeartBeatProcessor {
     this.consecutiveMissedBeats = 0;
     this.forcedDetectionMode = false;
   }
+
+  // Add the missing getRRIntervals method
+  public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {
+    // Convert RR interval data to a simple array of intervals
+    const intervals = this.rrIntervals.map(rr => rr.interval);
+    
+    return {
+      intervals: intervals,
+      lastPeakTime: this.lastBeatTime > 0 ? this.lastBeatTime : null
+    };
+  }
 }

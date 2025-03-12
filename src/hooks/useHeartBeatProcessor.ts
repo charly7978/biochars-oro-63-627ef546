@@ -1,8 +1,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
+import { HeartBeatProcessor, HeartBeatResult } from '../modules/HeartBeatProcessor';
 
-interface HeartBeatResult {
+interface ProcessedHeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
@@ -53,7 +53,7 @@ export const useHeartBeatProcessor = () => {
     };
   }, []);
 
-  const processSignal = useCallback((value: number): HeartBeatResult => {
+  const processSignal = useCallback((value: number): ProcessedHeartBeatResult => {
     if (!processorRef.current) {
       console.warn('useHeartBeatProcessor: Processor not initialized', {
         sessionId: sessionId.current,
@@ -92,8 +92,8 @@ export const useHeartBeatProcessor = () => {
         console.log('useHeartBeatProcessor - result:', {
           bpm: result.bpm,
           confidence: result.confidence,
-          isPeak: result.isPeak,
-          arrhythmiaCount: result.arrhythmiaCount,
+          isPeak: result.isBeat,
+          arrhythmiaCount: 0,
           intervals: rrData.intervals.length
         });
       }
@@ -150,8 +150,10 @@ export const useHeartBeatProcessor = () => {
       }
 
       return {
-        ...result,
         bpm: validatedBPM > 0 ? Math.round(validatedBPM) : currentBPM,
+        confidence: result.confidence,
+        isPeak: result.isBeat,
+        arrhythmiaCount: 0,
         rrData
       };
     } catch (error) {
