@@ -134,6 +134,8 @@ const CameraView = ({
       if (onStreamReady) {
         onStreamReady(newStream);
       }
+
+      console.log("Resolución final de la cámara:", videoTrack?.getCapabilities());
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
     }

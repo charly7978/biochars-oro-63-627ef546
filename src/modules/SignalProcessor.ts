@@ -160,7 +160,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         console.log("Valor filtrado:", filtered);
         console.log("Buffer actual:", this.lastValues);
         
-        const result = this.analyzeSignal(filtered, redValue);
+        const result = this.analyzeSignal(imageData, redValue);
         console.log("Resultado análisis:", result);
         
         console.log("=== FIN FRAME ===");
@@ -281,7 +281,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     return 0;
   }
 
-  private analyzeSignal(filtered: number, rawValue: number): { 
+  private analyzeSignal(imageData: ImageData, rawValue: number): { 
     isFingerDetected: boolean, 
     quality: number,
     waveformFeatures?: {
@@ -292,9 +292,19 @@ export class PPGSignalProcessor implements SignalProcessor {
       areaUnderCurve: number
     }
   } {
-    // Verificación con compensación de exposición
+    // Verificar dominancia del canal rojo (r > 0, g ≈ 0, b ≈ 0)
+    const centerX = Math.floor(imageData.width / 2);
+    const centerY = Math.floor(imageData.height / 2);
+    const centerIndex = (centerY * imageData.width + centerX) * 4;
+    const centerR = imageData.data[centerIndex];
+    const centerG = imageData.data[centerIndex + 1];
+    const centerB = imageData.data[centerIndex + 2];
+    
+    const isRedDominant = centerR > 50 && centerG < 10 && centerB < 10;
+    
+    // Verificación con compensación de exposición más permisiva
     const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
-                     rawValue <= 240; // Límite superior más estricto
+                     rawValue <= 240 && isRedDominant; 
     
     if (!isInRange) {
         this.consecutiveDetections = 0;
@@ -304,25 +314,38 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (this.lastValues.length >= 3) {
         const window = this.lastValues.slice(-3);
         
-        // Normalizar valores para compensar sobreexposición
-        const normalizedWindow = window.map(v => Math.min(200, v));
+        // Normalizar valores usando un rango más amplio
+        const normalizedWindow = window.map(v => v / 255 * 100);
         const peakToPeak = Math.max(...normalizedWindow) - Math.min(...normalizedWindow);
         const mean = normalizedWindow.reduce((a, b) => a + b, 0) / normalizedWindow.length;
         
-        // Ajustar sensibilidad basada en el nivel de exposición
-        const exposureLevel = mean / 200; // 0-1
-        const sensitivityFactor = Math.max(0.001, 0.005 * (1 - exposureLevel));
+        // Reducir el umbral de sensibilidad
+        const sensitivityFactor = 0.001;
         
-        const normalizedVariation = peakToPeak / mean;
+        const normalizedVariation = peakToPeak / (mean + 0.1);
         const hasVariation = normalizedVariation > sensitivityFactor;
         
+        // Calcular calidad basada en múltiples factores
+        let quality = 0;
         if (hasVariation) {
             this.consecutiveDetections++;
-            const quality = Math.min(100, Math.max(40, Math.round((normalizedVariation / 0.1) * 100)));
+            
+            // Factor de dominancia roja
+            const redDominance = centerR / (centerG + centerB + 1);
+            const redQuality = Math.min(100, redDominance * 50);
+            
+            // Factor de variación
+            const variationQuality = Math.min(100, (normalizedVariation / 0.01) * 100);
+            
+            // Factor de estabilidad
+            const stabilityQuality = this.calculateStabilityScore(window) * 100;
+            
+            // Combinar factores
+            quality = Math.round((redQuality + variationQuality + stabilityQuality) / 3);
             
             return {
                 isFingerDetected: true,
-                quality,
+                quality: Math.max(40, quality),
                 waveformFeatures: this.extractWaveformFeatures(normalizedWindow, this.findPeaksAndValleys(normalizedWindow))
             };
         }

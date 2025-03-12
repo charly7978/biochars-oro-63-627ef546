@@ -6,19 +6,58 @@ export class CameraController {
 
   async setupCamera(): Promise<MediaStream> {
     try {
-      const constraints: MediaStreamConstraints = {
+      // Intentar primero con resolución HD
+      const hdConstraints: MediaStreamConstraints = {
         video: {
           facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 30 }
+          width: { min: 1280, ideal: 1920 },
+          height: { min: 720, ideal: 1080 },
+          frameRate: { min: 30, ideal: 60 }
         }
       };
 
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-      this.videoTrack = this.stream.getVideoTracks()[0];
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia(hdConstraints);
+      } catch (e) {
+        console.log("No se pudo obtener HD, intentando resolución menor");
+        // Si falla HD, intentar con resolución media
+        const mediumConstraints: MediaStreamConstraints = {
+          video: {
+            facingMode: 'environment',
+            width: { min: 640, ideal: 1280 },
+            height: { min: 480, ideal: 720 },
+            frameRate: { min: 30, ideal: 30 }
+          }
+        };
+        this.stream = await navigator.mediaDevices.getUserMedia(mediumConstraints);
+      }
 
+      this.videoTrack = this.stream.getVideoTracks()[0];
+      
+      // Forzar la configuración más alta disponible
+      const capabilities = this.videoTrack.getCapabilities();
+      const settings: MediaTrackConstraintSet = {};
+
+      if (capabilities.width) {
+        settings.width = capabilities.width.max;
+      }
+      if (capabilities.height) {
+        settings.height = capabilities.height.max;
+      }
+      if (capabilities.frameRate) {
+        settings.frameRate = Math.min(60, capabilities.frameRate.max || 30);
+      }
+
+      // Aplicar configuraciones avanzadas
       await this.initializeTrackSettings();
+      
+      // Verificar la resolución final
+      const finalSettings = this.videoTrack.getSettings();
+      console.log("Resolución final de la cámara:", {
+        width: finalSettings.width,
+        height: finalSettings.height,
+        frameRate: finalSettings.frameRate
+      });
       
       return this.stream;
     } catch (error) {
@@ -46,15 +85,29 @@ export class CameraController {
       settings.whiteBalanceMode = 'manual';
     }
 
-    // Aplicar configuraciones
-    if (Object.keys(settings).length > 0) {
-      try {
+    // Intentar aplicar configuraciones avanzadas
+    try {
+      await this.videoTrack.applyConstraints({
+        advanced: [settings]
+      });
+
+      // Verificar si podemos ajustar la exposición
+      if (capabilities.exposureTime) {
+        const exposureRange = capabilities.exposureTime;
+        const targetExposure = Math.min(
+          exposureRange.max || 1000,
+          Math.max(exposureRange.min || 100, 500)
+        );
+        
         await this.videoTrack.applyConstraints({
-          advanced: [settings]
+          advanced: [{
+            exposureMode: 'manual',
+            exposureTime: targetExposure
+          }]
         });
-      } catch (error) {
-        console.warn('No se pudieron aplicar algunas configuraciones:', error);
       }
+    } catch (error) {
+      console.warn('No se pudieron aplicar algunas configuraciones:', error);
     }
   }
 
