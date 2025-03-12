@@ -161,6 +161,20 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled]);
 
+  useEffect(() => {
+    // Si se detecta dedo pero la linterna no está activa, volver a forzarla.
+    if (stream && isFingerDetected && !torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Reactivando linterna porque se detecta dedo");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => setTorchEnabled(true))
+          .catch(err => console.error("Error reactivando la linterna:", err));
+      }
+    }
+  }, [stream, isFingerDetected, torchEnabled]);
+  
   // Cambiar la tasa de cuadros a, por ejemplo, 12 FPS:
   const targetFrameInterval = 1000/12; // Apunta a 12 FPS para menor consumo
 

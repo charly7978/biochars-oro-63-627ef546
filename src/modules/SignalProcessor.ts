@@ -178,7 +178,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     // Optimización 1: Enfocarse en el centro de la imagen donde normalmente está el dedo
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
-    const roiSize = Math.min(imageData.width, imageData.height) * 0.4; // Aumentado de 0.3 a 0.4 para mayor área de captura
+    // Ajuste: aumentar el ROI en condiciones de baja iluminación
+    const globalBrightness = imageData.data.reduce((sum, val) => sum + val, 0) / (imageData.data.length);
+    const dynamicROI = globalBrightness < 90 ? 0.5 : 0.4; // ↑ Si el brillo es bajo, usar 50% en lugar de 40%
+    const roiSize = Math.min(imageData.width, imageData.height) * dynamicROI;
     
     const startX = Math.max(0, Math.floor(centerX - roiSize / 2));
     const endX = Math.min(imageData.width, Math.floor(centerX + roiSize / 2));

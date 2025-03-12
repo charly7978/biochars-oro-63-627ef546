@@ -7,7 +7,7 @@ export class HeartBeatProcessor {
   private readonly SIGNAL_THRESHOLD = 0.30; // Reducido de 0.40 para mayor sensibilidad
   private readonly MIN_CONFIDENCE = 0.50; // Reducido de 0.60 para capturar picos más sutiles
   private readonly DERIVATIVE_THRESHOLD = -0.02; // Menos restrictivo que -0.03 para mejor detección
-  private readonly MIN_PEAK_TIME_MS = 350; // Reducido de 400 para permitir frecuencias cardíacas más altas
+  private readonly MIN_PEAK_TIME_MS = 300; // Reducido de 350 para permitir frecuencias cardíacas más altas
   private readonly WARMUP_TIME_MS = 2000; // Reducido de 3000 para inicio más rápido
 
   // Parámetros de filtrado
