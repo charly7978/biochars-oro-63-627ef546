@@ -1,27 +1,27 @@
 export class HeartBeatProcessor {
   // ────────── CONFIGURACIONES PRINCIPALES ──────────
   private readonly SAMPLE_RATE = 30;
-  private readonly WINDOW_SIZE = 60;
+  private readonly WINDOW_SIZE = 45;          // Reducido para detectar cambios más rápido
   private readonly MIN_BPM = 40;
-  private readonly MAX_BPM = 200; // Se mantiene amplio para no perder picos fuera de rango
-  private readonly SIGNAL_THRESHOLD = 0.30; // Reducido de 0.40 para mayor sensibilidad
-  private readonly MIN_CONFIDENCE = 0.50; // Reducido de 0.60 para capturar picos más sutiles
-  private readonly DERIVATIVE_THRESHOLD = -0.015; // Menos restrictivo que -0.02 para mejor detección
-  private readonly MIN_PEAK_TIME_MS = 250; // Reducido de 300 para permitir frecuencias cardíacas más altas
-  private readonly WARMUP_TIME_MS = 2000; // Reducido de 3000 para inicio más rápido
+  private readonly MAX_BPM = 200;
+  private readonly SIGNAL_THRESHOLD = 0.25;    // Reducido para mayor sensibilidad
+  private readonly MIN_CONFIDENCE = 0.45;      // Reducido para captar más picos
+  private readonly DERIVATIVE_THRESHOLD = -0.01; // Menos restrictivo
+  private readonly MIN_PEAK_TIME_MS = 200;     // Reducido para detectar frecuencias más altas
+  private readonly WARMUP_TIME_MS = 1500;      // Reducido para inicio más rápido
 
-  // Parámetros de filtrado
-  private readonly MEDIAN_FILTER_WINDOW = 5; // Aumentado de 3 para mejor filtrado de ruido
-  private readonly MOVING_AVERAGE_WINDOW = 5; // Aumentado de 3 para suavizado más efectivo
-  private readonly EMA_ALPHA = 0.35; // Ajustado para mejor balance entre respuesta y suavizado
-  private readonly BASELINE_FACTOR = 0.97; // Ajustado para seguimiento más ágil del baseline
+  // Parámetros de filtrado optimizados
+  private readonly MEDIAN_FILTER_WINDOW = 3;    // Reducido para menor latencia
+  private readonly MOVING_AVERAGE_WINDOW = 3;   // Reducido para mejor respuesta
+  private readonly EMA_ALPHA = 0.4;            // Aumentado para seguir cambios más rápido
+  private readonly BASELINE_FACTOR = 0.95;     // Ajustado para mejor adaptación
 
-  // Parámetros de beep
-  private readonly BEEP_PRIMARY_FREQUENCY = 880; 
-  private readonly BEEP_SECONDARY_FREQUENCY = 440; 
-  private readonly BEEP_DURATION = 80; 
-  private readonly BEEP_VOLUME = 0.9; 
-  private readonly MIN_BEEP_INTERVAL_MS = 300;
+  // Parámetros de beep ajustados
+  private readonly BEEP_PRIMARY_FREQUENCY = 880;
+  private readonly BEEP_SECONDARY_FREQUENCY = 440;
+  private readonly BEEP_DURATION = 50;         // Reducido para feedback más rápido
+  private readonly BEEP_VOLUME = 0.5;          // Reducido volumen
+  private readonly MIN_BEEP_INTERVAL_MS = 250; // Ajustado para evitar sobreposición
 
   // ────────── AUTO-RESET SI LA SEÑAL ES MUY BAJA ──────────
   private readonly LOW_SIGNAL_THRESHOLD = 0.03;
@@ -262,26 +262,32 @@ export class HeartBeatProcessor {
       return { isPeak: false, confidence: 0 };
     }
 
-    // Detección mejorada de picos considerando tendencia
+    // Detección mejorada de picos con umbral adaptativo
+    const dynamicThreshold = this.SIGNAL_THRESHOLD * 
+      (Math.abs(this.baseline || 0) > 2 ? 0.8 : 1);
+
     const isOverThreshold =
       derivative < this.DERIVATIVE_THRESHOLD &&
-      normalizedValue > this.SIGNAL_THRESHOLD * 0.8 && // Umbral adaptativo más flexible
-      this.lastValue > this.baseline * 0.95; // Menos restrictivo
+      normalizedValue > dynamicThreshold &&
+      this.lastValue > (this.baseline || 0) * 0.9;
 
-    // Cálculo de confianza mejorado con más peso en la amplitud de la señal
+    // Cálculo de confianza mejorado
     const amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5), 0),
+      Math.max(Math.abs(normalizedValue) / (dynamicThreshold * 1.2), 0),
       1
     );
     const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.7), 0),
+      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.8), 0),
       1
     );
 
-    // Ponderación mejorada para dar más peso a la amplitud
-    const confidence = (amplitudeConfidence * 0.7 + derivativeConfidence * 0.3);
+    // Mayor peso a la amplitud para mejor detección
+    const confidence = (amplitudeConfidence * 0.8 + derivativeConfidence * 0.2);
 
-    return { isPeak: isOverThreshold, confidence };
+    return { 
+      isPeak: isOverThreshold, 
+      confidence: Math.max(confidence * 0.9, 0)  // Ligeramente más permisivo
+    };
   }
 
   private confirmPeak(
@@ -290,22 +296,24 @@ export class HeartBeatProcessor {
     confidence: number
   ): boolean {
     this.peakConfirmationBuffer.push(normalizedValue);
-    if (this.peakConfirmationBuffer.length > 5) {
+    if (this.peakConfirmationBuffer.length > 3) { // Reducido de 5 a 3
       this.peakConfirmationBuffer.shift();
     }
     
-    const avgBuffer = this.peakConfirmationBuffer.reduce((a, b) => a + b, 0) / this.peakConfirmationBuffer.length;
+    const avgBuffer = this.peakConfirmationBuffer.reduce((a, b) => a + b, 0) / 
+                     this.peakConfirmationBuffer.length;
     
-    // Criterio más sensible para confirmación de picos
-    if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE && avgBuffer > this.SIGNAL_THRESHOLD * 0.9) {
-      if (this.peakConfirmationBuffer.length >= 3) {
+    // Criterios más permisivos
+    if (isPeak && !this.lastConfirmedPeak && 
+        confidence >= this.MIN_CONFIDENCE * 0.9 && 
+        avgBuffer > this.SIGNAL_THRESHOLD * 0.8) {
+      
+      if (this.peakConfirmationBuffer.length >= 2) { // Reducido de 3 a 2
         const len = this.peakConfirmationBuffer.length;
+        const goingDown = this.peakConfirmationBuffer[len - 1] < 
+                         this.peakConfirmationBuffer[len - 2];
         
-        // Análisis más flexible de la forma de onda
-        const goingDown1 = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
-        
-        // Solo requerimos una tendencia descendente en lugar de dos para detectar picos más sutiles
-        if (goingDown1) {
+        if (goingDown) {
           this.lastConfirmedPeak = true;
           return true;
         }
