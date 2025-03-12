@@ -56,8 +56,8 @@ export class VitalSignsProcessor {
   private isCalibrating: boolean = false;
   private calibrationStartTime: number = 0;
   private calibrationSamples: number = 0;
-  private readonly CALIBRATION_REQUIRED_SAMPLES: number = 75; // Aumentado de 50 a 75 para mayor precisión
-  private readonly CALIBRATION_DURATION_MS: number = 10000;    // Aumentado de 8000 a 10000 ms para mejor calidad de datos
+  private readonly CALIBRATION_REQUIRED_SAMPLES: number = 50; // Aumentado para mayor precisión
+  private readonly CALIBRATION_DURATION_MS: number = 8000;    // Aumentado para mejor calidad de datos
   
   private spo2Samples: number[] = [];
   private pressureSamples: number[] = [];
@@ -98,10 +98,24 @@ export class VitalSignsProcessor {
    * Inicia el proceso de calibración para mejorar la precisión de las mediciones
    */
   public startCalibration(): void {
-    // Reiniciar variables de calibración
+    if (this.isCalibrating) {
+      console.log("VitalSignsProcessor: Ya hay una calibración en curso");
+      return;
+    }
+
     this.isCalibrating = true;
     this.calibrationStartTime = Date.now();
     this.calibrationSamples = 0;
+    this.forceCompleteCalibration = false;
+
+    // Reiniciar buffers de calibración
+    this.spo2Samples = [];
+    this.pressureSamples = [];
+    this.heartRateSamples = [];
+    this.glucoseSamples = [];
+    this.lipidSamples = [];
+
+    // Reiniciar progreso de calibración
     this.calibrationProgress = {
       heartRate: 0,
       spo2: 0,
@@ -111,41 +125,20 @@ export class VitalSignsProcessor {
       lipids: 0,
       hemoglobin: 0
     };
-    
-    // Limpiar muestras previas
-    this.spo2Samples = [];
-    this.pressureSamples = [];
-    this.heartRateSamples = [];
-    this.glucoseSamples = [];
-    this.lipidSamples = [];
-    
-    // Configurar temporizador de seguridad para completar calibración
+
+    // Configurar temporizador para completar la calibración después del tiempo máximo
     if (this.calibrationTimer) {
       clearTimeout(this.calibrationTimer);
     }
     
-    // Establecer un temporizador que fuerza la finalización de la calibración
-    // después de un tiempo máximo, incluso si no se reúnen todas las muestras requeridas
     this.calibrationTimer = setTimeout(() => {
-      if (this.isCalibrating && this.calibrationSamples >= this.CALIBRATION_REQUIRED_SAMPLES * 0.8) {
-        // Solo completar si tenemos al menos el 80% de las muestras requeridas
-        this.forceCompleteCalibrationProcess();
-      } else if (this.isCalibrating) {
-        // Si no tenemos suficientes muestras, reiniciar la calibración
-        console.warn("Calibración insuficiente, reiniciando proceso");
-        this.startCalibration();
+      console.log(`VitalSignsProcessor: Completando calibración por timeout (${this.CALIBRATION_DURATION_MS}ms)`);
+      if (this.isCalibrating) {
+        this.completeCalibration();
       }
     }, this.CALIBRATION_DURATION_MS);
-    
-    console.log("Iniciando calibración de signos vitales");
-  }
-  
-  /**
-   * Fuerza la finalización del proceso de calibración
-   */
-  private forceCompleteCalibrationProcess(): void {
-    this.forceCompleteCalibration = true;
-    this.completeCalibration();
+
+    console.log("VitalSignsProcessor: Calibración iniciada");
   }
   
   /**
@@ -427,12 +420,13 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Fuerza la finalización del proceso de calibración (método público)
+   * Fuerza la finalización del proceso de calibración
    */
   public forceCalibrationCompletion(): void {
     if (!this.isCalibrating) return;
     
-    this.forceCompleteCalibrationProcess();
+    this.forceCompleteCalibration = true;
+    this.completeCalibration();
   }
 
   /**

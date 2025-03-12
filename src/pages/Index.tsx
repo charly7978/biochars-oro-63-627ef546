@@ -332,98 +332,65 @@ const Index = () => {
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
       
-      // Control de tasa de frames para no sobrecargar el dispositivo
+      // Control de tasa de frames optimizado para balancear precisión y rendimiento
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
           // Capturar frame 
           const frame = await imageCapture.grabFrame();
           
           // Configurar tamaño adecuado del canvas para procesamiento
-          const targetWidth = Math.min(640, frame.width); // Aumentado de 320 a 640 para mejor resolución
-          const targetHeight = Math.min(480, frame.height); // Aumentado de 240 a 480
+          // Aumentamos ligeramente la resolución para mejor análisis de color
+          const targetWidth = Math.min(400, frame.width); // Aumentado de 320 a 400 para mayor detalle
+          const targetHeight = Math.min(300, frame.height); // Aumentado de 240 a 300
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
           
-          // Dibujar el frame en el canvas
+          // Dibujar el frame en el canvas con alta calidad
+          tempCtx.imageSmoothingEnabled = true;
+          tempCtx.imageSmoothingQuality = 'high';
           tempCtx.drawImage(
             frame, 
             0, 0, frame.width, frame.height, 
             0, 0, targetWidth, targetHeight
           );
           
-          // OPTIMIZACIÓN: Mejorar la imagen para detección PPG
+          // Mejorar la imagen para detección PPG con técnicas avanzadas
           if (enhanceCtx) {
-            // Ajustar tamaño del canvas de mejora
-            enhanceCanvas.width = targetWidth;
-            enhanceCanvas.height = targetHeight;
-            
             // Resetear canvas
             enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            
+            // Configurar calidad de procesamiento
+            enhanceCtx.imageSmoothingEnabled = true;
+            enhanceCtx.imageSmoothingQuality = 'high';
             
             // Dibujar en el canvas de mejora
             enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
             
-            // OPTIMIZACIÓN: Aumentar contraste del canal rojo para mejorar señal PPG
-            // Aplicar un filtro que favorece el canal rojo y mejora la detección de vasos sanguíneos
+            // Mejora 1: Refuerzo adaptativo del canal rojo para mejorar señal PPG
             enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.15)';  // Aumento del refuerzo del canal rojo
+            enhanceCtx.fillStyle = 'rgba(255,0,0,0.08)';  // Refuerzo más intenso del canal rojo
             enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
             
-            // Ajustar el nivel de contraste para mejorar la detección de pulso
-            enhanceCtx.globalCompositeOperation = 'lighter';
-            enhanceCtx.fillStyle = 'rgba(50,0,0,0.05)';
+            // Mejora 2: Ajuste de contraste para mejorar detección de cambios sutiles
+            enhanceCtx.globalCompositeOperation = 'multiply';
+            enhanceCtx.fillStyle = 'rgba(100,100,100,0.05)';
             enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
             
-            // Restaurar modo de composición normal
+            // Restaurar modo normal
             enhanceCtx.globalCompositeOperation = 'source-over';
-          
-            // Obtener datos de la imagen mejorada
+            
+            // Mejora 3: Aplicar filtro de nitidez para detectar mejor los bordes y cambios
             const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            const sharpened = applySharpening(imageData, 0.3); // Factor de nitidez bajo para no amplificar ruido
             
-            // DIAGNÓSTICO: Analizar distribución de color (solo en modo desarrollo)
-            if (process.env.NODE_ENV === 'development' && frameCount % 30 === 0) {
-              const data = imageData.data;
-              let redSum = 0, greenSum = 0, blueSum = 0;
-              let pixelCount = 0;
-              
-              // Analizar solo el centro (25%)
-              const centerX = Math.floor(imageData.width / 2);
-              const centerY = Math.floor(imageData.height / 2);
-              const radius = Math.min(imageData.width, imageData.height) / 4;
-              
-              for (let y = 0; y < imageData.height; y++) {
-                for (let x = 0; x < imageData.width; x++) {
-                  // Solo analizar píxeles en el centro
-                  const distanceFromCenter = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
-                  if (distanceFromCenter < radius) {
-                    const i = (y * imageData.width + x) * 4;
-                    redSum += data[i];
-                    greenSum += data[i + 1];
-                    blueSum += data[i + 2];
-                    pixelCount++;
-                  }
-                }
-              }
-              
-              if (pixelCount > 0) {
-                const avgRed = redSum / pixelCount;
-                const avgGreen = greenSum / pixelCount;
-                const avgBlue = blueSum / pixelCount;
-                
-                console.log("Diagnóstico PPG:", {
-                  avgRed: avgRed.toFixed(1),
-                  avgGreen: avgGreen.toFixed(1),
-                  avgBlue: avgBlue.toFixed(1),
-                  redGreenRatio: (avgRed / avgGreen).toFixed(2),
-                  redBlueRatio: (avgRed / avgBlue).toFixed(2),
-                  processingFps
-                });
-              }
-            }
+            enhanceCtx.putImageData(sharpened, 0, 0);
+            
+            // Obtener datos de la imagen mejorada para procesamiento
+            const finalImageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
             
             // Procesar el frame mejorado
-            processFrame(imageData);
+            processFrame(finalImageData);
           } else {
             // Fallback a procesamiento normal
             const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
@@ -446,13 +413,74 @@ const Index = () => {
         }
       }
       
-      // Programar el siguiente frame
+      // Programar el siguiente frame con optimización para móviles
       if (isMonitoring) {
-        requestAnimationFrame(processImage);
+        if (isMobile) {
+          // En móviles usar intervalos más largos para ahorrar batería
+          setTimeout(() => requestAnimationFrame(processImage), 5);
+        } else {
+          // En desktop usar animación directa para máxima fluidez
+          requestAnimationFrame(processImage);
+        }
       }
     };
 
     processImage();
+  };
+
+  // Función auxiliar para aplicar filtro de nitidez a imagen
+  const applySharpening = (imageData: ImageData, factor: number): ImageData => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    const output = new ImageData(width, height);
+    const outputData = output.data;
+    
+    // Kernel de nitidez simple
+    // [  0, -1,  0 ]
+    // [ -1,  5, -1 ]
+    // [  0, -1,  0 ]
+    
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const center = (y * width + x) * 4;
+        const top = ((y - 1) * width + x) * 4;
+        const bottom = ((y + 1) * width + x) * 4;
+        const left = (y * width + (x - 1)) * 4;
+        const right = (y * width + (x + 1)) * 4;
+        
+        for (let c = 0; c < 3; c++) {
+          // Aplicar kernel de nitidez
+          const val = 5 * data[center + c] - 
+                      data[top + c] - 
+                      data[bottom + c] - 
+                      data[left + c] - 
+                      data[right + c];
+          
+          // Mezcla entre valor original y valor con nitidez
+          outputData[center + c] = Math.max(0, Math.min(255, 
+            data[center + c] * (1 - factor) + val * factor));
+        }
+        
+        // Preservar el canal alfa
+        outputData[center + 3] = data[center + 3];
+      }
+    }
+    
+    // Copiar bordes sin procesar
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (y === 0 || y === height - 1 || x === 0 || x === width - 1) {
+          const i = (y * width + x) * 4;
+          outputData[i] = data[i];
+          outputData[i + 1] = data[i + 1];
+          outputData[i + 2] = data[i + 2];
+          outputData[i + 3] = data[i + 3];
+        }
+      }
+    }
+    
+    return output;
   };
 
   useEffect(() => {

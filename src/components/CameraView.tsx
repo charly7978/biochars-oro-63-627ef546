@@ -50,95 +50,82 @@ const CameraView = ({
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
-      const isIOS = /ipad|iphone|ipod/i.test(navigator.userAgent);
 
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 },  // Mayor resolución para mejor detalle
-        height: { ideal: 720 }
+        width: { ideal: 720 },
+        height: { ideal: 480 }
       };
 
       if (isAndroid) {
         // Ajustes para mejorar la extracción de señal en Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }, // Mantener 30 FPS estables
-          // En algunos Android, estos ajustes pueden mejorar la señal PPG
-          exposureMode: "manual",
-          focusMode: "continuous"
-        });
-      } else if (isIOS) {
-        // Ajustes específicos para iOS
-        Object.assign(baseVideoConstraints, {
-          frameRate: { min: 25, ideal: 30 }, // iOS funciona mejor con framerates altos
+          frameRate: { ideal: 30, max: 30 }, // Limitamos explícitamente a 30 FPS
+          resizeMode: 'crop-and-scale'
         });
       }
 
-      // Solicitar acceso a la cámara con las restricciones configuradas
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: baseVideoConstraints,
-        audio: false
-      });
+      const constraints: MediaStreamConstraints = {
+        video: baseVideoConstraints
+      };
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const videoTrack = newStream.getVideoTracks()[0];
 
-      setStream(stream);
-
-      if (onStreamReady) {
-        onStreamReady(stream);
-      }
-
-      // Activar la linterna automáticamente para mejorar la señal
-      setTimeout(() => enableTorch(true), 500);
-
-      console.log("Cámara iniciada con configuración optimizada para PPG");
-    } catch (error) {
-      console.error("Error al iniciar la cámara:", error);
-    }
-  };
-
-  const enableTorch = async (enable: boolean) => {
-    if (!stream) return;
-
-    const videoTracks = stream.getVideoTracks();
-    if (videoTracks.length === 0) return;
-
-    try {
-      const track = videoTracks[0];
-      if (!track.getCapabilities().torch) {
-        console.log("Este dispositivo no soporta el control de linterna");
-        return;
-      }
-
-      // Aplicar modo de linterna
-      await track.applyConstraints({
-        advanced: [{ torch: enable }]
-      });
-
-      // Si estamos activando la linterna, también optimizamos otros parámetros
-      if (enable) {
-        // Intentar aplicar configuraciones adicionales que pueden mejorar la señal
+      if (videoTrack && isAndroid) {
         try {
-          // Algunos dispositivos soportan estos parámetros adicionales
-          await track.applyConstraints({
-            advanced: [{ 
-              exposureMode: "manual",       // Exposición manual
-              exposureTime: 2000,           // Tiempo de exposición moderado (microsegundos)
-              whiteBalanceMode: "manual",   // Balance de blancos manual
-              colorTemperature: 3300        // Temperatura de color cálida (favorece rojos)
-            }]
-          });
+          const capabilities = videoTrack.getCapabilities();
+          const advancedConstraints: MediaTrackConstraintSet[] = [];
+          
+          if (capabilities.exposureMode) {
+            advancedConstraints.push({ exposureMode: 'continuous' });
+          }
+          if (capabilities.focusMode) {
+            advancedConstraints.push({ focusMode: 'continuous' });
+          }
+          if (capabilities.whiteBalanceMode) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          }
+
+          if (advancedConstraints.length > 0) {
+            await videoTrack.applyConstraints({
+              advanced: advancedConstraints
+            });
+          }
+
+          if (videoRef.current) {
+            videoRef.current.style.transform = 'translateZ(0)';
+            videoRef.current.style.backfaceVisibility = 'hidden';
+          }
+          
+          // Activar linterna (flash) inmediatamente si está disponible
+          if (capabilities.torch) {
+            console.log("Activando linterna para mejorar la señal PPG");
+            await videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            });
+            setTorchEnabled(true);
+          }
         } catch (err) {
-          // Estos parámetros son opcionales, así que ignoramos errores
-          console.log("Parámetros avanzados de cámara no soportados");
+          console.log("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
-      setTorchEnabled(enable);
-      console.log(`Linterna ${enable ? 'activada' : 'desactivada'}`);
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+        if (isAndroid) {
+          videoRef.current.style.willChange = 'transform';
+          videoRef.current.style.transform = 'translateZ(0)';
+        }
+      }
+
+      setStream(newStream);
+      
+      if (onStreamReady) {
+        onStreamReady(newStream);
+      }
     } catch (err) {
-      console.error("Error al controlar la linterna:", err);
+      console.error("Error al iniciar la cámara:", err);
     }
   };
 
