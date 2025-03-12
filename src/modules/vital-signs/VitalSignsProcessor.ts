@@ -198,25 +198,4 @@ export class VitalSignsProcessor {
     this.reset();
     this.lastValidResults = null;
   }
-
-  // Métodos dummy para mantener la compatibilidad con el resto del código
-  public startCalibration(): void {
-    // Método vacío - calibración removida
-    console.log("Auto-calibración desactivada");
-  }
-
-  public forceCalibrationCompletion(): void {
-    // Método vacío - calibración removida
-    console.log("Auto-calibración desactivada");
-  }
-
-  public isCurrentlyCalibrating(): boolean {
-    // Siempre retorna falso - calibración removida
-    return false;
-  }
-
-  public getCalibrationProgress(): undefined {
-    // Siempre retorna undefined - calibración removida
-    return undefined;
-  }
 }

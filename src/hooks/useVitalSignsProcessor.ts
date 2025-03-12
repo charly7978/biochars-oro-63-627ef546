@@ -274,8 +274,6 @@ export const useVitalSignsProcessor = () => {
     processSignal,
     reset,
     fullReset,
-    startCalibration: () => {}, // Función vacía - auto-calibración removida
-    forceCalibrationCompletion: () => {}, // Función vacía - auto-calibración removida
     arrhythmiaCounter,
     lastValidResults,
     debugInfo: {

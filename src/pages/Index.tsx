@@ -34,7 +34,6 @@ const Index = () => {
     rrVariation: number;
   } | null>(null);
   
-  // Refs for camera/video handling
   const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const frameRequestIdRef = useRef<number | null>(null);
   
@@ -47,7 +46,6 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
-  // Clean up function to properly release camera resources
   const cleanupCameraResources = () => {
     console.log("Cleaning up camera resources");
     
@@ -58,14 +56,12 @@ const Index = () => {
     
     if (videoTrackRef.current && videoTrackRef.current.readyState === 'live') {
       try {
-        // Turn off torch if available
         if (videoTrackRef.current.getCapabilities()?.torch) {
           videoTrackRef.current.applyConstraints({
             advanced: [{ torch: false }]
           }).catch(err => console.error("Error turning off torch:", err));
         }
         
-        // Stop the track
         videoTrackRef.current.stop();
       } catch (err) {
         console.error("Error stopping video track:", err);
@@ -93,7 +89,6 @@ const Index = () => {
     };
   }, []);
   
-  // Clean up camera resources when component unmounts or monitoring stops
   useEffect(() => {
     if (!isMonitoring) {
       cleanupCameraResources();
@@ -120,17 +115,14 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       
-      // Iniciar procesamiento de señal
       startProcessing();
       
-      // Resetear valores
       setElapsedTime(0);
       setVitalSigns(prev => ({
         ...prev,
         arrhythmiaStatus: "SIN ARRITMIAS|0"
       }));
       
-      // Iniciar temporizador para medición
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
       }
@@ -140,7 +132,6 @@ const Index = () => {
           const newTime = prev + 1;
           console.log(`Tiempo transcurrido: ${newTime}s`);
           
-          // Finalizar medición después de 30 segundos
           if (newTime >= 30) {
             finalizeMeasurement();
             return 30;
@@ -172,7 +163,6 @@ const Index = () => {
     setElapsedTime(0);
     setSignalQuality(0);
     
-    // Clean up camera resources
     cleanupCameraResources();
   };
 
@@ -206,7 +196,6 @@ const Index = () => {
     setSignalQuality(0);
     setLastArrhythmiaData(null);
     
-    // Clean up camera resources
     cleanupCameraResources();
   };
 
@@ -219,7 +208,6 @@ const Index = () => {
       return;
     }
 
-    // Store the video track in a ref for later cleanup
     videoTrackRef.current = videoTrack;
     
     try {
@@ -242,7 +230,6 @@ const Index = () => {
       let isProcessing = false;
       
       const processImage = async () => {
-        // Skip if we're not monitoring or another frame is already being processed
         if (!isMonitoring || isProcessing) {
           if (frameRequestIdRef.current) {
             cancelAnimationFrame(frameRequestIdRef.current);
@@ -254,7 +241,6 @@ const Index = () => {
         try {
           isProcessing = true;
           
-          // Check track state before capturing
           if (!videoTrack || videoTrack.readyState !== 'live') {
             console.warn('Video track is not live, skipping frame');
             isProcessing = false;
@@ -268,24 +254,21 @@ const Index = () => {
           const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
           processFrame(imageData);
           
-          frame.close(); // Properly release the frame
+          frame.close();
         } catch (error) {
           console.error("Error capturing frame:", error);
           if (error instanceof Error && error.name === 'InvalidStateError') {
-            // If we get an invalid state error, stop trying to process frames
             console.error("Invalid state error - track may have been stopped");
             return;
           }
         } finally {
           isProcessing = false;
-          // Only request another frame if we're still monitoring and track is live
           if (isMonitoring && videoTrack && videoTrack.readyState === 'live') {
             frameRequestIdRef.current = requestAnimationFrame(processImage);
           }
         }
       };
 
-      // Start processing frames
       processImage();
     } catch (error) {
       console.error("Error in stream setup:", error);
@@ -313,7 +296,6 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
-  // Nueva función para alternar medición
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -343,7 +325,6 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
-          {/* Se agrega header para sensor de calidad y estado de huella digital */}
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-lg">
               Calidad: {signalQuality}
@@ -366,7 +347,6 @@ const Index = () => {
             />
           </div>
 
-          {/* Contenedor de los displays ampliado y con mayor espaciamiento */}
           <div className="absolute inset-x-0 top-[55%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-3 gap-4 place-items-center">
               <VitalSign 
@@ -408,7 +388,6 @@ const Index = () => {
             </div>
           </div>
 
-          {/* Botonera inferior: botón de iniciar/detener y de reset en fila */}
           <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
             <div className="w-1/2">
               <MonitorButton 
