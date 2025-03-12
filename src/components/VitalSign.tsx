@@ -293,7 +293,7 @@ const VitalSign = ({
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
-            <span className="golden-value animate-value-glow">
+            <span className="golden-value">
               {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}

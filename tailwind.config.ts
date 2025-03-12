@@ -87,20 +87,10 @@ export default {
           "0%, 100%": { height: "2rem" },
           "50%": { height: "0.5rem" }
         },
-        "value-glow": {
-          "0%, 100%": { opacity: "0.9" },
-          "50%": { opacity: "1" }
-        },
-        "golden-shimmer": {
-          "0%": { backgroundPosition: "0% 50%" },
-          "100%": { backgroundPosition: "100% 50%" }
-        }
       },
       animation: {
         "heart-beat": "heart-beat 1s ease-in-out infinite",
         "flip": "card-flip 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
-        "value-glow": "value-glow 3s ease-in-out infinite",
-        "golden-shimmer": "golden-shimmer 3s ease-in-out infinite alternate"
       }
     },
   },
