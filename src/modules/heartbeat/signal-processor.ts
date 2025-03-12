@@ -21,6 +21,7 @@ export class SignalProcessor {
     this.MAX_BUFFER_SIZE = maxBufferSize;
     this.DERIVATIVE_BUFFER_SIZE = derivativeBufferSize;
     this.EMA_ALPHA = emaAlpha;
+    console.log(`SignalProcessor: Inicializado con parámetros - maxBufferSize: ${maxBufferSize}, derivativeBufferSize: ${derivativeBufferSize}, emaAlpha: ${emaAlpha}`);
   }
   
   public processSignal(value: number): {
@@ -31,6 +32,7 @@ export class SignalProcessor {
     // Initialize baseline tracking for improved stability
     if (this.baselineValue === null) {
       this.baselineValue = value;
+      console.log(`SignalProcessor: Inicialización de línea base con valor ${value}`);
     } else {
       this.baselineValue = this.baselineValue * (1 - this.BASELINE_ALPHA) + value * this.BASELINE_ALPHA;
     }
@@ -41,6 +43,7 @@ export class SignalProcessor {
     if (this.signalBuffer.length === 0) {
       smoothedValue = value;
       this.signalBuffer.push(value);
+      console.log(`SignalProcessor: Primera muestra - valor bruto: ${value}`);
     } else {
       // Multi-stage smoothing for better noise reduction
       const preSmoothed = this.lastProcessedValue + 
@@ -69,6 +72,11 @@ export class SignalProcessor {
       
       this.signalBuffer.push(smoothedValue);
       this.lastProcessedValue = smoothedValue;
+      
+      // Log every 10th sample to avoid spam
+      if (this.signalBuffer.length % 10 === 0) {
+        console.log(`SignalProcessor: Muestra #${this.signalBuffer.length} - valor bruto: ${value.toFixed(2)}, pre-suavizado: ${preSmoothed.toFixed(2)}, suavizado final: ${smoothedValue.toFixed(2)}`);
+      }
     }
     
     // Calculate derivative with improved sensitivity
@@ -90,6 +98,11 @@ export class SignalProcessor {
       if (this.derivativeBuffer.length > this.DERIVATIVE_BUFFER_SIZE) {
         this.derivativeBuffer.shift();
       }
+      
+      // Log significant derivative changes
+      if (Math.abs(this.valueDerivative) > 0.3 || this.signalBuffer.length % 30 === 0) {
+        console.log(`SignalProcessor: Derivada calculada: ${this.valueDerivative.toFixed(3)}, pendiente1: ${slope1.toFixed(3)}, pendiente2: ${slope2.toFixed(3)}`);
+      }
     }
     
     // Limit buffer size
@@ -109,12 +122,14 @@ export class SignalProcessor {
   }
   
   public reset(): void {
+    console.log(`SignalProcessor: Reseteo - bufferLength: ${this.signalBuffer.length}, derivativeBufferLength: ${this.derivativeBuffer.length}`);
     this.signalBuffer = [];
     this.derivativeBuffer = [];
     this.stabilityBuffer = [];
     this.lastProcessedValue = 0;
     this.valueDerivative = 0;
     this.baselineValue = null;
+    console.log("SignalProcessor: Reseteo completado");
   }
   
   public get bufferLength(): number {

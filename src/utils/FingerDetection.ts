@@ -34,8 +34,10 @@ let previousConfidence = 0;
 let lastDetectionTime = 0;
 let consecutiveDetections = 0;
 let consecutiveNonDetections = 0;
-const REQUIRED_CONSECUTIVE_DETECTIONS = 3;
-const MAX_CONSECUTIVE_NON_DETECTIONS = 4;
+// CAMBIO 1: Reducir el número requerido de detecciones consecutivas para considerar un dedo
+const REQUIRED_CONSECUTIVE_DETECTIONS = 2; // Reducido de 3 a 2
+// CAMBIO 2: Aumentar el máximo de no-detecciones consecutivas antes de considerar que se quitó el dedo
+const MAX_CONSECUTIVE_NON_DETECTIONS = 6; // Aumentado de 4 a 6
 
 /**
  * Analiza una región de imagen para detectar la presencia de un dedo
@@ -136,6 +138,7 @@ export function detectFinger(
   
   // Si no hay píxeles, no se puede detectar
   if (pixelCount === 0) {
+    console.log("FingerDetection: No hay píxeles para analizar");
     consecutiveNonDetections++;
     consecutiveDetections = 0;
     return getEmptyResult();
@@ -312,10 +315,11 @@ export function detectFinger(
     lastDetectionTime = now;
   }
 
-  // Log only significant changes to reduce console spam
-  if (finalDetection || now % 500 < 100) {
-    console.log(`Finger: R:${avgRed.toFixed(0)} G:${avgGreen.toFixed(0)} B:${avgBlue.toFixed(0)} Bright:${brightness.toFixed(0)} RedDom:${redDominance.toFixed(0)} Skin%:${skinColorPercentage.toFixed(0)} Shape%:${fingerShapePercentage.toFixed(0)} Conf:${finalConfidence} Det:${finalDetection}`);
-  }
+  // Detailed logs for every frame
+  console.log(`DEDO DEBUG: R:${avgRed.toFixed(0)} G:${avgGreen.toFixed(0)} B:${avgBlue.toFixed(0)} RGratio:${redGreenRatio.toFixed(2)} RBratio:${redBlueRatio.toFixed(2)}`);
+  console.log(`CRITERIOS: Bright:${brightness.toFixed(0)}/${currentBrightnessThreshold.toFixed(0)} RedDom:${redDominance.toFixed(0)}/${currentRedDominanceThreshold.toFixed(0)} Skin%:${skinColorPercentage.toFixed(0)} Shape%:${fingerShapePercentage.toFixed(0)}`);
+  console.log(`DETECCIÓN: Basic:${basicDetection} Skin:${hasHumanSkinPattern} Morpho:${hasFingerMorphology} Color:${colorBasedDetection} MultiMethod:${multiMethodDetection}`);
+  console.log(`TEMPORAL: ConsecDet:${consecutiveDetections}/${REQUIRED_CONSECUTIVE_DETECTIONS} ConsecNonDet:${consecutiveNonDetections}/${MAX_CONSECUTIVE_NON_DETECTIONS} Stable:${stableDetection} Final:${finalDetection} Conf:${finalConfidence}`);
 
   return {
     detected: finalDetection,
