@@ -35,9 +35,9 @@ let lastDetectionTime = 0;
 let consecutiveDetections = 0;
 let consecutiveNonDetections = 0;
 // CAMBIO 1: Reducir el número requerido de detecciones consecutivas para considerar un dedo
-const REQUIRED_CONSECUTIVE_DETECTIONS = 2; // Reducido de 3 a 2
+const REQUIRED_CONSECUTIVE_DETECTIONS = 1; // PRIMERA VARIABLE: Reducido de 2 a 1 para detección más inmediata
 // CAMBIO 2: Aumentar el máximo de no-detecciones consecutivas antes de considerar que se quitó el dedo
-const MAX_CONSECUTIVE_NON_DETECTIONS = 6; // Aumentado de 4 a 6
+const MAX_CONSECUTIVE_NON_DETECTIONS = 8; // SEGUNDA VARIABLE: Aumentado de 6 a 8 para mayor persistencia
 
 /**
  * Analiza una región de imagen para detectar la presencia de un dedo
