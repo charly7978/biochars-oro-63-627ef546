@@ -49,65 +49,76 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      // Intentar primero con resolución HD
+      // Primero consultar los dispositivos disponibles
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter(device => device.kind === 'videoinput');
+      console.log("Cámaras disponibles:", cameras);
+
+      // Intentar con resolución HD estricta
       const hdConstraints: MediaStreamConstraints = {
         video: {
           facingMode: 'environment',
-          width: { exact: 1280 },
-          height: { exact: 720 },
-          frameRate: { ideal: 30 }
+          width: { min: 1280, ideal: 1280 },
+          height: { min: 720, ideal: 720 },
+          frameRate: { min: 30, ideal: 30 },
+          deviceId: cameras.length > 0 ? { ideal: cameras[0].deviceId } : undefined
         }
       };
 
       let newStream: MediaStream;
       try {
+        console.log("Intentando obtener stream HD...");
         newStream = await navigator.mediaDevices.getUserMedia(hdConstraints);
       } catch (e) {
-        console.log("No se pudo obtener HD, intentando resolución menor");
-        const fallbackConstraints: MediaStreamConstraints = {
+        console.log("No se pudo obtener HD, intentando resolución media:", e);
+        const mediumConstraints: MediaStreamConstraints = {
           video: {
             facingMode: 'environment',
-            width: { exact: 640 },
-            height: { exact: 480 },
-            frameRate: { ideal: 30 }
+            width: { min: 640, ideal: 640 },
+            height: { min: 480, ideal: 480 },
+            frameRate: { min: 30, ideal: 30 },
+            deviceId: cameras.length > 0 ? { ideal: cameras[0].deviceId } : undefined
           }
         };
-        newStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        newStream = await navigator.mediaDevices.getUserMedia(mediumConstraints);
       }
 
       const videoTrack = newStream.getVideoTracks()[0];
+      console.log("Capacidades de la cámara:", videoTrack.getCapabilities());
       
-      // Verificar y mostrar la resolución actual
-      const settings = videoTrack.getSettings();
-      console.log("Resolución actual:", {
-        width: settings.width,
-        height: settings.height,
-        frameRate: settings.frameRate
-      });
+      // Verificar resolución inicial
+      const initialSettings = videoTrack.getSettings();
+      console.log("Configuración inicial:", initialSettings);
 
       if (videoTrack) {
         try {
           const capabilities = videoTrack.getCapabilities();
+          console.log("Intentando aplicar máxima resolución disponible...");
           
           // Forzar la resolución más alta disponible
           if (capabilities.width && capabilities.height) {
-            await videoTrack.applyConstraints({
-              width: capabilities.width.max,
-              height: capabilities.height.max
-            });
+            const constraints = {
+              width: { exact: Math.min(1280, capabilities.width.max || 1280) },
+              height: { exact: Math.min(720, capabilities.height.max || 720) }
+            };
+            
+            console.log("Aplicando constraints:", constraints);
+            await videoTrack.applyConstraints(constraints);
           }
 
-          // Configurar exposición y otros parámetros
+          // Verificar configuración después de forzar resolución
+          const afterResolutionSettings = videoTrack.getSettings();
+          console.log("Configuración después de forzar resolución:", afterResolutionSettings);
+
+          // Configurar otros parámetros
           const settings: MediaTrackConstraintSet = {};
           
           if (capabilities.exposureMode?.includes('manual')) {
             settings.exposureMode = 'manual';
           }
-
           if (capabilities.focusMode?.includes('manual')) {
             settings.focusMode = 'manual';
           }
-
           if (capabilities.whiteBalanceMode?.includes('manual')) {
             settings.whiteBalanceMode = 'manual';
           }
@@ -127,22 +138,17 @@ const CameraView = ({
             setTorchEnabled(true);
           }
 
-          // Verificar configuración final después de aplicar todos los cambios
+          // Verificar configuración final
           const finalSettings = videoTrack.getSettings();
-          console.log("Configuración final de la cámara:", {
-            width: finalSettings.width,
-            height: finalSettings.height,
-            frameRate: finalSettings.frameRate
-          });
+          console.log("Configuración final de la cámara:", finalSettings);
 
         } catch (err) {
-          console.warn("No se pudieron aplicar algunas optimizaciones:", err);
+          console.warn("Error al aplicar configuraciones:", err);
         }
       }
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        // Forzar el tamaño del video
         videoRef.current.width = 1280;
         videoRef.current.height = 720;
       }
