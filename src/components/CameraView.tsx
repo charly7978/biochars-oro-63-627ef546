@@ -17,14 +17,19 @@ const CameraView = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamReadyCalledRef = useRef<boolean>(false);
+  const mountedRef = useRef<boolean>(true);
 
   const stopCamera = async () => {
+    console.log("CameraView: Deteniendo cámara");
     streamReadyCalledRef.current = false;
     
     if (stream) {
-      console.log("Stopping camera stream");
       stream.getTracks().forEach(track => {
-        track.stop();
+        try {
+          track.stop();
+        } catch (err) {
+          console.error("Error stopping track:", err);
+        }
       });
       
       if (videoRef.current) {
@@ -44,7 +49,7 @@ const CameraView = ({
       await stopCamera();
       streamReadyCalledRef.current = false;
 
-      console.log("Iniciando nueva stream de cámara");
+      console.log("CameraView: Iniciando nueva stream de cámara");
       
       const constraints: MediaStreamConstraints = {
         video: {
@@ -57,10 +62,15 @@ const CameraView = ({
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       
+      // Only proceed if component is still mounted
+      if (!mountedRef.current) {
+        newStream.getTracks().forEach(track => track.stop());
+        return;
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Esperar a que el video esté realmente listo
         await new Promise<void>((resolve) => {
           if (!videoRef.current) return resolve();
           
@@ -77,14 +87,18 @@ const CameraView = ({
           }
         });
         
-        // Dar tiempo adicional para estabilización
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Additional stabilization wait
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
+        if (!mountedRef.current) {
+          newStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
         setStream(newStream);
         
-        // Notificar solo si isMonitoring es true
         if (isMonitoring && onStreamReady && !streamReadyCalledRef.current) {
-          console.log("Notificando stream lista para procesamiento");
+          console.log("CameraView: Notificando stream lista para procesamiento");
           streamReadyCalledRef.current = true;
           onStreamReady(newStream);
         }
@@ -96,6 +110,7 @@ const CameraView = ({
 
   useEffect(() => {
     console.log("CameraView: isMonitoring cambiado a", isMonitoring);
+    mountedRef.current = true;
     
     if (isMonitoring) {
       startCamera();
@@ -104,6 +119,7 @@ const CameraView = ({
     }
     
     return () => {
+      mountedRef.current = false;
       stopCamera();
     };
   }, [isMonitoring]);
