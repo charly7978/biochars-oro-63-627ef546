@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 
 interface CameraViewProps {
@@ -51,16 +52,17 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
+      // Request maximum resolution available
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
-        height: { ideal: 480 }
+        width: { ideal: 1920 }, // Request maximum resolution
+        height: { ideal: 1080 }
       };
 
       if (isAndroid) {
-        // Ajustes para mejorar la extracción de señal en Android
+        // Optimized settings for Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }, // Limitamos explícitamente a 30 FPS
+          frameRate: { ideal: 30, max: 30 },
           resizeMode: 'crop-and-scale'
         });
       }
@@ -72,11 +74,15 @@ const CameraView = ({
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = newStream.getVideoTracks()[0];
 
+      // Log available capabilities
+      console.log("Camera capabilities:", videoTrack.getCapabilities());
+
       if (videoTrack && isAndroid) {
         try {
           const capabilities = videoTrack.getCapabilities();
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
+          // Apply optimal camera settings for better signal extraction
           if (capabilities.exposureMode) {
             advancedConstraints.push({ exposureMode: 'continuous' });
           }
@@ -85,6 +91,17 @@ const CameraView = ({
           }
           if (capabilities.whiteBalanceMode) {
             advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          }
+          
+          // If resolution can be increased, try to apply maximum
+          if (capabilities.width && capabilities.height) {
+            const maxWidth = capabilities.width.max;
+            const maxHeight = capabilities.height.max;
+            console.log(`Attempting to set maximum resolution: ${maxWidth}x${maxHeight}`);
+            advancedConstraints.push({ 
+              width: { ideal: maxWidth },
+              height: { ideal: maxHeight }
+            });
           }
 
           if (advancedConstraints.length > 0) {
@@ -98,7 +115,7 @@ const CameraView = ({
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
           
-          // Activar linterna (flash) inmediatamente si está disponible
+          // Activate flash immediately if available
           if (capabilities.torch) {
             console.log("Activando linterna para mejorar la señal PPG");
             await videoTrack.applyConstraints({
@@ -144,7 +161,7 @@ const CameraView = ({
     };
   }, [isMonitoring]);
 
-  // Asegurar que la linterna esté encendida cuando se detecta un dedo
+  // Ensure the flash is on when a finger is detected
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
@@ -161,8 +178,8 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled]);
 
-  // Cambiar la tasa de cuadros a, por ejemplo, 12 FPS:
-  const targetFrameInterval = 1000/12; // Apunta a 12 FPS para menor consumo
+  // Target lower frame rate for better performance
+  const targetFrameInterval = 1000/12; // Aim for 12 FPS to reduce battery consumption
 
   return (
     <video
