@@ -332,65 +332,45 @@ const Index = () => {
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
       
-      // Control de tasa de frames optimizado para balancear precisión y rendimiento
+      // Control de tasa de frames para no sobrecargar el dispositivo
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
           // Capturar frame 
           const frame = await imageCapture.grabFrame();
           
           // Configurar tamaño adecuado del canvas para procesamiento
-          // Aumentamos ligeramente la resolución para mejor análisis de color
-          const targetWidth = Math.min(400, frame.width); // Aumentado de 320 a 400 para mayor detalle
-          const targetHeight = Math.min(300, frame.height); // Aumentado de 240 a 300
+          const targetWidth = Math.min(320, frame.width);
+          const targetHeight = Math.min(240, frame.height);
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
           
-          // Dibujar el frame en el canvas con alta calidad
-          tempCtx.imageSmoothingEnabled = true;
-          tempCtx.imageSmoothingQuality = 'high';
+          // Dibujar el frame en el canvas
           tempCtx.drawImage(
             frame, 
             0, 0, frame.width, frame.height, 
             0, 0, targetWidth, targetHeight
           );
           
-          // Mejorar la imagen para detección PPG con técnicas avanzadas
+          // Mejorar la imagen para detección PPG
           if (enhanceCtx) {
             // Resetear canvas
             enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
             
-            // Configurar calidad de procesamiento
-            enhanceCtx.imageSmoothingEnabled = true;
-            enhanceCtx.imageSmoothingQuality = 'high';
-            
             // Dibujar en el canvas de mejora
             enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
             
-            // Mejora 1: Refuerzo adaptativo del canal rojo para mejorar señal PPG
+            // Opcionales: Ajustes para mejorar la señal roja
             enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.08)';  // Refuerzo más intenso del canal rojo
+            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';  // Sutil refuerzo del canal rojo
             enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            
-            // Mejora 2: Ajuste de contraste para mejorar detección de cambios sutiles
-            enhanceCtx.globalCompositeOperation = 'multiply';
-            enhanceCtx.fillStyle = 'rgba(100,100,100,0.05)';
-            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            
-            // Restaurar modo normal
             enhanceCtx.globalCompositeOperation = 'source-over';
-            
-            // Mejora 3: Aplicar filtro de nitidez para detectar mejor los bordes y cambios
+          
+            // Obtener datos de la imagen mejorada
             const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            const sharpened = applySharpening(imageData, 0.3); // Factor de nitidez bajo para no amplificar ruido
-            
-            enhanceCtx.putImageData(sharpened, 0, 0);
-            
-            // Obtener datos de la imagen mejorada para procesamiento
-            const finalImageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
             
             // Procesar el frame mejorado
-            processFrame(finalImageData);
+            processFrame(imageData);
           } else {
             // Fallback a procesamiento normal
             const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
@@ -413,74 +393,13 @@ const Index = () => {
         }
       }
       
-      // Programar el siguiente frame con optimización para móviles
+      // Programar el siguiente frame
       if (isMonitoring) {
-        if (isMobile) {
-          // En móviles usar intervalos más largos para ahorrar batería
-          setTimeout(() => requestAnimationFrame(processImage), 5);
-        } else {
-          // En desktop usar animación directa para máxima fluidez
-          requestAnimationFrame(processImage);
-        }
+        requestAnimationFrame(processImage);
       }
     };
 
     processImage();
-  };
-
-  // Función auxiliar para aplicar filtro de nitidez a imagen
-  const applySharpening = (imageData: ImageData, factor: number): ImageData => {
-    const data = imageData.data;
-    const width = imageData.width;
-    const height = imageData.height;
-    const output = new ImageData(width, height);
-    const outputData = output.data;
-    
-    // Kernel de nitidez simple
-    // [  0, -1,  0 ]
-    // [ -1,  5, -1 ]
-    // [  0, -1,  0 ]
-    
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        const center = (y * width + x) * 4;
-        const top = ((y - 1) * width + x) * 4;
-        const bottom = ((y + 1) * width + x) * 4;
-        const left = (y * width + (x - 1)) * 4;
-        const right = (y * width + (x + 1)) * 4;
-        
-        for (let c = 0; c < 3; c++) {
-          // Aplicar kernel de nitidez
-          const val = 5 * data[center + c] - 
-                      data[top + c] - 
-                      data[bottom + c] - 
-                      data[left + c] - 
-                      data[right + c];
-          
-          // Mezcla entre valor original y valor con nitidez
-          outputData[center + c] = Math.max(0, Math.min(255, 
-            data[center + c] * (1 - factor) + val * factor));
-        }
-        
-        // Preservar el canal alfa
-        outputData[center + 3] = data[center + 3];
-      }
-    }
-    
-    // Copiar bordes sin procesar
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (y === 0 || y === height - 1 || x === 0 || x === width - 1) {
-          const i = (y * width + x) * 4;
-          outputData[i] = data[i];
-          outputData[i + 1] = data[i + 1];
-          outputData[i + 2] = data[i + 2];
-          outputData[i + 3] = data[i + 3];
-        }
-      }
-    }
-    
-    return output;
   };
 
   useEffect(() => {
