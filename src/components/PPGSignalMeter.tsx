@@ -41,9 +41,9 @@ const PPGSignalMeter = ({
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Constants adapted for 20:9 aspect ratio (3840 x 2160)
-  const WINDOW_WIDTH_MS = 7500;
-  const CANVAS_WIDTH = 3840;
-  const CANVAS_HEIGHT = 2160;
+  const WINDOW_WIDTH_MS = 4500;
+  const CANVAS_WIDTH = 2400;
+  const CANVAS_HEIGHT = 1080;
   // Grid size adjusted for the resolution
   const GRID_SIZE_X = 240; // Smaller horizontal grid lines for better visibility
   const GRID_SIZE_Y = 180;  // Smaller vertical grid lines for better visibility
