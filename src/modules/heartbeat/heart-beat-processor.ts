@@ -7,16 +7,16 @@ import { HeartBeatResult, RRIntervalData } from './types';
 import HumSoundFile from '../../assets/sounds/heartbeat-low.mp3';
 
 export class HeartBeatProcessor {
-  // Debug mode
+  // Modo de depuración
   private DEBUG = true;
 
-  // Component modules
+  // Módulos de componentes
   private audioHandler: AudioHandler;
   private signalProcessor: SignalProcessor;
   private peakDetector: PeakDetector;
   private bpmAnalyzer: BPMAnalyzer;
   
-  // State
+  // Estado
   private lastBeatTime = 0;
   private lastMajorBeatTime = 0;
   private rrIntervals: { timestamp: number; interval: number }[] = [];
@@ -31,24 +31,26 @@ export class HeartBeatProcessor {
   private falsePositiveProtection = 0;
   private lastProcessedTimestamp = 0;
   private initializationAttempts = 0;
+  private lastDebugLogTime = 0;
 
   constructor() {
-    // Improved parameters for more sensitive detection
+    // Parámetros mejorados para detección más sensible
     this.audioHandler = new AudioHandler(HumSoundFile);
-    this.signalProcessor = new SignalProcessor(200, 6, 0.4); // More responsive smoothing
+    this.signalProcessor = new SignalProcessor(150, 4, 0.45); // Valores más sensibles: buffer más pequeño, ventana más pequeña, alpha más alto
     
-    // More sensitive peak detector settings for better capturing beats
+    // Configuración de detector de picos más sensible para capturar mejor los latidos
     this.peakDetector = new PeakDetector(
-      2,       // Smaller peak window for faster detection
-      0.15,    // Lower threshold to catch more peaks
-      0.25,    // Lower strong peak threshold
-      0.55,    // More aggressive dynamic threshold
-      240,     // Slightly lower minimum time (240ms = 250bpm max)
-      1600     // Increased maximum time (1600ms = 37.5bpm min)
+      2,       // Ventana de pico más pequeña para detección más rápida
+      0.12,    // Umbral más bajo para capturar más picos
+      0.2,     // Umbral de pico fuerte más bajo
+      0.5,     // Umbral dinámico más agresivo
+      200,     // Tiempo mínimo más bajo (200ms = 300bpm máx)
+      1800     // Tiempo máximo aumentado (1800ms = 33bpm mín)
     );
     
-    this.bpmAnalyzer = new BPMAnalyzer(40, 200, 5); // Standard physiological range with good window
+    this.bpmAnalyzer = new BPMAnalyzer(35, 210, 5); // Rango fisiológico ampliado
     
+    console.log("HeartBeatProcessor: Constructor ejecutado con parámetros optimizados");
     this.initialize();
   }
 
@@ -56,33 +58,33 @@ export class HeartBeatProcessor {
     if (this.isInitialized && this.initializationAttempts > 0) return true;
     
     this.initializationAttempts++;
-    console.log(`HeartBeatProcessor initialization attempt #${this.initializationAttempts}`);
+    console.log(`HeartBeatProcessor intento de inicialización #${this.initializationAttempts}`);
 
     try {
-      // Initialize audio handler first
+      // Inicializar manejador de audio primero
       let audioInit = await this.audioHandler.initialize();
       
-      // Retry audio initialization if it fails
+      // Reintentar inicialización de audio si falla
       if (!audioInit) {
-        console.log("Retrying audio initialization after short delay...");
+        console.log("Reintentando inicialización de audio después de breve retraso...");
         await new Promise(resolve => setTimeout(resolve, 500));
         audioInit = await this.audioHandler.initialize();
       }
       
       this.isInitialized = true;
       
-      console.log("HeartBeatProcessor: Initialized with audio status:", audioInit);
+      console.log("HeartBeatProcessor: Inicializado con estado de audio:", audioInit);
       return true;
     } catch (error) {
-      console.error("Error initializing HeartBeatProcessor:", error);
-      // Still mark as initialized to allow processing without audio
+      console.error("Error inicializando HeartBeatProcessor:", error);
+      // Aún marcar como inicializado para permitir procesamiento sin audio
       this.isInitialized = true;
       
-      // Try to reinitialize after a delay
+      // Intentar reinicializar después de un retraso
       setTimeout(() => {
-        console.log("Attempting to reinitialize audio after error");
+        console.log("Intentando reinicializar audio después de error");
         this.audioHandler.initialize().catch(err => 
-          console.error("Audio re-initialization failed:", err)
+          console.error("Reinicialización de audio falló:", err)
         );
       }, 2000);
       
@@ -90,15 +92,15 @@ export class HeartBeatProcessor {
     }
   }
 
-  public processSignal(value: number, quality: number = 0): HeartBeatResult {
+  public processSignal(value: number, quality: number = 50): HeartBeatResult { // Valor de calidad por defecto aumentado de 0 a 50
     const now = Date.now();
     
-    // Throttle processing rate to prevent overwhelming the system
-    if (now - this.lastProcessedTimestamp < 20 && this.lastProcessedTimestamp !== 0) {
-      // Return last result if we're processing too frequently
+    // Limitar la frecuencia de procesamiento para no sobrecargar el sistema
+    if (now - this.lastProcessedTimestamp < 15 && this.lastProcessedTimestamp !== 0) { // Reducido de 20 a 15ms
+      // Devolver último resultado si estamos procesando con demasiada frecuencia
       return {
         bpm: this.bpmAnalyzer.currentBPM,
-        confidence: 0.2, // Balanced confidence
+        confidence: 0.3, // Confianza balanceada aumentada de 0.2 a 0.3
         isBeat: false,
         lastBeatTime: this.lastBeatTime,
         rrData: [...this.rrIntervals]
@@ -107,155 +109,161 @@ export class HeartBeatProcessor {
     
     this.lastProcessedTimestamp = now;
     
-    // Increase minimum signal quality to help with detection
-    this.lastSignalQuality = Math.max(40, quality);
+    // Registro de depuración periódico (cada 3 segundos)
+    const shouldDebugLog = now - this.lastDebugLogTime > 3000;
+    if (shouldDebugLog) {
+      console.log(`HeartBeatProcessor: Procesando señal con valor=${value.toFixed(2)}, calidad=${quality}, beats=${this.beatsCounter}`, {
+        forcedMode: this.forcedDetectionMode,
+        missedBeats: this.consecutiveMissedBeats,
+        timestamp: new Date().toISOString()
+      });
+      this.lastDebugLogTime = now;
+    }
     
-    // Keep a short buffer of raw values for anomaly detection
+    // Aumentar calidad mínima de señal para ayudar con la detección
+    this.lastSignalQuality = Math.max(50, quality); // Aumentado de 40 a 50
+    
+    // Mantener un buffer corto de valores sin procesar para detección de anomalías
     this.signalBuffer.push(value);
-    if (this.signalBuffer.length > 30) {
+    if (this.signalBuffer.length > 20) { // Reducido de 30 a 20
       this.signalBuffer.shift();
     }
     
-    // Process the signal through our signal processor
+    // Procesar la señal a través de nuestro procesador de señal
     const { smoothedValue, derivative, signalBuffer } = this.signalProcessor.processSignal(value);
     
-    // More frequent update of adaptive threshold for faster response
-    if (this.beatsCounter % 5 === 0 || this.forcedDetectionMode) {
-      this.peakDetector.updateAdaptiveThreshold(signalBuffer, now, this.DEBUG);
-    }
-    
-    // Log more detailed signal information for debugging
-    if (this.DEBUG && this.beatsCounter % 20 === 0) {
-      console.log(`Signal values - Raw: ${value.toFixed(2)}, Smoothed: ${smoothedValue.toFixed(2)}, Derivative: ${derivative.toFixed(2)}, Quality: ${this.lastSignalQuality}`);
+    // Actualización más frecuente de umbral adaptativo para respuesta más rápida
+    if (this.beatsCounter % 3 === 0 || this.forcedDetectionMode) { // Reducido de 5 a 3
+      this.peakDetector.updateAdaptiveThreshold(signalBuffer, now, shouldDebugLog);
     }
 
-    // Beat detection logic
+    // Detección de latido con lógica mejorada
     let isBeat = false;
     let currentBpm = this.bpmAnalyzer.currentBPM;
     
-    // Faster detection with smaller buffer requirement
-    if (this.signalProcessor.bufferLength > 3) {
-      // More sensitive beat detection with relaxed quality check
+    // Detección más rápida con requisito de buffer más pequeño
+    if (this.signalProcessor.bufferLength > 2) { // Reducido de 3 a 2
+      // Detección de latido más sensible con comprobación de calidad relajada
       isBeat = this.peakDetector.detectBeat(
         now, 
         smoothedValue, 
-        Math.max(30, this.lastSignalQuality), // Use a minimum quality threshold
+        Math.max(40, this.lastSignalQuality), // Usar un umbral de calidad mínimo más alto (aumentado de 30 a 40)
         signalBuffer, 
         derivative, 
         this.lastBeatTime
       );
       
-      // Less aggressive false positive protection
+      // Protección contra falsos positivos menos agresiva
       if (isBeat) {
         const timeSinceLastBeat = now - this.lastBeatTime;
         
-        // Block only extremely frequent beats (less restrictive)
-        if (timeSinceLastBeat < 180) {
+        // Bloquear solo latidos extremadamente frecuentes (menos restrictivo)
+        if (timeSinceLastBeat < 150) { // Reducido de 180 a 150
           isBeat = false;
           this.falsePositiveProtection++;
-          if (this.DEBUG) {
-            console.log(`False positive rejected: extremely short interval (${timeSinceLastBeat}ms)`);
+          if (this.DEBUG && shouldDebugLog) {
+            console.log(`Falso positivo rechazado: intervalo extremadamente corto (${timeSinceLastBeat}ms)`);
           }
         } else {
           this.falsePositiveProtection = Math.max(0, this.falsePositiveProtection - 1);
         }
       }
       
-      // If beat detected and passes false positive check
+      // Si se detecta latido y pasa verificación de falso positivo
       if (isBeat) {
-        console.log(`BEAT DETECTED at timestamp ${now} with quality ${this.lastSignalQuality}`);
+        console.log(`LATIDO DETECTADO en timestamp ${now} con calidad ${this.lastSignalQuality}`);
         this.beatsCounter++;
         
-        // Reset counter for forced mode
+        // Reiniciar contador para modo forzado
         this.consecutiveMissedBeats = 0;
         this.forcedDetectionMode = false;
         
         if (this.lastBeatTime > 0) {
           const interval = now - this.lastBeatTime;
           
-          // More permissive interval validation
-          if (interval > 240 && interval < 1600) {
-            // Store RR interval data
+          // Validación de intervalo más permisiva
+          if (interval > 200 && interval < 1800) { // Cambiado de 240/1600 a 200/1800
+            // Almacenar datos de intervalo RR
             this.rrIntervals.push({ timestamp: now, interval });
             if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
               this.rrIntervals.shift();
             }
             
-            // Track quality of last 5 beats for confidence calculation
+            // Rastrear calidad de últimos 5 latidos para cálculo de confianza
             this.lastFiveBeatsQuality.push(this.lastSignalQuality);
             if (this.lastFiveBeatsQuality.length > 5) {
               this.lastFiveBeatsQuality.shift();
             }
             
-            // Calculate BPM and update analyzer
+            // Calcular BPM y actualizar analizador
             const newBpm = this.bpmAnalyzer.addBeatInterval(interval);
             if (newBpm !== null) {
               currentBpm = newBpm;
               
-              // Update peak detector timing parameters
+              // Actualizar parámetros de tiempo del detector de picos
               this.peakDetector.setTimingParameters(interval);
             }
-          } else if (this.DEBUG) {
-            console.log(`Beat interval outside valid range: ${interval}ms`);
+          } else if (this.DEBUG && shouldDebugLog) {
+            console.log(`Intervalo de latido fuera de rango válido: ${interval}ms`);
           }
         }
         
-        // Update last beat time
+        // Actualizar hora del último latido
         this.lastBeatTime = now;
         this.lastMajorBeatTime = now;
         
-        // Play sound with increased volume based on confidence
-        const beatStrength = this.peakDetector.confidenceLevel; // Using getter instead of private property
+        // Reproducir sonido con volumen aumentado basado en confianza
+        const beatStrength = this.peakDetector.confidenceLevel;
         this.audioHandler.playBeep(
-          Math.min(0.9, beatStrength + 0.4), // Increased volume
-          Math.min(85, this.lastSignalQuality)  // Higher quality-based tone
+          Math.min(1.0, beatStrength + 0.5), // Volumen aumentado (de 0.9/0.4 a 1.0/0.5)
+          Math.min(90, this.lastSignalQuality)  // Tono basado en calidad más alto (de 85 a 90)
         );
           
-        if (this.DEBUG) {
-          console.log(`BEEP played with strength ${beatStrength.toFixed(2)} and quality ${this.lastSignalQuality}`);
+        if (this.DEBUG && shouldDebugLog) {
+          console.log(`BEEP reproducido con fuerza ${beatStrength.toFixed(2)} y calidad ${this.lastSignalQuality}`);
         }
         
         if (this.DEBUG && this.beatsCounter % 2 === 0) {
-          console.log(`HEARTBEAT @ ${new Date().toISOString()} - BPM: ${currentBpm}, Confidence: ${this.peakDetector.confidenceLevel.toFixed(2)}, Quality: ${this.lastSignalQuality}, Stability: ${this.peakDetector.stabilityLevel.toFixed(2)}`);
+          console.log(`LATIDO @ ${new Date().toISOString()} - BPM: ${currentBpm}, Confianza: ${this.peakDetector.confidenceLevel.toFixed(2)}, Calidad: ${this.lastSignalQuality}, Estabilidad: ${this.peakDetector.stabilityLevel.toFixed(2)}`);
         }
       }
       
-      // More aggressive missed beats handling
+      // Manejo más agresivo de latidos perdidos
       const expectedBeatInterval = 60000 / (currentBpm || 70);
-      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.3 && this.lastBeatTime > 0) {
+      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.2 && this.lastBeatTime > 0) { // Reducido de 1.3 a 1.2
         this.consecutiveMissedBeats++;
         
-        // Enter forced mode sooner
-        if (this.consecutiveMissedBeats > 3 && !this.forcedDetectionMode) {
+        // Entrar en modo forzado antes
+        if (this.consecutiveMissedBeats > 2 && !this.forcedDetectionMode) { // Reducido de 3 a 2
           this.forcedDetectionMode = true;
-          console.log("HeartBeatProcessor: Entering forced detection mode after missed beats");
+          console.log("HeartBeatProcessor: Entrando en modo de detección forzada después de latidos perdidos");
           
-          // Force a beat after fewer missed beats
-          if (this.consecutiveMissedBeats > 4 && now - this.lastBeatTime > expectedBeatInterval * 1.6) {
+          // Forzar un latido después de menos latidos perdidos
+          if (this.consecutiveMissedBeats > 3 && now - this.lastBeatTime > expectedBeatInterval * 1.5) { // Reducido de 4 a 3 y de 1.6 a 1.5
             isBeat = true;
             this.lastBeatTime = now;
             this.beatsCounter++;
             
-            // Play a forced beat sound at higher volume
-            this.audioHandler.playBeep(0.7, 60);
-            console.log("Forced beat generated after missing multiple beats");
+            // Reproducir un sonido de latido forzado a mayor volumen
+            this.audioHandler.playBeep(0.8, 65); // Aumentado de 0.7/60 a 0.8/65
+            console.log("Latido forzado generado después de perder múltiples latidos");
           }
         }
       }
     }
 
-    // Calculate confidence with more aggressive boost
+    // Calcular confianza con impulso más agresivo
     const avgQuality = this.lastFiveBeatsQuality.reduce((sum, q) => sum + q, 0) / 
                      (this.lastFiveBeatsQuality.length || 1);
     
     let finalConfidence = this.bpmAnalyzer.calculateConfidence(avgQuality);
     
-    // Strong confidence boost based on stability
-    finalConfidence *= (1.0 + (0.5 * this.peakDetector.stabilityLevel)); // Using getter instead of private property
-    finalConfidence = Math.min(1.0, finalConfidence + 0.2); // Higher baseline
+    // Fuerte impulso de confianza basado en estabilidad
+    finalConfidence *= (1.0 + (0.7 * this.peakDetector.stabilityLevel)); // Aumentado de 0.5 a 0.7
+    finalConfidence = Math.min(1.0, finalConfidence + 0.25); // Base más alta (de 0.2 a 0.25)
     
     if (this.forcedDetectionMode) {
-      finalConfidence *= 0.8; // Less penalty for forced mode
+      finalConfidence *= 0.85; // Menos penalización para modo forzado (de 0.8 a 0.85)
     }
 
     return {
@@ -282,10 +290,13 @@ export class HeartBeatProcessor {
     this.lastFiveBeatsQuality = [0, 0, 0, 0, 0];
     this.falsePositiveProtection = 0;
     this.lastProcessedTimestamp = 0;
+    this.lastDebugLogTime = 0;
+    
+    console.log("HeartBeatProcessor: Reset completo ejecutado");
   }
 
   public getRRIntervals(): RRIntervalData {
-    // Convert RR interval data to a simple array of intervals
+    // Convertir datos de intervalo RR a una matriz simple de intervalos
     const intervals = this.rrIntervals.map(rr => rr.interval);
     
     return {

@@ -1,5 +1,7 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor, HeartBeatResult } from '../modules/HeartBeatProcessor';
+import { toast } from "sonner";
 
 interface ProcessedHeartBeatResult {
   bpm: number;
@@ -21,29 +23,37 @@ export const useHeartBeatProcessor = () => {
   const lastUpdateTime = useRef<number>(Date.now());
   const stableReadingsCount = useRef<number>(0);
   const lastValidBPM = useRef<number>(0);
+  const peakCount = useRef<number>(0);
+  const processingStartTime = useRef<number>(0);
+  const noBeatsDetectedTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    console.log('useHeartBeatProcessor: Creating new processor instance', {
+    console.log('useHeartBeatProcessor: Creando nueva instancia de procesador', {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
     
     processorRef.current = new HeartBeatProcessor();
+    processingStartTime.current = Date.now();
     
     if (typeof window !== 'undefined') {
       (window as any).heartBeatProcessor = processorRef.current;
-      console.log('useHeartBeatProcessor: Processor registered globally', {
+      console.log('useHeartBeatProcessor: Procesador registrado globalmente', {
         processorRegistered: !!(window as any).heartBeatProcessor,
         timestamp: new Date().toISOString()
       });
     }
 
+    // Configurar un temporizador para verificar si no se detectan latidos
+    startNoBeatsDetectionTimer();
+
     return () => {
-      console.log('useHeartBeatProcessor: Cleanup', {
+      console.log('useHeartBeatProcessor: Limpieza', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
       
+      stopNoBeatsDetectionTimer();
       processorRef.current = null;
       
       if (typeof window !== 'undefined') {
@@ -52,9 +62,34 @@ export const useHeartBeatProcessor = () => {
     };
   }, []);
 
+  const startNoBeatsDetectionTimer = () => {
+    stopNoBeatsDetectionTimer();
+    
+    noBeatsDetectedTimer.current = setTimeout(() => {
+      // Si después de 10 segundos no hay latidos detectados
+      if (peakCount.current === 0 && Date.now() - processingStartTime.current > 10000) {
+        console.warn('useHeartBeatProcessor: No se han detectado latidos después de 10 segundos', {
+          sessionId: sessionId.current,
+          timestamp: new Date().toISOString()
+        });
+        
+        toast.warning("No se detectan latidos. Por favor, ajuste su dedo en la cámara.", {
+          duration: 5000,
+        });
+      }
+    }, 10000);
+  };
+  
+  const stopNoBeatsDetectionTimer = () => {
+    if (noBeatsDetectedTimer.current) {
+      clearTimeout(noBeatsDetectedTimer.current);
+      noBeatsDetectedTimer.current = null;
+    }
+  };
+
   const processSignal = useCallback((value: number): ProcessedHeartBeatResult => {
     if (!processorRef.current) {
-      console.warn('useHeartBeatProcessor: Processor not initialized', {
+      console.warn('useHeartBeatProcessor: Procesador no inicializado', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
@@ -72,31 +107,55 @@ export const useHeartBeatProcessor = () => {
     }
 
     const now = Date.now();
-    const shouldLog = now - lastUpdateTime.current > 1000; // Log only once per second
+    const shouldLog = now - lastUpdateTime.current > 1000; // Registrar solo una vez por segundo
     
     if (shouldLog) {
-      console.log('useHeartBeatProcessor - processing signal:', {
+      console.log('useHeartBeatProcessor - procesando señal:', {
         inputValue: value.toFixed(2),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        elapsedTime: now - processingStartTime.current
       });
       lastUpdateTime.current = now;
     }
 
     try {
+      // Procesamiento más sensible de la señal
       const result = processorRef.current.processSignal(value);
       const rrData = processorRef.current.getRRIntervals();
       
+      // Si se detecta un latido, incrementar contador y reiniciar temporizador
+      if (result.isBeat) {
+        peakCount.current++;
+        
+        // Reiniciar temporizador de detección de latidos
+        stopNoBeatsDetectionTimer();
+        startNoBeatsDetectionTimer();
+        
+        if (peakCount.current === 1) {
+          console.log('useHeartBeatProcessor: Primer latido detectado después de', {
+            milliseconds: now - processingStartTime.current,
+            timestamp: new Date().toISOString()
+          });
+          
+          toast.success("¡Primer latido detectado!", {
+            duration: 2000,
+          });
+        }
+      }
+      
       if (shouldLog) {
-        console.log('useHeartBeatProcessor - result:', {
+        console.log('useHeartBeatProcessor - resultado:', {
           bpm: result.bpm,
           confidence: result.confidence,
           isPeak: result.isBeat,
           arrhythmiaCount: 0,
-          intervals: rrData.intervals.length
+          intervals: rrData.intervals.length,
+          totalPeaks: peakCount.current
         });
       }
       
-      if (result.confidence < 0.3) {
+      // Umbral de confianza más bajo para permitir más detecciones
+      if (result.confidence < 0.2) { // Reducido de 0.3 a 0.2
         stableReadingsCount.current = 0;
         return {
           bpm: currentBPM > 0 ? currentBPM : result.bpm || 70,
@@ -108,7 +167,8 @@ export const useHeartBeatProcessor = () => {
       }
 
       let validatedBPM = result.bpm;
-      const isValidBPM = result.bpm >= 45 && result.bpm <= 180;
+      // Rango más amplio de valores BPM aceptables
+      const isValidBPM = result.bpm >= 40 && result.bpm <= 200; // Ampliado de 45-180 a 40-200
       
       if (!isValidBPM) {
         stableReadingsCount.current = 0;
@@ -117,19 +177,23 @@ export const useHeartBeatProcessor = () => {
         if (lastValidBPM.current > 0) {
           const bpmDiff = Math.abs(result.bpm - lastValidBPM.current);
           
-          if (bpmDiff > 20) {
+          // Mayor tolerancia a cambios en BPM
+          if (bpmDiff > 25) { // Aumentado de 20 a 25
             stableReadingsCount.current = 0;
-            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 3 : -3);
+            // Transición más rápida hacia nuevos valores
+            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 5 : -5); // Aumentado de 3 a 5
           } else {
             stableReadingsCount.current++;
-            validatedBPM = lastValidBPM.current * 0.6 + result.bpm * 0.4;
+            // Mayor peso para los nuevos valores
+            validatedBPM = lastValidBPM.current * 0.5 + result.bpm * 0.5; // Cambiado de 0.6/0.4 a 0.5/0.5
           }
         }
         
         lastValidBPM.current = validatedBPM;
       }
       
-      if ((stableReadingsCount.current >= 3 || result.confidence > 0.75) && validatedBPM > 0) {
+      // Menos lecturas estables requeridas o menor umbral de confianza
+      if ((stableReadingsCount.current >= 2 || result.confidence > 0.65) && validatedBPM > 0) { // Reducido de 3 a 2 y de 0.75 a 0.65
         setCurrentBPM(Math.round(validatedBPM));
         setConfidence(result.confidence);
       }
@@ -142,7 +206,7 @@ export const useHeartBeatProcessor = () => {
         rrData
       };
     } catch (error) {
-      console.error('useHeartBeatProcessor - Error processing signal:', error);
+      console.error('useHeartBeatProcessor - Error al procesar señal:', error);
       return {
         bpm: currentBPM || 70,
         confidence: 0,
@@ -157,10 +221,11 @@ export const useHeartBeatProcessor = () => {
   }, [currentBPM, confidence]);
 
   const reset = useCallback(() => {
-    console.log('useHeartBeatProcessor: Resetting processor', {
+    console.log('useHeartBeatProcessor: Reiniciando procesador', {
       sessionId: sessionId.current,
       prevBPM: currentBPM,
       prevConfidence: confidence,
+      peaksDetected: peakCount.current,
       timestamp: new Date().toISOString()
     });
     
@@ -172,12 +237,19 @@ export const useHeartBeatProcessor = () => {
     setConfidence(0);
     stableReadingsCount.current = 0;
     lastValidBPM.current = 0;
+    peakCount.current = 0;
+    processingStartTime.current = Date.now();
+    
+    // Reiniciar temporizador de detección
+    stopNoBeatsDetectionTimer();
+    startNoBeatsDetectionTimer();
   }, [currentBPM, confidence]);
 
   return {
     currentBPM,
     confidence,
     processSignal,
-    reset
+    reset,
+    peakCount: peakCount.current
   };
 };
