@@ -62,16 +62,16 @@ const PPGSignalMeter = ({
   const WINDOW_WIDTH_MS = 4000;
   const CANVAS_WIDTH = 1080;
   const CANVAS_HEIGHT = 720;
-  const GRID_SIZE_X = 1080;
-  const GRID_SIZE_Y = 720;
+  const GRID_SIZE_X = 80;
+  const GRID_SIZE_Y = 30;
   const verticalScale = 65.0;
-  const SMOOTHING_FACTOR = 1.99;
+  const SMOOTHING_FACTOR = 1.79;
   const TARGET_FPS = 90;
   const BUFFER_SIZE = 700;
   const QUALITY_HISTORY_SIZE = 10;
   const REQUIRED_FINGER_FRAMES = 1;
   const MAX_RENDER_HISTORY = 15;
-  const RENDER_DELAY_COMPENSATION = 0.8;
+  const RENDER_DELAY_COMPENSATION = 0.1;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
