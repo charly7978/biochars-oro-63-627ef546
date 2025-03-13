@@ -37,7 +37,6 @@ export const useHeartBeatProcessor = () => {
   const peakCounterRef = useRef<number>(0);
   const lastArrhythmiaRef = useRef<boolean>(false);
 
-  // High precision timer for real-time tracking
   useEffect(() => {
     const timer = setInterval(() => {
       realTimeRef.current = Date.now();
@@ -107,24 +106,20 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    // Capture precise current time for synchronization
     const now = realTimeRef.current;
     activeValueRef.current = value;
     
-    // Track value history for scaling calculations and normalization
     peakValueHistoryRef.current.push(value);
     if (peakValueHistoryRef.current.length > 20) {
       peakValueHistoryRef.current.shift();
     }
     
-    // Analyze peak value history for better scaling
     let peakScaleFactor = 40; // Default scaling
     if (peakValueHistoryRef.current.length > 5) {
       const maxVal = Math.max(...peakValueHistoryRef.current);
       const minVal = Math.min(...peakValueHistoryRef.current);
       const range = maxVal - minVal;
       
-      // Adaptive scaling based on signal range
       if (range > 0 && range < 0.1) {
         peakScaleFactor = 80; // Boost small signals
       } else if (range >= 0.1 && range < 0.5) {
@@ -134,7 +129,6 @@ export const useHeartBeatProcessor = () => {
       }
     }
     
-    // Use minimal input buffering for low latency while maintaining signal quality
     inputBufferRef.current.push({value, timestamp: now});
     if (inputBufferRef.current.length > MAX_BUFFER_SIZE) {
       inputBufferRef.current.shift();
@@ -157,14 +151,13 @@ export const useHeartBeatProcessor = () => {
     
     processingStatsRef.current.latency = processingStats.latency || processingLatency;
     
-    // Determine if this might be an arrhythmia
     const isArrhythmia = checkForArrhythmia(rrData);
     lastArrhythmiaRef.current = isArrhythmia;
     
-    // ENHANCED PEAK DETECTION: When a peak is detected, record it with detailed information
     if (result.isPeak) {
       peakCounterRef.current++;
       const peakId = peakCounterRef.current;
+      const peakScaleFactor = 100; // Higher scaling for visibility
       const scaledValue = value * peakScaleFactor;
       
       console.log('useHeartBeatProcessor - PEAK DETECTED!', {
@@ -175,67 +168,56 @@ export const useHeartBeatProcessor = () => {
         isArrhythmia
       });
       
-      // Store peak information with current timestamp and unique ID
       processingStatsRef.current.peakTimestamps.push(now);
       if (processingStatsRef.current.peakTimestamps.length > 10) {
         processingStatsRef.current.peakTimestamps.shift();
       }
       
-      // Store peak for visualization with proper timestamp, value, and metadata
       detectedPeaksRef.current.push({
         timestamp: now,
-        value: scaledValue, // Use adaptive scaling
-        isArrhythmia // Mark if this is an arrhythmia peak
+        value: scaledValue,
+        isArrhythmia
       });
       
-      // Maintain reasonable buffer size while keeping more recent peaks
       if (detectedPeaksRef.current.length > 40) {
         detectedPeaksRef.current.shift();
       }
     }
 
-    // Only update BPM display when signal confidence is good
     if (result.confidence >= 0.65 && result.bpm > 0) {
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
-    // Create a deep copy of the peaks to avoid reference issues
     const peaksCopy = detectedPeaksRef.current.map(peak => ({...peak}));
 
-    // Debug log to verify peaks are included
     if (peaksCopy.length > 0) {
       console.log('useHeartBeatProcessor - Returning peaks data:', {
         peakCount: peaksCopy.length,
         firstPeak: peaksCopy[0],
-        lastPeak: peaksCopy[peaksCopy.length - 1]
+        lastPeak: peaksCopy[peaksCopy.length - 1],
+        hasArrhythmia: peaksCopy.some(p => p.isArrhythmia)
       });
     }
     
     return {
       ...result,
       rrData,
-      detectedPeaks: peaksCopy // Return the copy of peaks
+      detectedPeaks: peaksCopy
     };
   }, []);
 
-  // Simple function to check for arrhythmia based on R-R intervals
   const checkForArrhythmia = (rrData: {intervals: number[], lastPeakTime: number | null}): boolean => {
     if (!rrData || !rrData.intervals || rrData.intervals.length < 3) {
       return false;
     }
     
-    // Get the last 3 intervals
     const recentIntervals = rrData.intervals.slice(-3);
-    
-    // Calculate the average
     const avg = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
-    
-    // Check if the last interval differs significantly from the average (more than 20%)
     const lastInterval = recentIntervals[recentIntervals.length - 1];
     const percentDiff = Math.abs(lastInterval - avg) / avg;
     
-    return percentDiff > 0.2; // More than 20% variation indicates potential arrhythmia
+    return percentDiff > 0.2;
   };
 
   const reset = useCallback(() => {

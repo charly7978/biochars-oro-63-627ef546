@@ -8,7 +8,7 @@ const CameraView = memo(({
   isFingerDetected = false, 
   signalQuality = 0,
   buttonPosition,
-  detectedPeaks = [] // Add detectedPeaks prop with default empty array
+  detectedPeaks = [] // Ensure we're accepting peaks data
 }) => {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -170,7 +170,7 @@ const CameraView = memo(({
   // Debug log when peaks change
   useEffect(() => {
     if (detectedPeaks && detectedPeaks.length > 0) {
-      console.log("CameraView: Peaks received:", detectedPeaks.length);
+      console.log("CameraView: Peaks received:", detectedPeaks.length, detectedPeaks);
     }
   }, [detectedPeaks]);
 
@@ -207,42 +207,57 @@ const CameraView = memo(({
         </div>
       )}
 
-      {/* Peak visualization overlay - IMPROVED */}
+      {/* Peak visualization overlay - IMPROVED AND FIXED */}
       {isMonitoring && detectedPeaks && detectedPeaks.length > 0 && (
         <div className="absolute inset-0 z-10 pointer-events-none">
-          {detectedPeaks.map((peak, index) => (
-            <div 
-              key={`peak-${index}-${peak.timestamp}`}
-              className={`absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center`}
-              style={{
-                left: `${50 + (index - detectedPeaks.length + 1) * 10}%`, 
-                top: `${40 - (peak.value || 0) * 0.4}%`
-              }}
-            >
-              {/* Main circle */}
+          {detectedPeaks.map((peak, index) => {
+            // Calculate position (ensure we have the correct properties)
+            const x = `${Math.min(Math.max(25 + (index - Math.max(0, detectedPeaks.length - 10)) * 5, 10), 90)}%`;
+            const y = `${Math.max(20, 50 - (peak.value || 0) * 0.3)}%`;
+            
+            // Debug each peak
+            console.log(`Rendering peak ${index}:`, { x, y, peak });
+            
+            return (
               <div 
-                className={`
-                  w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
-                  ${peak.isArrhythmia ? 'bg-yellow-500 animate-pulse border-2 border-red-500' : 'bg-blue-500'}
-                  text-white
-                `}
+                key={`peak-${index}-${peak.timestamp || Date.now()}`}
+                className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+                style={{
+                  left: x,
+                  top: y,
+                  zIndex: 1000 + index // Ensure newer peaks are on top
+                }}
               >
-                {Math.round(peak.value || 0)}
-              </div>
-              
-              {/* Value label */}
-              <div className="mt-1 text-xs font-medium bg-black/60 text-white px-1 rounded">
-                {getFormattedTime(peak.timestamp)}
-              </div>
-              
-              {/* Special arrhythmia label */}
-              {peak.isArrhythmia && (
-                <div className="mt-1 text-xs font-bold bg-red-500/90 text-white px-2 py-1 rounded-full animate-pulse">
-                  LATIDO PREMATURO
+                {/* Pulsating background for arrhythmia */}
+                {peak.isArrhythmia && (
+                  <div className="absolute inset-0 w-24 h-24 -m-10 rounded-full bg-yellow-400/30 animate-pulse"></div>
+                )}
+                
+                {/* Main circle - different styles for normal vs arrhythmia */}
+                <div 
+                  className={`
+                    w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold
+                    ${peak.isArrhythmia ? 'bg-red-500 border-2 border-yellow-400 animate-pulse' : 'bg-blue-500'}
+                    text-white shadow-lg
+                  `}
+                >
+                  {Math.round(peak.value || 0)}
                 </div>
-              )}
-            </div>
-          ))}
+                
+                {/* Value label with timing info */}
+                <div className="mt-1 text-xs font-medium bg-black/70 text-white px-2 py-1 rounded">
+                  {peak.timestamp ? getFormattedTime(peak.timestamp) : 'N/A'}
+                </div>
+                
+                {/* Special label for arrhythmia peaks */}
+                {peak.isArrhythmia && (
+                  <div className="mt-1 text-xs font-bold bg-red-500 text-white px-3 py-1 rounded-full animate-pulse shadow-md">
+                    LATIDO PREMATURO
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </>

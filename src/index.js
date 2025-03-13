@@ -276,6 +276,22 @@ const Index = () => {
           value: peak.value || (lastSignal.filteredValue * 40)
         }));
         
+        // Ensure we mark arrhythmia peaks if detected in vital signs
+        if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes('ARRITMIA')) {
+          // Mark the most recent peak as arrhythmia
+          if (peaksWithMetadata.length > 0) {
+            const lastIndex = peaksWithMetadata.length - 1;
+            peaksWithMetadata[lastIndex].isArrhythmia = true;
+          }
+        }
+        
+        // Log peaks for debugging
+        console.log("Peaks with metadata:", peaksWithMetadata.map(p => ({
+          value: p.value,
+          time: p.time,
+          isArrhythmia: p.isArrhythmia
+        })));
+        
         setDetectedPeaks(peaksWithMetadata);
       }
       
@@ -310,14 +326,14 @@ const Index = () => {
       });
       setArrhythmiaCount("--");
       setSignalQuality(0);
+      setDetectedPeaks([]);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   useEffect(() => {
     if (detectedPeaks.length > 0) {
-      console.log("Picos para visualización actualizados:", 
-        detectedPeaks.length, 
-        "Ejemplo:", detectedPeaks[0]
+      console.log("Peaks for visualization updated:", detectedPeaks.length, 
+        "Sample:", JSON.stringify(detectedPeaks[0])
       );
     }
   }, [detectedPeaks]);
@@ -336,7 +352,7 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
-            detectedPeaks={detectedPeaks}
+            detectedPeaks={detectedPeaks} // Pass peaks to the CameraView
           />
         </div>
 
