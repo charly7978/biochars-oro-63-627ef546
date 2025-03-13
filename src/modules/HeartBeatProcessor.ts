@@ -16,12 +16,12 @@ export class HeartBeatProcessor {
   private readonly EMA_ALPHA = 0.35; // Adjusted for better signal smoothing
   private readonly BASELINE_FACTOR = 0.998; // Improved adaptive baseline
 
-  // Audio feedback parameters
+  // Audio feedback parameters - adjusted for better synchronization
   private readonly BEEP_PRIMARY_FREQUENCY = 880;
   private readonly BEEP_SECONDARY_FREQUENCY = 440;
   private readonly BEEP_DURATION = 80;
   private readonly BEEP_VOLUME = 0.9;
-  private readonly MIN_BEEP_INTERVAL_MS = 300;
+  private readonly MIN_BEEP_INTERVAL_MS = 50; // Reduced to allow more responsive beeping
 
   // Auto-reset parameters
   private readonly LOW_SIGNAL_THRESHOLD = 0.02; // Reduced for better sensitivity
@@ -106,23 +106,14 @@ export class HeartBeatProcessor {
         this.audioContext.currentTime
       );
 
-      // Envelope del sonido principal
-      primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-      primaryGain.gain.linearRampToValueAtTime(
-        volume,
-        this.audioContext.currentTime + 0.01
-      );
+      // Immediate sound onset with minimal delay for better sync
+      primaryGain.gain.setValueAtTime(volume, this.audioContext.currentTime);
       primaryGain.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.BEEP_DURATION / 1000
       );
 
-      // Envelope del sonido secundario
-      secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-      secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.3,
-        this.audioContext.currentTime + 0.01
-      );
+      secondaryGain.gain.setValueAtTime(volume * 0.3, this.audioContext.currentTime);
       secondaryGain.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.BEEP_DURATION / 1000
@@ -136,8 +127,8 @@ export class HeartBeatProcessor {
       primaryOscillator.start();
       secondaryOscillator.start();
 
-      primaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.05);
-      secondaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.05);
+      primaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000);
+      secondaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000);
 
       this.lastBeepTime = now;
     } catch (error) {
@@ -265,12 +256,14 @@ export class HeartBeatProcessor {
           isArrhythmia
         });
         
+        // Play beep immediately when we detect a peak for better synchronization
+        this.playBeep(isArrhythmia ? 0.15 : 0.12);
+        
         // Limit stored peaks
         if (this.detectedPeaks.length > this.MAX_STORED_PEAKS) {
           this.detectedPeaks.shift();
         }
         
-        this.playBeep(isArrhythmia ? 0.15 : 0.12); // Louder beep for arrhythmias
         this.updateBPM();
         
         console.log("HeartBeatProcessor: PEAK CONFIRMED", {

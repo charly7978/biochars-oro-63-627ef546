@@ -37,6 +37,34 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.log('Could not lock orientation:', err);
       }
+      
+      // Force fullscreen and prevent system UI from appearing
+      // This ensures maximum screen real estate on all devices
+      if ((doc as any).webkitEnterFullscreen) {
+        (doc as any).webkitEnterFullscreen();
+      }
+      
+      // Prevent screen dimming
+      if (navigator.wakeLock) {
+        try {
+          const wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Wake Lock is active');
+          
+          // Release wake lock when visibility changes
+          document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible' && !document.fullscreenElement) {
+              try {
+                await tryFullscreen();
+                await navigator.wakeLock.request('screen');
+              } catch (err) {
+                console.log('Error re-acquiring wake lock:', err);
+              }
+            }
+          });
+        } catch (err) {
+          console.log('Could not acquire wake lock:', err);
+        }
+      }
     } catch (err) {
       console.error('Fullscreen request failed:', err);
       // Retry after a delay if failed
@@ -47,7 +75,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Setup event listeners to maintain fullscreen
   document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) {
-      setTimeout(tryFullscreen, 1000);
+      setTimeout(tryFullscreen, 500);
+    }
+  });
+  
+  document.addEventListener('webkitfullscreenchange', () => {
+    if (!(document as any).webkitFullscreenElement) {
+      setTimeout(tryFullscreen, 500);
+    }
+  });
+  
+  // Additional handlers to ensure fullscreen stays active
+  document.addEventListener('touchend', () => {
+    if (!document.fullscreenElement) {
+      tryFullscreen();
     }
   });
   
