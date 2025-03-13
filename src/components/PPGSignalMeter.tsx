@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -39,30 +38,35 @@ const PPGSignalMeter = ({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Referencia para el historial de calidad de señal
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const offscreenCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
-  // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
+  const receivedPeaksRef = useRef<{timestamp: number, value: number}[]>([]);
+  const lastHeartbeatTimeRef = useRef<number>(0);
+  const lastRenderTimeStampRef = useRef<number>(performance.now());
+  const renderDelayRef = useRef<number[]>([]);
+  const renderFrameCountRef = useRef<number>(0);
+  const lastSignalValueRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 10000;
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 40.0; // Aumentado para mejor visualización
+  const verticalScale = 40.0;
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 30;
-  const FRAME_TIME = 1500 / TARGET_FPS;
+  const TARGET_FPS = 60;
+  const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 500;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 2.5; // Reducido para mayor sensibilidad
-  const MIN_PEAK_DISTANCE_MS = 220; // Reducido para mejor detección
+  const PEAK_THRESHOLD = 2.5;
+  const MIN_PEAK_DISTANCE_MS = 220;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  // Nuevo: Cantidad de frames consecutivos necesarios para confirmar detección
   const REQUIRED_FINGER_FRAMES = 3;
-  // Nuevo: Tamaño del historial de calidad para calcular promedio
   const QUALITY_HISTORY_SIZE = 5;
+  const PREDICTION_FACTOR = 5;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -76,34 +80,64 @@ const PPGSignalMeter = ({
       baselineRef.current = null;
       lastValueRef.current = null;
     }
+    
+    if (!offscreenCanvasRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = CANVAS_WIDTH;
+      canvas.height = CANVAS_HEIGHT;
+      offscreenCanvasRef.current = canvas;
+      offscreenCtxRef.current = canvas.getContext('2d', { alpha: false });
+    }
   }, [preserveResults, isFingerDetected]);
 
-  // Actualizar historial de calidad
   useEffect(() => {
-    // Actualizar el historial de calidad
+    if (isFingerDetected && rawArrhythmiaData) {
+      if (rawArrhythmiaData.timestamp > lastHeartbeatTimeRef.current) {
+        lastHeartbeatTimeRef.current = rawArrhythmiaData.timestamp;
+        
+        const avgRenderDelay = renderDelayRef.current.length > 0 ? 
+          renderDelayRef.current.reduce((a, b) => a + b, 0) / renderDelayRef.current.length : 0;
+        
+        const compensatedTime = Date.now() - Math.max(0, avgRenderDelay);
+        
+        const scaledValue = lastSignalValueRef.current * verticalScale;
+        
+        peaksRef.current.push({
+          time: compensatedTime,
+          value: scaledValue,
+          isArrhythmia: false
+        });
+        
+        if (peaksRef.current.length > MAX_PEAKS_TO_DISPLAY) {
+          peaksRef.current.shift();
+        }
+      }
+    }
+  }, [rawArrhythmiaData, isFingerDetected]);
+
+  useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
     
-    // Actualizar contador de frames con dedo detectado
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
-  }, [quality, isFingerDetected]);
+    
+    lastSignalValueRef.current = value;
+  }, [quality, isFingerDetected, value]);
 
-  // Calcular calidad promedio más estable (reduce fluctuaciones)
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
-    // Calcular promedio ponderando más los valores recientes
     let weightedSum = 0;
     let weightSum = 0;
     
     qualityHistoryRef.current.forEach((q, index) => {
-      const weight = index + 1; // Dar más peso a valores más recientes
+      const weight = index + 1;
       weightedSum += q * weight;
       weightSum += weight;
     });
@@ -112,28 +146,22 @@ const PPGSignalMeter = ({
   }, []);
 
   const getQualityColor = useCallback((q: number) => {
-    // Usar promedio de calidad para mayor estabilidad
     const avgQuality = getAverageQuality();
-    
-    // Verificar frames consecutivos para confirmación robusta
     const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
     
     if (!isFingerConfirmed) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 65) return 'from-green-500 to-emerald-500'; // Umbral reducido
-    if (avgQuality > 40) return 'from-yellow-500 to-orange-500'; // Umbral reducido
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
   const getQualityText = useCallback((q: number) => {
-    // Usar promedio de calidad para mayor estabilidad
     const avgQuality = getAverageQuality();
-    
-    // Verificar frames consecutivos para confirmación robusta
     const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
     
     if (!isFingerConfirmed) return 'Sin detección';
-    if (avgQuality > 65) return 'Señal óptima'; // Umbral reducido
-    if (avgQuality > 40) return 'Señal aceptable'; // Umbral reducido
+    if (avgQuality > 65) return 'Señal óptima';
+    if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
   }, [getAverageQuality]);
 
@@ -143,6 +171,11 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
+    if (gridCanvasRef.current) {
+      ctx.drawImage(gridCanvasRef.current, 0, 0);
+      return;
+    }
+    
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
     gradient.addColorStop(0.3, '#FDE1D3');
@@ -261,7 +294,6 @@ const PPGSignalMeter = ({
         }
       }
       
-      // Reducción del umbral mínimo para detectar picos más pequeños
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
         potentialPeaks.push({
           index: i,
@@ -272,7 +304,6 @@ const PPGSignalMeter = ({
       }
     }
     
-    // Procesar picos potenciales y aplicar filtrado temporal
     for (const peak of potentialPeaks) {
       const tooClose = peaksRef.current.some(
         existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
@@ -294,7 +325,78 @@ const PPGSignalMeter = ({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
+  const createGridCanvas = useCallback(() => {
+    if (gridCanvasRef.current) return;
+    
+    const offscreen = document.createElement('canvas');
+    offscreen.width = CANVAS_WIDTH;
+    offscreen.height = CANVAS_HEIGHT;
+    const offCtx = offscreen.getContext('2d', { alpha: false });
+    
+    if (!offCtx) return;
+    
+    const gradient = offCtx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    gradient.addColorStop(0, '#E5DEFF');
+    gradient.addColorStop(0.3, '#FDE1D3');
+    gradient.addColorStop(0.7, '#F2FCE2');
+    gradient.addColorStop(1, '#D3E4FD');
+    
+    offCtx.fillStyle = gradient;
+    offCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    offCtx.globalAlpha = 0.03;
+    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
+      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
+        offCtx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
+        offCtx.fillRect(i, j, 10, 10);
+      }
+    }
+    offCtx.globalAlpha = 1.0;
+    
+    offCtx.beginPath();
+    offCtx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
+    offCtx.lineWidth = 0.5;
+    
+    for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
+      offCtx.moveTo(x, 0);
+      offCtx.lineTo(x, CANVAS_HEIGHT);
+      if (x % (GRID_SIZE_X * 5) === 0) {
+        offCtx.fillStyle = 'rgba(50, 50, 50, 0.6)';
+        offCtx.font = '10px Inter';
+        offCtx.textAlign = 'center';
+        offCtx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
+      }
+    }
+    
+    for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
+      offCtx.moveTo(0, y);
+      offCtx.lineTo(CANVAS_WIDTH, y);
+      if (y % (GRID_SIZE_Y * 5) === 0) {
+        offCtx.fillStyle = 'rgba(50, 50, 50, 0.6)';
+        offCtx.font = '10px Inter';
+        offCtx.textAlign = 'right';
+        offCtx.fillText(y.toString(), 15, y + 3);
+      }
+    }
+    offCtx.stroke();
+    
+    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
+    offCtx.beginPath();
+    offCtx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
+    offCtx.lineWidth = 1.5;
+    offCtx.setLineDash([5, 3]);
+    offCtx.moveTo(0, centerLineY);
+    offCtx.lineTo(CANVAS_WIDTH, centerLineY);
+    offCtx.stroke();
+    offCtx.setLineDash([]);
+    
+    gridCanvasRef.current = offscreen;
+  }, []);
+
   const renderSignal = useCallback(() => {
+    const startRenderTime = performance.now();
+    renderFrameCountRef.current++;
+    
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -311,26 +413,34 @@ const PPGSignalMeter = ({
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { alpha: false });
     
-    if (!ctx) {
+    if (!ctx || !offscreenCtxRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
     
     const now = Date.now();
     
-    drawGrid(ctx);
+    createGridCanvas();
+    
+    const offCtx = offscreenCtxRef.current;
+    
+    if (gridCanvasRef.current) {
+      offCtx.drawImage(gridCanvasRef.current, 0, 0);
+    } else {
+      drawGrid(offCtx);
+    }
     
     if (preserveResults && !isFingerDetected) {
+      ctx.drawImage(offscreenCanvasRef.current!, 0, 0);
+      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
     
-    // Ajuste más dinámico de la línea base
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      // Factor más agresivo para adaptarse rápidamente a cambios
       const adaptationRate = isFingerDetected ? 0.97 : 0.95;
       baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
     }
@@ -358,14 +468,13 @@ const PPGSignalMeter = ({
     dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
-    detectPeaks(points, now);
     
     if (points.length > 1) {
-      ctx.beginPath();
-      ctx.strokeStyle = '#0EA5E9';
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
+      offCtx.beginPath();
+      offCtx.strokeStyle = '#0EA5E9';
+      offCtx.lineWidth = 2;
+      offCtx.lineJoin = 'round';
+      offCtx.lineCap = 'round';
       
       let firstPoint = true;
       
@@ -380,62 +489,84 @@ const PPGSignalMeter = ({
         const y2 = (canvas.height / 2) - 40 - point.value;
         
         if (firstPoint) {
-          ctx.moveTo(x1, y1);
+          offCtx.moveTo(x1, y1);
           firstPoint = false;
         }
         
-        ctx.lineTo(x2, y2);
+        offCtx.lineTo(x2, y2);
         
         if (point.isArrhythmia) {
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.strokeStyle = '#DC2626';
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.strokeStyle = '#0EA5E9';
-          ctx.moveTo(x2, y2);
+          offCtx.stroke();
+          offCtx.beginPath();
+          offCtx.strokeStyle = '#DC2626';
+          offCtx.moveTo(x1, y1);
+          offCtx.lineTo(x2, y2);
+          offCtx.stroke();
+          offCtx.beginPath();
+          offCtx.strokeStyle = '#0EA5E9';
+          offCtx.moveTo(x2, y2);
           firstPoint = true;
         }
       }
       
-      ctx.stroke();
+      offCtx.stroke();
       
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2) - 40 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
-          ctx.beginPath();
-          ctx.arc(x, y, 5, 0, Math.PI * 2);
-          ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
-          ctx.fill();
+          offCtx.beginPath();
+          offCtx.arc(x, y, 5, 0, Math.PI * 2);
+          offCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          offCtx.fill();
           
           if (peak.isArrhythmia) {
-            ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.strokeStyle = '#FEF7CD';
-            ctx.lineWidth = 3;
-            ctx.stroke();
+            offCtx.beginPath();
+            offCtx.arc(x, y, 10, 0, Math.PI * 2);
+            offCtx.strokeStyle = '#FEF7CD';
+            offCtx.lineWidth = 3;
+            offCtx.stroke();
             
-            ctx.font = 'bold 18px Inter';
-            ctx.fillStyle = '#F97316';
-            ctx.textAlign = 'center';
-            ctx.fillText('ARRITMIA', x, y - 25);
+            offCtx.font = 'bold 18px Inter';
+            offCtx.fillStyle = '#F97316';
+            offCtx.textAlign = 'center';
+            offCtx.fillText('ARRITMIA', x, y - 25);
           }
           
-          ctx.font = 'bold 16px Inter';
-          ctx.fillStyle = '#000000';
-          ctx.textAlign = 'center';
-          ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          offCtx.font = 'bold 16px Inter';
+          offCtx.fillStyle = '#000000';
+          offCtx.textAlign = 'center';
+          offCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
         }
       });
     }
     
+    ctx.drawImage(offscreenCanvasRef.current!, 0, 0);
+    
+    const endRenderTime = performance.now();
+    const renderDelay = endRenderTime - startRenderTime;
+    
+    renderDelayRef.current.push(renderDelay);
+    if (renderDelayRef.current.length > 30) {
+      renderDelayRef.current.shift();
+    }
+    
+    if (renderFrameCountRef.current % 60 === 0) {
+      console.log('PPGSignalMeter - Estadísticas de renderización:', {
+        avgDelay: renderDelayRef.current.reduce((a, b) => a + b, 0) / renderDelayRef.current.length,
+        minDelay: Math.min(...renderDelayRef.current),
+        maxDelay: Math.max(...renderDelayRef.current),
+        frameCount: renderFrameCountRef.current,
+        fps: 1000 / (endRenderTime - lastRenderTimeStampRef.current) * 60
+      });
+      
+      lastRenderTimeStampRef.current = endRenderTime;
+    }
+    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults]);
+  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, smoothValue, preserveResults, createGridCanvas]);
 
   useEffect(() => {
     renderSignal();
@@ -443,21 +574,14 @@ const PPGSignalMeter = ({
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
   }, [renderSignal]);
 
   useEffect(() => {
-    const offscreen = document.createElement('canvas');
-    offscreen.width = CANVAS_WIDTH;
-    offscreen.height = CANVAS_HEIGHT;
-    const offCtx = offscreen.getContext('2d');
-    
-    if(offCtx){
-      drawGrid(offCtx);
-      gridCanvasRef.current = offscreen;
-    }
-  }, [drawGrid]);
+    createGridCanvas();
+  }, [createGridCanvas]);
 
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
@@ -465,7 +589,6 @@ const PPGSignalMeter = ({
     onReset();
   }, [onReset]);
 
-  // Determinar si usar calidad mejorada para UI
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
@@ -530,3 +653,4 @@ const PPGSignalMeter = ({
 };
 
 export default PPGSignalMeter;
+

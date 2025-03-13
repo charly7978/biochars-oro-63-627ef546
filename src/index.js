@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -21,6 +22,7 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [detectedPeaks, setDetectedPeaks] = useState([]);
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -138,6 +140,7 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    setDetectedPeaks([]);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -194,6 +197,11 @@ const Index = () => {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
       setHeartRate(calculatedHeartRate);
+      
+      // Guardar los picos detectados para sincronización visual
+      if (heartBeatResult.detectedPeaks) {
+        setDetectedPeaks(heartBeatResult.detectedPeaks);
+      }
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {

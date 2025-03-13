@@ -1,3 +1,4 @@
+
 export class HeartBeatProcessor {
   // ────────── CONFIGURACIONES PRINCIPALES ──────────
   private readonly SAMPLE_RATE = 30;
@@ -48,6 +49,12 @@ export class HeartBeatProcessor {
   private readonly BPM_ALPHA = 0.2;
   private peakCandidateIndex: number | null = null;
   private peakCandidateValue: number = 0;
+  
+  // Nuevas variables para mejorar sincronización
+  private detectedPeaks: {timestamp: number, value: number}[] = [];
+  private readonly MAX_STORED_PEAKS = 20;
+  private processingLatency: number = 0;
+  private lastProcessingTime: number = 0;
 
   constructor() {
     this.initAudio();
@@ -163,7 +170,14 @@ export class HeartBeatProcessor {
     isPeak: boolean;
     filteredValue: number;
     arrhythmiaCount: number;
+    rrData?: {
+      intervals: number[];
+      lastPeakTime: number | null;
+    };
+    detectedPeaks?: {timestamp: number, value: number}[];
   } {
+    const processingStartTime = performance.now();
+    
     // Filtros sucesivos para mejorar la señal
     const medVal = this.medianFilter(value);
     const movAvgVal = this.calculateMovingAverage(medVal);
@@ -180,7 +194,8 @@ export class HeartBeatProcessor {
         confidence: 0,
         isPeak: false,
         filteredValue: smoothed,
-        arrhythmiaCount: 0
+        arrhythmiaCount: 0,
+        detectedPeaks: []
       };
     }
 
@@ -213,17 +228,45 @@ export class HeartBeatProcessor {
       if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
         this.previousPeakTime = this.lastPeakTime;
         this.lastPeakTime = now;
+        
+        // Almacenar el pico detectado para sincronización visual
+        this.detectedPeaks.push({
+          timestamp: now,
+          value: normalizedValue
+        });
+        
+        // Limitar la cantidad de picos almacenados
+        if (this.detectedPeaks.length > this.MAX_STORED_PEAKS) {
+          this.detectedPeaks.shift();
+        }
+        
         this.playBeep(0.12); // Suena beep cuando se confirma pico
         this.updateBPM();
       }
     }
+    
+    // Calcular la latencia de procesamiento para compensación
+    const processingEndTime = performance.now();
+    this.processingLatency = processingEndTime - processingStartTime;
+    this.lastProcessingTime = Date.now();
+    
+    // Filtrar picos antiguos (más de 10 segundos)
+    const now = Date.now();
+    this.detectedPeaks = this.detectedPeaks.filter(peak => now - peak.timestamp < 10000);
+
+    const rrData = {
+      intervals: [...this.bpmHistory],
+      lastPeakTime: this.lastPeakTime
+    };
 
     return {
       bpm: Math.round(this.getSmoothBPM()),
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue: smoothed,
-      arrhythmiaCount: 0
+      arrhythmiaCount: 0,
+      rrData,
+      detectedPeaks: [...this.detectedPeaks]
     };
   }
 
@@ -246,6 +289,7 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.peakConfirmationBuffer = [];
     this.values = [];
+    this.detectedPeaks = [];
     console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
   }
 
@@ -375,6 +419,9 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
+    this.detectedPeaks = [];
+    this.processingLatency = 0;
+    this.lastProcessingTime = 0;
   }
 
   public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {
@@ -382,5 +429,16 @@ export class HeartBeatProcessor {
       intervals: [...this.bpmHistory],
       lastPeakTime: this.lastPeakTime
     };
+  }
+  
+  public getProcessingStats(): { latency: number, lastProcessingTime: number } {
+    return {
+      latency: this.processingLatency,
+      lastProcessingTime: this.lastProcessingTime
+    };
+  }
+  
+  public getDetectedPeaks(): {timestamp: number, value: number}[] {
+    return [...this.detectedPeaks];
   }
 }

@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -11,6 +12,7 @@ interface HeartBeatResult {
     intervals: number[];
     lastPeakTime: number | null;
   };
+  detectedPeaks?: {timestamp: number, value: number}[];
 }
 
 export const useHeartBeatProcessor = () => {
@@ -18,6 +20,13 @@ export const useHeartBeatProcessor = () => {
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const processingStatsRef = useRef<{
+    latency: number;
+    peakTimestamps: number[];
+  }>({
+    latency: 0,
+    peakTimestamps: []
+  });
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -70,7 +79,8 @@ export const useHeartBeatProcessor = () => {
         rrData: {
           intervals: [],
           lastPeakTime: null
-        }
+        },
+        detectedPeaks: []
       };
     }
 
@@ -85,6 +95,18 @@ export const useHeartBeatProcessor = () => {
 
     const result = processorRef.current.processSignal(value);
     const rrData = processorRef.current.getRRIntervals();
+    const processingStats = processorRef.current.getProcessingStats();
+    
+    // Actualizar estadísticas de procesamiento para sincronización
+    processingStatsRef.current.latency = processingStats.latency;
+    
+    if (result.isPeak) {
+      processingStatsRef.current.peakTimestamps.push(Date.now());
+      // Mantener solo los últimos 10 picos
+      if (processingStatsRef.current.peakTimestamps.length > 10) {
+        processingStatsRef.current.peakTimestamps.shift();
+      }
+    }
 
     console.log('useHeartBeatProcessor - resultado detallado:', {
       bpm: result.bpm,
@@ -95,6 +117,8 @@ export const useHeartBeatProcessor = () => {
       ultimosIntervalos: rrData.intervals.slice(-5),
       ultimoPico: rrData.lastPeakTime,
       tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
+      processingLatency: processingStats.latency.toFixed(2) + 'ms',
+      detectedPeaks: result.detectedPeaks?.length || 0,
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
@@ -106,10 +130,8 @@ export const useHeartBeatProcessor = () => {
         confidence: result.confidence,
         isPeak: false,
         arrhythmiaCount: 0,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+        rrData,
+        detectedPeaks: result.detectedPeaks
       };
     }
 
@@ -129,7 +151,8 @@ export const useHeartBeatProcessor = () => {
 
     return {
       ...result,
-      rrData
+      rrData,
+      detectedPeaks: result.detectedPeaks
     };
   }, [currentBPM, confidence]);
 
@@ -152,14 +175,24 @@ export const useHeartBeatProcessor = () => {
       });
     }
     
+    processingStatsRef.current = {
+      latency: 0,
+      peakTimestamps: []
+    };
+    
     setCurrentBPM(0);
     setConfidence(0);
   }, [currentBPM, confidence]);
+
+  const getProcessingStats = useCallback(() => {
+    return { ...processingStatsRef.current };
+  }, []);
 
   return {
     currentBPM,
     confidence,
     processSignal,
-    reset
+    reset,
+    getProcessingStats
   };
 };
