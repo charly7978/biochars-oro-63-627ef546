@@ -269,7 +269,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         const event = new CustomEvent('measurementComplete');
         window.dispatchEvent(event);
       }
-    }, 100); // Reducido a 100ms para máxima frecuencia de muestreo posible
+    }, 50); // ¡ACELERADO a 50ms para muestreo ultra-rápido! (Antes era 100ms)
 
     return () => {
       console.log('useVitalMeasurement - Limpiando intervalo', {

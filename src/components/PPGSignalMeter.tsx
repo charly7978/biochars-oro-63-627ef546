@@ -44,25 +44,25 @@ const PPGSignalMeter = ({
   // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 9000;
+  const WINDOW_WIDTH_MS = 5000; // Reducido a 5 segundos para mostrar más reciente
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
   const verticalScale = 40.0; // Aumentado para mejor visualización
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 30;
-  const FRAME_TIME = 1500 / TARGET_FPS;
-  const BUFFER_SIZE = 500;
+  const TARGET_FPS = 60; // Aumentado para máxima fluidez
+  const FRAME_TIME = 1000 / TARGET_FPS;
+  const BUFFER_SIZE = 600; // Aumentado para mayor capacidad
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 2.5; // Reducido para mayor sensibilidad
-  const MIN_PEAK_DISTANCE_MS = 220; // Reducido para mejor detección
-  const IMMEDIATE_RENDERING = true;
+  const PEAK_THRESHOLD = 2.5;
+  const MIN_PEAK_DISTANCE_MS = 220;
+  const IMMEDIATE_RENDERING = true; // Forzar renderizado inmediato
   const MAX_PEAKS_TO_DISPLAY = 20;
-  // Nuevo: Cantidad de frames consecutivos necesarios para confirmar detección
-  const REQUIRED_FINGER_FRAMES = 3;
-  // Nuevo: Tamaño del historial de calidad para calcular promedio
-  const QUALITY_HISTORY_SIZE = 5;
+  // Cantidad de frames consecutivos necesarios para confirmar detección
+  const REQUIRED_FINGER_FRAMES = 2; // Reducido para menos retraso
+  // Tamaño del historial de calidad para calcular promedio
+  const QUALITY_HISTORY_SIZE = 3; // Reducido para mayor reactividad
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -119,8 +119,8 @@ const PPGSignalMeter = ({
     const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
     
     if (!isFingerConfirmed) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 65) return 'from-green-500 to-emerald-500'; // Umbral reducido
-    if (avgQuality > 40) return 'from-yellow-500 to-orange-500'; // Umbral reducido
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
@@ -132,8 +132,8 @@ const PPGSignalMeter = ({
     const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
     
     if (!isFingerConfirmed) return 'Sin detección';
-    if (avgQuality > 65) return 'Señal óptima'; // Umbral reducido
-    if (avgQuality > 40) return 'Señal aceptable'; // Umbral reducido
+    if (avgQuality > 65) return 'Señal óptima';
+    if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
   }, [getAverageQuality]);
 
@@ -261,7 +261,6 @@ const PPGSignalMeter = ({
         }
       }
       
-      // Reducción del umbral mínimo para detectar picos más pequeños
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
         potentialPeaks.push({
           index: i,
@@ -326,36 +325,39 @@ const PPGSignalMeter = ({
       return;
     }
     
-    // Ajuste más dinámico de la línea base
-    if (baselineRef.current === null) {
-      baselineRef.current = value;
-    } else {
-      // Factor más agresivo para adaptarse rápidamente a cambios
-      const adaptationRate = isFingerDetected ? 0.97 : 0.95;
-      baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
+    // Actualización inmediata para eliminar retraso
+    if (isFingerDetected) {
+      // Ajuste más dinámico de la línea base (adaptación más rápida)
+      if (baselineRef.current === null) {
+        baselineRef.current = value;
+      } else {
+        // Factor más agresivo para adaptarse instantáneamente a cambios
+        const adaptationRate = 0.95; // Más rápido
+        baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
+      }
+      
+      const smoothedValue = smoothValue(value, lastValueRef.current);
+      lastValueRef.current = smoothedValue;
+      
+      const normalizedValue = (baselineRef.current || 0) - smoothedValue;
+      const scaledValue = normalizedValue * verticalScale;
+      
+      let isArrhythmia = false;
+      if (rawArrhythmiaData && 
+          arrhythmiaStatus?.includes("ARRITMIA") && 
+          now - rawArrhythmiaData.timestamp < 500) { // Reducido para menor retraso
+        isArrhythmia = true;
+        lastArrhythmiaTime.current = now;
+      }
+      
+      const dataPoint: PPGDataPoint = {
+        time: now,
+        value: scaledValue,
+        isArrhythmia
+      };
+      
+      dataBufferRef.current.push(dataPoint);
     }
-    
-    const smoothedValue = smoothValue(value, lastValueRef.current);
-    lastValueRef.current = smoothedValue;
-    
-    const normalizedValue = (baselineRef.current || 0) - smoothedValue;
-    const scaledValue = normalizedValue * verticalScale;
-    
-    let isArrhythmia = false;
-    if (rawArrhythmiaData && 
-        arrhythmiaStatus?.includes("ARRITMIA") && 
-        now - rawArrhythmiaData.timestamp < 1000) {
-      isArrhythmia = true;
-      lastArrhythmiaTime.current = now;
-    }
-    
-    const dataPoint: PPGDataPoint = {
-      time: now,
-      value: scaledValue,
-      isArrhythmia
-    };
-    
-    dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
@@ -373,11 +375,18 @@ const PPGSignalMeter = ({
         const prevPoint = points[i - 1];
         const point = points[i];
         
-        const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = (canvas.height / 2) - 40 - prevPoint.value;
+        // Eliminación total del retraso - calculamos X de forma que la onda aparezca inmediatamente
+        // Aquí está el cambio clave para eliminar el retraso:
+        // En lugar de posicionar en base al tiempo absoluto, posicionamos según el índice
+        // Esto hace que la onda siempre aparezca desde la derecha sin esperar
+        const totalPoints = points.length;
+        const position = i / totalPoints;
+        const x1 = CANVAS_WIDTH - (position * CANVAS_WIDTH);
+        const y1 = (CANVAS_HEIGHT / 2) - 40 - prevPoint.value;
         
-        const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = (canvas.height / 2) - 40 - point.value;
+        const position2 = (i+1) / totalPoints;
+        const x2 = CANVAS_WIDTH - (position2 * CANVAS_WIDTH);
+        const y2 = (CANVAS_HEIGHT / 2) - 40 - point.value;
         
         if (firstPoint) {
           ctx.moveTo(x1, y1);
@@ -402,34 +411,36 @@ const PPGSignalMeter = ({
       
       ctx.stroke();
       
-      peaksRef.current.forEach(peak => {
-        const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2) - 40 - peak.value;
+      // Dibujar los picos - también ajustados para visualización inmediata
+      peaksRef.current.forEach((peak, idx) => {
+        const peakPosition = idx / peaksRef.current.length;
+        const x = CANVAS_WIDTH - (peakPosition * CANVAS_WIDTH * 0.8); // Esparcir a lo largo del 80% del canvas
         
-        if (x >= 0 && x <= canvas.width) {
+        // Usar el valor original del pico para la altura
+        const y = (CANVAS_HEIGHT / 2) - 40 - peak.value;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+        ctx.fill();
+        
+        if (peak.isArrhythmia) {
           ctx.beginPath();
-          ctx.arc(x, y, 5, 0, Math.PI * 2);
-          ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
-          ctx.fill();
+          ctx.arc(x, y, 10, 0, Math.PI * 2);
+          ctx.strokeStyle = '#FEF7CD';
+          ctx.lineWidth = 3;
+          ctx.stroke();
           
-          if (peak.isArrhythmia) {
-            ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.strokeStyle = '#FEF7CD';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            
-            ctx.font = 'bold 18px Inter';
-            ctx.fillStyle = '#F97316';
-            ctx.textAlign = 'center';
-            ctx.fillText('ARRITMIA', x, y - 25);
-          }
-          
-          ctx.font = 'bold 16px Inter';
-          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 18px Inter';
+          ctx.fillStyle = '#F97316';
           ctx.textAlign = 'center';
-          ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          ctx.fillText('ARRITMIA', x, y - 25);
         }
+        
+        ctx.font = 'bold 16px Inter';
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
       });
     }
     
