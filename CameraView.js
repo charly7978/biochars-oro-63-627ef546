@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 
@@ -10,16 +11,29 @@ const CameraView = ({
 }) => {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
+  const [cameraActive, setCameraActive] = useState(false);
 
   const stopCamera = async () => {
     if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
+      try {
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (err) {
+            console.error("Error al detener track:", err);
+          }
+        });
+        
         if (videoRef.current) {
           videoRef.current.srcObject = null;
         }
-      });
-      setStream(null);
+        
+        setStream(null);
+        setCameraActive(false);
+        console.log("Cámara detenida correctamente");
+      } catch (err) {
+        console.error("Error al detener la cámara:", err);
+      }
     }
   };
 
@@ -28,6 +42,9 @@ const CameraView = ({
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
+
+      // Detener cámara anterior si existe
+      await stopCamera();
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
@@ -48,7 +65,10 @@ const CameraView = ({
         video: baseVideoConstraints
       };
 
+      console.log("Intentando iniciar cámara con restricciones:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Cámara iniciada correctamente");
+      
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack && isAndroid) {
@@ -90,22 +110,29 @@ const CameraView = ({
       }
 
       setStream(newStream);
+      setCameraActive(true);
       
       if (onStreamReady) {
         onStreamReady(newStream);
+        console.log("Stream enviado a la aplicación");
       }
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
+      setCameraActive(false);
     }
   };
 
   useEffect(() => {
     if (isMonitoring && !stream) {
+      console.log("Iniciando cámara porque isMonitoring=true");
       startCamera();
     } else if (!isMonitoring && stream) {
+      console.log("Deteniendo cámara porque isMonitoring=false");
       stopCamera();
     }
+    
     return () => {
+      console.log("Componente CameraView desmontándose, deteniendo cámara");
       stopCamera();
     };
   }, [isMonitoring]);

@@ -24,6 +24,7 @@ const Index = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [detectedPeaks, setDetectedPeaks] = useState([]);
   const measurementTimerRef = useRef(null);
+  const processingActiveRef = useRef(false);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -76,6 +77,7 @@ const Index = () => {
     setIsCameraOn(true);
     startProcessing();
     setElapsedTime(0);
+    processingActiveRef.current = true;
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -116,6 +118,7 @@ const Index = () => {
   };
 
   const completeMonitoring = () => {
+    processingActiveRef.current = false;
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -127,6 +130,7 @@ const Index = () => {
   };
 
   const stopMonitoring = () => {
+    processingActiveRef.current = false;
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -152,6 +156,11 @@ const Index = () => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack || videoTrack.readyState !== 'live') {
+      console.log("Video track no disponible o no activo");
+      return;
+    }
+    
     const imageCapture = new ImageCapture(videoTrack);
     
     if (videoTrack.getCapabilities()?.torch) {
@@ -168,9 +177,22 @@ const Index = () => {
     }
     
     const processImage = async () => {
-      if (!isMonitoring) return;
+      // Verificar si debemos continuar procesando
+      if (!processingActiveRef.current || !isMonitoring) {
+        console.log("Procesamiento detenido - monitoreo desactivado");
+        return;
+      }
       
       try {
+        // Verificar que el track sigue disponible
+        if (!videoTrack || videoTrack.readyState !== 'live') {
+          console.log("Video track no disponible o no activo - saltando frame");
+          if (processingActiveRef.current) {
+            requestAnimationFrame(processImage);
+          }
+          return;
+        }
+        
         const frame = await imageCapture.grabFrame();
         tempCanvas.width = frame.width;
         tempCanvas.height = frame.height;
@@ -178,17 +200,23 @@ const Index = () => {
         const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
         processFrame(imageData);
         
-        if (isMonitoring) {
+        if (processingActiveRef.current) {
           requestAnimationFrame(processImage);
         }
       } catch (error) {
         console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+        
+        // Continuar solo si el procesamiento sigue activo
+        if (processingActiveRef.current) {
+          // Pequeña pausa antes de reintentar para no saturar con errores
+          setTimeout(() => {
+            requestAnimationFrame(processImage);
+          }, 500);
         }
       }
     };
 
+    // Iniciar el procesamiento
     processImage();
   };
 
