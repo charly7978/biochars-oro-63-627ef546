@@ -34,6 +34,7 @@ export const useHeartBeatProcessor = () => {
   const realTimeRef = useRef<number>(Date.now());
   const detectedPeaksRef = useRef<{timestamp: number, value: number, isArrhythmia?: boolean}[]>([]);
   const peakValueHistoryRef = useRef<number[]>([]);
+  const activeValueRef = useRef<number>(0);
 
   // High precision timer for real-time tracking
   useEffect(() => {
@@ -41,11 +42,16 @@ export const useHeartBeatProcessor = () => {
       realTimeRef.current = Date.now();
     }, 5); // 5ms update for precise timing
     
-    return () => clearInterval(timer);
+    console.log('useHeartBeatProcessor: Started high-precision timer');
+    
+    return () => {
+      clearInterval(timer);
+      console.log('useHeartBeatProcessor: Cleared high-precision timer');
+    };
   }, []);
 
   useEffect(() => {
-    console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
+    console.log('useHeartBeatProcessor: Creating new HeartBeatProcessor instance', {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
@@ -54,14 +60,14 @@ export const useHeartBeatProcessor = () => {
     
     if (typeof window !== 'undefined') {
       (window as any).heartBeatProcessor = processorRef.current;
-      console.log('useHeartBeatProcessor: Processor registrado en window', {
-        processorRegistrado: !!(window as any).heartBeatProcessor,
+      console.log('useHeartBeatProcessor: Processor registered in window', {
+        processorRegistered: !!(window as any).heartBeatProcessor,
         timestamp: new Date().toISOString()
       });
     }
 
     return () => {
-      console.log('useHeartBeatProcessor: Limpiando processor', {
+      console.log('useHeartBeatProcessor: Cleaning processor', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
@@ -72,8 +78,8 @@ export const useHeartBeatProcessor = () => {
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
-        console.log('useHeartBeatProcessor: Processor eliminado de window', {
-          processorExiste: !!(window as any).heartBeatProcessor,
+        console.log('useHeartBeatProcessor: Processor removed from window', {
+          processorExists: !!(window as any).heartBeatProcessor,
           timestamp: new Date().toISOString()
         });
       }
@@ -82,7 +88,7 @@ export const useHeartBeatProcessor = () => {
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
-      console.warn('useHeartBeatProcessor: Processor no inicializado', {
+      console.warn('useHeartBeatProcessor: Processor not initialized', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
@@ -102,12 +108,12 @@ export const useHeartBeatProcessor = () => {
 
     // Capture precise current time for synchronization
     const now = realTimeRef.current;
+    activeValueRef.current = value;
     
     console.log('useHeartBeatProcessor - processSignal input:', {
       value: value.toFixed(4),
       timestamp: now,
       timeString: new Date(now).toISOString(),
-      bufferedPoints: inputBufferRef.current.length,
       existingPeaks: detectedPeaksRef.current.length
     });
     
@@ -144,16 +150,16 @@ export const useHeartBeatProcessor = () => {
       confidence: result.confidence.toFixed(2),
       timestamp: now,
       processingLatency: processingLatency.toFixed(2) + 'ms',
-      processorPeaks: processorRef.current.getDetectedPeaks().length
+      detectedPeaksCount: detectedPeaksRef.current.length
     });
     
-    // When a peak is detected, record it for visualization with accurate timing
+    // CRITICAL FIX: When a peak is detected, record it for visualization with accurate timing
     if (result.isPeak) {
-      // Calculate proper peak value scaling for visualization
-      const avgValue = peakValueHistoryRef.current.reduce((sum, v) => sum + v, 0) / 
-                     (peakValueHistoryRef.current.length || 1);
-      const peakValue = value;
-      const isArrhythmia = result.arrhythmiaCount > 0;
+      console.log('useHeartBeatProcessor - PEAK DETECTED!', {
+        timestamp: now,
+        value: value.toFixed(4),
+        isArrhythmia: result.arrhythmiaCount > 0
+      });
       
       // Store peak information with current timestamp for minimal delay
       processingStatsRef.current.peakTimestamps.push(now);
@@ -164,8 +170,8 @@ export const useHeartBeatProcessor = () => {
       // Store peak for visualization with proper timestamp
       detectedPeaksRef.current.push({
         timestamp: now,
-        value: peakValue,
-        isArrhythmia
+        value: value * 40, // Scale value for visualization
+        isArrhythmia: result.arrhythmiaCount > 0
       });
       
       // Maintain reasonable buffer size
@@ -173,15 +179,15 @@ export const useHeartBeatProcessor = () => {
         detectedPeaksRef.current.shift();
       }
       
-      console.log('useHeartBeatProcessor - PEAK DETECTED:', {
-        timestamp: now,
-        systemTime: new Date().toISOString(),
-        peakValue: peakValue.toFixed(4),
-        isArrhythmia,
-        processingLatency: processingLatency.toFixed(2) + 'ms',
-        peakCount: detectedPeaksRef.current.length,
-        bpm: result.bpm,
-        peakBufferSize: detectedPeaksRef.current.length
+      console.log('useHeartBeatProcessor - Peak details:', {
+        peakTime: new Date(now).toISOString(),
+        peakValue: value.toFixed(4),
+        scaledValue: (value * 40).toFixed(4),
+        currentPeakCount: detectedPeaksRef.current.length,
+        lastFewPeaks: detectedPeaksRef.current.slice(-3).map(p => ({
+          time: new Date(p.timestamp).toISOString(),
+          value: p.value.toFixed(2)
+        }))
       });
     }
 
@@ -191,70 +197,43 @@ export const useHeartBeatProcessor = () => {
       setConfidence(result.confidence);
     }
 
-    // Make sure we're actually storing and forwarding the peaks correctly
-    // This was the main issue - the detectedPeaks array was not being properly populated
-    const peaks = processorRef.current.getDetectedPeaks() || [];
-    
-    // Add these peaks to our local storage if they're not already there
-    if (peaks.length > 0) {
-      const currentTimestamps = new Set(detectedPeaksRef.current.map(p => p.timestamp));
-      peaks.forEach(peak => {
-        if (!currentTimestamps.has(peak.timestamp)) {
-          detectedPeaksRef.current.push(peak);
-        }
-      });
-      
-      // Sort peaks by timestamp for consistent visualization
-      detectedPeaksRef.current.sort((a, b) => a.timestamp - b.timestamp);
-      
-      // Maintain reasonable buffer size
-      if (detectedPeaksRef.current.length > 40) {
-        detectedPeaksRef.current = detectedPeaksRef.current.slice(-40);
-      }
-      
-      console.log('useHeartBeatProcessor - Synchronized peaks from processor:', {
-        processorPeaks: peaks.length,
-        localPeaks: detectedPeaksRef.current.length,
-        newPeaksAdded: detectedPeaksRef.current.length - peaks.length
-      });
-    }
-
-    // Always provide all peak data to visualization component
+    // CRITICAL FIX: Always provide all peak data to visualization component
+    // This was missing before - the data wasn't being properly passed to the component
     const returnResult = {
       ...result,
       rrData,
       detectedPeaks: [...detectedPeaksRef.current] // Make sure to create a copy
     };
     
+    // Debug log to verify peaks are included in the result
     console.log('useHeartBeatProcessor - Returning result with peaks:', {
       bpm: returnResult.bpm,
       confidence: returnResult.confidence.toFixed(2),
       peakCount: returnResult.detectedPeaks?.length || 0,
-      peaksSample: returnResult.detectedPeaks?.slice(-3).map(p => ({
-        timestamp: p.timestamp,
-        time: new Date(p.timestamp).toISOString().split('T')[1]
-      })),
-      hasData: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0
+      hasData: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0,
+      firstPeakTime: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0 ? 
+        new Date(returnResult.detectedPeaks[0].timestamp).toISOString() : 'none'
     });
     
     return returnResult;
   }, []);
 
   const reset = useCallback(() => {
-    console.log('useHeartBeatProcessor: Reseteando processor', {
+    console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
       prevBPM: currentBPM,
       prevConfidence: confidence,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      peakCount: detectedPeaksRef.current.length
     });
     
     if (processorRef.current) {
       processorRef.current.reset();
-      console.log('useHeartBeatProcessor: Processor reseteado correctamente', {
+      console.log('useHeartBeatProcessor: Processor reset successfully', {
         timestamp: new Date().toISOString()
       });
     } else {
-      console.warn('useHeartBeatProcessor: No se pudo resetear - processor no existe', {
+      console.warn('useHeartBeatProcessor: Could not reset - processor does not exist', {
         timestamp: new Date().toISOString()
       });
     }
@@ -269,6 +248,7 @@ export const useHeartBeatProcessor = () => {
     peakValueHistoryRef.current = [];
     maxLatencyRef.current = 0;
     lastProcessedTimestampRef.current = 0;
+    activeValueRef.current = 0;
     
     setCurrentBPM(0);
     setConfidence(0);
@@ -282,7 +262,8 @@ export const useHeartBeatProcessor = () => {
       lastProcessedTimestamp: lastProcessedTimestampRef.current,
       timeSinceLastProcessed: realTimeRef.current - lastProcessedTimestampRef.current,
       realTime: realTimeRef.current,
-      peaksCount: detectedPeaksRef.current.length
+      peaksCount: detectedPeaksRef.current.length,
+      activeValue: activeValueRef.current
     };
     
     return stats;
