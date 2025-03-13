@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '@/utils/CircularBuffer';
@@ -395,17 +396,32 @@ const PPGSignalMeter = ({
             offCtx.lineWidth = 1.5;
             offCtx.stroke();
             
-            // Add value label - WITHOUT BACKGROUND
+            // Add value label WITH BACKGROUND
             offCtx.font = 'bold 10px Arial';
+            const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
+            const valueWidth = offCtx.measureText(displayValue).width;
+            
+            // Draw background for value label
+            offCtx.fillStyle = peak.isArrhythmia ? 'rgba(254, 240, 138, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+            offCtx.fillRect(x - valueWidth/2 - 2, y - 25, valueWidth + 4, 14);
+            
+            // Draw value text
             offCtx.fillStyle = peak.isArrhythmia ? '#F97316' : '#0f172a';
             offCtx.textAlign = 'center';
-            const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
             offCtx.fillText(displayValue, x, y - 15);
             
-            // Add time label - WITHOUT BACKGROUND
+            // Add time label WITH BACKGROUND
             offCtx.font = '10px Arial';
+            const timeText = `${Math.round(timeSinceNow)}ms`;
+            const timeWidth = offCtx.measureText(timeText).width;
+            
+            // Draw background for time label
+            offCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            offCtx.fillRect(x - timeWidth/2 - 2, y + 12, timeWidth + 4, 12);
+            
+            // Draw time text
             offCtx.fillStyle = '#64748b';
-            offCtx.fillText(`${Math.round(timeSinceNow)}ms`, x, y + 20);
+            offCtx.fillText(timeText, x, y + 20);
             
             // Special label for arrhythmia peaks with flashing animation
             if (peak.isArrhythmia) {
@@ -419,10 +435,18 @@ const PPGSignalMeter = ({
               offCtx.stroke();
               offCtx.setLineDash([]);
               
-              // "LATIDO PREMATURO" label for arrhythmia - WITHOUT BACKGROUND
+              // "LATIDO PREMATURO" label for arrhythmia WITH BACKGROUND
+              const arrhythmiaText = "LATIDO PREMATURO";
+              const arrhythmiaWidth = offCtx.measureText(arrhythmiaText).width;
+              
+              // Draw background for arrhythmia label
+              offCtx.fillStyle = 'rgba(255, 229, 183, 0.9)';
+              offCtx.fillRect(x - arrhythmiaWidth/2 - 4, y - 50, arrhythmiaWidth + 8, 18);
+              
+              // Draw arrhythmia text
               offCtx.font = 'bold 12px Arial';
               offCtx.fillStyle = '#F97316';
-              offCtx.fillText("LATIDO PREMATURO", x, y - 40);
+              offCtx.fillText(arrhythmiaText, x, y - 40);
             }
           }
         });
