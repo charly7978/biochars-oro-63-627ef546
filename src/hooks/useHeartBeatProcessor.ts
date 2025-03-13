@@ -35,6 +35,7 @@ export const useHeartBeatProcessor = () => {
   const peakValueHistoryRef = useRef<number[]>([]);
   const activeValueRef = useRef<number>(0);
   const peakCounterRef = useRef<number>(0);
+  const lastArrhythmiaRef = useRef<boolean>(false);
 
   // High precision timer for real-time tracking
   useEffect(() => {
@@ -156,6 +157,10 @@ export const useHeartBeatProcessor = () => {
     
     processingStatsRef.current.latency = processingStats.latency || processingLatency;
     
+    // Determine if this might be an arrhythmia
+    const isArrhythmia = checkForArrhythmia(rrData);
+    lastArrhythmiaRef.current = isArrhythmia;
+    
     // ENHANCED PEAK DETECTION: When a peak is detected, record it with detailed information
     if (result.isPeak) {
       peakCounterRef.current++;
@@ -167,7 +172,7 @@ export const useHeartBeatProcessor = () => {
         timestamp: now,
         value: value.toFixed(4),
         scaledValue: scaledValue.toFixed(2),
-        isArrhythmia: result.arrhythmiaCount > 0
+        isArrhythmia
       });
       
       // Store peak information with current timestamp and unique ID
@@ -180,7 +185,7 @@ export const useHeartBeatProcessor = () => {
       detectedPeaksRef.current.push({
         timestamp: now,
         value: scaledValue, // Use adaptive scaling
-        isArrhythmia: result.arrhythmiaCount > 0
+        isArrhythmia // Mark if this is an arrhythmia peak
       });
       
       // Maintain reasonable buffer size while keeping more recent peaks
@@ -195,24 +200,43 @@ export const useHeartBeatProcessor = () => {
       setConfidence(result.confidence);
     }
 
-    // ALWAYS provide all peak data to visualization component
-    const returnResult = {
-      ...result,
-      rrData,
-      detectedPeaks: [...detectedPeaksRef.current] // Create a complete copy to avoid reference issues
-    };
-    
+    // Create a deep copy of the peaks to avoid reference issues
+    const peaksCopy = detectedPeaksRef.current.map(peak => ({...peak}));
+
     // Debug log to verify peaks are included
-    if (returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0) {
+    if (peaksCopy.length > 0) {
       console.log('useHeartBeatProcessor - Returning peaks data:', {
-        peakCount: returnResult.detectedPeaks.length,
-        firstPeak: returnResult.detectedPeaks[0],
-        lastPeak: returnResult.detectedPeaks[returnResult.detectedPeaks.length - 1]
+        peakCount: peaksCopy.length,
+        firstPeak: peaksCopy[0],
+        lastPeak: peaksCopy[peaksCopy.length - 1]
       });
     }
     
-    return returnResult;
+    return {
+      ...result,
+      rrData,
+      detectedPeaks: peaksCopy // Return the copy of peaks
+    };
   }, []);
+
+  // Simple function to check for arrhythmia based on R-R intervals
+  const checkForArrhythmia = (rrData: {intervals: number[], lastPeakTime: number | null}): boolean => {
+    if (!rrData || !rrData.intervals || rrData.intervals.length < 3) {
+      return false;
+    }
+    
+    // Get the last 3 intervals
+    const recentIntervals = rrData.intervals.slice(-3);
+    
+    // Calculate the average
+    const avg = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
+    
+    // Check if the last interval differs significantly from the average (more than 20%)
+    const lastInterval = recentIntervals[recentIntervals.length - 1];
+    const percentDiff = Math.abs(lastInterval - avg) / avg;
+    
+    return percentDiff > 0.2; // More than 20% variation indicates potential arrhythmia
+  };
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
@@ -245,6 +269,7 @@ export const useHeartBeatProcessor = () => {
     maxLatencyRef.current = 0;
     lastProcessedTimestampRef.current = 0;
     activeValueRef.current = 0;
+    lastArrhythmiaRef.current = false;
     
     setCurrentBPM(0);
     setConfidence(0);

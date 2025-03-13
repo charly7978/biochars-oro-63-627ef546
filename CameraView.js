@@ -14,6 +14,8 @@ const CameraView = memo(({
   const [stream, setStream] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const frameProcessingRef = useRef(null);
+  const lastErrorRef = useRef(null);
+  const errorCountRef = useRef(0);
 
   const stopCamera = async () => {
     if (stream) {
@@ -120,6 +122,10 @@ const CameraView = memo(({
       setStream(newStream);
       setCameraActive(true);
       
+      // Reset error tracking on successful camera start
+      errorCountRef.current = 0;
+      lastErrorRef.current = null;
+      
       if (onStreamReady) {
         onStreamReady(newStream);
         console.log("Stream enviado a la aplicación");
@@ -127,6 +133,16 @@ const CameraView = memo(({
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
       setCameraActive(false);
+      
+      // Track errors
+      errorCountRef.current++;
+      lastErrorRef.current = err;
+      
+      // If we've had multiple failures, wait longer before retrying
+      if (errorCountRef.current > 3) {
+        console.log("Múltiples errores al iniciar la cámara, esperando más tiempo...");
+        // We don't auto-retry here, let the component's lifecycle handle it
+      }
     }
   };
 
@@ -151,7 +167,7 @@ const CameraView = memo(({
     return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}.${date.getMilliseconds().toString().padStart(3, '0')}`;
   };
 
-  // This effect logs when peaks change for debugging
+  // Debug log when peaks change
   useEffect(() => {
     if (detectedPeaks && detectedPeaks.length > 0) {
       console.log("CameraView: Peaks received:", detectedPeaks.length);
@@ -191,7 +207,7 @@ const CameraView = memo(({
         </div>
       )}
 
-      {/* Peak visualization overlay - MEJORADA y DESTACADA */}
+      {/* Peak visualization overlay - IMPROVED */}
       {isMonitoring && detectedPeaks && detectedPeaks.length > 0 && (
         <div className="absolute inset-0 z-10 pointer-events-none">
           {detectedPeaks.map((peak, index) => (
@@ -203,7 +219,7 @@ const CameraView = memo(({
                 top: `${40 - (peak.value || 0) * 0.4}%`
               }}
             >
-              {/* Círculo principal */}
+              {/* Main circle */}
               <div 
                 className={`
                   w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
@@ -214,12 +230,12 @@ const CameraView = memo(({
                 {Math.round(peak.value || 0)}
               </div>
               
-              {/* Etiqueta de valor */}
+              {/* Value label */}
               <div className="mt-1 text-xs font-medium bg-black/60 text-white px-1 rounded">
                 {getFormattedTime(peak.timestamp)}
               </div>
               
-              {/* Etiqueta especial de arritmia */}
+              {/* Special arrhythmia label */}
               {peak.isArrhythmia && (
                 <div className="mt-1 text-xs font-bold bg-red-500/90 text-white px-2 py-1 rounded-full animate-pulse">
                   LATIDO PREMATURO
