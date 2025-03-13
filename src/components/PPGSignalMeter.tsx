@@ -44,7 +44,7 @@ const PPGSignalMeter = ({
   // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 3500;
+  const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1024;
   const CANVAS_HEIGHT = 768;
   const GRID_SIZE_X = 25;
