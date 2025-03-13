@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Fingerprint } from 'lucide-react';
 
 const PPGSignalMeter = ({ 
@@ -23,11 +23,34 @@ const PPGSignalMeter = ({
   const baselineRef = useRef(null);
   const lastValueRef = useRef(0);
   
-  // Nuevas referencias para optimización
+  // Performance optimization references
   const cachedWaveformRef = useRef(null);
   const lastDataLengthRef = useRef(0);
   const renderCountRef = useRef(0);
-  const highPerformanceMode = true; // Activar modo de alto rendimiento
+  const lastFrameTimeRef = useRef(0);
+  const targetFpsRef = useRef(60);
+  const frameTimeThresholdRef = useRef(1000 / 60); // For 60 FPS
+  
+  // Double-buffering for smoother rendering
+  const offscreenCanvasRef = useRef(null);
+  const offscreenContextRef = useRef(null);
+  
+  // Batch processing for improved performance
+  const batchSizeRef = useRef(4);
+
+  // Function to initialize offscreen canvas for double-buffering
+  const initOffscreenCanvas = useCallback(() => {
+    if (!offscreenCanvasRef.current) {
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = CANVAS_WIDTH;
+      offscreenCanvas.height = CANVAS_HEIGHT;
+      offscreenCanvasRef.current = offscreenCanvas;
+      offscreenContextRef.current = offscreenCanvas.getContext('2d', { 
+        alpha: false,
+        willReadFrequently: false // Optimizing for write-heavy operations
+      });
+    }
+  }, []);
 
   const handleReset = () => {
     dataRef.current = [];
@@ -36,19 +59,19 @@ const PPGSignalMeter = ({
     setStartTime(Date.now());
     onReset();
     
-    // Reiniciar caches para renderizado
+    // Reset optimization state
     cachedWaveformRef.current = null;
     lastDataLengthRef.current = 0;
     renderCountRef.current = 0;
 
-    // Limpiar loop de animación previo
+    // Clear previous animation loop
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
   };
 
-  // Memoizar cálculos de calidad para evitar recálculos innecesarios
+  // Memoize quality calculations to prevent unnecessary recalculations
   const qualityData = useMemo(() => {
     const qualityColor = () => {
       if (quality > 90) return 'from-emerald-500/80 to-emerald-400/80';
@@ -72,45 +95,53 @@ const PPGSignalMeter = ({
     };
   }, [quality]);
 
-  const drawBackgroundGrid = (ctx) => {
-    // Si no tenemos la cuadrícula en caché, crearla
+  // Heavily optimized grid drawing with caching
+  const drawBackgroundGrid = useCallback((ctx) => {
+    // Create cached grid if it doesn't exist
     if (!gridCanvasRef.current) {
       const gridCanvas = document.createElement('canvas');
       gridCanvas.width = CANVAS_WIDTH;
       gridCanvas.height = CANVAS_HEIGHT;
-      const gridCtx = gridCanvas.getContext('2d', { alpha: false });
+      const gridCtx = gridCanvas.getContext('2d', { 
+        alpha: false,
+        willReadFrequently: false
+      });
       
-      // Dibujar fondo
+      // Draw background
       gridCtx.fillStyle = '#F8FAFC';
       gridCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
-      // Dibujar líneas de cuadrícula
+      // Draw grid lines
       gridCtx.strokeStyle = 'rgba(51, 65, 85, 0.15)';
       gridCtx.lineWidth = 0.5;
       
+      // Batch horizontal and vertical lines to reduce draw calls
+      gridCtx.beginPath();
       for (let i = 0; i < 40; i++) {
         const x = CANVAS_WIDTH - (CANVAS_WIDTH * (i / 40));
-        gridCtx.beginPath();
         gridCtx.moveTo(x, 0);
         gridCtx.lineTo(x, CANVAS_HEIGHT);
-        gridCtx.stroke();
-        
-        if (i % 4 === 0) {
-          gridCtx.fillStyle = 'rgba(51, 65, 85, 0.5)';
-          gridCtx.font = '12px Inter';
-          gridCtx.fillText(`${i * 50}ms`, x - 25, CANVAS_HEIGHT - 5);
-        }
       }
       
       const amplitudeLines = 10;
       for (let i = 0; i <= amplitudeLines; i++) {
         const y = (CANVAS_HEIGHT / amplitudeLines) * i;
-        gridCtx.beginPath();
         gridCtx.moveTo(0, y);
         gridCtx.lineTo(CANVAS_WIDTH, y);
-        gridCtx.stroke();
+      }
+      gridCtx.stroke();
+      
+      // Add text labels in a separate pass (can't batch with lines)
+      gridCtx.fillStyle = 'rgba(51, 65, 85, 0.5)';
+      gridCtx.font = '12px Inter';
+      for (let i = 0; i < 40; i++) {
+        if (i % 4 === 0) {
+          const x = CANVAS_WIDTH - (CANVAS_WIDTH * (i / 40));
+          gridCtx.fillText(`${i * 50}ms`, x - 25, CANVAS_HEIGHT - 5);
+        }
       }
       
+      // Add midline
       gridCtx.strokeStyle = 'rgba(51, 65, 85, 0.2)';
       gridCtx.lineWidth = 1;
       gridCtx.beginPath();
@@ -121,12 +152,12 @@ const PPGSignalMeter = ({
       gridCanvasRef.current = gridCanvas;
     }
     
-    // Usar la cuadrícula en caché
+    // Use cached grid (much faster than redrawing)
     ctx.drawImage(gridCanvasRef.current, 0, 0);
-  };
+  }, []);
 
-  // Función optimizada para renderizar la señal
-  const renderOptimizedSignal = () => {
+  // Optimized rendering function with adaptive FPS and double buffering
+  const renderOptimizedSignal = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       animationFrameRef.current = requestAnimationFrame(renderOptimizedSignal);
@@ -139,89 +170,101 @@ const PPGSignalMeter = ({
       return;
     }
     
-    // Control de FPS para mantener un ritmo estable
-    const now = performance.now();
-    const elapsed = now - lastRenderTimeRef.current;
-    const targetFrameTime = 1000 / 60; // Apuntar a 60 FPS
+    // Initialize offscreen canvas for double-buffering
+    initOffscreenCanvas();
     
-    // Solo renderizar si es tiempo o si hay cambios significativos
-    if (elapsed >= targetFrameTime || lastDataLengthRef.current !== dataRef.current.length) {
-      // Dibujar cuadrícula de fondo desde caché
-      drawBackgroundGrid(ctx);
+    // Adaptive frame rate control
+    const now = performance.now();
+    const elapsed = now - lastFrameTimeRef.current;
+    
+    // Only render when necessary to maintain target FPS
+    if (elapsed >= frameTimeThresholdRef.current || lastDataLengthRef.current !== dataRef.current.length) {
+      // Use double buffering: draw to offscreen canvas first
+      const offCtx = offscreenContextRef.current;
+      
+      // Draw grid to offscreen canvas
+      drawBackgroundGrid(offCtx);
       
       const currentTime = Date.now();
-      renderCountRef.current++;
       
-      // Renderizado de la forma de onda PPG
+      // High-performance waveform rendering
       if (dataRef.current.length > 1) {
-        ctx.lineWidth = 3;
+        // Process points in optimized batches
+        const batchSize = batchSizeRef.current;
+        const data = dataRef.current;
+        const dataLength = data.length;
         
+        // Use a single stroke operation per wave when possible
         let waveStartIndex = 0;
+        let segmentBatches = [];
         
-        // Dividir en batches para renderizado más eficiente
-        const batchSize = highPerformanceMode ? 4 : 1;
-        let currentBatch = [];
-        
-        dataRef.current.forEach((point, index) => {
-          if (point.isWaveStart || index === dataRef.current.length - 1) {
-            if (index > waveStartIndex) {
-              // Acumular puntos para procesar en lotes
-              currentBatch.push({
-                startIdx: waveStartIndex,
-                endIdx: index
+        for (let i = 0; i < dataLength; i++) {
+          const point = data[i];
+          
+          if (point.isWaveStart || i === dataLength - 1) {
+            if (i > waveStartIndex) {
+              segmentBatches.push({
+                start: waveStartIndex,
+                end: i
               });
+            }
+            waveStartIndex = i;
+          }
+        }
+        
+        // Render batches in one operation when possible
+        if (segmentBatches.length > 0) {
+          offCtx.lineWidth = 3;
+          offCtx.strokeStyle = '#0ea5e9';
+          offCtx.beginPath();
+          
+          // Process all segments at once
+          let isFirstPoint = true;
+          
+          segmentBatches.forEach(batch => {
+            for (let i = batch.start; i <= batch.end; i++) {
+              const point = data[i];
+              const x = CANVAS_WIDTH - ((currentTime - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+              const y = CANVAS_HEIGHT / 2 + point.value;
               
-              // Procesar en batches para mayor eficiencia
-              if (currentBatch.length >= batchSize || index === dataRef.current.length - 1) {
-                ctx.beginPath();
-                ctx.strokeStyle = '#0ea5e9';
-                
-                // Procesar todos los puntos del batch actual
-                for (const batch of currentBatch) {
-                  const startPoint = dataRef.current[batch.startIdx];
-                  
-                  // Primera vez, mover al punto inicial
-                  if (batch === currentBatch[0]) {
-                    ctx.moveTo(
-                      CANVAS_WIDTH - ((currentTime - startPoint.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS),
-                      CANVAS_HEIGHT / 2 + startPoint.value
-                    );
-                  }
-                  
-                  // Dibujar resto de puntos en el batch
-                  for (let i = batch.startIdx + 1; i <= batch.endIdx; i++) {
-                    const p = dataRef.current[i];
-                    ctx.lineTo(
-                      CANVAS_WIDTH - ((currentTime - p.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS),
-                      CANVAS_HEIGHT / 2 + p.value
-                    );
-                  }
-                }
-                
-                // Dibujar todos los batches acumulados de una vez
-                ctx.stroke();
-                currentBatch = [];
+              if (isFirstPoint) {
+                offCtx.moveTo(x, y);
+                isFirstPoint = false;
+              } else {
+                offCtx.lineTo(x, y);
               }
             }
-            waveStartIndex = index;
-          }
-        });
+          });
+          
+          offCtx.stroke();
+        }
       }
       
-      lastRenderTimeRef.current = now;
+      // Copy the offscreen canvas to the visible canvas in a single operation
+      ctx.drawImage(offscreenCanvasRef.current, 0, 0);
+      
+      lastFrameTimeRef.current = now;
       lastDataLengthRef.current = dataRef.current.length;
+      renderCountRef.current++;
+      
+      // Adaptive performance adjustment
+      if (renderCountRef.current % 60 === 0) {
+        // Adjust batch size based on performance 
+        const avgRenderTime = elapsed;
+        if (avgRenderTime > 20) {
+          batchSizeRef.current = Math.min(8, batchSizeRef.current + 1); // Increase batch size if slow
+        } else if (avgRenderTime < 10 && batchSizeRef.current > 2) {
+          batchSizeRef.current = batchSizeRef.current - 1; // Decrease if very fast
+        }
+      }
     }
     
-    // Mantener el loop de animación
+    // Schedule next frame
     animationFrameRef.current = requestAnimationFrame(renderOptimizedSignal);
-  };
+  }, [drawBackgroundGrid, initOffscreenCanvas]);
 
   useEffect(() => {
     if (!canvasRef.current || !isFingerDetected) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
 
     const currentTime = Date.now();
     
@@ -244,12 +287,11 @@ const PPGSignalMeter = ({
 
     const cutoffTime = currentTime - WINDOW_WIDTH_MS;
     dataRef.current = dataRef.current.filter(point => point.time >= cutoffTime);
-
   }, [value, quality, isFingerDetected, arrhythmiaStatus]);
 
-  // Efecto para iniciar el loop de renderizado independiente (desacoplado)
+  // Separate effect to manage rendering loop lifecycle
   useEffect(() => {
-    // Iniciar el ciclo de renderizado optimizado y separado
+    // Start optimized rendering loop
     if (!animationFrameRef.current) {
       renderOptimizedSignal();
     }
@@ -260,7 +302,7 @@ const PPGSignalMeter = ({
         animationFrameRef.current = null;
       }
     };
-  }, []);
+  }, [renderOptimizedSignal]);
 
   return (
     <div className="fixed inset-0 bg-gradient-to-b from-white to-slate-50/30">
