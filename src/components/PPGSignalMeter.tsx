@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -56,7 +57,8 @@ const PPGSignalMeter = ({
   const noFingerFramesRef = useRef<number>(0);
   const MAX_NO_FINGER_FRAMES = 3;
 
-  const WINDOW_WIDTH_MS = 4000;
+  // Config constants
+  const WINDOW_WIDTH_MS = 4000; // 4 second window for reduced latency perception
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
@@ -113,6 +115,7 @@ const PPGSignalMeter = ({
     return () => clearTimeout(timeUpdateTimer);
   }, [preserveResults, isFingerDetected]);
 
+  // Handle arrhythmia data and heartbeat detection
   useEffect(() => {
     if (isFingerDetected && rawArrhythmiaData) {
       const now = realTimeStampRef.current;
@@ -144,6 +147,7 @@ const PPGSignalMeter = ({
     }
   }, [rawArrhythmiaData, isFingerDetected]);
 
+  // Track quality history and consecutive frames with finger detected
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
@@ -159,6 +163,7 @@ const PPGSignalMeter = ({
     lastSignalValueRef.current = value;
   }, [quality, isFingerDetected, value]);
 
+  // Grid drawing function with arrhythmia status
   const createGridCanvas = useCallback(() => {
     if (gridCanvasRef.current) return;
     
@@ -258,6 +263,7 @@ const PPGSignalMeter = ({
     gridCanvasRef.current = offscreen;
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
+  // Main rendering function
   const renderSignal = useCallback(() => {
     const renderStartTime = performance.now(); 
     renderTimeRef.current.renderCount++;
