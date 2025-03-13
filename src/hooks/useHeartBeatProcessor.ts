@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -27,6 +26,10 @@ export const useHeartBeatProcessor = () => {
     latency: 0,
     peakTimestamps: []
   });
+  const inputBufferRef = useRef<{value: number, timestamp: number}[]>([]);
+  const MAX_BUFFER_SIZE = 10;
+  const maxLatencyRef = useRef<number>(0);
+  const lastProcessedTimestampRef = useRef<number>(0);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -84,47 +87,46 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    console.log('useHeartBeatProcessor - processSignal detallado:', {
-      inputValue: value,
-      normalizadoValue: value.toFixed(2),
-      currentProcessor: !!processorRef.current,
-      processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-
+    const now = Date.now();
+    
+    inputBufferRef.current.push({value, timestamp: now});
+    
+    if (inputBufferRef.current.length > MAX_BUFFER_SIZE) {
+      inputBufferRef.current.shift();
+    }
+    
+    const processStart = performance.now();
     const result = processorRef.current.processSignal(value);
+    const processingLatency = performance.now() - processStart;
+    
+    if (processingLatency > maxLatencyRef.current) {
+      maxLatencyRef.current = processingLatency;
+    }
+    
+    lastProcessedTimestampRef.current = now;
+    
     const rrData = processorRef.current.getRRIntervals();
     const processingStats = processorRef.current.getProcessingStats();
     
-    // Actualizar estadísticas de procesamiento para sincronización
     processingStatsRef.current.latency = processingStats.latency;
     
     if (result.isPeak) {
-      processingStatsRef.current.peakTimestamps.push(Date.now());
-      // Mantener solo los últimos 10 picos
+      processingStatsRef.current.peakTimestamps.push(now);
+      
       if (processingStatsRef.current.peakTimestamps.length > 10) {
         processingStatsRef.current.peakTimestamps.shift();
       }
+      
+      console.log('useHeartBeatProcessor - PEAK DETECTED:', {
+        timestamp: now,
+        systemTime: new Date().toISOString(),
+        peakValue: value,
+        processingLatency: processingLatency.toFixed(2) + 'ms',
+        bufferSize: inputBufferRef.current.length
+      });
     }
 
-    console.log('useHeartBeatProcessor - resultado detallado:', {
-      bpm: result.bpm,
-      confidence: result.confidence,
-      isPeak: result.isPeak,
-      arrhythmiaCount: result.arrhythmiaCount,
-      rrIntervals: JSON.stringify(rrData.intervals),
-      ultimosIntervalos: rrData.intervals.slice(-5),
-      ultimoPico: rrData.lastPeakTime,
-      tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
-      processingLatency: processingStats.latency.toFixed(2) + 'ms',
-      detectedPeaks: result.detectedPeaks?.length || 0,
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
     if (result.confidence < 0.7) {
-      console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
         bpm: currentBPM,
         confidence: result.confidence,
@@ -136,17 +138,15 @@ export const useHeartBeatProcessor = () => {
     }
 
     if (result.bpm > 0) {
-      console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
-        prevBPM: currentBPM,
-        newBPM: result.bpm,
-        prevConfidence: confidence,
-        newConfidence: result.confidence,
-        sessionId: sessionId.current,
-        timestamp: new Date().toISOString()
-      });
-      
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
+    }
+
+    if (result.detectedPeaks && result.detectedPeaks.length > 0) {
+      result.detectedPeaks = result.detectedPeaks.map(peak => ({
+        ...peak,
+        timestamp: peak.timestamp || now
+      }));
     }
 
     return {
@@ -180,12 +180,24 @@ export const useHeartBeatProcessor = () => {
       peakTimestamps: []
     };
     
+    inputBufferRef.current = [];
+    maxLatencyRef.current = 0;
+    lastProcessedTimestampRef.current = 0;
+    
     setCurrentBPM(0);
     setConfidence(0);
   }, [currentBPM, confidence]);
 
   const getProcessingStats = useCallback(() => {
-    return { ...processingStatsRef.current };
+    const stats = { 
+      ...processingStatsRef.current,
+      maxLatency: maxLatencyRef.current,
+      inputBufferSize: inputBufferRef.current.length,
+      lastProcessedTimestamp: lastProcessedTimestampRef.current,
+      timeSinceLastProcessed: Date.now() - lastProcessedTimestampRef.current
+    };
+    
+    return stats;
   }, []);
 
   return {
