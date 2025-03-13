@@ -1,8 +1,8 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 
-const CameraView = ({ 
+const CameraView = memo(({ 
   onStreamReady, 
   isMonitoring, 
   isFingerDetected = false, 
@@ -151,6 +151,13 @@ const CameraView = ({
     return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}.${date.getMilliseconds().toString().padStart(3, '0')}`;
   };
 
+  // This effect logs when peaks change for debugging
+  useEffect(() => {
+    if (detectedPeaks && detectedPeaks.length > 0) {
+      console.log("CameraView: Peaks received:", detectedPeaks.length);
+    }
+  }, [detectedPeaks]);
+
   return (
     <>
       <video
@@ -184,19 +191,19 @@ const CameraView = ({
         </div>
       )}
 
-      {/* Peak visualization overlay */}
+      {/* Peak visualization overlay - MEJORADA y DESTACADA */}
       {isMonitoring && detectedPeaks && detectedPeaks.length > 0 && (
         <div className="absolute inset-0 z-10 pointer-events-none">
           {detectedPeaks.map((peak, index) => (
             <div 
-              key={`peak-${index}-${peak.time}`}
+              key={`peak-${index}-${peak.timestamp}`}
               className={`absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center`}
               style={{
                 left: `${50 + (index - detectedPeaks.length + 1) * 10}%`, 
                 top: `${40 - (peak.value || 0) * 0.4}%`
               }}
             >
-              {/* Circle marker */}
+              {/* Círculo principal */}
               <div 
                 className={`
                   w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
@@ -207,12 +214,12 @@ const CameraView = ({
                 {Math.round(peak.value || 0)}
               </div>
               
-              {/* Value label */}
+              {/* Etiqueta de valor */}
               <div className="mt-1 text-xs font-medium bg-black/60 text-white px-1 rounded">
-                {getFormattedTime(peak.time)}
+                {getFormattedTime(peak.timestamp)}
               </div>
               
-              {/* Arrhythmia label */}
+              {/* Etiqueta especial de arritmia */}
               {peak.isArrhythmia && (
                 <div className="mt-1 text-xs font-bold bg-red-500/90 text-white px-2 py-1 rounded-full animate-pulse">
                   LATIDO PREMATURO
@@ -224,6 +231,6 @@ const CameraView = ({
       )}
     </>
   );
-};
+});
 
 export default CameraView;

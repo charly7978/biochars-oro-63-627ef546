@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -159,6 +160,11 @@ const Index = () => {
   };
 
   const handleStreamReady = (stream) => {
+    console.log("Stream recibido en Index", {
+      isMonitoring,
+      trackState: stream?.getVideoTracks()[0]?.readyState
+    });
+    
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
@@ -222,7 +228,12 @@ const Index = () => {
       }
     };
 
-    processImage();
+    // Iniciar el procesamiento después de un breve retraso
+    setTimeout(() => {
+      if (processingActiveRef.current) {
+        processImage();
+      }
+    }, 500);
   };
 
   useEffect(() => {
@@ -231,16 +242,21 @@ const Index = () => {
       const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
       setHeartRate(calculatedHeartRate);
       
-      if (heartBeatResult.detectedPeaks) {
+      // Procesar y preparar los picos detectados para visualización
+      if (heartBeatResult.detectedPeaks && heartBeatResult.detectedPeaks.length > 0) {
+        console.log("Picos detectados en Index:", heartBeatResult.detectedPeaks.length);
+        
         const now = Date.now();
         const newPeaks = heartBeatResult.detectedPeaks.map(peak => ({
           ...peak,
-          time: now - (peak.offset || 0),
-          value: lastSignal.filteredValue * 20,
+          time: peak.timestamp || (now - (peak.offset || 0)),
+          value: peak.value || (lastSignal.filteredValue * 20),
           isArrhythmia: peak.isArrhythmia || false
         }));
         
+        // Actualizar detectedPeaks mediante una operación atómica para evitar problemas de referencias
         setDetectedPeaks(prev => {
+          // Mantener solo los picos recientes (menos de 5 segundos)
           const filteredPrev = prev.filter(p => now - p.time < 5000);
           return [...filteredPrev, ...newPeaks];
         });
@@ -254,10 +270,12 @@ const Index = () => {
           arrhythmiaStatus: vitals.arrhythmiaStatus || "--"
         });
         
+        // Actualizar información de arritmias
         if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('ARRITMIA')) {
           const arrhythmiaCount = vitals.arrhythmiaStatus.split('|')[1] || "--";
           setArrhythmiaCount(arrhythmiaCount);
           
+          // Marcar el último pico como arritmia si corresponde
           setDetectedPeaks(prev => {
             if (prev.length > 0) {
               const lastIndex = prev.length - 1;
@@ -286,9 +304,10 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
+  // Registro de depuración para verificar los picos
   useEffect(() => {
     if (detectedPeaks.length > 0) {
-      console.log("Picos detectados actualizados:", detectedPeaks.length);
+      console.log("Picos para visualización actualizados:", detectedPeaks.length);
     }
   }, [detectedPeaks]);
 

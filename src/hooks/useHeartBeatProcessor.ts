@@ -11,7 +11,7 @@ interface HeartBeatResult {
     intervals: number[];
     lastPeakTime: number | null;
   };
-  detectedPeaks?: {timestamp: number, value: number, isArrhythmia?: boolean}[];
+  detectedPeaks?: {timestamp: number, value: number, isArrhythmia?: boolean, offset?: number}[];
 }
 
 export const useHeartBeatProcessor = () => {
@@ -31,7 +31,7 @@ export const useHeartBeatProcessor = () => {
   const maxLatencyRef = useRef<number>(0);
   const lastProcessedTimestampRef = useRef<number>(0);
   const realTimeRef = useRef<number>(Date.now());
-  const detectedPeaksRef = useRef<{timestamp: number, value: number, isArrhythmia?: boolean}[]>([]);
+  const detectedPeaksRef = useRef<{timestamp: number, value: number, isArrhythmia?: boolean, offset?: number}[]>([]);
   const peakValueHistoryRef = useRef<number[]>([]);
   const activeValueRef = useRef<number>(0);
   const peakCounterRef = useRef<number>(0);
@@ -110,13 +110,6 @@ export const useHeartBeatProcessor = () => {
     const now = realTimeRef.current;
     activeValueRef.current = value;
     
-    console.log('useHeartBeatProcessor - processSignal input:', {
-      value: value.toFixed(4),
-      timestamp: now,
-      timeString: new Date(now).toISOString(),
-      existingPeaks: detectedPeaksRef.current.length
-    });
-    
     // Track value history for scaling calculations and normalization
     peakValueHistoryRef.current.push(value);
     if (peakValueHistoryRef.current.length > 20) {
@@ -157,18 +150,11 @@ export const useHeartBeatProcessor = () => {
     lastProcessedTimestampRef.current = now;
     
     const rrData = processorRef.current.getRRIntervals();
-    const processingStats = processorRef.current.getProcessingStats();
+    const processingStats = processorRef.current.getProcessingStats ? 
+                            processorRef.current.getProcessingStats() : 
+                            { latency: processingLatency };
     
-    processingStatsRef.current.latency = processingStats.latency;
-    
-    console.log('useHeartBeatProcessor - processSignal result:', {
-      bpm: result.bpm,
-      isPeak: result.isPeak,
-      confidence: result.confidence.toFixed(2),
-      timestamp: now,
-      processingLatency: processingLatency.toFixed(2) + 'ms',
-      detectedPeaksCount: detectedPeaksRef.current.length
-    });
+    processingStatsRef.current.latency = processingStats.latency || processingLatency;
     
     // ENHANCED PEAK DETECTION: When a peak is detected, record it with detailed information
     if (result.isPeak) {
@@ -201,15 +187,6 @@ export const useHeartBeatProcessor = () => {
       if (detectedPeaksRef.current.length > 40) {
         detectedPeaksRef.current.shift();
       }
-      
-      console.log('useHeartBeatProcessor - Peak details:', {
-        peakId,
-        peakTime: new Date(now).toISOString(),
-        peakValue: value.toFixed(4),
-        scaledValue: scaledValue.toFixed(2),
-        scaleFactor: peakScaleFactor,
-        currentPeakCount: detectedPeaksRef.current.length
-      });
     }
 
     // Only update BPM display when signal confidence is good
@@ -218,22 +195,21 @@ export const useHeartBeatProcessor = () => {
       setConfidence(result.confidence);
     }
 
-    // CRITICAL FIX: Always provide all peak data to visualization component
+    // ALWAYS provide all peak data to visualization component
     const returnResult = {
       ...result,
       rrData,
-      detectedPeaks: [...detectedPeaksRef.current] // Create a complete copy
+      detectedPeaks: [...detectedPeaksRef.current] // Create a complete copy to avoid reference issues
     };
     
-    // Debug log to verify peaks are included in the result
-    console.log('useHeartBeatProcessor - Returning result with peaks:', {
-      bpm: returnResult.bpm,
-      confidence: returnResult.confidence.toFixed(2),
-      peakCount: returnResult.detectedPeaks?.length || 0,
-      hasData: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0,
-      firstPeakTime: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0 ? 
-        new Date(returnResult.detectedPeaks[0].timestamp).toISOString() : 'none'
-    });
+    // Debug log to verify peaks are included
+    if (returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0) {
+      console.log('useHeartBeatProcessor - Returning peaks data:', {
+        peakCount: returnResult.detectedPeaks.length,
+        firstPeak: returnResult.detectedPeaks[0],
+        lastPeak: returnResult.detectedPeaks[returnResult.detectedPeaks.length - 1]
+      });
+    }
     
     return returnResult;
   }, []);
