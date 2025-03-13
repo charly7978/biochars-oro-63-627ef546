@@ -39,15 +39,15 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 2500;
-  const CANVAS_WIDTH = 1280;
-  const CANVAS_HEIGHT = 720;
-  const GRID_SIZE_X = 35;
-  const GRID_SIZE_Y = 10;
-  const verticalScale = 50.0;
+  const WINDOW_WIDTH_MS = 3500;
+  const CANVAS_WIDTH = 1024;
+  const CANVAS_HEIGHT = 768;
+  const GRID_SIZE_X = 25;
+  const GRID_SIZE_Y = 5;
+  const verticalScale = 28.0;
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 120;
-  const FRAME_TIME = 1200 / TARGET_FPS;
+  const TARGET_FPS = 60;
+  const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
@@ -407,12 +407,12 @@ const PPGSignalMeter = ({
   }, [onReset]);
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px]">
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-[100vh] absolute inset-0 z-0"
+        className="w-full h-full absolute inset-0 z-0 object-cover"
       />
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
