@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -41,28 +42,28 @@ const PPGSignalMeter = ({
   const consecutiveFingerFramesRef = useRef<number>(0);
   const lastValueTimeRef = useRef<number>(0);
 
-  // Constantes optimizadas para fluidez
-  const WINDOW_WIDTH_MS = 4000; // 4 segundos de ventana (reducida)
+  // Optimized constants for smoother rendering
+  const WINDOW_WIDTH_MS = 4000; // 4 seconds window width
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
   const verticalScale = 40.0;
-  const SMOOTHING_FACTOR = 0.6; // Reducido para respuesta más inmediata
-  const TARGET_FPS = 120; // Máxima fluidez
+  const SMOOTHING_FACTOR = 0.3; // Reduced for more immediate response
+  const TARGET_FPS = 120; // Maximum fluidity
   const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = 300; // Optimizado para rendimiento
-  const PEAK_DETECTION_WINDOW = 6; // Reducido para menor latencia
-  const PEAK_THRESHOLD = 2.2; // Ajustado para mejor detección
-  const MIN_PEAK_DISTANCE_MS = 220;
-  const MAX_PEAKS_TO_DISPLAY = 12; // Reducido para mejor rendimiento
-  const REQUIRED_FINGER_FRAMES = 1; // Respuesta inmediata
+  const BUFFER_SIZE = 300; // Optimized for performance
+  const PEAK_DETECTION_WINDOW = 5; // Better peak detection
+  const PEAK_THRESHOLD = 2.2; // Adjusted for more accurate detection
+  const MIN_PEAK_DISTANCE_MS = 250; // Minimum time between peaks (prevent duplicates)
+  const MAX_PEAKS_TO_DISPLAY = 12; 
+  const REQUIRED_FINGER_FRAMES = 1; // Immediate response
   const QUALITY_HISTORY_SIZE = 2;
-  const BASELINE_ADAPTATION_RATE = 0.92; // Adaptación más rápida
+  const BASELINE_ADAPTATION_RATE = 0.96; // Slower adaptation for more stable baseline
   
-  // Constantes para sincronización precisa
+  // Critical for synchronized display
   const USE_PRECISE_TIMING = true;
-  const FLOW_DIRECTION = 'rtl'; // 'rtl' (derecha a izquierda) o 'ltr' (izquierda a derecha)
+  const FLOW_DIRECTION = 'rtl'; // Right-to-left (newer values appear on the right)
   
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -78,7 +79,7 @@ const PPGSignalMeter = ({
     }
   }, [preserveResults, isFingerDetected]);
 
-  // Actualizar historial de calidad
+  // Update quality history
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
@@ -92,7 +93,7 @@ const PPGSignalMeter = ({
     }
   }, [quality, isFingerDetected]);
 
-  // Cálculo de calidad promedio
+  // Average quality calculation
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
@@ -108,7 +109,7 @@ const PPGSignalMeter = ({
     return weightSum > 0 ? weightedSum / weightSum : 0;
   }, []);
 
-  // Color según calidad
+  // Quality color determination
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
@@ -119,7 +120,7 @@ const PPGSignalMeter = ({
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
-  // Texto informativo de calidad
+  // Quality text determination
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
@@ -130,14 +131,13 @@ const PPGSignalMeter = ({
     return 'Señal débil';
   }, [getAverageQuality]);
 
-  // Suavizado optimizado para reducir latencia
+  // Optimized smoothing function
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
-    // Suavizado mínimo con prioridad a valores actuales para menor latencia
     return previousValue * SMOOTHING_FACTOR + currentValue * (1 - SMOOTHING_FACTOR);
   }, []);
 
-  // Dibujado de cuadrícula
+  // Grid drawing function
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
@@ -225,27 +225,29 @@ const PPGSignalMeter = ({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
-  // Detección de picos optimizada
+  // Improved peak detection algorithm
   const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
-    if (points.length < PEAK_DETECTION_WINDOW) return;
+    if (points.length < PEAK_DETECTION_WINDOW * 2 + 1) return;
     
-    // Usar solo los N últimos puntos para reducir carga computacional
-    const recentPoints = points.slice(-Math.min(points.length, 30));
-    const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
+    // Examine the most recent points for peak detection
+    const recentPoints = points.slice(-Math.min(points.length, 50));
     
+    // Clear old peaks that are outside the visible window to prevent buildup
+    peaksRef.current = peaksRef.current.filter(peak => now - peak.time < WINDOW_WIDTH_MS);
+    
+    // Only process middle points (not edges) to ensure we have proper windowing
     for (let i = PEAK_DETECTION_WINDOW; i < recentPoints.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = recentPoints[i];
       
-      // Evitar procesar picos ya detectados
+      // Skip if we've recently processed a peak nearby to avoid duplicates
       const recentlyProcessed = peaksRef.current.some(
         peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
       );
       
       if (recentlyProcessed) continue;
       
-      // Algoritmo simplificado de detección de picos
+      // Check if current point is higher than all points in window before it
       let isPeak = true;
-      
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
         if (recentPoints[j].value >= currentPoint.value) {
           isPeak = false;
@@ -253,6 +255,7 @@ const PPGSignalMeter = ({
         }
       }
       
+      // And check if it's higher than all points in window after it
       if (isPeak) {
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
           if (j < recentPoints.length && recentPoints[j].value > currentPoint.value) {
@@ -262,41 +265,34 @@ const PPGSignalMeter = ({
         }
       }
       
+      // If it's a genuine peak and above threshold, add it
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
-        potentialPeaks.push({
-          index: i,
-          value: currentPoint.value,
-          time: currentPoint.time,
-          isArrhythmia: currentPoint.isArrhythmia
-        });
+        // Check once more that it's not too close to existing peaks
+        const tooClose = peaksRef.current.some(
+          existingPeak => Math.abs(existingPeak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
+        );
+        
+        if (!tooClose) {
+          // Add the new peak
+          peaksRef.current.push({
+            time: currentPoint.time,
+            value: currentPoint.value,
+            isArrhythmia: currentPoint.isArrhythmia
+          });
+        }
       }
     }
     
-    // Procesar picos potenciales
-    for (const peak of potentialPeaks) {
-      const tooClose = peaksRef.current.some(
-        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
-      );
-      
-      if (!tooClose) {
-        peaksRef.current.push({
-          time: peak.time,
-          value: peak.value,
-          isArrhythmia: peak.isArrhythmia
-        });
-      }
-    }
-    
-    // Ordenar picos por tiempo
+    // Sort peaks by time to ensure correct rendering
     peaksRef.current.sort((a, b) => a.time - b.time);
     
-    // Mantener solo picos recientes y limitar cantidad
-    peaksRef.current = peaksRef.current
-      .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
-      .slice(-MAX_PEAKS_TO_DISPLAY);
+    // Limit the number of peaks to prevent performance issues
+    if (peaksRef.current.length > MAX_PEAKS_TO_DISPLAY) {
+      peaksRef.current = peaksRef.current.slice(-MAX_PEAKS_TO_DISPLAY);
+    }
   }, []);
 
-  // Renderizado optimizado con desync
+  // Optimized rendering function with high-precision timing
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -306,7 +302,7 @@ const PPGSignalMeter = ({
     const currentTime = performance.now();
     const timeSinceLastRender = currentTime - lastRenderTimeRef.current;
     
-    // Control de framerate para estabilidad
+    // Frame rate control for stability
     if (timeSinceLastRender < FRAME_TIME) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -315,7 +311,7 @@ const PPGSignalMeter = ({
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', {
       alpha: false,
-      desynchronized: true // Crucial para reducir latencia
+      desynchronized: true // Critical for reducing latency
     });
     
     if (!ctx) {
@@ -323,40 +319,43 @@ const PPGSignalMeter = ({
       return;
     }
     
+    // Use high-precision timing
     const now = USE_PRECISE_TIMING ? performance.now() : Date.now();
     
+    // Draw background grid
     drawGrid(ctx);
     
+    // Don't update data if preserving results and finger not detected
     if (preserveResults && !isFingerDetected) {
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
     
-    // Procesamiento inmediato sin retardos
+    // Process signal data when finger is detected
     if (isFingerDetected && value !== 0) {
-      // Timestamp preciso para cada punto
+      // Use high-precision timestamp
       const pointTimestamp = performance.now();
       lastValueTimeRef.current = pointTimestamp;
       
-      // Adaptación rápida de línea base
+      // Create or update baseline for normalization
       if (baselineRef.current === null) {
         baselineRef.current = value;
       } else {
-        // Adaptación más rápida para evitar "drift"
+        // More stable baseline adaptation
         baselineRef.current = baselineRef.current * BASELINE_ADAPTATION_RATE + 
                             value * (1 - BASELINE_ADAPTATION_RATE);
       }
       
-      // Aplicar suavizado mínimo para respuesta rápida
+      // Apply minimal smoothing for responsive display
       const smoothedValue = smoothValue(value, lastValueRef.current);
       lastValueRef.current = smoothedValue;
       
-      // Normalización consistente
+      // Normalize and scale the value
       const normalizedValue = baselineRef.current - smoothedValue;
       const scaledValue = normalizedValue * verticalScale;
       
-      // Detección simplificada de arritmias
+      // Check for arrhythmia
       let isArrhythmia = false;
       if (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && 
           now - rawArrhythmiaData.timestamp < 300) {
@@ -364,22 +363,22 @@ const PPGSignalMeter = ({
         lastArrhythmiaTime.current = now;
       }
       
-      // Crear punto con timestamp preciso
+      // Create a data point with precise timing
       const dataPoint: PPGDataPoint = {
-        time: pointTimestamp, // Usar timestamp preciso
+        time: pointTimestamp,
         value: scaledValue,
         isArrhythmia
       };
       
-      // Agregar punto al buffer
+      // Add to buffer
       dataBufferRef.current.push(dataPoint);
     }
     
-    // Obtener puntos y detectar picos
+    // Get all points from buffer and detect peaks
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
-    // Renderizado optimizado de la señal
+    // Render the signal if there are enough points
     if (points.length > 1) {
       ctx.beginPath();
       ctx.strokeStyle = '#0EA5E9';
@@ -392,27 +391,30 @@ const PPGSignalMeter = ({
       let lastY = 0;
       const centerY = (CANVAS_HEIGHT / 2) - 40;
       
-      // Dibujar onda de derecha a izquierda (más nuevo a la derecha)
-      const renderPoints = [...points]; // Copia para evitar modificaciones durante renderizado
+      // Create a copy of points to avoid modification during rendering
+      const renderPoints = [...points];
       
+      // Render each point
       for (let i = 0; i < renderPoints.length; i++) {
         const point = renderPoints[i];
         
-        // Cálculo preciso de posición temporal
+        // Calculate x position based on time - critical for correct positioning
         let x;
         if (FLOW_DIRECTION === 'rtl') {
-          // Derecha a izquierda (más nuevo a la derecha)
+          // Right to left: newer points on right
           x = CANVAS_WIDTH - ((now - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
         } else {
-          // Izquierda a derecha (más nuevo a la izquierda)
+          // Left to right: newer points on left
           x = (now - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS;
         }
         
+        // Y position based on signal value
         const y = centerY - point.value;
         
-        // No dibujar fuera del canvas
+        // Skip points outside visible area
         if (x < 0 || x > CANVAS_WIDTH) continue;
         
+        // Start or continue the path
         if (firstPoint) {
           ctx.moveTo(x, y);
           firstPoint = false;
@@ -420,19 +422,19 @@ const PPGSignalMeter = ({
           ctx.lineTo(x, y);
         }
         
-        // Dibujar segmentos de arritmia en rojo
+        // Handle arrhythmia segments (red)
         if (point.isArrhythmia && i > 0) {
-          // Cerrar el trazo actual
+          // Complete current line
           ctx.stroke();
           
-          // Comenzar nuevo trazo en rojo
+          // Draw arrhythmia segment in red
           ctx.beginPath(); 
           ctx.strokeStyle = '#DC2626';
           ctx.moveTo(lastX, lastY);
           ctx.lineTo(x, y);
           ctx.stroke();
           
-          // Volver al trazo normal
+          // Resume normal line
           ctx.beginPath();
           ctx.strokeStyle = '#0EA5E9';
           ctx.moveTo(x, y);
@@ -443,32 +445,33 @@ const PPGSignalMeter = ({
         lastY = y;
       }
       
+      // Complete the path
       ctx.stroke();
       
-      // Dibujar los picos detectados con posición precisa
+      // Draw detected peaks with precise positioning
       ctx.lineWidth = 2;
       peaksRef.current.forEach((peak) => {
-        // Calcular posición X basada en timestamp
+        // Calculate position based on precise timing
         let x;
         if (FLOW_DIRECTION === 'rtl') {
-          // Derecha a izquierda (más nuevo a la derecha)
+          // Right to left (newer points on right)
           x = CANVAS_WIDTH - ((now - peak.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
         } else {
-          // Izquierda a derecha (más nuevo a la izquierda)
+          // Left to right (newer points on left)
           x = (now - peak.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS;
         }
         
         const y = centerY - peak.value;
         
-        // Solo dibujar picos visibles
+        // Only render peaks that are in the visible area
         if (x >= 0 && x <= CANVAS_WIDTH) {
-          // Círculo del pico
+          // Draw peak circle
           ctx.beginPath();
           ctx.arc(x, y, 6, 0, Math.PI * 2);
           ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           ctx.fill();
           
-          // Resaltar arritmias
+          // Highlight arrhythmia peaks
           if (peak.isArrhythmia) {
             ctx.beginPath();
             ctx.arc(x, y, 12, 0, Math.PI * 2);
@@ -482,7 +485,7 @@ const PPGSignalMeter = ({
             ctx.fillText('ARRITMIA', x, y - 25);
           }
           
-          // Valor numérico
+          // Display value
           ctx.font = 'bold 16px Inter';
           ctx.fillStyle = '#000000';
           ctx.textAlign = 'center';
@@ -495,15 +498,10 @@ const PPGSignalMeter = ({
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults]);
 
-  // Iniciar renderizado con alta prioridad
+  // Initialize rendering with high priority
   useEffect(() => {
-    // Usar rAF con alta prioridad si está disponible
-    if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
-      animationFrameRef.current = requestAnimationFrame(renderSignal);
-    } else {
-      const interval = setInterval(renderSignal, FRAME_TIME);
-      return () => clearInterval(interval);
-    }
+    // Use requestAnimationFrame for optimal performance
+    animationFrameRef.current = requestAnimationFrame(renderSignal);
     
     return () => {
       if (animationFrameRef.current) {
@@ -512,14 +510,19 @@ const PPGSignalMeter = ({
     };
   }, [renderSignal]);
 
-  // Manejador de reset
+  // Handle reset
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
+    if (dataBufferRef.current) {
+      dataBufferRef.current.clear();
+    }
+    baselineRef.current = null;
+    lastValueRef.current = null;
     onReset();
   }, [onReset]);
 
-  // Determinar si usar calidad mejorada para UI
+  // Get current quality with smoothing
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 

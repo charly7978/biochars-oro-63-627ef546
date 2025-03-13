@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -66,11 +67,15 @@ export const useSignalProcessor = () => {
     
     const enhancedQuality = Math.min(100, avgQuality * 1.1);
     
-    return {
+    // Add a precise timestamp using performance.now() for better temporal resolution
+    const preciseSignal = {
       ...signal,
       fingerDetected: robustFingerDetected,
-      quality: enhancedQuality
+      quality: enhancedQuality,
+      preciseTimestamp: performance.now()
     };
+    
+    return preciseSignal;
   }, []);
 
   useEffect(() => {
@@ -82,6 +87,7 @@ export const useSignalProcessor = () => {
     processor.onSignalReady = (signal: ProcessedSignal) => {
       const modifiedSignal = processRobustFingerDetection(signal);
       
+      // Add high-precision timestamp for better synchronization
       const preciseSignal = {
         ...modifiedSignal,
         preciseTimestamp: performance.now()
@@ -144,7 +150,7 @@ export const useSignalProcessor = () => {
       });
       processor.stop();
     };
-  }, [processor, processRobustFingerDetection]);
+  }, [processor, processRobustFingerDetection, framesProcessed, lastSignal]);
 
   const startProcessing = useCallback(() => {
     console.log("useSignalProcessor: Iniciando procesamiento", {
@@ -161,8 +167,10 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
+    // Clear historical data for a fresh start
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
+    signalBufferRef.current = [];
     
     processor.start();
   }, [processor, isProcessing]);
