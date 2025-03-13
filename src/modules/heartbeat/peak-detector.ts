@@ -1,274 +1,253 @@
 
 export class PeakDetector {
-  // Thresholds and detection parameters
-  private readonly MIN_PEAK_THRESHOLD_FACTOR: number;
-  private readonly STRONG_PEAK_THRESHOLD_FACTOR: number;
-  private readonly PEAK_WINDOW_SIZE: number;
-  private readonly MIN_TIME_BETWEEN_BEATS: number;
-  private readonly MAX_TIME_BETWEEN_BEATS: number;
+  // Constants for detection
+  private readonly peakWindowSize: number;
+  private readonly minPeakThreshold: number;
+  private readonly strongPeakThreshold: number;
+  private readonly adaptiveThresholdFactor: number;
+  private readonly minTimeBetweenBeats: number;
+  private readonly maxTimeBetweenBeats: number;
   
-  // State
-  private baselineThreshold: number = 1.0;
-  private beatConfidence: number = 0.0;
-  private lastBeatTime: number = 0;
-  private shouldReduceTimeBetweenBeats: boolean = false;
-  private adaptivePeakWindow: number;
-  private signalStability: number = 0.5;
-  private recentAmplitudes: number[] = [];
-  private peakHistory: number[] = [];
-  private beatIntervalHistory: number[] = [];
+  // State variables
+  private adaptiveThreshold: number = 0.2;
+  private lastPeakTime: number = 0;
+  private lastBeatValue: number = 0;
+  private stability: number = 0.5;
+  private confidence: number = 0.5;
+  private lastPeakValues: number[] = [];
+  private consecutiveBeats: number = 0;
+  private minTimeSinceLastBeat: number;
+  private missedBeatCounter: number = 0;
   
-  // Stability tracking with balanced values
-  private consecutiveDetectionsCount: number = 0;
-  private readonly MIN_CONSECUTIVE_FOR_CONFIDENCE: number = 2;
-  private readonly MAX_CONSECUTIVE_BOOST: number = 4;
-  
+  // Enhanced thresholds for more sensitive detection
+  private readonly MAX_PEAK_VALUES = 10;
+  private readonly STABILITY_WINDOW = 5;
+  private readonly CONFIDENCE_DECAY = 0.9;
+  private readonly CONFIDENCE_BOOST = 1.2;
+  private readonly PEAK_SIMILARITY_THRESHOLD = 0.7;
+  private readonly AGGRESSIVE_DETECTION_THRESHOLD = 3;
+
   constructor(
-    peakWindow: number = 3,
-    minPeakThreshold: number = 0.3,     // Balanced threshold
-    strongPeakThreshold: number = 0.45,  // Balanced threshold
-    dynamicThreshold: number = 0.7,
-    minTimeBetweenBeats: number = 350,   // Balanced
-    maxTimeBetweenBeats: number = 1400
+    peakWindowSize: number = 3,
+    minPeakThreshold: number = 0.15,
+    strongPeakThreshold: number = 0.25,
+    adaptiveThresholdFactor: number = 0.55,
+    minTimeBetweenBeats: number = 240,
+    maxTimeBetweenBeats: number = 1600
   ) {
-    this.PEAK_WINDOW_SIZE = peakWindow;
-    this.adaptivePeakWindow = peakWindow;
-    this.MIN_PEAK_THRESHOLD_FACTOR = minPeakThreshold;
-    this.STRONG_PEAK_THRESHOLD_FACTOR = strongPeakThreshold;
-    this.MIN_TIME_BETWEEN_BEATS = minTimeBetweenBeats;
-    this.MAX_TIME_BETWEEN_BEATS = maxTimeBetweenBeats;
-    
-    // Initialize amplitude buffer
-    for (let i = 0; i < 8; i++) {
-      this.recentAmplitudes.push(1.0);
-    }
+    this.peakWindowSize = peakWindowSize;
+    this.minPeakThreshold = minPeakThreshold;
+    this.strongPeakThreshold = strongPeakThreshold;
+    this.adaptiveThresholdFactor = adaptiveThresholdFactor;
+    this.minTimeBetweenBeats = minTimeBetweenBeats;
+    this.maxTimeBetweenBeats = maxTimeBetweenBeats;
+    this.minTimeSinceLastBeat = minTimeBetweenBeats;
   }
-  
+
+  // More sensitive detection of beat signals
   public detectBeat(
-    now: number,
+    timestamp: number,
     value: number,
     quality: number,
-    signalBuffer: number[],
+    buffer: number[],
     derivative: number,
-    lastBeat: number
+    lastHeartBeatTime: number
   ): boolean {
-    // Skip if too soon after last beat
-    const timeSinceLastBeat = now - this.lastBeatTime;
-    const minTimeBetweenBeats = this.shouldReduceTimeBetweenBeats ? 
-      this.MIN_TIME_BETWEEN_BEATS * 0.92 : this.MIN_TIME_BETWEEN_BEATS;
-
-    if (timeSinceLastBeat < minTimeBetweenBeats) {
-      return false;
-    }
-
-    // Need enough samples for detection
-    if (signalBuffer.length < this.adaptivePeakWindow + 2) {
-      return false;
-    }
-
-    // Balanced quality threshold
-    if (quality < 45) {
-      this.consecutiveDetectionsCount = Math.max(0, this.consecutiveDetectionsCount - 1);
-      return false;
-    }
-
-    // Adjust peak window based on signal stability - balanced approach
-    this.adaptivePeakWindow = Math.max(2, Math.min(4, Math.round(this.PEAK_WINDOW_SIZE * (1.0 - this.signalStability * 0.3))));
-
-    // Check for peak with adaptive window size
-    const isPeak = this.isPeakValue(value, signalBuffer);
+    const timeSinceLastPeak = timestamp - this.lastPeakTime;
     
-    // Standard validation for peaks
-    if (isPeak) {
-      // Calculate peak strength
-      const peakStrength = Math.abs(value);
-      this.peakHistory.push(peakStrength);
-      if (this.peakHistory.length > 7) {
-        this.peakHistory.shift();
+    // More aggressive timing checks based on signal quality
+    let minTimeRequired = this.minTimeSinceLastBeat;
+    if (quality < 40) {
+      // For lower quality signals, be more permissive with timing
+      minTimeRequired = Math.max(200, this.minTimeSinceLastBeat * 0.8);
+    } else if (this.missedBeatCounter > 2) {
+      // If we've missed several beats, be more aggressive
+      minTimeRequired = Math.max(180, this.minTimeSinceLastBeat * 0.7);
+    }
+    
+    // More aggressive detection threshold adjustment based on signal quality
+    let currentThreshold = this.adaptiveThreshold;
+    if (quality < 50) {
+      // Lower threshold for lower quality signals
+      currentThreshold *= 0.8;
+    }
+    
+    if (this.missedBeatCounter > this.AGGRESSIVE_DETECTION_THRESHOLD) {
+      // Very aggressive threshold for detection after missed beats
+      currentThreshold *= 0.6;
+      console.log(`PeakDetector: Using aggressive threshold ${currentThreshold.toFixed(3)} after ${this.missedBeatCounter} missed beats`);
+    }
+    
+    // Early rejection for timing constraints
+    if (timeSinceLastPeak < minTimeRequired) {
+      return false;
+    }
+    
+    // Improved peak detection algorithm with more sensitivity
+    const bufferLength = buffer.length;
+    let isPeak = false;
+    
+    if (bufferLength < this.peakWindowSize * 2 + 1) {
+      // Not enough data for detection
+      return false;
+    }
+    
+    // Get the current sliding window
+    const windowStart = Math.max(0, bufferLength - this.peakWindowSize * 2 - 1);
+    const window = buffer.slice(windowStart);
+    
+    // More aggressive peak finding for small windows
+    if (window.length >= 3) {
+      const currentIndex = window.length - 1;
+      const current = window[currentIndex];
+      
+      // Check if this point is higher than previous and next is lower (if available)
+      const prevHigherThanThreshold = current > window[currentIndex - 1] + currentThreshold;
+      const prevLowerThanCurrent = current > window[currentIndex - 1];
+      
+      // Detect if we have a potential peak
+      if (prevLowerThanCurrent && prevHigherThanThreshold) {
+        // For the last point, we can only check previous
+        if (currentIndex === window.length - 1 || current > window[currentIndex + 1]) {
+          isPeak = true;
+        }
       }
+    }
+    
+    // Only proceed if we detected a peak and quality is acceptable
+    if (isPeak && (value > currentThreshold || quality > 40)) {
+      const timeSinceLastBeat = timestamp - lastHeartBeatTime;
       
-      this.recentAmplitudes.push(peakStrength);
-      if (this.recentAmplitudes.length > 8) {
-        this.recentAmplitudes.shift();
-      }
+      // More permissive quality check for first beat detection
+      const qualityCheck = lastHeartBeatTime === 0 ? quality > 20 : quality > 30;
       
-      // Balanced quality-adjusted threshold
-      const qualityFactor = Math.max(0.65, quality / 100);
-      const avgAmplitude = this.recentAmplitudes.reduce((sum, val) => sum + val, 0) / this.recentAmplitudes.length;
-      
-      // Calculate adaptive threshold
-      const avgPeakStrength = this.peakHistory.length > 0 ? 
-        this.peakHistory.reduce((sum, val) => sum + val, 0) / this.peakHistory.length : 0;
-      
-      // Balanced threshold
-      const adaptiveThreshold = this.baselineThreshold * this.MIN_PEAK_THRESHOLD_FACTOR * 1.05;
-      
-      // Consider relative peak strength
-      const relativePeakStrength = avgPeakStrength > 0 ? peakStrength / avgPeakStrength : 1;
-      
-      // Apply threshold with balanced criteria
-      const effectiveThreshold = relativePeakStrength < 0.7 ? 
-        adaptiveThreshold * 1.15 : adaptiveThreshold;
-
-      // Check if peak surpasses threshold
-      if (peakStrength > effectiveThreshold) {
-        // Beat interval validation with balanced criteria
-        if (this.beatIntervalHistory.length > 2) {
-          // Calculate average interval
-          const avgInterval = this.beatIntervalHistory.reduce((sum, val) => sum + val, 0) / 
-                             this.beatIntervalHistory.length;
+      // Check if the peak is within valid timing windows with more permissive check
+      if ((timeSinceLastBeat >= minTimeRequired || lastHeartBeatTime === 0) && 
+          (timeSinceLastBeat <= this.maxTimeBetweenBeats * 1.1 || lastHeartBeatTime === 0) &&
+          qualityCheck) {
+        
+        console.log(`PeakDetector: Valid peak detected - Value: ${value.toFixed(3)}, Quality: ${quality}, TimeSinceLastBeat: ${timeSinceLastBeat}ms`);
+        
+        // Update stability metric based on consistent detection
+        if (this.lastPeakValues.length > 0) {
+          const prevValue = this.lastPeakValues[this.lastPeakValues.length - 1];
+          const similarity = 1 - Math.min(1, Math.abs(value - prevValue) / Math.max(0.01, Math.abs(prevValue)));
           
-          // Prevent premature beats with balanced threshold
-          if (timeSinceLastBeat < avgInterval * 0.6) {
-            return false;
+          // More gradual stability adjustments
+          if (similarity > this.PEAK_SIMILARITY_THRESHOLD) {
+            this.stability = Math.min(1.0, this.stability + 0.1);
+            this.consecutiveBeats++;
+          } else {
+            this.stability = Math.max(0.1, this.stability - 0.05);
+            this.consecutiveBeats = Math.max(0, this.consecutiveBeats - 1);
           }
         }
         
-        // Balanced confidence calculation
-        this.beatConfidence = Math.min(0.85, 
-          (peakStrength / (adaptiveThreshold * 1.1)) * qualityFactor * (this.signalStability + 0.55)
-        );
+        // More aggressive confidence boost
+        this.confidence = Math.min(1.0, this.confidence * this.CONFIDENCE_BOOST + 0.1);
         
-        // Balanced confidence boost with consecutive detections
-        this.consecutiveDetectionsCount++;
-        if (this.consecutiveDetectionsCount > this.MIN_CONSECUTIVE_FOR_CONFIDENCE) {
-          const confBoost = Math.min(
-            0.12, 
-            0.04 * (this.consecutiveDetectionsCount - this.MIN_CONSECUTIVE_FOR_CONFIDENCE) / this.MAX_CONSECUTIVE_BOOST
-          );
-          this.beatConfidence = Math.min(0.92, this.beatConfidence + confBoost);
+        // Store peak information
+        this.lastPeakTime = timestamp;
+        this.lastBeatValue = value;
+        this.lastPeakValues.push(value);
+        if (this.lastPeakValues.length > this.MAX_PEAK_VALUES) {
+          this.lastPeakValues.shift();
         }
         
-        // Record interval for rhythm analysis
-        if (this.lastBeatTime > 0) {
-          this.beatIntervalHistory.push(timeSinceLastBeat);
-          if (this.beatIntervalHistory.length > 5) {
-            this.beatIntervalHistory.shift();
-          }
-        }
-        
-        this.lastBeatTime = now;
-        
-        // Update timing parameters
-        if (timeSinceLastBeat < 650) {  // Balanced threshold for high heart rates
-          this.shouldReduceTimeBetweenBeats = true;
-        } else if (timeSinceLastBeat > 950) {
-          this.shouldReduceTimeBetweenBeats = false;
-        }
+        // Reset missed beat counter on successful detection
+        this.missedBeatCounter = 0;
         
         return true;
       }
-    } else {
-      // Gradual decrease in consecutive detections
-      this.consecutiveDetectionsCount = Math.max(0, this.consecutiveDetectionsCount - 0.5);
-    }
-
-    // Balanced derivative-based fallback detection
-    if (!isPeak && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS * 0.75) {
-      // Use with high-quality signals
-      if (derivative > 0.35 && quality > 65) {
-        this.beatConfidence = 0.4;  // Balanced confidence for derivative detection
-        this.lastBeatTime = now;
-        return true;
-      }
+    } else if (lastHeartBeatTime > 0) {
+      // Beat missed based on timing - more aggressive checking
+      const timeSinceLastBeat = timestamp - lastHeartBeatTime;
+      const expectedBeatInterval = 60000 / 75; // Assume average heart rate
       
-      // Last resort for very long gaps with strict conditions
-      if (derivative > 0.4 && timeSinceLastBeat > this.MAX_TIME_BETWEEN_BEATS && quality > 75) {
-        this.beatConfidence = 0.3;
-        this.lastBeatTime = now;
-        return true;
+      if (timeSinceLastBeat > expectedBeatInterval * 1.3) {
+        this.missedBeatCounter++;
+        
+        // More aggressive confidence reduction
+        this.confidence = Math.max(0.2, this.confidence * this.CONFIDENCE_DECAY);
+        
+        if (this.missedBeatCounter % 3 === 0) {
+          console.log(`PeakDetector: ${this.missedBeatCounter} consecutive beats missed, confidence reduced to ${this.confidence.toFixed(2)}`);
+        }
       }
     }
-
+    
     return false;
   }
-  
-  private isPeakValue(value: number, buffer: number[]): boolean {
-    const windowSize = this.adaptivePeakWindow;
-    const midPoint = Math.floor(buffer.length / 2);
+
+  // More frequent update for adaptive threshold
+  public updateAdaptiveThreshold(buffer: number[], timestamp: number, debug: boolean = false): void {
+    if (buffer.length < 10) return;
     
-    // Balanced minimum value requirement
-    if (Math.abs(value) < 0.2) return false;
+    // Take recent values for threshold calculation
+    const recentValues = buffer.slice(-20);
     
-    // Check if current value is local maximum
-    let peakConfirmed = true;
-    
-    // Check values before current value
-    for (let i = 1; i <= windowSize; i++) {
-      if (midPoint - i >= 0 && buffer[midPoint - i] >= value) {
-        peakConfirmed = false;
-        break;
-      }
-    }
-    
-    if (peakConfirmed) {
-      // Check values after current value
-      for (let i = 1; i <= windowSize; i++) {
-        if (midPoint + i < buffer.length && buffer[midPoint + i] >= value) {
-          peakConfirmed = false;
-          break;
-        }
-      }
-    }
-    
-    return peakConfirmed;
-  }
-  
-  public updateAdaptiveThreshold(buffer: number[], now: number, debug: boolean = false): void {
-    if (buffer.length < 15) return;
-    
-    const recentValues = buffer.slice(-25);
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    const amplitude = max - min;
-    
-    // Update signal stability metric with balanced approach
-    const sorted = [...recentValues].sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
-    const iqr = q3 - q1;
-    
-    // Balanced stability metric (0-1 where 1 is most stable)
-    this.signalStability = Math.min(1, Math.max(0, 1 - (iqr / (amplitude || 1))));
-    
-    // Balanced threshold adjustment rate
-    const adaptationRate = 0.15 + (0.1 * this.signalStability);
-    this.baselineThreshold = Math.max(
-      0.4,  // Balanced minimum threshold
-      this.baselineThreshold * (1 - adaptationRate) + amplitude * adaptationRate
+    // Calculate average and standard deviation
+    const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const stdDev = Math.sqrt(
+      recentValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / recentValues.length
     );
     
+    // More sensitive threshold based on signal characteristics
+    const newThreshold = Math.max(
+      this.minPeakThreshold,
+      stdDev * this.adaptiveThresholdFactor
+    );
+    
+    // Faster threshold adaptation (80% old, 20% new)
+    this.adaptiveThreshold = this.adaptiveThreshold * 0.8 + newThreshold * 0.2;
+    
     if (debug) {
-      console.log(`Peak detector: threshold=${this.baselineThreshold.toFixed(2)}, stability=${this.signalStability.toFixed(2)}, window=${this.adaptivePeakWindow}`);
+      console.log(`PeakDetector: Updated adaptive threshold to ${this.adaptiveThreshold.toFixed(3)}, avg=${avg.toFixed(3)}, stdDev=${stdDev.toFixed(3)}`);
     }
   }
-  
-  public setTimingParameters(interval: number): void {
-    if (interval < 650) {  // Balanced threshold
-      this.shouldReduceTimeBetweenBeats = true;
-    } else if (interval > 950) {
-      this.shouldReduceTimeBetweenBeats = false;
+
+  // Update timing parameters based on detected intervals
+  public setTimingParameters(beatInterval: number): void {
+    // More responsive timing parameter updates
+    if (beatInterval > 300 && beatInterval < 1500) {
+      // Set minimum time as 75% of last interval (more aggressive)
+      this.minTimeSinceLastBeat = Math.max(
+        this.minTimeBetweenBeats,
+        Math.round(beatInterval * 0.75)
+      );
+      
+      console.log(`PeakDetector: Updated minimum time between beats to ${this.minTimeSinceLastBeat}ms based on interval ${beatInterval}ms`);
     }
   }
-  
-  public get confidence(): number {
-    return this.beatConfidence;
-  }
-  
-  public get stability(): number {
-    return this.signalStability;
-  }
-  
+
+  // Reset the detector
   public reset(): void {
-    this.lastBeatTime = 0;
-    this.beatConfidence = 0;
-    this.baselineThreshold = 1.0;
-    this.shouldReduceTimeBetweenBeats = false;
-    this.adaptivePeakWindow = this.PEAK_WINDOW_SIZE;
-    this.signalStability = 0.5;
-    this.recentAmplitudes = Array(8).fill(1.0);
-    this.peakHistory = [];
-    this.beatIntervalHistory = [];
-    this.consecutiveDetectionsCount = 0;
+    this.adaptiveThreshold = 0.2;
+    this.lastPeakTime = 0;
+    this.lastBeatValue = 0;
+    this.stability = 0.5;
+    this.confidence = 0.5;
+    this.lastPeakValues = [];
+    this.consecutiveBeats = 0;
+    this.minTimeSinceLastBeat = this.minTimeBetweenBeats;
+    this.missedBeatCounter = 0;
+    console.log("PeakDetector: Reset complete");
+  }
+  
+  // Getters for internal state
+  public get currentThreshold(): number {
+    return this.adaptiveThreshold;
+  }
+  
+  public get lastPeakTimestamp(): number {
+    return this.lastPeakTime;
+  }
+  
+  public get confidenceLevel(): number {
+    return this.confidence;
+  }
+  
+  public get stabilityLevel(): number {
+    return this.stability;
   }
 }
