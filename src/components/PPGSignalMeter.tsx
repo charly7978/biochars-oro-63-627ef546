@@ -59,19 +59,19 @@ const PPGSignalMeter = ({
   const frameCountRef = useRef<number>(0);
   const visiblePeaksCountRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 5500;
+  const WINDOW_WIDTH_MS = 4000;
   const CANVAS_WIDTH = 1080;
   const CANVAS_HEIGHT = 720;
-  const GRID_SIZE_X = 10;
-  const GRID_SIZE_Y = 4;
-  const verticalScale = 45.0;
-  const SMOOTHING_FACTOR = 1.79;
-  const TARGET_FPS = 90;
+  const GRID_SIZE_X = 1080;
+  const GRID_SIZE_Y = 720;
+  const verticalScale = 65.0;
+  const SMOOTHING_FACTOR = 1.99;
+  const TARGET_FPS = 60;
   const BUFFER_SIZE = 700;
-  const QUALITY_HISTORY_SIZE = 10;
-  const REQUIRED_FINGER_FRAMES = 1;
-  const MAX_RENDER_HISTORY = 15;
-  const RENDER_DELAY_COMPENSATION = 1.5;
+  const QUALITY_HISTORY_SIZE = 5;
+  const REQUIRED_FINGER_FRAMES = 2;
+  const MAX_RENDER_HISTORY = 10;
+  const RENDER_DELAY_COMPENSATION = 0.8;
 
   useEffect(() => {
     if (!dataBufferRef.current) {

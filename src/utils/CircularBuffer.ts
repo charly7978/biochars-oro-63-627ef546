@@ -1,5 +1,5 @@
 
-export interface PPGDataPoint {
+interface PPGDataPoint {
   time: number;
   value: number;
   isArrhythmia: boolean;
@@ -29,3 +29,5 @@ export class CircularBuffer {
     this.buffer = [];
   }
 }
+
+export type { PPGDataPoint };
