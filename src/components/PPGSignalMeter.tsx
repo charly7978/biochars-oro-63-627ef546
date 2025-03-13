@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -15,6 +14,7 @@ interface PPGSignalMeterProps {
     rmssd: number;
     rrVariation: number;
   } | null;
+  detectedPeaks?: Array<{time: number, value: number, isArrhythmia?: boolean}>;
   preserveResults?: boolean;
 }
 
@@ -26,6 +26,7 @@ const PPGSignalMeter = ({
   onReset,
   arrhythmiaStatus,
   rawArrhythmiaData,
+  detectedPeaks = [],
   preserveResults = false
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -131,6 +132,33 @@ const PPGSignalMeter = ({
     
     return () => clearTimeout(timeUpdateTimer);
   }, [preserveResults, isFingerDetected]);
+
+  // Update peaksRef from detected peaks props
+  useEffect(() => {
+    if (detectedPeaks && detectedPeaks.length > 0) {
+      console.log("PPGSignalMeter: Updating peaks from props:", detectedPeaks.length);
+      
+      // Merge detected peaks with existing peaks, avoid duplicates
+      const now = Date.now();
+      const recentPeaks = peaksRef.current.filter(p => now - p.time < WINDOW_WIDTH_MS);
+      
+      // Filter out any peaks that are too close in time to existing ones
+      const newPeaks = detectedPeaks.filter(newPeak => {
+        return !recentPeaks.some(existingPeak => 
+          Math.abs(existingPeak.time - newPeak.time) < 200);
+      }).map(peak => ({
+        time: peak.time,
+        value: peak.value,
+        isArrhythmia: peak.isArrhythmia || false
+      }));
+      
+      peaksRef.current = [...recentPeaks, ...newPeaks];
+      
+      // Keep only recent peaks
+      peaksRef.current = peaksRef.current.filter(peak => 
+        now - peak.time < WINDOW_WIDTH_MS);
+    }
+  }, [detectedPeaks, WINDOW_WIDTH_MS]);
 
   useEffect(() => {
     // Register external peak if there's new arrhythmia data
@@ -579,7 +607,7 @@ const PPGSignalMeter = ({
     onReset();
     
     console.log('PPGSignalMeter - Reset completed');
-  }, [onReset, createGridCanvas]);
+  }, [onReset]);
 
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
