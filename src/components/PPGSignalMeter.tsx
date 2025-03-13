@@ -44,16 +44,16 @@ const PPGSignalMeter = ({
   // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 6000;
+  const WINDOW_WIDTH_MS = 7000;
   const CANVAS_WIDTH = 2560;
   const CANVAS_HEIGHT = 1440;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
   const verticalScale = 40.0; // Aumentado para mejor visualización
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 60;
-  const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = 600;
+  const TARGET_FPS = 120;
+  const FRAME_TIME = 1500 / TARGET_FPS;
+  const BUFFER_SIZE = 700;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 2.5; // Reducido para mayor sensibilidad
   const MIN_PEAK_DISTANCE_MS = 220; // Reducido para mejor detección
