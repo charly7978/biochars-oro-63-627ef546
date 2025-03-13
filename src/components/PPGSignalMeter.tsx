@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -274,6 +273,38 @@ const PPGSignalMeter = ({
       }
     }
     
+    offCtx.fillStyle = 'rgba(20, 20, 20, 0.7)';
+    offCtx.fillRect(CANVAS_WIDTH - 180, 20, 160, 60);
+    offCtx.strokeStyle = '#0EA5E9';
+    offCtx.lineWidth = 2;
+    offCtx.strokeRect(CANVAS_WIDTH - 180, 20, 160, 60);
+    
+    offCtx.beginPath();
+    offCtx.arc(CANVAS_WIDTH - 155, 45, 7, 0, Math.PI * 2);
+    offCtx.fillStyle = '#0EA5E9';
+    offCtx.fill();
+    
+    offCtx.fillStyle = 'white';
+    offCtx.font = 'bold 14px Inter';
+    offCtx.textAlign = 'left';
+    offCtx.fillText('Picos Detectados', CANVAS_WIDTH - 140, 50);
+    
+    offCtx.fillStyle = 'rgba(20, 20, 20, 0.7)';
+    offCtx.fillRect(CANVAS_WIDTH - 180, 90, 160, 60);
+    offCtx.strokeStyle = '#FEF08A';
+    offCtx.lineWidth = 2;
+    offCtx.strokeRect(CANVAS_WIDTH - 180, 90, 160, 60);
+    
+    offCtx.beginPath();
+    offCtx.arc(CANVAS_WIDTH - 155, 115, 7, 0, Math.PI * 2);
+    offCtx.fillStyle = '#FEF08A';
+    offCtx.fill();
+    
+    offCtx.fillStyle = 'white';
+    offCtx.font = 'bold 14px Inter';
+    offCtx.textAlign = 'left';
+    offCtx.fillText('Arritmias', CANVAS_WIDTH - 140, 120);
+    
     gridCanvasRef.current = offscreen;
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
@@ -416,18 +447,21 @@ const PPGSignalMeter = ({
         const y = (canvas.height / 2) - 40 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
-          const gradient = offCtx.createRadialGradient(x, y, 3, x, y, 12);
-          gradient.addColorStop(0, peak.isArrhythmia ? 'rgba(220, 38, 38, 0.9)' : 'rgba(14, 165, 233, 0.9)');
+          const circleColor = peak.isArrhythmia ? '#FEF08A' : '#0EA5E9';
+          const glowColor = peak.isArrhythmia ? 'rgba(254, 240, 138, 0.6)' : 'rgba(14, 165, 233, 0.6)';
+          
+          const gradient = offCtx.createRadialGradient(x, y, 3, x, y, 15);
+          gradient.addColorStop(0, glowColor);
           gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
           
           offCtx.beginPath();
-          offCtx.arc(x, y, 12, 0, Math.PI * 2);
+          offCtx.arc(x, y, 15, 0, Math.PI * 2);
           offCtx.fillStyle = gradient;
           offCtx.fill();
           
           offCtx.beginPath();
           offCtx.arc(x, y, 8, 0, Math.PI * 2);
-          offCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          offCtx.fillStyle = circleColor;
           offCtx.fill();
           
           offCtx.beginPath();
@@ -436,14 +470,46 @@ const PPGSignalMeter = ({
           offCtx.lineWidth = 1.5;
           offCtx.stroke();
           
+          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
+          
+          offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          const textWidth = offCtx.measureText(displayValue).width;
+          offCtx.fillRect(x - textWidth/2 - 4, y - 35, textWidth + 8, 20);
+          
+          offCtx.font = 'bold 12px Inter';
+          offCtx.fillStyle = 'white';
+          offCtx.textAlign = 'center';
+          offCtx.fillText(displayValue, x, y - 22);
+          
+          const timeDisplay = `${Math.round(timeSinceNow)}ms`;
+          const timeTextWidth = offCtx.measureText(timeDisplay).width;
+          
+          offCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          offCtx.fillRect(x - timeTextWidth/2 - 3, y + 15, timeTextWidth + 6, 16);
+          
+          offCtx.font = '10px Inter';
+          offCtx.fillStyle = '#F0F0F0';
+          offCtx.fillText(timeDisplay, x, y + 27);
+          
           if (peak.isArrhythmia) {
             offCtx.beginPath();
             offCtx.arc(x, y, 15, 0, Math.PI * 2);
-            offCtx.strokeStyle = '#FF9500';
+            offCtx.strokeStyle = '#FEF08A';
             offCtx.lineWidth = 2;
             offCtx.setLineDash([3, 2]);
             offCtx.stroke();
             offCtx.setLineDash([]);
+            
+            offCtx.font = 'bold 14px Inter';
+            offCtx.fillStyle = '#FEF08A';
+            offCtx.textAlign = 'center';
+            
+            const arrTextWidth = offCtx.measureText("LATIDO PREMATURO").width;
+            offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            offCtx.fillRect(x - arrTextWidth/2 - 5, y - 55, arrTextWidth + 10, 22);
+            
+            offCtx.fillStyle = '#FEF08A';
+            offCtx.fillText("LATIDO PREMATURO", x, y - 40);
           }
         }
       });
@@ -591,6 +657,13 @@ const PPGSignalMeter = ({
               {getQualityText(quality)}
             </span>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-black/20 px-2 py-1 rounded-full">
+          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+          <span className="text-xs font-medium">
+            Picos: {visiblePeaksCountRef.current}
+          </span>
         </div>
 
         <div className="flex flex-col items-center">
