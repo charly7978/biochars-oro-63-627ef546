@@ -12,10 +12,17 @@ const CameraView = ({
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const frameProcessingRef = useRef(null);
 
   const stopCamera = async () => {
     if (stream) {
       try {
+        // Cancel any ongoing frame processing
+        if (frameProcessingRef.current) {
+          cancelAnimationFrame(frameProcessingRef.current);
+          frameProcessingRef.current = null;
+        }
+
         stream.getTracks().forEach(track => {
           try {
             track.stop();
@@ -173,4 +180,4 @@ const CameraView = ({
   );
 };
 
-export default CameraView; 
+export default CameraView;

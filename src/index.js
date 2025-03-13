@@ -25,6 +25,7 @@ const Index = () => {
   const [detectedPeaks, setDetectedPeaks] = useState([]);
   const measurementTimerRef = useRef(null);
   const processingActiveRef = useRef(false);
+  const frameProcessingRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -150,6 +151,12 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
+    
+    // Cancel any ongoing frame processing
+    if (frameProcessingRef.current) {
+      cancelAnimationFrame(frameProcessingRef.current);
+      frameProcessingRef.current = null;
+    }
   };
 
   const handleStreamReady = (stream) => {
@@ -170,7 +177,7 @@ const Index = () => {
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
@@ -184,11 +191,15 @@ const Index = () => {
       }
       
       try {
-        // Verificar que el track sigue disponible
+        // Verificar que el track sigue disponible y activo
         if (!videoTrack || videoTrack.readyState !== 'live') {
           console.log("Video track no disponible o no activo - saltando frame");
+          
+          // Reintentar después de un breve delay
           if (processingActiveRef.current) {
-            requestAnimationFrame(processImage);
+            frameProcessingRef.current = setTimeout(() => {
+              frameProcessingRef.current = requestAnimationFrame(processImage);
+            }, 500);
           }
           return;
         }
@@ -197,11 +208,12 @@ const Index = () => {
         tempCanvas.width = frame.width;
         tempCanvas.height = frame.height;
         tempCtx.drawImage(frame, 0, 0);
+        
         const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
         processFrame(imageData);
         
         if (processingActiveRef.current) {
-          requestAnimationFrame(processImage);
+          frameProcessingRef.current = requestAnimationFrame(processImage);
         }
       } catch (error) {
         console.error("Error capturando frame:", error);
@@ -209,9 +221,9 @@ const Index = () => {
         // Continuar solo si el procesamiento sigue activo
         if (processingActiveRef.current) {
           // Pequeña pausa antes de reintentar para no saturar con errores
-          setTimeout(() => {
-            requestAnimationFrame(processImage);
-          }, 500);
+          frameProcessingRef.current = setTimeout(() => {
+            frameProcessingRef.current = requestAnimationFrame(processImage);
+          }, 1000); // Pausa más larga en caso de error
         }
       }
     };
@@ -226,9 +238,21 @@ const Index = () => {
       const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
       setHeartRate(calculatedHeartRate);
       
-      // Guardar los picos detectados para sincronización visual
+      // Guardar los picos detectados para visualización
       if (heartBeatResult.detectedPeaks) {
-        setDetectedPeaks(heartBeatResult.detectedPeaks);
+        const now = Date.now();
+        const newPeaks = heartBeatResult.detectedPeaks.map(peak => ({
+          ...peak,
+          time: now - (peak.offset || 0),
+          value: lastSignal.filteredValue * 20,
+          isArrhythmia: peak.isArrhythmia || false
+        }));
+        
+        setDetectedPeaks(prev => {
+          // Mantener solo los picos recientes (últimos 5 segundos)
+          const filteredPrev = prev.filter(p => now - p.time < 5000);
+          return [...filteredPrev, ...newPeaks];
+        });
       }
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -238,7 +262,25 @@ const Index = () => {
           pressure: vitals.pressure || "--/--",
           arrhythmiaStatus: vitals.arrhythmiaStatus || "--"
         });
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        
+        // Si hay una arritmia, marcar el último pico como arrítmico
+        if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('ARRITMIA')) {
+          const arrhythmiaCount = vitals.arrhythmiaStatus.split('|')[1] || "--";
+          setArrhythmiaCount(arrhythmiaCount);
+          
+          setDetectedPeaks(prev => {
+            if (prev.length > 0) {
+              const lastIndex = prev.length - 1;
+              const updatedPeaks = [...prev];
+              updatedPeaks[lastIndex] = {
+                ...updatedPeaks[lastIndex],
+                isArrhythmia: true
+              };
+              return updatedPeaks;
+            }
+            return prev;
+          });
+        }
       }
       
       setSignalQuality(lastSignal.quality);
@@ -253,6 +295,11 @@ const Index = () => {
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+
+  // Asegurar que los picos se pasen correctamente a PPGSignalMeter
+  useEffect(() => {
+    console.log("Picos detectados actualizados:", detectedPeaks.length);
+  }, [detectedPeaks]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -281,6 +328,7 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              detectedPeaks={detectedPeaks}
             />
           </div>
 
