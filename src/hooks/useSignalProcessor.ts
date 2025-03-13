@@ -24,7 +24,7 @@ export const useSignalProcessor = () => {
       enhancedProcessing: true, // Habilitar algoritmos mejorados
     };
     
-    return new PPGSignalProcessor(config);
+    return new PPGSignalProcessor();
   });
   
   const [isProcessing, setIsProcessing] = useState(false);
