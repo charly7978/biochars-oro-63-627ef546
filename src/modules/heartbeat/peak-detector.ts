@@ -1,6 +1,6 @@
 
 export class PeakDetector {
-  // Constantes para detección
+  // Constantes para detección más sensible
   private readonly peakWindowSize: number;
   private readonly minPeakThreshold: number;
   private readonly strongPeakThreshold: number;
@@ -9,7 +9,7 @@ export class PeakDetector {
   private readonly maxTimeBetweenBeats: number;
   
   // Variables de estado
-  private adaptiveThreshold: number = 0.10; // Reducido de 0.15 a 0.10
+  private adaptiveThreshold: number = 0.08; // Reducido para mayor sensibilidad
   private lastPeakTime: number = 0;
   private lastBeatValue: number = 0;
   private stability: number = 0.5;
@@ -22,18 +22,18 @@ export class PeakDetector {
   // Umbrales mejorados para detección más sensible
   private readonly MAX_PEAK_VALUES = 10;
   private readonly STABILITY_WINDOW = 5;
-  private readonly CONFIDENCE_DECAY = 0.92; // Aumentado de 0.9 a 0.92
-  private readonly CONFIDENCE_BOOST = 1.5; // Aumentado de 1.3 a 1.5
-  private readonly PEAK_SIMILARITY_THRESHOLD = 0.55; // Reducido de 0.65 a 0.55
-  private readonly AGGRESSIVE_DETECTION_THRESHOLD = 1; // Reducido de 2 a 1
+  private readonly CONFIDENCE_DECAY = 0.95; // Aumentado para mantener confianza
+  private readonly CONFIDENCE_BOOST = 1.8; // Aumentado para respuesta más rápida
+  private readonly PEAK_SIMILARITY_THRESHOLD = 0.45; // Reducido para mayor sensibilidad
+  private readonly AGGRESSIVE_DETECTION_THRESHOLD = 1; // Valor mínimo
 
   constructor(
     peakWindowSize: number = 2, 
-    minPeakThreshold: number = 0.08, // Reducido de 0.12 a 0.08
-    strongPeakThreshold: number = 0.15, // Reducido de 0.2 a 0.15
-    adaptiveThresholdFactor: number = 0.45, // Reducido de 0.5 a 0.45
-    minTimeBetweenBeats: number = 180, // Reducido de 200 a 180
-    maxTimeBetweenBeats: number = 2000 // Aumentado de 1800 a 2000
+    minPeakThreshold: number = 0.05, // Reducido significativamente
+    strongPeakThreshold: number = 0.12, // Reducido significativamente
+    adaptiveThresholdFactor: number = 0.4, // Reducido para mayor sensibilidad
+    minTimeBetweenBeats: number = 150, // Reducido significativamente
+    maxTimeBetweenBeats: number = 2000 // Sin cambios
   ) {
     this.peakWindowSize = peakWindowSize;
     this.minPeakThreshold = minPeakThreshold;
@@ -43,7 +43,7 @@ export class PeakDetector {
     this.maxTimeBetweenBeats = maxTimeBetweenBeats;
     this.minTimeSinceLastBeat = minTimeBetweenBeats;
     
-    console.log("PeakDetector: Inicializado con valores más sensibles", {
+    console.log("PeakDetector: Inicializado con valores ultra sensibles", {
       peakWindowSize,
       minPeakThreshold,
       strongPeakThreshold,
@@ -53,7 +53,7 @@ export class PeakDetector {
     });
   }
 
-  // Detección más sensible de señales de latido
+  // Detección mucho más sensible de señales de latido
   public detectBeat(
     timestamp: number,
     value: number,
@@ -64,27 +64,27 @@ export class PeakDetector {
   ): boolean {
     const timeSinceLastPeak = timestamp - this.lastPeakTime;
     
-    // Comprobaciones de tiempo más agresivas basadas en la calidad de la señal
+    // Comprobaciones de tiempo ultra agresivas basadas en la calidad de la señal
     let minTimeRequired = this.minTimeSinceLastBeat;
-    if (quality < 60) { // Aumentado de 50 a 60
-      // Para señales de menor calidad, ser más permisivo con el tiempo
-      minTimeRequired = Math.max(150, this.minTimeSinceLastBeat * 0.6); // Reducido de 180 a 150 y de 0.7 a 0.6
-    } else if (this.missedBeatCounter > 0) { // Aún más agresivo: reducido de 1 a 0
-      // Si hemos perdido varios latidos, ser más agresivo
-      minTimeRequired = Math.max(120, this.minTimeSinceLastBeat * 0.5); // Reducido de 150 a 120 y de 0.6 a 0.5
+    if (quality < 70) { // Aumentado para ser más permisivo
+      // Para señales de menor calidad, ser mucho más permisivo con el tiempo
+      minTimeRequired = Math.max(130, this.minTimeSinceLastBeat * 0.5);
+    } else if (this.missedBeatCounter > 0) {
+      // Si hemos perdido varios latidos, ser ultra agresivo
+      minTimeRequired = Math.max(100, this.minTimeSinceLastBeat * 0.4);
     }
     
-    // Ajuste de umbral de detección más agresivo basado en la calidad de la señal
+    // Ajuste de umbral de detección ultra agresivo basado en la calidad de la señal
     let currentThreshold = this.adaptiveThreshold;
-    if (quality < 70) { // Aumentado de 60 a 70
-      // Umbral más bajo para señales de menor calidad
-      currentThreshold *= 0.6; // Reducido de 0.7 a 0.6
+    if (quality < 80) { // Aumentado para ser más permisivo
+      // Umbral mucho más bajo para señales de menor calidad
+      currentThreshold *= 0.5;
     }
     
     if (this.missedBeatCounter > this.AGGRESSIVE_DETECTION_THRESHOLD) {
-      // Umbral muy agresivo para detección después de latidos perdidos
-      currentThreshold *= 0.4; // Reducido de 0.5 a 0.4
-      console.log(`PeakDetector: Usando umbral super agresivo ${currentThreshold.toFixed(3)} después de ${this.missedBeatCounter} latidos perdidos`);
+      // Umbral extremadamente agresivo para detección después de latidos perdidos
+      currentThreshold *= 0.3;
+      console.log(`PeakDetector: Usando umbral ultra agresivo ${currentThreshold.toFixed(3)} después de ${this.missedBeatCounter} latidos perdidos`);
     }
     
     // Rechazo temprano para restricciones de tiempo
@@ -92,7 +92,7 @@ export class PeakDetector {
       return false;
     }
     
-    // Algoritmo de detección de picos mejorado con mayor sensibilidad
+    // Algoritmo de detección de picos mejorado con sensibilidad extrema
     const bufferLength = buffer.length;
     let isPeak = false;
     
@@ -105,16 +105,16 @@ export class PeakDetector {
     const windowStart = Math.max(0, bufferLength - this.peakWindowSize * 2 - 1);
     const window = buffer.slice(windowStart);
     
-    // Búsqueda de picos más agresiva para ventanas pequeñas
+    // Búsqueda de picos ultra agresiva
     if (window.length >= 3) {
       const currentIndex = window.length - 1;
       const current = window[currentIndex];
       
       // Verificar si este punto es un punto de inflexión positivo
-      const prevHigherThanThreshold = current > window[currentIndex - 1] + currentThreshold * 0.6; // Reducido de 0.8 a 0.6
+      const prevHigherThanThreshold = current > window[currentIndex - 1] + currentThreshold * 0.4;
       const prevLowerThanCurrent = current > window[currentIndex - 1];
       
-      // Detectar si tenemos un pico potencial - criterios más relajados
+      // Detectar si tenemos un pico potencial - criterios ultra relajados
       if (prevLowerThanCurrent && prevHigherThanThreshold) {
         // Para el último punto, solo podemos comprobar el anterior
         if (currentIndex === window.length - 1 || current > window[currentIndex + 1]) {
@@ -123,8 +123,8 @@ export class PeakDetector {
       }
       
       // Detección adicional basada en derivada para picos más difíciles de detectar
-      if (!isPeak && derivative > 0.8 && derivative < 3.0) { // Valores ajustados para detección más sensible
-        const derivativeChangeSignificant = Math.abs(derivative) > 0.8;
+      if (!isPeak && derivative > 0.5 && derivative < 4.0) { // Valores ajustados para máxima sensibilidad
+        const derivativeChangeSignificant = Math.abs(derivative) > 0.5;
         
         if (derivativeChangeSignificant && current > window[currentIndex - 1]) {
           isPeak = true;
@@ -133,16 +133,16 @@ export class PeakDetector {
       }
     }
     
-    // Solo proceder si detectamos un pico y la calidad es aceptable
-    if (isPeak && (value > currentThreshold * 0.8 || quality > 30)) { // Reducido de 0.9 a 0.8 y de 35 a 30
+    // Solo proceder si detectamos un pico y la calidad es mínimamente aceptable
+    if (isPeak && (value > currentThreshold * 0.6 || quality > 20)) { // Reducidos drásticamente
       const timeSinceLastBeat = timestamp - lastHeartBeatTime;
       
-      // Comprobación de calidad más permisiva para la primera detección de latido
-      const qualityCheck = lastHeartBeatTime === 0 ? quality > 10 : quality > 20; // Reducido de 15 a 10 y de 25 a 20
+      // Comprobación de calidad extremadamente permisiva para la primera detección de latido
+      const qualityCheck = lastHeartBeatTime === 0 ? quality > 5 : quality > 10; // Reducido drásticamente
       
-      // Comprobar si el pico está dentro de ventanas de tiempo válidas con comprobación más permisiva
+      // Comprobar si el pico está dentro de ventanas de tiempo válidas con comprobación extremadamente permisiva
       if ((timeSinceLastBeat >= minTimeRequired || lastHeartBeatTime === 0) && 
-          (timeSinceLastBeat <= this.maxTimeBetweenBeats * 1.3 || lastHeartBeatTime === 0) && // Aumentado de 1.2 a 1.3
+          (timeSinceLastBeat <= this.maxTimeBetweenBeats * 1.5 || lastHeartBeatTime === 0) && // Aumentado significativamente
           qualityCheck) {
         
         console.log(`PeakDetector: Pico válido detectado - Valor: ${value.toFixed(3)}, Calidad: ${quality}, TiempoDesdeÚltimoLatido: ${timeSinceLastBeat}ms`);
@@ -152,18 +152,18 @@ export class PeakDetector {
           const prevValue = this.lastPeakValues[this.lastPeakValues.length - 1];
           const similarity = 1 - Math.min(1, Math.abs(value - prevValue) / Math.max(0.01, Math.abs(prevValue)));
           
-          // Ajustes de estabilidad más graduales
+          // Ajustes de estabilidad más graduales y optimistas
           if (similarity > this.PEAK_SIMILARITY_THRESHOLD) {
-            this.stability = Math.min(1.0, this.stability + 0.2); // Aumentado de 0.15 a 0.2
+            this.stability = Math.min(1.0, this.stability + 0.25);
             this.consecutiveBeats++;
           } else {
-            this.stability = Math.max(0.3, this.stability - 0.02); // Cambiado de 0.2/0.03 a 0.3/0.02
+            this.stability = Math.max(0.4, this.stability - 0.02);
             this.consecutiveBeats = Math.max(0, this.consecutiveBeats - 1);
           }
         }
         
-        // Impulso de confianza más agresivo
-        this.confidence = Math.min(1.0, this.confidence * this.CONFIDENCE_BOOST + 0.2); // Aumentado de 0.15 a 0.2
+        // Impulso de confianza mucho más agresivo
+        this.confidence = Math.min(1.0, this.confidence * this.CONFIDENCE_BOOST + 0.3);
         
         // Almacenar información del pico
         this.lastPeakTime = timestamp;
@@ -183,11 +183,11 @@ export class PeakDetector {
       const timeSinceLastBeat = timestamp - lastHeartBeatTime;
       const expectedBeatInterval = 60000 / 75; // Asumir frecuencia cardíaca promedio
       
-      if (timeSinceLastBeat > expectedBeatInterval * 1.1) { // Reducido de 1.2 a 1.1
+      if (timeSinceLastBeat > expectedBeatInterval * 1.05) { // Reducido significativamente
         this.missedBeatCounter++;
         
-        // Reducción de confianza más graduada
-        this.confidence = Math.max(0.3, this.confidence * this.CONFIDENCE_DECAY); // Aumentado de 0.25 a 0.3
+        // Reducción de confianza más gradual
+        this.confidence = Math.max(0.35, this.confidence * this.CONFIDENCE_DECAY);
         
         if (this.missedBeatCounter % 2 === 0) {
           console.log(`PeakDetector: ${this.missedBeatCounter} latidos consecutivos perdidos, confianza reducida a ${this.confidence.toFixed(2)}`);
@@ -200,10 +200,10 @@ export class PeakDetector {
 
   // Actualización más frecuente para umbral adaptativo
   public updateAdaptiveThreshold(buffer: number[], timestamp: number, debug: boolean = false): void {
-    if (buffer.length < 6) return; // Reducido de 8 a 6
+    if (buffer.length < 5) return; // Reducido para respuesta más rápida
     
     // Tomar valores recientes para cálculo de umbral
-    const recentValues = buffer.slice(-12); // Reducido de 15 a 12
+    const recentValues = buffer.slice(-10); // Reducido para respuesta más rápida
     
     // Calcular promedio y desviación estándar
     const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
@@ -217,11 +217,11 @@ export class PeakDetector {
       stdDev * this.adaptiveThresholdFactor
     );
     
-    // Adaptación de umbral más rápida (60% antiguo, 40% nuevo)
-    this.adaptiveThreshold = this.adaptiveThreshold * 0.6 + newThreshold * 0.4; // Cambiado de 0.7/0.3 a 0.6/0.4
+    // Adaptación de umbral más rápida (50% antiguo, 50% nuevo)
+    this.adaptiveThreshold = this.adaptiveThreshold * 0.5 + newThreshold * 0.5;
     
     // Limitar el umbral a un valor máximo para evitar umbrales excesivos
-    this.adaptiveThreshold = Math.min(this.adaptiveThreshold, 0.25);
+    this.adaptiveThreshold = Math.min(this.adaptiveThreshold, 0.20);
     
     if (debug) {
       console.log(`PeakDetector: Umbral adaptativo actualizado a ${this.adaptiveThreshold.toFixed(3)}, prom=${avg.toFixed(3)}, desvEst=${stdDev.toFixed(3)}`);
@@ -230,12 +230,12 @@ export class PeakDetector {
 
   // Actualizar parámetros de tiempo basados en intervalos detectados
   public setTimingParameters(beatInterval: number): void {
-    // Actualizaciones de parámetros de tiempo más sensibles
-    if (beatInterval > 200 && beatInterval < 2000) { // Cambiado de 250/1800 a 200/2000
-      // Establecer tiempo mínimo como 55% del último intervalo (más agresivo)
+    // Actualizaciones de parámetros de tiempo ultra sensibles
+    if (beatInterval > 180 && beatInterval < 2000) { // Rango más permisivo
+      // Establecer tiempo mínimo como 45% del último intervalo (ultra agresivo)
       this.minTimeSinceLastBeat = Math.max(
         this.minTimeBetweenBeats,
-        Math.round(beatInterval * 0.55) // Reducido de 0.65 a 0.55
+        Math.round(beatInterval * 0.45) // Reducido significativamente
       );
       
       console.log(`PeakDetector: Tiempo mínimo entre latidos actualizado a ${this.minTimeSinceLastBeat}ms basado en intervalo ${beatInterval}ms`);
@@ -244,7 +244,7 @@ export class PeakDetector {
 
   // Reiniciar el detector
   public reset(): void {
-    this.adaptiveThreshold = 0.10; // Reducido de 0.15 a 0.10
+    this.adaptiveThreshold = 0.08; // Reducido para mayor sensibilidad inicial
     this.lastPeakTime = 0;
     this.lastBeatValue = 0;
     this.stability = 0.5;
