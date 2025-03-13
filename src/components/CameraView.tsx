@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -97,11 +97,16 @@ const CameraView = ({
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
           if (capabilities.exposureMode) {
-            advancedConstraints.push({ 
-              exposureMode: 'continuous',
-              // Aumentar exposición si está disponible para mejorar la señal
-              exposureCompensation: capabilities.exposureCompensation?.max || 0
-            });
+            const exposureConstraint: MediaTrackConstraintSet = { 
+              exposureMode: 'continuous' 
+            };
+            
+            // Solo añadir exposureCompensation si está disponible
+            if (capabilities.exposureCompensation?.max) {
+              exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+            }
+            
+            advancedConstraints.push(exposureConstraint);
           }
           
           if (capabilities.focusMode) {
@@ -112,14 +117,14 @@ const CameraView = ({
             advancedConstraints.push({ whiteBalanceMode: 'continuous' });
           }
           
-          // Intentar aumentar el brillo/contraste si está disponible
-          if (capabilities.brightness) {
-            const maxBrightness = capabilities.brightness.max || 0;
+          // Intentar aumentar el brillo/contraste solo si está disponible
+          if (capabilities.brightness && capabilities.brightness.max) {
+            const maxBrightness = capabilities.brightness.max;
             advancedConstraints.push({ brightness: maxBrightness * 0.7 }); // 70% del máximo
           }
           
-          if (capabilities.contrast) {
-            const maxContrast = capabilities.contrast.max || 0;
+          if (capabilities.contrast && capabilities.contrast.max) {
+            const maxContrast = capabilities.contrast.max;
             advancedConstraints.push({ contrast: maxContrast * 0.6 }); // 60% del máximo
           }
 
