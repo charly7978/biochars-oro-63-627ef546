@@ -60,8 +60,8 @@ const PPGSignalMeter = ({
   const visiblePeaksCountRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 10500;
-  const CANVAS_WIDTH = 2400;
-  const CANVAS_HEIGHT = 1080;
+  const CANVAS_WIDTH = 1080;
+  const CANVAS_HEIGHT = 720;
   const GRID_SIZE_X = 24000;
   const GRID_SIZE_Y = 1080;
   const verticalScale = 45.0;
