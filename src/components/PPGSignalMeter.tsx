@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -60,8 +59,7 @@ const PPGSignalMeter = ({
   const frameCountRef = useRef<number>(0);
   const visiblePeaksCountRef = useRef<number>(0);
 
-  // Config constants
-  const WINDOW_WIDTH_MS = 4000; // 4 second window for reduced latency perception
+  const WINDOW_WIDTH_MS = 4000;
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
@@ -127,12 +125,10 @@ const PPGSignalMeter = ({
     return () => clearTimeout(timeUpdateTimer);
   }, [preserveResults, isFingerDetected]);
 
-  // CRITICAL FIX: Register external peaks into our visualization system
   useEffect(() => {
     if (rawArrhythmiaData?.timestamp && rawArrhythmiaData.timestamp !== lastHeartbeatTimeRef.current) {
       lastHeartbeatTimeRef.current = rawArrhythmiaData.timestamp;
       
-      // Correctly store detected peaks with the right scaling
       const now = Date.now();
       const scaledValue = value * verticalScale;
       
@@ -143,7 +139,6 @@ const PPGSignalMeter = ({
         arrhythmiaData: rawArrhythmiaData 
       });
       
-      // External peak from the arrhythmia data
       peaksRef.current.push({
         time: now,
         value: scaledValue,
@@ -158,7 +153,6 @@ const PPGSignalMeter = ({
     frameCountRef.current++;
     lastSignalValueRef.current = value;
     
-    // Log status periodically
     if (frameCountRef.current % 30 === 0) {
       console.log('PPGSignalMeter - Status Update:', {
         isFingerDetected,
@@ -170,7 +164,6 @@ const PPGSignalMeter = ({
     }
   }, [rawArrhythmiaData, value, quality, isFingerDetected]);
 
-  // Track quality history and consecutive frames with finger detected
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
@@ -184,7 +177,6 @@ const PPGSignalMeter = ({
     }
   }, [quality, isFingerDetected]);
 
-  // Grid drawing function with arrhythmia status
   const createGridCanvas = useCallback(() => {
     if (gridCanvasRef.current) return;
     
@@ -196,7 +188,6 @@ const PPGSignalMeter = ({
     
     if (!offCtx) return;
     
-    // Create a gradient background
     const gradient = offCtx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
     gradient.addColorStop(0.3, '#FDE1D3');
@@ -206,7 +197,6 @@ const PPGSignalMeter = ({
     offCtx.fillStyle = gradient;
     offCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Add subtle texture
     offCtx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
@@ -216,7 +206,6 @@ const PPGSignalMeter = ({
     }
     offCtx.globalAlpha = 1.0;
     
-    // Draw grid lines
     offCtx.beginPath();
     offCtx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
     offCtx.lineWidth = 0.5;
@@ -244,7 +233,6 @@ const PPGSignalMeter = ({
     }
     offCtx.stroke();
     
-    // Draw center line
     const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     offCtx.beginPath();
     offCtx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
@@ -255,7 +243,22 @@ const PPGSignalMeter = ({
     offCtx.stroke();
     offCtx.setLineDash([]);
     
-    // Add arrhythmia indicator if needed
+    offCtx.fillStyle = 'rgba(20, 20, 20, 0.7)';
+    offCtx.fillRect(CANVAS_WIDTH - 180, 20, 160, 60);
+    offCtx.strokeStyle = '#0EA5E9';
+    offCtx.lineWidth = 2;
+    offCtx.strokeRect(CANVAS_WIDTH - 180, 20, 160, 60);
+    
+    offCtx.beginPath();
+    offCtx.arc(CANVAS_WIDTH - 155, 45, 7, 0, Math.PI * 2);
+    offCtx.fillStyle = '#0EA5E9';
+    offCtx.fill();
+    
+    offCtx.font = 'bold 14px Inter';
+    offCtx.fillStyle = 'white';
+    offCtx.textAlign = 'left';
+    offCtx.fillText('Picos Detectados', CANVAS_WIDTH - 140, 50);
+    
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
@@ -289,7 +292,6 @@ const PPGSignalMeter = ({
     gridCanvasRef.current = offscreen;
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
-  // CRITICAL FIX: Improved rendering function
   const renderSignal = useCallback(() => {
     const renderStartTime = performance.now(); 
     renderTimeRef.current.renderCount++;
@@ -307,8 +309,6 @@ const PPGSignalMeter = ({
       return;
     }
     
-    const now = realTimeStampRef.current;
-    
     createGridCanvas();
     
     const offCtx = offscreenCtxRef.current;
@@ -324,7 +324,6 @@ const PPGSignalMeter = ({
       return;
     }
     
-    // Process current signal value
     if (isFingerDetected) {
       if (baselineRef.current === null) {
         baselineRef.current = value;
@@ -349,7 +348,6 @@ const PPGSignalMeter = ({
         isArrhythmia = true;
       }
       
-      // Add point to buffer for continuous waveform
       const dataPoint: PPGDataPoint = {
         time: now,
         value: scaledValue,
@@ -359,10 +357,8 @@ const PPGSignalMeter = ({
       dataBufferRef.current.push(dataPoint);
     }
     
-    // Get all points from buffer
     const points = dataBufferRef.current.getPoints();
     
-    // CRITICAL FIX: Draw the continuous waveform
     if (points.length > 1) {
       offCtx.beginPath();
       offCtx.strokeStyle = '#0EA5E9';
@@ -372,11 +368,9 @@ const PPGSignalMeter = ({
       
       let firstPoint = true;
       
-      // Only draw points within our time window
       const cutoffTime = now - WINDOW_WIDTH_MS;
       const visiblePoints = points.filter(pt => pt.time >= cutoffTime);
       
-      // CRITICAL FIX: Draw the continuous PPG waveform
       for (let i = 1; i < visiblePoints.length; i++) {
         const prevPoint = visiblePoints[i - 1];
         const point = visiblePoints[i];
@@ -394,7 +388,6 @@ const PPGSignalMeter = ({
         
         offCtx.lineTo(x2, y2);
         
-        // Handle arrhythmia segments differently
         if (point.isArrhythmia) {
           offCtx.stroke();
           offCtx.beginPath();
@@ -411,11 +404,9 @@ const PPGSignalMeter = ({
       
       offCtx.stroke();
       
-      // CRITICAL FIX: Draw all the peak markers
       const recentPeaks = peaksRef.current.filter(peak => now - peak.time <= WINDOW_WIDTH_MS);
       visiblePeaksCountRef.current = recentPeaks.length;
       
-      // Log peak counts if changed
       if (lastPeaksCountRef.current !== recentPeaks.length && renderTimeRef.current.renderCount % 10 === 0) {
         console.log('PPGSignalMeter - Drawing peaks:', {
           peakCount: recentPeaks.length,
@@ -429,7 +420,6 @@ const PPGSignalMeter = ({
         lastPeaksCountRef.current = recentPeaks.length;
       }
       
-      // Draw each peak marker
       recentPeaks.forEach(peak => {
         const timeSinceNow = now - peak.time;
         
@@ -439,31 +429,73 @@ const PPGSignalMeter = ({
         const y = (canvas.height / 2) - 40 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
+          const gradient = offCtx.createRadialGradient(x, y, 3, x, y, 12);
+          gradient.addColorStop(0, peak.isArrhythmia ? 'rgba(220, 38, 38, 0.9)' : 'rgba(14, 165, 233, 0.9)');
+          gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          
           offCtx.beginPath();
-          offCtx.arc(x, y, 5, 0, Math.PI * 2);
+          offCtx.arc(x, y, 12, 0, Math.PI * 2);
+          offCtx.fillStyle = gradient;
+          offCtx.fill();
+          
+          offCtx.beginPath();
+          offCtx.arc(x, y, 8, 0, Math.PI * 2);
           offCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           offCtx.fill();
           
+          offCtx.beginPath();
+          offCtx.arc(x, y, 8, 0, Math.PI * 2);
+          offCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+          offCtx.lineWidth = 1.5;
+          offCtx.stroke();
+          
+          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
+          
+          offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          const textWidth = offCtx.measureText(displayValue).width;
+          offCtx.fillRect(x - textWidth/2 - 4, y - 35, textWidth + 8, 20);
+          
+          offCtx.font = 'bold 12px Inter';
+          offCtx.fillStyle = 'white';
+          offCtx.textAlign = 'center';
+          offCtx.fillText(displayValue, x, y - 22);
+          
+          const timeDisplay = `${Math.round(timeSinceNow)}ms`;
+          const timeTextWidth = offCtx.measureText(timeDisplay).width;
+          
+          offCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          offCtx.fillRect(x - timeTextWidth/2 - 3, y + 15, timeTextWidth + 6, 16);
+          
+          offCtx.font = '10px Inter';
+          offCtx.fillStyle = '#F0F0F0';
+          offCtx.fillText(timeDisplay, x, y + 27);
+          
           if (peak.isArrhythmia) {
             offCtx.beginPath();
-            offCtx.arc(x, y, 10, 0, Math.PI * 2);
-            offCtx.strokeStyle = '#FEF7CD';
-            offCtx.lineWidth = 3;
+            offCtx.arc(x, y, 15, 0, Math.PI * 2);
+            offCtx.strokeStyle = '#FF9500';
+            offCtx.lineWidth = 2;
+            offCtx.setLineDash([3, 2]);
             offCtx.stroke();
+            offCtx.setLineDash([]);
             
-            offCtx.font = 'bold 18px Inter';
-            offCtx.fillStyle = '#F97316';
+            offCtx.font = 'bold 14px Inter';
+            offCtx.fillStyle = '#FF9500';
             offCtx.textAlign = 'center';
-            offCtx.fillText('ARRITMIA', x, y - 25);
+            
+            const arrTextWidth = offCtx.measureText("ARRITMIA").width;
+            offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            offCtx.fillRect(x - arrTextWidth/2 - 5, y - 55, arrTextWidth + 10, 22);
+            
+            offCtx.fillStyle = '#FF9500';
+            offCtx.fillText("ARRITMIA", x, y - 40);
           }
         }
       });
     }
     
-    // Draw the final canvas
     ctx.drawImage(offscreenCanvasRef.current!, 0, 0);
     
-    // Performance metrics
     const renderEndTime = performance.now();
     const renderDelay = renderEndTime - renderStartTime;
     
@@ -476,7 +508,6 @@ const PPGSignalMeter = ({
       renderTimeRef.current.renderDelays.reduce((sum, delay) => sum + delay, 0) / 
       renderTimeRef.current.renderDelays.length;
     
-    // Periodic performance logging
     if (renderTimeRef.current.renderCount % 180 === 0) {
       console.log('PPGSignalMeter - Rendering Performance:', {
         avgDelay: renderTimeRef.current.avgRenderDelay.toFixed(2) + 'ms',
@@ -494,7 +525,6 @@ const PPGSignalMeter = ({
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, preserveResults, createGridCanvas]);
 
-  // Start rendering loop
   useEffect(() => {
     renderSignal();
     
@@ -506,12 +536,10 @@ const PPGSignalMeter = ({
     };
   }, [renderSignal]);
 
-  // Create grid when needed
   useEffect(() => {
     createGridCanvas();
   }, [createGridCanvas]);
 
-  // Reset function
   const handleReset = useCallback(() => {
     console.log('PPGSignalMeter - Reset called', {
       timestamp: Date.now(),
@@ -546,7 +574,6 @@ const PPGSignalMeter = ({
     console.log('PPGSignalMeter - Reset completed');
   }, [onReset, createGridCanvas]);
 
-  // Quality calculations
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
@@ -609,6 +636,13 @@ const PPGSignalMeter = ({
               {getQualityText(quality)}
             </span>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-black/20 px-2 py-1 rounded-full">
+          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+          <span className="text-xs font-medium">
+            Picos: {visiblePeaksCountRef.current}
+          </span>
         </div>
 
         <div className="flex flex-col items-center">

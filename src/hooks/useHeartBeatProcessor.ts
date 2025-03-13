@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -12,7 +11,7 @@ interface HeartBeatResult {
     intervals: number[];
     lastPeakTime: number | null;
   };
-  detectedPeaks?: {timestamp: number, value: number}[];
+  detectedPeaks?: {timestamp: number, value: number, isArrhythmia?: boolean}[];
 }
 
 export const useHeartBeatProcessor = () => {
@@ -35,6 +34,7 @@ export const useHeartBeatProcessor = () => {
   const detectedPeaksRef = useRef<{timestamp: number, value: number, isArrhythmia?: boolean}[]>([]);
   const peakValueHistoryRef = useRef<number[]>([]);
   const activeValueRef = useRef<number>(0);
+  const peakCounterRef = useRef<number>(0);
 
   // High precision timer for real-time tracking
   useEffect(() => {
@@ -117,10 +117,27 @@ export const useHeartBeatProcessor = () => {
       existingPeaks: detectedPeaksRef.current.length
     });
     
-    // Track value history for scaling calculations
+    // Track value history for scaling calculations and normalization
     peakValueHistoryRef.current.push(value);
     if (peakValueHistoryRef.current.length > 20) {
       peakValueHistoryRef.current.shift();
+    }
+    
+    // Analyze peak value history for better scaling
+    let peakScaleFactor = 40; // Default scaling
+    if (peakValueHistoryRef.current.length > 5) {
+      const maxVal = Math.max(...peakValueHistoryRef.current);
+      const minVal = Math.min(...peakValueHistoryRef.current);
+      const range = maxVal - minVal;
+      
+      // Adaptive scaling based on signal range
+      if (range > 0 && range < 0.1) {
+        peakScaleFactor = 80; // Boost small signals
+      } else if (range >= 0.1 && range < 0.5) {
+        peakScaleFactor = 60; // Medium scaling
+      } else if (range >= 0.5) {
+        peakScaleFactor = 40; // Normal scaling for large signals
+      }
     }
     
     // Use minimal input buffering for low latency while maintaining signal quality
@@ -153,41 +170,45 @@ export const useHeartBeatProcessor = () => {
       detectedPeaksCount: detectedPeaksRef.current.length
     });
     
-    // CRITICAL FIX: When a peak is detected, record it for visualization with accurate timing
+    // ENHANCED PEAK DETECTION: When a peak is detected, record it with detailed information
     if (result.isPeak) {
+      peakCounterRef.current++;
+      const peakId = peakCounterRef.current;
+      const scaledValue = value * peakScaleFactor;
+      
       console.log('useHeartBeatProcessor - PEAK DETECTED!', {
+        peakId,
         timestamp: now,
         value: value.toFixed(4),
+        scaledValue: scaledValue.toFixed(2),
         isArrhythmia: result.arrhythmiaCount > 0
       });
       
-      // Store peak information with current timestamp for minimal delay
+      // Store peak information with current timestamp and unique ID
       processingStatsRef.current.peakTimestamps.push(now);
       if (processingStatsRef.current.peakTimestamps.length > 10) {
         processingStatsRef.current.peakTimestamps.shift();
       }
       
-      // Store peak for visualization with proper timestamp
+      // Store peak for visualization with proper timestamp, value, and metadata
       detectedPeaksRef.current.push({
         timestamp: now,
-        value: value * 40, // Scale value for visualization
+        value: scaledValue, // Use adaptive scaling
         isArrhythmia: result.arrhythmiaCount > 0
       });
       
-      // Maintain reasonable buffer size
+      // Maintain reasonable buffer size while keeping more recent peaks
       if (detectedPeaksRef.current.length > 40) {
         detectedPeaksRef.current.shift();
       }
       
       console.log('useHeartBeatProcessor - Peak details:', {
+        peakId,
         peakTime: new Date(now).toISOString(),
         peakValue: value.toFixed(4),
-        scaledValue: (value * 40).toFixed(4),
-        currentPeakCount: detectedPeaksRef.current.length,
-        lastFewPeaks: detectedPeaksRef.current.slice(-3).map(p => ({
-          time: new Date(p.timestamp).toISOString(),
-          value: p.value.toFixed(2)
-        }))
+        scaledValue: scaledValue.toFixed(2),
+        scaleFactor: peakScaleFactor,
+        currentPeakCount: detectedPeaksRef.current.length
       });
     }
 
@@ -198,11 +219,10 @@ export const useHeartBeatProcessor = () => {
     }
 
     // CRITICAL FIX: Always provide all peak data to visualization component
-    // This was missing before - the data wasn't being properly passed to the component
     const returnResult = {
       ...result,
       rrData,
-      detectedPeaks: [...detectedPeaksRef.current] // Make sure to create a copy
+      detectedPeaks: [...detectedPeaksRef.current] // Create a complete copy
     };
     
     // Debug log to verify peaks are included in the result
