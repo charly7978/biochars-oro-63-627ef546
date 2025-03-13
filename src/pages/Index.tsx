@@ -422,6 +422,7 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
+  // Nueva función para alternar medición
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -451,6 +452,7 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
+          {/* Se agrega header para sensor de calidad y estado de huella digital */}
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-lg">
               Calidad: {signalQuality}
@@ -473,6 +475,7 @@ const Index = () => {
             />
           </div>
 
+          {/* Contenedor de los displays ampliado y con mayor espaciamiento */}
           <div className="absolute inset-x-0 top-[55%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-3 gap-4 place-items-center">
               <VitalSign 
@@ -514,6 +517,7 @@ const Index = () => {
             </div>
           </div>
 
+          {/* Botonera inferior: botón de iniciar/detener y de reset en fila */}
           <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
             <div className="w-1/2">
               <MonitorButton 
@@ -537,3 +541,4 @@ const Index = () => {
 };
 
 export default Index;
+
