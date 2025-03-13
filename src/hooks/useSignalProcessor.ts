@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -31,9 +30,12 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
   
+  const signalBufferRef = useRef<ProcessedSignal[]>([]);
+  const MAX_BUFFER_SIZE = 10;
+  
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 5; // Ventana de historial para promedio
+  const HISTORY_SIZE = 3;
   
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
     qualityHistoryRef.current.push(signal.quality);
@@ -49,7 +51,7 @@ export const useSignalProcessor = () => {
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1; // Más peso a las muestras recientes
+      const weight = index + 1;
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -60,23 +62,9 @@ export const useSignalProcessor = () => {
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Usar un umbral más exigente para la detección robusta (3 de 5 = 0.6)
-    const robustFingerDetected = detectionRatio >= 0.6;
+    const robustFingerDetected = detectionRatio >= 0.4;
     
-    // Mejora ligera de calidad para mejor experiencia de usuario
     const enhancedQuality = Math.min(100, avgQuality * 1.1);
-    
-    console.log("useSignalProcessor: Detección robusta", {
-      original: signal.fingerDetected,
-      robust: robustFingerDetected,
-      detectionRatio,
-      trueCount,
-      historyLength: fingerDetectedHistoryRef.current.length,
-      originalQuality: signal.quality,
-      enhancedQuality,
-      rawValue: signal.rawValue.toFixed(2),
-      filteredValue: signal.filteredValue.toFixed(2)
-    });
     
     return {
       ...signal,
@@ -94,21 +82,19 @@ export const useSignalProcessor = () => {
     processor.onSignalReady = (signal: ProcessedSignal) => {
       const modifiedSignal = processRobustFingerDetection(signal);
       
-      console.log("useSignalProcessor: Señal procesada:", {
-        timestamp: modifiedSignal.timestamp,
-        formattedTime: new Date(modifiedSignal.timestamp).toISOString(),
-        quality: modifiedSignal.quality.toFixed(1),
-        rawQuality: signal.quality.toFixed(1),
-        rawValue: modifiedSignal.rawValue.toFixed(3),
-        filteredValue: modifiedSignal.filteredValue.toFixed(3),
-        fingerDetected: modifiedSignal.fingerDetected,
-        originalFingerDetected: signal.fingerDetected,
-        processingTime: Date.now() - modifiedSignal.timestamp
-      });
+      const preciseSignal = {
+        ...modifiedSignal,
+        preciseTimestamp: performance.now()
+      };
       
-      setLastSignal(modifiedSignal);
+      setLastSignal(preciseSignal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
+      
+      signalBufferRef.current.push(preciseSignal);
+      if (signalBufferRef.current.length > MAX_BUFFER_SIZE) {
+        signalBufferRef.current.shift();
+      }
       
       setSignalStats(prev => {
         const newStats = {
@@ -237,6 +223,7 @@ export const useSignalProcessor = () => {
     startProcessing,
     stopProcessing,
     calibrate,
-    processFrame
+    processFrame,
+    getRecentSignals: () => [...signalBufferRef.current]
   };
 };
