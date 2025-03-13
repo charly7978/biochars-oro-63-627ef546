@@ -78,8 +78,44 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      // Obtener datos reales del procesador heartBeat
-      const bpm = processor.getFinalBPM() || 0;
+      // Optimización: Aumentar la frecuencia de muestreo para captura más precisa
+      // Obtener datos del procesador heartBeat con prioridad para el BPM
+      let bpm = processor.getFinalBPM() || 0;
+      
+      // Si el BPM es bajo o inestable, intentar obtener el valor instantáneo
+      if (bpm < 40 && processor.getRRIntervals) {
+        const rrData = processor.getRRIntervals();
+        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+          // Calcular BPM desde los últimos intervalos si están disponibles
+          const recentIntervals = rrData.intervals.slice(-3);
+          if (recentIntervals.length > 0) {
+            const avgInterval = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
+            if (avgInterval > 0) {
+              const instantBpm = Math.round(60000 / avgInterval);
+              if (instantBpm >= 40 && instantBpm <= 200) {
+                bpm = instantBpm;
+                console.log('useVitalMeasurement - Usando BPM instantáneo:', {
+                  instantBpm,
+                  intervals: recentIntervals,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            }
+          }
+        }
+      }
+      
+      // Verificación adicional de confianza
+      let confidence = 0;
+      if (processor.getConfidence) {
+        confidence = processor.getConfidence();
+        console.log('useVitalMeasurement - Confianza de señal:', confidence);
+        // Si la confianza es muy baja, aplicar corrección
+        if (confidence < 0.3 && bpm > 0) {
+          bpm = Math.max(40, Math.min(200, bpm)); // Asegurar rango fisiológico
+          console.log('useVitalMeasurement - Aplicando corrección a BPM por baja confianza');
+        }
+      }
       
       // Obtener valores reales de los procesadores biométricos solo si están disponibles
       let spo2Value = 0;
@@ -122,28 +158,31 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         processorMethods: processor ? Object.getOwnPropertyNames(processor.__proto__) : [],
         bpm,
         rawBPM: processor.getFinalBPM(),
+        confidence: confidence,
         spo2: spo2Value,
         pressure: systolic && diastolic ? `${systolic}/${diastolic}` : "--/--",
         glucose,
         hemoglobin,
         lipids,
-        confidence: processor.getConfidence ? processor.getConfidence() : 'N/A',
         timestamp: new Date().toISOString()
       });
 
       setMeasurements(prev => {
-        // No actualizar si los valores son los mismos y no son cero
-        if (prev.heartRate === bpm && bpm !== 0 && 
+        // Mayor tolerancia para la actualización de ritmo cardíaco para evitar pérdidas
+        if ((prev.heartRate === bpm && bpm !== 0) && 
             prev.spo2 === spo2Value && spo2Value !== 0 &&
             prev.glucose === glucose && glucose !== 0 &&
             prev.hemoglobin === hemoglobin && hemoglobin !== 0 &&
             prev.lipids === lipids && lipids !== 0) {
           
-          console.log('useVitalMeasurement - Valores sin cambios, no se actualiza', {
-            currentValues: prev,
-            timestamp: new Date().toISOString()
-          });
-          return prev;
+          // Permitir actualización de BPM si la diferencia es significativa
+          if (Math.abs(prev.heartRate - bpm) <= 3) {
+            console.log('useVitalMeasurement - Valores sin cambios, no se actualiza', {
+              currentValues: prev,
+              timestamp: new Date().toISOString()
+            });
+            return prev;
+          }
         }
         
         // Obtener el recuento de arritmias del procesador específico si existe
@@ -175,6 +214,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
 
     updateMeasurements();
 
+    // Aumentar frecuencia de muestreo para captura más precisa de latidos
     const interval = setInterval(() => {
       const currentTime = Date.now();
       const elapsed = currentTime - startTime;
@@ -200,7 +240,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         const event = new CustomEvent('measurementComplete');
         window.dispatchEvent(event);
       }
-    }, 200);
+    }, 150); // Reducido de 200ms a 150ms para mayor frecuencia de muestreo
 
     return () => {
       console.log('useVitalMeasurement - Limpiando intervalo', {
