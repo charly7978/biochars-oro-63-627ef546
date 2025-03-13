@@ -49,7 +49,7 @@ export const useSignalProcessor = () => {
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1;
+      const weight = index + 1; // Más peso a las muestras recientes
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -57,13 +57,14 @@ export const useSignalProcessor = () => {
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
-    const detectionRatio = trueCount / fingerDetectedHistoryRef.current.length;
+    const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
+      trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // UPDATED: Use a lower threshold for robust detection (2 out of 5 = 0.4)
-    const robustFingerDetected = detectionRatio >= 0.4;
+    // Usar un umbral más exigente para la detección robusta (3 de 5 = 0.6)
+    const robustFingerDetected = detectionRatio >= 0.6;
     
-    // Slight quality enhancement for better user experience
-    const enhancedQuality = Math.min(100, avgQuality * 1.15);
+    // Mejora ligera de calidad para mejor experiencia de usuario
+    const enhancedQuality = Math.min(100, avgQuality * 1.1);
     
     console.log("useSignalProcessor: Detección robusta", {
       original: signal.fingerDetected,
@@ -72,7 +73,9 @@ export const useSignalProcessor = () => {
       trueCount,
       historyLength: fingerDetectedHistoryRef.current.length,
       originalQuality: signal.quality,
-      enhancedQuality
+      enhancedQuality,
+      rawValue: signal.rawValue.toFixed(2),
+      filteredValue: signal.filteredValue.toFixed(2)
     });
     
     return {
@@ -100,7 +103,6 @@ export const useSignalProcessor = () => {
         filteredValue: modifiedSignal.filteredValue.toFixed(3),
         fingerDetected: modifiedSignal.fingerDetected,
         originalFingerDetected: signal.fingerDetected,
-        roi: modifiedSignal.roi,
         processingTime: Date.now() - modifiedSignal.timestamp
       });
       
@@ -217,19 +219,14 @@ export const useSignalProcessor = () => {
 
   const processFrame = useCallback((imageData: ImageData) => {
     if (isProcessing) {
-      console.log("useSignalProcessor: Procesando nuevo frame", {
-        frameNum: framesProcessed + 1,
-        dimensions: `${imageData.width}x${imageData.height}`,
-        timestamp: new Date().toISOString()
-      });
-      
-      processor.processFrame(imageData);
-    } else {
-      console.log("useSignalProcessor: Frame ignorado (no está procesando)", {
-        timestamp: new Date().toISOString()
-      });
+      try {
+        processor.processFrame(imageData);
+        setFramesProcessed(prev => prev + 1);
+      } catch (err) {
+        console.error("useSignalProcessor: Error procesando frame:", err);
+      }
     }
-  }, [isProcessing, processor, framesProcessed]);
+  }, [isProcessing, processor]);
 
   return {
     isProcessing,

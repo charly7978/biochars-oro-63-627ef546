@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface SignalQualityIndicatorProps {
@@ -22,11 +23,16 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     return 'Baja';
   };
 
+  // Added pulse animation for better visual feedback
+  const pulseStyle = displayQuality > 0 
+    ? "animate-pulse transition-all duration-300" 
+    : "transition-all duration-300";
+
   return (
     <div className="bg-black/30 backdrop-blur-md rounded p-2 w-full">
       <div className="flex items-center gap-2">
         <div 
-          className="w-12 h-12 rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-300"
+          className={`w-12 h-12 rounded-full border-2 flex items-center justify-center shrink-0 ${pulseStyle}`}
           style={{
             borderColor: getQualityColor(displayQuality),
             backgroundColor: `${getQualityColor(displayQuality)}33`
