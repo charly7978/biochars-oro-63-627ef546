@@ -1,5 +1,6 @@
 
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
 import './index.css'
 
@@ -96,4 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
   tryFullscreen();
 });
 
-createRoot(document.getElementById("root")!).render(<App />);
+// Wrap the App component with BrowserRouter to enable routing
+createRoot(document.getElementById("root")!).render(
+  <BrowserRouter>
+    <App />
+  </BrowserRouter>
+);
