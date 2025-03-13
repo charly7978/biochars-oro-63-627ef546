@@ -44,25 +44,23 @@ const PPGSignalMeter = ({
   // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 5000; // Reducido a 5 segundos para mostrar más reciente
+  const WINDOW_WIDTH_MS = 5000; // 5 segundos de ventana
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 40.0; // Aumentado para mejor visualización
+  const verticalScale = 40.0; 
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 60; // Aumentado para máxima fluidez
+  const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = 600; // Aumentado para mayor capacidad
+  const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 2.5;
   const MIN_PEAK_DISTANCE_MS = 220;
-  const IMMEDIATE_RENDERING = true; // Forzar renderizado inmediato
+  const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  // Cantidad de frames consecutivos necesarios para confirmar detección
-  const REQUIRED_FINGER_FRAMES = 2; // Reducido para menos retraso
-  // Tamaño del historial de calidad para calcular promedio
-  const QUALITY_HISTORY_SIZE = 3; // Reducido para mayor reactividad
+  const REQUIRED_FINGER_FRAMES = 2;
+  const QUALITY_HISTORY_SIZE = 3;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -371,21 +369,16 @@ const PPGSignalMeter = ({
       
       let firstPoint = true;
       
+      // Corregido: La onda debe fluir de derecha a izquierda (los puntos más nuevos a la derecha)
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
         const point = points[i];
         
-        // Eliminación total del retraso - calculamos X de forma que la onda aparezca inmediatamente
-        // Aquí está el cambio clave para eliminar el retraso:
-        // En lugar de posicionar en base al tiempo absoluto, posicionamos según el índice
-        // Esto hace que la onda siempre aparezca desde la derecha sin esperar
-        const totalPoints = points.length;
-        const position = i / totalPoints;
-        const x1 = CANVAS_WIDTH - (position * CANVAS_WIDTH);
+        // Calculamos la posición en X basada en el tiempo real para que fluya correctamente
+        const x1 = CANVAS_WIDTH - ((now - prevPoint.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
         const y1 = (CANVAS_HEIGHT / 2) - 40 - prevPoint.value;
         
-        const position2 = (i+1) / totalPoints;
-        const x2 = CANVAS_WIDTH - (position2 * CANVAS_WIDTH);
+        const x2 = CANVAS_WIDTH - ((now - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
         const y2 = (CANVAS_HEIGHT / 2) - 40 - point.value;
         
         if (firstPoint) {
@@ -411,12 +404,10 @@ const PPGSignalMeter = ({
       
       ctx.stroke();
       
-      // Dibujar los picos - también ajustados para visualización inmediata
-      peaksRef.current.forEach((peak, idx) => {
-        const peakPosition = idx / peaksRef.current.length;
-        const x = CANVAS_WIDTH - (peakPosition * CANVAS_WIDTH * 0.8); // Esparcir a lo largo del 80% del canvas
-        
-        // Usar el valor original del pico para la altura
+      // Dibujar los picos - corregido para que se posicionen correctamente en el gráfico
+      peaksRef.current.forEach((peak) => {
+        // Usar el tiempo real para posicionar los picos correctamente
+        const x = CANVAS_WIDTH - ((now - peak.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
         const y = (CANVAS_HEIGHT / 2) - 40 - peak.value;
         
         ctx.beginPath();
