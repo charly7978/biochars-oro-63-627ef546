@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -36,11 +37,13 @@ export const useHeartBeatProcessor = () => {
   const activeValueRef = useRef<number>(0);
   const peakCounterRef = useRef<number>(0);
   const lastArrhythmiaRef = useRef<boolean>(false);
+  const arrhythmiaCountRef = useRef<number>(0);
 
   useEffect(() => {
+    // High-precision timer for accurate timing
     const timer = setInterval(() => {
       realTimeRef.current = Date.now();
-    }, 5); // 5ms update for precise timing
+    }, 5);
     
     console.log('useHeartBeatProcessor: Started high-precision timer');
     
@@ -59,6 +62,7 @@ export const useHeartBeatProcessor = () => {
     processorRef.current = new HeartBeatProcessor();
     
     if (typeof window !== 'undefined') {
+      // Make processor accessible for debugging
       (window as any).heartBeatProcessor = processorRef.current;
       console.log('useHeartBeatProcessor: Processor registered in window', {
         processorRegistered: !!(window as any).heartBeatProcessor,
@@ -109,11 +113,13 @@ export const useHeartBeatProcessor = () => {
     const now = realTimeRef.current;
     activeValueRef.current = value;
     
+    // Track peak value history for scaling
     peakValueHistoryRef.current.push(value);
     if (peakValueHistoryRef.current.length > 20) {
       peakValueHistoryRef.current.shift();
     }
     
+    // Adaptive peak scaling based on signal characteristics
     let peakScaleFactor = 40; // Default scaling
     if (peakValueHistoryRef.current.length > 5) {
       const maxVal = Math.max(...peakValueHistoryRef.current);
@@ -129,11 +135,13 @@ export const useHeartBeatProcessor = () => {
       }
     }
     
+    // Buffer inputs with timestamps for processing latency calculation
     inputBufferRef.current.push({value, timestamp: now});
     if (inputBufferRef.current.length > MAX_BUFFER_SIZE) {
       inputBufferRef.current.shift();
     }
     
+    // Process signal with performance measurement
     const processStart = performance.now();
     const result = processorRef.current.processSignal(value);
     const processingLatency = performance.now() - processStart;
@@ -144,69 +152,104 @@ export const useHeartBeatProcessor = () => {
     
     lastProcessedTimestampRef.current = now;
     
-    const rrData = processorRef.current.getRRIntervals();
+    // Get RR interval data for advanced analysis
+    const rrData = processorRef.current.getRRIntervals ? 
+                   processorRef.current.getRRIntervals() : 
+                   { intervals: [], lastPeakTime: null };
+    
+    // Get processing stats if available
     const processingStats = processorRef.current.getProcessingStats ? 
                             processorRef.current.getProcessingStats() : 
                             { latency: processingLatency };
     
     processingStatsRef.current.latency = processingStats.latency || processingLatency;
     
-    const isArrhythmia = checkForArrhythmia(rrData);
-    lastArrhythmiaRef.current = isArrhythmia;
+    // Process detected peaks from the result
+    if (result.detectedPeaks && result.detectedPeaks.length > 0) {
+      // Update our local peaks reference
+      detectedPeaksRef.current = result.detectedPeaks.map(peak => ({
+        ...peak,
+        // Ensure value is properly scaled for visualization
+        value: typeof peak.value === 'number' ? peak.value : 0
+      }));
+      
+      // Count arrhythmias
+      const arrhythmiaCount = result.detectedPeaks.filter(p => p.isArrhythmia).length;
+      if (arrhythmiaCount > arrhythmiaCountRef.current) {
+        console.log('useHeartBeatProcessor: Arrhythmia count updated', {
+          previous: arrhythmiaCountRef.current,
+          current: arrhythmiaCount
+        });
+        arrhythmiaCountRef.current = arrhythmiaCount;
+      }
+    }
     
+    // Process result.isPeak for immediate peaks
     if (result.isPeak) {
       peakCounterRef.current++;
       const peakId = peakCounterRef.current;
-      const peakScaleFactor = 100; // Higher scaling for visibility
-      const scaledValue = value * peakScaleFactor;
       
-      console.log('useHeartBeatProcessor - PEAK DETECTED!', {
-        peakId,
-        timestamp: now,
-        value: value.toFixed(4),
-        scaledValue: scaledValue.toFixed(2),
-        isArrhythmia
-      });
+      // If a peak is detected but somehow not in detectedPeaks, add it manually
+      if (!result.detectedPeaks || result.detectedPeaks.length === 0) {
+        console.log('useHeartBeatProcessor - Peak detected but not in peaks array, adding manually', {
+          peakId,
+          timestamp: now,
+          value: value.toFixed(4)
+        });
+        
+        // Check if this could be an arrhythmia
+        const isArrhythmia = checkForArrhythmia(rrData);
+        
+        // Store for visualization (scale value for display)
+        const scaledValue = value * 100;
+        
+        detectedPeaksRef.current.push({
+          timestamp: now,
+          value: scaledValue,
+          isArrhythmia
+        });
+        
+        // Limit the number of stored peaks
+        if (detectedPeaksRef.current.length > 40) {
+          detectedPeaksRef.current.shift();
+        }
+      }
       
       processingStatsRef.current.peakTimestamps.push(now);
       if (processingStatsRef.current.peakTimestamps.length > 10) {
         processingStatsRef.current.peakTimestamps.shift();
       }
-      
-      detectedPeaksRef.current.push({
-        timestamp: now,
-        value: scaledValue,
-        isArrhythmia
-      });
-      
-      if (detectedPeaksRef.current.length > 40) {
-        detectedPeaksRef.current.shift();
-      }
     }
 
+    // Update BPM if confidence is good
     if (result.confidence >= 0.65 && result.bpm > 0) {
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
+    // Make a deep copy of peaks to prevent reference issues
     const peaksCopy = detectedPeaksRef.current.map(peak => ({...peak}));
 
-    if (peaksCopy.length > 0) {
-      console.log('useHeartBeatProcessor - Returning peaks data:', {
+    // Log peaks data for debugging
+    if (peaksCopy.length > 0 && peaksCopy.length % 5 === 0) {
+      console.log('useHeartBeatProcessor - Current peaks data:', {
         peakCount: peaksCopy.length,
         firstPeak: peaksCopy[0],
         lastPeak: peaksCopy[peaksCopy.length - 1],
-        hasArrhythmia: peaksCopy.some(p => p.isArrhythmia)
+        hasArrhythmia: peaksCopy.some(p => p.isArrhythmia),
+        arrhythmiaCount: peaksCopy.filter(p => p.isArrhythmia).length
       });
     }
     
     return {
       ...result,
       rrData,
-      detectedPeaks: peaksCopy
+      detectedPeaks: peaksCopy,
+      arrhythmiaCount: arrhythmiaCountRef.current
     };
   }, []);
 
+  // Helper function to check for arrhythmia
   const checkForArrhythmia = (rrData: {intervals: number[], lastPeakTime: number | null}): boolean => {
     if (!rrData || !rrData.intervals || rrData.intervals.length < 3) {
       return false;
@@ -215,11 +258,26 @@ export const useHeartBeatProcessor = () => {
     const recentIntervals = rrData.intervals.slice(-3);
     const avg = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
     const lastInterval = recentIntervals[recentIntervals.length - 1];
-    const percentDiff = Math.abs(lastInterval - avg) / avg;
     
-    return percentDiff > 0.2;
+    // Detect significant deviation (>20%)
+    const percentDiff = Math.abs(lastInterval - avg) / avg;
+    const isArrhythmia = percentDiff > 0.2;
+    
+    if (isArrhythmia && !lastArrhythmiaRef.current) {
+      console.log('useHeartBeatProcessor: Arrhythmia detected', {
+        percentDiff: (percentDiff * 100).toFixed(1) + '%',
+        threshold: '20%',
+        lastInterval,
+        avgInterval: avg,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    lastArrhythmiaRef.current = isArrhythmia;
+    return isArrhythmia;
   };
 
+  // Reset all state
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
@@ -240,6 +298,7 @@ export const useHeartBeatProcessor = () => {
       });
     }
     
+    // Reset all local state
     processingStatsRef.current = {
       latency: 0,
       peakTimestamps: []
@@ -252,11 +311,13 @@ export const useHeartBeatProcessor = () => {
     lastProcessedTimestampRef.current = 0;
     activeValueRef.current = 0;
     lastArrhythmiaRef.current = false;
+    arrhythmiaCountRef.current = 0;
     
     setCurrentBPM(0);
     setConfidence(0);
   }, [currentBPM, confidence]);
 
+  // Get processing stats for debugging
   const getProcessingStats = useCallback(() => {
     const stats = { 
       ...processingStatsRef.current,
@@ -266,7 +327,8 @@ export const useHeartBeatProcessor = () => {
       timeSinceLastProcessed: realTimeRef.current - lastProcessedTimestampRef.current,
       realTime: realTimeRef.current,
       peaksCount: detectedPeaksRef.current.length,
-      activeValue: activeValueRef.current
+      activeValue: activeValueRef.current,
+      arrhythmiaCount: arrhythmiaCountRef.current
     };
     
     return stats;

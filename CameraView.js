@@ -170,7 +170,12 @@ const CameraView = memo(({
   // Debug log when peaks change
   useEffect(() => {
     if (detectedPeaks && detectedPeaks.length > 0) {
-      console.log("CameraView: Peaks received:", detectedPeaks.length, detectedPeaks);
+      console.log("CameraView: Peaks received:", {
+        count: detectedPeaks.length, 
+        firstPeak: detectedPeaks[0],
+        lastPeak: detectedPeaks[detectedPeaks.length - 1],
+        hasArrhythmia: detectedPeaks.some(p => p.isArrhythmia)
+      });
     }
   }, [detectedPeaks]);
 
@@ -207,16 +212,22 @@ const CameraView = memo(({
         </div>
       )}
 
-      {/* Peak visualization overlay - IMPROVED AND FIXED */}
+      {/* Peak visualization overlay - ENHANCED */}
       {isMonitoring && detectedPeaks && detectedPeaks.length > 0 && (
         <div className="absolute inset-0 z-10 pointer-events-none">
           {detectedPeaks.map((peak, index) => {
-            // Calculate position (ensure we have the correct properties)
-            const x = `${Math.min(Math.max(25 + (index - Math.max(0, detectedPeaks.length - 10)) * 5, 10), 90)}%`;
+            // Calculate position based on index and value
+            const x = `${Math.min(Math.max(15 + (index * 2), 10), 90)}%`;
             const y = `${Math.max(20, 50 - (peak.value || 0) * 0.3)}%`;
             
-            // Debug each peak
-            console.log(`Rendering peak ${index}:`, { x, y, peak });
+            // Log each peak rendering
+            console.log(`Rendering peak ${index}:`, { 
+              x, 
+              y, 
+              value: peak.value, 
+              isArrhythmia: peak.isArrhythmia,
+              timestamp: peak.timestamp
+            });
             
             return (
               <div 

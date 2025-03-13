@@ -1,21 +1,22 @@
+
 /**
  * Advanced Arrhythmia Processor based on peer-reviewed cardiac research
  */
 export class ArrhythmiaProcessor {
   // Configuration based on Harvard Medical School research on HRV
   private readonly RR_WINDOW_SIZE = 10; // Increased window for better statistical power
-  private readonly RMSSD_THRESHOLD = 45; // More conservative threshold
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 6000; // Extended learning period
-  private readonly SD1_THRESHOLD = 35; // More conservative Poincaré plot SD1 threshold
-  private readonly PERFUSION_INDEX_MIN = 0.3; // Higher minimum PI for reliable detection
+  private readonly RMSSD_THRESHOLD = 40; // Adjusted threshold for higher sensitivity
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 5000; // Reduced learning period for faster response
+  private readonly SD1_THRESHOLD = 30; // Lower SD1 threshold for higher sensitivity
+  private readonly PERFUSION_INDEX_MIN = 0.2; // Lower minimum PI for better detection
   
   // Advanced detection parameters from Mayo Clinic research
-  private readonly PNNX_THRESHOLD = 0.25; // More conservative pNN50 threshold
-  private readonly SHANNON_ENTROPY_THRESHOLD = 1.8; // Higher entropy threshold
-  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.4; // Higher sample entropy threshold
+  private readonly PNNX_THRESHOLD = 0.20; // Lower pNN50 threshold for higher sensitivity
+  private readonly SHANNON_ENTROPY_THRESHOLD = 1.6; // Lower entropy threshold
+  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.2; // Lower sample entropy threshold
   
   // Minimum time between arrhythmias to reduce false positives
-  private readonly MIN_ARRHYTHMIA_INTERVAL = 2000; // 2 seconds minimum between detections
+  private readonly MIN_ARRHYTHMIA_INTERVAL = 1500; // 1.5 seconds minimum between detections
 
   // State variables
   private rrIntervals: number[] = [];
@@ -93,8 +94,7 @@ export class ArrhythmiaProcessor {
   }
 
   /**
-   * Detects arrhythmia using multiple advanced HRV metrics
-   * Based on ESC Guidelines for arrhythmia detection
+   * Enhanced arrhythmia detection with improved parameters
    */
   private detectArrhythmia(): void {
     if (this.rrIntervals.length < this.RR_WINDOW_SIZE) return;
@@ -102,34 +102,34 @@ export class ArrhythmiaProcessor {
     const currentTime = Date.now();
     const recentRR = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
     
-    // Calculate RMSSD with more stringent validation
+    // Calculate RMSSD with less stringent validation for higher sensitivity
     let sumSquaredDiff = 0;
     let validIntervals = 0;
     
     for (let i = 1; i < recentRR.length; i++) {
       const diff = recentRR[i] - recentRR[i-1];
-      // Only count intervals within physiological limits
-      if (recentRR[i] >= 500 && recentRR[i] <= 1500) {
+      // Use wider physiological limits for better detection
+      if (recentRR[i] >= 400 && recentRR[i] <= 1600) {
         sumSquaredDiff += diff * diff;
         validIntervals++;
       }
     }
     
-    // Require at least 70% valid intervals
-    if (validIntervals < this.RR_WINDOW_SIZE * 0.7) {
+    // Require at least 60% valid intervals for higher sensitivity
+    if (validIntervals < this.RR_WINDOW_SIZE * 0.6) {
       return;
     }
     
     const rmssd = Math.sqrt(sumSquaredDiff / validIntervals);
     
-    // Calculate mean RR and standard deviation with outlier rejection
-    const validRRs = recentRR.filter(rr => rr >= 500 && rr <= 1500);
-    if (validRRs.length < this.RR_WINDOW_SIZE * 0.7) return;
+    // Calculate mean RR and standard deviation with less strict outlier rejection
+    const validRRs = recentRR.filter(rr => rr >= 400 && rr <= 1600);
+    if (validRRs.length < this.RR_WINDOW_SIZE * 0.6) return;
     
     const avgRR = validRRs.reduce((a, b) => a + b, 0) / validRRs.length;
     const lastRR = validRRs[validRRs.length - 1];
     
-    // More conservative variation calculations
+    // More sensitive variation calculations
     const rrStandardDeviation = Math.sqrt(
       validRRs.reduce((sum, val) => sum + Math.pow(val - avgRR, 2), 0) / validRRs.length
     );
@@ -137,49 +137,50 @@ export class ArrhythmiaProcessor {
     const coefficientOfVariation = rrStandardDeviation / avgRR;
     const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
     
-    // Advanced non-linear dynamics metrics with stricter thresholds
+    // Calculate advanced metrics with more sensitive thresholds
     this.calculateNonLinearMetrics(validRRs);
     
     this.lastRMSSD = rmssd;
     this.lastRRVariation = rrVariation;
     
-    // Multi-parametric decision algorithm with more conservative thresholds
+    // Multi-parametric decision algorithm with more sensitive thresholds
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const newArrhythmiaState = 
       timeSinceLastArrhythmia >= this.MIN_ARRHYTHMIA_INTERVAL && (
-        // Primary condition: requires multiple criteria to be met
+        // Primary condition: more sensitive parameter combination
         (rmssd > this.RMSSD_THRESHOLD && 
-         rrVariation > 0.25 && 
-         coefficientOfVariation > 0.15) ||
+         rrVariation > 0.20 && 
+         coefficientOfVariation > 0.12) ||
         
-        // Secondary condition: requires very strong signal quality
+        // Secondary condition: more sensitive entropy-based detection
         (this.shannonEntropy > this.SHANNON_ENTROPY_THRESHOLD && 
          this.pnnX > this.PNNX_THRESHOLD && 
-         coefficientOfVariation > 0.2) ||
+         coefficientOfVariation > 0.15) ||
         
-        // Extreme variation condition: requires multiple confirmations
-        (rrVariation > 0.35 && 
-         coefficientOfVariation > 0.25 && 
+        // Extreme variation condition: still requires significant confirmation
+        (rrVariation > 0.30 && 
+         coefficientOfVariation > 0.20 && 
          this.sampleEntropy > this.SAMPLE_ENTROPY_THRESHOLD)
       );
 
     // If it's a new arrhythmia and enough time has passed since the last one
     if (newArrhythmiaState && 
-        currentTime - this.lastArrhythmiaTime > 1000) { // Minimum 1 second between arrhythmias
+        currentTime - this.lastArrhythmiaTime > this.MIN_ARRHYTHMIA_INTERVAL) {
       this.arrhythmiaCount++;
       this.lastArrhythmiaTime = currentTime;
       
       // Mark that we've detected the first arrhythmia
       this.hasDetectedFirstArrhythmia = true;
       
-      console.log('VitalSignsProcessor - Nueva arritmia detectada:', {
+      console.log('ArrhythmiaProcessor - Nueva arritmia detectada:', {
         contador: this.arrhythmiaCount,
         rmssd,
         rrVariation,
         shannonEntropy: this.shannonEntropy,
         pnnX: this.pnnX,
         coefficientOfVariation,
-        timestamp: currentTime
+        timestamp: currentTime,
+        timeString: new Date(currentTime).toISOString()
       });
     }
 
@@ -276,5 +277,10 @@ export class ArrhythmiaProcessor {
     this.shannonEntropy = 0;
     this.sampleEntropy = 0;
     this.pnnX = 0;
+    
+    console.log('ArrhythmiaProcessor: Reset completed', {
+      timestamp: Date.now(),
+      timeString: new Date().toISOString()
+    });
   }
 }
