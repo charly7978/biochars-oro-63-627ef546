@@ -40,8 +40,8 @@ const PPGSignalMeter = ({
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const WINDOW_WIDTH_MS = 3500;
-  const CANVAS_WIDTH = 854;
-  const CANVAS_HEIGHT = 480;
+  const CANVAS_WIDTH = 1280;
+  const CANVAS_HEIGHT = 720;
   const GRID_SIZE_X = 15;
   const GRID_SIZE_Y = 10;
   const verticalScale = 50.0;
