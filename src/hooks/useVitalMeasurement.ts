@@ -6,9 +6,9 @@ interface VitalMeasurements {
   spo2: number;
   pressure: string;
   arrhythmiaCount: string | number;
-  glucose?: number;
-  hemoglobin?: number;
-  lipids?: number;
+  glucose: number;
+  hemoglobin: number;
+  lipids: number;
 }
 
 export const useVitalMeasurement = (isMeasuring: boolean) => {
@@ -82,7 +82,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       const systolic = Math.round(110 + (Math.random() * 30)); // Entre 110-140
       const diastolic = Math.round(70 + (Math.random() * 20)); // Entre 70-90
       const glucose = Math.round(80 + (Math.random() * 40)); // Entre 80-120 mg/dL
-      const hemoglobin = (12 + (Math.random() * 5)).toFixed(1); // Entre 12-17 g/dL
+      const hemoglobin = parseFloat((12 + (Math.random() * 5)).toFixed(1)); // Entre 12-17 g/dL
       const lipids = Math.round(150 + (Math.random() * 50)); // Entre 150-200 mg/dL
       
       console.log('useVitalMeasurement - Actualización detallada:', {
@@ -101,12 +101,14 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
 
       setMeasurements(prev => {
-        // Si los valores son iguales a los anteriores y no son valores iniciales, mantenerlos
+        // Solo mantener los valores si no son los valores iniciales (0)
         if (prev.heartRate === bpm && bpm !== 0 && 
-            prev.spo2 === spo2Value && spo2Value !== 0) {
+            prev.spo2 === spo2Value && spo2Value !== 0 &&
+            prev.glucose === glucose && glucose !== 0 &&
+            prev.hemoglobin === hemoglobin && hemoglobin !== 0 &&
+            prev.lipids === lipids && lipids !== 0) {
           console.log('useVitalMeasurement - Valores sin cambios, no se actualiza', {
-            currentBPM: prev.heartRate,
-            currentSPO2: prev.spo2,
+            currentValues: prev,
             timestamp: new Date().toISOString()
           });
           return prev;
@@ -119,7 +121,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           pressure: `${systolic}/${diastolic}`,
           arrhythmiaCount: Math.round(Math.random() * 3),
           glucose: glucose,
-          hemoglobin: parseFloat(hemoglobin),
+          hemoglobin: hemoglobin,
           lipids: lipids
         };
         
