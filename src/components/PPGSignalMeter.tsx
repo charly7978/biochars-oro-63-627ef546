@@ -71,7 +71,7 @@ const PPGSignalMeter = ({
   const QUALITY_HISTORY_SIZE = 10;
   const REQUIRED_FINGER_FRAMES = 1;
   const MAX_RENDER_HISTORY = 15;
-  const RENDER_DELAY_COMPENSATION = 0.1;
+  const RENDER_DELAY_COMPENSATION = 1.5;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
