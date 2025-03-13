@@ -26,6 +26,8 @@ export const useHeartBeatProcessor = () => {
   const peakCount = useRef<number>(0);
   const processingStartTime = useRef<number>(0);
   const noBeatsDetectedTimer = useRef<NodeJS.Timeout | null>(null);
+  const beatDetectedOnce = useRef<boolean>(false);
+  const beatsDetectionCheckInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de procesador', {
@@ -46,6 +48,9 @@ export const useHeartBeatProcessor = () => {
 
     // Configurar un temporizador para verificar si no se detectan latidos
     startNoBeatsDetectionTimer();
+    
+    // Iniciar verificación periódica de latidos
+    startBeatsDetectionCheck();
 
     return () => {
       console.log('useHeartBeatProcessor: Limpieza', {
@@ -54,6 +59,7 @@ export const useHeartBeatProcessor = () => {
       });
       
       stopNoBeatsDetectionTimer();
+      stopBeatsDetectionCheck();
       processorRef.current = null;
       
       if (typeof window !== 'undefined') {
@@ -66,24 +72,68 @@ export const useHeartBeatProcessor = () => {
     stopNoBeatsDetectionTimer();
     
     noBeatsDetectedTimer.current = setTimeout(() => {
-      // Si después de 10 segundos no hay latidos detectados
-      if (peakCount.current === 0 && Date.now() - processingStartTime.current > 10000) {
-        console.warn('useHeartBeatProcessor: No se han detectado latidos después de 10 segundos', {
+      // Si después de 7 segundos no hay latidos detectados (reducido de 10 a 7)
+      if (peakCount.current === 0 && Date.now() - processingStartTime.current > 7000) {
+        console.warn('useHeartBeatProcessor: No se han detectado latidos después de 7 segundos', {
           sessionId: sessionId.current,
           timestamp: new Date().toISOString()
         });
         
-        toast.warning("No se detectan latidos. Por favor, ajuste su dedo en la cámara.", {
+        toast.warning("No se detectan latidos. Por favor, ajuste su dedo en la cámara y asegure que esté bien iluminado.", {
           duration: 5000,
         });
       }
-    }, 10000);
+    }, 7000); // Reducido de 10000 a 7000
   };
   
   const stopNoBeatsDetectionTimer = () => {
     if (noBeatsDetectedTimer.current) {
       clearTimeout(noBeatsDetectedTimer.current);
       noBeatsDetectedTimer.current = null;
+    }
+  };
+  
+  const startBeatsDetectionCheck = () => {
+    stopBeatsDetectionCheck();
+    
+    beatsDetectionCheckInterval.current = setInterval(() => {
+      const now = Date.now();
+      const timeElapsed = now - processingStartTime.current;
+      
+      // Solo verificar después de los primeros 3 segundos
+      if (timeElapsed > 3000) {
+        if (peakCount.current === 0) {
+          console.warn('useHeartBeatProcessor: Aún no se detectan latidos después de', {
+            segundosTranscurridos: Math.floor(timeElapsed / 1000),
+            timestamp: new Date().toISOString()
+          });
+          
+          // Mostrar toast solo cada 5 segundos si no hay latidos
+          if (timeElapsed % 5000 < 1000) {
+            toast.warning("Señal débil. Intente mover ligeramente el dedo o mejorar la iluminación.", {
+              duration: 3000,
+            });
+          }
+        } else if (!beatDetectedOnce.current) {
+          // Primer latido detectado
+          beatDetectedOnce.current = true;
+          console.log('useHeartBeatProcessor: Primer latido detectado!', {
+            tiempoTranscurrido: Math.floor(timeElapsed / 1000),
+            timestamp: new Date().toISOString()
+          });
+          
+          toast.success("¡Primeros latidos detectados! Mantenga el dedo quieto.", {
+            duration: 3000,
+          });
+        }
+      }
+    }, 1000);
+  };
+  
+  const stopBeatsDetectionCheck = () => {
+    if (beatsDetectionCheckInterval.current) {
+      clearInterval(beatsDetectionCheckInterval.current);
+      beatsDetectionCheckInterval.current = null;
     }
   };
 
@@ -140,6 +190,8 @@ export const useHeartBeatProcessor = () => {
           toast.success("¡Primer latido detectado!", {
             duration: 2000,
           });
+          
+          beatDetectedOnce.current = true;
         }
       }
       
@@ -155,7 +207,7 @@ export const useHeartBeatProcessor = () => {
       }
       
       // Umbral de confianza más bajo para permitir más detecciones
-      if (result.confidence < 0.2) { // Reducido de 0.3 a 0.2
+      if (result.confidence < 0.15) { // Reducido de 0.2 a 0.15
         stableReadingsCount.current = 0;
         return {
           bpm: currentBPM > 0 ? currentBPM : result.bpm || 70,
@@ -193,7 +245,7 @@ export const useHeartBeatProcessor = () => {
       }
       
       // Menos lecturas estables requeridas o menor umbral de confianza
-      if ((stableReadingsCount.current >= 2 || result.confidence > 0.65) && validatedBPM > 0) { // Reducido de 3 a 2 y de 0.75 a 0.65
+      if ((stableReadingsCount.current >= 2 || result.confidence > 0.6) && validatedBPM > 0) { // Reducido de 3 a 2 y de 0.65 a 0.6
         setCurrentBPM(Math.round(validatedBPM));
         setConfidence(result.confidence);
       }
@@ -239,10 +291,15 @@ export const useHeartBeatProcessor = () => {
     lastValidBPM.current = 0;
     peakCount.current = 0;
     processingStartTime.current = Date.now();
+    beatDetectedOnce.current = false;
     
     // Reiniciar temporizador de detección
     stopNoBeatsDetectionTimer();
     startNoBeatsDetectionTimer();
+    
+    // Reiniciar verificación periódica
+    stopBeatsDetectionCheck();
+    startBeatsDetectionCheck();
   }, [currentBPM, confidence]);
 
   return {

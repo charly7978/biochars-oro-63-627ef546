@@ -32,26 +32,30 @@ export class HeartBeatProcessor {
   private lastProcessedTimestamp = 0;
   private initializationAttempts = 0;
   private lastDebugLogTime = 0;
+  private forcePlayBeepOnNextCall = false;
 
   constructor() {
     // Parámetros mejorados para detección más sensible
     this.audioHandler = new AudioHandler(HumSoundFile);
-    this.signalProcessor = new SignalProcessor(150, 4, 0.45); // Valores más sensibles: buffer más pequeño, ventana más pequeña, alpha más alto
+    this.signalProcessor = new SignalProcessor(120, 3, 0.5); // Valores más sensibles: buffer más pequeño, ventana más pequeña, alpha más alto
     
-    // Configuración de detector de picos más sensible para capturar mejor los latidos
+    // Configuración de detector de picos para máxima sensibilidad
     this.peakDetector = new PeakDetector(
-      2,       // Ventana de pico más pequeña para detección más rápida
-      0.12,    // Umbral más bajo para capturar más picos
-      0.2,     // Umbral de pico fuerte más bajo
-      0.5,     // Umbral dinámico más agresivo
-      200,     // Tiempo mínimo más bajo (200ms = 300bpm máx)
-      1800     // Tiempo máximo aumentado (1800ms = 33bpm mín)
+      2,       // Ventana de pico pequeña para detección rápida
+      0.08,    // Umbral más bajo para capturar más picos
+      0.15,    // Umbral de pico fuerte más bajo
+      0.45,    // Umbral dinámico más agresivo
+      180,     // Tiempo mínimo más bajo (180ms = 333bpm máx)
+      2000     // Tiempo máximo aumentado (2000ms = 30bpm mín)
     );
     
-    this.bpmAnalyzer = new BPMAnalyzer(35, 210, 5); // Rango fisiológico ampliado
+    this.bpmAnalyzer = new BPMAnalyzer(30, 220, 4); // Rango fisiológico ampliado
     
-    console.log("HeartBeatProcessor: Constructor ejecutado con parámetros optimizados");
+    console.log("HeartBeatProcessor: Constructor ejecutado con parámetros optimizados para máxima sensibilidad");
     this.initialize();
+    
+    // Forzar un beep inicial para probar el audio
+    this.forcePlayBeepOnNextCall = true;
   }
 
   public async initialize(): Promise<boolean> {
@@ -65,13 +69,28 @@ export class HeartBeatProcessor {
       let audioInit = await this.audioHandler.initialize();
       
       // Reintentar inicialización de audio si falla
-      if (!audioInit) {
+      if (!audioInit && this.initializationAttempts < 3) {
         console.log("Reintentando inicialización de audio después de breve retraso...");
         await new Promise(resolve => setTimeout(resolve, 500));
         audioInit = await this.audioHandler.initialize();
+        
+        // Un tercer intento si sigue fallando
+        if (!audioInit) {
+          console.log("Tercer intento de inicialización de audio...");
+          await new Promise(resolve => setTimeout(resolve, 800));
+          audioInit = await this.audioHandler.initialize();
+        }
       }
       
       this.isInitialized = true;
+      
+      // Reproducir un beep de prueba para verificar que el audio funciona
+      if (audioInit) {
+        console.log("Reproduciendo beep de prueba para verificar audio...");
+        setTimeout(() => {
+          this.audioHandler.playBeep(1.0, 100); // Volumen máximo
+        }, 1000);
+      }
       
       console.log("HeartBeatProcessor: Inicializado con estado de audio:", audioInit);
       return true;
@@ -92,15 +111,15 @@ export class HeartBeatProcessor {
     }
   }
 
-  public processSignal(value: number, quality: number = 50): HeartBeatResult { // Valor de calidad por defecto aumentado de 0 a 50
+  public processSignal(value: number, quality: number = 60): HeartBeatResult { // Valor de calidad por defecto aumentado de 50 a 60
     const now = Date.now();
     
-    // Limitar la frecuencia de procesamiento para no sobrecargar el sistema
-    if (now - this.lastProcessedTimestamp < 15 && this.lastProcessedTimestamp !== 0) { // Reducido de 20 a 15ms
+    // Limitar la frecuencia de procesamiento pero más permisivo
+    if (now - this.lastProcessedTimestamp < 10 && this.lastProcessedTimestamp !== 0) { // Reducido de 15 a 10ms
       // Devolver último resultado si estamos procesando con demasiada frecuencia
       return {
         bpm: this.bpmAnalyzer.currentBPM,
-        confidence: 0.3, // Confianza balanceada aumentada de 0.2 a 0.3
+        confidence: 0.4, // Confianza balanceada aumentada de 0.3 a 0.4
         isBeat: false,
         lastBeatTime: this.lastBeatTime,
         rrData: [...this.rrIntervals]
@@ -109,8 +128,15 @@ export class HeartBeatProcessor {
     
     this.lastProcessedTimestamp = now;
     
-    // Registro de depuración periódico (cada 3 segundos)
-    const shouldDebugLog = now - this.lastDebugLogTime > 3000;
+    // Si forzamos beep para prueba de audio
+    if (this.forcePlayBeepOnNextCall) {
+      this.forcePlayBeepOnNextCall = false;
+      console.log("Forzando beep de prueba");
+      this.audioHandler.playBeep(1.0, 100);
+    }
+    
+    // Registro de depuración periódico (cada 2 segundos)
+    const shouldDebugLog = now - this.lastDebugLogTime > 2000; // Reducido de 3000 a 2000
     if (shouldDebugLog) {
       console.log(`HeartBeatProcessor: Procesando señal con valor=${value.toFixed(2)}, calidad=${quality}, beats=${this.beatsCounter}`, {
         forcedMode: this.forcedDetectionMode,
@@ -121,11 +147,11 @@ export class HeartBeatProcessor {
     }
     
     // Aumentar calidad mínima de señal para ayudar con la detección
-    this.lastSignalQuality = Math.max(50, quality); // Aumentado de 40 a 50
+    this.lastSignalQuality = Math.max(60, quality); // Aumentado de 50 a 60
     
     // Mantener un buffer corto de valores sin procesar para detección de anomalías
     this.signalBuffer.push(value);
-    if (this.signalBuffer.length > 20) { // Reducido de 30 a 20
+    if (this.signalBuffer.length > 15) { // Reducido de 20 a 15
       this.signalBuffer.shift();
     }
     
@@ -133,7 +159,7 @@ export class HeartBeatProcessor {
     const { smoothedValue, derivative, signalBuffer } = this.signalProcessor.processSignal(value);
     
     // Actualización más frecuente de umbral adaptativo para respuesta más rápida
-    if (this.beatsCounter % 3 === 0 || this.forcedDetectionMode) { // Reducido de 5 a 3
+    if (this.beatsCounter % 2 === 0 || this.forcedDetectionMode) { // Reducido de 3 a 2
       this.peakDetector.updateAdaptiveThreshold(signalBuffer, now, shouldDebugLog);
     }
 
@@ -142,12 +168,12 @@ export class HeartBeatProcessor {
     let currentBpm = this.bpmAnalyzer.currentBPM;
     
     // Detección más rápida con requisito de buffer más pequeño
-    if (this.signalProcessor.bufferLength > 2) { // Reducido de 3 a 2
+    if (this.signalProcessor.bufferLength > 1) { // Reducido de 2 a 1
       // Detección de latido más sensible con comprobación de calidad relajada
       isBeat = this.peakDetector.detectBeat(
         now, 
         smoothedValue, 
-        Math.max(40, this.lastSignalQuality), // Usar un umbral de calidad mínimo más alto (aumentado de 30 a 40)
+        Math.max(50, this.lastSignalQuality), // Usar un umbral de calidad mínimo más alto (aumentado de 40 a 50)
         signalBuffer, 
         derivative, 
         this.lastBeatTime
@@ -158,7 +184,7 @@ export class HeartBeatProcessor {
         const timeSinceLastBeat = now - this.lastBeatTime;
         
         // Bloquear solo latidos extremadamente frecuentes (menos restrictivo)
-        if (timeSinceLastBeat < 150) { // Reducido de 180 a 150
+        if (timeSinceLastBeat < 120) { // Reducido de 150 a 120
           isBeat = false;
           this.falsePositiveProtection++;
           if (this.DEBUG && shouldDebugLog) {
@@ -182,7 +208,7 @@ export class HeartBeatProcessor {
           const interval = now - this.lastBeatTime;
           
           // Validación de intervalo más permisiva
-          if (interval > 200 && interval < 1800) { // Cambiado de 240/1600 a 200/1800
+          if (interval > 180 && interval < 2000) { // Cambiado de 200/1800 a 180/2000
             // Almacenar datos de intervalo RR
             this.rrIntervals.push({ timestamp: now, interval });
             if (this.rrIntervals.length > this.MAX_RR_DATA_POINTS) {
@@ -215,8 +241,8 @@ export class HeartBeatProcessor {
         // Reproducir sonido con volumen aumentado basado en confianza
         const beatStrength = this.peakDetector.confidenceLevel;
         this.audioHandler.playBeep(
-          Math.min(1.0, beatStrength + 0.5), // Volumen aumentado (de 0.9/0.4 a 1.0/0.5)
-          Math.min(90, this.lastSignalQuality)  // Tono basado en calidad más alto (de 85 a 90)
+          Math.min(1.0, beatStrength + 0.7), // Volumen aumentado (de 0.5 a 0.7)
+          Math.min(100, this.lastSignalQuality)  // Tono basado en calidad más alto (de 90 a 100)
         );
           
         if (this.DEBUG && shouldDebugLog) {
@@ -230,22 +256,22 @@ export class HeartBeatProcessor {
       
       // Manejo más agresivo de latidos perdidos
       const expectedBeatInterval = 60000 / (currentBpm || 70);
-      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.2 && this.lastBeatTime > 0) { // Reducido de 1.3 a 1.2
+      if (!isBeat && now - this.lastBeatTime > expectedBeatInterval * 1.1 && this.lastBeatTime > 0) { // Reducido de 1.2 a 1.1
         this.consecutiveMissedBeats++;
         
         // Entrar en modo forzado antes
-        if (this.consecutiveMissedBeats > 2 && !this.forcedDetectionMode) { // Reducido de 3 a 2
+        if (this.consecutiveMissedBeats > 1 && !this.forcedDetectionMode) { // Reducido de 2 a 1
           this.forcedDetectionMode = true;
           console.log("HeartBeatProcessor: Entrando en modo de detección forzada después de latidos perdidos");
           
           // Forzar un latido después de menos latidos perdidos
-          if (this.consecutiveMissedBeats > 3 && now - this.lastBeatTime > expectedBeatInterval * 1.5) { // Reducido de 4 a 3 y de 1.6 a 1.5
+          if (this.consecutiveMissedBeats > 2 && now - this.lastBeatTime > expectedBeatInterval * 1.3) { // Reducido de 3 a 2 y de 1.5 a 1.3
             isBeat = true;
             this.lastBeatTime = now;
             this.beatsCounter++;
             
             // Reproducir un sonido de latido forzado a mayor volumen
-            this.audioHandler.playBeep(0.8, 65); // Aumentado de 0.7/60 a 0.8/65
+            this.audioHandler.playBeep(0.9, 70); // Aumentado de 0.8/65 a 0.9/70
             console.log("Latido forzado generado después de perder múltiples latidos");
           }
         }
@@ -259,11 +285,11 @@ export class HeartBeatProcessor {
     let finalConfidence = this.bpmAnalyzer.calculateConfidence(avgQuality);
     
     // Fuerte impulso de confianza basado en estabilidad
-    finalConfidence *= (1.0 + (0.7 * this.peakDetector.stabilityLevel)); // Aumentado de 0.5 a 0.7
-    finalConfidence = Math.min(1.0, finalConfidence + 0.25); // Base más alta (de 0.2 a 0.25)
+    finalConfidence *= (1.0 + (0.8 * this.peakDetector.stabilityLevel)); // Aumentado de 0.7 a 0.8
+    finalConfidence = Math.min(1.0, finalConfidence + 0.3); // Base más alta (de 0.25 a 0.3)
     
     if (this.forcedDetectionMode) {
-      finalConfidence *= 0.85; // Menos penalización para modo forzado (de 0.8 a 0.85)
+      finalConfidence *= 0.9; // Menos penalización para modo forzado (de 0.85 a 0.9)
     }
 
     return {
@@ -291,8 +317,15 @@ export class HeartBeatProcessor {
     this.falsePositiveProtection = 0;
     this.lastProcessedTimestamp = 0;
     this.lastDebugLogTime = 0;
+    this.forcePlayBeepOnNextCall = true;
     
     console.log("HeartBeatProcessor: Reset completo ejecutado");
+    
+    // Reproducir un beep de prueba en el siguiente procesamiento
+    setTimeout(() => {
+      this.audioHandler.playBeep(1.0, 100);
+      console.log("Reproduciendo beep de prueba después de reset");
+    }, 500);
   }
 
   public getRRIntervals(): RRIntervalData {
