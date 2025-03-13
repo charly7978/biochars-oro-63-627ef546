@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -58,8 +59,10 @@ export const useSignalProcessor = () => {
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = trueCount / fingerDetectedHistoryRef.current.length;
     
+    // UPDATED: Use a lower threshold for robust detection (2 out of 5 = 0.4)
     const robustFingerDetected = detectionRatio >= 0.4;
     
+    // Slight quality enhancement for better user experience
     const enhancedQuality = Math.min(100, avgQuality * 1.15);
     
     console.log("useSignalProcessor: Detección robusta", {
