@@ -1,3 +1,4 @@
+
 import { AudioHandler } from './audio-handler';
 import { SignalProcessor } from './signal-processor';
 import { PeakDetector } from './peak-detector';
@@ -204,7 +205,7 @@ export class HeartBeatProcessor {
         this.lastMajorBeatTime = now;
         
         // Play sound with increased volume based on confidence
-        const beatStrength = this.peakDetector.confidence;
+        const beatStrength = this.peakDetector.confidenceLevel; // Using getter instead of private property
         this.audioHandler.playBeep(
           Math.min(0.9, beatStrength + 0.4), // Increased volume
           Math.min(85, this.lastSignalQuality)  // Higher quality-based tone
@@ -215,7 +216,7 @@ export class HeartBeatProcessor {
         }
         
         if (this.DEBUG && this.beatsCounter % 2 === 0) {
-          console.log(`HEARTBEAT @ ${new Date().toISOString()} - BPM: ${currentBpm}, Confidence: ${this.peakDetector.confidence.toFixed(2)}, Quality: ${this.lastSignalQuality}, Stability: ${this.peakDetector.stability.toFixed(2)}`);
+          console.log(`HEARTBEAT @ ${new Date().toISOString()} - BPM: ${currentBpm}, Confidence: ${this.peakDetector.confidenceLevel.toFixed(2)}, Quality: ${this.lastSignalQuality}, Stability: ${this.peakDetector.stabilityLevel.toFixed(2)}`);
         }
       }
       
@@ -250,7 +251,7 @@ export class HeartBeatProcessor {
     let finalConfidence = this.bpmAnalyzer.calculateConfidence(avgQuality);
     
     // Strong confidence boost based on stability
-    finalConfidence *= (1.0 + (0.5 * this.peakDetector.stability));
+    finalConfidence *= (1.0 + (0.5 * this.peakDetector.stabilityLevel)); // Using getter instead of private property
     finalConfidence = Math.min(1.0, finalConfidence + 0.2); // Higher baseline
     
     if (this.forcedDetectionMode) {

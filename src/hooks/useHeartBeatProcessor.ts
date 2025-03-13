@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor, HeartBeatResult } from '../modules/HeartBeatProcessor';
 
@@ -72,7 +71,6 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    // Avoid too frequent logging to reduce console clutter
     const now = Date.now();
     const shouldLog = now - lastUpdateTime.current > 1000; // Log only once per second
     
@@ -85,7 +83,6 @@ export const useHeartBeatProcessor = () => {
     }
 
     try {
-      // Process signal with balanced quality check
       const result = processorRef.current.processSignal(value);
       const rrData = processorRef.current.getRRIntervals();
       
@@ -99,11 +96,10 @@ export const useHeartBeatProcessor = () => {
         });
       }
       
-      // Balanced confidence threshold - 0.3
       if (result.confidence < 0.3) {
         stableReadingsCount.current = 0;
         return {
-          bpm: currentBPM > 0 ? currentBPM : result.bpm || 70, // Fallback value
+          bpm: currentBPM > 0 ? currentBPM : result.bpm || 70,
           confidence: result.confidence,
           isPeak: result.isBeat,
           arrhythmiaCount: 0,
@@ -111,43 +107,33 @@ export const useHeartBeatProcessor = () => {
         };
       }
 
-      // Standard BPM validation
       let validatedBPM = result.bpm;
       const isValidBPM = result.bpm >= 45 && result.bpm <= 180;
       
       if (!isValidBPM) {
         stableReadingsCount.current = 0;
-        validatedBPM = lastValidBPM.current || result.bpm || 70; // Fallback
+        validatedBPM = lastValidBPM.current || result.bpm || 70;
       } else {
-        // Balanced stability check
         if (lastValidBPM.current > 0) {
           const bpmDiff = Math.abs(result.bpm - lastValidBPM.current);
           
-          // Standard dramatic change threshold (20)
           if (bpmDiff > 20) {
             stableReadingsCount.current = 0;
-            
-            // Balanced transition
             validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 3 : -3);
           } else {
             stableReadingsCount.current++;
-            
-            // Balanced weighting between old and new values
             validatedBPM = lastValidBPM.current * 0.6 + result.bpm * 0.4;
           }
         }
         
-        // Always update the last valid BPM
         lastValidBPM.current = validatedBPM;
       }
       
-      // Standard display update - need 3 stable readings or good confidence
       if ((stableReadingsCount.current >= 3 || result.confidence > 0.75) && validatedBPM > 0) {
         setCurrentBPM(Math.round(validatedBPM));
         setConfidence(result.confidence);
       }
 
-      // Always return a value, never zero
       return {
         bpm: validatedBPM > 0 ? Math.round(validatedBPM) : (currentBPM || 70),
         confidence: result.confidence,
