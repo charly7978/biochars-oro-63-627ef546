@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -28,16 +27,17 @@ export const useHeartBeatProcessor = () => {
     peakTimestamps: []
   });
   const inputBufferRef = useRef<{value: number, timestamp: number}[]>([]);
-  const MAX_BUFFER_SIZE = 3; // Reduced from 10 to minimize delay
+  const MAX_BUFFER_SIZE = 2; // Reduced buffer size to minimize latency
   const maxLatencyRef = useRef<number>(0);
   const lastProcessedTimestampRef = useRef<number>(0);
   const realTimeRef = useRef<number>(Date.now());
+  const detectedPeaksRef = useRef<{timestamp: number, value: number}[]>([]);
 
   // Add timer to update realTimeRef with precision
   useEffect(() => {
     const timer = setInterval(() => {
       realTimeRef.current = Date.now();
-    }, 10); // Update every 10ms for more precise timing
+    }, 5); // Update every 5ms for more precise timing
     
     return () => clearInterval(timer);
   }, []);
@@ -101,7 +101,7 @@ export const useHeartBeatProcessor = () => {
     // Use precise realtime instead of Date.now() for better synchronization
     const now = realTimeRef.current;
     
-    // Minimize input buffer to reduce delay
+    // Minimize input buffer to reduce delay while keeping minimal smoothing
     inputBufferRef.current.push({value, timestamp: now});
     
     if (inputBufferRef.current.length > MAX_BUFFER_SIZE) {
@@ -123,7 +123,7 @@ export const useHeartBeatProcessor = () => {
     
     processingStatsRef.current.latency = processingStats.latency;
     
-    // Synchronize peak timing with current time to reduce visual delay
+    // Store peaks with accurate timing for visualization
     if (result.isPeak) {
       // Add current time for accurate peak display
       processingStatsRef.current.peakTimestamps.push(now);
@@ -132,50 +132,39 @@ export const useHeartBeatProcessor = () => {
         processingStatsRef.current.peakTimestamps.shift();
       }
       
+      // Add peak with current timestamp to display in visualization
+      detectedPeaksRef.current.push({
+        timestamp: now, 
+        value: value
+      });
+      
+      // Keep detected peaks buffer at reasonable size
+      if (detectedPeaksRef.current.length > 30) {
+        detectedPeaksRef.current.shift();
+      }
+      
       console.log('useHeartBeatProcessor - PEAK DETECTED:', {
         timestamp: now,
         systemTime: new Date().toISOString(),
         peakValue: value,
         processingLatency: processingLatency.toFixed(2) + 'ms',
-        bufferSize: inputBufferRef.current.length
+        bufferSize: inputBufferRef.current.length,
+        peaksStored: detectedPeaksRef.current.length
       });
     }
 
-    if (result.confidence < 0.7) {
-      return {
-        bpm: currentBPM,
-        confidence: result.confidence,
-        isPeak: false,
-        arrhythmiaCount: 0,
-        rrData,
-        detectedPeaks: result.detectedPeaks
-      };
-    }
-
-    if (result.bpm > 0) {
+    // Maintain accurate BPM when signal is reliable
+    if (result.confidence >= 0.7 && result.bpm > 0) {
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
-    // Make sure detectedPeaks have accurate timestamps for rendering
-    if (result.detectedPeaks && result.detectedPeaks.length > 0) {
-      // Use current time rather than any delayed time for latest peak
-      const latestPeakIndex = result.detectedPeaks.length - 1;
-      if (result.isPeak && latestPeakIndex >= 0) {
-        result.detectedPeaks[latestPeakIndex].timestamp = now;
-      }
-      
-      // Ensure all peaks have timestamps
-      result.detectedPeaks = result.detectedPeaks.map(peak => ({
-        ...peak,
-        timestamp: peak.timestamp || now
-      }));
-    }
-
+    // Always provide detected peaks to visualization
     return {
       ...result,
       rrData,
-      detectedPeaks: result.detectedPeaks
+      // Always include detected peaks for visualization
+      detectedPeaks: detectedPeaksRef.current
     };
   }, [currentBPM, confidence]);
 
@@ -204,6 +193,7 @@ export const useHeartBeatProcessor = () => {
     };
     
     inputBufferRef.current = [];
+    detectedPeaksRef.current = [];
     maxLatencyRef.current = 0;
     lastProcessedTimestampRef.current = 0;
     
@@ -218,7 +208,8 @@ export const useHeartBeatProcessor = () => {
       inputBufferSize: inputBufferRef.current.length,
       lastProcessedTimestamp: lastProcessedTimestampRef.current,
       timeSinceLastProcessed: realTimeRef.current - lastProcessedTimestampRef.current,
-      realTime: realTimeRef.current
+      realTime: realTimeRef.current,
+      peaksCount: detectedPeaksRef.current.length
     };
     
     return stats;
