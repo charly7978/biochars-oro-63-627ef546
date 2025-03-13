@@ -414,41 +414,70 @@ const PPGSignalMeter = ({
         const y = (canvas.height / 2) - 40 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
+          const circleColor = peak.isArrhythmia ? '#FEF08A' : '#0EA5E9';
+          const glowColor = peak.isArrhythmia ? 'rgba(254, 240, 138, 0.6)' : 'rgba(14, 165, 233, 0.6)';
+          
+          const gradient = offCtx.createRadialGradient(x, y, 3, x, y, 15);
+          gradient.addColorStop(0, glowColor);
+          gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          
+          offCtx.beginPath();
+          offCtx.arc(x, y, 15, 0, Math.PI * 2);
+          offCtx.fillStyle = gradient;
+          offCtx.fill();
+          
+          offCtx.beginPath();
+          offCtx.arc(x, y, 8, 0, Math.PI * 2);
+          offCtx.fillStyle = circleColor;
+          offCtx.fill();
+          
+          offCtx.beginPath();
+          offCtx.arc(x, y, 8, 0, Math.PI * 2);
+          offCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+          offCtx.lineWidth = 1.5;
+          offCtx.stroke();
+          
+          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
+          
+          offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          const textWidth = offCtx.measureText(displayValue).width;
+          offCtx.fillRect(x - textWidth/2 - 4, y - 35, textWidth + 8, 20);
+          
+          offCtx.font = 'bold 12px Inter';
+          offCtx.fillStyle = 'white';
+          offCtx.textAlign = 'center';
+          offCtx.fillText(displayValue, x, y - 22);
+          
+          const timeDisplay = `${Math.round(timeSinceNow)}ms`;
+          const timeTextWidth = offCtx.measureText(timeDisplay).width;
+          
+          offCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          offCtx.fillRect(x - timeTextWidth/2 - 3, y + 15, timeTextWidth + 6, 16);
+          
+          offCtx.font = '10px Inter';
+          offCtx.fillStyle = '#F0F0F0';
+          offCtx.fillText(timeDisplay, x, y + 27);
+          
           if (peak.isArrhythmia) {
-            const pulseSize = 12 + Math.sin(now * 0.01) * 3;
             offCtx.beginPath();
-            offCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
+            offCtx.arc(x, y, 15, 0, Math.PI * 2);
             offCtx.strokeStyle = '#FEF08A';
             offCtx.lineWidth = 2;
             offCtx.setLineDash([3, 2]);
             offCtx.stroke();
             offCtx.setLineDash([]);
             
-            offCtx.beginPath();
-            offCtx.arc(x, y, 6, 0, Math.PI * 2);
-            offCtx.fillStyle = '#FF0000';
-            offCtx.fill();
-            
-            offCtx.font = 'bold 12px Arial';
+            offCtx.font = 'bold 14px Inter';
             offCtx.fillStyle = '#FEF08A';
             offCtx.textAlign = 'center';
-            offCtx.fillText("Latido Prematuro", x, y - 40);
-          } else {
-            offCtx.beginPath();
-            offCtx.arc(x, y, 5, 0, Math.PI * 2);
-            offCtx.fillStyle = '#000000';
-            offCtx.fill();
+            
+            const arrTextWidth = offCtx.measureText("LATIDO PREMATURO").width;
+            offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            offCtx.fillRect(x - arrTextWidth/2 - 5, y - 55, arrTextWidth + 10, 22);
+            
+            offCtx.fillStyle = '#FEF08A';
+            offCtx.fillText("LATIDO PREMATURO", x, y - 40);
           }
-          
-          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
-          offCtx.font = '10px Arial';
-          offCtx.fillStyle = '#000000';
-          offCtx.textAlign = 'center';
-          offCtx.fillText(displayValue, x, y - 15);
-          
-          offCtx.font = '8px Arial';
-          offCtx.fillStyle = '#000000';
-          offCtx.fillText(`${Math.round(timeSinceNow)}ms`, x, y + 15);
         }
       });
     }
