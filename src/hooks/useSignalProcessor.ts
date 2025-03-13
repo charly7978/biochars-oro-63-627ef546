@@ -16,14 +16,6 @@ export const useSignalProcessor = () => {
       sessionId: Math.random().toString(36).substring(2, 9)
     });
     
-    const config: ProcessorConfig = {
-      // Configuración mejorada para detección de dedo
-      fingerDetectionThreshold: 0.12, // Umbral reducido para detección más sensible
-      minSignalQuality: 35, // Umbral mínimo de calidad reducido
-      adaptiveSensitivity: true, // Habilitar sensibilidad adaptativa
-      enhancedProcessing: true, // Habilitar algoritmos mejorados
-    };
-    
     return new PPGSignalProcessor();
   });
   
@@ -69,6 +61,16 @@ export const useSignalProcessor = () => {
     const robustFingerDetected = detectionRatio >= 0.4;
     
     const enhancedQuality = Math.min(100, avgQuality * 1.15);
+    
+    console.log("useSignalProcessor: Detección robusta", {
+      original: signal.fingerDetected,
+      robust: robustFingerDetected,
+      detectionRatio,
+      trueCount,
+      historyLength: fingerDetectedHistoryRef.current.length,
+      originalQuality: signal.quality,
+      enhancedQuality
+    });
     
     return {
       ...signal,
