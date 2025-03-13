@@ -1,4 +1,3 @@
-
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
@@ -55,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
           document.addEventListener('visibilitychange', async () => {
             if (document.visibilityState === 'visible' && !document.fullscreenElement) {
               try {
-                await tryFullscreen();
                 await navigator.wakeLock.request('screen');
               } catch (err) {
                 console.log('Error re-acquiring wake lock:', err);
@@ -68,32 +66,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Fullscreen request failed:', err);
-      // Retry after a delay if failed
-      setTimeout(tryFullscreen, 1000);
+      // Continue loading the app even if fullscreen fails
+      console.log('Continuing without fullscreen');
     }
   };
   
-  // Setup event listeners to maintain fullscreen
-  document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) {
-      setTimeout(tryFullscreen, 500);
-    }
-  });
-  
-  document.addEventListener('webkitfullscreenchange', () => {
-    if (!(document as any).webkitFullscreenElement) {
-      setTimeout(tryFullscreen, 500);
-    }
-  });
-  
-  // Additional handlers to ensure fullscreen stays active
-  document.addEventListener('touchend', () => {
-    if (!document.fullscreenElement) {
-      tryFullscreen();
-    }
-  });
-  
-  // Initial attempt
+  // Try fullscreen once but don't keep retrying - this may be causing the black screen
   tryFullscreen();
 });
 
