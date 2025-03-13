@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -243,22 +244,6 @@ const PPGSignalMeter = ({
     offCtx.stroke();
     offCtx.setLineDash([]);
     
-    offCtx.fillStyle = 'rgba(20, 20, 20, 0.7)';
-    offCtx.fillRect(CANVAS_WIDTH - 180, 20, 160, 60);
-    offCtx.strokeStyle = '#0EA5E9';
-    offCtx.lineWidth = 2;
-    offCtx.strokeRect(CANVAS_WIDTH - 180, 20, 160, 60);
-    
-    offCtx.beginPath();
-    offCtx.arc(CANVAS_WIDTH - 155, 45, 7, 0, Math.PI * 2);
-    offCtx.fillStyle = '#0EA5E9';
-    offCtx.fill();
-    
-    offCtx.font = 'bold 14px Inter';
-    offCtx.fillStyle = 'white';
-    offCtx.textAlign = 'left';
-    offCtx.fillText('Picos Detectados', CANVAS_WIDTH - 140, 50);
-    
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
@@ -323,6 +308,8 @@ const PPGSignalMeter = ({
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
+    
+    const now = Date.now();
     
     if (isFingerDetected) {
       if (baselineRef.current === null) {
@@ -449,27 +436,6 @@ const PPGSignalMeter = ({
           offCtx.lineWidth = 1.5;
           offCtx.stroke();
           
-          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
-          
-          offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-          const textWidth = offCtx.measureText(displayValue).width;
-          offCtx.fillRect(x - textWidth/2 - 4, y - 35, textWidth + 8, 20);
-          
-          offCtx.font = 'bold 12px Inter';
-          offCtx.fillStyle = 'white';
-          offCtx.textAlign = 'center';
-          offCtx.fillText(displayValue, x, y - 22);
-          
-          const timeDisplay = `${Math.round(timeSinceNow)}ms`;
-          const timeTextWidth = offCtx.measureText(timeDisplay).width;
-          
-          offCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          offCtx.fillRect(x - timeTextWidth/2 - 3, y + 15, timeTextWidth + 6, 16);
-          
-          offCtx.font = '10px Inter';
-          offCtx.fillStyle = '#F0F0F0';
-          offCtx.fillText(timeDisplay, x, y + 27);
-          
           if (peak.isArrhythmia) {
             offCtx.beginPath();
             offCtx.arc(x, y, 15, 0, Math.PI * 2);
@@ -478,17 +444,6 @@ const PPGSignalMeter = ({
             offCtx.setLineDash([3, 2]);
             offCtx.stroke();
             offCtx.setLineDash([]);
-            
-            offCtx.font = 'bold 14px Inter';
-            offCtx.fillStyle = '#FF9500';
-            offCtx.textAlign = 'center';
-            
-            const arrTextWidth = offCtx.measureText("ARRITMIA").width;
-            offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            offCtx.fillRect(x - arrTextWidth/2 - 5, y - 55, arrTextWidth + 10, 22);
-            
-            offCtx.fillStyle = '#FF9500';
-            offCtx.fillText("ARRITMIA", x, y - 40);
           }
         }
       });
@@ -636,13 +591,6 @@ const PPGSignalMeter = ({
               {getQualityText(quality)}
             </span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 bg-black/20 px-2 py-1 rounded-full">
-          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-          <span className="text-xs font-medium">
-            Picos: {visiblePeaksCountRef.current}
-          </span>
         </div>
 
         <div className="flex flex-col items-center">
