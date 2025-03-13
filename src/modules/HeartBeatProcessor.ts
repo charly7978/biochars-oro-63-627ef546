@@ -1,3 +1,4 @@
+
 export class HeartBeatProcessor {
   // ────────── CONFIGURACIONES PRINCIPALES ──────────
   private readonly SAMPLE_RATE = 30;
@@ -5,7 +6,7 @@ export class HeartBeatProcessor {
   private readonly MIN_BPM = 40;
   private readonly MAX_BPM = 200; // Se mantiene amplio para no perder picos fuera de rango
   private readonly SIGNAL_THRESHOLD = 0.40; 
-  private readonly MIN_CONFIDENCE = 0.60;
+  private readonly MIN_CONFIDENCE = 0.50; // Reducido para detectar más picos
   private readonly DERIVATIVE_THRESHOLD = -0.03; 
   private readonly MIN_PEAK_TIME_MS = 400; 
   private readonly WARMUP_TIME_MS = 3000; 
@@ -281,7 +282,8 @@ export class HeartBeatProcessor {
     this.lastProcessingTime = now;
     
     // Filtrar picos antiguos (más de 10 segundos)
-    this.detectedPeaks = this.detectedPeaks.filter(peak => now - peak.timestamp < 10000);
+    const tenSecondsAgo = now - 10000;
+    this.detectedPeaks = this.detectedPeaks.filter(peak => peak.timestamp > tenSecondsAgo);
 
     const rrData = {
       intervals: [...this.bpmHistory],
@@ -366,6 +368,15 @@ export class HeartBeatProcessor {
     // Aproximación a la confianza final
     const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
 
+    console.log("HeartBeatProcessor: Peak detection values:", {
+      normalizedValue: normalizedValue.toFixed(4),
+      derivative: derivative.toFixed(4),
+      isOverThreshold,
+      threshold: this.SIGNAL_THRESHOLD,
+      confidence: confidence.toFixed(2),
+      minConfidence: this.MIN_CONFIDENCE
+    });
+
     return { isPeak: isOverThreshold, confidence };
   }
 
@@ -379,12 +390,25 @@ export class HeartBeatProcessor {
       this.peakConfirmationBuffer.shift();
     }
     const avgBuffer = this.peakConfirmationBuffer.reduce((a, b) => a + b, 0) / this.peakConfirmationBuffer.length;
-    if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE && avgBuffer > this.SIGNAL_THRESHOLD) {
+    const confirmationResult = isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE && avgBuffer > this.SIGNAL_THRESHOLD;
+    
+    if (confirmationResult) {
       if (this.peakConfirmationBuffer.length >= 3) {
         const len = this.peakConfirmationBuffer.length;
         const goingDown1 = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
         const goingDown2 = this.peakConfirmationBuffer[len - 2] < this.peakConfirmationBuffer[len - 3];
-        if (goingDown1 && goingDown2) {
+        
+        const peakConfirmed = goingDown1 && goingDown2;
+        
+        if (peakConfirmed) {
+          console.log("HeartBeatProcessor: Peak confirmed!", {
+            normalizedValue: normalizedValue.toFixed(4),
+            confidence: confidence.toFixed(2),
+            bufferValues: this.peakConfirmationBuffer.map(v => v.toFixed(4)),
+            goingDown1,
+            goingDown2
+          });
+          
           this.lastConfirmedPeak = true;
           return true;
         }

@@ -191,17 +191,49 @@ export const useHeartBeatProcessor = () => {
       setConfidence(result.confidence);
     }
 
+    // Make sure we're actually storing and forwarding the peaks correctly
+    // This was the main issue - the detectedPeaks array was not being properly populated
+    const peaks = processorRef.current.getDetectedPeaks() || [];
+    
+    // Add these peaks to our local storage if they're not already there
+    if (peaks.length > 0) {
+      const currentTimestamps = new Set(detectedPeaksRef.current.map(p => p.timestamp));
+      peaks.forEach(peak => {
+        if (!currentTimestamps.has(peak.timestamp)) {
+          detectedPeaksRef.current.push(peak);
+        }
+      });
+      
+      // Sort peaks by timestamp for consistent visualization
+      detectedPeaksRef.current.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Maintain reasonable buffer size
+      if (detectedPeaksRef.current.length > 40) {
+        detectedPeaksRef.current = detectedPeaksRef.current.slice(-40);
+      }
+      
+      console.log('useHeartBeatProcessor - Synchronized peaks from processor:', {
+        processorPeaks: peaks.length,
+        localPeaks: detectedPeaksRef.current.length,
+        newPeaksAdded: detectedPeaksRef.current.length - peaks.length
+      });
+    }
+
     // Always provide all peak data to visualization component
     const returnResult = {
       ...result,
       rrData,
-      detectedPeaks: detectedPeaksRef.current
+      detectedPeaks: [...detectedPeaksRef.current] // Make sure to create a copy
     };
     
     console.log('useHeartBeatProcessor - Returning result with peaks:', {
       bpm: returnResult.bpm,
       confidence: returnResult.confidence.toFixed(2),
       peakCount: returnResult.detectedPeaks?.length || 0,
+      peaksSample: returnResult.detectedPeaks?.slice(-3).map(p => ({
+        timestamp: p.timestamp,
+        time: new Date(p.timestamp).toISOString().split('T')[1]
+      })),
       hasData: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0
     });
     
