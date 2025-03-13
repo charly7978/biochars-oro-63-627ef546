@@ -103,6 +103,14 @@ export const useHeartBeatProcessor = () => {
     // Capture precise current time for synchronization
     const now = realTimeRef.current;
     
+    console.log('useHeartBeatProcessor - processSignal input:', {
+      value: value.toFixed(4),
+      timestamp: now,
+      timeString: new Date(now).toISOString(),
+      bufferedPoints: inputBufferRef.current.length,
+      existingPeaks: detectedPeaksRef.current.length
+    });
+    
     // Track value history for scaling calculations
     peakValueHistoryRef.current.push(value);
     if (peakValueHistoryRef.current.length > 20) {
@@ -129,6 +137,15 @@ export const useHeartBeatProcessor = () => {
     const processingStats = processorRef.current.getProcessingStats();
     
     processingStatsRef.current.latency = processingStats.latency;
+    
+    console.log('useHeartBeatProcessor - processSignal result:', {
+      bpm: result.bpm,
+      isPeak: result.isPeak,
+      confidence: result.confidence.toFixed(2),
+      timestamp: now,
+      processingLatency: processingLatency.toFixed(2) + 'ms',
+      processorPeaks: processorRef.current.getDetectedPeaks().length
+    });
     
     // When a peak is detected, record it for visualization with accurate timing
     if (result.isPeak) {
@@ -159,11 +176,12 @@ export const useHeartBeatProcessor = () => {
       console.log('useHeartBeatProcessor - PEAK DETECTED:', {
         timestamp: now,
         systemTime: new Date().toISOString(),
-        peakValue,
+        peakValue: peakValue.toFixed(4),
         isArrhythmia,
         processingLatency: processingLatency.toFixed(2) + 'ms',
         peakCount: detectedPeaksRef.current.length,
-        bpm: result.bpm
+        bpm: result.bpm,
+        peakBufferSize: detectedPeaksRef.current.length
       });
     }
 
@@ -174,11 +192,20 @@ export const useHeartBeatProcessor = () => {
     }
 
     // Always provide all peak data to visualization component
-    return {
+    const returnResult = {
       ...result,
       rrData,
       detectedPeaks: detectedPeaksRef.current
     };
+    
+    console.log('useHeartBeatProcessor - Returning result with peaks:', {
+      bpm: returnResult.bpm,
+      confidence: returnResult.confidence.toFixed(2),
+      peakCount: returnResult.detectedPeaks?.length || 0,
+      hasData: returnResult.detectedPeaks && returnResult.detectedPeaks.length > 0
+    });
+    
+    return returnResult;
   }, []);
 
   const reset = useCallback(() => {

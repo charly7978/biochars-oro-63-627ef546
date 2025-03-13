@@ -1,4 +1,3 @@
-
 export class HeartBeatProcessor {
   // ────────── CONFIGURACIONES PRINCIPALES ──────────
   private readonly SAMPLE_RATE = 30;
@@ -55,10 +54,20 @@ export class HeartBeatProcessor {
   private readonly MAX_STORED_PEAKS = 20;
   private processingLatency: number = 0;
   private lastProcessingTime: number = 0;
+  private processingCount: number = 0;
 
   constructor() {
     this.initAudio();
     this.startTime = Date.now();
+    console.log("HeartBeatProcessor: Inicializado correctamente", {
+      timestamp: this.startTime,
+      timeString: new Date(this.startTime).toISOString(),
+      thresholds: {
+        signal: this.SIGNAL_THRESHOLD,
+        derivative: this.DERIVATIVE_THRESHOLD,
+        confidence: this.MIN_CONFIDENCE
+      }
+    });
   }
 
   private async initAudio() {
@@ -177,6 +186,18 @@ export class HeartBeatProcessor {
     detectedPeaks?: {timestamp: number, value: number}[];
   } {
     const processingStartTime = performance.now();
+    this.processingCount++;
+    const now = Date.now();
+    
+    // Log input
+    if (this.processingCount % 10 === 0) {
+      console.log("HeartBeatProcessor: Processing signal", { 
+        value: value.toFixed(4),
+        timestamp: now,
+        timeString: new Date(now).toISOString(),
+        peakCount: this.detectedPeaks.length
+      });
+    }
     
     // Filtros sucesivos para mejorar la señal
     const medVal = this.medianFilter(value);
@@ -220,7 +241,6 @@ export class HeartBeatProcessor {
     const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
     if (isConfirmedPeak && !this.isInWarmup()) {
-      const now = Date.now();
       const timeSinceLastPeak = this.lastPeakTime
         ? now - this.lastPeakTime
         : Number.MAX_VALUE;
@@ -242,22 +262,45 @@ export class HeartBeatProcessor {
         
         this.playBeep(0.12); // Suena beep cuando se confirma pico
         this.updateBPM();
+        
+        console.log("HeartBeatProcessor: PICO CONFIRMADO", {
+          timestamp: now,
+          timeString: new Date(now).toISOString(),
+          normalizedValue: normalizedValue.toFixed(4),
+          confidence: confidence.toFixed(2),
+          timeSinceLastPeak: timeSinceLastPeak,
+          bpm: this.getSmoothBPM(),
+          totalPeaks: this.detectedPeaks.length
+        });
       }
     }
     
     // Calcular la latencia de procesamiento para compensación
     const processingEndTime = performance.now();
     this.processingLatency = processingEndTime - processingStartTime;
-    this.lastProcessingTime = Date.now();
+    this.lastProcessingTime = now;
     
     // Filtrar picos antiguos (más de 10 segundos)
-    const now = Date.now();
     this.detectedPeaks = this.detectedPeaks.filter(peak => now - peak.timestamp < 10000);
 
     const rrData = {
       intervals: [...this.bpmHistory],
       lastPeakTime: this.lastPeakTime
     };
+    
+    // Log detailed information periodically
+    if (this.processingCount % 100 === 0) {
+      console.log("HeartBeatProcessor: Estado del procesador", {
+        bpm: this.getSmoothBPM().toFixed(1),
+        peakCount: this.detectedPeaks.length,
+        bpmHistoryLength: this.bpmHistory.length,
+        lastPeakTime: this.lastPeakTime ? new Date(this.lastPeakTime).toISOString() : "none",
+        processingLatency: this.processingLatency.toFixed(2) + "ms",
+        runningTime: (now - this.startTime).toFixed(0) + "ms",
+        baseline: this.baseline.toFixed(4),
+        signalBufferSize: this.signalBuffer.length
+      });
+    }
 
     return {
       bpm: Math.round(this.getSmoothBPM()),
@@ -363,6 +406,15 @@ export class HeartBeatProcessor {
       if (this.bpmHistory.length > 12) {
         this.bpmHistory.shift();
       }
+      
+      console.log("HeartBeatProcessor: BPM Actualizado", {
+        instantBPM: instantBPM.toFixed(1),
+        interval: interval.toFixed(0) + "ms",
+        historySize: this.bpmHistory.length,
+        smoothBPM: this.getSmoothBPM().toFixed(1),
+        timestamp: Date.now(),
+        timeString: new Date().toISOString()
+      });
     }
   }
 
@@ -401,6 +453,13 @@ export class HeartBeatProcessor {
   }
 
   public reset() {
+    console.log("HeartBeatProcessor: Reseteando todos los valores", {
+      bpmHistory: this.bpmHistory.length,
+      peakCount: this.detectedPeaks.length,
+      timestamp: Date.now(),
+      timeString: new Date().toISOString()
+    });
+    
     this.signalBuffer = [];
     this.medianBuffer = [];
     this.movingAverageBuffer = [];
@@ -422,6 +481,9 @@ export class HeartBeatProcessor {
     this.detectedPeaks = [];
     this.processingLatency = 0;
     this.lastProcessingTime = 0;
+    this.processingCount = 0;
+    
+    console.log("HeartBeatProcessor: Reset completado");
   }
 
   public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {
@@ -439,6 +501,13 @@ export class HeartBeatProcessor {
   }
   
   public getDetectedPeaks(): {timestamp: number, value: number}[] {
+    if (this.processingCount % 30 === 0) {
+      console.log("HeartBeatProcessor: getDetectedPeaks", {
+        peakCount: this.detectedPeaks.length,
+        timestamp: Date.now(),
+        timeString: new Date().toISOString()
+      });
+    }
     return [...this.detectedPeaks];
   }
 }

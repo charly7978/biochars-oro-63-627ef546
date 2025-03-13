@@ -56,6 +56,8 @@ const PPGSignalMeter = ({
   const realTimeStampRef = useRef<number>(Date.now());
   const noFingerFramesRef = useRef<number>(0);
   const MAX_NO_FINGER_FRAMES = 3;
+  const lastPeaksCountRef = useRef<number>(0);
+  const frameCountRef = useRef<number>(0);
 
   // Config constants
   const WINDOW_WIDTH_MS = 4000; // 4 second window for reduced latency perception
@@ -75,6 +77,10 @@ const PPGSignalMeter = ({
   useEffect(() => {
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer(BUFFER_SIZE);
+      console.log('PPGSignalMeter: Buffer inicializado', { 
+        bufferSize: BUFFER_SIZE,
+        timestamp: Date.now()
+      });
     }
     
     if (!isFingerDetected) {
@@ -103,6 +109,11 @@ const PPGSignalMeter = ({
       canvas.height = CANVAS_HEIGHT;
       offscreenCanvasRef.current = canvas;
       offscreenCtxRef.current = canvas.getContext('2d', { alpha: false });
+      console.log('PPGSignalMeter: Offscreen canvas creado', {
+        width: CANVAS_WIDTH,
+        height: CANVAS_HEIGHT,
+        hasContext: !!offscreenCtxRef.current
+      });
     }
     
     const updateRealTimeStamp = () => {
@@ -117,6 +128,8 @@ const PPGSignalMeter = ({
 
   // Handle arrhythmia data and heartbeat detection
   useEffect(() => {
+    frameCountRef.current++;
+    
     if (isFingerDetected && rawArrhythmiaData) {
       const now = realTimeStampRef.current;
       
@@ -137,15 +150,28 @@ const PPGSignalMeter = ({
           peaksRef.current.shift();
         }
         
-        console.log('PEAK REGISTERED:', {
+        console.log('PPGSignalMeter - PEAK REGISTERED:', {
           timestamp: compensatedTime,
           realTime: new Date(compensatedTime).toISOString(),
           renderDelay: renderTimeRef.current.avgRenderDelay,
-          value: scaledValue
+          value: scaledValue,
+          peakCount: peaksRef.current.length
         });
       }
     }
-  }, [rawArrhythmiaData, isFingerDetected]);
+    
+    // Log periodically
+    if (frameCountRef.current % 60 === 0) {
+      console.log('PPGSignalMeter - Status:', {
+        isFingerDetected,
+        peakCount: peaksRef.current.length,
+        signalQuality: quality.toFixed(2),
+        fps: (1000 / (renderTimeRef.current.avgRenderDelay || 16)).toFixed(1),
+        renderCount: renderTimeRef.current.renderCount,
+        timestamp: Date.now()
+      });
+    }
+  }, [rawArrhythmiaData, isFingerDetected, quality]);
 
   // Track quality history and consecutive frames with finger detected
   useEffect(() => {
@@ -381,6 +407,20 @@ const PPGSignalMeter = ({
       
       const recentPeaks = peaksRef.current.filter(peak => now - peak.time <= WINDOW_WIDTH_MS);
       
+      // Log peak counts if changed
+      if (lastPeaksCountRef.current !== recentPeaks.length && renderTimeRef.current.renderCount % 10 === 0) {
+        console.log('PPGSignalMeter - Drawing peaks:', {
+          peakCount: recentPeaks.length,
+          totalPeaks: peaksRef.current.length,
+          visiblePoints: visiblePoints.length,
+          windowWidthMs: WINDOW_WIDTH_MS,
+          now,
+          timeString: new Date(now).toISOString()
+        });
+        
+        lastPeaksCountRef.current = recentPeaks.length;
+      }
+      
       recentPeaks.forEach(peak => {
         const timeSinceNow = now - peak.time;
         
@@ -458,6 +498,12 @@ const PPGSignalMeter = ({
   }, [createGridCanvas]);
 
   const handleReset = useCallback(() => {
+    console.log('PPGSignalMeter - Reset llamado', {
+      timestamp: Date.now(),
+      peakCount: peaksRef.current.length,
+      bufferSize: dataBufferRef.current?.getPoints().length || 0
+    });
+    
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
     
@@ -476,8 +522,12 @@ const PPGSignalMeter = ({
     };
     
     gridCanvasRef.current = null;
+    frameCountRef.current = 0;
+    lastPeaksCountRef.current = 0;
     
     onReset();
+    
+    console.log('PPGSignalMeter - Reset completado');
   }, [onReset, createGridCanvas]);
 
   const getAverageQuality = useCallback(() => {
