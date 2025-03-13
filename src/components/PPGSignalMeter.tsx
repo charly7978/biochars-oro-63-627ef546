@@ -53,8 +53,10 @@ const PPGSignalMeter = ({
   const lastHeartbeatTimeRef = useRef<number>(0);
   const lastSignalValueRef = useRef<number>(0);
   const realTimeStampRef = useRef<number>(Date.now());
+  const noFingerFramesRef = useRef<number>(0);
+  const MAX_NO_FINGER_FRAMES = 3;
 
-  const WINDOW_WIDTH_MS = 6000;
+  const WINDOW_WIDTH_MS = 4000;
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
@@ -62,7 +64,7 @@ const PPGSignalMeter = ({
   const verticalScale = 40.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
-  const BUFFER_SIZE = 250;
+  const BUFFER_SIZE = 180;
   const QUALITY_HISTORY_SIZE = 5;
   const REQUIRED_FINGER_FRAMES = 2;
   const MAX_RENDER_HISTORY = 10;
@@ -71,6 +73,17 @@ const PPGSignalMeter = ({
   useEffect(() => {
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer(BUFFER_SIZE);
+    }
+    
+    if (!isFingerDetected) {
+      noFingerFramesRef.current++;
+      if (noFingerFramesRef.current >= MAX_NO_FINGER_FRAMES) {
+        if (dataBufferRef.current && !preserveResults) {
+          dataBufferRef.current.clear();
+        }
+      }
+    } else {
+      noFingerFramesRef.current = 0;
     }
     
     if (preserveResults && !isFingerDetected) {
@@ -283,7 +296,7 @@ const PPGSignalMeter = ({
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      const adaptationRate = isFingerDetected ? 0.97 : 0.92;
+      const adaptationRate = isFingerDetected ? 0.94 : 0.88;
       baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
     }
     
@@ -303,13 +316,15 @@ const PPGSignalMeter = ({
       isArrhythmia = true;
     }
     
-    const dataPoint: PPGDataPoint = {
-      time: now,
-      value: scaledValue,
-      isArrhythmia
-    };
-    
-    dataBufferRef.current.push(dataPoint);
+    if (isFingerDetected) {
+      const dataPoint: PPGDataPoint = {
+        time: now,
+        value: scaledValue,
+        isArrhythmia
+      };
+      
+      dataBufferRef.current.push(dataPoint);
+    }
     
     const points = dataBufferRef.current.getPoints();
     
@@ -322,9 +337,12 @@ const PPGSignalMeter = ({
       
       let firstPoint = true;
       
-      for (let i = 1; i < points.length; i++) {
-        const prevPoint = points[i - 1];
-        const point = points[i];
+      const cutoffTime = now - WINDOW_WIDTH_MS;
+      const visiblePoints = points.filter(pt => pt.time >= cutoffTime);
+      
+      for (let i = 1; i < visiblePoints.length; i++) {
+        const prevPoint = visiblePoints[i - 1];
+        const point = visiblePoints[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
         const y1 = (canvas.height / 2) - 40 - prevPoint.value;
@@ -355,7 +373,9 @@ const PPGSignalMeter = ({
       
       offCtx.stroke();
       
-      peaksRef.current.forEach(peak => {
+      const recentPeaks = peaksRef.current.filter(peak => now - peak.time <= WINDOW_WIDTH_MS);
+      
+      recentPeaks.forEach(peak => {
         const timeSinceNow = now - peak.time;
         
         if (timeSinceNow > WINDOW_WIDTH_MS) return;
@@ -406,7 +426,9 @@ const PPGSignalMeter = ({
         pointCount: points.length,
         peakCount: peaksRef.current.length,
         bufferUsage: `${(points.length / BUFFER_SIZE * 100).toFixed(1)}%`,
-        timestamp: new Date(now).toISOString()
+        timestamp: new Date(now).toISOString(),
+        isFingerDetected,
+        visiblePoints: points.filter(pt => now - pt.time <= WINDOW_WIDTH_MS).length
       });
     }
     
@@ -447,8 +469,10 @@ const PPGSignalMeter = ({
       avgRenderDelay: 0
     };
     
+    gridCanvasRef.current = null;
+    
     onReset();
-  }, [onReset]);
+  }, [onReset, createGridCanvas]);
 
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;

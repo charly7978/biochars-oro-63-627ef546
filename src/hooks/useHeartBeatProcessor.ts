@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -27,9 +28,19 @@ export const useHeartBeatProcessor = () => {
     peakTimestamps: []
   });
   const inputBufferRef = useRef<{value: number, timestamp: number}[]>([]);
-  const MAX_BUFFER_SIZE = 10;
+  const MAX_BUFFER_SIZE = 3; // Reduced from 10 to minimize delay
   const maxLatencyRef = useRef<number>(0);
   const lastProcessedTimestampRef = useRef<number>(0);
+  const realTimeRef = useRef<number>(Date.now());
+
+  // Add timer to update realTimeRef with precision
+  useEffect(() => {
+    const timer = setInterval(() => {
+      realTimeRef.current = Date.now();
+    }, 10); // Update every 10ms for more precise timing
+    
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -87,8 +98,10 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    const now = Date.now();
+    // Use precise realtime instead of Date.now() for better synchronization
+    const now = realTimeRef.current;
     
+    // Minimize input buffer to reduce delay
     inputBufferRef.current.push({value, timestamp: now});
     
     if (inputBufferRef.current.length > MAX_BUFFER_SIZE) {
@@ -110,7 +123,9 @@ export const useHeartBeatProcessor = () => {
     
     processingStatsRef.current.latency = processingStats.latency;
     
+    // Synchronize peak timing with current time to reduce visual delay
     if (result.isPeak) {
+      // Add current time for accurate peak display
       processingStatsRef.current.peakTimestamps.push(now);
       
       if (processingStatsRef.current.peakTimestamps.length > 10) {
@@ -142,7 +157,15 @@ export const useHeartBeatProcessor = () => {
       setConfidence(result.confidence);
     }
 
+    // Make sure detectedPeaks have accurate timestamps for rendering
     if (result.detectedPeaks && result.detectedPeaks.length > 0) {
+      // Use current time rather than any delayed time for latest peak
+      const latestPeakIndex = result.detectedPeaks.length - 1;
+      if (result.isPeak && latestPeakIndex >= 0) {
+        result.detectedPeaks[latestPeakIndex].timestamp = now;
+      }
+      
+      // Ensure all peaks have timestamps
       result.detectedPeaks = result.detectedPeaks.map(peak => ({
         ...peak,
         timestamp: peak.timestamp || now
@@ -194,7 +217,8 @@ export const useHeartBeatProcessor = () => {
       maxLatency: maxLatencyRef.current,
       inputBufferSize: inputBufferRef.current.length,
       lastProcessedTimestamp: lastProcessedTimestampRef.current,
-      timeSinceLastProcessed: Date.now() - lastProcessedTimestampRef.current
+      timeSinceLastProcessed: realTimeRef.current - lastProcessedTimestampRef.current,
+      realTime: realTimeRef.current
     };
     
     return stats;
