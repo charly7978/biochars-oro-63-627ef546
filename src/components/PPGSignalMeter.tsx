@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { Fingerprint, AlertCircle } from 'lucide-react';
+import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 
 interface PPGSignalMeterProps {
@@ -268,42 +268,9 @@ const PPGSignalMeter = ({
         offCtx.fillStyle = '#ef4444';
         offCtx.font = 'bold 24px Inter';
         offCtx.textAlign = 'left';
-        const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
         offCtx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
       }
     }
-    
-    offCtx.fillStyle = 'rgba(20, 20, 20, 0.7)';
-    offCtx.fillRect(CANVAS_WIDTH - 180, 20, 160, 60);
-    offCtx.strokeStyle = '#0EA5E9';
-    offCtx.lineWidth = 2;
-    offCtx.strokeRect(CANVAS_WIDTH - 180, 20, 160, 60);
-    
-    offCtx.beginPath();
-    offCtx.arc(CANVAS_WIDTH - 155, 45, 7, 0, Math.PI * 2);
-    offCtx.fillStyle = '#0EA5E9';
-    offCtx.fill();
-    
-    offCtx.fillStyle = 'white';
-    offCtx.font = 'bold 14px Inter';
-    offCtx.textAlign = 'left';
-    offCtx.fillText('Picos Detectados', CANVAS_WIDTH - 140, 50);
-    
-    offCtx.fillStyle = 'rgba(20, 20, 20, 0.7)';
-    offCtx.fillRect(CANVAS_WIDTH - 180, 90, 160, 60);
-    offCtx.strokeStyle = '#FEF08A';
-    offCtx.lineWidth = 2;
-    offCtx.strokeRect(CANVAS_WIDTH - 180, 90, 160, 60);
-    
-    offCtx.beginPath();
-    offCtx.arc(CANVAS_WIDTH - 155, 115, 7, 0, Math.PI * 2);
-    offCtx.fillStyle = '#FEF08A';
-    offCtx.fill();
-    
-    offCtx.fillStyle = 'white';
-    offCtx.font = 'bold 14px Inter';
-    offCtx.textAlign = 'left';
-    offCtx.fillText('Arritmias', CANVAS_WIDTH - 140, 120);
     
     gridCanvasRef.current = offscreen;
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
@@ -657,13 +624,6 @@ const PPGSignalMeter = ({
               {getQualityText(quality)}
             </span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 bg-black/20 px-2 py-1 rounded-full">
-          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-          <span className="text-xs font-medium">
-            Picos: {visiblePeaksCountRef.current}
-          </span>
         </div>
 
         <div className="flex flex-col items-center">
