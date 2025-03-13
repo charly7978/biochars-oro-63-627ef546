@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -22,7 +21,6 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [detectedPeaks, setDetectedPeaks] = useState([]);
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -33,22 +31,13 @@ const Index = () => {
     const elem = document.documentElement;
     try {
       if (elem.requestFullscreen) {
-        await elem.requestFullscreen({ navigationUI: "hide" });
+        await elem.requestFullscreen();
       } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
+        await elem.webkitRequestFullscreen();
       } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen({ navigationUI: "hide" });
+        await elem.mozRequestFullScreen();
       } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen({ navigationUI: "hide" });
-      }
-      
-      if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.AndroidFullScreen) {
-          window.AndroidFullScreen.immersiveMode(
-            function() { console.log('Immersive mode enabled'); },
-            function() { console.log('Failed to enable immersive mode'); }
-          );
-        }
+        await elem.msRequestFullscreen();
       }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
@@ -68,40 +57,14 @@ const Index = () => {
       }
     };
     
-    const setMaxResolution = () => {
-      if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = 1 / window.devicePixelRatio;
-      }
-    };
-    
     lockOrientation();
-    setMaxResolution();
-    enterFullScreen();
     
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
-    document.body.addEventListener('touchstart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturestart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturechange', preventScroll, { passive: false });
-    document.body.addEventListener('gestureend', preventScroll, { passive: false });
-    
-    window.addEventListener('orientationchange', enterFullScreen);
-    
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) {
-        setTimeout(enterFullScreen, 1000);
-      }
-    });
 
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
-      document.body.removeEventListener('touchstart', preventScroll);
-      document.body.removeEventListener('gesturestart', preventScroll);
-      document.body.removeEventListener('gesturechange', preventScroll);
-      document.body.removeEventListener('gestureend', preventScroll);
-      window.removeEventListener('orientationchange', enterFullScreen);
-      document.removeEventListener('fullscreenchange', enterFullScreen);
     };
   }, []);
 
@@ -111,7 +74,6 @@ const Index = () => {
     setIsCameraOn(true);
     startProcessing();
     setElapsedTime(0);
-    setDetectedPeaks([]);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -120,7 +82,7 @@ const Index = () => {
     measurementTimerRef.current = window.setInterval(() => {
       setElapsedTime(prev => {
         if (prev >= 30) {
-          stopMonitoring();
+          showMeasurementConfirmation();
           return 30;
         }
         return prev + 1;
@@ -129,33 +91,32 @@ const Index = () => {
   };
 
   const showMeasurementConfirmation = () => {
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
+    
     setShowConfirmDialog(true);
   };
 
   const confirmMeasurement = () => {
+    toast.success("Medición guardada correctamente", {
+      description: "Los resultados han sido registrados con éxito",
+      duration: 3000,
+    });
     setShowConfirmDialog(false);
     completeMonitoring();
   };
 
   const cancelMeasurement = () => {
     setShowConfirmDialog(false);
-    stopMonitoring();
+    startMonitoring();
   };
 
   const completeMonitoring = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    resetVitalSigns();
-    setElapsedTime(0);
-    setHeartRate(0);
-    setVitalSigns({ 
-      spo2: 0, 
-      pressure: "--/--",
-      arrhythmiaStatus: "--" 
-    });
-    setArrhythmiaCount("--");
-    setSignalQuality(0);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -190,17 +151,7 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    const capabilities = videoTrack.getCapabilities();
-    if (capabilities.width && capabilities.height) {
-      const maxWidth = capabilities.width.max;
-      const maxHeight = capabilities.height.max;
-      
-      videoTrack.applyConstraints({
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
-        torch: true
-      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities()?.torch) {
+    if (videoTrack.getCapabilities()?.torch) {
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
       }).catch(err => console.error("Error activando linterna:", err));
@@ -241,52 +192,38 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
-      
-      // Process peaks for visualization
-      if (heartBeatResult.detectedPeaks && heartBeatResult.detectedPeaks.length > 0) {
-        const now = Date.now();
-        const peaksWithMetadata = heartBeatResult.detectedPeaks.map(peak => ({
-          ...peak,
-          time: peak.timestamp || (now - (peak.offset || 0)),
-          value: peak.value || (lastSignal.filteredValue * 40)
-        }));
-        
-        // Check if there's arrhythmia and mark appropriate peaks
-        if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes('ARRITMIA')) {
-          // Mark the most recent peak as arrhythmia
-          if (peaksWithMetadata.length > 0) {
-            const lastIndex = peaksWithMetadata.length - 1;
-            peaksWithMetadata[lastIndex].isArrhythmia = true;
-          }
-        }
-        
-        setDetectedPeaks(peaksWithMetadata);
-      }
+      const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
+      setHeartRate(calculatedHeartRate);
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        setVitalSigns(vitals);
+        setVitalSigns({
+          spo2: vitals.spo2 > 0 ? vitals.spo2 : 0,
+          pressure: vitals.pressure || "--/--",
+          arrhythmiaStatus: vitals.arrhythmiaStatus || "--"
+        });
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
       setSignalQuality(lastSignal.quality);
+    } else {
+      setHeartRate(0);
+      setVitalSigns({ 
+        spo2: 0, 
+        pressure: "--/--",
+        arrhythmiaStatus: "--" 
+      });
+      setArrhythmiaCount("--");
+      setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
       style={{ 
-        height: '100%',
-        width: '100%',
-        maxWidth: '100vw',
-        maxHeight: '100vh',
+        height: 'calc(100vh + env(safe-area-inset-bottom))',
         paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
-        touchAction: 'none',
-        userSelect: 'none',
+        paddingBottom: 'env(safe-area-inset-bottom)'
       }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
@@ -308,7 +245,6 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
-              detectedPeaks={detectedPeaks}
             />
           </div>
 
