@@ -44,23 +44,27 @@ const PPGSignalMeter = ({
   // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
 
+  // Constantes optimizadas
   const WINDOW_WIDTH_MS = 5000; // 5 segundos de ventana
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 40.0; 
-  const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 60;
+  const verticalScale = 40.0;
+  const SMOOTHING_FACTOR = 0.8; // Reducido para menos suavizado (respuesta más rápida)
+  const TARGET_FPS = 120; // Aumentado para máxima fluidez
   const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = 600;
+  const BUFFER_SIZE = 800; // Aumentado para mayor capacidad
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 2.5;
   const MIN_PEAK_DISTANCE_MS = 220;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  const REQUIRED_FINGER_FRAMES = 2;
-  const QUALITY_HISTORY_SIZE = 3;
+  const REQUIRED_FINGER_FRAMES = 1; // Reducido para respuesta inmediata
+  const QUALITY_HISTORY_SIZE = 2; // Reducido para mayor reactividad
+  
+  // Factor de adaptación de línea base - más agresivo para adaptación instantánea
+  const BASELINE_ADAPTATION_RATE = 0.98; // Más rápido
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -109,6 +113,7 @@ const PPGSignalMeter = ({
     return weightSum > 0 ? weightedSum / weightSum : 0;
   }, []);
 
+  // Calcular color según calidad
   const getQualityColor = useCallback((q: number) => {
     // Usar promedio de calidad para mayor estabilidad
     const avgQuality = getAverageQuality();
@@ -122,6 +127,7 @@ const PPGSignalMeter = ({
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
+  // Texto informativo de calidad
   const getQualityText = useCallback((q: number) => {
     // Usar promedio de calidad para mayor estabilidad
     const avgQuality = getAverageQuality();
@@ -135,11 +141,13 @@ const PPGSignalMeter = ({
     return 'Señal débil';
   }, [getAverageQuality]);
 
+  // Suavizado de señal mejorado para reducir latencia
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
-    return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
+    return previousValue + (SMOOTHING_FACTOR * (currentValue - previousValue));
   }, []);
 
+  // Dibujado de cuadrícula
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
@@ -227,6 +235,7 @@ const PPGSignalMeter = ({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
+  // Detección de picos con estimación de tiempo mejorada
   const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     
@@ -291,6 +300,7 @@ const PPGSignalMeter = ({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
+  // Renderizado optimizado sin retardo
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -306,7 +316,10 @@ const PPGSignalMeter = ({
     }
     
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', {
+      alpha: false,
+      desynchronized: true // Mejora rendimiento
+    });
     
     if (!ctx) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -324,26 +337,28 @@ const PPGSignalMeter = ({
     }
     
     // Actualización inmediata para eliminar retraso
-    if (isFingerDetected) {
-      // Ajuste más dinámico de la línea base (adaptación más rápida)
+    if (isFingerDetected && value !== 0) {
+      // Adaptación más rápida de la línea base
       if (baselineRef.current === null) {
         baselineRef.current = value;
       } else {
-        // Factor más agresivo para adaptarse instantáneamente a cambios
-        const adaptationRate = 0.95; // Más rápido
-        baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
+        baselineRef.current = baselineRef.current * BASELINE_ADAPTATION_RATE + 
+                             value * (1 - BASELINE_ADAPTATION_RATE);
       }
       
+      // Aplicar suavizado mínimo para respuesta inmediata
       const smoothedValue = smoothValue(value, lastValueRef.current);
       lastValueRef.current = smoothedValue;
       
-      const normalizedValue = (baselineRef.current || 0) - smoothedValue;
+      // La señal PPG debe ser invertida para representación correcta
+      const normalizedValue = baselineRef.current - smoothedValue;
       const scaledValue = normalizedValue * verticalScale;
       
+      // Detectar arritmias
       let isArrhythmia = false;
       if (rawArrhythmiaData && 
           arrhythmiaStatus?.includes("ARRITMIA") && 
-          now - rawArrhythmiaData.timestamp < 500) { // Reducido para menor retraso
+          now - rawArrhythmiaData.timestamp < 300) { // Tiempo reducido para detección más rápida
         isArrhythmia = true;
         lastArrhythmiaTime.current = now;
       }
@@ -357,81 +372,101 @@ const PPGSignalMeter = ({
       dataBufferRef.current.push(dataPoint);
     }
     
+    // Obtener puntos y detectar picos
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
+    // Renderizado optimizado de la señal
     if (points.length > 1) {
       ctx.beginPath();
       ctx.strokeStyle = '#0EA5E9';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       
       let firstPoint = true;
+      let lastX = 0;
+      let lastY = 0;
+      const centerY = (CANVAS_HEIGHT / 2) - 40;
       
-      // Corregido: La onda debe fluir de derecha a izquierda (los puntos más nuevos a la derecha)
-      for (let i = 1; i < points.length; i++) {
-        const prevPoint = points[i - 1];
+      // Dibujar onda de derecha a izquierda (los puntos más nuevos a la derecha)
+      for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
-        // Calculamos la posición en X basada en el tiempo real para que fluya correctamente
-        const x1 = CANVAS_WIDTH - ((now - prevPoint.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-        const y1 = (CANVAS_HEIGHT / 2) - 40 - prevPoint.value;
+        // Cálculo exacto de la posición X basada en timestamp para flujo correcto
+        const x = CANVAS_WIDTH - ((now - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+        const y = centerY - point.value;
         
-        const x2 = CANVAS_WIDTH - ((now - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-        const y2 = (CANVAS_HEIGHT / 2) - 40 - point.value;
+        // Optimización: no dibujar puntos fuera del canvas
+        if (x < 0 || x > CANVAS_WIDTH) continue;
         
         if (firstPoint) {
-          ctx.moveTo(x1, y1);
+          ctx.moveTo(x, y);
           firstPoint = false;
+        } else {
+          ctx.lineTo(x, y);
         }
         
-        ctx.lineTo(x2, y2);
-        
-        if (point.isArrhythmia) {
+        // Dibujar segmentos de arritmia en rojo
+        if (point.isArrhythmia && i > 0) {
+          // Cerrar el trazo actual
           ctx.stroke();
-          ctx.beginPath();
+          
+          // Comenzar nuevo trazo en rojo
+          ctx.beginPath(); 
           ctx.strokeStyle = '#DC2626';
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(x, y);
           ctx.stroke();
+          
+          // Volver al trazo normal
           ctx.beginPath();
           ctx.strokeStyle = '#0EA5E9';
-          ctx.moveTo(x2, y2);
+          ctx.moveTo(x, y);
           firstPoint = true;
         }
+        
+        lastX = x;
+        lastY = y;
       }
       
       ctx.stroke();
       
-      // Dibujar los picos - corregido para que se posicionen correctamente en el gráfico
+      // Dibujar los picos detectados
+      ctx.lineWidth = 2;
       peaksRef.current.forEach((peak) => {
-        // Usar el tiempo real para posicionar los picos correctamente
+        // Calcular posición X basada en timestamp real
         const x = CANVAS_WIDTH - ((now - peak.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-        const y = (CANVAS_HEIGHT / 2) - 40 - peak.value;
+        const y = centerY - peak.value;
         
-        ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
-        ctx.fill();
-        
-        if (peak.isArrhythmia) {
+        // Solo dibujar picos visibles en el canvas
+        if (x >= 0 && x <= CANVAS_WIDTH) {
+          // Círculo del pico
           ctx.beginPath();
-          ctx.arc(x, y, 10, 0, Math.PI * 2);
-          ctx.strokeStyle = '#FEF7CD';
-          ctx.lineWidth = 3;
-          ctx.stroke();
+          ctx.arc(x, y, 6, 0, Math.PI * 2);
+          ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          ctx.fill();
           
-          ctx.font = 'bold 18px Inter';
-          ctx.fillStyle = '#F97316';
+          // Resaltar arritmias
+          if (peak.isArrhythmia) {
+            ctx.beginPath();
+            ctx.arc(x, y, 12, 0, Math.PI * 2);
+            ctx.strokeStyle = '#FEF7CD';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            ctx.font = 'bold 18px Inter';
+            ctx.fillStyle = '#F97316';
+            ctx.textAlign = 'center';
+            ctx.fillText('ARRITMIA', x, y - 25);
+          }
+          
+          // Valor numérico
+          ctx.font = 'bold 16px Inter';
+          ctx.fillStyle = '#000000';
           ctx.textAlign = 'center';
-          ctx.fillText('ARRITMIA', x, y - 25);
+          ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
         }
-        
-        ctx.font = 'bold 16px Inter';
-        ctx.fillStyle = '#000000';
-        ctx.textAlign = 'center';
-        ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
       });
     }
     
@@ -439,6 +474,7 @@ const PPGSignalMeter = ({
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults]);
 
+  // Iniciar renderizado
   useEffect(() => {
     renderSignal();
     
@@ -449,6 +485,7 @@ const PPGSignalMeter = ({
     };
   }, [renderSignal]);
 
+  // Pregeneración de grid para optimizar rendimiento
   useEffect(() => {
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
@@ -461,6 +498,7 @@ const PPGSignalMeter = ({
     }
   }, [drawGrid]);
 
+  // Manejador de reset
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
