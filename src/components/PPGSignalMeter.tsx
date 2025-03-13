@@ -59,12 +59,12 @@ const PPGSignalMeter = ({
   const frameCountRef = useRef<number>(0);
   const visiblePeaksCountRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 4000;
+  const WINDOW_WIDTH_MS = 9000;
   const CANVAS_WIDTH = 2400;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 40.0;
+  const verticalScale = 50.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const BUFFER_SIZE = 180;
