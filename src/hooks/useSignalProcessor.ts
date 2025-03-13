@@ -38,7 +38,9 @@ export const useSignalProcessor = () => {
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
   const HISTORY_SIZE = 3;
   
+  // Enhanced finger detection with hysteresis to prevent flickering
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
+    // Add current values to history
     qualityHistoryRef.current.push(signal.quality);
     if (qualityHistoryRef.current.length > HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
@@ -49,34 +51,42 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
+    // Calculate weighted average quality giving more weight to recent values
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1;
+      const weight = index + 1; // More recent values have higher weights
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
+    // Lower threshold for establishing detection, higher threshold for maintaining detection
+    // This creates hysteresis to prevent finger detection from rapidly toggling
+    const detectionThreshold = lastSignal?.fingerDetected ? 0.30 : 0.40;
+    
+    // Count positive detections in history
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    const robustFingerDetected = detectionRatio >= 0.4;
+    // Robust detection with hysteresis
+    const robustFingerDetected = detectionRatio >= detectionThreshold;
     
+    // Slight enhancement of quality for better UI experience
     const enhancedQuality = Math.min(100, avgQuality * 1.1);
     
     // Add a precise timestamp using performance.now() for better temporal resolution
-    const preciseSignal = {
+    const enhancedSignal = {
       ...signal,
       fingerDetected: robustFingerDetected,
       quality: enhancedQuality,
       preciseTimestamp: performance.now()
     };
     
-    return preciseSignal;
-  }, []);
+    return enhancedSignal;
+  }, [lastSignal]);
 
   useEffect(() => {
     console.log("useSignalProcessor: Configurando callbacks", {
@@ -85,6 +95,7 @@ export const useSignalProcessor = () => {
     });
     
     processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Apply robust finger detection with hysteresis
       const modifiedSignal = processRobustFingerDetection(signal);
       
       // Add high-precision timestamp for better synchronization
@@ -172,7 +183,11 @@ export const useSignalProcessor = () => {
     fingerDetectedHistoryRef.current = [];
     signalBufferRef.current = [];
     
+    // Start the processor and recalibrate for better detection
     processor.start();
+    processor.calibrate().catch(err => {
+      console.error("Error during calibration:", err);
+    });
   }, [processor, isProcessing]);
 
   const stopProcessing = useCallback(() => {
@@ -194,6 +209,10 @@ export const useSignalProcessor = () => {
       });
       
       await processor.calibrate();
+      
+      // Reset history after calibration
+      qualityHistoryRef.current = [];
+      fingerDetectedHistoryRef.current = [];
       
       console.log("useSignalProcessor: Calibración exitosa", {
         timestamp: new Date().toISOString()
