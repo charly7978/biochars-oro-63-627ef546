@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -58,6 +59,7 @@ const PPGSignalMeter = ({
   const lastPeaksCountRef = useRef<number>(0);
   const frameCountRef = useRef<number>(0);
   const visiblePeaksCountRef = useRef<number>(0);
+  const animationTimeRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 4000;
   const CANVAS_WIDTH = 1080;
@@ -74,6 +76,7 @@ const PPGSignalMeter = ({
   const RENDER_DELAY_COMPENSATION = 0.8;
 
   useEffect(() => {
+    // Initialize buffer
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer(BUFFER_SIZE);
       console.log('PPGSignalMeter: Buffer initialized', { 
@@ -82,6 +85,7 @@ const PPGSignalMeter = ({
       });
     }
     
+    // Handle finger detection
     if (!isFingerDetected) {
       noFingerFramesRef.current++;
       if (noFingerFramesRef.current >= MAX_NO_FINGER_FRAMES) {
@@ -93,6 +97,7 @@ const PPGSignalMeter = ({
       noFingerFramesRef.current = 0;
     }
     
+    // Reset data if needed
     if (preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
@@ -102,6 +107,7 @@ const PPGSignalMeter = ({
       lastValueRef.current = null;
     }
     
+    // Initialize offscreen canvas
     if (!offscreenCanvasRef.current) {
       const canvas = document.createElement('canvas');
       canvas.width = CANVAS_WIDTH;
@@ -115,6 +121,7 @@ const PPGSignalMeter = ({
       });
     }
     
+    // Update real-time timestamp
     const updateRealTimeStamp = () => {
       realTimeStampRef.current = Date.now();
       setTimeout(updateRealTimeStamp, 10);
@@ -126,6 +133,7 @@ const PPGSignalMeter = ({
   }, [preserveResults, isFingerDetected]);
 
   useEffect(() => {
+    // Register external peak if there's new arrhythmia data
     if (rawArrhythmiaData?.timestamp && rawArrhythmiaData.timestamp !== lastHeartbeatTimeRef.current) {
       lastHeartbeatTimeRef.current = rawArrhythmiaData.timestamp;
       
@@ -165,11 +173,13 @@ const PPGSignalMeter = ({
   }, [rawArrhythmiaData, value, quality, isFingerDetected]);
 
   useEffect(() => {
+    // Update quality history
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
     
+    // Track consecutive finger frames
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
@@ -278,6 +288,7 @@ const PPGSignalMeter = ({
   const renderSignal = useCallback(() => {
     const renderStartTime = performance.now(); 
     renderTimeRef.current.renderCount++;
+    animationTimeRef.current += 0.05; // For animation timing
     
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -389,6 +400,7 @@ const PPGSignalMeter = ({
       
       offCtx.stroke();
       
+      // Draw peaks with circles and values
       const recentPeaks = peaksRef.current.filter(peak => now - peak.time <= WINDOW_WIDTH_MS);
       visiblePeaksCountRef.current = recentPeaks.length;
       
@@ -405,7 +417,8 @@ const PPGSignalMeter = ({
         lastPeaksCountRef.current = recentPeaks.length;
       }
       
-      recentPeaks.forEach(peak => {
+      // Draw peaks with black circles and values
+      recentPeaks.forEach((peak, index) => {
         const timeSinceNow = now - peak.time;
         
         if (timeSinceNow > WINDOW_WIDTH_MS) return;
@@ -414,70 +427,76 @@ const PPGSignalMeter = ({
         const y = (canvas.height / 2) - 40 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
-          const circleColor = peak.isArrhythmia ? '#FEF08A' : '#0EA5E9';
-          const glowColor = peak.isArrhythmia ? 'rgba(254, 240, 138, 0.6)' : 'rgba(14, 165, 233, 0.6)';
-          
-          const gradient = offCtx.createRadialGradient(x, y, 3, x, y, 15);
-          gradient.addColorStop(0, glowColor);
-          gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-          
-          offCtx.beginPath();
-          offCtx.arc(x, y, 15, 0, Math.PI * 2);
-          offCtx.fillStyle = gradient;
-          offCtx.fill();
-          
-          offCtx.beginPath();
-          offCtx.arc(x, y, 8, 0, Math.PI * 2);
-          offCtx.fillStyle = circleColor;
-          offCtx.fill();
-          
-          offCtx.beginPath();
-          offCtx.arc(x, y, 8, 0, Math.PI * 2);
-          offCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-          offCtx.lineWidth = 1.5;
-          offCtx.stroke();
-          
-          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
-          
-          offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-          const textWidth = offCtx.measureText(displayValue).width;
-          offCtx.fillRect(x - textWidth/2 - 4, y - 35, textWidth + 8, 20);
-          
-          offCtx.font = 'bold 12px Inter';
-          offCtx.fillStyle = 'white';
-          offCtx.textAlign = 'center';
-          offCtx.fillText(displayValue, x, y - 22);
-          
-          const timeDisplay = `${Math.round(timeSinceNow)}ms`;
-          const timeTextWidth = offCtx.measureText(timeDisplay).width;
-          
-          offCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          offCtx.fillRect(x - timeTextWidth/2 - 3, y + 15, timeTextWidth + 6, 16);
-          
-          offCtx.font = '10px Inter';
-          offCtx.fillStyle = '#F0F0F0';
-          offCtx.fillText(timeDisplay, x, y + 27);
+          // Calculate animation values for the pulse effect
+          const animationPhase = Math.sin(animationTimeRef.current * 3 + index * 0.5) * 0.5 + 0.5;
           
           if (peak.isArrhythmia) {
+            // Draw yellow to red animated circle for arrhythmia
+            const pulseSize = 15 + animationPhase * 5;
             offCtx.beginPath();
-            offCtx.arc(x, y, 15, 0, Math.PI * 2);
-            offCtx.strokeStyle = '#FEF08A';
-            offCtx.lineWidth = 2;
+            offCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
+            
+            // Create gradient from yellow to red
+            const gradientColor = `rgba(${255 - animationPhase * 100}, ${220 - animationPhase * 200}, 0, ${0.7 - animationPhase * 0.3})`;
+            offCtx.strokeStyle = gradientColor;
+            offCtx.lineWidth = 2 + animationPhase * 1;
             offCtx.setLineDash([3, 2]);
             offCtx.stroke();
             offCtx.setLineDash([]);
             
+            // Draw circle for arrhythmia point
+            offCtx.beginPath();
+            offCtx.arc(x, y, 8, 0, Math.PI * 2);
+            const circleGradient = offCtx.createRadialGradient(x, y, 0, x, y, 8);
+            circleGradient.addColorStop(0, '#FEF08A');
+            circleGradient.addColorStop(1, '#F59E0B');
+            offCtx.fillStyle = circleGradient;
+            offCtx.fill();
+            
+            // Draw white stroke
+            offCtx.beginPath();
+            offCtx.arc(x, y, 8, 0, Math.PI * 2);
+            offCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            offCtx.lineWidth = 1.5;
+            offCtx.stroke();
+            
+            // Draw "LATIDO PREMATURO" label
             offCtx.font = 'bold 14px Inter';
-            offCtx.fillStyle = '#FEF08A';
+            offCtx.fillStyle = animationPhase > 0.5 ? '#FEF08A' : '#F59E0B';
             offCtx.textAlign = 'center';
-            
-            const arrTextWidth = offCtx.measureText("LATIDO PREMATURO").width;
-            offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            offCtx.fillRect(x - arrTextWidth/2 - 5, y - 55, arrTextWidth + 10, 22);
-            
-            offCtx.fillStyle = '#FEF08A';
             offCtx.fillText("LATIDO PREMATURO", x, y - 40);
+          } else {
+            // Regular black circle for normal peaks
+            offCtx.beginPath();
+            offCtx.arc(x, y, 8, 0, Math.PI * 2);
+            offCtx.fillStyle = '#000000';
+            offCtx.fill();
+            
+            // Draw white stroke
+            offCtx.beginPath();
+            offCtx.arc(x, y, 8, 0, Math.PI * 2);
+            offCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            offCtx.lineWidth = 1.5;
+            offCtx.stroke();
           }
+          
+          // Draw value label without background
+          const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
+          offCtx.font = 'bold 12px Inter';
+          offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
+          offCtx.textAlign = 'center';
+          offCtx.fillText(displayValue, x, y - 15);
+          
+          // Draw time label without background
+          const timeDisplay = `${Math.round(timeSinceNow)}ms`;
+          offCtx.font = '10px Inter';
+          offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
+          offCtx.fillText(timeDisplay, x, y + 20);
+          
+          // Add sequential numbering
+          offCtx.font = 'bold 9px Inter';
+          offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
+          offCtx.fillText(`#${index + 1}`, x, y + 35);
         }
       });
     }
