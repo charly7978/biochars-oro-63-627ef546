@@ -45,8 +45,8 @@ const PPGSignalMeter = ({
   const consecutiveFingerFramesRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 5000;
-  const CANVAS_WIDTH = 1024;
-  const CANVAS_HEIGHT = 768;
+  const CANVAS_WIDTH = 1920;
+  const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 35;
   const GRID_SIZE_Y = 5;
   const verticalScale = 30.0; // Aumentado para mejor visualización
