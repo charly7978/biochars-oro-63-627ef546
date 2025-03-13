@@ -18,25 +18,40 @@ const CameraView = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
-  const frameIntervalRef = useRef<number>(1000 / 30); // 30 FPS
-  const lastFrameTimeRef = useRef<number>(0);
+  const [isAndroid, setIsAndroid] = useState(false);
   // Nuevas referencias para manejo mejorado de la cámara
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
+
+  // Detector de plataforma
+  useEffect(() => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const androidDetected = /android/i.test(userAgent);
+    console.log("Plataforma detectada:", {
+      userAgent,
+      isAndroid: androidDetected,
+      isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
+    });
+    setIsAndroid(androidDetected);
+  }, []);
 
   const stopCamera = async () => {
     if (stream) {
       console.log("Stopping camera stream and turning off torch");
       stream.getTracks().forEach(track => {
-        // Turn off torch if it's available
-        if (track.kind === 'video' && track.getCapabilities()?.torch) {
-          track.applyConstraints({
-            advanced: [{ torch: false }]
-          }).catch(err => console.error("Error desactivando linterna:", err));
+        try {
+          // Turn off torch if it's available
+          if (track.kind === 'video' && track.getCapabilities()?.torch) {
+            track.applyConstraints({
+              advanced: [{ torch: false }]
+            }).catch(err => console.error("Error desactivando linterna:", err));
+          }
+          
+          // Stop the track
+          track.stop();
+        } catch (err) {
+          console.error("Error al detener track:", err);
         }
-        
-        // Stop the track
-        track.stop();
       });
       
       if (videoRef.current) {
@@ -58,29 +73,36 @@ const CameraView = ({
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-      // Configuración de video optimizada para captura de PPG
+      // Configuración base de video para todas las plataformas
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 640 }, // Resolución reducida para mejor rendimiento
+        width: { ideal: 640 }, 
         height: { ideal: 480 }
       };
 
-      // Mejoras específicas para diferentes plataformas
+      // Configuraciones específicas para diferentes plataformas
       if (isAndroid) {
-        // Ajustes para mejorar la extracción de señal en Android
+        console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 },
-          resizeMode: 'crop-and-scale'
+          // Reducir framerate para Android para mayor estabilidad
+          frameRate: { ideal: 15, max: 30 },
+          
+          // Reducir resolución para Android
+          width: { ideal: 320 },
+          height: { ideal: 240 }
         });
       } else if (isIOS) {
-        // Configuraciones específicas para iOS
+        console.log("Configurando para iOS");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }
+          frameRate: { ideal: 20, max: 30 }
         });
+      } else {
+        console.log("Configurando para escritorio");
       }
 
       const constraints: MediaStreamConstraints = {
-        video: baseVideoConstraints
+        video: baseVideoConstraints,
+        audio: false
       };
 
       console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
@@ -94,62 +116,82 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
+          // Esperar a que el track esté listo antes de configurar
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
-          if (capabilities.exposureMode) {
-            const exposureConstraint: MediaTrackConstraintSet = { 
-              exposureMode: 'continuous' 
-            };
-            
-            // Solo añadir exposureCompensation si está disponible
-            if (capabilities.exposureCompensation?.max) {
-              exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+          // En Android priorizar estabilidad sobre calidad
+          if (isAndroid) {
+            // Configuración simplificada para Android
+            try {
+              if (capabilities.torch) {
+                console.log("Activando linterna en Android");
+                await videoTrack.applyConstraints({
+                  advanced: [{ torch: true }]
+                });
+                setTorchEnabled(true);
+              }
+            } catch (err) {
+              console.error("Error al activar linterna en Android:", err);
+            }
+          } else {
+            // Configuración completa para otras plataformas
+            if (capabilities.exposureMode) {
+              const exposureConstraint: MediaTrackConstraintSet = { 
+                exposureMode: 'continuous' 
+              };
+              
+              if (capabilities.exposureCompensation?.max) {
+                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+              }
+              
+              advancedConstraints.push(exposureConstraint);
             }
             
-            advancedConstraints.push(exposureConstraint);
-          }
-          
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-          
-          // Intentar aumentar el brillo/contraste solo si está disponible
-          if (capabilities.brightness && capabilities.brightness.max) {
-            const maxBrightness = capabilities.brightness.max;
-            advancedConstraints.push({ brightness: maxBrightness * 0.7 }); // 70% del máximo
-          }
-          
-          if (capabilities.contrast && capabilities.contrast.max) {
-            const maxContrast = capabilities.contrast.max;
-            advancedConstraints.push({ contrast: maxContrast * 0.6 }); // 60% del máximo
-          }
+            if (capabilities.focusMode) {
+              advancedConstraints.push({ focusMode: 'continuous' });
+            }
+            
+            if (capabilities.whiteBalanceMode) {
+              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+            }
+            
+            if (capabilities.brightness && capabilities.brightness.max) {
+              const maxBrightness = capabilities.brightness.max;
+              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
+            }
+            
+            if (capabilities.contrast && capabilities.contrast.max) {
+              const maxContrast = capabilities.contrast.max;
+              advancedConstraints.push({ contrast: maxContrast * 0.6 });
+            }
 
-          if (advancedConstraints.length > 0) {
-            console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-            await videoTrack.applyConstraints({
-              advanced: advancedConstraints
-            });
-          }
+            if (advancedConstraints.length > 0) {
+              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+              await videoTrack.applyConstraints({
+                advanced: advancedConstraints
+              });
+            }
 
+            // Activar linterna para no-Android
+            if (capabilities.torch) {
+              console.log("Activando linterna para mejorar la señal PPG");
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              setTorchEnabled(true);
+            } else {
+              console.log("La linterna no está disponible en este dispositivo");
+            }
+          }
+          
+          // Aplicar optimizaciones de renderizado para todos
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
           
-          // Activar linterna (flash) inmediatamente si está disponible
-          if (capabilities.torch) {
-            console.log("Activando linterna para mejorar la señal PPG");
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            setTorchEnabled(true);
-          } else {
-            console.log("La linterna no está disponible en este dispositivo");
-          }
         } catch (err) {
           console.log("No se pudieron aplicar algunas optimizaciones:", err);
         }
@@ -190,7 +232,7 @@ const CameraView = ({
   
   // Función para refrescar el auto-enfoque periódicamente
   const refreshAutoFocus = useCallback(async () => {
-    if (stream && !isFocusing) {
+    if (stream && !isFocusing && !isAndroid) { // Evitar en Android
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.focusMode) {
         try {
@@ -216,7 +258,7 @@ const CameraView = ({
         }
       }
     }
-  }, [stream, isFocusing]);
+  }, [stream, isFocusing, isAndroid]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
@@ -250,15 +292,16 @@ const CameraView = ({
     }
     
     // Refrescar el enfoque periódicamente cuando hay un dedo detectado
-    // para mantener la imagen nítida
-    if (isFingerDetected) {
+    // pero solo en plataformas no-Android
+    if (isFingerDetected && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 5000); // Cada 5 segundos
       return () => clearInterval(focusInterval);
     }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus]);
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
-  // Mejorar rendimiento optimizando la tasa de captura
-  const targetFrameInterval = signalQuality > 70 ? 1000/30 : 1000/15; // Adaptativo según calidad
+  // En Android usamos framerates más bajos para estabilidad
+  const targetFrameInterval = isAndroid ? 1000/10 : 
+                             signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
     <video
