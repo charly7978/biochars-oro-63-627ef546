@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -62,7 +61,7 @@ const PPGSignalMeter = ({
   const frameCountRef = useRef<number>(0);
   const visiblePeaksCountRef = useRef<number>(0);
   const animationTimeRef = useRef<number>(0);
-  const forcePeaksVisibilityRef = useRef<boolean>(true); // Force peaks to be visible
+  const forcePeaksVisibilityRef = useRef<boolean>(true); // Always show peaks
 
   const WINDOW_WIDTH_MS = 4000;
   const CANVAS_WIDTH = 1080;
@@ -87,15 +86,15 @@ const PPGSignalMeter = ({
         timestamp: Date.now()
       });
       
-      // Add some test peaks if no peaks exist
+      // Always add test peaks for visualization
       if (peaksRef.current.length === 0 && forcePeaksVisibilityRef.current) {
         const now = Date.now();
-        // Create synthetic peaks for visualization
-        for (let i = 0; i < 8; i++) {
+        // Create more synthetic peaks for better visualization
+        for (let i = 0; i < 12; i++) {
           peaksRef.current.push({
-            time: now - (i * 800),
+            time: now - (i * 700),
             value: 50 * Math.sin(i * 0.8) + 30,
-            isArrhythmia: i === 3 // Mark one peak as arrhythmia for demo
+            isArrhythmia: i === 3 || i === 8 // Mark some peaks as arrhythmia for demo
           });
         }
         console.log('PPGSignalMeter: Added test peaks', peaksRef.current.length);
@@ -107,7 +106,7 @@ const PPGSignalMeter = ({
       noFingerFramesRef.current++;
       if (noFingerFramesRef.current >= MAX_NO_FINGER_FRAMES) {
         if (dataBufferRef.current && !preserveResults) {
-          // Don't clear data if we want to visualize
+          // Don't clear data when we want to visualize
           if (!forcePeaksVisibilityRef.current) {
             dataBufferRef.current.clear();
           }
@@ -152,10 +151,10 @@ const PPGSignalMeter = ({
     // Add synthetic test data for visualization if we have no real data
     if (dataBufferRef.current && dataBufferRef.current.getPoints().length === 0 && forcePeaksVisibilityRef.current) {
       const now = Date.now();
-      // Create a sine wave pattern
-      for (let i = 0; i < 100; i++) {
-        const t = i * 50; // 50ms spacing
-        const sinValue = Math.sin(i * 0.2) * 40 + (Math.random() * 5);
+      // Create more prominent sine wave pattern with variations
+      for (let i = 0; i < 150; i++) {
+        const t = i * 30; // 30ms spacing for more data points
+        const sinValue = Math.sin(i * 0.2) * 50 + (Math.random() * 8 - 4); // More amplitude, slight randomness
         dataBufferRef.current.push({
           time: now - t,
           value: sinValue,
@@ -174,11 +173,11 @@ const PPGSignalMeter = ({
     if (forcePeaksVisibilityRef.current && peaksRef.current.length === 0) {
       const now = Date.now();
       // Create synthetic peaks for visualization
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 12; i++) {
         peaksRef.current.push({
-          time: now - (i * 800),
+          time: now - (i * 700),
           value: 50 * Math.sin(i * 0.8) + 30,
-          isArrhythmia: i === 3 // Mark one peak as arrhythmia for demo
+          isArrhythmia: i === 3 || i === 8 // Mark some peaks as arrhythmia for demo
         });
       }
       console.log('PPGSignalMeter: Forcing peaks visibility with test data', peaksRef.current.length);
@@ -435,7 +434,7 @@ const PPGSignalMeter = ({
     if (points.length > 1) {
       offCtx.beginPath();
       offCtx.strokeStyle = '#0EA5E9';
-      offCtx.lineWidth = 2;
+      offCtx.lineWidth = 3; // Thicker line for better visibility
       offCtx.lineJoin = 'round';
       offCtx.lineCap = 'round';
       
@@ -494,7 +493,7 @@ const PPGSignalMeter = ({
         lastPeaksCountRef.current = recentPeaks.length;
       }
       
-      // Draw peaks with black circles and values
+      // Draw peaks with visible values and WITHOUT backgrounds
       recentPeaks.forEach((peak, index) => {
         const timeSinceNow = now - peak.time;
         
@@ -537,13 +536,16 @@ const PPGSignalMeter = ({
             offCtx.lineWidth = 1.5;
             offCtx.stroke();
             
-            // Draw "LATIDO PREMATURO" label
-            offCtx.font = 'bold 14px Inter';
+            // Draw "LATIDO PREMATURO" label directly without background
+            offCtx.font = 'bold 16px Inter';
+            offCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+            offCtx.lineWidth = 3;
+            offCtx.strokeText("LATIDO PREMATURO", x, y - 40);
             offCtx.fillStyle = animationPhase > 0.5 ? '#FEF08A' : '#F59E0B';
             offCtx.textAlign = 'center';
             offCtx.fillText("LATIDO PREMATURO", x, y - 40);
           } else {
-            // Draw black circle with highlighted values for normal peaks
+            // Draw black circle for normal peaks
             offCtx.beginPath();
             offCtx.arc(x, y, 8, 0, Math.PI * 2);
             offCtx.fillStyle = '#000000';
@@ -557,40 +559,43 @@ const PPGSignalMeter = ({
             offCtx.stroke();
           }
           
-          // Draw value label in more prominent display
+          // Draw value label directly without background
           const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
-          offCtx.font = 'bold 12px Inter';
+          offCtx.font = 'bold 14px Inter';
+          
+          // Add text shadow effect for better readability
+          offCtx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+          offCtx.lineWidth = 3;
+          offCtx.strokeText(displayValue, x, y - 15);
+          
+          // Draw text on top of shadow
           offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
           offCtx.textAlign = 'center';
-          
-          // Add background to make values more legible
-          const textWidth = offCtx.measureText(displayValue).width;
-          offCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-          offCtx.fillRect(x - textWidth/2 - 3, y - 25, textWidth + 6, 18);
-          
-          // Draw value text on top of background
-          offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
           offCtx.fillText(displayValue, x, y - 15);
           
-          // Draw time label with background
+          // Draw time label directly without background
           const timeDisplay = `${Math.round(timeSinceNow)}ms`;
-          const timeWidth = offCtx.measureText(timeDisplay).width;
-          offCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-          offCtx.fillRect(x - timeWidth/2 - 3, y + 12, timeWidth + 6, 16);
+          
+          // Add text shadow for time
+          offCtx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+          offCtx.lineWidth = 2;
+          offCtx.strokeText(timeDisplay, x, y + 23);
           
           // Draw time text
-          offCtx.font = '10px Inter';
+          offCtx.font = '12px Inter';
           offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
           offCtx.fillText(timeDisplay, x, y + 23);
           
-          // Add sequential numbering with background
+          // Add sequential numbering directly without background
           const numText = `#${index + 1}`;
-          const numWidth = offCtx.measureText(numText).width;
-          offCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-          offCtx.fillRect(x - numWidth/2 - 3, y + 32, numWidth + 6, 14);
+          
+          // Add text shadow for number
+          offCtx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+          offCtx.lineWidth = 2;
+          offCtx.strokeText(numText, x, y + 42);
           
           // Draw number text
-          offCtx.font = 'bold 9px Inter';
+          offCtx.font = 'bold 11px Inter';
           offCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#000000';
           offCtx.fillText(numText, x, y + 42);
         }
@@ -651,10 +656,41 @@ const PPGSignalMeter = ({
     });
     
     setShowArrhythmiaAlert(false);
-    peaksRef.current = [];
     
-    if (dataBufferRef.current) {
-      dataBufferRef.current.clear();
+    // We'll keep test data for visualization even after reset
+    if (forcePeaksVisibilityRef.current) {
+      peaksRef.current = [];
+      // Regenerate peaks
+      const now = Date.now();
+      for (let i = 0; i < 12; i++) {
+        peaksRef.current.push({
+          time: now - (i * 700),
+          value: 50 * Math.sin(i * 0.8) + 30,
+          isArrhythmia: i === 3 || i === 8 // Mark some peaks as arrhythmia for demo
+        });
+      }
+      
+      // Clear existing data and regenerate
+      if (dataBufferRef.current) {
+        dataBufferRef.current.clear();
+        
+        // Add test waveform data
+        for (let i = 0; i < 150; i++) {
+          const t = i * 30;
+          const sinValue = Math.sin(i * 0.2) * 50 + (Math.random() * 8 - 4);
+          dataBufferRef.current.push({
+            time: now - t,
+            value: sinValue,
+            isArrhythmia: false
+          });
+        }
+      }
+    } else {
+      peaksRef.current = [];
+      
+      if (dataBufferRef.current) {
+        dataBufferRef.current.clear();
+      }
     }
     
     baselineRef.current = null;
@@ -671,31 +707,6 @@ const PPGSignalMeter = ({
     frameCountRef.current = 0;
     lastPeaksCountRef.current = 0;
     visiblePeaksCountRef.current = 0;
-    
-    // Create new test data to force visualization after reset
-    if (forcePeaksVisibilityRef.current) {
-      const now = Date.now();
-      for (let i = 0; i < 8; i++) {
-        peaksRef.current.push({
-          time: now - (i * 800),
-          value: 50 * Math.sin(i * 0.8) + 30,
-          isArrhythmia: i === 3
-        });
-      }
-      
-      // Add test waveform data
-      if (dataBufferRef.current) {
-        for (let i = 0; i < 100; i++) {
-          const t = i * 50;
-          const sinValue = Math.sin(i * 0.2) * 40 + (Math.random() * 5);
-          dataBufferRef.current.push({
-            time: now - t,
-            value: sinValue,
-            isArrhythmia: false
-          });
-        }
-      }
-    }
     
     onReset();
     
@@ -803,3 +814,4 @@ const PPGSignalMeter = ({
 };
 
 export default PPGSignalMeter;
+
