@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -79,6 +78,7 @@ const Index = () => {
     startProcessing();
     setElapsedTime(0);
     processingActiveRef.current = true;
+    setDetectedPeaks([]);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -152,7 +152,6 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
-    // Cancel any ongoing frame processing
     if (frameProcessingRef.current) {
       cancelAnimationFrame(frameProcessingRef.current);
       frameProcessingRef.current = null;
@@ -184,18 +183,15 @@ const Index = () => {
     }
     
     const processImage = async () => {
-      // Verificar si debemos continuar procesando
       if (!processingActiveRef.current || !isMonitoring) {
         console.log("Procesamiento detenido - monitoreo desactivado");
         return;
       }
       
       try {
-        // Verificar que el track sigue disponible y activo
         if (!videoTrack || videoTrack.readyState !== 'live') {
           console.log("Video track no disponible o no activo - saltando frame");
           
-          // Reintentar después de un breve delay
           if (processingActiveRef.current) {
             frameProcessingRef.current = setTimeout(() => {
               frameProcessingRef.current = requestAnimationFrame(processImage);
@@ -218,17 +214,14 @@ const Index = () => {
       } catch (error) {
         console.error("Error capturando frame:", error);
         
-        // Continuar solo si el procesamiento sigue activo
         if (processingActiveRef.current) {
-          // Pequeña pausa antes de reintentar para no saturar con errores
           frameProcessingRef.current = setTimeout(() => {
             frameProcessingRef.current = requestAnimationFrame(processImage);
-          }, 1000); // Pausa más larga en caso de error
+          }, 1000);
         }
       }
     };
 
-    // Iniciar el procesamiento
     processImage();
   };
 
@@ -238,7 +231,6 @@ const Index = () => {
       const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
       setHeartRate(calculatedHeartRate);
       
-      // Guardar los picos detectados para visualización
       if (heartBeatResult.detectedPeaks) {
         const now = Date.now();
         const newPeaks = heartBeatResult.detectedPeaks.map(peak => ({
@@ -249,7 +241,6 @@ const Index = () => {
         }));
         
         setDetectedPeaks(prev => {
-          // Mantener solo los picos recientes (últimos 5 segundos)
           const filteredPrev = prev.filter(p => now - p.time < 5000);
           return [...filteredPrev, ...newPeaks];
         });
@@ -263,7 +254,6 @@ const Index = () => {
           arrhythmiaStatus: vitals.arrhythmiaStatus || "--"
         });
         
-        // Si hay una arritmia, marcar el último pico como arrítmico
         if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('ARRITMIA')) {
           const arrhythmiaCount = vitals.arrhythmiaStatus.split('|')[1] || "--";
           setArrhythmiaCount(arrhythmiaCount);
@@ -296,9 +286,10 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
-  // Asegurar que los picos se pasen correctamente a PPGSignalMeter
   useEffect(() => {
-    console.log("Picos detectados actualizados:", detectedPeaks.length);
+    if (detectedPeaks.length > 0) {
+      console.log("Picos detectados actualizados:", detectedPeaks.length);
+    }
   }, [detectedPeaks]);
 
   return (
@@ -315,6 +306,7 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
+            detectedPeaks={detectedPeaks}
           />
         </div>
 
