@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -38,22 +39,30 @@ const PPGSignalMeter = ({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Referencia para el historial de calidad de señal
+  const qualityHistoryRef = useRef<number[]>([]);
+  // Contador para frames consecutivos con dedo detectado
+  const consecutiveFingerFramesRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 3500;
   const CANVAS_WIDTH = 1024;
   const CANVAS_HEIGHT = 768;
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 28.0;
+  const verticalScale = 30.0; // Aumentado para mejor visualización
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 250;
+  const PEAK_THRESHOLD = 2.5; // Reducido para mayor sensibilidad
+  const MIN_PEAK_DISTANCE_MS = 220; // Reducido para mejor detección
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
+  // Nuevo: Cantidad de frames consecutivos necesarios para confirmar detección
+  const REQUIRED_FINGER_FRAMES = 3;
+  // Nuevo: Tamaño del historial de calidad para calcular promedio
+  const QUALITY_HISTORY_SIZE = 5;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -69,19 +78,64 @@ const PPGSignalMeter = ({
     }
   }, [preserveResults, isFingerDetected]);
 
+  // Actualizar historial de calidad
+  useEffect(() => {
+    // Actualizar el historial de calidad
+    qualityHistoryRef.current.push(quality);
+    if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
+      qualityHistoryRef.current.shift();
+    }
+    
+    // Actualizar contador de frames con dedo detectado
+    if (isFingerDetected) {
+      consecutiveFingerFramesRef.current++;
+    } else {
+      consecutiveFingerFramesRef.current = 0;
+    }
+  }, [quality, isFingerDetected]);
+
+  // Calcular calidad promedio más estable (reduce fluctuaciones)
+  const getAverageQuality = useCallback(() => {
+    if (qualityHistoryRef.current.length === 0) return 0;
+    
+    // Calcular promedio ponderando más los valores recientes
+    let weightedSum = 0;
+    let weightSum = 0;
+    
+    qualityHistoryRef.current.forEach((q, index) => {
+      const weight = index + 1; // Dar más peso a valores más recientes
+      weightedSum += q * weight;
+      weightSum += weight;
+    });
+    
+    return weightSum > 0 ? weightedSum / weightSum : 0;
+  }, []);
+
   const getQualityColor = useCallback((q: number) => {
-    if (!isFingerDetected) return 'from-gray-400 to-gray-500';
-    if (q > 75) return 'from-green-500 to-emerald-500';
-    if (q > 50) return 'from-yellow-500 to-orange-500';
+    // Usar promedio de calidad para mayor estabilidad
+    const avgQuality = getAverageQuality();
+    
+    // Verificar frames consecutivos para confirmación robusta
+    const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+    
+    if (!isFingerConfirmed) return 'from-gray-400 to-gray-500';
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500'; // Umbral reducido
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500'; // Umbral reducido
     return 'from-red-500 to-rose-500';
-  }, [isFingerDetected]);
+  }, [getAverageQuality]);
 
   const getQualityText = useCallback((q: number) => {
-    if (!isFingerDetected) return 'Sin detección';
-    if (q > 75) return 'Señal óptima';
-    if (q > 50) return 'Señal aceptable';
+    // Usar promedio de calidad para mayor estabilidad
+    const avgQuality = getAverageQuality();
+    
+    // Verificar frames consecutivos para confirmación robusta
+    const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+    
+    if (!isFingerConfirmed) return 'Sin detección';
+    if (avgQuality > 65) return 'Señal óptima'; // Umbral reducido
+    if (avgQuality > 40) return 'Señal aceptable'; // Umbral reducido
     return 'Señal débil';
-  }, [isFingerDetected]);
+  }, [getAverageQuality]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -207,6 +261,7 @@ const PPGSignalMeter = ({
         }
       }
       
+      // Reducción del umbral mínimo para detectar picos más pequeños
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
         potentialPeaks.push({
           index: i,
@@ -217,6 +272,7 @@ const PPGSignalMeter = ({
       }
     }
     
+    // Procesar picos potenciales y aplicar filtrado temporal
     for (const peak of potentialPeaks) {
       const tooClose = peaksRef.current.some(
         existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
@@ -270,10 +326,13 @@ const PPGSignalMeter = ({
       return;
     }
     
+    // Ajuste más dinámico de la línea base
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      baselineRef.current = baselineRef.current * 0.95 + value * 0.05;
+      // Factor más agresivo para adaptarse rápidamente a cambios
+      const adaptationRate = isFingerDetected ? 0.97 : 0.95;
+      baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
     }
     
     const smoothedValue = smoothValue(value, lastValueRef.current);
@@ -406,6 +465,10 @@ const PPGSignalMeter = ({
     onReset();
   }, [onReset]);
 
+  // Determinar si usar calidad mejorada para UI
+  const displayQuality = getAverageQuality();
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col">
       <canvas
@@ -422,11 +485,11 @@ const PPGSignalMeter = ({
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${isFingerDetected ? quality : 0}%` }}
+                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
               />
             </div>
             <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                  style={{ color: quality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
           </div>
@@ -435,15 +498,15 @@ const PPGSignalMeter = ({
         <div className="flex flex-col items-center">
           <Fingerprint
             className={`h-8 w-8 transition-colors duration-300 ${
-              !isFingerDetected ? 'text-gray-400' :
-              quality > 75 ? 'text-green-500' :
-              quality > 50 ? 'text-yellow-500' :
+              !displayFingerDetected ? 'text-gray-400' :
+              displayQuality > 65 ? 'text-green-500' :
+              displayQuality > 40 ? 'text-yellow-500' :
               'text-red-500'
             }`}
             strokeWidth={1.5}
           />
           <span className="text-[8px] text-center font-medium text-black/80">
-            {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
       </div>

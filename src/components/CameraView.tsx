@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 
 interface CameraViewProps {
@@ -16,8 +17,12 @@ const CameraView = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
+  const [isFocusing, setIsFocusing] = useState(false);
   const frameIntervalRef = useRef<number>(1000 / 30); // 30 FPS
   const lastFrameTimeRef = useRef<number>(0);
+  // Nuevas referencias para manejo mejorado de la cámara
+  const retryAttemptsRef = useRef<number>(0);
+  const maxRetryAttempts = 3;
 
   const stopCamera = async () => {
     if (stream) {
@@ -40,6 +45,7 @@ const CameraView = ({
       
       setStream(null);
       setTorchEnabled(false);
+      retryAttemptsRef.current = 0;
     }
   };
 
@@ -50,18 +56,26 @@ const CameraView = ({
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
+      // Configuración de video optimizada para captura de PPG
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
+        width: { ideal: 640 }, // Resolución reducida para mejor rendimiento
         height: { ideal: 480 }
       };
 
+      // Mejoras específicas para diferentes plataformas
       if (isAndroid) {
         // Ajustes para mejorar la extracción de señal en Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }, // Limitamos explícitamente a 30 FPS
+          frameRate: { ideal: 30, max: 30 },
           resizeMode: 'crop-and-scale'
+        });
+      } else if (isIOS) {
+        // Configuraciones específicas para iOS
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30, max: 30 }
         });
       }
 
@@ -69,25 +83,48 @@ const CameraView = ({
         video: baseVideoConstraints
       };
 
+      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Cámara inicializada correctamente");
+      
       const videoTrack = newStream.getVideoTracks()[0];
 
-      if (videoTrack && isAndroid) {
+      if (videoTrack) {
         try {
           const capabilities = videoTrack.getCapabilities();
+          console.log("Capacidades de la cámara:", capabilities);
+          
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
           if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
+            advancedConstraints.push({ 
+              exposureMode: 'continuous',
+              // Aumentar exposición si está disponible para mejorar la señal
+              exposureCompensation: capabilities.exposureCompensation?.max || 0
+            });
           }
+          
           if (capabilities.focusMode) {
             advancedConstraints.push({ focusMode: 'continuous' });
           }
+          
           if (capabilities.whiteBalanceMode) {
             advancedConstraints.push({ whiteBalanceMode: 'continuous' });
           }
+          
+          // Intentar aumentar el brillo/contraste si está disponible
+          if (capabilities.brightness) {
+            const maxBrightness = capabilities.brightness.max || 0;
+            advancedConstraints.push({ brightness: maxBrightness * 0.7 }); // 70% del máximo
+          }
+          
+          if (capabilities.contrast) {
+            const maxContrast = capabilities.contrast.max || 0;
+            advancedConstraints.push({ contrast: maxContrast * 0.6 }); // 60% del máximo
+          }
 
           if (advancedConstraints.length > 0) {
+            console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
             await videoTrack.applyConstraints({
               advanced: advancedConstraints
             });
@@ -105,6 +142,8 @@ const CameraView = ({
               advanced: [{ torch: true }]
             });
             setTorchEnabled(true);
+          } else {
+            console.log("La linterna no está disponible en este dispositivo");
           }
         } catch (err) {
           console.log("No se pudieron aplicar algunas optimizaciones:", err);
@@ -113,7 +152,9 @@ const CameraView = ({
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        if (isAndroid) {
+        
+        // Aplicar optimizaciones de rendimiento
+        if (isAndroid || isIOS) {
           videoRef.current.style.willChange = 'transform';
           videoRef.current.style.transform = 'translateZ(0)';
         }
@@ -124,10 +165,53 @@ const CameraView = ({
       if (onStreamReady) {
         onStreamReady(newStream);
       }
+      
+      // Reiniciar contador de intentos
+      retryAttemptsRef.current = 0;
+      
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
+      
+      // Incrementar contador de intentos y reintentar si no excede el máximo
+      retryAttemptsRef.current++;
+      if (retryAttemptsRef.current <= maxRetryAttempts) {
+        console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
+        setTimeout(startCamera, 1000); // Reintento con delay
+      } else {
+        console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
+      }
     }
   };
+  
+  // Función para refrescar el auto-enfoque periódicamente
+  const refreshAutoFocus = useCallback(async () => {
+    if (stream && !isFocusing) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.focusMode) {
+        try {
+          setIsFocusing(true);
+          // Cambiar brevemente a enfoque manual y volver a auto para refrescar
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'manual' }]
+          });
+          
+          // Pequeña pausa para permitir que el cambio surta efecto
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Volver a enfoque automático
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'continuous' }]
+          });
+          
+          console.log("Auto-enfoque refrescado con éxito");
+        } catch (err) {
+          console.error("Error al refrescar auto-enfoque:", err);
+        } finally {
+          setIsFocusing(false);
+        }
+      }
+    }
+  }, [stream, isFocusing]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
@@ -159,10 +243,17 @@ const CameraView = ({
         });
       }
     }
-  }, [stream, isFingerDetected, torchEnabled]);
+    
+    // Refrescar el enfoque periódicamente cuando hay un dedo detectado
+    // para mantener la imagen nítida
+    if (isFingerDetected) {
+      const focusInterval = setInterval(refreshAutoFocus, 5000); // Cada 5 segundos
+      return () => clearInterval(focusInterval);
+    }
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus]);
 
-  // Cambiar la tasa de cuadros a, por ejemplo, 12 FPS:
-  const targetFrameInterval = 1000/12; // Apunta a 12 FPS para menor consumo
+  // Mejorar rendimiento optimizando la tasa de captura
+  const targetFrameInterval = signalQuality > 70 ? 1000/30 : 1000/15; // Adaptativo según calidad
 
   return (
     <video
