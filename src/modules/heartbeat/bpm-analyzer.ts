@@ -8,11 +8,11 @@ export class BPMAnalyzer {
   private prevValidBpm = 0;
   
   // Optimized physiological parameters
-  private readonly STABILITY_THRESHOLD = 4; // Tighter threshold for BPM variation
-  private readonly CONFIDENCE_BOOST_THRESHOLD = 3; // More sensitive stability threshold
+  private readonly STABILITY_THRESHOLD = 3.5; // Balanced threshold for BPM variation
+  private readonly CONFIDENCE_BOOST_THRESHOLD = 2.5; // Balanced stability threshold
   private previousValues: number[] = [];
   
-  constructor(minBpm = 40, maxBpm = 180, bpmWindowSize = 6) {
+  constructor(minBpm = 40, maxBpm = 180, bpmWindowSize = 5) {
     this.MIN_BPM = minBpm;
     this.MAX_BPM = maxBpm;
     this.BPM_WINDOW_SIZE = bpmWindowSize;
@@ -26,17 +26,17 @@ export class BPMAnalyzer {
     if (bpm >= this.MIN_BPM && bpm <= this.MAX_BPM) {
       // Track raw values for stability assessment
       this.previousValues.push(bpm);
-      if (this.previousValues.length > 10) {
+      if (this.previousValues.length > 8) { // Reduced for faster response
         this.previousValues.shift();
       }
       
-      // Enhanced outlier rejection with physiological basis
-      if (this.bpmValues.length >= 3 && this.previousValues.length >= 4) {
+      // Enhanced outlier rejection with balanced parameters
+      if (this.bpmValues.length >= 3 && this.previousValues.length >= 3) {
         // Calculate average of existing values
         const avgBpm = this.bpmValues.reduce((sum, val) => sum + val, 0) / this.bpmValues.length;
         
         // Reject extreme outliers using physiological limits
-        if (Math.abs(bpm - avgBpm) > this.STABILITY_THRESHOLD * 2.5) {
+        if (Math.abs(bpm - avgBpm) > this.STABILITY_THRESHOLD * 2.0) {
           console.log(`BPM Analyzer: Rejected extreme outlier BPM: ${bpm} vs avg ${avgBpm}`);
           return this.prevValidBpm > 0 ? this.prevValidBpm : null;
         }
@@ -45,7 +45,7 @@ export class BPMAnalyzer {
         if (Math.abs(bpm - avgBpm) > this.STABILITY_THRESHOLD) {
           // Calculate dampening factor based on deviation magnitude
           const deviation = Math.abs(bpm - avgBpm);
-          const dampingFactor = Math.max(0.15, 0.5 - (deviation / 120));
+          const dampingFactor = Math.max(0.2, 0.45 - (deviation / 120));
           const dampedBpm = avgBpm + (bpm - avgBpm) * dampingFactor;
           console.log(`BPM Analyzer: Dampened BPM from ${bpm} to ${dampedBpm} (deviation: ${deviation})`);
           this.bpmValues.push(dampedBpm);
@@ -63,7 +63,7 @@ export class BPMAnalyzer {
         this.bpmValues.shift();
       }
       
-      // Physiologically optimized BPM calculation with weighted median approach
+      // Balanced BPM calculation with weighted median approach
       let weightedSum = 0;
       let weightSum = 0;
       
@@ -71,13 +71,13 @@ export class BPMAnalyzer {
       const sortedValues = [...this.bpmValues].sort((a, b) => a - b);
       const medianBpm = sortedValues[Math.floor(sortedValues.length / 2)];
       
-      // Apply weights with stronger preference for median-like values
+      // Apply weights with preference for median-like values
       for (let i = 0; i < this.bpmValues.length; i++) {
         // Base weight increases for more recent values
         const recencyWeight = i + 1;
         
         // Additional weight if close to median (physiologically more likely to be accurate)
-        const medianCloseness = Math.max(0, 1 - Math.abs(this.bpmValues[i] - medianBpm) / 10);
+        const medianCloseness = Math.max(0, 1 - Math.abs(this.bpmValues[i] - medianBpm) / 12);
         const weight = recencyWeight * (1 + medianCloseness);
         
         weightedSum += this.bpmValues[i] * weight;
@@ -95,10 +95,10 @@ export class BPMAnalyzer {
   }
   
   public calculateConfidence(quality: number): number {
-    // Enhanced physiologically-based confidence calculation
+    // Balanced confidence calculation
     let confidence = (quality / 100) * 0.5; // Base confidence from signal quality
     
-    // Advanced confidence boost with consistent readings
+    // Balanced confidence boost with consistent readings
     if (this.bpmValues.length >= 3) {
       const avg = this.bpmValues.reduce((sum, val) => sum + val, 0) / this.bpmValues.length;
       
@@ -108,11 +108,11 @@ export class BPMAnalyzer {
       
       // Physiologically-relevant confidence boosts based on stability
       if (stdDev < this.CONFIDENCE_BOOST_THRESHOLD) {
-        confidence += 0.3; // Strong boost for very stable readings
+        confidence += 0.25; // Strong boost for very stable readings
       } else if (stdDev < this.STABILITY_THRESHOLD) {
-        confidence += 0.2; // Moderate boost for stable readings
+        confidence += 0.15; // Moderate boost for stable readings
       } else if (stdDev < this.STABILITY_THRESHOLD * 1.5) {
-        confidence += 0.1; // Small boost for somewhat stable readings
+        confidence += 0.10; // Small boost for somewhat stable readings
       }
       
       // Additional boost based on number of consistent readings

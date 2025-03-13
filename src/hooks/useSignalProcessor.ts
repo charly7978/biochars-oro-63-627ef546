@@ -17,23 +17,23 @@ export const useSignalProcessor = () => {
   
   // Enhanced parameters for better signal extraction
   const MAX_BUFFER_SIZE = 300;
-  const QUALITY_THRESHOLD = 25; // Significantly reduced to capture weaker signals
-  const FINGER_DETECTION_FRAMES = 2; // Faster finger detection
-  const MIN_SIGNAL_AMPLITUDE = 0.001; // Much more sensitive to amplitude changes
+  const QUALITY_THRESHOLD = 30; // Increased to reduce false positives
+  const FINGER_DETECTION_FRAMES = 1; // Faster finger detection
+  const MIN_SIGNAL_AMPLITUDE = 0.005; // Moderately sensitive to amplitude changes
   const fingerDetectionCounterRef = useRef<number>(0);
   
   // Improved filtering for human cardiac signals
-  const LP_ALPHA = 0.2; // Increased for faster response to signal changes
-  const SMA_WINDOW = 4; // Reduced for better responsiveness
+  const LP_ALPHA = 0.25; // Balanced for good response to signal changes
+  const SMA_WINDOW = 5; // Balanced window size
   const lastFilteredValueRef = useRef<number | null>(null);
   
   // Dynamic amplification control
-  const amplificationFactorRef = useRef<number>(100.0); // Increased initial amplification
+  const amplificationFactorRef = useRef<number>(90.0); // Balanced initial amplification
   const previousSignalLevelsRef = useRef<number[]>([]);
   
   // Signal memory for continuity
   const validSignalMemoryRef = useRef<{value: number, quality: number}[]>([]);
-  const MAX_MEMORY_SIZE = 30; // Increased for better history tracking
+  const MAX_MEMORY_SIZE = 25; // Balanced
   
   // Detection stability management
   const consecutiveDetectionsRef = useRef<number>(0);
@@ -60,15 +60,15 @@ export const useSignalProcessor = () => {
     };
   }, []);
 
-  // Enhanced amplification function with better sensitivity
+  // Balanced amplification function
   const adjustAmplification = useCallback((value: number) => {
-    const MAX_BUFFER = 15; // Increased buffer for better adaptation
+    const MAX_BUFFER = 12; // Balanced buffer for adaptation
     previousSignalLevelsRef.current.push(Math.abs(value));
     if (previousSignalLevelsRef.current.length > MAX_BUFFER) {
       previousSignalLevelsRef.current.shift();
     }
     
-    if (previousSignalLevelsRef.current.length >= 5) {
+    if (previousSignalLevelsRef.current.length >= 4) {
       // Calculate recent average amplitude
       const avgAmplitude = previousSignalLevelsRef.current.reduce((sum, val) => sum + val, 0) / 
                           previousSignalLevelsRef.current.length;
@@ -82,34 +82,34 @@ export const useSignalProcessor = () => {
       debugInfoRef.current.avgSignalStrength = avgAmplitude;
       debugInfoRef.current.signalNoise = avgVariation;
       
-      // Much more aggressive adaptive strategy
+      // Balanced adaptive strategy
       if (avgAmplitude < 0.004) {
-        // Very weak signal - amplify significantly more
-        amplificationFactorRef.current = Math.min(200, amplificationFactorRef.current * 1.15);
+        // Very weak signal - amplify more
+        amplificationFactorRef.current = Math.min(160, amplificationFactorRef.current * 1.10);
       } 
       else if (avgAmplitude < 0.01) {
         // Weak signal - increase amplification
-        amplificationFactorRef.current = Math.min(160, amplificationFactorRef.current * 1.08);
+        amplificationFactorRef.current = Math.min(140, amplificationFactorRef.current * 1.05);
       }
       else if (avgAmplitude < 0.02) {
-        // Signal present but weak - gradually increase
-        amplificationFactorRef.current = Math.min(140, amplificationFactorRef.current * 1.04);
+        // Signal present but weak - slight increase
+        amplificationFactorRef.current = Math.min(120, amplificationFactorRef.current * 1.03);
       }
       // For very strong signals, reduce amplification
       else if (avgAmplitude > 0.3) {
-        amplificationFactorRef.current = Math.max(20, amplificationFactorRef.current * 0.90);
+        amplificationFactorRef.current = Math.max(40, amplificationFactorRef.current * 0.92);
       }
       // For strong signals, slightly reduce
       else if (avgAmplitude > 0.15) {
-        amplificationFactorRef.current = Math.max(30, amplificationFactorRef.current * 0.95);
+        amplificationFactorRef.current = Math.max(50, amplificationFactorRef.current * 0.97);
       } 
       // For signals in ideal range, make minor adjustments
       else if (avgAmplitude > 0.06) {
-        amplificationFactorRef.current = Math.max(50, amplificationFactorRef.current * 0.98);
+        amplificationFactorRef.current = Math.max(60, amplificationFactorRef.current * 0.99);
       } 
       else {
         // Slightly weak signal - minor increase
-        amplificationFactorRef.current = Math.min(120, amplificationFactorRef.current * 1.02);
+        amplificationFactorRef.current = Math.min(110, amplificationFactorRef.current * 1.01);
       }
       
       console.log(`Signal Amplitude: ${avgAmplitude.toFixed(4)}, Variation: ${avgVariation.toFixed(4)}, Amplification: ${amplificationFactorRef.current.toFixed(1)}`);
@@ -134,7 +134,7 @@ export const useSignalProcessor = () => {
     previousSignalLevelsRef.current = [];
     validSignalMemoryRef.current = [];
     consecutiveDetectionsRef.current = 0;
-    amplificationFactorRef.current = 100.0; // Higher initial amplification
+    amplificationFactorRef.current = 90.0; // Balanced initial amplification
     debugInfoRef.current = {
       avgSignalStrength: 0,
       signalNoise: 0,
@@ -147,13 +147,8 @@ export const useSignalProcessor = () => {
     setTimeout(() => {
       console.log("Signal processor: listo para procesar");
       readyToProcessRef.current = true;
-      calibrationRef.current = true;
-      
-      // Reduced calibration time
-      setTimeout(() => {
-        calibrationRef.current = false;
-      }, 2000);
-    }, 1000);
+      calibrationRef.current = false; // No calibration needed
+    }, 500); // Faster startup
   }, []);
 
   const stopProcessing = useCallback(() => {
@@ -162,13 +157,13 @@ export const useSignalProcessor = () => {
     readyToProcessRef.current = false;
   }, []);
 
-  // Improved low-pass filter with better parameters
+  // Balanced low-pass filter
   const applyLowPassFilter = useCallback((newValue: number, previousValue: number | null): number => {
     if (previousValue === null) return newValue;
     return previousValue + LP_ALPHA * (newValue - previousValue);
   }, []);
   
-  // Enhanced SMA filter with weighted recent values
+  // Balanced SMA filter
   const applySMAFilter = useCallback((buffer: number[]): number => {
     if (buffer.length === 0) return 0;
     if (buffer.length === 1) return buffer[0];
@@ -189,94 +184,57 @@ export const useSignalProcessor = () => {
     return weightedSum / weightSum;
   }, []);
 
-  // Significantly improved red channel extraction with focus on PPG signal
+  // Improved red channel extraction for PPG signal
   const extractRedChannel = useCallback((imageData: ImageData): number => {
     const width = imageData.width;
     const height = imageData.height;
     
-    // Create multiple sampling regions to find best PPG signal
-    const REGION_COUNT = 3; // Sample from multiple regions
-    const regionSize = Math.min(120, Math.floor(width / 3)); // Larger region
+    // Create focused sampling region
+    const regionSize = Math.min(100, Math.floor(width / 4)); // Focused
     
     // Center coordinates
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
     
-    // Define multiple sampling regions
-    const regions = [
-      // Central region (primary)
-      {
-        startX: centerX - Math.floor(regionSize / 2),
-        startY: centerY - Math.floor(regionSize / 2),
-        endX: centerX + Math.floor(regionSize / 2),
-        endY: centerY + Math.floor(regionSize / 2),
-        weight: 0.6 // Primary weight
-      },
-      // Top region (secondary)
-      {
-        startX: centerX - Math.floor(regionSize / 2),
-        startY: centerY - regionSize - Math.floor(regionSize / 2),
-        endX: centerX + Math.floor(regionSize / 2),
-        endY: centerY - Math.floor(regionSize / 2),
-        weight: 0.2 // Secondary weight
-      },
-      // Bottom region (secondary)
-      {
-        startX: centerX - Math.floor(regionSize / 2),
-        startY: centerY + Math.floor(regionSize / 2),
-        endX: centerX + Math.floor(regionSize / 2),
-        endY: centerY + regionSize + Math.floor(regionSize / 2),
-        weight: 0.2 // Secondary weight
-      }
-    ];
+    // Primary central region
+    const startX = centerX - Math.floor(regionSize / 2);
+    const startY = centerY - Math.floor(regionSize / 2);
+    const endX = centerX + Math.floor(regionSize / 2);
+    const endY = centerY + Math.floor(regionSize / 2);
     
-    let weightedRedValue = 0;
-    let totalWeight = 0;
+    let redSum = 0;
+    let greenSum = 0;
+    let blueSum = 0;
+    let pixelCount = 0;
     
-    // Process each region
-    for (const region of regions) {
-      let redSum = 0;
-      let greenSum = 0;
-      let blueSum = 0;
-      let pixelCount = 0;
-      
-      // Analyze pixels in this region
-      for (let y = region.startY; y < region.endY; y++) {
-        for (let x = region.startX; x < region.endX; x++) {
-          if (x >= 0 && x < width && y >= 0 && y < height) {
-            const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
-            redSum += imageData.data[idx]; // Red channel
-            greenSum += imageData.data[idx + 1]; // Green channel
-            blueSum += imageData.data[idx + 2]; // Blue channel
-            pixelCount++;
-          }
+    // Analyze pixels in this region
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        if (x >= 0 && x < width && y >= 0 && y < height) {
+          const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
+          redSum += imageData.data[idx]; // Red channel
+          greenSum += imageData.data[idx + 1]; // Green channel
+          blueSum += imageData.data[idx + 2]; // Blue channel
+          pixelCount++;
         }
-      }
-      
-      if (pixelCount > 0) {
-        const avgRed = redSum / pixelCount;
-        const avgGreen = greenSum / pixelCount;
-        const avgBlue = blueSum / pixelCount;
-        
-        // Enhanced PPG extraction formula - prioritize red and suppress other channels
-        // This formula is optimized for detecting blood volume changes
-        const ppgValue = avgRed - (0.68 * avgGreen + 0.32 * avgBlue);
-        
-        // Add weighted contribution from this region
-        weightedRedValue += ppgValue * region.weight;
-        totalWeight += region.weight;
       }
     }
     
-    // Return weighted average of all regions
-    if (totalWeight > 0) {
+    if (pixelCount > 0) {
+      const avgRed = redSum / pixelCount;
+      const avgGreen = greenSum / pixelCount;
+      const avgBlue = blueSum / pixelCount;
+      
+      // Optimized PPG extraction formula
+      const ppgValue = avgRed - (0.65 * avgGreen + 0.35 * avgBlue);
+      
       // Store raw value in history for trend analysis
-      rawSignalHistoryRef.current.push(weightedRedValue / totalWeight);
-      if (rawSignalHistoryRef.current.length > 60) { // Keep last second at 60fps
+      rawSignalHistoryRef.current.push(ppgValue);
+      if (rawSignalHistoryRef.current.length > 60) {
         rawSignalHistoryRef.current.shift();
       }
       
-      return weightedRedValue / totalWeight;
+      return ppgValue;
     }
     
     return 0;
@@ -299,14 +257,14 @@ export const useSignalProcessor = () => {
       return;
     }
     
-    // Enhanced finger detection with better parameters
+    // Optimized finger detection
     const detectionResult = detectFinger(imageData, {
-      redThreshold: 60,                // Even lower threshold
-      brightnessThreshold: 40,         // Lower brightness requirement
-      redDominanceThreshold: 12,       // Less strict red dominance
-      regionSize: 40,                  // Optimal region size
-      adaptiveMode: true,              // Always use adaptive detection
-      maxIntensityThreshold: 225       // Higher max threshold
+      redThreshold: 100,              // Higher threshold for fewer false positives
+      brightnessThreshold: 60,        // Higher brightness requirement
+      redDominanceThreshold: 30,      // Stricter red dominance
+      regionSize: 30,                 // Focused region
+      adaptiveMode: true,
+      maxIntensityThreshold: 240
     });
     
     let fingerDetected = detectionResult.detected;
@@ -316,7 +274,7 @@ export const useSignalProcessor = () => {
       fingerDetected = fingerDetectedOverride;
     }
     
-    // Enhanced detection logic with faster response
+    // Fast response detection logic
     if (fingerDetected) {
       fingerDetectionCounterRef.current++;
       
@@ -331,15 +289,15 @@ export const useSignalProcessor = () => {
       if (lastFingerDetectedRef.current) {
         consecutiveDetectionsRef.current++;
         
-        // Allow a bit more leeway before considering finger removed
-        if (consecutiveDetectionsRef.current >= 8) {
+        // Be responsive to finger removal
+        if (consecutiveDetectionsRef.current >= 5) {
           lastFingerDetectedRef.current = false;
           consecutiveDetectionsRef.current = 0;
         }
       }
     }
     
-    // Calculate signal quality with enhanced sensitivity
+    // Calculate signal quality
     const signalQuality = calculateSignalQuality(detectionResult);
     signalQualityRef.current = signalQuality;
     
@@ -356,14 +314,14 @@ export const useSignalProcessor = () => {
         signalBufferRef.current.shift();
       }
       
-      // Apply enhanced filtering chain optimized for heartbeat detection
+      // Apply balanced filtering chain
       // 1. First SMA with weighted recent values
       const smoothedValue = applySMAFilter(signalBufferRef.current);
       
-      // 2. Then low-pass filter with higher alpha for better responsiveness
+      // 2. Then low-pass filter
       const basicFiltered = applyLowPassFilter(smoothedValue, lastFilteredValueRef.current);
       
-      // 3. Finally, dynamic amplification
+      // 3. Finally, balanced amplification
       const amplifiedValue = adjustAmplification(basicFiltered);
       
       lastFilteredValueRef.current = basicFiltered; // Store unamplified value
@@ -379,11 +337,11 @@ export const useSignalProcessor = () => {
         validSignalMemoryRef.current.shift();
       }
       
-      // Much more permissive signal validation
+      // Balanced signal validation
       const signalValid = signalQuality > QUALITY_THRESHOLD || 
                          Math.abs(amplifiedValue) > MIN_SIGNAL_AMPLITUDE;
       
-      if (signalValid || frameCountRef.current % 3 === 0) { // Process every frame when valid or every 3rd frame regardless
+      if (signalValid || frameCountRef.current % 3 === 0) {
         // Create processed signal object
         const processedSignal: ProcessedSignal = {
           timestamp: currentTime,
@@ -397,9 +355,7 @@ export const useSignalProcessor = () => {
             width: Math.floor(imageData.width / 2),
             height: Math.floor(imageData.height / 2)
           },
-          // Add perfusion index estimate (important for PPG quality assessment)
           perfusionIndex: calculatePerfusionIndex(rawSignalHistoryRef.current),
-          // Add waveform features if we have enough data
           waveformFeatures: rawSignalHistoryRef.current.length >= 30 ? 
             extractWaveformFeatures(rawSignalHistoryRef.current) : undefined
         };
@@ -427,8 +383,8 @@ export const useSignalProcessor = () => {
       setLastSignal(emptySignal);
       
       // Gradual cleanup
-      if (signalBufferRef.current.length > 20) {
-        signalBufferRef.current = signalBufferRef.current.slice(-10);
+      if (signalBufferRef.current.length > 10) {
+        signalBufferRef.current = signalBufferRef.current.slice(-5);
       } else {
         signalBufferRef.current = [];
       }
@@ -436,15 +392,15 @@ export const useSignalProcessor = () => {
       lastFilteredValueRef.current = null;
       previousSignalLevelsRef.current = [];
       rawSignalHistoryRef.current = [];
-      amplificationFactorRef.current = 100.0; // Reset amplification
+      amplificationFactorRef.current = 90.0; // Reset amplification to balanced value
     }
   }, [isProcessing, applyLowPassFilter, applySMAFilter, extractRedChannel, adjustAmplification]);
 
-  // Calculate perfusion index - a clinical measure of pulse strength
+  // Calculate perfusion index with balanced parameters
   const calculatePerfusionIndex = (rawValues: number[]): number => {
     if (rawValues.length < 10) return 0;
     
-    const recentValues = rawValues.slice(-30); // Last 30 samples
+    const recentValues = rawValues.slice(-25); // Last 25 samples
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
@@ -457,11 +413,11 @@ export const useSignalProcessor = () => {
     return (ac / Math.abs(dc)) * 100;
   };
 
-  // Extract waveform features useful for heartbeat analysis
+  // Extract waveform features with balanced parameters
   const extractWaveformFeatures = (rawValues: number[]): ProcessedSignal['waveformFeatures'] => {
-    if (rawValues.length < 30) return undefined;
+    if (rawValues.length < 25) return undefined;
     
-    const values = rawValues.slice(-30); // Last 30 samples
+    const values = rawValues.slice(-25);
     
     // Find peaks (potential systolic peaks)
     const peaks: number[] = [];
@@ -504,7 +460,6 @@ export const useSignalProcessor = () => {
     // Estimate dicrotic notch (usually after systolic peak)
     let dicroticIdx = -1;
     if (systolicIdx < values.length - 3) {
-      // Look for a local minimum after the systolic peak
       for (let i = systolicIdx + 1; i < values.length - 1; i++) {
         if (values[i] < values[i-1] && values[i] < values[i+1]) {
           dicroticIdx = i;
