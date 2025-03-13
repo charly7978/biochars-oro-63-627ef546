@@ -78,42 +78,69 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      // Optimización: Aumentar la frecuencia de muestreo para captura más precisa
-      // Obtener datos del procesador heartBeat con prioridad para el BPM
+      // Optimización: Aumentar la frecuencia de muestreo para captura ultra-precisa
+      // Obtener datos del procesador heartBeat con máxima prioridad para el BPM
       let bpm = processor.getFinalBPM() || 0;
       
-      // Si el BPM es bajo o inestable, intentar obtener el valor instantáneo
-      if (bpm < 40 && processor.getRRIntervals) {
+      // Optimización avanzada para estabilidad de BPM
+      // Si el BPM es bajo, inestable o tiene variaciones abruptas, usar análisis multimodo
+      if ((bpm < 45 || bpm > 180) && processor.getRRIntervals) {
         const rrData = processor.getRRIntervals();
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          // Calcular BPM desde los últimos intervalos si están disponibles
-          const recentIntervals = rrData.intervals.slice(-3);
+          // Método 1: Análisis de intervalos recientes con peso adaptativo
+          const recentIntervals = rrData.intervals.slice(-5); // Aumentado a 5 intervalos para mejor promedio
           if (recentIntervals.length > 0) {
-            const avgInterval = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
-            if (avgInterval > 0) {
-              const instantBpm = Math.round(60000 / avgInterval);
-              if (instantBpm >= 40 && instantBpm <= 200) {
-                bpm = instantBpm;
-                console.log('useVitalMeasurement - Usando BPM instantáneo:', {
-                  instantBpm,
-                  intervals: recentIntervals,
-                  timestamp: new Date().toISOString()
-                });
+            // Filtrar valores atípicos usando desviación media absoluta
+            const medianInterval = recentIntervals.sort((a, b) => a - b)[Math.floor(recentIntervals.length / 2)];
+            const validIntervals = recentIntervals.filter(interval => {
+              const deviation = Math.abs(interval - medianInterval);
+              return deviation < medianInterval * 0.3; // Tolerancia del 30%
+            });
+            
+            if (validIntervals.length > 0) {
+              const avgInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
+              if (avgInterval > 0) {
+                const instantBpm = Math.round(60000 / avgInterval);
+                if (instantBpm >= 40 && instantBpm <= 200) {
+                  // Transición suave para BPM
+                  bpm = bpm > 0 ? Math.round((instantBpm * 0.7) + (bpm * 0.3)) : instantBpm;
+                  console.log('useVitalMeasurement - Usando BPM multimodo estabilizado:', {
+                    instantBpm,
+                    finalBpm: bpm,
+                    intervalsFiltrados: validIntervals,
+                    intervalsTotales: recentIntervals.length,
+                    timestamp: new Date().toISOString()
+                  });
+                }
               }
             }
           }
         }
       }
       
-      // Verificación adicional de confianza
+      // Verificación avanzada de confianza con histéresis
       let confidence = 0;
       if (processor.getConfidence) {
         confidence = processor.getConfidence();
-        console.log('useVitalMeasurement - Confianza de señal:', confidence);
-        // Si la confianza es muy baja, aplicar corrección
-        if (confidence < 0.3 && bpm > 0) {
-          bpm = Math.max(40, Math.min(200, bpm)); // Asegurar rango fisiológico
-          console.log('useVitalMeasurement - Aplicando corrección a BPM por baja confianza');
+        
+        // Sistema de histéresis para evitar fluctuaciones rápidas en baja confianza
+        if (confidence < 0.4 && bpm > 0) {
+          // Preservar BPM anterior en caso de baja confianza momentánea
+          const prevBPM = measurements.heartRate;
+          if (prevBPM > 40 && prevBPM < 180) {
+            // Combinar con valor actual usando peso proporcional a la confianza
+            const blendFactor = Math.max(0.2, confidence); // Mínimo 20% del valor actual
+            bpm = Math.round((prevBPM * (1 - blendFactor)) + (bpm * blendFactor));
+            
+            console.log('useVitalMeasurement - Aplicando estabilización por histéresis:', {
+              prevBPM,
+              rawBPM: processor.getFinalBPM(),
+              confidence,
+              blendFactor,
+              resultBPM: bpm,
+              timestamp: new Date().toISOString()
+            });
+          }
         }
       }
       
@@ -168,21 +195,23 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
 
       setMeasurements(prev => {
-        // Mayor tolerancia para la actualización de ritmo cardíaco para evitar pérdidas
-        if ((prev.heartRate === bpm && bpm !== 0) && 
+        // Algoritmo mejorado de actualización para mayor estabilidad
+        // Permitir pequeñas variaciones en BPM sin actualización completa
+        const bpmDelta = Math.abs(prev.heartRate - bpm);
+        const smallBpmChange = bpm > 0 && prev.heartRate > 0 && bpmDelta <= 2;
+        
+        if (smallBpmChange && 
             prev.spo2 === spo2Value && spo2Value !== 0 &&
             prev.glucose === glucose && glucose !== 0 &&
             prev.hemoglobin === hemoglobin && hemoglobin !== 0 &&
             prev.lipids === lipids && lipids !== 0) {
           
-          // Permitir actualización de BPM si la diferencia es significativa
-          if (Math.abs(prev.heartRate - bpm) <= 3) {
-            console.log('useVitalMeasurement - Valores sin cambios, no se actualiza', {
-              currentValues: prev,
-              timestamp: new Date().toISOString()
-            });
-            return prev;
-          }
+          console.log('useVitalMeasurement - Valores estables, manteniendo medición actual', {
+            currentValues: prev,
+            smallBpmDelta: bpmDelta,
+            timestamp: new Date().toISOString()
+          });
+          return prev;
         }
         
         // Obtener el recuento de arritmias del procesador específico si existe
@@ -214,7 +243,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
 
     updateMeasurements();
 
-    // Aumentar frecuencia de muestreo para captura más precisa de latidos
+    // Frecuencia de muestreo maximizada para captura ultra-precisa de latidos
     const interval = setInterval(() => {
       const currentTime = Date.now();
       const elapsed = currentTime - startTime;
@@ -240,7 +269,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         const event = new CustomEvent('measurementComplete');
         window.dispatchEvent(event);
       }
-    }, 150); // Reducido de 200ms a 150ms para mayor frecuencia de muestreo
+    }, 100); // Reducido a 100ms para máxima frecuencia de muestreo posible
 
     return () => {
       console.log('useVitalMeasurement - Limpiando intervalo', {
