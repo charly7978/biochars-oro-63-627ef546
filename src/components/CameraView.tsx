@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -69,35 +68,25 @@ const CameraView = ({
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-      // Increased resolution for better clarity
-      const baseVideoConstraints: MediaTrackConstraints = {
+      // Platform-specific resolution settings
+      const androidVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: 1080 },
+        height: { ideal: 1920 },
+        frameRate: { ideal: 30, max: 60 }
       };
 
-      if (isAndroid) {
-        console.log("Configurando para Android");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else if (isIOS) {
-        console.log("Configurando para iOS");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      } else {
-        console.log("Configurando para escritorio con máxima resolución");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      }
+      const windowsVideoConstraints: MediaTrackConstraints = {
+        facingMode: 'environment',
+        width: { ideal: 720 },
+        height: { ideal: 1280 },
+        frameRate: { ideal: 30 }
+      };
+
+      // Choose appropriate constraints based on platform
+      const baseVideoConstraints = isAndroid ? androidVideoConstraints : windowsVideoConstraints;
+
+      console.log(`Configurando para ${isAndroid ? 'Android (1080p)' : 'Windows (720p)'}`);
 
       const constraints: MediaStreamConstraints = {
         video: baseVideoConstraints,
@@ -193,14 +182,14 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Apply high performance rendering settings
-        videoRef.current.style.willChange = 'transform';
-        videoRef.current.style.transform = 'translateZ(0)';
-        videoRef.current.style.imageRendering = 'crisp-edges';
+        // Only apply hardware acceleration where needed
+        if (isAndroid) {
+          videoRef.current.style.willChange = 'transform';
+          videoRef.current.style.transform = 'translateZ(0)';
+        }
         
-        // Force hardware acceleration
-        videoRef.current.style.backfaceVisibility = 'hidden';
-        videoRef.current.style.perspective = '1000px';
+        // Crisp edges for better text/edge rendering
+        videoRef.current.style.imageRendering = 'crisp-edges';
       }
 
       setStream(newStream);
@@ -281,10 +270,7 @@ const CameraView = ({
       const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
-
-  const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/15;
+  }, [stream, isFingerDetected, torchEnabled, isAndroid]);
 
   return (
     <video
@@ -294,8 +280,8 @@ const CameraView = ({
       muted
       className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
       style={{
-        willChange: 'transform',
-        transform: 'translateZ(0)',
+        willChange: isAndroid ? 'transform' : 'auto',
+        transform: isAndroid ? 'translateZ(0)' : 'none',
         backfaceVisibility: 'hidden',
         imageRendering: 'crisp-edges'
       }}
