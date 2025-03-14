@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, memo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { optimizeCanvas } from '../utils/displayOptimizer';
 
 interface GraphGridProps {
@@ -8,35 +8,17 @@ interface GraphGridProps {
 	cellSize?: number;
 }
 
-// Using memo to prevent unnecessary re-renders
-const GraphGrid: React.FC<GraphGridProps> = memo(({ width = 1000, height = 900, cellSize = 20 }) => {
+const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellSize = 20 }) => {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
-	// Store the last render dimensions to avoid unnecessary redraws
-	const lastDimensionsRef = useRef({ width, height, cellSize });
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
-		if (!canvas) return;
-		
-		// Check if we actually need to redraw the grid
-		const lastDimensions = lastDimensionsRef.current;
-		const dimensionsChanged = 
-			lastDimensions.width !== width || 
-			lastDimensions.height !== height || 
-			lastDimensions.cellSize !== cellSize;
-		
-		if (dimensionsChanged) {
-			// Update stored dimensions
-			lastDimensionsRef.current = { width, height, cellSize };
+		if (canvas) {
+			// Optimize the canvas for device pixel ratio
+			optimizeCanvas(canvas);
 			
-			// Use requestAnimationFrame to batch the rendering operations
-			requestAnimationFrame(() => {
-				// Optimize the canvas for device pixel ratio
-				optimizeCanvas(canvas);
-				
-				const ctx = canvas.getContext('2d', { alpha: false });
-				if (!ctx) return;
-				
+			const ctx = canvas.getContext('2d');
+			if (ctx) {
 				// Get the actual drawing size adjusted for device pixel ratio
 				const displayWidth = canvas.width;
 				const displayHeight = canvas.height;
@@ -92,24 +74,9 @@ const GraphGrid: React.FC<GraphGridProps> = memo(({ width = 1000, height = 900, 
 					ctx.lineTo(displayWidth, yPos);
 				}
 				ctx.stroke();
-			});
+			}
 		}
 	}, [width, height, cellSize]);
-
-	// Clean up resources on unmount
-	useEffect(() => {
-		return () => {
-			// Release any resources
-			const canvas = canvasRef.current;
-			if (canvas) {
-				const ctx = canvas.getContext('2d');
-				if (ctx) {
-					// Clear any cached resources
-					ctx.clearRect(0, 0, canvas.width, canvas.height);
-				}
-			}
-		};
-	}, []);
 
 	return (
 		<canvas 
@@ -123,8 +90,6 @@ const GraphGrid: React.FC<GraphGridProps> = memo(({ width = 1000, height = 900, 
 			className="ppg-graph performance-boost"
 		/>
 	);
-});
-
-GraphGrid.displayName = 'GraphGrid';
+};
 
 export default GraphGrid;

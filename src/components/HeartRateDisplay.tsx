@@ -13,17 +13,10 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   
   // Apply high-DPI optimizations after component mounts
   useEffect(() => {
-    // Only optimize when the component is visible and mounted
     if (containerRef.current) {
       optimizeElement(containerRef.current);
     }
-    
-    // Clean up function to improve memory management
-    return () => {
-      // No specific cleanup needed for this component,
-      // but this is where you would clean up any subscriptions or timers
-    };
-  }, []); // Only run once on mount
+  }, []);
   
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
@@ -35,11 +28,14 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center ppg-graph"
-      // Remove inline styles that would trigger unnecessary style recalculations
-      // Let the optimizeElement function handle these properties
+      className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform performance-boost ppg-graph"
+      style={{
+        transform: 'translate3d(0, 0, 0)',
+        backfaceVisibility: 'hidden',
+        contain: 'layout paint style'
+      }}
     >
-      <h3 className="text-gray-400/90 text-sm mb-1 precision-text">Heart Rate</h3>
+      <h3 className="text-gray-400/90 text-sm mb-1 crisp-text precision-text">Heart Rate</h3>
       <div className="flex items-baseline justify-center gap-1">
         <span className={`text-2xl font-bold vital-display precision-number ${getValueClass()}`}>
           {bpm > 0 ? bpm : '--'}
