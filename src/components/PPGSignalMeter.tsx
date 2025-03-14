@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -149,10 +148,10 @@ const PPGSignalMeter = memo(({
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E2DCFF');
     gradient.addColorStop(0.25, '#FFDECF');
-    gradient.addColorStop(0.45, '#F1FBDF'); // Maintain top color
-    gradient.addColorStop(0.55, '#F1EEE8'); // Start transitioning to subtle gold
-    gradient.addColorStop(0.75, '#F5EED8'); // Subtle golden tone
-    gradient.addColorStop(1, '#F5EED0'); // Deeper subtle golden tone at bottom
+    gradient.addColorStop(0.45, '#F1FBDF');
+    gradient.addColorStop(0.55, '#F1EEE8');
+    gradient.addColorStop(0.75, '#F5EED8');
+    gradient.addColorStop(1, '#F5EED0');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -541,16 +540,16 @@ const PPGSignalMeter = memo(({
         }}
       />
 
-      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
-        <div className="flex items-center gap-2 ml-2 mt-0">
-          <div className="w-[150px]">
-            <div className={`h-1.5 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
+      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-1">
+        <div className="flex items-center gap-1 ml-2 mt-0" style={{transform: 'translateY(-2mm)'}}>
+          <div className="w-[120px]">
+            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
                 style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
               />
             </div>
-            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+            <span className="text-[7px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
                   style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
@@ -562,7 +561,7 @@ const PPGSignalMeter = memo(({
 
         <div className="flex flex-col items-center">
           <Fingerprint
-            className={`h-8 w-8 transition-colors duration-300 ${
+            className={`h-7 w-7 transition-colors duration-300 ${
               !displayFingerDetected ? 'text-gray-400' :
               displayQuality > 65 ? 'text-green-500' :
               displayQuality > 40 ? 'text-yellow-500' :
@@ -570,7 +569,7 @@ const PPGSignalMeter = memo(({
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[8px] text-center font-medium text-black/80">
+          <span className="text-[7px] text-center font-medium text-black/80">
             {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
