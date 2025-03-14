@@ -204,7 +204,7 @@ const PPGSignalMeter = ({
       <div className="absolute top-0 left-0 right-0 p-2 flex justify-between items-center bg-white/60 backdrop-blur-sm border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3 flex-1">
           <span className="text-xl font-bold text-slate-700">PPG</span>
-          <div className="flex flex-col flex-1">
+          <div className="flex flex-col flex-1 mt-3"> {/* Added mt-3 (margin-top) to move down by approximately 3mm */}
             <div className={`h-1.5 w-[80%] mx-auto rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-300 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-300"
