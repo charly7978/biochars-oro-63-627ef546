@@ -88,14 +88,12 @@ const PPGSignalMeter = memo(({
     }
   }, [quality, isFingerDetected]);
 
-  // Create offscreen canvas once on mount
   useEffect(() => {
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
     offscreen.height = CANVAS_HEIGHT;
     offscreenCanvasRef.current = offscreen;
     
-    // Also create the static grid canvas
     const gridCanvas = document.createElement('canvas');
     gridCanvas.width = CANVAS_WIDTH;
     gridCanvas.height = CANVAS_HEIGHT;
@@ -317,7 +315,6 @@ const PPGSignalMeter = memo(({
     }
     
     const canvas = canvasRef.current;
-    // Use OffscreenCanvas for rendering to reduce main thread work
     const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
       offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
       canvas.getContext('2d', { alpha: false });
@@ -329,7 +326,6 @@ const PPGSignalMeter = memo(({
     
     const now = Date.now();
     
-    // Use pre-rendered grid when possible
     if (gridCanvasRef.current) {
       renderCtx.drawImage(gridCanvasRef.current, 0, 0);
     } else {
@@ -337,7 +333,6 @@ const PPGSignalMeter = memo(({
     }
     
     if (preserveResults && !isFingerDetected) {
-      // If using offscreen canvas, copy to visible canvas
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
         const visibleCtx = canvas.getContext('2d', { alpha: false });
         if (visibleCtx) {
@@ -391,7 +386,6 @@ const PPGSignalMeter = memo(({
       
       let firstPoint = true;
       
-      // Batch rendering for better performance - process all points at once
       const pathCoordinates: [number, number][] = [];
       const arrhythmiaSegments: {start: [number, number], end: [number, number]}[] = [];
       
@@ -420,7 +414,6 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      // Render main path in one go
       if (pathCoordinates.length > 0) {
         renderCtx.beginPath();
         renderCtx.moveTo(pathCoordinates[0][0], pathCoordinates[0][1]);
@@ -430,7 +423,6 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Render arrhythmia segments separately
       if (arrhythmiaSegments.length > 0) {
         renderCtx.beginPath();
         renderCtx.strokeStyle = '#DC2626';
@@ -443,10 +435,9 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Batch peak rendering
       if (peaksRef.current.length > 0) {
-        const normalPeaks: [number, number, number][] = []; // x, y, value
-        const arrhythmiaPeaks: [number, number, number][] = []; // x, y, value
+        const normalPeaks: [number, number, number][] = [];
+        const arrhythmiaPeaks: [number, number, number][] = [];
         
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -461,7 +452,6 @@ const PPGSignalMeter = memo(({
           }
         });
         
-        // Render normal peaks
         if (normalPeaks.length > 0) {
           renderCtx.fillStyle = '#0EA5E9';
           
@@ -477,7 +467,6 @@ const PPGSignalMeter = memo(({
           });
         }
         
-        // Render arrhythmia peaks
         if (arrhythmiaPeaks.length > 0) {
           renderCtx.fillStyle = '#DC2626';
           
@@ -506,7 +495,6 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    // If using offscreen canvas, copy to visible canvas with a single draw operation
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
       const visibleCtx = canvas.getContext('2d', { alpha: false });
       if (visibleCtx) {
@@ -568,7 +556,7 @@ const PPGSignalMeter = memo(({
           </div>
         </div>
 
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center" style={{ marginTop: '5mm', marginRight: '6mm' }}>
           <Fingerprint
             className={`h-8 w-8 transition-colors duration-300 ${
               !displayFingerDetected ? 'text-gray-400' :
@@ -605,3 +593,4 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
+
