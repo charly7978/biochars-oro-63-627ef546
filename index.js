@@ -287,10 +287,12 @@ const Index = () => {
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
             />
             
-            <SignalQualityIndicator 
-              quality={signalQuality}
-              isMonitoring={isMonitoring} 
-            />
+            <div style={{ marginTop: '4mm', marginLeft: '5mm' }}>
+              <SignalQualityIndicator 
+                quality={signalQuality}
+                isMonitoring={isMonitoring} 
+              />
+            </div>
           </div>
 
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
