@@ -36,9 +36,9 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   heartRate,
   spo2,
   pressure,
-  glucose = 0,
-  cholesterol = 0,
-  triglycerides = 0
+  glucose = '--',
+  cholesterol = '--',
+  triglycerides = '--'
 }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

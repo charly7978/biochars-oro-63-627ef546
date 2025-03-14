@@ -15,7 +15,12 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--" 
+    arrhythmiaStatus: "--",
+    glucose: "--",
+    lipids: {
+      totalCholesterol: "--",
+      triglycerides: "--"
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
@@ -149,7 +154,12 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: "--",
+      lipids: {
+        totalCholesterol: "--",
+        triglycerides: "--"
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -170,7 +180,12 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: "--",
+      lipids: {
+        totalCholesterol: "--",
+        triglycerides: "--"
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -179,6 +194,10 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
+  };
+
+  const finalizeMeasurement = () => {
+    setShowConfirmDialog(true);
   };
 
   const handleStreamReady = (stream) => {
@@ -247,8 +266,12 @@ const Index = () => {
       }
       
       setSignalQuality(lastSignal.quality);
+      
+      if (elapsedTime >= 30 && isMonitoring) {
+        finalizeMeasurement();
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -349,6 +372,9 @@ const Index = () => {
         heartRate={heartRate}
         spo2={vitalSigns.spo2}
         pressure={vitalSigns.pressure}
+        glucose={vitalSigns.glucose}
+        cholesterol={vitalSigns.lipids?.totalCholesterol}
+        triglycerides={vitalSigns.lipids?.triglycerides}
       />
     </div>
   );
