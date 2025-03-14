@@ -1,68 +1,25 @@
 
 /**
- * Utility functions for vital signs processing
- * Implementaciones basadas en métodos estándar de procesamiento de señales biomédicas
+ * Funciones de utilidad para procesamiento de señales biomédicas
+ * Implementa algoritmos avanzados para análisis de señales PPG y ECG
  */
 
 /**
- * Calcula la componente AC (amplitud de la señal pulsátil) de una señal PPG
- * Implementado según estándares de procesamiento de fotopletismografía
- * @param values Array de valores de la señal PPG
- * @returns Valor de la componente AC
+ * Aplica un filtro de media móvil simple
  */
-export const calculateAC = (values: number[]): number => {
-  if (!values || values.length < 10) return 0;
-  
-  // Análisis de ventana deslizante para mayor precisión que un simple min/max
-  let maxAC = 0;
-  const windowSize = Math.min(30, Math.floor(values.length / 3));
-  
-  for (let i = 0; i <= values.length - windowSize; i++) {
-    const segment = values.slice(i, i + windowSize);
-    const segmentAC = Math.max(...segment) - Math.min(...segment);
-    maxAC = Math.max(maxAC, segmentAC);
-  }
-  
-  return maxAC;
-};
-
-/**
- * Calcula la componente DC (nivel de señal base) de una señal PPG
- * @param values Array de valores de la señal PPG
- * @returns Valor de la componente DC
- */
-export const calculateDC = (values: number[]): number => {
-  if (!values || values.length < 5) return 0;
-  
-  // Implementación de filtro paso bajo para estimar DC con mayor precisión
-  // que un simple promedio
-  const sortedValues = [...values].sort((a, b) => a - b);
-  const lowerQuartile = Math.floor(sortedValues.length * 0.25);
-  const upperQuartile = Math.ceil(sortedValues.length * 0.75);
-  
-  // Usar valores del rango intercuartil para estimar DC
-  const filteredValues = sortedValues.slice(lowerQuartile, upperQuartile);
-  return filteredValues.reduce((sum, val) => sum + val, 0) / filteredValues.length;
-};
-
-/**
- * Aplica un filtro de media móvil a una señal
- * Implementación estándar para reducción de ruido en señales biomédicas
- * @param values Valores de entrada
- * @param windowSize Tamaño de la ventana
- * @returns Señal filtrada
- */
-export const applySMAFilter = (values: number[], windowSize: number = 5): number[] => {
-  if (!values || values.length < windowSize) return [...values];
+export function applySMAFilter(values: number[], windowSize: number = 5): number[] {
+  if (!values || values.length === 0) return [];
+  if (values.length < windowSize) return [...values];
   
   const result: number[] = [];
-  const halfWindow = Math.floor(windowSize / 2);
   
   for (let i = 0; i < values.length; i++) {
     let sum = 0;
     let count = 0;
     
-    for (let j = Math.max(0, i - halfWindow); j <= Math.min(values.length - 1, i + halfWindow); j++) {
+    for (let j = Math.max(0, i - Math.floor(windowSize / 2)); 
+         j <= Math.min(values.length - 1, i + Math.floor(windowSize / 2)); 
+         j++) {
       sum += values[j];
       count++;
     }
@@ -71,321 +28,258 @@ export const applySMAFilter = (values: number[], windowSize: number = 5): number
   }
   
   return result;
-};
+}
 
 /**
- * Aplica filtro mediana para eliminar artefactos y valores atípicos
- * Especialmente útil para eliminar ruido impulsivo en señales PPG
- * @param values Valores de entrada
- * @param windowSize Tamaño de la ventana
- * @returns Señal filtrada
+ * Aplica un filtro de mediana para eliminar ruido impulsivo
  */
-export const applyMedianFilter = (values: number[], windowSize: number = 5): number[] => {
-  if (!values || values.length < windowSize) return [...values];
+export function applyMedianFilter(values: number[], windowSize: number = 3): number[] {
+  if (!values || values.length === 0) return [];
+  if (values.length < windowSize) return [...values];
   
   const result: number[] = [];
   const halfWindow = Math.floor(windowSize / 2);
   
   for (let i = 0; i < values.length; i++) {
-    const windowValues = [];
+    const windowValues: number[] = [];
     
-    for (let j = Math.max(0, i - halfWindow); j <= Math.min(values.length - 1, i + halfWindow); j++) {
+    for (let j = Math.max(0, i - halfWindow); 
+         j <= Math.min(values.length - 1, i + halfWindow); 
+         j++) {
       windowValues.push(values[j]);
     }
     
     windowValues.sort((a, b) => a - b);
-    result.push(windowValues[Math.floor(windowValues.length / 2)]);
+    const medianIndex = Math.floor(windowValues.length / 2);
+    result.push(windowValues[medianIndex]);
   }
   
   return result;
-};
+}
 
 /**
- * Aplica filtro Butterworth paso bajo de segundo orden (implementación simplificada)
- * Algoritmo profesional para eliminar ruido de alta frecuencia en señales fisiológicas
- * @param values Valores de entrada
- * @param cutoffFreq Frecuencia de corte normalizada (0.0-1.0)
- * @returns Señal filtrada
+ * Aplica un filtro paso bajo para eliminar frecuencias altas
  */
-export const applyLowPassFilter = (values: number[], cutoffFreq: number = 0.1): number[] => {
-  if (!values || values.length < 3) return [...values];
+export function applyLowPassFilter(values: number[], alpha: number = 0.1): number[] {
+  if (!values || values.length === 0) return [];
   
-  // Coeficientes del filtro Butterworth de segundo orden
-  const omega = Math.tan(Math.PI * cutoffFreq);
-  const omegaSq = omega * omega;
-  const b0 = omegaSq / (1 + Math.SQRT2 * omega + omegaSq);
-  const b1 = 2 * b0;
-  const b2 = b0;
-  const a1 = 2 * (omegaSq - 1) / (1 + Math.SQRT2 * omega + omegaSq);
-  const a2 = (1 - Math.SQRT2 * omega + omegaSq) / (1 + Math.SQRT2 * omega + omegaSq);
+  const result: number[] = [values[0]];
   
-  const result = new Array(values.length).fill(0);
-  
-  // Inicializar con los primeros valores
-  result[0] = values[0];
-  if (values.length > 1) {
-    result[1] = values[1];
-  }
-  
-  // Aplicar filtro
-  for (let i = 2; i < values.length; i++) {
-    result[i] = b0 * values[i] + b1 * values[i-1] + b2 * values[i-2] - 
-                a1 * result[i-1] - a2 * result[i-2];
+  for (let i = 1; i < values.length; i++) {
+    result.push(alpha * values[i] + (1 - alpha) * result[i - 1]);
   }
   
   return result;
-};
+}
 
 /**
- * Encuentra picos y valles en una señal
- * Algoritmo robusto que considera pendientes, anchuras y amplitudes
- * @param values Valores de la señal
- * @param prominence Factor de prominencia para filtrar picos/valles poco significativos
- * @returns Índices de picos y valles
+ * Encuentra picos y valles en la señal
  */
-export const findPeaksAndValleys = (values: number[], prominence: number = 0.3): { 
-  peaks: number[]; 
+export function findPeaksAndValleys(values: number[], sensitivity: number = 0.2): {
+  peaks: number[];
   valleys: number[];
-} => {
+} {
   if (!values || values.length < 5) return { peaks: [], valleys: [] };
   
   const peaks: number[] = [];
   const valleys: number[] = [];
   
-  // Filtrar la señal para reducir falsos positivos
-  const filteredValues = applySMAFilter(values, 3);
+  // Normalizar sensibilidad
+  const amplitude = Math.max(...values) - Math.min(...values);
+  const threshold = amplitude * sensitivity;
   
-  // Calcular los umbrales de prominencia
-  const range = Math.max(...filteredValues) - Math.min(...filteredValues);
-  const minProminence = range * prominence;
-  
-  // Buscar picos
-  for (let i = 2; i < filteredValues.length - 2; i++) {
-    // Condición de pico mejorada (evaluación de 5 puntos)
-    const isPeak = 
-      filteredValues[i] > filteredValues[i-1] && 
-      filteredValues[i] > filteredValues[i-2] &&
-      filteredValues[i] > filteredValues[i+1] && 
-      filteredValues[i] > filteredValues[i+2];
-      
-    if (isPeak) {
-      // Verificar prominencia (altura relativa al valle más cercano)
-      let leftValley = filteredValues[i];
-      for (let j = i-1; j >= 0; j--) {
-        if (filteredValues[j] < leftValley) {
-          leftValley = filteredValues[j];
-        }
-        if (filteredValues[j] > filteredValues[i]) break;
-      }
-      
-      let rightValley = filteredValues[i];
-      for (let j = i+1; j < filteredValues.length; j++) {
-        if (filteredValues[j] < rightValley) {
-          rightValley = filteredValues[j];
-        }
-        if (filteredValues[j] > filteredValues[i]) break;
-      }
-      
-      const prominence = Math.min(
-        filteredValues[i] - leftValley,
-        filteredValues[i] - rightValley
-      );
-      
-      if (prominence >= minProminence) {
-        peaks.push(i);
-      }
+  for (let i = 2; i < values.length - 2; i++) {
+    const v = values[i];
+    
+    // Detectar picos
+    if (v > values[i - 1] && 
+        v > values[i - 2] && 
+        v > values[i + 1] && 
+        v > values[i + 2] && 
+        (v - Math.min(values[i - 1], values[i + 1])) > threshold) {
+      peaks.push(i);
     }
-  }
-  
-  // Buscar valles
-  for (let i = 2; i < filteredValues.length - 2; i++) {
-    // Condición de valle mejorada (evaluación de 5 puntos)
-    const isValley = 
-      filteredValues[i] < filteredValues[i-1] && 
-      filteredValues[i] < filteredValues[i-2] &&
-      filteredValues[i] < filteredValues[i+1] && 
-      filteredValues[i] < filteredValues[i+2];
-      
-    if (isValley) {
-      // Verificar prominencia (profundidad relativa al pico más cercano)
-      let leftPeak = filteredValues[i];
-      for (let j = i-1; j >= 0; j--) {
-        if (filteredValues[j] > leftPeak) {
-          leftPeak = filteredValues[j];
-        }
-        if (filteredValues[j] < filteredValues[i]) break;
-      }
-      
-      let rightPeak = filteredValues[i];
-      for (let j = i+1; j < filteredValues.length; j++) {
-        if (filteredValues[j] > rightPeak) {
-          rightPeak = filteredValues[j];
-        }
-        if (filteredValues[j] < filteredValues[i]) break;
-      }
-      
-      const prominence = Math.min(
-        leftPeak - filteredValues[i],
-        rightPeak - filteredValues[i]
-      );
-      
-      if (prominence >= minProminence) {
-        valleys.push(i);
-      }
+    
+    // Detectar valles
+    if (v < values[i - 1] && 
+        v < values[i - 2] && 
+        v < values[i + 1] && 
+        v < values[i + 2] && 
+        (Math.max(values[i - 1], values[i + 1]) - v) > threshold) {
+      valleys.push(i);
     }
   }
   
   return { peaks, valleys };
-};
+}
 
 /**
- * Calcula variabilidad de la frecuencia cardíaca (HRV) con método RMSSD
- * Método estándar usado en evaluación clínica de ECG
- * @param rrIntervals Intervalos RR en milisegundos
- * @returns Valor RMSSD
+ * Calcula el componente DC (valor medio) de la señal
  */
-export const calculateRMSSD = (rrIntervals: number[]): number => {
-  if (!rrIntervals || rrIntervals.length < 3) return 0;
-  
-  let sumSquaredDiff = 0;
-  for (let i = 1; i < rrIntervals.length; i++) {
-    const diff = rrIntervals[i] - rrIntervals[i-1];
-    sumSquaredDiff += diff * diff;
-  }
-  
-  return Math.sqrt(sumSquaredDiff / (rrIntervals.length - 1));
-};
+export function calculateDC(values: number[]): number {
+  if (!values || values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
 
 /**
- * Calcula el índice de perfusión a partir de una señal PPG
- * Métrica utilizada en aplicaciones clínicas para evaluar la calidad de la señal
- * @param values Valores de señal PPG
- * @returns Índice de perfusión (0-1)
+ * Calcula el componente AC (variación) de la señal
  */
-export const calculatePerfusionIndex = (values: number[]): number => {
-  if (!values || values.length < 5) return 0;
+export function calculateAC(values: number[]): number {
+  if (!values || values.length < 2) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/**
+ * Calcula el índice de perfusión basado en componentes AC/DC
+ */
+export function calculatePerfusionIndex(values: number[]): number {
+  if (!values || values.length < 2) return 0;
   
   const ac = calculateAC(values);
   const dc = calculateDC(values);
   
   if (dc === 0) return 0;
-  
   return ac / dc;
-};
+}
 
 /**
- * Calcula la calidad de la señal PPG basada en múltiples métricas
- * Evaluación integral de la señal para aplicaciones médicas
- * @param values Valores de la señal PPG
- * @returns Puntuación de calidad (0-100)
+ * Calcula la calidad de la señal basada en múltiples factores
  */
-export const calculateSignalQuality = (values: number[]): number => {
+export function calculateSignalQuality(values: number[]): number {
   if (!values || values.length < 10) return 0;
   
-  // Calcular métricas básicas
-  const ac = calculateAC(values);
-  const dc = calculateDC(values);
-  const perfusionIndex = dc !== 0 ? ac / dc : 0;
+  // Factor 1: Amplitud normalizada
+  const amplitude = calculateAC(values);
+  const amplitudeScore = Math.min(100, amplitude * 50);
   
-  // Detectar picos para evaluar ritmo
-  const { peaks } = findPeaksAndValleys(values);
+  // Factor 2: Consistencia de la señal
+  const mean = calculateDC(values);
+  const varSum = values.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0);
+  const stdDev = Math.sqrt(varSum / values.length);
+  const consistencyScore = 100 * Math.exp(-Math.pow(stdDev / mean - 0.15, 2) / 0.01);
   
-  // Calcular regularidad de intervalos entre picos
-  let intervalVariability = 0;
-  if (peaks.length > 3) {
-    const intervals = [];
-    for (let i = 1; i < peaks.length; i++) {
-      intervals.push(peaks[i] - peaks[i-1]);
-    }
-    
-    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    intervalVariability = intervals.reduce((sum, val) => sum + Math.abs(val - avgInterval), 0) / intervals.length / avgInterval;
-  }
+  // Factor 3: Periodicidad
+  const { peaks } = findPeaksAndValleys(values, 0.1);
+  const periodicityScore = peaks.length > 1 ? Math.min(100, peaks.length * 20) : 0;
   
-  // Calcular SNR (relación señal-ruido) simplificada
-  const filteredSignal = applySMAFilter(values, 5);
-  let noiseLevel = 0;
-  for (let i = 0; i < values.length; i++) {
-    noiseLevel += Math.pow(values[i] - filteredSignal[i], 2);
-  }
-  noiseLevel = Math.sqrt(noiseLevel / values.length);
-  const signalPower = ac * ac / 8; // Aproximación de potencia de señal
-  const snr = noiseLevel > 0 ? 10 * Math.log10(signalPower / noiseLevel) : 0;
+  // Ponderar factores
+  const qualityScore = (amplitudeScore * 0.4) + (consistencyScore * 0.3) + (periodicityScore * 0.3);
   
-  // Ponderar métricas para puntuación final
-  const perfusionScore = Math.min(100, perfusionIndex * 1000);
-  const rhythmScore = Math.max(0, 100 * (1 - Math.min(1, intervalVariability)));
-  const snrScore = Math.max(0, Math.min(100, snr * 5 + 50));
-  
-  const weightedScore = 
-    0.5 * perfusionScore + 
-    0.3 * rhythmScore + 
-    0.2 * snrScore;
-  
-  return Math.round(Math.max(0, Math.min(100, weightedScore)));
-};
+  return Math.min(100, Math.max(0, qualityScore));
+}
 
 /**
- * Detecta la presencia de arritmias basado en variabilidad de intervalos RR
- * Implementación basada en criterios clínicos simplificados
- * @param rrIntervals Intervalos RR en ms
- * @returns Clasificación de arritmia
+ * Calcula RMSSD (Root Mean Square of Successive Differences)
+ * Métrica estándar de variabilidad de frecuencia cardíaca
  */
-export const detectArrhythmia = (rrIntervals: number[]): {
+export function calculateRMSSD(intervals: number[]): number {
+  if (!intervals || intervals.length < 2) return 0;
+  
+  let sumSquaredDiff = 0;
+  for (let i = 1; i < intervals.length; i++) {
+    const diff = intervals[i] - intervals[i-1];
+    sumSquaredDiff += diff * diff;
+  }
+  
+  return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
+}
+
+/**
+ * Detecta arritmias basadas en análisis avanzado de variabilidad cardíaca
+ */
+export function detectArrhythmia(intervals: number[]): {
   detected: boolean;
   type: string;
-  confidence: number;
-} => {
-  if (!rrIntervals || rrIntervals.length < 6) {
-    return { detected: false, type: 'INSUFICIENTES_DATOS', confidence: 0 };
+  severity: number;
+} {
+  if (!intervals || intervals.length < 3) {
+    return { detected: false, type: 'INSUFICIENTES_DATOS', severity: 0 };
   }
   
-  // Calcular métricas HRV
-  const rmssd = calculateRMSSD(rrIntervals);
-  const recentRR = rrIntervals.slice(-5);
-  const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
-  const lastRR = recentRR[recentRR.length - 1];
+  // Calcular RMSSD
+  const rmssd = calculateRMSSD(intervals);
   
-  // Calcular desviación estándar de RR
-  const rrSD = Math.sqrt(
-    recentRR.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / recentRR.length
-  );
+  // Calcular promedio y desviación estándar
+  const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+  const varSum = intervals.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0);
+  const stdDev = Math.sqrt(varSum / intervals.length);
   
-  // Calcular variación porcentual
-  const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
+  // Calcular coeficiente de variación (CV)
+  const cv = stdDev / mean;
   
-  // Criterios de detección de arritmias
-  const hasSeverePrematureBeat = lastRR < 0.7 * avgRR;
-  const hasPause = lastRR > 1.7 * avgRR;
-  const hasHighVariability = rrSD > 50 && rmssd > 70;
-  const hasModerateVariability = rrSD > 35 && rrVariation > 0.3;
+  // Verificar si hay latidos prematuros
+  const prematureBeat = intervals.some(interval => interval < mean * 0.7);
   
-  // Determinar tipo de arritmia y confianza
-  if (hasSeverePrematureBeat) {
-    return { 
-      detected: true, 
-      type: 'LATIDO_PREMATURO', 
-      confidence: Math.min(0.9, 0.5 + rrVariation) 
-    };
-  } else if (hasPause) {
-    return { 
-      detected: true, 
-      type: 'PAUSA_CARDÍACA', 
-      confidence: Math.min(0.9, 0.5 + rrVariation) 
-    };
-  } else if (hasHighVariability) {
-    return { 
-      detected: true, 
-      type: 'ARRITMIA_SEVERA', 
-      confidence: Math.min(0.9, 0.5 + (rrSD / 100)) 
-    };
-  } else if (hasModerateVariability) {
-    return { 
-      detected: true, 
-      type: 'ARRITMIA_MODERADA', 
-      confidence: Math.min(0.8, 0.3 + (rrSD / 100)) 
-    };
+  // Verificar si hay pausas anormales
+  const prolongedInterval = intervals.some(interval => interval > mean * 1.5);
+  
+  // Análisis multi-paramétrico para detección de arritmias
+  let arrhythmiaDetected = false;
+  let arrhythmiaType = 'RITMO_NORMAL';
+  let severity = 0;
+  
+  if (rmssd > 50 && cv > 0.15) {
+    arrhythmiaDetected = true;
+    severity = Math.min(10, Math.max(1, Math.floor(rmssd / 10)));
+    
+    if (prematureBeat) {
+      arrhythmiaType = 'LATIDO_PREMATURO';
+    } else if (prolongedInterval) {
+      arrhythmiaType = 'PAUSAS_ANORMALES';
+    } else {
+      arrhythmiaType = 'IRREGULARIDAD_RITMO';
+    }
+  } else if (stdDev < 10 && mean < 600) {
+    // Patrón de taquicardia regular
+    arrhythmiaDetected = true;
+    arrhythmiaType = 'TAQUICARDIA';
+    severity = 5;
+  } else if (stdDev < 15 && mean > 1000) {
+    // Patrón de bradicardia regular
+    arrhythmiaDetected = true;
+    arrhythmiaType = 'BRADICARDIA';
+    severity = 3;
   }
   
-  return { detected: false, type: 'RITMO_NORMAL', confidence: 0.7 };
-};
+  return {
+    detected: arrhythmiaDetected,
+    type: arrhythmiaType,
+    severity
+  };
+}
+
+/**
+ * Calcula el área bajo la curva utilizando integración trapezoidal
+ */
+export function calculateAreaUnderCurve(values: number[]): number {
+  if (!values || values.length < 2) return 0;
+  
+  let area = 0;
+  for (let i = 1; i < values.length; i++) {
+    area += (values[i] + values[i-1]) / 2;
+  }
+  
+  return area;
+}
+
+/**
+ * Calcula la amplitud de la señal entre picos y valles
+ */
+export function calculateAmplitude(values: number[], peaks: number[], valleys: number[]): number {
+  if (!values || !peaks || !valleys || peaks.length === 0 || valleys.length === 0) {
+    return 0;
+  }
+  
+  const amplitudes: number[] = [];
+  const len = Math.min(peaks.length, valleys.length);
+  
+  for (let i = 0; i < len; i++) {
+    const amp = values[peaks[i]] - values[valleys[i]];
+    if (amp > 0) {
+      amplitudes.push(amp);
+    }
+  }
+  
+  if (amplitudes.length === 0) return 0;
+  return amplitudes.reduce((a, b) => a + b, 0) / amplitudes.length;
+}
