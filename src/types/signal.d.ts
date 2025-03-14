@@ -1,3 +1,4 @@
+
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 export interface ProcessedSignal {
@@ -28,6 +29,7 @@ export interface SignalProcessor {
   calibrate: () => Promise<boolean>;
   onSignalReady?: (signal: ProcessedSignal) => void;
   onError?: (error: ProcessingError) => void;
+  getPPGBuffer?: () => number[]; // Added this method to fix type errors
 }
 
 declare global {

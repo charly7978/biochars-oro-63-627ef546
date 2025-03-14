@@ -1,4 +1,3 @@
-
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
 import './HeartBeatProcessor.extension';
 import { GlucoseProcessor } from './vital-signs/glucose-processor';
@@ -164,7 +163,7 @@ export class VitalSignsProcessor {
     if (this.glucoseProcessor && typeof this.glucoseProcessor.calculateGlucose === 'function') {
       // Obtener datos PPG acumulados del procesador principal si están disponibles
       let ppgData = [];
-      if (this.processor.signalProcessor && typeof this.processor.signalProcessor.getPPGBuffer === 'function') {
+      if (this.processor.signalProcessor && this.processor.signalProcessor.getPPGBuffer) {
         ppgData = this.processor.signalProcessor.getPPGBuffer();
       }
       
@@ -185,7 +184,7 @@ export class VitalSignsProcessor {
     if (this.lipidProcessor && typeof this.lipidProcessor.calculateLipids === 'function') {
       // Obtener datos PPG acumulados del procesador principal si están disponibles
       let ppgData = [];
-      if (this.processor.signalProcessor && typeof this.processor.signalProcessor.getPPGBuffer === 'function') {
+      if (this.processor.signalProcessor && this.processor.signalProcessor.getPPGBuffer) {
         ppgData = this.processor.signalProcessor.getPPGBuffer();
       }
       

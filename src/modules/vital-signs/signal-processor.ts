@@ -1,3 +1,4 @@
+
 /**
  * Enhanced Signal Processor based on advanced biomedical signal processing techniques
  * Implements wavelet denoising and adaptive filter techniques from IEEE publications
@@ -425,6 +426,13 @@ export class SignalProcessor {
 
   /**
    * Get the current PPG values buffer
+   */
+  public getPPGBuffer(): number[] {
+    return [...this.ppgValues];
+  }
+  
+  /**
+   * Get the current PPG values buffer (alias for getPPGValues for compatibility)
    */
   public getPPGValues(): number[] {
     return [...this.ppgValues];
