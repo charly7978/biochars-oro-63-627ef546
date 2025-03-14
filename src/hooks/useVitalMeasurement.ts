@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 
 interface VitalMeasurements {
@@ -19,6 +18,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [rawGlucoseReadings, setRawGlucoseReadings] = useState<number[]>([]);
+  const [rawBPMReadings, setRawBPMReadings] = useState<number[]>([]);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -51,6 +51,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       
       setElapsedTime(0);
       setRawGlucoseReadings([]);
+      setRawBPMReadings([]);
       return;
     }
 
@@ -73,6 +74,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       }
 
       const bpm = processor.getFinalBPM() || 0;
+      
       const glucoseProcessor = (window as any).glucoseProcessor;
       
       console.log('useVitalMeasurement - Actualización detallada:', {
@@ -86,19 +88,20 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         timestamp: new Date().toISOString()
       });
 
-      // Get raw glucose value directly from the processor using current PPG data
-      if (glucoseProcessor) {
+      if (bpm > 40 && bpm < 180) {
+        setRawBPMReadings(prev => [...prev, bpm]);
+      }
+
+      if (glucoseProcessor && glucoseProcessor.calculateGlucose) {
         try {
-          // Use the processor's calculateGlucose method without simulated data
-          // Pass an empty array to let the processor use its internal buffer
-          const rawGlucoseValue = glucoseProcessor.calculateGlucose ? 
-            Math.round(glucoseProcessor.calculateGlucose([])) : 0;
+          const ppgData = processor.getPPGData ? processor.getPPGData() : [];
           
-          if (rawGlucoseValue > 0) {
-            // Store all readings for trend analysis
+          const rawGlucoseValue = glucoseProcessor.calculateGlucose(ppgData);
+          
+          if (rawGlucoseValue && rawGlucoseValue > 0) {
             setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
             
-            console.log('useVitalMeasurement - Nuevo valor de glucosa real:', {
+            console.log('useVitalMeasurement - Nuevo valor de glucosa:', {
               valor: rawGlucoseValue,
               totalLecturas: rawGlucoseReadings.length + 1,
               tiempoTranscurrido: elapsedTime,
@@ -111,31 +114,81 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       }
 
       setMeasurements(prev => {
-        // Only update if actual values have changed or if we have new glucose readings
-        const latestGlucoseReading = rawGlucoseReadings.length > 0 ? 
-          rawGlucoseReadings[rawGlucoseReadings.length - 1] : prev.glucose;
-        
-        if (prev.heartRate === bpm && prev.glucose === latestGlucoseReading) {
-          return prev;
+        let finalBPM = prev.heartRate;
+        if (rawBPMReadings.length > 2) {
+          const sortedBPM = [...rawBPMReadings].sort((a, b) => a - b);
+          const medianBPM = sortedBPM[Math.floor(sortedBPM.length / 2)];
+          finalBPM = medianBPM;
+        } else if (bpm > 0) {
+          finalBPM = bpm;
+        }
+
+        let finalGlucose = prev.glucose;
+        if (rawGlucoseReadings.length > 2) {
+          const sortedGlucose = [...rawGlucoseReadings].sort((a, b) => a - b);
+          
+          const cutStart = Math.floor(sortedGlucose.length * 0.1);
+          const cutEnd = Math.floor(sortedGlucose.length * 0.9);
+          const filteredGlucose = sortedGlucose.slice(cutStart, cutEnd + 1);
+          
+          if (filteredGlucose.length > 0) {
+            const medianGlucose = filteredGlucose[Math.floor(filteredGlucose.length / 2)];
+            finalGlucose = Math.round(medianGlucose);
+          } else if (sortedGlucose.length > 0) {
+            const medianGlucose = sortedGlucose[Math.floor(sortedGlucose.length / 2)];
+            finalGlucose = Math.round(medianGlucose);
+          }
+        } else if (rawGlucoseReadings.length > 0) {
+          finalGlucose = Math.round(rawGlucoseReadings[rawGlucoseReadings.length - 1]);
+        }
+
+        let pressureString = prev.pressure;
+        const vitalSignsProcessor = (window as any).vitalSignsProcessor;
+        if (vitalSignsProcessor && vitalSignsProcessor.calculateBloodPressure) {
+          try {
+            const ppgData = processor.getPPGData ? processor.getPPGData() : [];
+            if (ppgData && ppgData.length > 0) {
+              const bp = vitalSignsProcessor.calculateBloodPressure(ppgData);
+              if (bp && bp.systolic > 0 && bp.diastolic > 0) {
+                pressureString = `${bp.systolic}/${bp.diastolic}`;
+              }
+            }
+          } catch (error) {
+            console.error('Error calculando presión arterial:', error);
+          }
+        }
+
+        if (
+          prev.heartRate !== finalBPM || 
+          prev.glucose !== finalGlucose || 
+          prev.pressure !== pressureString
+        ) {
+          const newValues = {
+            ...prev,
+            heartRate: finalBPM,
+            glucose: finalGlucose,
+            pressure: pressureString
+          };
+          
+          console.log('useVitalMeasurement - Actualizando valores', {
+            prevHeartRate: prev.heartRate,
+            newHeartRate: finalBPM,
+            prevGlucose: prev.glucose,
+            newGlucose: finalGlucose,
+            prevPressure: prev.pressure,
+            newPressure: pressureString,
+            totalReadings: {
+              bpm: rawBPMReadings.length,
+              glucose: rawGlucoseReadings.length
+            },
+            elapsedTime,
+            timestamp: new Date().toISOString()
+          });
+          
+          return newValues;
         }
         
-        const newValues = {
-          ...prev,
-          heartRate: bpm,
-          glucose: latestGlucoseReading
-        };
-        
-        console.log('useVitalMeasurement - Actualizando valores', {
-          frecuenciaAnterior: prev.heartRate,
-          nuevaFrecuencia: bpm,
-          glucosaAnterior: prev.glucose,
-          nuevaGlucosa: latestGlucoseReading,
-          totalLecturasGlucosa: rawGlucoseReadings.length,
-          tiempoTranscurrido: elapsedTime,
-          timestamp: new Date().toISOString()
-        });
-        
-        return newValues;
+        return prev;
       });
     };
 
@@ -149,6 +202,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         elapsed: elapsed / 1000,
         porcentaje: (elapsed / MEASUREMENT_DURATION) * 100,
         lecturasGlucosa: rawGlucoseReadings.length,
+        lecturasBPM: rawBPMReadings.length,
         timestamp: new Date().toISOString()
       });
       
@@ -161,6 +215,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           duracionTotal: MEASUREMENT_DURATION / 1000,
           resultadosFinal: {...measurements},
           totalLecturasGlucosa: rawGlucoseReadings.length,
+          totalLecturasBPM: rawBPMReadings.length,
           timestamp: new Date().toISOString()
         });
         
@@ -177,7 +232,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings]);
+  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings]);
 
   return {
     ...measurements,

@@ -1,3 +1,4 @@
+
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
@@ -141,45 +142,37 @@ export class BloodPressureProcessor {
     const sortedSystolic = [...this.systolicBuffer].sort((a, b) => a - b);
     const sortedDiastolic = [...this.diastolicBuffer].sort((a, b) => a - b);
     
-    const medianIndex = Math.floor(this.systolicBuffer.length / 2);
-    const systolicMedian = this.systolicBuffer.length % 2 === 0
-      ? (sortedSystolic[medianIndex - 1] + sortedSystolic[medianIndex]) / 2
-      : sortedSystolic[medianIndex];
-      
-    const diastolicMedian = this.diastolicBuffer.length % 2 === 0
-      ? (sortedDiastolic[medianIndex - 1] + sortedDiastolic[medianIndex]) / 2
-      : sortedDiastolic[medianIndex];
+    const medianSystolic = sortedSystolic[Math.floor(sortedSystolic.length / 2)];
+    const medianDiastolic = sortedDiastolic[Math.floor(sortedDiastolic.length / 2)];
     
     // 2. Calcular promedios
-    const systolicMean = this.systolicBuffer.reduce((sum, val) => sum + val, 0) / this.systolicBuffer.length;
-    const diastolicMean = this.diastolicBuffer.reduce((sum, val) => sum + val, 0) / this.diastolicBuffer.length;
+    const meanSystolic = this.systolicBuffer.reduce((sum, val) => sum + val, 0) / this.systolicBuffer.length;
+    const meanDiastolic = this.diastolicBuffer.reduce((sum, val) => sum + val, 0) / this.diastolicBuffer.length;
     
-    // 3. Aplicar ponderación entre mediana y promedio
-    const finalSystolic = (systolicMedian * this.MEDIAN_WEIGHT) + (systolicMean * this.MEAN_WEIGHT);
-    const finalDiastolic = (diastolicMedian * this.MEDIAN_WEIGHT) + (diastolicMean * this.MEAN_WEIGHT);
+    // 3. Aplicar promedio ponderado de mediana y media
+    const finalSystolic = Math.round((medianSystolic * this.MEDIAN_WEIGHT) + (meanSystolic * this.MEAN_WEIGHT));
+    const finalDiastolic = Math.round((medianDiastolic * this.MEDIAN_WEIGHT) + (meanDiastolic * this.MEAN_WEIGHT));
     
-    // 4. Verificar diferencial de presión en resultado final
+    // 4. Asegurar que la diferencia entre sistólica y diastólica sea fisiológicamente válida
+    const finalDifferential = finalSystolic - finalDiastolic;
+    
     let adjustedSystolic = finalSystolic;
     let adjustedDiastolic = finalDiastolic;
     
-    const finalDifferential = adjustedSystolic - adjustedDiastolic;
     if (finalDifferential < this.MIN_PULSE_PRESSURE) {
       adjustedDiastolic = adjustedSystolic - this.MIN_PULSE_PRESSURE;
     } else if (finalDifferential > this.MAX_PULSE_PRESSURE) {
       adjustedDiastolic = adjustedSystolic - this.MAX_PULSE_PRESSURE;
     }
-    
-    // 5. Aplicar límites fisiológicos una última vez
-    adjustedDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, adjustedDiastolic));
 
     return {
-      systolic: Math.round(adjustedSystolic),
-      diastolic: Math.round(adjustedDiastolic)
+      systolic: Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, adjustedSystolic)),
+      diastolic: Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, adjustedDiastolic))
     };
   }
-  
+
   /**
-   * Reinicia el estado del procesador de presión arterial
+   * Reset the processor state
    */
   public reset(): void {
     this.systolicBuffer = [];

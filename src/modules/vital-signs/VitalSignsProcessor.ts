@@ -92,6 +92,12 @@ export class VitalSignsProcessor {
     this.lipidProcessor = new LipidProcessor();
     
     console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
+    
+    // Make this processor available globally
+    if (typeof window !== 'undefined') {
+      (window as any).vitalSignsProcessor = this;
+      console.log('VitalSignsProcessor: Registered globally');
+    }
   }
 
   /**
@@ -466,5 +472,16 @@ export class VitalSignsProcessor {
     this.reset();
     this.lastValidResults = null;
   }
-}
 
+  /**
+   * Public method to calculate blood pressure directly
+   * This allows direct access from other components
+   */
+  public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
+    if (!ppgValues || ppgValues.length < 100) {
+      return { systolic: 0, diastolic: 0 };
+    }
+    
+    return this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
+  }
+}

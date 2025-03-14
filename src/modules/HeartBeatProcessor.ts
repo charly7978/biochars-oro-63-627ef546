@@ -356,6 +356,10 @@ export class HeartBeatProcessor {
     return Math.round(sum / finalSet.length);
   }
 
+  public getPPGData(): number[] {
+    return [...this.signalBuffer];
+  }
+
   public reset() {
     this.signalBuffer = [];
     this.medianBuffer = [];
