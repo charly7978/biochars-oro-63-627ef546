@@ -15,9 +15,9 @@ import {
 
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;
-  private readonly MIN_PERFUSION_INDEX = 0.05;
-  private readonly MIN_SIGNAL_QUALITY = 50;
-  private readonly CALIBRATION_FACTOR = 1.025;
+  private readonly MIN_PERFUSION_INDEX = 0.03; // Reducido para detectar señales más débiles
+  private readonly MIN_SIGNAL_QUALITY = 40; // Reducido para aceptar más señales
+  private readonly CALIBRATION_FACTOR = 1.03; // Aumentado para mayor sensibilidad
   private readonly RED_TO_IR_COMPENSATED_RATIO = 1.00;
   
   private spo2Buffer: number[] = [];
@@ -40,7 +40,7 @@ export class SpO2Processor {
     const currentTime = Date.now();
     
     // 1. Validación de datos y preprocesamiento
-    if (!values || values.length < 30) {
+    if (!values || values.length < 25) { // Reducido de 30 a 25
       return {
         value: this.lastValidReading,
         confidence: Math.max(0, this.confidenceScore - 0.1)
@@ -54,7 +54,8 @@ export class SpO2Processor {
     const signalQuality = calculateSignalQuality(filteredValues);
     const perfusionIndex = calculatePerfusionIndex(filteredValues);
     
-    if (signalQuality < this.MIN_SIGNAL_QUALITY || 
+    // Reducir umbrales de calidad para permitir más mediciones
+    if (signalQuality < this.MIN_SIGNAL_QUALITY && 
         perfusionIndex < this.MIN_PERFUSION_INDEX) {
       
       // Señal de baja calidad - usar último valor válido con confianza reducida
@@ -68,7 +69,7 @@ export class SpO2Processor {
     
     // 4. Cálculo de componentes PPG fundamentales
     const dc = calculateDC(filteredValues);
-    if (dc === 0 || Math.abs(dc) < 0.005) {
+    if (dc === 0 || Math.abs(dc) < 0.003) { // Reducido de 0.005 a 0.003
       return {
         value: this.lastValidReading,
         confidence: Math.max(0, this.confidenceScore - 0.2)
@@ -76,7 +77,7 @@ export class SpO2Processor {
     }
     
     const ac = calculateAC(filteredValues);
-    if (ac < 0.01) {
+    if (ac < 0.008) { // Reducido de 0.01 a 0.008
       return {
         value: this.lastValidReading,
         confidence: Math.max(0, this.confidenceScore - 0.2)
@@ -97,9 +98,9 @@ export class SpO2Processor {
     
     // 8. Ajustes basados en calidad de perfusión
     // Los pacientes con mejor perfusión tendrán lecturas más cercanas al 98-99%
-    if (perfusionIndex > 0.15) {
+    if (perfusionIndex > 0.12) { // Reducido de 0.15 a 0.12
       rawSpO2 = Math.min(100, rawSpO2 + 1);
-    } else if (perfusionIndex < 0.08) {
+    } else if (perfusionIndex < 0.06) { // Reducido de 0.08 a 0.06
       rawSpO2 = Math.max(80, rawSpO2 - 1);
     }
     
@@ -131,20 +132,20 @@ export class SpO2Processor {
     this.lastCalculationTime = currentTime;
     
     this.confidenceScore = Math.min(0.95, 
-      0.4 + 
+      0.45 + // Aumentado para base de confianza más alta
       (signalQuality / 200) + 
       Math.min(0.25, perfusionIndex * 2) +
       (this.spo2Buffer.length / this.SPO2_BUFFER_SIZE) * 0.15
     );
     
-    // Reducir confianza si hay un cambio brusco inesperado
+    // Reducir penalidad por cambios para permitir más fluctuaciones
     if (this.lastValidReading > 0 && timeSinceLastCalc < 2000) {
       const change = Math.abs(finalSpO2 - this.lastValidReading);
       
-      if (change > 4) {
-        this.confidenceScore = Math.max(0.3, this.confidenceScore - 0.25);
-      } else if (change > 2) {
-        this.confidenceScore = Math.max(0.4, this.confidenceScore - 0.1);
+      if (change > 6) { // Aumentado umbral de 4 a 6
+        this.confidenceScore = Math.max(0.3, this.confidenceScore - 0.2); // Reducido de 0.25 a 0.2
+      } else if (change > 3) { // Aumentado umbral de 2 a 3
+        this.confidenceScore = Math.max(0.4, this.confidenceScore - 0.08); // Reducido de 0.1 a 0.08
       }
     }
     

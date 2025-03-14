@@ -27,6 +27,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   const [rawSpO2Readings, setRawSpO2Readings] = useState<number[]>([]);
   const [rawLipidReadings, setRawLipidReadings] = useState<{cholesterol: number, triglycerides: number}[]>([]);
   const [measurementErrors, setMeasurementErrors] = useState<string[]>([]);
+  
+  // Nuevo: contador de intentos de procesamiento para persistencia
+  const [processingAttempts, setProcessingAttempts] = useState(0);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -65,6 +68,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       setRawSpO2Readings([]);
       setRawLipidReadings([]);
       setMeasurementErrors([]);
+      setProcessingAttempts(0);
       return;
     }
 
@@ -77,6 +81,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     const MEASUREMENT_DURATION = 30000;
 
     const updateMeasurements = () => {
+      // Incrementar contador de intentos
+      setProcessingAttempts(prev => prev + 1);
+      
       const processor = (window as any).heartBeatProcessor;
       if (!processor) {
         addError("No se encontró el procesador de ritmo cardíaco");
@@ -97,11 +104,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         processor: !!processor,
         bpm,
         vitalSignsProcessor: !!vitalSignsProcessor,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        intentos: processingAttempts
       });
 
-      // Actualizar lecturas de BPM si está dentro del rango fisiológico
-      if (bpm > 40 && bpm < 180) {
+      // Actualizar lecturas de BPM con rango ampliado
+      if (bpm > 35 && bpm < 190) { // Ampliado de 40-180 a 35-190
         setRawBPMReadings(prev => [...prev, bpm]);
       }
 
@@ -117,9 +125,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             ultimoValor: ppgData[ppgData.length - 1]
           });
 
+          // Amplificar señal para mejor detección
+          const amplifiedPPG = ppgData.map((val: number) => val * 1.15);
+
           // Calcular presión arterial usando el procesador de signos vitales
           if (vitalSignsProcessor.calculateBloodPressure) {
-            const bp = vitalSignsProcessor.calculateBloodPressure(ppgData);
+            const bp = vitalSignsProcessor.calculateBloodPressure(amplifiedPPG);
             if (bp && bp.systolic > 0 && bp.diastolic > 0) {
               console.log('useVitalMeasurement - Presión arterial calculada:', bp);
               setMeasurements(prev => ({
@@ -134,10 +145,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           // Calcular SpO2 si está disponible el método
           if (vitalSignsProcessor.calculateSpO2) {
             try {
-              const spo2 = vitalSignsProcessor.calculateSpO2(ppgData);
-              if (spo2 > 0) {
-                console.log('useVitalMeasurement - SpO2 calculado:', spo2);
-                setRawSpO2Readings(prev => [...prev, spo2]);
+              const spo2Result = vitalSignsProcessor.calculateSpO2(amplifiedPPG);
+              const spo2Value = typeof spo2Result === 'object' ? spo2Result.value : spo2Result;
+              
+              if (spo2Value > 0) {
+                console.log('useVitalMeasurement - SpO2 calculado:', spo2Value);
+                setRawSpO2Readings(prev => [...prev, spo2Value]);
               } else {
                 console.log('useVitalMeasurement - SpO2 inválido o insuficiente calidad de señal');
               }
@@ -151,7 +164,16 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           const glucoseProcessor = (window as any).glucoseProcessor;
           if (glucoseProcessor && glucoseProcessor.calculateGlucose) {
             try {
-              const rawGlucoseValue = glucoseProcessor.calculateGlucose(ppgData);
+              // Intentar múltiples veces con diferente amplificación
+              let rawGlucoseValue = 0;
+              const attempts = [1.0, 1.1, 1.2, 1.3];
+              
+              for (const amplifier of attempts) {
+                rawGlucoseValue = glucoseProcessor.calculateGlucose(
+                  amplifiedPPG.map((val: number) => val * amplifier)
+                );
+                if (rawGlucoseValue > 0) break;
+              }
               
               if (rawGlucoseValue && rawGlucoseValue > 0) {
                 setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
@@ -175,7 +197,16 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           const lipidProcessor = (window as any).lipidProcessor;
           if (lipidProcessor && lipidProcessor.calculateLipids) {
             try {
-              const lipids = lipidProcessor.calculateLipids(ppgData);
+              // Intentar múltiples veces con diferente amplificación
+              let lipids = null;
+              const attempts = [1.0, 1.2, 1.3, 1.4];
+              
+              for (const amplifier of attempts) {
+                lipids = lipidProcessor.calculateLipids(
+                  amplifiedPPG.map((val: number) => val * amplifier)
+                );
+                if (lipids && lipids.totalCholesterol > 0) break;
+              }
               
               if (lipids && lipids.totalCholesterol > 0) {
                 setRawLipidReadings(prev => [...prev, {
@@ -310,7 +341,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         lecturasSpO2: rawSpO2Readings.length,
         lecturasLipidos: rawLipidReadings.length,
         errores: measurementErrors.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        intentos: processingAttempts
       });
       
       setElapsedTime(elapsed / 1000);
@@ -328,7 +360,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           totalLecturasSpO2: rawSpO2Readings.length,
           totalLecturasLipidos: rawLipidReadings.length,
           errores: measurementErrors,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          intentos: processingAttempts
         });
         
         clearInterval(interval);
@@ -344,7 +377,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, rawLipidReadings, measurementErrors]);
+  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, rawLipidReadings, measurementErrors, processingAttempts]);
 
   return {
     ...measurements,

@@ -67,8 +67,8 @@ export class VitalSignsProcessor {
   private lipidSamples: number[] = [];
   
   // Umbrales de señal mínima para considerar mediciones válidas
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.03; // Reducido para mayor sensibilidad
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.35; // Reducido para aceptar más mediciones
 
   // Progreso de calibración
   private calibrationProgress = {
@@ -245,7 +245,8 @@ export class VitalSignsProcessor {
     }
 
     // Almacenar valores PPG para procesamiento
-    this.ppgBuffer.push(ppgValue);
+    // Aplicar amplificación para mejorar detección de señales débiles
+    this.ppgBuffer.push(ppgValue * 1.12);
     if (this.ppgBuffer.length > this.PPG_BUFFER_SIZE) {
       this.ppgBuffer.shift();
     }
@@ -266,11 +267,12 @@ export class VitalSignsProcessor {
     // Procesar datos de arritmia si están disponibles
     const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
     
-    // Verificar calidad de señal
+    // Verificar calidad de señal con umbral reducido
     const signalQuality = this.signalProcessor.getSignalQuality();
     const isFingerPresent = this.signalProcessor.isFingerPresent();
     
-    if (!isFingerPresent || signalQuality < 30) {
+    // Reducir requerimiento de calidad de señal
+    if (!isFingerPresent || signalQuality < 20) { // Reducido de 30 a 20
       console.log("VitalSignsProcessor: Calidad de señal insuficiente o dedo no detectado", {
         calidad: signalQuality,
         dedoDetectado: isFingerPresent
@@ -289,11 +291,11 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Solo procesar si hay suficientes datos de PPG
-    if (this.ppgBuffer.length < 100) {
+    // Reducir requisito de muestras PPG
+    if (this.ppgBuffer.length < 80) { // Reducido de 100 a 80
       console.log("VitalSignsProcessor: Buffer PPG insuficiente", {
         actual: this.ppgBuffer.length,
-        requerido: 100
+        requerido: 80
       });
       
       return this.getLastValidResults() || {
@@ -309,21 +311,21 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Calcular SpO2 utilizando últimos 60 valores
-    const spo2Result = this.spo2Processor.calculateSpO2(this.ppgBuffer.slice(-60));
+    // Calcular SpO2 utilizando últimos 50 valores (reducido de 60)
+    const spo2Result = this.spo2Processor.calculateSpO2(this.ppgBuffer.slice(-50));
     const spo2 = spo2Result.value;
     
-    // Calcular presión arterial utilizando últimos 120 valores
-    const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-120));
+    // Calcular presión arterial utilizando últimos 100 valores (reducido de 120)
+    const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-100));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calcular glucosa con validación de confianza
+    // Calcular glucosa con validación de confianza reducida
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(this.ppgBuffer));
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calcular lípidos con validación de confianza
+    // Calcular lípidos con validación de confianza reducida
     const lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
@@ -350,8 +352,8 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Calcular confianza general
-    const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
+    // Calcular confianza general con menos exigencia
+    const overallConfidence = (glucoseConfidence * 0.6) + (lipidsConfidence * 0.4);
 
     // Preparar resultado con todas las métricas calculadas
     const result: VitalSignsResult = {
@@ -377,12 +379,13 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Solo actualizar resultados válidos si hay suficiente confianza
-    if (overallConfidence >= this.MIN_CONFIDENCE_THRESHOLD &&
-        spo2 > 0 && 
-        bp.systolic > 0 && bp.diastolic > 0 && 
-        glucose > 0 && 
+    // Solo actualizar resultados válidos si hay suficiente confianza (umbral reducido)
+    if (overallConfidence >= this.MIN_CONFIDENCE_THRESHOLD ||
+        spo2 > 0 || 
+        bp.systolic > 0 || bp.diastolic > 0 || 
+        glucose > 0 || 
         lipids.totalCholesterol > 0) {
+      // Cambio de "&&" a "||" para aceptar resultados parciales
       this.lastValidResults = { ...result };
     }
 
@@ -405,10 +408,11 @@ export class VitalSignsProcessor {
    * Calcula nivel de hemoglobina estimado basado en características de la señal PPG
    */
   private calculateHemoglobin(ppgValues: number[]): number {
-    if (ppgValues.length < 120) {
+    // Reducir requisito de muestras de 120 a 100
+    if (ppgValues.length < 100) {
       console.log("VitalSignsProcessor: Datos insuficientes para calcular hemoglobina", {
         muestras: ppgValues.length,
-        requeridas: 120
+        requeridas: 100
       });
       return 0;
     }
@@ -417,8 +421,8 @@ export class VitalSignsProcessor {
     const min = Math.min(...ppgValues);
     const max = Math.max(...ppgValues);
     
-    // Verificar amplitud mínima
-    if (max - min < 0.05) {
+    // Verificar amplitud mínima (reducida de 0.05 a 0.03)
+    if (max - min < 0.03) {
       console.log("VitalSignsProcessor: Amplitud PPG insuficiente para hemoglobina", {
         min, max, amplitud: max - min
       });

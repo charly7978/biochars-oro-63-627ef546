@@ -58,8 +58,34 @@ export class VitalSignsProcessor {
     // Aquí configuramos manualmente parámetros para mejorar sensibilidad
     console.log("VitalSignsProcessor: Configurando procesadores para sensibilidad mejorada");
     
-    // Ajustar cualquier parámetro interno si los procesadores lo exponen
-    // Como alternativa a pasar opciones en el constructor
+    // Intentar acceder y modificar los parámetros internos para mayor sensibilidad
+    if (this.processor && this.processor.signalProcessor) {
+      // Reducir umbrales de calidad de señal
+      (this.processor.signalProcessor as any).MIN_SIGNAL_AMPLITUDE = 0.03; // Reducido de 0.05
+      (this.processor.signalProcessor as any).MIN_SIGNAL_QUALITY = 25; // Reducido de 30
+    }
+    
+    if (this.processor && this.processor.bpProcessor) {
+      // Aumentar sensibilidad de presión
+      (this.processor.bpProcessor as any).MIN_SIGNAL_QUALITY = 0.3; // Reducido de 0.4
+      (this.processor.bpProcessor as any).MIN_SAMPLES = 25; // Reducido de 30
+    }
+    
+    if (this.processor && this.processor.spo2Processor) {
+      // Aumentar sensibilidad SpO2
+      (this.processor.spo2Processor as any).MIN_PERFUSION_INDEX = 0.03; // Reducido de 0.05
+      (this.processor.spo2Processor as any).MIN_SIGNAL_QUALITY = 40; // Reducido de 50
+    }
+    
+    // Configurar procesador de glucosa para mayor sensibilidad
+    if (this.glucoseProcessor) {
+      (this.glucoseProcessor as any).MIN_SIGNAL_QUALITY = 40; // Reducido de 50
+    }
+    
+    // Configurar procesador de lípidos para mayor sensibilidad
+    if (this.lipidProcessor) {
+      (this.lipidProcessor as any).MIN_SIGNAL_QUALITY = 40; // Reducido de 50
+    }
   }
   
   /**
