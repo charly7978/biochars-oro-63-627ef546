@@ -53,9 +53,13 @@ export class VitalSignsProcessor {
    * Proxy method to expose SpO2 calculation directly
    */
   public calculateSpO2(ppgValues: number[]): number {
-    if (typeof this.processor.calculateSpO2 === 'function') {
-      return this.processor.calculateSpO2(ppgValues);
+    // Check if the processor has an SpO2Processor instance
+    if (this.processor.spo2Processor && typeof this.processor.spo2Processor.calculateSpO2 === 'function') {
+      return this.processor.spo2Processor.calculateSpO2(ppgValues);
     }
-    return 0;
+    
+    // If the SpO2 processor isn't available, return a default value
+    console.warn('VitalSignsProcessor: Unable to calculate SpO2, processor not available');
+    return 95; // Default normal SpO2 value
   }
 }

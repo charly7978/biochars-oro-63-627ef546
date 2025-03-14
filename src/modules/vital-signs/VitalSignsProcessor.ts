@@ -45,12 +45,12 @@ export interface VitalSignsResult {
  * con enfoque en precisión y honestidad de los resultados
  */
 export class VitalSignsProcessor {
-  private spo2Processor: SpO2Processor;
-  private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaProcessor: ArrhythmiaProcessor;
-  private signalProcessor: SignalProcessor;
-  private glucoseProcessor: GlucoseProcessor;
-  private lipidProcessor: LipidProcessor;
+  public spo2Processor: SpO2Processor;
+  public bpProcessor: BloodPressureProcessor;
+  public arrhythmiaProcessor: ArrhythmiaProcessor;
+  public signalProcessor: SignalProcessor;
+  public glucoseProcessor: GlucoseProcessor;
+  public lipidProcessor: LipidProcessor;
   
   private lastValidResults: VitalSignsResult | null = null;
   private isCalibrating: boolean = false;
@@ -379,6 +379,18 @@ export class VitalSignsProcessor {
     }
 
     return result;
+  }
+
+  /**
+   * Calculate SpO2 directly from PPG values
+   * This method is used by the wrapper class
+   */
+  public calculateSpO2(ppgValues: number[]): number {
+    if (!ppgValues || ppgValues.length < 30) {
+      return 0;
+    }
+    
+    return this.spo2Processor.calculateSpO2(ppgValues);
   }
 
   /**

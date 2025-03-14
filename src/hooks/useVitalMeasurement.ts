@@ -178,7 +178,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         // Actualizar SpO2 con mediana de lecturas
         if (rawSpO2Readings.length > 2) {
           const sortedSpO2 = [...rawSpO2Readings].sort((a, b) => a - b);
-          const medianSpO2 = sortedSpO2[Math.floor(sortedSpO2Readings.length / 2)];
+          const medianSpO2 = sortedSpO2[Math.floor(rawSpO2Readings.length / 2)];
           newValues.spo2 = medianSpO2;
         }
 
