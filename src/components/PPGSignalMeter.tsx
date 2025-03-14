@@ -541,8 +541,7 @@ const PPGSignalMeter = memo(({
       />
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
-        <div style={{ marginLeft: '12mm', marginTop: '4mm' }} className="flex items-center gap-2">
-          <AppTitle />
+        <div className="flex items-center gap-2 ml-2 mt-2">
           <div className="w-[150px]">
             <div className={`h-1.5 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
@@ -554,6 +553,9 @@ const PPGSignalMeter = memo(({
                   style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
+          </div>
+          <div style={{ marginLeft: '8mm' }}>
+            <AppTitle />
           </div>
         </div>
 
