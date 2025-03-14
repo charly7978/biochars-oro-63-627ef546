@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -70,15 +71,15 @@ const CameraView = ({
 
       // Platform-specific resolution settings - maintain different resolutions
       const androidVideoConstraints: MediaTrackConstraints = {
-        facingMode: { exact: 'environment' }, // Reverted to exact for Android
+        facingMode: 'environment',
         width: { ideal: 1080 },
         height: { ideal: 1920 },
         frameRate: { ideal: 30, max: 60 }
       };
 
-      // Windows video constraints - more permissive but still has to work for finger detection
+      // Fix for Windows - using more compatible constraints
       const windowsVideoConstraints: MediaTrackConstraints = {
-        facingMode: 'environment', // Keep this permissive for Windows
+        facingMode: { exact: 'environment' }, // Try without exact to allow fallback
         width: { ideal: 720 },
         height: { ideal: 1280 },
         frameRate: { ideal: 30 }
@@ -102,18 +103,23 @@ const CameraView = ({
       } catch (err) {
         console.warn("Error con configuración específica, intentando con configuración genérica:", err);
         
-        // Fallback constraints for both platforms if needed
-        const fallbackConstraints: MediaStreamConstraints = {
-          video: {
-            facingMode: isAndroid ? { exact: 'environment' } : 'environment', // Keep Android exact, Windows permissive
-            width: { ideal: isAndroid ? 720 : 640 },
-            height: { ideal: isAndroid ? 1280 : 480 }
-          },
-          audio: false
-        };
-        
-        console.log("Intentando con configuración de respaldo:", JSON.stringify(fallbackConstraints));
-        newStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        if (!isAndroid) {
+          // Fallback for Windows: try with simpler constraints if the specific ones fail
+          const fallbackConstraints: MediaStreamConstraints = {
+            video: {
+              facingMode: 'environment', // Remove 'exact' to be more permissive
+              width: { ideal: 640 },     // Lower resolution as fallback
+              height: { ideal: 480 }
+            },
+            audio: false
+          };
+          
+          console.log("Intentando con configuración de respaldo:", JSON.stringify(fallbackConstraints));
+          newStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        } else {
+          // For Android, just rethrow the error
+          throw err;
+        }
       }
       
       console.log("Cámara inicializada correctamente");
