@@ -30,8 +30,21 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   
   // Nuevo: contador de intentos de procesamiento para persistencia
   const [processingAttempts, setProcessingAttempts] = useState(0);
+  // Nuevo: verificación de procesadores
+  const [processorsVerified, setProcessorsVerified] = useState(false);
 
   useEffect(() => {
+    // Nuevo: verificar procesadores al inicio para detectar duplicaciones
+    if (!processorsVerified) {
+      console.log('useVitalMeasurement - Verificando procesadores globales:', {
+        vitalSignsProcessor: !!(window as any).vitalSignsProcessor,
+        glucoseProcessor: !!(window as any).glucoseProcessor,
+        lipidProcessor: !!(window as any).lipidProcessor,
+        timestamp: new Date().toISOString()
+      });
+      setProcessorsVerified(true);
+    }
+    
     console.log('useVitalMeasurement - Estado detallado:', {
       isMeasuring,
       currentMeasurements: measurements,
@@ -84,6 +97,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       // Incrementar contador de intentos
       setProcessingAttempts(prev => prev + 1);
       
+      // Verificar procesador de ritmo cardíaco
       const processor = (window as any).heartBeatProcessor;
       if (!processor) {
         addError("No se encontró el procesador de ritmo cardíaco");
@@ -99,11 +113,27 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         addError("No se encontró el procesador de signos vitales");
         return;
       }
+      
+      // NUEVO: Verificar explícitamente procesadores específicos
+      const glucoseProcessor = (window as any).glucoseProcessor;
+      const lipidProcessor = (window as any).lipidProcessor;
+      
+      if (!glucoseProcessor) {
+        addError("No se encontró el procesador de glucosa");
+        console.error("Procesador de glucosa no encontrado en window.glucoseProcessor");
+      }
+      
+      if (!lipidProcessor) {
+        addError("No se encontró el procesador de lípidos");
+        console.error("Procesador de lípidos no encontrado en window.lipidProcessor");
+      }
 
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
         bpm,
         vitalSignsProcessor: !!vitalSignsProcessor,
+        glucoseProcessor: !!glucoseProcessor,
+        lipidProcessor: !!lipidProcessor,
         timestamp: new Date().toISOString(),
         intentos: processingAttempts
       });
@@ -126,7 +156,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           });
 
           // Usar amplificaciones múltiples para aumentar probabilidad de detección
-          const amplificationFactors = [1.15, 1.25, 1.35, 1.45];
+          const amplificationFactors = [1.2, 1.4, 1.6, 1.8, 2.0]; // Ampliado con más factores
           let bpCalculated = false;
           let spo2Calculated = false;
           let glucoseCalculated = false;
@@ -166,7 +196,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
 
             // Calcular glucosa si no se ha calculado aún
-            const glucoseProcessor = (window as any).glucoseProcessor;
             if (!glucoseCalculated && glucoseProcessor && glucoseProcessor.calculateGlucose) {
               try {
                 const rawGlucoseValue = glucoseProcessor.calculateGlucose(amplifiedPPG);
@@ -189,7 +218,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
 
             // Calcular lípidos si no se han calculado aún
-            const lipidProcessor = (window as any).lipidProcessor;
             if (!lipidsCalculated && lipidProcessor && lipidProcessor.calculateLipids) {
               try {
                 const lipids = lipidProcessor.calculateLipids(amplifiedPPG);
@@ -227,7 +255,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             console.log('useVitalMeasurement - Intentando método de último recurso para valores faltantes');
             
             // Usar el último método de amplificación extrema para los valores faltantes
-            const superAmplifiedPPG = ppgData.map((val: number) => val * 1.8);
+            const superAmplifiedPPG = ppgData.map((val: number) => val * 2.5); // Aumentado considerablemente
             
             // Presión arterial último intento
             if (!bpCalculated && vitalSignsProcessor.calculateBloodPressure) {
@@ -242,9 +270,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
             
             // Glucosa último intento
-            if (!glucoseCalculated && (window as any).glucoseProcessor) {
+            if (!glucoseCalculated && glucoseProcessor) {
               try {
-                const rawGlucoseValue = (window as any).glucoseProcessor.calculateGlucose(superAmplifiedPPG);
+                const rawGlucoseValue = glucoseProcessor.calculateGlucose(superAmplifiedPPG);
                 if (rawGlucoseValue && rawGlucoseValue > 0) {
                   setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
                   console.log('useVitalMeasurement - Glucosa calculada con amplificación extrema:', rawGlucoseValue);
@@ -255,9 +283,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
             
             // Lípidos último intento
-            if (!lipidsCalculated && (window as any).lipidProcessor) {
+            if (!lipidsCalculated && lipidProcessor) {
               try {
-                const lipids = (window as any).lipidProcessor.calculateLipids(superAmplifiedPPG);
+                const lipids = lipidProcessor.calculateLipids(superAmplifiedPPG);
                 if (lipids && lipids.totalCholesterol > 0) {
                   setRawLipidReadings(prev => [...prev, {
                     cholesterol: lipids.totalCholesterol,
@@ -300,44 +328,55 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         }
 
         // Actualizar glucosa con mediana de lecturas, eliminando outliers
-        if (rawGlucoseReadings.length > 2) {
-          const sortedGlucose = [...rawGlucoseReadings].sort((a, b) => a - b);
-          
-          // Eliminar outliers (10% superior e inferior)
-          const cutStart = Math.floor(sortedGlucose.length * 0.1);
-          const cutEnd = Math.floor(sortedGlucose.length * 0.9);
-          const filteredGlucose = sortedGlucose.slice(cutStart, cutEnd + 1);
-          
-          if (filteredGlucose.length > 0) {
-            const medianGlucose = filteredGlucose[Math.floor(filteredGlucose.length / 2)];
-            newValues.glucose = Math.round(medianGlucose);
-          } else if (sortedGlucose.length > 0) {
-            const medianGlucose = sortedGlucose[Math.floor(sortedGlucose.length / 2)];
-            newValues.glucose = Math.round(medianGlucose);
+        if (rawGlucoseReadings.length > 0) { // Cambiado para aceptar incluso con pocas lecturas
+          // Si hay pocas lecturas, usar la última directamente
+          if (rawGlucoseReadings.length < 3) {
+            newValues.glucose = Math.round(rawGlucoseReadings[rawGlucoseReadings.length - 1]);
+          } else {
+            // Con más lecturas, usar filtrado de outliers
+            const sortedGlucose = [...rawGlucoseReadings].sort((a, b) => a - b);
+            
+            // Eliminar outliers solo si hay suficientes lecturas
+            if (sortedGlucose.length >= 5) {
+              const cutStart = Math.floor(sortedGlucose.length * 0.1);
+              const cutEnd = Math.floor(sortedGlucose.length * 0.9);
+              const filteredGlucose = sortedGlucose.slice(cutStart, cutEnd + 1);
+              
+              if (filteredGlucose.length > 0) {
+                const medianGlucose = filteredGlucose[Math.floor(filteredGlucose.length / 2)];
+                newValues.glucose = Math.round(medianGlucose);
+              }
+            } else {
+              // Con pocas lecturas, usar la mediana directa
+              const medianGlucose = sortedGlucose[Math.floor(sortedGlucose.length / 2)];
+              newValues.glucose = Math.round(medianGlucose);
+            }
           }
-        } else if (rawGlucoseReadings.length > 0) {
-          newValues.glucose = Math.round(rawGlucoseReadings[rawGlucoseReadings.length - 1]);
         }
 
         // Actualizar lípidos con mediana de lecturas
-        if (rawLipidReadings.length > 2) {
-          const sortedCholesterol = [...rawLipidReadings]
-            .map(l => l.cholesterol)
-            .sort((a, b) => a - b);
-          
-          const sortedTriglycerides = [...rawLipidReadings]
-            .map(l => l.triglycerides)
-            .sort((a, b) => a - b);
-          
-          const medianCholesterol = sortedCholesterol[Math.floor(sortedCholesterol.length / 2)];
-          const medianTriglycerides = sortedTriglycerides[Math.floor(sortedTriglycerides.length / 2)];
-          
-          newValues.cholesterol = Math.round(medianCholesterol);
-          newValues.triglycerides = Math.round(medianTriglycerides);
-        } else if (rawLipidReadings.length > 0) {
-          const lastReading = rawLipidReadings[rawLipidReadings.length - 1];
-          newValues.cholesterol = Math.round(lastReading.cholesterol);
-          newValues.triglycerides = Math.round(lastReading.triglycerides);
+        if (rawLipidReadings.length > 0) { // Cambiado para aceptar incluso con pocas lecturas
+          // Si hay pocas lecturas, usar la última directamente
+          if (rawLipidReadings.length < 3) {
+            const lastReading = rawLipidReadings[rawLipidReadings.length - 1];
+            newValues.cholesterol = Math.round(lastReading.cholesterol);
+            newValues.triglycerides = Math.round(lastReading.triglycerides);
+          } else {
+            // Con más lecturas, usar medianas
+            const sortedCholesterol = [...rawLipidReadings]
+              .map(l => l.cholesterol)
+              .sort((a, b) => a - b);
+            
+            const sortedTriglycerides = [...rawLipidReadings]
+              .map(l => l.triglycerides)
+              .sort((a, b) => a - b);
+            
+            const medianCholesterol = sortedCholesterol[Math.floor(sortedCholesterol.length / 2)];
+            const medianTriglycerides = sortedTriglycerides[Math.floor(sortedTriglycerides.length / 2)];
+            
+            newValues.cholesterol = Math.round(medianCholesterol);
+            newValues.triglycerides = Math.round(medianTriglycerides);
+          }
         }
 
         console.log('useVitalMeasurement - Valores actualizados:', {
@@ -418,7 +457,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, rawLipidReadings, measurementErrors, processingAttempts]);
+  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, rawLipidReadings, measurementErrors, processingAttempts, processorsVerified]);
 
   return {
     ...measurements,

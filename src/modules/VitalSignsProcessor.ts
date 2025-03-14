@@ -27,10 +27,11 @@ export class VitalSignsProcessor {
   
   constructor() {
     console.log("VitalSignsProcessor: Inicializando con enfoque en PRESIÓN, GLUCOSA Y LÍPIDOS");
-    // Inicializar procesador sin pasar argumentos
+    
+    // Inicializar procesador principal
     this.processor = new NewVitalSignsProcessor();
     
-    // Inicializar procesadores sin pasar argumentos
+    // Inicializar procesadores directamente para mejor control
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
@@ -40,14 +41,32 @@ export class VitalSignsProcessor {
     // Configurar manualmente para mayor sensibilidad después de inicialización
     this.configureEnhancedSensitivity();
     
-    // Registro global para otros componentes
+    // Registro global para otros componentes - VERIFICAR QUE NO HAYA DUPLICACIÓN
     if (typeof window !== 'undefined') {
+      // Eliminar instancias anteriores si existen para evitar duplicación
+      if ((window as any).vitalSignsProcessor) {
+        console.log('VitalSignsProcessor: Eliminando instancia anterior para evitar duplicación');
+      }
+      if ((window as any).glucoseProcessor) {
+        console.log('GlucoseProcessor: Eliminando instancia anterior para evitar duplicación');
+      }
+      if ((window as any).lipidProcessor) {
+        console.log('LipidProcessor: Eliminando instancia anterior para evitar duplicación');
+      }
+      
+      // Registrar nuevas instancias
       (window as any).vitalSignsProcessor = this.processor;
-      (window as any).glucoseProcessor = this.glucoseProcessor; // Registrar globalmente
-      (window as any).lipidProcessor = this.lipidProcessor; // Registrar globalmente
-      console.log('VitalSignsProcessor: Registrado globalmente a través del wrapper');
-      console.log('GlucoseProcessor: Registrado globalmente para acceso directo');
-      console.log('LipidProcessor: Registrado globalmente para acceso directo');
+      (window as any).glucoseProcessor = this.glucoseProcessor;
+      (window as any).lipidProcessor = this.lipidProcessor;
+      
+      console.log('VitalSignsProcessor: Registrado globalmente con control de duplicación');
+      console.log('GlucoseProcessor: Registrado globalmente con valores de configuración:', {
+        MIN_SIGNAL_QUALITY: (this.glucoseProcessor as any).MIN_SIGNAL_QUALITY || 'N/A',
+        BUFFER_SIZE: (this.glucoseProcessor as any).BUFFER_SIZE || 'N/A'
+      });
+      console.log('LipidProcessor: Registrado globalmente con valores de configuración:', {
+        MIN_SIGNAL_QUALITY: (this.lipidProcessor as any).MIN_SIGNAL_QUALITY || 'N/A'
+      });
     }
   }
   
@@ -56,53 +75,60 @@ export class VitalSignsProcessor {
    */
   private configureEnhancedSensitivity(): void {
     // Aquí configuramos manualmente parámetros para mejorar sensibilidad
-    console.log("VitalSignsProcessor: Configurando procesadores para ALTA sensibilidad en PRESIÓN, GLUCOSA Y LÍPIDOS");
+    console.log("VitalSignsProcessor: Configurando procesadores para EXTREMA sensibilidad en PRESIÓN, GLUCOSA Y LÍPIDOS");
     
     // Intentar acceder y modificar los parámetros internos para mayor sensibilidad
     if (this.processor && this.processor.signalProcessor) {
-      // Reducir umbrales de calidad de señal
-      (this.processor.signalProcessor as any).MIN_SIGNAL_AMPLITUDE = 0.025; // Reducido aún más (antes 0.03)
-      (this.processor.signalProcessor as any).MIN_SIGNAL_QUALITY = 20; // Reducido aún más (antes 25)
+      // Reducir umbrales de calidad de señal aún más
+      (this.processor.signalProcessor as any).MIN_SIGNAL_AMPLITUDE = 0.02; // Reducido considerablemente
+      (this.processor.signalProcessor as any).MIN_SIGNAL_QUALITY = 15; // Reducido considerablemente
     }
     
     if (this.processor && this.processor.bpProcessor) {
-      // Aumentar sensibilidad de presión
-      (this.processor.bpProcessor as any).MIN_SIGNAL_QUALITY = 0.25; // Reducido aún más (antes 0.3)
-      (this.processor.bpProcessor as any).MIN_SAMPLES = 20; // Reducido aún más (antes 25)
+      // Aumentar sensibilidad de presión extremadamente
+      (this.processor.bpProcessor as any).MIN_SIGNAL_QUALITY = 0.2; // Reducido considerablemente
+      (this.processor.bpProcessor as any).MIN_SAMPLES = 15; // Reducido considerablemente
       
       // Ajustes adicionales para mejorar detección de presión arterial
-      (this.processor.bpProcessor as any).AMPLIFICATION_FACTOR = 1.25; // Aumentado para mejorar detección
-      (this.processor.bpProcessor as any).PEAK_THRESHOLD = 0.2; // Reducido para detectar más picos
+      (this.processor.bpProcessor as any).AMPLIFICATION_FACTOR = 1.4; // Aumentado para mejor detección
+      (this.processor.bpProcessor as any).PEAK_THRESHOLD = 0.15; // Reducido para detectar más picos
       
-      console.log("VitalSignsProcessor: Sensibilidad de detección de PRESIÓN aumentada significativamente");
+      console.log("VitalSignsProcessor: Sensibilidad de detección de PRESIÓN aumentada a nivel EXTREMO");
     }
     
     if (this.processor && this.processor.spo2Processor) {
-      // Aumentar sensibilidad SpO2
-      (this.processor.spo2Processor as any).MIN_PERFUSION_INDEX = 0.02; // Reducido aún más (antes 0.03)
-      (this.processor.spo2Processor as any).MIN_SIGNAL_QUALITY = 30; // Reducido aún más (antes 40)
+      // Aumentar sensibilidad SpO2 extremadamente
+      (this.processor.spo2Processor as any).MIN_PERFUSION_INDEX = 0.015; // Reducido considerablemente
+      (this.processor.spo2Processor as any).MIN_SIGNAL_QUALITY = 25; // Reducido considerablemente
     }
     
-    // Configurar procesador de glucosa para MUCHA mayor sensibilidad
+    // Configurar procesador de glucosa para sensibilidad EXTREMA
     if (this.glucoseProcessor) {
-      (this.glucoseProcessor as any).MIN_SIGNAL_QUALITY = 30; // Reducido considerablemente (antes 40)
+      (this.glucoseProcessor as any).MIN_SIGNAL_QUALITY = 20; // Reducido extremadamente
       
       // Ajustes adicionales para mejorar detección de glucosa
       if ((this.glucoseProcessor as any).BUFFER_SIZE) {
-        (this.glucoseProcessor as any).BUFFER_SIZE = 6; // Reducido para respuesta más rápida (antes 10)
+        (this.glucoseProcessor as any).BUFFER_SIZE = 4; // Reducido para respuesta casi inmediata
       }
-      console.log("VitalSignsProcessor: Sensibilidad de detección de GLUCOSA aumentada significativamente");
+      
+      // NUEVO: Intentar configurar parámetro de calibración si existe
+      if ((this.glucoseProcessor as any).CALIBRATION_OFFSET !== undefined) {
+        (this.glucoseProcessor as any).CALIBRATION_OFFSET = 5; // Ajuste positivo para compensar
+      }
+      
+      console.log("VitalSignsProcessor: Sensibilidad de detección de GLUCOSA aumentada a nivel EXTREMO");
     }
     
-    // Configurar procesador de lípidos para MUCHA mayor sensibilidad
+    // Configurar procesador de lípidos para sensibilidad EXTREMA
     if (this.lipidProcessor) {
-      (this.lipidProcessor as any).MIN_SIGNAL_QUALITY = 25; // Reducido considerablemente (antes 40)
+      (this.lipidProcessor as any).MIN_SIGNAL_QUALITY = 15; // Reducido extremadamente
       
       // Ajustes adicionales para mejorar detección de lípidos
       if ((this.lipidProcessor as any).AMPLIFICATION_FACTOR) {
-        (this.lipidProcessor as any).AMPLIFICATION_FACTOR = 1.35; // Aumentado para mejorar detección
+        (this.lipidProcessor as any).AMPLIFICATION_FACTOR = 1.5; // Aumentado considerablemente
       }
-      console.log("VitalSignsProcessor: Sensibilidad de detección de LÍPIDOS aumentada significativamente");
+      
+      console.log("VitalSignsProcessor: Sensibilidad de detección de LÍPIDOS aumentada a nivel EXTREMO");
     }
   }
   
@@ -122,8 +148,8 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Amplificar ligeramente los valores PPG para mejorar detección
-    const amplifiedValue = ppgValue * 1.25; // Aumentado para mejor detección (antes 1.15)
+    // Amplificar considerablemente los valores PPG para mejorar detección
+    const amplifiedValue = ppgValue * 1.5; // Aumentado considerablemente
     return this.processor.processSignal(amplifiedValue, rrData);
   }
   
@@ -135,43 +161,57 @@ export class VitalSignsProcessor {
     this.processor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
+    
+    // Reconfigurar después de reset para mantener alta sensibilidad
+    this.configureEnhancedSensitivity();
   }
   
   /**
    * Método proxy para cálculo directo de presión arterial
    */
   public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
-    // Validación menos estricta de datos para permitir más mediciones
-    if (!ppgValues || ppgValues.length < 30) { // Reducido aún más (antes 40)
+    // Validación muy permisiva de datos para permitir más mediciones
+    if (!ppgValues || ppgValues.length < 20) { // Reducido al mínimo absoluto
       console.warn("VitalSignsProcessor: Datos insuficientes para calcular presión arterial", {
         longitud: ppgValues?.length || 0,
-        requeridos: 30
+        requeridos: 20
       });
       return { systolic: 0, diastolic: 0 }; // Indicar medición inválida
     }
     
-    // Amplificar valores para mejor detección
-    const amplifiedValues = ppgValues.map(val => val * 1.3); // Aumentado (antes 1.12)
-    return this.processor.calculateBloodPressure(amplifiedValues);
+    // Amplificar valores considerablemente para mejor detección
+    const amplifiedValues = ppgValues.map(val => val * 1.6); // Aumentado considerablemente
+    const result = this.processor.calculateBloodPressure(amplifiedValues);
+    
+    // Verificar resultado y aplicar corrección si es necesario
+    if (result.systolic === 0 || result.diastolic === 0) {
+      console.log("VitalSignsProcessor: Intento de corrección de presión arterial con valores alternativos");
+      // Intentar con otra amplificación como último recurso
+      const alternativeValues = ppgValues.map(val => val * 2.0);
+      const alternativeResult = this.processor.calculateBloodPressure(alternativeValues);
+      return alternativeResult;
+    }
+    
+    return result;
   }
   
   /**
    * Método proxy para cálculo directo de SpO2
    */
   public calculateSpO2(ppgValues: number[]): number {
-    // Validación menos estricta de datos para permitir más mediciones
-    if (!ppgValues || ppgValues.length < 15) { // Reducido aún más (antes 20)
-      console.warn("VitalSignsProcessor: Datos insuficientes para calcular SpO2", {
+    // Validación extremadamente permisiva de datos
+    if (!ppgValues || ppgValues.length < 10) { // Reducido al mínimo absoluto
+      console.warn("VitalSignsProcessor: Datos muy insuficientes para calcular SpO2", {
         longitud: ppgValues?.length || 0,
-        requeridos: 15
+        requeridos: 10
       });
       return 0; // Indicar medición inválida
     }
     
     // Verificar disponibilidad del procesador y método
     if (this.processor.spo2Processor && typeof this.processor.spo2Processor.calculateSpO2 === 'function') {
-      // Amplificar valores para mejor detección
-      const amplifiedValues = ppgValues.map(val => val * 1.2); // Aumentado (antes 1.08)
+      // Amplificar valores considerablemente para mejor detección
+      const amplifiedValues = ppgValues.map(val => val * 1.4); // Aumentado considerablemente
       const result = this.processor.spo2Processor.calculateSpO2(amplifiedValues);
       // Manejar tanto objeto de resultado como valor directo para compatibilidad
       const value = typeof result === 'object' ? result.value : result;

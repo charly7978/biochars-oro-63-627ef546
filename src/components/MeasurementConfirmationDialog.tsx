@@ -22,6 +22,9 @@ interface MeasurementConfirmationDialogProps {
   heartRate: number | string;
   spo2: number | string;
   pressure: string;
+  glucose?: number | string;
+  cholesterol?: number | string;
+  triglycerides?: number | string;
 }
 
 const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps> = ({
@@ -32,7 +35,10 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   measurementTime,
   heartRate,
   spo2,
-  pressure
+  pressure,
+  glucose = 0,
+  cholesterol = 0,
+  triglycerides = 0
 }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -48,7 +54,7 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
         </AlertDialogHeader>
         
         <div className="py-4 space-y-3">
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-2 text-center mb-2">
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Frecuencia Cardíaca</div>
               <div className="font-bold text-lg">{heartRate} BPM</div>
@@ -60,6 +66,21 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Presión</div>
               <div className="font-bold text-lg">{pressure}</div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <div className="text-sm text-gray-500">Glucosa</div>
+              <div className="font-bold text-lg">{glucose || '--'} mg/dL</div>
+            </div>
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <div className="text-sm text-gray-500">Colesterol</div>
+              <div className="font-bold text-lg">{cholesterol || '--'} mg/dL</div>
+            </div>
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <div className="text-sm text-gray-500">Triglicéridos</div>
+              <div className="font-bold text-lg">{triglycerides || '--'} mg/dL</div>
             </div>
           </div>
         </div>
