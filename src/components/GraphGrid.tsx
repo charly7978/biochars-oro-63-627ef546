@@ -26,10 +26,12 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
 				
-				// Improved background with subtle gradient
+				// Improved background with subtle gradient and golden tone transition from middle to bottom
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
 				gradient.addColorStop(0, '#F3F7FC'); // Lighter blue-cream at top
-				gradient.addColorStop(1, '#EBF2F9'); // Slightly darker at bottom
+				gradient.addColorStop(0.45, '#EBF2F9'); // Slightly darker at middle
+				gradient.addColorStop(0.55, '#F1EEE8'); // Start transitioning to subtle gold
+				gradient.addColorStop(1, '#F5EED8'); // Subtle golden tone at bottom
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				
