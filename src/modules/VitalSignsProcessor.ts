@@ -1,5 +1,6 @@
 
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
+import './HeartBeatProcessor.extension';
 
 /**
  * This is a wrapper class to maintain backward compatibility with
@@ -22,6 +23,12 @@ export class VitalSignsProcessor {
   
   constructor() {
     this.processor = new NewVitalSignsProcessor();
+    
+    // Make this processor available globally for other components to use
+    if (typeof window !== 'undefined') {
+      (window as any).vitalSignsProcessor = this.processor;
+      console.log('VitalSignsProcessor: Registered globally through wrapper');
+    }
   }
   
   public processSignal(
@@ -33,5 +40,22 @@ export class VitalSignsProcessor {
   
   public reset(): void {
     this.processor.reset();
+  }
+  
+  /**
+   * Proxy method to expose blood pressure calculation directly
+   */
+  public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
+    return this.processor.calculateBloodPressure(ppgValues);
+  }
+  
+  /**
+   * Proxy method to expose SpO2 calculation directly
+   */
+  public calculateSpO2(ppgValues: number[]): number {
+    if (typeof this.processor.calculateSpO2 === 'function') {
+      return this.processor.calculateSpO2(ppgValues);
+    }
+    return 0;
   }
 }

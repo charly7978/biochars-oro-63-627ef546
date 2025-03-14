@@ -3,7 +3,7 @@ import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
   // Tamaño de buffer ampliado para mayor estabilidad
-  private readonly BP_BUFFER_SIZE = 15;
+  private readonly BP_BUFFER_SIZE = 10;
   // Parámetros de mediana y promedio ponderado
   private readonly MEDIAN_WEIGHT = 0.6;
   private readonly MEAN_WEIGHT = 0.4;
@@ -18,99 +18,92 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 30;
   private readonly MAX_PULSE_PRESSURE = 60;
   // Umbrales mínimos para aceptar una medición
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.03;
-  private readonly MIN_PEAK_COUNT = 4;
-  private readonly MIN_FPS = 20;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.02;
+  private readonly MIN_PEAK_COUNT = 3;
 
   /**
    * Calcula la presión arterial utilizando características de la señal PPG
-   * Implementa un enfoque de mediana y promedio ponderado para mayor precisión
    */
   public calculateBloodPressure(values: number[]): {
     systolic: number;
     diastolic: number;
   } {
     // Validación de calidad de la señal
-    if (values.length < 30 || Math.max(...values) - Math.min(...values) < this.MIN_SIGNAL_AMPLITUDE) {
+    if (values.length < 30) {
+      console.log("BloodPressureProcessor: Datos insuficientes para calcular presión", { 
+        longitud: values.length
+      });
+      return { systolic: 0, diastolic: 0 };
+    }
+
+    const range = Math.max(...values) - Math.min(...values);
+    if (range < this.MIN_SIGNAL_AMPLITUDE) {
+      console.log("BloodPressureProcessor: Amplitud de señal insuficiente", { 
+        amplitud: range, 
+        umbral: this.MIN_SIGNAL_AMPLITUDE
+      });
       return { systolic: 0, diastolic: 0 };
     }
 
     const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+    
     if (peakIndices.length < this.MIN_PEAK_COUNT) {
+      console.log("BloodPressureProcessor: Picos insuficientes para análisis", { 
+        picos: peakIndices.length, 
+        requeridos: this.MIN_PEAK_COUNT
+      });
       return { systolic: 0, diastolic: 0 };
     }
 
-    // Parámetros de muestreo
-    const fps = this.MIN_FPS; // Tasa de muestreo conservadora
+    // Parámetros de muestreo - asumimos 30fps
+    const fps = 30;
     const msPerSample = 1000 / fps;
 
-    // Calcular valores PTT (Pulse Transit Time) con mayor precisión
+    // Calcular valores PTT (Pulse Transit Time)
     const pttValues: number[] = [];
     for (let i = 1; i < peakIndices.length; i++) {
       const dt = (peakIndices[i] - peakIndices[i - 1]) * msPerSample;
-      // Rango fisiológicamente válido más estricto
+      // Rango fisiológicamente válido
       if (dt > 400 && dt < 1200) {
         pttValues.push(dt);
       }
     }
     
-    // Filtrar valores atípicos (outliers) usando técnica estadística
-    const sortedPTT = [...pttValues].sort((a, b) => a - b);
-    const medianPTT = sortedPTT.length % 2 === 0
-      ? (sortedPTT[Math.floor(sortedPTT.length / 2) - 1] + sortedPTT[Math.floor(sortedPTT.length / 2)]) / 2
-      : sortedPTT[Math.floor(sortedPTT.length / 2)];
-    
-    // Filtrar valores fuera de 1.5 IQR (rango intercuartil)
-    let filteredPTT: number[] = [];
-    if (sortedPTT.length >= 4) {
-      const q1Index = Math.floor(sortedPTT.length / 4);
-      const q3Index = Math.floor(3 * sortedPTT.length / 4);
-      const q1 = sortedPTT[q1Index];
-      const q3 = sortedPTT[q3Index];
-      const iqr = q3 - q1;
-      const lowerBound = q1 - 1.5 * iqr;
-      const upperBound = q3 + 1.5 * iqr;
-      filteredPTT = pttValues.filter(val => val >= lowerBound && val <= upperBound);
-    } else {
-      filteredPTT = pttValues;
-    }
-    
-    // Si no hay suficientes mediciones después del filtrado, usar el valor mediano
-    let calculatedPTT = 0;
-    if (filteredPTT.length >= 3) {
-      // Calcular PTT ponderado con mayor peso a valores más recientes
-      let weightSum = 0;
-      let weightedSum = 0;
-      
-      filteredPTT.forEach((val, idx) => {
-        // Ponderación exponencial que da más peso a muestras más recientes
-        const weight = Math.pow(1.2, idx) / filteredPTT.length;
-        weightedSum += val * weight;
-        weightSum += weight;
+    if (pttValues.length < 2) {
+      console.log("BloodPressureProcessor: PTT values insuficientes", { 
+        valores: pttValues.length
       });
-      
-      calculatedPTT = weightSum > 0 ? weightedSum / weightSum : medianPTT;
-    } else if (sortedPTT.length > 0) {
-      calculatedPTT = medianPTT;
-    } else {
-      calculatedPTT = 800; // Valor conservador si no hay datos suficientes
+      return { systolic: 0, diastolic: 0 };
     }
     
-    // Normalizar PTT a un rango fisiológicamente relevante
-    const normalizedPTT = Math.max(500, Math.min(1100, calculatedPTT));
+    // Filtrar valores atípicos usando mediana
+    const sortedPTT = [...pttValues].sort((a, b) => a - b);
+    const medianPTT = sortedPTT[Math.floor(sortedPTT.length / 2)];
     
-    // Calcular amplitud mejorada de la señal PPG
+    // Calcular amplitud de la señal PPG
     const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
-    // Menor factor de amplificación para evitar sobreestimación
+    if (amplitude === 0) {
+      console.log("BloodPressureProcessor: Amplitud cero, señal inválida");
+      return { systolic: 0, diastolic: 0 };
+    }
+    
+    // Normalizar a un rango fisiológicamente relevante
+    const normalizedPTT = Math.max(500, Math.min(1100, medianPTT));
     const normalizedAmplitude = Math.min(80, Math.max(0, amplitude * 5.0));
 
-    // Coeficientes más conservadores basados en estudios de validación
-    const pttFactor = (800 - normalizedPTT) * 0.09; // Reducido de 0.11
-    const ampFactor = normalizedAmplitude * 0.25;   // Reducido de 0.38
+    console.log("BloodPressureProcessor: Características de señal calculadas", {
+      ptt: normalizedPTT,
+      amplitud: normalizedAmplitude,
+      numPicos: peakIndices.length
+    });
+
+    // Coeficientes basados en modelos simplificados de la literatura médica
+    const pttFactor = (850 - normalizedPTT) * 0.11;
+    const ampFactor = normalizedAmplitude * 0.35;
     
-    // Usar un modelo de estimación más conservador
-    let instantSystolic = 115 + pttFactor + ampFactor;
-    let instantDiastolic = 75 + (pttFactor * 0.55) + (ampFactor * 0.25);
+    // Modelo simplificado basado en correlaciones de estudios clínicos
+    let instantSystolic = 120 + pttFactor + ampFactor;
+    let instantDiastolic = 80 + (pttFactor * 0.6) + (ampFactor * 0.3);
 
     // Aplicar límites fisiológicos
     instantSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, instantSystolic));
@@ -124,7 +117,7 @@ export class BloodPressureProcessor {
       instantDiastolic = instantSystolic - this.MAX_PULSE_PRESSURE;
     }
     
-    // Verificar nuevamente límites fisiológicos después del ajuste de diferencial
+    // Verificar límites fisiológicos después del ajuste de diferencial
     instantDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, instantDiastolic));
 
     // Actualizar buffers de presión con nuevos valores
@@ -137,23 +130,23 @@ export class BloodPressureProcessor {
       this.diastolicBuffer.shift();
     }
 
-    // Implementar enfoque de mediana y promedio ponderado para mayor estabilidad
-    // 1. Calcular medianas
+    // Implementar enfoque de mediana y promedio ponderado para estabilidad
+    // Calcular medianas
     const sortedSystolic = [...this.systolicBuffer].sort((a, b) => a - b);
     const sortedDiastolic = [...this.diastolicBuffer].sort((a, b) => a - b);
     
     const medianSystolic = sortedSystolic[Math.floor(sortedSystolic.length / 2)];
     const medianDiastolic = sortedDiastolic[Math.floor(sortedDiastolic.length / 2)];
     
-    // 2. Calcular promedios
+    // Calcular promedios
     const meanSystolic = this.systolicBuffer.reduce((sum, val) => sum + val, 0) / this.systolicBuffer.length;
     const meanDiastolic = this.diastolicBuffer.reduce((sum, val) => sum + val, 0) / this.diastolicBuffer.length;
     
-    // 3. Aplicar promedio ponderado de mediana y media
+    // Aplicar promedio ponderado de mediana y media
     const finalSystolic = Math.round((medianSystolic * this.MEDIAN_WEIGHT) + (meanSystolic * this.MEAN_WEIGHT));
     const finalDiastolic = Math.round((medianDiastolic * this.MEDIAN_WEIGHT) + (meanDiastolic * this.MEAN_WEIGHT));
     
-    // 4. Asegurar que la diferencia entre sistólica y diastólica sea fisiológicamente válida
+    // Asegurar que la diferencia entre sistólica y diastólica sea fisiológicamente válida
     const finalDifferential = finalSystolic - finalDiastolic;
     
     let adjustedSystolic = finalSystolic;
@@ -165,9 +158,15 @@ export class BloodPressureProcessor {
       adjustedDiastolic = adjustedSystolic - this.MAX_PULSE_PRESSURE;
     }
 
+    console.log("BloodPressureProcessor: Presión arterial calculada", {
+      sistólica: Math.round(adjustedSystolic),
+      diastólica: Math.round(adjustedDiastolic),
+      diferencial: adjustedSystolic - adjustedDiastolic
+    });
+
     return {
-      systolic: Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, adjustedSystolic)),
-      diastolic: Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, adjustedDiastolic))
+      systolic: Math.round(adjustedSystolic),
+      diastolic: Math.round(adjustedDiastolic)
     };
   }
 
