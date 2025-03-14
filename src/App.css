@@ -1,4 +1,3 @@
-
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -49,6 +48,9 @@
   letter-spacing: -0.02em;
   font-weight: 600;
   text-rendering: geometricPrecision;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .crisp-text {
@@ -75,6 +77,8 @@ button, .button {
   text-shadow: 0 0 1px rgba(255,255,255,0.1);
   -webkit-font-smoothing: subpixel-antialiased;
   text-rendering: geometricPrecision;
+  transform: translateZ(0);
+  will-change: contents;
 }
 
 /* Enhanced medical value readability classes */
@@ -145,4 +149,21 @@ button, .button {
   word-spacing: -0.05em;
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Performance optimizations for animations */
+.performance-boost {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-perspective: 1000;
+  perspective: 1000;
+}
+
+/* Enhanced smooth animations */
+@media screen and (min-width: 30em) {
+  .smooth-animation {
+    transition-duration: 0.25s;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
 }

@@ -1,10 +1,12 @@
 
+import React, { memo } from 'react';
+
 interface HeartRateDisplayProps {
   bpm: number;
   confidence: number;
 }
 
-const HeartRateDisplay = ({ bpm, confidence }: HeartRateDisplayProps) => {
+const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const isReliable = confidence > 0.5;
   
   const getValueClass = () => {
@@ -15,7 +17,7 @@ const HeartRateDisplay = ({ bpm, confidence }: HeartRateDisplayProps) => {
   };
 
   return (
-    <div className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center">
+    <div className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform">
       <h3 className="text-gray-400/90 text-sm mb-1 crisp-text">Heart Rate</h3>
       <div className="flex items-baseline justify-center gap-1">
         <span className={`text-2xl font-bold vital-display ${getValueClass()}`}>
@@ -25,6 +27,8 @@ const HeartRateDisplay = ({ bpm, confidence }: HeartRateDisplayProps) => {
       </div>
     </div>
   );
-};
+});
+
+HeartRateDisplay.displayName = 'HeartRateDisplay';
 
 export default HeartRateDisplay;
