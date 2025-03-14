@@ -7,12 +7,8 @@
 export const calculateAC = (values: number[]): number => {
   if (!values || values.length === 0) return 0;
   
-  // Cálculo robusto utilizando percentiles para evitar influencia de outliers
-  const sorted = [...values].sort((a, b) => a - b);
-  const p95 = sorted[Math.floor(sorted.length * 0.95)];
-  const p5 = sorted[Math.floor(sorted.length * 0.05)];
-  
-  return p95 - p5;
+  // Cálculo simple y directo: diferencia entre máximo y mínimo
+  return Math.max(...values) - Math.min(...values);
 };
 
 /**
@@ -23,9 +19,8 @@ export const calculateAC = (values: number[]): number => {
 export const calculateDC = (values: number[]): number => {
   if (!values || values.length === 0) return 0;
   
-  // Usar mediana en lugar de media para mayor robustez a outliers
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
+  // Promedio simple de los valores
+  return values.reduce((sum, val) => sum + val, 0) / values.length;
 };
 
 /**
@@ -59,6 +54,7 @@ export const applySMAFilter = (values: number[], windowSize: number = 5): number
 
 /**
  * Calcula la variabilidad de la frecuencia cardíaca (HRV) a partir de intervalos RR
+ * Implementación simplificada sin excesivas validaciones
  * @param rrIntervals Array de intervalos RR en milisegundos
  * @returns Valor RMSSD (Root Mean Square of Successive Differences)
  */
@@ -76,6 +72,7 @@ export const calculateRMSSD = (rrIntervals: number[]): number => {
 
 /**
  * Detecta si hay un latido prematuro basado en la variación de intervalos RR
+ * Implementación directa y simple
  * @param rrIntervals Array de intervalos RR en milisegundos
  * @returns true si se detecta un latido prematuro
  */
@@ -86,12 +83,12 @@ export const detectPrematureBeat = (rrIntervals: number[]): boolean => {
   const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
   const lastRR = recentRR[recentRR.length - 1];
   
-  // Un latido prematuro típicamente tiene una diferencia de >25% respecto a la media
+  // Criterio simple: 25% de diferencia respecto a la media reciente
   return Math.abs(lastRR - avgRR) > (avgRR * 0.25);
 };
 
 /**
- * Verifica la calidad de la señal PPG
+ * Verifica la calidad de la señal PPG con un algoritmo simplificado
  * @param values Array de valores PPG
  * @returns Puntuación de calidad (0-100)
  */
@@ -105,20 +102,11 @@ export const calculateSignalQuality = (values: number[]): number => {
   // Si DC es 0, la calidad es 0
   if (dc === 0) return 0;
   
-  // Calcular índice de perfusión
+  // Calcular índice de perfusión (simple relación AC/DC)
   const perfusionIndex = ac / dc;
   
-  // Calcular variabilidad
-  const sorted = [...values].sort((a, b) => a - b);
-  const p90 = sorted[Math.floor(sorted.length * 0.9)];
-  const p10 = sorted[Math.floor(sorted.length * 0.1)];
-  const range = p90 - p10;
-  
-  // Puntuación basada en perfusión y variabilidad
-  let qualityScore = (perfusionIndex * 1000) * (range > 0 ? 1 : 0.1);
-  
-  // Limitar a 0-100
-  qualityScore = Math.min(100, Math.max(0, qualityScore));
+  // Puntuación basada principalmente en la perfusión
+  let qualityScore = Math.min(100, perfusionIndex * 1000);
   
   return Math.round(qualityScore);
 };
