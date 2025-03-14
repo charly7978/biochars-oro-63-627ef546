@@ -6,6 +6,7 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
+import SignalQualityIndicator from "@/components/SignalQualityIndicator";
 import { toast } from "sonner";
 
 const Index = () => {
@@ -284,6 +285,11 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+            />
+            
+            <SignalQualityIndicator 
+              quality={signalQuality}
+              isMonitoring={isMonitoring} 
             />
           </div>
 
