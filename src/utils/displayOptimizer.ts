@@ -28,38 +28,65 @@ export const optimizeCanvas = (canvas: HTMLCanvasElement): void => {
   // Scale the context to ensure correct drawing operations
   ctx.scale(dpr, dpr);
   
-  // Apply high-performance rendering settings
-  ctx.imageSmoothingEnabled = false;
+  // Apply high-performance rendering settings - only when needed
+  if (canvas.classList.contains('ppg-graph')) {
+    ctx.imageSmoothingEnabled = false;
+  }
   
   // Set the CSS width and height to the original dimensions
   canvas.style.width = `${rect.width}px`;
   canvas.style.height = `${rect.height}px`;
 };
 
-// Apply performance optimizations to DOM elements
+/**
+ * Selectively apply performance optimizations to DOM elements
+ * Only applies hardware acceleration to elements that really need it
+ */
 export const applyPerformanceOptimizations = (element: HTMLElement): void => {
-  // Apply hardware acceleration
-  element.style.transform = 'translate3d(0, 0, 0)';
-  element.style.backfaceVisibility = 'hidden';
-  element.style.willChange = 'transform';
-  
-  // Apply performance classes
-  element.classList.add('performance-boost');
-  
-  // If this is a graph or visualization, apply additional optimizations
+  // Only apply hardware acceleration to elements that need it
   if (
     element.classList.contains('ppg-signal-meter') || 
     element.classList.contains('graph-container') ||
+    element.classList.contains('ppg-graph') ||
     element.tagName.toLowerCase() === 'canvas'
   ) {
-    element.classList.add('ppg-graph');
-    element.style.contain = 'strict';
+    // Apply hardware acceleration
+    element.style.transform = 'translate3d(0, 0, 0)';
+    element.style.backfaceVisibility = 'hidden';
+    
+    // Only apply will-change to elements that will actually animate
+    if (element.classList.contains('ppg-signal-meter')) {
+      element.style.willChange = 'transform';
+    }
+    
+    // Apply performance classes
+    element.classList.add('performance-boost');
+    
+    // For graphs, apply additional optimizations
+    if (
+      element.classList.contains('ppg-signal-meter') || 
+      element.classList.contains('graph-container') ||
+      element.classList.contains('ppg-graph')
+    ) {
+      element.classList.add('ppg-graph');
+      element.style.contain = 'content'; // Changed from 'strict' to 'content' for better balance
+    }
   }
 };
 
 // Apply text rendering optimizations
 export const optimizeTextRendering = (element: HTMLElement): void => {
-  element.style.textRendering = 'geometricPrecision';
+  // Only apply geometric precision to elements that need it
+  if (
+    element.classList.contains('vital-display') || 
+    element.classList.contains('precision-number') ||
+    element.classList.contains('precision-text')
+  ) {
+    element.style.textRendering = 'geometricPrecision';
+  } else {
+    // Use optimizeSpeed for other text elements
+    element.style.textRendering = 'optimizeSpeed';
+  }
   
   if (isHighDpiDisplay()) {
     // Fix for TypeScript error - using setAttribute instead of direct property assignment
@@ -77,21 +104,48 @@ export const optimizeTextRendering = (element: HTMLElement): void => {
   }
 };
 
-// Apply all optimizations to an element and its children
+/**
+ * Optimized version that applies performance improvements selectively
+ * and uses batched operations to avoid excessive reflows
+ */
 export const optimizeElement = (element: HTMLElement): void => {
-  applyPerformanceOptimizations(element);
-  optimizeTextRendering(element);
+  // Early exit for non-visible elements to save processing
+  if (!element.offsetParent) return;
   
-  // Recursively optimize all child elements
-  Array.from(element.children).forEach(child => {
-    if (child instanceof HTMLElement) {
-      optimizeElement(child);
-    }
+  // Use requestAnimationFrame to batch DOM operations
+  requestAnimationFrame(() => {
+    // First collect all elements that need optimization
+    const elementsToOptimize = new Set<HTMLElement>();
+    const canvases = new Set<HTMLCanvasElement>();
     
-    // Special handling for canvases
-    if (child instanceof HTMLCanvasElement) {
-      optimizeCanvas(child);
-    }
+    // Add the root element
+    elementsToOptimize.add(element);
+    
+    // Find all child elements that need optimization
+    Array.from(element.querySelectorAll('.performance-boost, .ppg-graph, .vital-display, .precision-number, canvas')).forEach(el => {
+      if (el instanceof HTMLElement) {
+        elementsToOptimize.add(el);
+      }
+      if (el instanceof HTMLCanvasElement) {
+        canvases.add(el);
+      }
+    });
+    
+    // Now apply optimizations in batches to avoid excessive reflows
+    // First apply performance optimizations
+    elementsToOptimize.forEach(el => {
+      applyPerformanceOptimizations(el);
+    });
+    
+    // Then apply text rendering optimizations in a separate batch
+    elementsToOptimize.forEach(el => {
+      optimizeTextRendering(el);
+    });
+    
+    // Finally optimize canvases
+    canvases.forEach(canvas => {
+      optimizeCanvas(canvas);
+    });
   });
 };
 
