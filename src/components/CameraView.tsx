@@ -287,7 +287,7 @@ const CameraView = ({
         willChange: 'transform',
         transform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
-        imageRendering: 'high-quality'
+        imageRendering: 'crisp-edges'
       }}
     />
   );
