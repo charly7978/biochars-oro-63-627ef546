@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 
@@ -61,7 +60,6 @@ const PPGSignalMeter = ({
     const now = performance.now();
     const elapsed = now - lastRenderTimeRef.current;
     
-    // Skip frames to maintain target FPS
     if (elapsed < frameDuration) {
       frameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -79,7 +77,6 @@ const PPGSignalMeter = ({
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      // More responsive baseline adjustment for better tracking
       baselineRef.current = baselineRef.current * 0.98 + value * 0.02;
     }
 
@@ -87,7 +84,6 @@ const PPGSignalMeter = ({
     const isWaveStart = lastValueRef.current < 0 && normalizedValue >= 0;
     lastValueRef.current = normalizedValue;
     
-    // Use high-precision timestamps for better data point tracking
     dataRef.current.push({
       time: currentTime,
       value: normalizedValue,
@@ -99,16 +95,13 @@ const PPGSignalMeter = ({
     const cutoffTime = currentTime - WINDOW_WIDTH_MS;
     dataRef.current = dataRef.current.filter(point => point.time >= cutoffTime);
 
-    // Efficient rendering with a clean slate each frame
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#F8FAFC';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid with optimized rendering
     ctx.strokeStyle = 'rgba(51, 65, 85, 0.15)';
     ctx.lineWidth = 0.5;
     
-    // Batch grid lines for better performance
     ctx.beginPath();
     for (let i = 0; i < 40; i++) {
       const x = canvas.width - (canvas.width * (i / 40));
@@ -123,7 +116,6 @@ const PPGSignalMeter = ({
     }
     ctx.stroke();
 
-    // Batch horizontal grid lines
     ctx.beginPath();
     const amplitudeLines = 10;
     for (let i = 0; i <= amplitudeLines; i++) {
@@ -133,7 +125,6 @@ const PPGSignalMeter = ({
     }
     ctx.stroke();
 
-    // Center line
     ctx.strokeStyle = 'rgba(51, 65, 85, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -141,7 +132,6 @@ const PPGSignalMeter = ({
     ctx.lineTo(canvas.width, canvas.height / 2);
     ctx.stroke();
 
-    // Direct rendering of the waveform without unnecessary processing
     if (dataRef.current.length > 1) {
       ctx.lineWidth = 3;
       
@@ -157,11 +147,9 @@ const PPGSignalMeter = ({
             const xStart = canvas.width - ((currentTime - startPoint.time) * canvas.width / WINDOW_WIDTH_MS);
             const yStart = canvas.height / 2 + startPoint.value;
             
-            // Only draw if within canvas bounds
             if (xStart >= 0 && xStart <= canvas.width) {
               ctx.moveTo(xStart, yStart);
 
-              // Optimized path drawing - skip intermediary points if too dense
               const pointsToRender = index - waveStartIndex;
               const skipFactor = pointsToRender > 100 ? Math.floor(pointsToRender / 100) : 1;
               
@@ -188,10 +176,8 @@ const PPGSignalMeter = ({
   };
 
   useEffect(() => {
-    // Start the high-performance animation loop
     frameRef.current = requestAnimationFrame(renderSignal);
     
-    // Clean up on unmount
     return () => {
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current);
@@ -204,7 +190,7 @@ const PPGSignalMeter = ({
       <div className="absolute top-0 left-0 right-0 p-2 flex justify-between items-center bg-white/60 backdrop-blur-sm border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3 flex-1">
           <span className="text-xl font-bold text-slate-700">PPG</span>
-          <div className="flex flex-col flex-1 mt-3"> {/* Added mt-3 (margin-top) to move down by approximately 3mm */}
+          <div className="flex flex-col flex-1 mt-6">
             <div className={`h-1.5 w-[80%] mx-auto rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-300 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-300"
@@ -219,7 +205,7 @@ const PPGSignalMeter = ({
           
           <div className="flex flex-col items-center">
             <Fingerprint 
-              size={56}
+              size={60}
               className={`transition-all duration-300 ${
                 isFingerDetected 
                   ? 'text-emerald-500 scale-100 drop-shadow-md'
@@ -258,4 +244,4 @@ const PPGSignalMeter = ({
   );
 };
 
-export default PPGSignalMeter; 
+export default PPGSignalMeter;
