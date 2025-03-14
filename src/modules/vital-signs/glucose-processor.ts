@@ -1,4 +1,3 @@
-
 /**
  * Advanced real-time glucose estimation using PPG signal analysis
  * Implementation focused on precise extraction of glucose concentration from PPG signals
@@ -6,7 +5,7 @@
  */
 export class GlucoseProcessor {
   // Core measurement parameters with expanded physiological range
-  private readonly MIN_GLUCOSE = 70;  // Minimum physiological value (mg/dL)
+  private readonly MIN_GLUCOSE = 40;  // Adjusted minimum to 40 mg/dL to detect hypoglycemia
   private readonly MAX_GLUCOSE = 200; // Maximum physiological value (mg/dL)
   private readonly MIN_SAMPLE_SIZE = 150; // Minimum samples needed for reliable measurement
   
@@ -233,9 +232,9 @@ export class GlucoseProcessor {
   /**
    * Enhanced preprocessing with advanced denoising for glucose detection
    */
-  private preprocessSignal(signal: number[]): Float32Array {
+  private preprocessSignal(signal: number[]): number[] {
     // Fill the process buffer, zero-pad if necessary
-    const processBuffer = new Float32Array(this.FFT_SIZE);
+    const processBuffer = new Array(this.FFT_SIZE);
     for (let i = 0; i < this.FFT_SIZE; i++) {
       processBuffer[i] = i < signal.length ? signal[i] : 0;
     }
@@ -245,14 +244,14 @@ export class GlucoseProcessor {
     const centeredSignal = processBuffer.map(v => v - mean);
     
     // 2. Apply Hanning window to minimize spectral leakage
-    const windowedSignal = new Float32Array(this.FFT_SIZE);
+    const windowedSignal = new Array(this.FFT_SIZE);
     for (let i = 0; i < this.FFT_SIZE; i++) {
       windowedSignal[i] = centeredSignal[i] * this.HANNING_WINDOW[i];
     }
     
     // 3. Apply optimized bandpass filter (1-12 Hz region for glucose)
     // This is an improved IIR filter implementation
-    const filtered = new Float32Array(this.FFT_SIZE);
+    const filtered = new Array(this.FFT_SIZE);
     let b0 = 0, b1 = 0, b2 = 0;
     const alpha1 = 0.85; // Low-pass component
     const alpha2 = 0.35; // High-pass component
@@ -395,7 +394,7 @@ export class GlucoseProcessor {
   /**
    * Extract spectral features using improved FFT techniques
    */
-  private extractSpectralFeatures(processedSignal: Float32Array): {
+  private extractSpectralFeatures(processedSignal: number[]): {
     lowBandPower: number,
     midBandPower: number,
     highBandPower: number,
@@ -476,7 +475,7 @@ export class GlucoseProcessor {
   /**
    * Perform Fast Fourier Transform with optimized implementation
    */
-  private performFFT(signal: Float32Array): Float32Array {
+  private performFFT(signal: number[]): Float32Array {
     // Implementation based on Cooley-Tukey algorithm
     const result = new Float32Array(this.FFT_SIZE);
     
@@ -522,8 +521,8 @@ export class GlucoseProcessor {
     // Multi-parameter model based on physiological principles
     // Each component has scientific basis in how glucose affects blood properties
     
-    // Base glucose level - standard fasting level
-    const baseGlucose = 95;
+    // Base glucose level - adjusted to detect lower hypoglycemia values
+    const baseGlucose = 90; // Adjusted down from 95
     
     // Component 1: Spectral ratio correlates with glucose due to optical absorption
     // Lower spectralRatio → higher glucose (inverse relationship)
@@ -540,6 +539,10 @@ export class GlucoseProcessor {
     // Component 4: Spectral entropy increases with glucose concentration
     const entropyComponent = 8 * (spectralEntropy - 0.6);
     
+    // Component 5: Low glucose detection component - new
+    // Lower amplitudes and longer pulse widths can correlate with hypoglycemia
+    const hypoglycemiaComponent = (avgPulseWidth > 12 && avgAmplitude < 0.6) ? -18 : 0;
+    
     // Amplitude contribution - amplitude decreases slightly with higher glucose
     const amplitudeComponent = avgAmplitude > 0 ? -5 * (avgAmplitude - 0.7) : 0;
     
@@ -549,7 +552,8 @@ export class GlucoseProcessor {
                           frequencyComponent + 
                           morphologyComponent + 
                           entropyComponent +
-                          amplitudeComponent;
+                          amplitudeComponent +
+                          hypoglycemiaComponent; // Added component for low glucose detection
     
     console.log("GlucoseProcessor: Feature components", {
       base: baseGlucose,
@@ -558,6 +562,7 @@ export class GlucoseProcessor {
       morphology: morphologyComponent.toFixed(2),
       entropy: entropyComponent.toFixed(2),
       amplitude: amplitudeComponent.toFixed(2),
+      hypoglycemia: hypoglycemiaComponent.toFixed(2),
       riseFallRatio: riseFallRatio.toFixed(3),
       features: {
         spectralRatio: spectralRatio.toFixed(3),
