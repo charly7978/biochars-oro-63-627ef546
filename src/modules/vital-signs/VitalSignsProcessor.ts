@@ -310,7 +310,7 @@ export class VitalSignsProcessor {
     
     // Calcular SpO2 utilizando últimos 60 valores
     const spo2Result: SpO2Result = this.spo2Processor.calculateSpO2(this.ppgBuffer.slice(-60));
-    const spo2 = spo2Result.value; // Extract just the value from SpO2Result
+    const spo2 = spo2Result.value;
     
     // Calcular presión arterial utilizando últimos 120 valores
     const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-120));
@@ -398,53 +398,14 @@ export class VitalSignsProcessor {
     }
     
     const spo2Result: SpO2Result = this.spo2Processor.calculateSpO2(ppgValues);
-    return spo2Result.value; // Extract just the value from SpO2Result
+    return spo2Result.value;
   }
 
   /**
    * Calcula nivel de hemoglobina estimado basado en características de la señal PPG
    */
   private calculateHemoglobin(ppgValues: number[]): number {
-    if (ppgValues.length < 120) {
-      console.log("VitalSignsProcessor: Datos insuficientes para calcular hemoglobina", {
-        muestras: ppgValues.length,
-        requeridas: 120
-      });
-      return 0;
-    }
-    
-    // Normalizar valores
-    const min = Math.min(...ppgValues);
-    const max = Math.max(...ppgValues);
-    
-    // Verificar amplitud mínima
-    if (max - min < 0.05) {
-      console.log("VitalSignsProcessor: Amplitud PPG insuficiente para hemoglobina", {
-        min, max, amplitud: max - min
-      });
-      return 0;
-    }
-    
-    // Análisis de la señal PPG normalizada
-    const normalized = ppgValues.map(v => (v - min) / (max - min));
-    
-    // Cálculo del área bajo la curva como indicador de contenido de hemoglobina
-    const auc = normalized.reduce((sum, val) => sum + val, 0) / normalized.length;
-    
-    // Modelo basado en investigación óptica
-    const baseHemoglobin = 14.5; // g/dL (valor promedio normal)
-    const hemoglobin = baseHemoglobin - ((0.6 - auc) * 8);
-    
-    // Validación del rango fisiológico
-    const validatedHemoglobin = Math.max(10, Math.min(17, hemoglobin));
-    
-    console.log("VitalSignsProcessor: Hemoglobina calculada de datos PPG", {
-      auc,
-      hemoglobinaBruta: hemoglobin,
-      hemoglobinaValidada: validatedHemoglobin
-    });
-    
-    return validatedHemoglobin;
+    return 0;
   }
 
   /**
@@ -458,12 +419,7 @@ export class VitalSignsProcessor {
    * Obtiene el progreso actual de calibración
    */
   public getCalibrationProgress(): VitalSignsResult['calibration'] {
-    if (!this.isCalibrating) return undefined;
-    
-    return {
-      isCalibrating: true,
-      progress: { ...this.calibrationProgress }
-    };
+    return undefined;
   }
 
   /**
