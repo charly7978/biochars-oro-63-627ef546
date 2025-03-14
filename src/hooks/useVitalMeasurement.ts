@@ -7,6 +7,8 @@ interface VitalMeasurements {
   pressure: string;
   arrhythmiaCount: string | number;
   glucose: number;
+  cholesterol: number;
+  triglycerides: number;
 }
 
 export const useVitalMeasurement = (isMeasuring: boolean) => {
@@ -15,12 +17,15 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     spo2: 0,
     pressure: "--/--",
     arrhythmiaCount: 0,
-    glucose: 0
+    glucose: 0,
+    cholesterol: 0,
+    triglycerides: 0
   });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [rawGlucoseReadings, setRawGlucoseReadings] = useState<number[]>([]);
   const [rawBPMReadings, setRawBPMReadings] = useState<number[]>([]);
   const [rawSpO2Readings, setRawSpO2Readings] = useState<number[]>([]);
+  const [rawLipidReadings, setRawLipidReadings] = useState<{cholesterol: number, triglycerides: number}[]>([]);
   const [measurementErrors, setMeasurementErrors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -45,7 +50,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           spo2: 0,
           pressure: "--/--",
           arrhythmiaCount: "--",
-          glucose: 0
+          glucose: 0,
+          cholesterol: 0,
+          triglycerides: 0
         };
         
         console.log('useVitalMeasurement - Nuevos valores tras reinicio', newValues);
@@ -56,6 +63,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       setRawGlucoseReadings([]);
       setRawBPMReadings([]);
       setRawSpO2Readings([]);
+      setRawLipidReadings([]);
       setMeasurementErrors([]);
       return;
     }
@@ -139,7 +147,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
           }
 
-          // Calcular glucosa si existe el procesador de glucosa
+          // Calcular glucosa utilizando glucoseProcessor directamente desde la instancia global
           const glucoseProcessor = (window as any).glucoseProcessor;
           if (glucoseProcessor && glucoseProcessor.calculateGlucose) {
             try {
@@ -160,6 +168,34 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             } catch (error) {
               console.error('Error obteniendo valor de glucosa:', error);
               addError("Error al calcular glucosa");
+            }
+          }
+
+          // Calcular lípidos utilizando lipidProcessor directamente desde la instancia global
+          const lipidProcessor = (window as any).lipidProcessor;
+          if (lipidProcessor && lipidProcessor.calculateLipids) {
+            try {
+              const lipids = lipidProcessor.calculateLipids(ppgData);
+              
+              if (lipids && lipids.totalCholesterol > 0) {
+                setRawLipidReadings(prev => [...prev, {
+                  cholesterol: lipids.totalCholesterol,
+                  triglycerides: lipids.triglycerides
+                }]);
+                
+                console.log('useVitalMeasurement - Nuevos valores de lípidos:', {
+                  colesterol: lipids.totalCholesterol,
+                  trigliceridos: lipids.triglycerides,
+                  totalLecturas: rawLipidReadings.length + 1,
+                  tiempoTranscurrido: elapsedTime,
+                  timestamp: new Date().toISOString()
+                });
+              } else {
+                console.log('useVitalMeasurement - Lípidos inválidos o insuficiente calidad de señal');
+              }
+            } catch (error) {
+              console.error('Error obteniendo valores de lípidos:', error);
+              addError("Error al calcular lípidos");
             }
           }
         } else {
@@ -211,13 +247,35 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           newValues.glucose = Math.round(rawGlucoseReadings[rawGlucoseReadings.length - 1]);
         }
 
+        // Actualizar lípidos con mediana de lecturas
+        if (rawLipidReadings.length > 2) {
+          const sortedCholesterol = [...rawLipidReadings]
+            .map(l => l.cholesterol)
+            .sort((a, b) => a - b);
+          
+          const sortedTriglycerides = [...rawLipidReadings]
+            .map(l => l.triglycerides)
+            .sort((a, b) => a - b);
+          
+          const medianCholesterol = sortedCholesterol[Math.floor(sortedCholesterol.length / 2)];
+          const medianTriglycerides = sortedTriglycerides[Math.floor(sortedTriglycerides.length / 2)];
+          
+          newValues.cholesterol = Math.round(medianCholesterol);
+          newValues.triglycerides = Math.round(medianTriglycerides);
+        } else if (rawLipidReadings.length > 0) {
+          const lastReading = rawLipidReadings[rawLipidReadings.length - 1];
+          newValues.cholesterol = Math.round(lastReading.cholesterol);
+          newValues.triglycerides = Math.round(lastReading.triglycerides);
+        }
+
         console.log('useVitalMeasurement - Valores actualizados:', {
           prevValues: prev,
           newValues,
           lecturas: {
             bpm: rawBPMReadings.length,
             spo2: rawSpO2Readings.length,
-            glucose: rawGlucoseReadings.length
+            glucose: rawGlucoseReadings.length,
+            lipids: rawLipidReadings.length
           },
           timestamp: new Date().toISOString()
         });
@@ -250,6 +308,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         lecturasGlucosa: rawGlucoseReadings.length,
         lecturasBPM: rawBPMReadings.length,
         lecturasSpO2: rawSpO2Readings.length,
+        lecturasLipidos: rawLipidReadings.length,
         errores: measurementErrors.length,
         timestamp: new Date().toISOString()
       });
@@ -267,6 +326,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           totalLecturasGlucosa: rawGlucoseReadings.length,
           totalLecturasBPM: rawBPMReadings.length,
           totalLecturasSpO2: rawSpO2Readings.length,
+          totalLecturasLipidos: rawLipidReadings.length,
           errores: measurementErrors,
           timestamp: new Date().toISOString()
         });
@@ -284,7 +344,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, measurementErrors]);
+  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, rawLipidReadings, measurementErrors]);
 
   return {
     ...measurements,

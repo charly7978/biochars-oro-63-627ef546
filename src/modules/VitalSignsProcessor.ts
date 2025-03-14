@@ -2,6 +2,7 @@
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
 import './HeartBeatProcessor.extension';
 import { GlucoseProcessor } from './vital-signs/glucose-processor';
+import { LipidProcessor } from './vital-signs/lipid-processor';
 
 /**
  * Wrapper para mantener compatibilidad con implementación original
@@ -11,6 +12,7 @@ export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
   public spo2Processor: any; // Exposición pública del procesador de SpO2
   public glucoseProcessor: GlucoseProcessor; // Exposición pública del procesador de glucosa
+  public lipidProcessor: LipidProcessor; // Exposición pública del procesador de lípidos
   
   // Constantes para compatibilidad
   private readonly WINDOW_SIZE = 300;
@@ -27,8 +29,9 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Inicializando con enfoque en datos reales");
     this.processor = new NewVitalSignsProcessor();
     
-    // Inicializar procesador de glucosa
+    // Inicializar procesadores
     this.glucoseProcessor = new GlucoseProcessor();
+    this.lipidProcessor = new LipidProcessor();
     
     // Importante: Hacer referencia al procesador de SpO2 para acceso directo
     this.spo2Processor = this.processor.spo2Processor;
@@ -37,8 +40,10 @@ export class VitalSignsProcessor {
     if (typeof window !== 'undefined') {
       (window as any).vitalSignsProcessor = this.processor;
       (window as any).glucoseProcessor = this.glucoseProcessor; // Registrar globalmente
+      (window as any).lipidProcessor = this.lipidProcessor; // Registrar globalmente
       console.log('VitalSignsProcessor: Registrado globalmente a través del wrapper');
       console.log('GlucoseProcessor: Registrado globalmente para acceso directo');
+      console.log('LipidProcessor: Registrado globalmente para acceso directo');
     }
   }
   
@@ -67,6 +72,8 @@ export class VitalSignsProcessor {
   public reset(): void {
     console.log("VitalSignsProcessor: Reiniciando todos los procesadores");
     this.processor.reset();
+    this.glucoseProcessor.reset();
+    this.lipidProcessor.reset();
   }
   
   /**
