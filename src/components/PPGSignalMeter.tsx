@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -39,9 +38,7 @@ const PPGSignalMeter = ({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Referencia para el historial de calidad de señal
   const qualityHistoryRef = useRef<number[]>([]);
-  // Contador para frames consecutivos con dedo detectado
   const consecutiveFingerFramesRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 4500;
@@ -49,19 +46,17 @@ const PPGSignalMeter = ({
   const CANVAS_HEIGHT = 768;
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 30.0; // Aumentado para mejor visualización
+  const verticalScale = 30.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 2.5; // Reducido para mayor sensibilidad
-  const MIN_PEAK_DISTANCE_MS = 220; // Reducido para mejor detección
+  const PEAK_THRESHOLD = 2.5;
+  const MIN_PEAK_DISTANCE_MS = 220;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  // Nuevo: Cantidad de frames consecutivos necesarios para confirmar detección
   const REQUIRED_FINGER_FRAMES = 3;
-  // Nuevo: Tamaño del historial de calidad para calcular promedio
   const QUALITY_HISTORY_SIZE = 5;
 
   useEffect(() => {
@@ -78,15 +73,12 @@ const PPGSignalMeter = ({
     }
   }, [preserveResults, isFingerDetected]);
 
-  // Actualizar historial de calidad
   useEffect(() => {
-    // Actualizar el historial de calidad
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
     
-    // Actualizar contador de frames con dedo detectado
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
@@ -94,16 +86,14 @@ const PPGSignalMeter = ({
     }
   }, [quality, isFingerDetected]);
 
-  // Calcular calidad promedio más estable (reduce fluctuaciones)
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
-    // Calcular promedio ponderando más los valores recientes
     let weightedSum = 0;
     let weightSum = 0;
     
     qualityHistoryRef.current.forEach((q, index) => {
-      const weight = index + 1; // Dar más peso a valores más recientes
+      const weight = index + 1;
       weightedSum += q * weight;
       weightSum += weight;
     });
@@ -112,28 +102,20 @@ const PPGSignalMeter = ({
   }, []);
 
   const getQualityColor = useCallback((q: number) => {
-    // Usar promedio de calidad para mayor estabilidad
     const avgQuality = getAverageQuality();
     
-    // Verificar frames consecutivos para confirmación robusta
-    const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
-    
-    if (!isFingerConfirmed) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 65) return 'from-green-500 to-emerald-500'; // Umbral reducido
-    if (avgQuality > 40) return 'from-yellow-500 to-orange-500'; // Umbral reducido
+    if (!consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) return 'from-gray-400 to-gray-500';
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
   const getQualityText = useCallback((q: number) => {
-    // Usar promedio de calidad para mayor estabilidad
     const avgQuality = getAverageQuality();
     
-    // Verificar frames consecutivos para confirmación robusta
-    const isFingerConfirmed = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
-    
-    if (!isFingerConfirmed) return 'Sin detección';
-    if (avgQuality > 65) return 'Señal óptima'; // Umbral reducido
-    if (avgQuality > 40) return 'Señal aceptable'; // Umbral reducido
+    if (!consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) return 'Sin detección';
+    if (avgQuality > 65) return 'Señal óptima';
+    if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
   }, [getAverageQuality]);
 
@@ -144,20 +126,21 @@ const PPGSignalMeter = ({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E5DEFF');     // Keeping original soft purple
-    gradient.addColorStop(0.3, '#FDE1D3');   // Keeping original soft peach
-    gradient.addColorStop(0.65, '#F2FCE2');  // Slight adjustment to position
-    gradient.addColorStop(0.85, '#D8E8FF');  // Slightly more saturated blue
-    gradient.addColorStop(1, '#C5DFFF');     // Deeper blue at the bottom for subtle intensity
+    gradient.addColorStop(0, '#E2DCFF');
+    gradient.addColorStop(0.25, '#FFDECF');
+    gradient.addColorStop(0.5, '#F1FBDF');
+    gradient.addColorStop(0.75, '#D8E8FF');
+    gradient.addColorStop(1, '#C0DAFF');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    ctx.globalAlpha = 0.03;
+    ctx.globalAlpha = 0.04;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        // Slightly increase contrast in the checker pattern in lower half
-        const alphaModifier = j > CANVAS_HEIGHT/2 ? 0.025 : 0;
+        const heightRatio = j / CANVAS_HEIGHT;
+        const alphaModifier = 0.01 + (heightRatio * 0.03);
+        
         ctx.fillStyle = j % 40 === 0 ? 
           `rgba(0,0,0,${0.2 + alphaModifier})` : 
           `rgba(255,255,255,${0.2 + alphaModifier})`;
@@ -167,7 +150,7 @@ const PPGSignalMeter = ({
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.22)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
@@ -195,7 +178,7 @@ const PPGSignalMeter = ({
     
     const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
     ctx.moveTo(0, centerLineY);
@@ -266,7 +249,6 @@ const PPGSignalMeter = ({
         }
       }
       
-      // Reducción del umbral mínimo para detectar picos más pequeños
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
         potentialPeaks.push({
           index: i,
@@ -277,7 +259,6 @@ const PPGSignalMeter = ({
       }
     }
     
-    // Procesar picos potenciales y aplicar filtrado temporal
     for (const peak of potentialPeaks) {
       const tooClose = peaksRef.current.some(
         existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
@@ -331,11 +312,9 @@ const PPGSignalMeter = ({
       return;
     }
     
-    // Ajuste más dinámico de la línea base
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      // Factor más agresivo para adaptarse rápidamente a cambios
       const adaptationRate = isFingerDetected ? 0.97 : 0.95;
       baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
     }
@@ -470,7 +449,6 @@ const PPGSignalMeter = ({
     onReset();
   }, [onReset]);
 
-  // Determinar si usar calidad mejorada para UI
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
