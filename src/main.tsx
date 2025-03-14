@@ -3,6 +3,23 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
+// Apply high-resolution interface class to the root element
+const applyHighResolution = () => {
+  const rootElement = document.getElementById('root');
+  if (rootElement) {
+    rootElement.classList.add('high-res-interface');
+  }
+  
+  // Apply high-DPI rendering for crisp text and UI
+  document.body.style.textRendering = 'geometricPrecision';
+  
+  // Force device pixel ratio to be respected
+  if (window.devicePixelRatio > 1) {
+    // Create a CSS variable with the device pixel ratio for use in styles
+    document.documentElement.style.setProperty('--device-pixel-ratio', window.devicePixelRatio.toString());
+  }
+};
+
 // Function to request fullscreen on startup
 const requestFullscreenMode = () => {
   try {
@@ -50,6 +67,7 @@ const requestFullscreenMode = () => {
 
 // Execute immediately AND on first user interaction
 requestFullscreenMode();
+applyHighResolution();
 
 // Ensure we request fullscreen on every user interaction until successful
 let isFullscreen = false;
@@ -70,6 +88,9 @@ const handleUserInteraction = () => {
 
 document.addEventListener('click', handleUserInteraction);
 document.addEventListener('touchstart', handleUserInteraction);
+
+// Handle resolution scaling on resize
+window.addEventListener('resize', applyHighResolution);
 
 // Render the app
 createRoot(document.getElementById("root")!).render(<App />);

@@ -36,6 +36,9 @@
         position: fixed;
         image-rendering: -webkit-optimize-contrast;
         image-rendering: crisp-edges;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
       
       body {
@@ -69,6 +72,40 @@
         #root {
           height: 100dvh;
         }
+      }
+      
+      /* High resolution interface settings */
+      .high-res-interface {
+        transform-origin: top left;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        backface-visibility: hidden;
+        -webkit-font-smoothing: subpixel-antialiased;
+      }
+      
+      @media screen and (min-width: 1024px) {
+        .high-res-interface {
+          transform: scale(1);
+        }
+      }
+      
+      @media screen and (min-width: 2048px) {
+        .high-res-interface {
+          transform: scale(0.5);
+          width: 200%;
+          height: 200%;
+        }
+      }
+      
+      /* Improve text rendering */
+      h1, h2, h3, h4, h5, h6, p, span, button {
+        text-rendering: geometricPrecision;
+      }
+      
+      /* Crisp UI elements */
+      svg, img, canvas {
+        image-rendering: crisp-edges;
+        shape-rendering: crispEdges;
       }
     </style>
   </head>
