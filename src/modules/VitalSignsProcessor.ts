@@ -94,6 +94,7 @@ export class VitalSignsProcessor {
     // Verificar disponibilidad del procesador y método
     if (this.processor.spo2Processor && typeof this.processor.spo2Processor.calculateSpO2 === 'function') {
       const result = this.processor.spo2Processor.calculateSpO2(ppgValues);
+      // Manejar tanto objeto de resultado como valor directo para compatibilidad
       const value = typeof result === 'object' ? result.value : result;
       
       console.log("VitalSignsProcessor: SpO2 calculado de datos PPG reales", {

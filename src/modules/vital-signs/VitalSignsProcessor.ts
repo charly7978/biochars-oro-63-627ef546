@@ -1,3 +1,4 @@
+
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -392,13 +393,12 @@ export class VitalSignsProcessor {
    * Calcula SpO2 directamente a partir de valores PPG
    * Método utilizado por la clase wrapper
    */
-  public calculateSpO2(ppgValues: number[]): number {
+  public calculateSpO2(ppgValues: number[]): { value: number; confidence: number } {
     if (!ppgValues || ppgValues.length < 30) {
-      return 0;
+      return { value: 0, confidence: 0 };
     }
     
-    const result = this.spo2Processor.calculateSpO2(ppgValues);
-    return result.value;
+    return this.spo2Processor.calculateSpO2(ppgValues);
   }
 
   /**
@@ -523,13 +523,13 @@ export class VitalSignsProcessor {
   /**
    * Método público para calcular presión arterial directamente
    */
-  public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
+  public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number; confidence: number } {
     if (!ppgValues || ppgValues.length < 100) {
       console.log("VitalSignsProcessor: Datos insuficientes para presión arterial", {
         muestras: ppgValues?.length || 0,
         requeridas: 100
       });
-      return { systolic: 0, diastolic: 0 };
+      return { systolic: 0, diastolic: 0, confidence: 0 };
     }
     
     return this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
