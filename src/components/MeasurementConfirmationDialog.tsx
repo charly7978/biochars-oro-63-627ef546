@@ -40,10 +40,23 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   cholesterol = '--',
   triglycerides = '--'
 }) => {
-  // Convert values to strings if they're numbers and ensure we display '--' for null, undefined, or 0 values
+  // Formatear valores para mostrar correctamente, usando '--' para valores 0, null o undefined
   const formattedGlucose = glucose === 0 || glucose === null || glucose === undefined ? '--' : glucose;
   const formattedCholesterol = cholesterol === 0 || cholesterol === null || cholesterol === undefined ? '--' : cholesterol;
   const formattedTriglycerides = triglycerides === 0 || triglycerides === null || triglycerides === undefined ? '--' : triglycerides;
+
+  // Consolelog para depuración
+  console.log("MeasurementConfirmationDialog - Valores recibidos:", {
+    heartRate,
+    spo2,
+    pressure,
+    glucose,
+    cholesterol,
+    triglycerides,
+    formattedGlucose,
+    formattedCholesterol,
+    formattedTriglycerides
+  });
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

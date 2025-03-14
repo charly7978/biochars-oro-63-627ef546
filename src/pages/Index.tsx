@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,6 +9,8 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
+import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -30,6 +33,7 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
+  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
   const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
     timestamp: number;
@@ -69,6 +73,7 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
+      console.log("Index: Actualizando resultados finales:", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -248,13 +253,38 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
+      console.log("Resultados guardados después de finalizar:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
+      
+      // Mostrar diálogo de confirmación con los resultados
+      setShowConfirmationDialog(true);
+      
+      // También notificar al usuario con un toast
+      toast.success("Medición completada con éxito", {
+        description: "Revise los resultados y confirme si son correctos."
+      });
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
     setCalibrationProgress(undefined);
+  };
+
+  const handleConfirmResults = () => {
+    console.log("Resultados confirmados:", vitalSigns);
+    setShowConfirmationDialog(false);
+    toast.success("Resultados confirmados", {
+      description: "Los resultados han sido guardados correctamente."
+    });
+  };
+
+  const handleCancelResults = () => {
+    console.log("Resultados cancelados, preparando nueva medición");
+    setShowConfirmationDialog(false);
+    toast.info("Medición cancelada", {
+      description: "Puede iniciar una nueva medición cuando esté listo."
+    });
   };
 
   const handleReset = () => {
@@ -263,6 +293,7 @@ const Index = () => {
     setIsCameraOn(false);
     setShowResults(false);
     setIsCalibrating(false);
+    setShowConfirmationDialog(false);
     stopProcessing();
     
     if (measurementTimerRef.current) {
@@ -410,6 +441,7 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
+        console.log("Index: Vitales procesados:", vitals);
         setVitalSigns(vitals);
         
         if (vitals.lastArrhythmiaData) {
@@ -535,6 +567,23 @@ const Index = () => {
           </div>
         </div>
       </div>
+
+      {/* Diálogo de confirmación de medición */}
+      {showConfirmationDialog && (
+        <MeasurementConfirmationDialog
+          open={showConfirmationDialog}
+          onOpenChange={setShowConfirmationDialog}
+          onConfirm={handleConfirmResults}
+          onCancel={handleCancelResults}
+          measurementTime={30}
+          heartRate={heartRate}
+          spo2={vitalSigns.spo2}
+          pressure={vitalSigns.pressure}
+          glucose={vitalSigns.glucose}
+          cholesterol={vitalSigns.lipids?.totalCholesterol}
+          triglycerides={vitalSigns.lipids?.triglycerides}
+        />
+      )}
     </div>
   );
 };
