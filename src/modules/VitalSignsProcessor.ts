@@ -60,6 +60,6 @@ export class VitalSignsProcessor {
     
     // If the SpO2 processor isn't available, return a default value
     console.warn('VitalSignsProcessor: Unable to calculate SpO2, processor not available');
-    return 95; // Default normal SpO2 value
+    return 0; // Return zero to indicate inability to measure instead of simulating
   }
 }

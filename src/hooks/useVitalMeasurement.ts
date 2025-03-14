@@ -21,6 +21,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   const [rawGlucoseReadings, setRawGlucoseReadings] = useState<number[]>([]);
   const [rawBPMReadings, setRawBPMReadings] = useState<number[]>([]);
   const [rawSpO2Readings, setRawSpO2Readings] = useState<number[]>([]);
+  const [measurementErrors, setMeasurementErrors] = useState<string[]>([]);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -55,6 +56,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       setRawGlucoseReadings([]);
       setRawBPMReadings([]);
       setRawSpO2Readings([]);
+      setMeasurementErrors([]);
       return;
     }
 
@@ -69,10 +71,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     const updateMeasurements = () => {
       const processor = (window as any).heartBeatProcessor;
       if (!processor) {
-        console.warn('VitalMeasurement: No se encontró el procesador', {
-          windowObject: Object.keys(window),
-          timestamp: new Date().toISOString()
-        });
+        addError("No se encontró el procesador de ritmo cardíaco");
         return;
       }
 
@@ -82,7 +81,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       // Verificar si existe el procesador de signos vitales
       const vitalSignsProcessor = (window as any).vitalSignsProcessor;
       if (!vitalSignsProcessor) {
-        console.warn('VitalMeasurement: No se encontró el procesador de signos vitales');
+        addError("No se encontró el procesador de signos vitales");
         return;
       }
 
@@ -119,6 +118,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
                 ...prev,
                 pressure: `${bp.systolic}/${bp.diastolic}`
               }));
+            } else {
+              console.log('useVitalMeasurement - No se pudo calcular presión válida');
             }
           }
 
@@ -129,9 +130,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
               if (spo2 > 0) {
                 console.log('useVitalMeasurement - SpO2 calculado:', spo2);
                 setRawSpO2Readings(prev => [...prev, spo2]);
+              } else {
+                console.log('useVitalMeasurement - SpO2 inválido o insuficiente calidad de señal');
               }
             } catch (error) {
               console.error('Error calculando SpO2:', error);
+              addError("Error al calcular SpO2");
             }
           }
 
@@ -150,16 +154,21 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
                   tiempoTranscurrido: elapsedTime,
                   timestamp: new Date().toISOString()
                 });
+              } else {
+                console.log('useVitalMeasurement - Glucosa inválida o insuficiente calidad de señal');
               }
             } catch (error) {
               console.error('Error obteniendo valor de glucosa:', error);
+              addError("Error al calcular glucosa");
             }
           }
         } else {
           console.warn('useVitalMeasurement - No hay datos PPG disponibles');
+          addError("No hay datos PPG disponibles");
         }
       } catch (error) {
         console.error('Error procesando datos PPG:', error);
+        addError("Error procesando datos PPG");
       }
 
       // Actualizar mediciones con los valores procesados
@@ -217,6 +226,16 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
     };
 
+    // Helper para agregar errores sin duplicados
+    const addError = (error: string) => {
+      setMeasurementErrors(prev => {
+        if (!prev.includes(error)) {
+          return [...prev, error];
+        }
+        return prev;
+      });
+    };
+
     // Realizar medición inicial
     updateMeasurements();
 
@@ -231,6 +250,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         lecturasGlucosa: rawGlucoseReadings.length,
         lecturasBPM: rawBPMReadings.length,
         lecturasSpO2: rawSpO2Readings.length,
+        errores: measurementErrors.length,
         timestamp: new Date().toISOString()
       });
       
@@ -247,6 +267,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           totalLecturasGlucosa: rawGlucoseReadings.length,
           totalLecturasBPM: rawBPMReadings.length,
           totalLecturasSpO2: rawSpO2Readings.length,
+          errores: measurementErrors,
           timestamp: new Date().toISOString()
         });
         
@@ -263,11 +284,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings]);
+  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings, rawBPMReadings, rawSpO2Readings, measurementErrors]);
 
   return {
     ...measurements,
     elapsedTime: Math.min(elapsedTime, 30),
-    isComplete: elapsedTime >= 30
+    isComplete: elapsedTime >= 30,
+    errors: measurementErrors
   };
 };
