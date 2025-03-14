@@ -100,6 +100,7 @@ export class VitalSignsProcessor {
         muestras: ppgValues.length
       });
       
+      // Make sure to extract the value property from SpO2Result
       return result.value;
     }
     

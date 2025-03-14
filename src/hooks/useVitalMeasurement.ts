@@ -127,9 +127,13 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           if (vitalSignsProcessor.calculateSpO2) {
             try {
               const spo2Value = vitalSignsProcessor.calculateSpO2(ppgData);
-              if (spo2Value > 0) {
-                console.log('useVitalMeasurement - SpO2 calculado:', spo2Value);
-                setRawSpO2Readings(prev => [...prev, spo2Value]);
+              // Ensuring we get the proper value, whether it's a number or an object with value property
+              const spo2NumberValue = typeof spo2Value === 'object' && spo2Value !== null ? 
+                (spo2Value.value || 0) : spo2Value;
+                
+              if (spo2NumberValue > 0) {
+                console.log('useVitalMeasurement - SpO2 calculado:', spo2NumberValue);
+                setRawSpO2Readings(prev => [...prev, spo2NumberValue]);
               } else {
                 console.log('useVitalMeasurement - SpO2 inválido o insuficiente calidad de señal');
               }

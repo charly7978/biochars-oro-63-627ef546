@@ -1,4 +1,3 @@
-
 import { SpO2Processor, SpO2Result } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -311,7 +310,7 @@ export class VitalSignsProcessor {
     
     // Calcular SpO2 utilizando últimos 60 valores
     const spo2Result: SpO2Result = this.spo2Processor.calculateSpO2(this.ppgBuffer.slice(-60));
-    const spo2 = spo2Result.value;
+    const spo2 = spo2Result.value; // Extract just the value from SpO2Result
     
     // Calcular presión arterial utilizando últimos 120 valores
     const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-120));
@@ -399,7 +398,7 @@ export class VitalSignsProcessor {
     }
     
     const spo2Result: SpO2Result = this.spo2Processor.calculateSpO2(ppgValues);
-    return spo2Result.value;
+    return spo2Result.value; // Extract just the value from SpO2Result
   }
 
   /**
