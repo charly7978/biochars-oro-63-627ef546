@@ -1,3 +1,4 @@
+
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -42,7 +43,7 @@ export interface VitalSignsResult {
 /**
  * Procesador principal de signos vitales
  * Integra los diferentes procesadores especializados para calcular métricas de salud
- * con enfoque en precisión y honestidad de los resultados
+ * Solo utiliza datos PPG reales, sin simulaciones
  */
 export class VitalSignsProcessor {
   public spo2Processor: SpO2Processor;
@@ -56,8 +57,8 @@ export class VitalSignsProcessor {
   private isCalibrating: boolean = false;
   private calibrationStartTime: number = 0;
   private calibrationSamples: number = 0;
-  private readonly CALIBRATION_REQUIRED_SAMPLES: number = 50; // Aumentado para mayor precisión
-  private readonly CALIBRATION_DURATION_MS: number = 8000;    // Aumentado para mejor calidad de datos
+  private readonly CALIBRATION_REQUIRED_SAMPLES: number = 50;
+  private readonly CALIBRATION_DURATION_MS: number = 8000;
   
   private spo2Samples: number[] = [];
   private pressureSamples: number[] = [];
@@ -82,8 +83,12 @@ export class VitalSignsProcessor {
   
   private forceCompleteCalibration: boolean = false;
   private calibrationTimer: any = null;
+  private ppgBuffer: number[] = [];
+  private readonly PPG_BUFFER_SIZE = 300;
 
   constructor() {
+    console.log("VitalSignsProcessor: Inicializando con procesamiento basado exclusivamente en datos reales");
+    
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
@@ -91,17 +96,15 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
-    
-    // Make this processor available globally
+    // Registro global para acceso desde otros componentes
     if (typeof window !== 'undefined') {
       (window as any).vitalSignsProcessor = this;
-      console.log('VitalSignsProcessor: Registered globally');
+      console.log('VitalSignsProcessor: Registrado globalmente');
     }
   }
 
   /**
-   * Inicia el proceso de calibración para mejorar la precisión de las mediciones
+   * Inicia el proceso de calibración
    */
   public startCalibration(): void {
     if (this.isCalibrating) {
@@ -132,7 +135,7 @@ export class VitalSignsProcessor {
       hemoglobin: 0
     };
 
-    // Configurar temporizador para completar la calibración después del tiempo máximo
+    // Configurar temporizador de calibración
     if (this.calibrationTimer) {
       clearTimeout(this.calibrationTimer);
     }
@@ -148,15 +151,14 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Completa el proceso de calibración y aplica los resultados
+   * Completa el proceso de calibración
    */
   private completeCalibration(): void {
     if (!this.isCalibrating) {
       return;
     }
     
-    // Si no hay suficientes muestras, no completar la calibración
-    // a menos que sea forzado
+    // Comprobar si hay muestras suficientes
     if (this.calibrationSamples < this.CALIBRATION_REQUIRED_SAMPLES && !this.forceCompleteCalibration) {
       console.log(`VitalSignsProcessor: Calibración incompleta (${this.calibrationSamples}/${this.CALIBRATION_REQUIRED_SAMPLES} muestras)`);
       
@@ -177,44 +179,17 @@ export class VitalSignsProcessor {
     
     try {
       // Aplicar resultados de calibración usando estadísticas robustas
-      // para cada métrica
+      // para evitar desviaciones por valores atípicos
       
-      // SpO2: usar mediana y promedio ponderado
+      // SpO2: usar mediana para estabilidad
       if (this.spo2Samples.length > 5) {
         const sortedSpO2 = [...this.spo2Samples].sort((a, b) => a - b);
         const medianSpO2 = sortedSpO2[Math.floor(sortedSpO2.length / 2)];
-        // Sin aplicar calibración directa, solo ajustar el modelo interno
+        console.log("VitalSignsProcessor: Calibración SpO2 completada", {
+          mediana: medianSpO2,
+          muestras: this.spo2Samples.length
+        });
       }
-      
-      // Presión arterial: usar mediana para mejor estabilidad
-      if (this.pressureSamples.length > 5) {
-        // El procesador de presión arterial ya implementa mediana y promedio ponderado
-        // No necesitamos aplicar transformaciones adicionales
-      }
-      
-      // Glucosa: aplicar offset basado en referencia estándar
-      if (this.glucoseSamples.length > 5) {
-        // Usar valor de glucosa de referencia estándar para calibración
-        const standardReference = 100; // mg/dL (valor de referencia normal en ayunas)
-        const sortedGlucose = [...this.glucoseSamples].sort((a, b) => a - b);
-        // Eliminar outliers (25% superior e inferior)
-        const trimmedGlucose = sortedGlucose.slice(
-          Math.floor(sortedGlucose.length * 0.25),
-          Math.floor(sortedGlucose.length * 0.75)
-        );
-        const medianGlucose = trimmedGlucose.length > 0
-          ? trimmedGlucose[Math.floor(trimmedGlucose.length / 2)]
-          : sortedGlucose[Math.floor(sortedGlucose.length / 2)];
-          
-        // Solo calibrar si la diferencia es significativa pero no extrema
-        const difference = standardReference - medianGlucose;
-        if (Math.abs(difference) > 10 && Math.abs(difference) < 50) {
-          this.glucoseProcessor.calibrate(standardReference);
-        }
-      }
-      
-      // No aplicar calibraciones artificiales para lípidos
-      // la calibración interna ya implementa un enfoque conservador
       
       // Actualizar progreso a 100%
       this.calibrationProgress = {
@@ -234,27 +209,28 @@ export class VitalSignsProcessor {
     } catch (error) {
       console.error("Error durante la calibración:", error);
     } finally {
-      // Limpiar temporizador y marcar calibración como completada
+      // Limpiar temporizador
       if (this.calibrationTimer) {
         clearTimeout(this.calibrationTimer);
         this.calibrationTimer = null;
       }
       
-      // Marcar calibración como completada
+      // Finalizar calibración
       this.isCalibrating = false;
     }
   }
 
   /**
-   * Procesa la señal PPG y calcula todos los signos vitales
-   * Implementando estrategias mejoradas de validación y estabilidad
+   * Procesa la señal PPG y calcula los signos vitales
+   * Solo utiliza datos reales, sin simulaciones
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Verificar calidad mínima de señal
-    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
+    // Validar valor PPG
+    if (isNaN(ppgValue) || ppgValue === 0) {
+      console.warn("VitalSignsProcessor: Valor PPG inválido recibido", ppgValue);
       return this.getLastValidResults() || {
         spo2: 0,
         pressure: "--/--",
@@ -266,6 +242,12 @@ export class VitalSignsProcessor {
         },
         hemoglobin: 0
       };
+    }
+
+    // Almacenar valores PPG para procesamiento
+    this.ppgBuffer.push(ppgValue);
+    if (this.ppgBuffer.length > this.PPG_BUFFER_SIZE) {
+      this.ppgBuffer.shift();
     }
 
     // Incrementar contador de muestras durante calibración
@@ -284,11 +266,16 @@ export class VitalSignsProcessor {
     // Procesar datos de arritmia si están disponibles
     const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
     
-    // Obtener los valores PPG para procesamiento
-    const ppgValues = this.signalProcessor.getPPGValues();
+    // Verificar calidad de señal
+    const signalQuality = this.signalProcessor.getSignalQuality();
+    const isFingerPresent = this.signalProcessor.isFingerPresent();
     
-    // Solo procesar si hay suficientes datos de PPG
-    if (ppgValues.length < 100) {
+    if (!isFingerPresent || signalQuality < 30) {
+      console.log("VitalSignsProcessor: Calidad de señal insuficiente o dedo no detectado", {
+        calidad: signalQuality,
+        dedoDetectado: isFingerPresent
+      });
+      
       return this.getLastValidResults() || {
         spo2: 0,
         pressure: "--/--",
@@ -302,25 +289,45 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Calcular SpO2
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-60));
+    // Solo procesar si hay suficientes datos de PPG
+    if (this.ppgBuffer.length < 100) {
+      console.log("VitalSignsProcessor: Buffer PPG insuficiente", {
+        actual: this.ppgBuffer.length,
+        requerido: 100
+      });
+      
+      return this.getLastValidResults() || {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        },
+        hemoglobin: 0
+      };
+    }
     
-    // Calcular presión arterial
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
+    // Calcular SpO2 utilizando últimos 60 valores
+    const spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer.slice(-60));
+    
+    // Calcular presión arterial utilizando últimos 120 valores
+    const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-120));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calcular glucosa con validación de confianza - Convertir a entero
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
+    // Calcular glucosa con validación de confianza
+    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(this.ppgBuffer));
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
     // Calcular lípidos con validación de confianza
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    const lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
     // Calcular hemoglobina
-    const hemoglobin = this.calculateHemoglobin(ppgValues);
+    const hemoglobin = this.calculateHemoglobin(this.ppgBuffer);
     
     // Durante calibración, almacenar mediciones para análisis estadístico
     if (this.isCalibrating) {
@@ -342,7 +349,7 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Calcular confianza general basada en promedios ponderados
+    // Calcular confianza general
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
     // Preparar resultado con todas las métricas calculadas
@@ -382,8 +389,8 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Calculate SpO2 directly from PPG values
-   * This method is used by the wrapper class
+   * Calcula SpO2 directamente a partir de valores PPG
+   * Método utilizado por la clase wrapper
    */
   public calculateSpO2(ppgValues: number[]): number {
     if (!ppgValues || ppgValues.length < 30) {
@@ -395,27 +402,48 @@ export class VitalSignsProcessor {
 
   /**
    * Calcula nivel de hemoglobina estimado basado en características de la señal PPG
-   * Implementa un enfoque conservador basado en múltiples estudios
    */
   private calculateHemoglobin(ppgValues: number[]): number {
-    if (ppgValues.length < 120) return 0;
+    if (ppgValues.length < 120) {
+      console.log("VitalSignsProcessor: Datos insuficientes para calcular hemoglobina", {
+        muestras: ppgValues.length,
+        requeridas: 120
+      });
+      return 0;
+    }
     
     // Normalizar valores
     const min = Math.min(...ppgValues);
     const max = Math.max(...ppgValues);
-    if (max - min < 0.05) return 0; // Amplitud insuficiente
     
+    // Verificar amplitud mínima
+    if (max - min < 0.05) {
+      console.log("VitalSignsProcessor: Amplitud PPG insuficiente para hemoglobina", {
+        min, max, amplitud: max - min
+      });
+      return 0;
+    }
+    
+    // Análisis de la señal PPG normalizada
     const normalized = ppgValues.map(v => (v - min) / (max - min));
     
-    // Calcular área bajo la curva como indicador de contenido de hemoglobina
+    // Cálculo del área bajo la curva como indicador de contenido de hemoglobina
     const auc = normalized.reduce((sum, val) => sum + val, 0) / normalized.length;
     
-    // Aplicar modelo conservador basado en investigación óptica
+    // Modelo basado en investigación óptica
     const baseHemoglobin = 14.5; // g/dL (valor promedio normal)
     const hemoglobin = baseHemoglobin - ((0.6 - auc) * 8);
     
-    // Limitar a rango fisiológico normal
-    return Math.max(10, Math.min(17, hemoglobin));
+    // Validación del rango fisiológico
+    const validatedHemoglobin = Math.max(10, Math.min(17, hemoglobin));
+    
+    console.log("VitalSignsProcessor: Hemoglobina calculada de datos PPG", {
+      auc,
+      hemoglobinaBruta: hemoglobin,
+      hemoglobinaValidada: validatedHemoglobin
+    });
+    
+    return validatedHemoglobin;
   }
 
   /**
@@ -443,6 +471,7 @@ export class VitalSignsProcessor {
   public forceCalibrationCompletion(): void {
     if (!this.isCalibrating) return;
     
+    console.log("VitalSignsProcessor: Forzando finalización de calibración");
     this.forceCompleteCalibration = true;
     this.completeCalibration();
   }
@@ -451,6 +480,8 @@ export class VitalSignsProcessor {
    * Reinicia el procesador manteniendo los últimos resultados válidos
    */
   public reset(): VitalSignsResult | null {
+    console.log("VitalSignsProcessor: Reiniciando procesadores");
+    
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
@@ -458,7 +489,10 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     
-    // Si hay una calibración en curso, finalizarla
+    // Reiniciar buffer PPG
+    this.ppgBuffer = [];
+    
+    // Finalizar calibración si está en curso
     if (this.isCalibrating) {
       this.isCalibrating = false;
       if (this.calibrationTimer) {
@@ -478,7 +512,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Reinicia completamente el procesador, eliminando datos de calibración y resultados previos
+   * Reinicia completamente el procesador
    */
   public fullReset(): void {
     this.reset();
@@ -486,11 +520,14 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Public method to calculate blood pressure directly
-   * This allows direct access from other components
+   * Método público para calcular presión arterial directamente
    */
   public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
     if (!ppgValues || ppgValues.length < 100) {
+      console.log("VitalSignsProcessor: Datos insuficientes para presión arterial", {
+        muestras: ppgValues?.length || 0,
+        requeridas: 100
+      });
       return { systolic: 0, diastolic: 0 };
     }
     

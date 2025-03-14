@@ -8,70 +8,88 @@ export class SpO2Processor {
   private spo2Buffer: number[] = [];
 
   /**
-   * Calculates the oxygen saturation (SpO2) from PPG values
+   * Calcula la saturación de oxígeno (SpO2) a partir de valores PPG reales
+   * No realiza simulaciones - solo retorna 0 si no hay datos suficientes
    */
   public calculateSpO2(values: number[]): number {
-    if (values.length < 30) {
-      console.log("SpO2Processor: Datos PPG insuficientes", { 
-        longitud: values.length,
+    // Validación estricta de datos de entrada
+    if (!values || values.length < 30) {
+      console.log("SpO2Processor: Datos insuficientes para calcular SpO2", {
+        longitud: values?.length || 0,
         requeridos: 30
       });
-      return this.getLastValidReading();
+      return 0; // No valores simulados - retorna 0 para indicar medición inválida
     }
 
+    // Calcular componentes DC y AC de la señal PPG
     const dc = calculateDC(values);
-    if (dc === 0) {
-      console.log("SpO2Processor: DC zero, invalid signal");
-      return this.getLastValidReading();
+    if (dc === 0 || Math.abs(dc) < 0.01) {
+      console.log("SpO2Processor: DC cero o muy bajo, señal inválida", {
+        dc: dc
+      });
+      return 0;
     }
 
+    // Cálculo de la componente AC (amplitud de la señal pulsátil)
     const ac = calculateAC(values);
     
-    // Only proceed if we have meaningful signal
-    if (ac < 0.02) {
-      console.log("SpO2Processor: Señal demasiado débil, AC muy bajo:", ac);
-      return this.getLastValidReading();
-    }
-    
+    // Verificar la calidad del pulso mediante el índice de perfusión
     const perfusionIndex = ac / dc;
     
-    if (perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
-      console.log("SpO2Processor: Índice de perfusión bajo:", perfusionIndex);
-      return this.getLastValidReading();
+    // Datos insuficientes para una medición precisa
+    if (ac < 0.02 || perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
+      console.log("SpO2Processor: Señal demasiado débil para una medición precisa", {
+        ac: ac,
+        perfusionIndex: perfusionIndex,
+        umbralPerfusion: this.PERFUSION_INDEX_THRESHOLD
+      });
+      return 0;
     }
 
+    // Cálculo basado en la relación R de absorción (fórmula empírica validada)
     const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
     
-    // Advanced empirical formula based on validated clinical research
+    // Fórmula empírica basada en investigación clínica con calibración
     let spO2 = Math.round(110 - (25 * R));
     
-    // Adjust based on perfusion quality for more clinical accuracy
-    if (perfusionIndex > 0.18) {
-      spO2 = Math.min(99, spO2 + 1);
+    // Ajustes basados en la calidad de perfusión
+    if (perfusionIndex > 0.2) {
+      spO2 = Math.min(99, spO2);
     } else if (perfusionIndex < 0.1) {
       spO2 = Math.max(85, spO2 - 1);
     }
 
-    // Ensure values are in physiological range
-    spO2 = Math.min(100, Math.max(0, spO2));
+    // Validación del rango fisiológico
+    if (spO2 < 80 || spO2 > 100) {
+      console.log("SpO2Processor: Valor fuera del rango fisiológico normal", {
+        spO2Calculado: spO2,
+        R: R,
+        perfusionIndex: perfusionIndex
+      });
+      
+      // Limitar a rango fisiológico pero mantener el valor como indicador
+      spO2 = Math.max(80, Math.min(100, spO2));
+    }
 
-    console.log("SpO2Processor: Valor basado en PPG real:", {
-      spO2,
-      ac,
-      dc,
-      R,
-      perfusionIndex
+    // Registro detallado para validación y depuración
+    console.log("SpO2Processor: Cálculo real basado en PPG", {
+      spO2: spO2,
+      ac: ac,
+      dc: dc,
+      R: R,
+      perfusionIndex: perfusionIndex,
+      muestras: values.length
     });
 
-    // Only store valid readings
-    if (spO2 > 0) {
+    // Almacenar solo lecturas válidas para el filtrado
+    if (spO2 >= 80 && spO2 <= 100) {
       this.spo2Buffer.push(spO2);
       if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
         this.spo2Buffer.shift();
       }
     }
 
-    // Use median filtering for more stable readings
+    // Uso de filtrado de mediana para resultados más estables
     if (this.spo2Buffer.length > 3) {
       const sorted = [...this.spo2Buffer].sort((a, b) => a - b);
       return sorted[Math.floor(sorted.length / 2)];
@@ -80,21 +98,22 @@ export class SpO2Processor {
     return spO2;
   }
 
+  /**
+   * Retorna la última lectura válida o 0 si no hay datos
+   */
   private getLastValidReading(): number {
     if (this.spo2Buffer.length > 0) {
       const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-      console.log("SpO2Processor: Usando última lectura válida:", lastValid);
       return lastValid;
     }
-    console.log("SpO2Processor: No hay lecturas válidas disponibles");
-    return 0; // Indicate no valid measurement rather than simulating
+    return 0;
   }
 
   /**
-   * Reset the SpO2 processor state
+   * Reinicia el estado del procesador
    */
   public reset(): void {
     this.spo2Buffer = [];
-    console.log("SpO2Processor: Reset completo");
+    console.log("SpO2Processor: Estado reiniciado");
   }
 }

@@ -3,14 +3,14 @@ import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/Vit
 import './HeartBeatProcessor.extension';
 
 /**
- * This is a wrapper class to maintain backward compatibility with
- * the original VitalSignsProcessor implementation while using the 
- * refactored version under the hood.
+ * Wrapper para mantener compatibilidad con implementación original
+ * mientras se usa la versión refactorizada.
  */
 export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
+  public spo2Processor: any; // Exposición pública del procesador de SpO2
   
-  // Expose constants for compatibility
+  // Constantes para compatibilidad
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.02;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
@@ -22,44 +22,88 @@ export class VitalSignsProcessor {
   private readonly PEAK_THRESHOLD = 0.3;
   
   constructor() {
+    console.log("VitalSignsProcessor: Inicializando con enfoque en datos reales");
     this.processor = new NewVitalSignsProcessor();
     
-    // Make this processor available globally for other components to use
+    // Importante: Hacer referencia al procesador de SpO2 para acceso directo
+    this.spo2Processor = this.processor.spo2Processor;
+    
+    // Registro global para otros componentes
     if (typeof window !== 'undefined') {
       (window as any).vitalSignsProcessor = this.processor;
-      console.log('VitalSignsProcessor: Registered globally through wrapper');
+      console.log('VitalSignsProcessor: Registrado globalmente a través del wrapper');
     }
   }
   
+  /**
+   * Procesa señal PPG y calcula signos vitales
+   */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ) {
+    if (isNaN(ppgValue) || ppgValue === 0) {
+      console.warn("VitalSignsProcessor: Valor PPG inválido recibido", ppgValue);
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--"
+      };
+    }
+    
     return this.processor.processSignal(ppgValue, rrData);
   }
   
+  /**
+   * Reinicia todos los procesadores
+   */
   public reset(): void {
+    console.log("VitalSignsProcessor: Reiniciando todos los procesadores");
     this.processor.reset();
   }
   
   /**
-   * Proxy method to expose blood pressure calculation directly
+   * Método proxy para cálculo directo de presión arterial
    */
   public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
+    // Validación estricta de datos
+    if (!ppgValues || ppgValues.length < 60) {
+      console.warn("VitalSignsProcessor: Datos insuficientes para calcular presión arterial", {
+        longitud: ppgValues?.length || 0,
+        requeridos: 60
+      });
+      return { systolic: 0, diastolic: 0 }; // Indicar medición inválida
+    }
+    
     return this.processor.calculateBloodPressure(ppgValues);
   }
   
   /**
-   * Proxy method to expose SpO2 calculation directly
+   * Método proxy para cálculo directo de SpO2
    */
   public calculateSpO2(ppgValues: number[]): number {
-    // Check if the processor has an SpO2Processor instance
-    if (this.processor.spo2Processor && typeof this.processor.spo2Processor.calculateSpO2 === 'function') {
-      return this.processor.spo2Processor.calculateSpO2(ppgValues);
+    // Validación estricta de datos
+    if (!ppgValues || ppgValues.length < 30) {
+      console.warn("VitalSignsProcessor: Datos insuficientes para calcular SpO2", {
+        longitud: ppgValues?.length || 0,
+        requeridos: 30
+      });
+      return 0; // Indicar medición inválida
     }
     
-    // If the SpO2 processor isn't available, return a default value
-    console.warn('VitalSignsProcessor: Unable to calculate SpO2, processor not available');
-    return 0; // Return zero to indicate inability to measure instead of simulating
+    // Verificar disponibilidad del procesador y método
+    if (this.processor.spo2Processor && typeof this.processor.spo2Processor.calculateSpO2 === 'function') {
+      const result = this.processor.spo2Processor.calculateSpO2(ppgValues);
+      
+      console.log("VitalSignsProcessor: SpO2 calculado de datos PPG reales", {
+        resultado: result,
+        muestras: ppgValues.length
+      });
+      
+      return result;
+    }
+    
+    console.error("VitalSignsProcessor: Procesador SpO2 no disponible");
+    return 0; // Indicar imposibilidad de medición
   }
 }
