@@ -144,10 +144,11 @@ const PPGSignalMeter = ({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E5DEFF');
-    gradient.addColorStop(0.3, '#FDE1D3');
-    gradient.addColorStop(0.7, '#F2FCE2');
-    gradient.addColorStop(1, '#D3E4FD');
+    gradient.addColorStop(0, '#E5DEFF');     // Keeping original soft purple
+    gradient.addColorStop(0.3, '#FDE1D3');   // Keeping original soft peach
+    gradient.addColorStop(0.65, '#F2FCE2');  // Slight adjustment to position
+    gradient.addColorStop(0.85, '#D8E8FF');  // Slightly more saturated blue
+    gradient.addColorStop(1, '#C5DFFF');     // Deeper blue at the bottom for subtle intensity
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -155,7 +156,11 @@ const PPGSignalMeter = ({
     ctx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
+        // Slightly increase contrast in the checker pattern in lower half
+        const alphaModifier = j > CANVAS_HEIGHT/2 ? 0.025 : 0;
+        ctx.fillStyle = j % 40 === 0 ? 
+          `rgba(0,0,0,${0.2 + alphaModifier})` : 
+          `rgba(255,255,255,${0.2 + alphaModifier})`;
         ctx.fillRect(i, j, 10, 10);
       }
     }
