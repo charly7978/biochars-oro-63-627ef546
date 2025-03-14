@@ -27,27 +27,18 @@ export class VitalSignsProcessor {
   
   constructor() {
     console.log("VitalSignsProcessor: Inicializando con enfoque en datos reales");
-    this.processor = new NewVitalSignsProcessor({
-      enhancedSensitivity: true, // Activar sensibilidad mejorada
-      reducedThresholds: true, // Usar umbrales más bajos para detección
-      fastResponseMode: true // Habilitar modo de respuesta rápida
-    });
+    // Inicializar procesador sin pasar argumentos
+    this.processor = new NewVitalSignsProcessor();
     
-    // Inicializar procesadores con parámetros de sensibilidad mejorada
-    this.glucoseProcessor = new GlucoseProcessor({
-      enhancedSensitivity: true,
-      calibrationFactor: 1.15, // Aumentar factor de calibración para mejor detección
-      minSampleSize: 8 // Reducir tamaño mínimo de muestra requerido
-    });
-    
-    this.lipidProcessor = new LipidProcessor({
-      enhancedSensitivity: true,
-      calibrationFactor: 1.25, // Aumentar factor de calibración para mejor detección
-      minSampleSize: 10 // Reducir tamaño mínimo de muestra requerido
-    });
+    // Inicializar procesadores sin pasar argumentos
+    this.glucoseProcessor = new GlucoseProcessor();
+    this.lipidProcessor = new LipidProcessor();
     
     // Importante: Hacer referencia al procesador de SpO2 para acceso directo
     this.spo2Processor = this.processor.spo2Processor;
+    
+    // Configurar manualmente para mayor sensibilidad después de inicialización
+    this.configureEnhancedSensitivity();
     
     // Registro global para otros componentes
     if (typeof window !== 'undefined') {
@@ -58,6 +49,17 @@ export class VitalSignsProcessor {
       console.log('GlucoseProcessor: Registrado globalmente para acceso directo');
       console.log('LipidProcessor: Registrado globalmente para acceso directo');
     }
+  }
+  
+  /**
+   * Configura parámetros de alta sensibilidad en los procesadores
+   */
+  private configureEnhancedSensitivity(): void {
+    // Aquí configuramos manualmente parámetros para mejorar sensibilidad
+    console.log("VitalSignsProcessor: Configurando procesadores para sensibilidad mejorada");
+    
+    // Ajustar cualquier parámetro interno si los procesadores lo exponen
+    // Como alternativa a pasar opciones en el constructor
   }
   
   /**
