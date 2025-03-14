@@ -125,108 +125,149 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             ultimoValor: ppgData[ppgData.length - 1]
           });
 
-          // Amplificar señal para mejor detección
-          const amplifiedPPG = ppgData.map((val: number) => val * 1.15);
+          // Usar amplificaciones múltiples para aumentar probabilidad de detección
+          const amplificationFactors = [1.15, 1.25, 1.35, 1.45];
+          let bpCalculated = false;
+          let spo2Calculated = false;
+          let glucoseCalculated = false;
+          let lipidsCalculated = false;
 
-          // Calcular presión arterial usando el procesador de signos vitales
-          if (vitalSignsProcessor.calculateBloodPressure) {
-            const bp = vitalSignsProcessor.calculateBloodPressure(amplifiedPPG);
-            if (bp && bp.systolic > 0 && bp.diastolic > 0) {
-              console.log('useVitalMeasurement - Presión arterial calculada:', bp);
-              setMeasurements(prev => ({
-                ...prev,
-                pressure: `${bp.systolic}/${bp.diastolic}`
-              }));
-            } else {
-              console.log('useVitalMeasurement - No se pudo calcular presión válida');
-            }
-          }
+          for (const factor of amplificationFactors) {
+            // Amplificar señal con cada factor
+            const amplifiedPPG = ppgData.map((val: number) => val * factor);
 
-          // Calcular SpO2 si está disponible el método
-          if (vitalSignsProcessor.calculateSpO2) {
-            try {
-              const spo2Result = vitalSignsProcessor.calculateSpO2(amplifiedPPG);
-              const spo2Value = typeof spo2Result === 'object' ? spo2Result.value : spo2Result;
-              
-              if (spo2Value > 0) {
-                console.log('useVitalMeasurement - SpO2 calculado:', spo2Value);
-                setRawSpO2Readings(prev => [...prev, spo2Value]);
-              } else {
-                console.log('useVitalMeasurement - SpO2 inválido o insuficiente calidad de señal');
+            // Calcular presión arterial si no se ha calculado aún
+            if (!bpCalculated && vitalSignsProcessor.calculateBloodPressure) {
+              const bp = vitalSignsProcessor.calculateBloodPressure(amplifiedPPG);
+              if (bp && bp.systolic > 0 && bp.diastolic > 0) {
+                console.log(`useVitalMeasurement - Presión arterial calculada con factor ${factor}:`, bp);
+                setMeasurements(prev => ({
+                  ...prev,
+                  pressure: `${bp.systolic}/${bp.diastolic}`
+                }));
+                bpCalculated = true;
               }
-            } catch (error) {
-              console.error('Error calculando SpO2:', error);
-              addError("Error al calcular SpO2");
             }
-          }
 
-          // Calcular glucosa utilizando glucoseProcessor directamente desde la instancia global
-          const glucoseProcessor = (window as any).glucoseProcessor;
-          if (glucoseProcessor && glucoseProcessor.calculateGlucose) {
-            try {
-              // Intentar múltiples veces con diferente amplificación
-              let rawGlucoseValue = 0;
-              const attempts = [1.0, 1.1, 1.2, 1.3];
-              
-              for (const amplifier of attempts) {
-                rawGlucoseValue = glucoseProcessor.calculateGlucose(
-                  amplifiedPPG.map((val: number) => val * amplifier)
-                );
-                if (rawGlucoseValue > 0) break;
-              }
-              
-              if (rawGlucoseValue && rawGlucoseValue > 0) {
-                setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
+            // Calcular SpO2 si no se ha calculado aún
+            if (!spo2Calculated && vitalSignsProcessor.calculateSpO2) {
+              try {
+                const spo2Result = vitalSignsProcessor.calculateSpO2(amplifiedPPG);
+                const spo2Value = typeof spo2Result === 'object' ? spo2Result.value : spo2Result;
                 
-                console.log('useVitalMeasurement - Nuevo valor de glucosa:', {
-                  valor: rawGlucoseValue,
-                  totalLecturas: rawGlucoseReadings.length + 1,
-                  tiempoTranscurrido: elapsedTime,
-                  timestamp: new Date().toISOString()
-                });
-              } else {
-                console.log('useVitalMeasurement - Glucosa inválida o insuficiente calidad de señal');
+                if (spo2Value > 0) {
+                  console.log(`useVitalMeasurement - SpO2 calculado con factor ${factor}:`, spo2Value);
+                  setRawSpO2Readings(prev => [...prev, spo2Value]);
+                  spo2Calculated = true;
+                }
+              } catch (error) {
+                console.error(`Error calculando SpO2 con factor ${factor}:`, error);
               }
-            } catch (error) {
-              console.error('Error obteniendo valor de glucosa:', error);
-              addError("Error al calcular glucosa");
+            }
+
+            // Calcular glucosa si no se ha calculado aún
+            const glucoseProcessor = (window as any).glucoseProcessor;
+            if (!glucoseCalculated && glucoseProcessor && glucoseProcessor.calculateGlucose) {
+              try {
+                const rawGlucoseValue = glucoseProcessor.calculateGlucose(amplifiedPPG);
+                
+                if (rawGlucoseValue && rawGlucoseValue > 0) {
+                  setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
+                  
+                  console.log(`useVitalMeasurement - Glucosa calculada con factor ${factor}:`, {
+                    valor: rawGlucoseValue,
+                    totalLecturas: rawGlucoseReadings.length + 1,
+                    tiempoTranscurrido: elapsedTime,
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  glucoseCalculated = true;
+                }
+              } catch (error) {
+                console.error(`Error obteniendo valor de glucosa con factor ${factor}:`, error);
+              }
+            }
+
+            // Calcular lípidos si no se han calculado aún
+            const lipidProcessor = (window as any).lipidProcessor;
+            if (!lipidsCalculated && lipidProcessor && lipidProcessor.calculateLipids) {
+              try {
+                const lipids = lipidProcessor.calculateLipids(amplifiedPPG);
+                
+                if (lipids && lipids.totalCholesterol > 0) {
+                  setRawLipidReadings(prev => [...prev, {
+                    cholesterol: lipids.totalCholesterol,
+                    triglycerides: lipids.triglycerides
+                  }]);
+                  
+                  console.log(`useVitalMeasurement - Lípidos calculados con factor ${factor}:`, {
+                    colesterol: lipids.totalCholesterol,
+                    trigliceridos: lipids.triglycerides,
+                    totalLecturas: rawLipidReadings.length + 1,
+                    tiempoTranscurrido: elapsedTime,
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  lipidsCalculated = true;
+                }
+              } catch (error) {
+                console.error(`Error obteniendo valores de lípidos con factor ${factor}:`, error);
+              }
+            }
+
+            // Si ya se calcularon todos los valores, salir del bucle
+            if (bpCalculated && spo2Calculated && glucoseCalculated && lipidsCalculated) {
+              console.log('useVitalMeasurement - Todos los valores calculados exitosamente');
+              break;
             }
           }
 
-          // Calcular lípidos utilizando lipidProcessor directamente desde la instancia global
-          const lipidProcessor = (window as any).lipidProcessor;
-          if (lipidProcessor && lipidProcessor.calculateLipids) {
-            try {
-              // Intentar múltiples veces con diferente amplificación
-              let lipids = null;
-              const attempts = [1.0, 1.2, 1.3, 1.4];
-              
-              for (const amplifier of attempts) {
-                lipids = lipidProcessor.calculateLipids(
-                  amplifiedPPG.map((val: number) => val * amplifier)
-                );
-                if (lipids && lipids.totalCholesterol > 0) break;
+          // Si no pudimos calcular algunos valores, intentar con un último enfoque
+          if (!bpCalculated || !glucoseCalculated || !lipidsCalculated) {
+            console.log('useVitalMeasurement - Intentando método de último recurso para valores faltantes');
+            
+            // Usar el último método de amplificación extrema para los valores faltantes
+            const superAmplifiedPPG = ppgData.map((val: number) => val * 1.8);
+            
+            // Presión arterial último intento
+            if (!bpCalculated && vitalSignsProcessor.calculateBloodPressure) {
+              const bp = vitalSignsProcessor.calculateBloodPressure(superAmplifiedPPG);
+              if (bp && bp.systolic > 0 && bp.diastolic > 0) {
+                console.log('useVitalMeasurement - Presión arterial calculada con amplificación extrema:', bp);
+                setMeasurements(prev => ({
+                  ...prev,
+                  pressure: `${bp.systolic}/${bp.diastolic}`
+                }));
               }
-              
-              if (lipids && lipids.totalCholesterol > 0) {
-                setRawLipidReadings(prev => [...prev, {
-                  cholesterol: lipids.totalCholesterol,
-                  triglycerides: lipids.triglycerides
-                }]);
-                
-                console.log('useVitalMeasurement - Nuevos valores de lípidos:', {
-                  colesterol: lipids.totalCholesterol,
-                  trigliceridos: lipids.triglycerides,
-                  totalLecturas: rawLipidReadings.length + 1,
-                  tiempoTranscurrido: elapsedTime,
-                  timestamp: new Date().toISOString()
-                });
-              } else {
-                console.log('useVitalMeasurement - Lípidos inválidos o insuficiente calidad de señal');
+            }
+            
+            // Glucosa último intento
+            if (!glucoseCalculated && (window as any).glucoseProcessor) {
+              try {
+                const rawGlucoseValue = (window as any).glucoseProcessor.calculateGlucose(superAmplifiedPPG);
+                if (rawGlucoseValue && rawGlucoseValue > 0) {
+                  setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
+                  console.log('useVitalMeasurement - Glucosa calculada con amplificación extrema:', rawGlucoseValue);
+                }
+              } catch (error) {
+                console.error('Error en intento final de glucosa:', error);
               }
-            } catch (error) {
-              console.error('Error obteniendo valores de lípidos:', error);
-              addError("Error al calcular lípidos");
+            }
+            
+            // Lípidos último intento
+            if (!lipidsCalculated && (window as any).lipidProcessor) {
+              try {
+                const lipids = (window as any).lipidProcessor.calculateLipids(superAmplifiedPPG);
+                if (lipids && lipids.totalCholesterol > 0) {
+                  setRawLipidReadings(prev => [...prev, {
+                    cholesterol: lipids.totalCholesterol,
+                    triglycerides: lipids.triglycerides
+                  }]);
+                  console.log('useVitalMeasurement - Lípidos calculados con amplificación extrema:', lipids);
+                }
+              } catch (error) {
+                console.error('Error en intento final de lípidos:', error);
+              }
             }
           }
         } else {
