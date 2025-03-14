@@ -31,6 +31,7 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
+  const [lastProcessTime, setLastProcessTime] = useState(Date.now());
   const measurementTimerRef = useRef<number | null>(null);
   const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
     timestamp: number;
@@ -354,11 +355,13 @@ const Index = () => {
       let lastFpsUpdateTime = Date.now();
       let processingFps = 0;
       
+      let lastProcessTimeRef = Date.now();
+      
       const processImage = async () => {
         if (!isMonitoring) return;
         
         const now = Date.now();
-        const timeSinceLastProcess = now - lastProcessTime;
+        const timeSinceLastProcess = now - lastProcessTimeRef;
         
         if (timeSinceLastProcess >= targetFrameInterval) {
           try {
@@ -398,7 +401,8 @@ const Index = () => {
             }
             
             frameCount++;
-            lastProcessTime = now;
+            lastProcessTimeRef = now;
+            setLastProcessTime(now);
             
             if (now - lastFpsUpdateTime > 1000) {
               processingFps = frameCount;
