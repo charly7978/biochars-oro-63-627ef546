@@ -6,6 +6,7 @@ interface VitalMeasurements {
   spo2: number;
   pressure: string;
   arrhythmiaCount: string | number;
+  glucose: number; // Added glucose to the measurements interface
 }
 
 export const useVitalMeasurement = (isMeasuring: boolean) => {
@@ -13,9 +14,11 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     heartRate: 0,
     spo2: 0,
     pressure: "--/--",
-    arrhythmiaCount: 0
+    arrhythmiaCount: 0,
+    glucose: 0  // Initialize glucose value
   });
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [stableGlucose, setStableGlucose] = useState(0); // Added state for stable glucose readings
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -38,7 +41,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           heartRate: 0,
           spo2: 0,
           pressure: "--/--",
-          arrhythmiaCount: "--"
+          arrhythmiaCount: "--",
+          glucose: 0 // Reset glucose value
         };
         
         console.log('useVitalMeasurement - Nuevos valores tras reinicio', newValues);
@@ -46,6 +50,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       
       setElapsedTime(0);
+      setStableGlucose(0); // Reset stable glucose
       return;
     }
 
@@ -56,6 +61,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     });
     
     const MEASUREMENT_DURATION = 30000;
+    const STABILIZATION_THRESHOLD = 20; // Time in seconds before stabilizing glucose reading
 
     const updateMeasurements = () => {
       const processor = (window as any).heartBeatProcessor;
@@ -68,6 +74,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       }
 
       const bpm = processor.getFinalBPM() || 0;
+      const glucoseProcessor = (window as any).glucoseProcessor;
+      
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
         processorType: processor ? typeof processor : 'undefined',
@@ -75,26 +83,54 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         bpm,
         rawBPM: processor.getFinalBPM(),
         confidence: processor.getConfidence ? processor.getConfidence() : 'N/A',
+        glucoseProcessor: !!glucoseProcessor,
         timestamp: new Date().toISOString()
       });
 
+      // Only update once we have a reasonable amount of data (15 seconds in)
+      // This prevents the fluctuating values during initial measurement
+      if (elapsedTime >= STABILIZATION_THRESHOLD && glucoseProcessor && !stableGlucose) {
+        try {
+          // Get glucose value from processor if available
+          const glucoseValue = glucoseProcessor.calculateGlucose ?
+            Math.round(glucoseProcessor.calculateGlucose([])) : 0;
+          
+          if (glucoseValue > 0) {
+            console.log('useVitalMeasurement - Estableciendo nivel de glucosa estable', {
+              value: glucoseValue,
+              elapsedTime,
+              timestamp: new Date().toISOString()
+            });
+            setStableGlucose(glucoseValue);
+          }
+        } catch (error) {
+          console.error('Error obteniendo valor de glucosa:', error);
+        }
+      }
+
       setMeasurements(prev => {
-        if (prev.heartRate === bpm) {
-          console.log('useVitalMeasurement - BPM sin cambios, no se actualiza', {
-            currentBPM: prev.heartRate,
-            timestamp: new Date().toISOString()
-          });
+        if (prev.heartRate === bpm && 
+            (elapsedTime < STABILIZATION_THRESHOLD || (stableGlucose > 0 && prev.glucose === stableGlucose))) {
           return prev;
         }
         
+        // Update glucose only once we have a stable reading
+        const glucoseValue = elapsedTime >= STABILIZATION_THRESHOLD ? 
+          (stableGlucose || prev.glucose) : 0;
+        
         const newValues = {
           ...prev,
-          heartRate: bpm
+          heartRate: bpm,
+          glucose: glucoseValue // Use stable glucose value
         };
         
-        console.log('useVitalMeasurement - Actualizando BPM', {
+        console.log('useVitalMeasurement - Actualizando valores', {
           prevBPM: prev.heartRate,
           newBPM: bpm,
+          prevGlucose: prev.glucose,
+          newGlucose: glucoseValue,
+          stableGlucose,
+          elapsedTime,
           timestamp: new Date().toISOString()
         });
         
@@ -111,6 +147,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       console.log('useVitalMeasurement - Progreso de medición', {
         elapsed: elapsed / 1000,
         porcentaje: (elapsed / MEASUREMENT_DURATION) * 100,
+        stableGlucose,
         timestamp: new Date().toISOString()
       });
       
@@ -121,7 +158,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       if (elapsed >= MEASUREMENT_DURATION) {
         console.log('useVitalMeasurement - Medición completada', {
           duracionTotal: MEASUREMENT_DURATION / 1000,
-          resultadosFinal: {...measurements},
+          resultadosFinal: {...measurements, glucose: stableGlucose},
           timestamp: new Date().toISOString()
         });
         
@@ -138,7 +175,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements]);
+  }, [isMeasuring, measurements, elapsedTime, stableGlucose]);
 
   return {
     ...measurements,
