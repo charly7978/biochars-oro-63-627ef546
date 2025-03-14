@@ -305,8 +305,8 @@ export class VitalSignsProcessor {
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calcular glucosa con validación de confianza
-    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
+    // Calcular glucosa con validación de confianza - Convertir a entero
+    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
     // Calcular lípidos con validación de confianza
@@ -467,3 +467,4 @@ export class VitalSignsProcessor {
     this.lastValidResults = null;
   }
 }
+
