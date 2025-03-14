@@ -126,10 +126,10 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           // Calcular SpO2 si está disponible el método
           if (vitalSignsProcessor.calculateSpO2) {
             try {
-              const spo2Value = vitalSignsProcessor.calculateSpO2(ppgData);
-              if (spo2Value > 0) {
-                console.log('useVitalMeasurement - SpO2 calculado:', spo2Value);
-                setRawSpO2Readings(prev => [...prev, spo2Value]);
+              const spo2 = vitalSignsProcessor.calculateSpO2(ppgData);
+              if (spo2 > 0) {
+                console.log('useVitalMeasurement - SpO2 calculado:', spo2);
+                setRawSpO2Readings(prev => [...prev, spo2]);
               } else {
                 console.log('useVitalMeasurement - SpO2 inválido o insuficiente calidad de señal');
               }
@@ -143,9 +143,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           const glucoseProcessor = (window as any).glucoseProcessor;
           if (glucoseProcessor && glucoseProcessor.calculateGlucose) {
             try {
-              const glucoseResult = glucoseProcessor.calculateGlucose(ppgData);
-              const rawGlucoseValue = typeof glucoseResult === 'object' ? 
-                glucoseResult.value : glucoseResult;
+              const rawGlucoseValue = glucoseProcessor.calculateGlucose(ppgData);
               
               if (rawGlucoseValue && rawGlucoseValue > 0) {
                 setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
