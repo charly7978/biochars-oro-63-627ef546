@@ -40,6 +40,11 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   cholesterol = '--',
   triglycerides = '--'
 }) => {
+  // Convert values to strings if they're numbers and ensure we display '--' for null, undefined, or 0 values
+  const formattedGlucose = glucose === 0 || glucose === null || glucose === undefined ? '--' : glucose;
+  const formattedCholesterol = cholesterol === 0 || cholesterol === null || cholesterol === undefined ? '--' : cholesterol;
+  const formattedTriglycerides = triglycerides === 0 || triglycerides === null || triglycerides === undefined ? '--' : triglycerides;
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-md">
@@ -72,15 +77,15 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Glucosa</div>
-              <div className="font-bold text-lg">{glucose || '--'} mg/dL</div>
+              <div className="font-bold text-lg">{formattedGlucose} mg/dL</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Colesterol</div>
-              <div className="font-bold text-lg">{cholesterol || '--'} mg/dL</div>
+              <div className="font-bold text-lg">{formattedCholesterol} mg/dL</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Triglicéridos</div>
-              <div className="font-bold text-lg">{triglycerides || '--'} mg/dL</div>
+              <div className="font-bold text-lg">{formattedTriglycerides} mg/dL</div>
             </div>
           </div>
         </div>
