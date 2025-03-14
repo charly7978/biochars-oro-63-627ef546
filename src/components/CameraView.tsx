@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -19,18 +18,24 @@ const CameraView = ({
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
     const androidDetected = /android/i.test(userAgent);
+    const windowsDetected = /windows nt/i.test(userAgent);
+    
     console.log("Plataforma detectada:", {
       userAgent,
       isAndroid: androidDetected,
+      isWindows: windowsDetected,
       isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
     });
+    
     setIsAndroid(androidDetected);
+    setIsWindows(windowsDetected);
   }, []);
 
   const stopCamera = async () => {
@@ -68,29 +73,37 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isWindows = /windows nt/i.test(navigator.userAgent);
 
-      // Increased resolution for better clarity
-      const baseVideoConstraints: MediaTrackConstraints = {
+      let baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
       };
-
-      if (isAndroid) {
+      
+      if (isWindows) {
+        console.log("Configurando para Windows con resolución reducida (720p)");
+        Object.assign(baseVideoConstraints, {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 }
+        });
+      } 
+      else if (isAndroid) {
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         });
-      } else if (isIOS) {
+      } 
+      else if (isIOS) {
         console.log("Configurando para iOS");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         });
-      } else {
+      } 
+      else {
         console.log("Configurando para escritorio con máxima resolución");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 60, max: 60 },
@@ -193,12 +206,10 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Apply high performance rendering settings
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
         
-        // Force hardware acceleration
         videoRef.current.style.backfaceVisibility = 'hidden';
         videoRef.current.style.perspective = '1000px';
       }
