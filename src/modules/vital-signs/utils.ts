@@ -1,163 +1,124 @@
 
 /**
- * Utility functions for vital signs processing
+ * Calcula la componente AC (amplitud de la señal pulsátil) de una señal PPG
+ * @param values Array de valores de la señal PPG
+ * @returns Valor de la componente AC
  */
-
-/**
- * Calculates the AC component of a PPG signal
- */
-export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
-
-/**
- * Calculates the DC component of a PPG signal
- */
-export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-/**
- * Calculates the amplitude of a PPG signal
- */
-export function calculateAmplitude(
-  values: number[],
-  peaks: number[],
-  valleys: number[]
-): number {
-  if (peaks.length === 0 || valleys.length === 0) return 0;
-
-  const amps: number[] = [];
+export const calculateAC = (values: number[]): number => {
+  if (!values || values.length === 0) return 0;
   
-  // Find matching peaks and valleys
-  for (let i = 0; i < peaks.length; i++) {
-    // Find the nearest valley after this peak
-    let nearestValleyIndex = -1;
-    let minDistance = Number.MAX_VALUE;
-    
-    for (let j = 0; j < valleys.length; j++) {
-      const distance = Math.abs(valleys[j] - peaks[i]);
-      if (distance < minDistance && valleys[j] > peaks[i]) {
-        minDistance = distance;
-        nearestValleyIndex = j;
-      }
-    }
-    
-    if (nearestValleyIndex >= 0) {
-      const amp = values[peaks[i]] - values[valleys[nearestValleyIndex]];
-      if (amp > 0) {
-        amps.push(amp);
-      }
-    }
-  }
+  // Cálculo robusto utilizando percentiles para evitar influencia de outliers
+  const sorted = [...values].sort((a, b) => a - b);
+  const p95 = sorted[Math.floor(sorted.length * 0.95)];
+  const p5 = sorted[Math.floor(sorted.length * 0.05)];
   
-  if (amps.length === 0) return 0;
-
-  // Return mean amplitude
-  return amps.reduce((a, b) => a + b, 0) / amps.length;
-}
+  return p95 - p5;
+};
 
 /**
- * Finds peaks and valleys in a PPG signal
+ * Calcula la componente DC (nivel de señal medio) de una señal PPG
+ * @param values Array de valores de la señal PPG
+ * @returns Valor de la componente DC
  */
-export function findPeaksAndValleys(values: number[]): {
-  peakIndices: number[];
-  valleyIndices: number[];
-} {
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
+export const calculateDC = (values: number[]): number => {
+  if (!values || values.length === 0) return 0;
   
-  // Simplified peak/valley detection using local maxima/minima
-  for (let i = 2; i < values.length - 2; i++) {
-    const v = values[i];
-    
-    // Check if this point is a peak
-    if (v > values[i - 1] && v > values[i - 2] && 
-        v > values[i + 1] && v > values[i + 2]) {
-      peakIndices.push(i);
-    }
-    
-    // Check if this point is a valley
-    if (v < values[i - 1] && v < values[i - 2] && 
-        v < values[i + 1] && v < values[i + 2]) {
-      valleyIndices.push(i);
-    }
-  }
-  
-  return { peakIndices, valleyIndices };
-}
+  // Usar mediana en lugar de media para mayor robustez a outliers
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
 
 /**
- * Create a simple moving average filter
+ * Aplica un filtro de media móvil simple a un array de valores
+ * @param values Array de valores a filtrar
+ * @param windowSize Tamaño de la ventana del filtro
+ * @returns Array filtrado
  */
-export function applySMAFilter(values: number[], windowSize: number = 3): number[] {
+export const applySMAFilter = (values: number[], windowSize: number = 5): number[] => {
   if (!values || values.length === 0) return [];
   if (values.length <= windowSize) return [...values];
   
   const result: number[] = [];
   
-  // Initialize first values without full window
-  for (let i = 0; i < windowSize - 1; i++) {
+  for (let i = 0; i < values.length; i++) {
     let sum = 0;
-    for (let j = 0; j <= i; j++) {
+    let count = 0;
+    
+    for (let j = Math.max(0, i - Math.floor(windowSize / 2)); 
+         j <= Math.min(values.length - 1, i + Math.floor(windowSize / 2)); 
+         j++) {
       sum += values[j];
+      count++;
     }
-    result.push(sum / (i + 1));
-  }
-  
-  // Apply SMA with full window
-  for (let i = windowSize - 1; i < values.length; i++) {
-    let sum = 0;
-    for (let j = 0; j < windowSize; j++) {
-      sum += values[i - j];
-    }
-    result.push(sum / windowSize);
+    
+    result.push(sum / count);
   }
   
   return result;
-}
+};
 
 /**
- * Calculate the RMS value of a signal
+ * Calcula la variabilidad de la frecuencia cardíaca (HRV) a partir de intervalos RR
+ * @param rrIntervals Array de intervalos RR en milisegundos
+ * @returns Valor RMSSD (Root Mean Square of Successive Differences)
  */
-export function calculateRMS(values: number[]): number {
-  if (values.length === 0) return 0;
+export const calculateRMSSD = (rrIntervals: number[]): number => {
+  if (!rrIntervals || rrIntervals.length < 2) return 0;
   
-  const sumOfSquares = values.reduce((sum, val) => sum + val * val, 0);
-  return Math.sqrt(sumOfSquares / values.length);
-}
+  let sumSquaredDiff = 0;
+  for (let i = 1; i < rrIntervals.length; i++) {
+    const diff = rrIntervals[i] - rrIntervals[i-1];
+    sumSquaredDiff += diff * diff;
+  }
+  
+  return Math.sqrt(sumSquaredDiff / (rrIntervals.length - 1));
+};
 
 /**
- * Calculate the standard deviation of a signal
+ * Detecta si hay un latido prematuro basado en la variación de intervalos RR
+ * @param rrIntervals Array de intervalos RR en milisegundos
+ * @returns true si se detecta un latido prematuro
  */
-export function calculateStandardDeviation(values: number[]): number {
-  if (values.length <= 1) return 0;
+export const detectPrematureBeat = (rrIntervals: number[]): boolean => {
+  if (!rrIntervals || rrIntervals.length < 3) return false;
   
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-  const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+  const recentRR = rrIntervals.slice(-3);
+  const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
+  const lastRR = recentRR[recentRR.length - 1];
   
-  return Math.sqrt(variance);
-}
+  // Un latido prematuro típicamente tiene una diferencia de >25% respecto a la media
+  return Math.abs(lastRR - avgRR) > (avgRR * 0.25);
+};
 
 /**
- * Detect outliers using IQR method
+ * Verifica la calidad de la señal PPG
+ * @param values Array de valores PPG
+ * @returns Puntuación de calidad (0-100)
  */
-export function removeOutliers(values: number[], factor: number = 1.5): number[] {
-  if (values.length < 4) return [...values];
+export const calculateSignalQuality = (values: number[]): number => {
+  if (!values || values.length < 10) return 0;
   
+  // Calcular componentes básicas
+  const ac = calculateAC(values);
+  const dc = calculateDC(values);
+  
+  // Si DC es 0, la calidad es 0
+  if (dc === 0) return 0;
+  
+  // Calcular índice de perfusión
+  const perfusionIndex = ac / dc;
+  
+  // Calcular variabilidad
   const sorted = [...values].sort((a, b) => a - b);
-  const q1Index = Math.floor(sorted.length / 4);
-  const q3Index = Math.floor(3 * sorted.length / 4);
+  const p90 = sorted[Math.floor(sorted.length * 0.9)];
+  const p10 = sorted[Math.floor(sorted.length * 0.1)];
+  const range = p90 - p10;
   
-  const q1 = sorted[q1Index];
-  const q3 = sorted[q3Index];
-  const iqr = q3 - q1;
+  // Puntuación basada en perfusión y variabilidad
+  let qualityScore = (perfusionIndex * 1000) * (range > 0 ? 1 : 0.1);
   
-  const lowerBound = q1 - factor * iqr;
-  const upperBound = q3 + factor * iqr;
+  // Limitar a 0-100
+  qualityScore = Math.min(100, Math.max(0, qualityScore));
   
-  return values.filter(val => val >= lowerBound && val <= upperBound);
-}
+  return Math.round(qualityScore);
+};
