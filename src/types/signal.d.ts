@@ -29,7 +29,7 @@ export interface SignalProcessor {
   calibrate: () => Promise<boolean>;
   onSignalReady?: (signal: ProcessedSignal) => void;
   onError?: (error: ProcessingError) => void;
-  getPPGBuffer?: () => number[]; // Added this method to fix type errors
+  getPPGBuffer?: () => number[]; // Method to access PPG buffer data
 }
 
 declare global {
