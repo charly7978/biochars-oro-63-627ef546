@@ -62,8 +62,8 @@ export const optimizeTextRendering = (element: HTMLElement): void => {
   element.style.textRendering = 'geometricPrecision';
   
   if (isHighDpiDisplay()) {
-    element.style.webkitFontSmoothing = 'antialiased';
-    element.style.mozOsxFontSmoothing = 'grayscale';
+    // Fix for TypeScript error - using setAttribute instead of direct property assignment
+    element.setAttribute('style', element.getAttribute('style') + ' -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;');
   }
   
   // For numeric displays that need to be particularly crisp
