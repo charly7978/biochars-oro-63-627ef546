@@ -47,6 +47,8 @@
   font-feature-settings: "tnum";
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  font-weight: 600;
+  text-rendering: geometricPrecision;
 }
 
 .crisp-text {
@@ -71,4 +73,76 @@ button, .button {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   text-shadow: 0 0 1px rgba(255,255,255,0.1);
+  -webkit-font-smoothing: subpixel-antialiased;
+  text-rendering: geometricPrecision;
+}
+
+/* Enhanced medical value readability classes */
+.value-critical {
+  font-feature-settings: "tnum", "cv01", "cv02", "cv03";
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: -0.02em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  font-weight: 700;
+  color: #ea384c;
+}
+
+.value-warning {
+  font-feature-settings: "tnum", "cv01", "cv02";
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: -0.01em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  font-weight: 600;
+  color: #f97316;
+}
+
+.value-normal {
+  font-feature-settings: "tnum", "cv01";
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  font-weight: 500;
+  color: #22c55e;
+}
+
+/* Clinical data presentation */
+.clinical-data {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: "tnum", "salt", "ss01";
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Enhaced units display */
+.unit-text {
+  font-size: 0.65em;
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.8;
+  margin-left: 0.15em;
+  vertical-align: baseline;
+}
+
+/* Medical measurements grid */
+.measurements-grid {
+  display: grid;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Precision number display */
+.precision-number {
+  font-feature-settings: "tnum", "zero";
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: -0.02em;
+  word-spacing: -0.05em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
 }
