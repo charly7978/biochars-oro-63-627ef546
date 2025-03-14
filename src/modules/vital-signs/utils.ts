@@ -110,3 +110,42 @@ export const calculateSignalQuality = (values: number[]): number => {
   
   return Math.round(qualityScore);
 };
+
+/**
+ * Calcula la amplitud de una señal PPG
+ * @param values Array de valores de la señal PPG
+ * @returns Amplitud de la señal
+ */
+export const calculateAmplitude = (values: number[]): number => {
+  if (!values || values.length === 0) return 0;
+  
+  // Amplitud simple: diferencia entre máximo y mínimo
+  return Math.max(...values) - Math.min(...values);
+};
+
+/**
+ * Encuentra picos y valles en una señal PPG
+ * @param values Array de valores de la señal PPG
+ * @returns Array con índices de picos y valles
+ */
+export const findPeaksAndValleys = (values: number[]): {peaks: number[], valleys: number[]} => {
+  if (!values || values.length < 3) return {peaks: [], valleys: []};
+  
+  const peaks: number[] = [];
+  const valleys: number[] = [];
+  
+  // Método simple para encontrar picos y valles
+  for (let i = 1; i < values.length - 1; i++) {
+    // Es un pico si es mayor que los valores adyacentes
+    if (values[i] > values[i-1] && values[i] > values[i+1]) {
+      peaks.push(i);
+    }
+    // Es un valle si es menor que los valores adyacentes
+    else if (values[i] < values[i-1] && values[i] < values[i+1]) {
+      valleys.push(i);
+    }
+  }
+  
+  return {peaks, valleys};
+};
+
