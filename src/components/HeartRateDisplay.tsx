@@ -17,7 +17,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   };
 
   return (
-    <div className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform">
+    <div className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform performance-boost">
       <h3 className="text-gray-400/90 text-sm mb-1 crisp-text">Heart Rate</h3>
       <div className="flex items-baseline justify-center gap-1">
         <span className={`text-2xl font-bold vital-display ${getValueClass()}`}>

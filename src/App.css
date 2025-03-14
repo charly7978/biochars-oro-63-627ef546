@@ -51,6 +51,7 @@
   will-change: transform, opacity;
   transform: translateZ(0);
   backface-visibility: hidden;
+  contain: content;
 }
 
 .crisp-text {
@@ -79,6 +80,7 @@ button, .button {
   text-rendering: geometricPrecision;
   transform: translateZ(0);
   will-change: contents;
+  contain: content;
 }
 
 /* Enhanced medical value readability classes */
@@ -139,6 +141,7 @@ button, .button {
   font-feature-settings: "tnum";
   font-variant-numeric: tabular-nums;
   text-align: right;
+  contain: layout;
 }
 
 /* Precision number display */
@@ -158,6 +161,7 @@ button, .button {
   backface-visibility: hidden;
   -webkit-perspective: 1000;
   perspective: 1000;
+  contain: paint layout;
 }
 
 /* Enhanced smooth animations */
@@ -165,5 +169,14 @@ button, .button {
   .smooth-animation {
     transition-duration: 0.25s;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Enhanced frame rate for heart rate display */
+@media (prefers-reduced-motion: no-preference) {
+  .vital-display {
+    transform: translate3d(0, 0, 0);
+    transition: all 0.15s cubic-bezier(0.1, 0.7, 0.1, 1);
   }
 }
