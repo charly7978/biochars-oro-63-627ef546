@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -68,28 +69,34 @@ const CameraView = ({
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
+      // Increased resolution for better clarity
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       };
 
       if (isAndroid) {
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 15, max: 30 },
-          width: { ideal: 720 },
-          height: { ideal: 480 }
-        });
-      } else if (isIOS) {
-        console.log("Configurando para iOS");
-        Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         });
+      } else if (isIOS) {
+        console.log("Configurando para iOS");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
       } else {
-        console.log("Configurando para escritorio");
+        console.log("Configurando para escritorio con máxima resolución");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
       }
 
       const constraints: MediaStreamConstraints = {
@@ -186,11 +193,14 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        if (isAndroid || isIOS) {
-          videoRef.current.style.willChange = 'transform';
-          videoRef.current.style.transform = 'translateZ(0)';
-          videoRef.current.style.imageRendering = 'crisp-edges';
-        }
+        // Apply high performance rendering settings
+        videoRef.current.style.willChange = 'transform';
+        videoRef.current.style.transform = 'translateZ(0)';
+        videoRef.current.style.imageRendering = 'crisp-edges';
+        
+        // Force hardware acceleration
+        videoRef.current.style.backfaceVisibility = 'hidden';
+        videoRef.current.style.perspective = '1000px';
       }
 
       setStream(newStream);
