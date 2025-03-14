@@ -74,15 +74,17 @@
         }
       }
       
-      /* High resolution interface settings */
+      /* High resolution interface settings - Enhanced */
       .high-res-interface {
         transform-origin: top left;
         image-rendering: -webkit-optimize-contrast;
         image-rendering: crisp-edges;
         backface-visibility: hidden;
         -webkit-font-smoothing: subpixel-antialiased;
+        text-rendering: geometricPrecision;
       }
       
+      /* Super high resolution scaling for 4K+ displays */
       @media screen and (min-width: 1024px) {
         .high-res-interface {
           transform: scale(1);
@@ -97,15 +99,38 @@
         }
       }
       
-      /* Improve text rendering */
-      h1, h2, h3, h4, h5, h6, p, span, button {
-        text-rendering: geometricPrecision;
+      @media screen and (min-width: 3840px) {
+        .high-res-interface {
+          transform: scale(0.33);
+          width: 300%;
+          height: 300%;
+        }
       }
       
-      /* Crisp UI elements */
+      /* Extreme resolution scaling for 8K displays */
+      @media screen and (min-width: 7680px) {
+        .high-res-interface {
+          transform: scale(0.25);
+          width: 400%;
+          height: 400%;
+        }
+      }
+      
+      /* Enhanced text rendering */
+      h1, h2, h3, h4, h5, h6, p, span, button {
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        transform: translateZ(0);
+      }
+      
+      /* Crisp UI elements with enhanced rendering */
       svg, img, canvas {
         image-rendering: crisp-edges;
+        image-rendering: -webkit-optimize-contrast;
         shape-rendering: crispEdges;
+        transform: translateZ(0);
+        will-change: transform;
       }
     </style>
   </head>
