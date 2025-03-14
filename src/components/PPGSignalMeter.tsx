@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -150,9 +149,10 @@ const PPGSignalMeter = memo(({
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E2DCFF');
     gradient.addColorStop(0.25, '#FFDECF');
-    gradient.addColorStop(0.5, '#F1FBDF');
-    gradient.addColorStop(0.75, '#D8E8FF');
-    gradient.addColorStop(1, '#C0DAFF');
+    gradient.addColorStop(0.45, '#F1FBDF'); // Maintain top color
+    gradient.addColorStop(0.55, '#F1EEE8'); // Start transitioning to subtle gold
+    gradient.addColorStop(0.75, '#F5EED8'); // Subtle golden tone
+    gradient.addColorStop(1, '#F5EED0'); // Deeper subtle golden tone at bottom
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
