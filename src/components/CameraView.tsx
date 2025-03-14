@@ -77,9 +77,9 @@ const CameraView = ({
         frameRate: { ideal: 30, max: 60 }
       };
 
-      // Fix for Windows - using more compatible constraints
+      // Fix for Windows - using more compatible constraints - IMPORTANT: Removed exact constraint
       const windowsVideoConstraints: MediaTrackConstraints = {
-        facingMode: { exact: 'environment' }, // Try without exact to allow fallback
+        facingMode: 'environment', // Removed exact constraint to fix finger detection
         width: { ideal: 720 },
         height: { ideal: 1280 },
         frameRate: { ideal: 30 }
@@ -107,7 +107,7 @@ const CameraView = ({
           // Fallback for Windows: try with simpler constraints if the specific ones fail
           const fallbackConstraints: MediaStreamConstraints = {
             video: {
-              facingMode: 'environment', // Remove 'exact' to be more permissive
+              facingMode: 'environment', // Already permissive
               width: { ideal: 640 },     // Lower resolution as fallback
               height: { ideal: 480 }
             },
@@ -117,7 +117,7 @@ const CameraView = ({
           console.log("Intentando con configuración de respaldo:", JSON.stringify(fallbackConstraints));
           newStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
         } else {
-          // For Android, just rethrow the error
+          // For Android, just rethrow the error to preserve original behavior
           throw err;
         }
       }
