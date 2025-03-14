@@ -100,8 +100,7 @@ export class VitalSignsProcessor {
         muestras: ppgValues.length
       });
       
-      // Ensure we handle both number and SpO2Result formats
-      return typeof result === 'object' && result !== null ? result.value : result;
+      return result.value;
     }
     
     console.error("VitalSignsProcessor: Procesador SpO2 no disponible");

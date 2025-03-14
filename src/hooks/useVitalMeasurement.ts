@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 
 interface VitalMeasurements {
@@ -74,8 +75,10 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
+      // Obtener la lectura de BPM del procesador
       const bpm = processor.getFinalBPM() || 0;
       
+      // Verificar si existe el procesador de signos vitales
       const vitalSignsProcessor = (window as any).vitalSignsProcessor;
       if (!vitalSignsProcessor) {
         addError("No se encontró el procesador de signos vitales");
@@ -89,11 +92,14 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         timestamp: new Date().toISOString()
       });
 
+      // Actualizar lecturas de BPM si está dentro del rango fisiológico
       if (bpm > 40 && bpm < 180) {
         setRawBPMReadings(prev => [...prev, bpm]);
       }
 
+      // Obtener datos PPG para calcular otros signos vitales
       try {
+        // Verificar si el procesador tiene el método getPPGData
         const ppgData = processor.getPPGData ? processor.getPPGData() : [];
         
         if (ppgData && ppgData.length > 0) {
@@ -103,6 +109,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             ultimoValor: ppgData[ppgData.length - 1]
           });
 
+          // Calcular presión arterial usando el procesador de signos vitales
           if (vitalSignsProcessor.calculateBloodPressure) {
             const bp = vitalSignsProcessor.calculateBloodPressure(ppgData);
             if (bp && bp.systolic > 0 && bp.diastolic > 0) {
@@ -116,15 +123,13 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
           }
 
+          // Calcular SpO2 si está disponible el método
           if (vitalSignsProcessor.calculateSpO2) {
             try {
               const spo2Value = vitalSignsProcessor.calculateSpO2(ppgData);
-              const spo2NumberValue = typeof spo2Value === 'object' && spo2Value !== null ? 
-                (spo2Value.value || 0) : spo2Value;
-                
-              if (spo2NumberValue > 0) {
-                console.log('useVitalMeasurement - SpO2 calculado:', spo2NumberValue);
-                setRawSpO2Readings(prev => [...prev, spo2NumberValue]);
+              if (spo2Value > 0) {
+                console.log('useVitalMeasurement - SpO2 calculado:', spo2Value);
+                setRawSpO2Readings(prev => [...prev, spo2Value]);
               } else {
                 console.log('useVitalMeasurement - SpO2 inválido o insuficiente calidad de señal');
               }
@@ -134,6 +139,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
             }
           }
 
+          // Calcular glucosa si existe el procesador de glucosa
           const glucoseProcessor = (window as any).glucoseProcessor;
           if (glucoseProcessor && glucoseProcessor.calculateGlucose) {
             try {
@@ -167,9 +173,11 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         addError("Error procesando datos PPG");
       }
 
+      // Actualizar mediciones con los valores procesados
       setMeasurements(prev => {
         const newValues = { ...prev };
 
+        // Actualizar BPM con mediana de lecturas
         if (rawBPMReadings.length > 2) {
           const sortedBPM = [...rawBPMReadings].sort((a, b) => a - b);
           const medianBPM = sortedBPM[Math.floor(sortedBPM.length / 2)];
@@ -178,15 +186,18 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           newValues.heartRate = bpm;
         }
 
+        // Actualizar SpO2 con mediana de lecturas
         if (rawSpO2Readings.length > 2) {
           const sortedSpO2 = [...rawSpO2Readings].sort((a, b) => a - b);
           const medianSpO2 = sortedSpO2[Math.floor(rawSpO2Readings.length / 2)];
           newValues.spo2 = medianSpO2;
         }
 
+        // Actualizar glucosa con mediana de lecturas, eliminando outliers
         if (rawGlucoseReadings.length > 2) {
           const sortedGlucose = [...rawGlucoseReadings].sort((a, b) => a - b);
           
+          // Eliminar outliers (10% superior e inferior)
           const cutStart = Math.floor(sortedGlucose.length * 0.1);
           const cutEnd = Math.floor(sortedGlucose.length * 0.9);
           const filteredGlucose = sortedGlucose.slice(cutStart, cutEnd + 1);
@@ -217,6 +228,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
     };
 
+    // Helper para agregar errores sin duplicados
     const addError = (error: string) => {
       setMeasurementErrors(prev => {
         if (!prev.includes(error)) {
@@ -226,8 +238,10 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
     };
 
+    // Realizar medición inicial
     updateMeasurements();
 
+    // Configurar intervalo para actualizar mediciones
     const interval = setInterval(() => {
       const currentTime = Date.now();
       const elapsed = currentTime - startTime;
@@ -244,8 +258,10 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       
       setElapsedTime(elapsed / 1000);
 
+      // Actualizar mediciones
       updateMeasurements();
 
+      // Finalizar medición al alcanzar la duración máxima
       if (elapsed >= MEASUREMENT_DURATION) {
         console.log('useVitalMeasurement - Medición completada', {
           duracionTotal: MEASUREMENT_DURATION / 1000,
