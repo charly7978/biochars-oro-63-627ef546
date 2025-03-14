@@ -104,7 +104,7 @@ const PPGSignalMeter = ({
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
-    if (!consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) return 'from-gray-400 to-gray-500';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
     if (avgQuality > 65) return 'from-green-500 to-emerald-500';
     if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
@@ -113,7 +113,7 @@ const PPGSignalMeter = ({
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
-    if (!consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) return 'Sin detección';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
