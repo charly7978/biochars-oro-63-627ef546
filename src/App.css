@@ -1,3 +1,4 @@
+
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -179,4 +180,34 @@ button, .button {
     transform: translate3d(0, 0, 0);
     transition: all 0.15s cubic-bezier(0.1, 0.7, 0.1, 1);
   }
+}
+
+/* High performance PPG graph rendering */
+canvas.performance-boost {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  perspective: 1000;
+  contain: strict;
+  will-change: transform;
+}
+
+/* Optimize graphics rendering specifically for graphs */
+.ppg-graph {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  contain: strict;
+  will-change: transform;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Force hardware acceleration for critical animations */
+.force-gpu {
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000;
+  contain: strict;
 }
