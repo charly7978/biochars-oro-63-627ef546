@@ -13,6 +13,11 @@ import {
   calculateSignalQuality
 } from './utils';
 
+export interface SpO2Result {
+  value: number;
+  confidence: number;
+}
+
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;
   private readonly MIN_PERFUSION_INDEX = 0.05;
@@ -31,12 +36,9 @@ export class SpO2Processor {
    * El algoritmo implementa técnicas profesionales de fotopletismografía
    * 
    * @param values Valores de señal PPG
-   * @returns Valor SpO2 (0-100)
+   * @returns Objeto con valor SpO2 (0-100) y nivel de confianza
    */
-  public calculateSpO2(values: number[]): {
-    value: number;
-    confidence: number;
-  } {
+  public calculateSpO2(values: number[]): SpO2Result {
     const currentTime = Date.now();
     
     // 1. Validación de datos y preprocesamiento
@@ -209,10 +211,7 @@ export class SpO2Processor {
   /**
    * Obtener última lectura válida
    */
-  public getLastReading(): { 
-    value: number; 
-    confidence: number;
-  } {
+  public getLastReading(): SpO2Result {
     return {
       value: this.lastValidReading,
       confidence: this.confidenceScore

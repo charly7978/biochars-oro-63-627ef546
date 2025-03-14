@@ -100,7 +100,7 @@ export class VitalSignsProcessor {
         muestras: ppgValues.length
       });
       
-      return result;
+      return result.value;
     }
     
     console.error("VitalSignsProcessor: Procesador SpO2 no disponible");
