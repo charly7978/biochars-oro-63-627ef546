@@ -84,7 +84,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     : "transition-all duration-300";
 
   return (
-    <div className="bg-black/30 backdrop-blur-md rounded p-2 w-full relative" style={{ marginTop: '8mm', marginLeft: '10mm' }}>
+    <div className="bg-black/30 backdrop-blur-md rounded p-2 w-full relative">
       <div className="flex items-center gap-2">
         <div 
           className={`w-12 h-12 rounded-full border-2 flex items-center justify-center shrink-0 ${pulseStyle}`}
