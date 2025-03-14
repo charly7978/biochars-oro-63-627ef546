@@ -1,7 +1,7 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
+import AppTitle from './AppTitle';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -542,9 +542,9 @@ const PPGSignalMeter = memo(({
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div style={{ marginLeft: '12mm', marginTop: '4mm' }} className="flex items-center gap-2">
-          <span className="text-lg font-bold text-black/80">PPG</span>
-          <div className="w-[180px]">
-            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
+          <AppTitle />
+          <div className="w-[150px]">
+            <div className={`h-1.5 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
                 style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
