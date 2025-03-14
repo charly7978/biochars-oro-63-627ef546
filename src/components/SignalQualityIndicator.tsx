@@ -84,30 +84,30 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     : "transition-all duration-300";
 
   return (
-    <div className="bg-black/30 backdrop-blur-md rounded p-2 w-full relative" style={{ marginTop: "-3mm" }}>
-      <div className="flex items-center gap-2">
+    <div className="bg-black/30 backdrop-blur-md rounded p-1 w-full relative" style={{ marginTop: "-7mm" }}>
+      <div className="flex items-center gap-1">
         <div 
-          className={`w-10 h-10 rounded-full border-2 flex items-center justify-center shrink-0 ${pulseStyle}`}
+          className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 ${pulseStyle}`}
           style={{
             borderColor: getQualityColor(displayQuality),
             backgroundColor: `${getQualityColor(displayQuality)}33`
           }}
         >
-          <span className="text-xs font-bold text-white">{displayQuality}%</span>
+          <span className="text-[10px] font-bold text-white">{displayQuality}%</span>
         </div>
 
         <div className="flex-1">
           <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-semibold text-white/90">Calidad de Señal</span>
+            <span className="text-[10px] font-semibold text-white/90">Calidad de Señal</span>
             <span 
-              className="text-xs font-medium"
+              className="text-[10px] font-medium"
               style={{ color: getQualityColor(displayQuality) }}
             >
               {getQualityText(displayQuality)}
             </span>
           </div>
 
-          <div className="w-full h-1.5 bg-gray-700/50 rounded-full overflow-hidden">
+          <div className="w-full h-1 bg-gray-700/50 rounded-full overflow-hidden">
             <div 
               className="h-full transition-all duration-300"
               style={{
