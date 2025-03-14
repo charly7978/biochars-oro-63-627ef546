@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -68,7 +69,7 @@ const CameraView = ({
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-      // Platform-specific resolution settings
+      // Platform-specific resolution settings - maintain different resolutions
       const androidVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
         width: { ideal: 1080 },
@@ -76,25 +77,51 @@ const CameraView = ({
         frameRate: { ideal: 30, max: 60 }
       };
 
+      // Fix for Windows - using more compatible constraints
       const windowsVideoConstraints: MediaTrackConstraints = {
-        facingMode: 'environment',
+        facingMode: { exact: 'environment' }, // Try without exact to allow fallback
         width: { ideal: 720 },
         height: { ideal: 1280 },
         frameRate: { ideal: 30 }
       };
 
       // Choose appropriate constraints based on platform
-      const baseVideoConstraints = isAndroid ? androidVideoConstraints : windowsVideoConstraints;
+      let baseVideoConstraints = isAndroid ? androidVideoConstraints : windowsVideoConstraints;
 
       console.log(`Configurando para ${isAndroid ? 'Android (1080p)' : 'Windows (720p)'}`);
 
-      const constraints: MediaStreamConstraints = {
-        video: baseVideoConstraints,
-        audio: false
-      };
+      // First try with the platform-specific settings
+      let newStream: MediaStream;
+      try {
+        const constraints: MediaStreamConstraints = {
+          video: baseVideoConstraints,
+          audio: false
+        };
 
-      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
+        newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        console.warn("Error con configuración específica, intentando con configuración genérica:", err);
+        
+        if (!isAndroid) {
+          // Fallback for Windows: try with simpler constraints if the specific ones fail
+          const fallbackConstraints: MediaStreamConstraints = {
+            video: {
+              facingMode: 'environment', // Remove 'exact' to be more permissive
+              width: { ideal: 640 },     // Lower resolution as fallback
+              height: { ideal: 480 }
+            },
+            audio: false
+          };
+          
+          console.log("Intentando con configuración de respaldo:", JSON.stringify(fallbackConstraints));
+          newStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        } else {
+          // For Android, just rethrow the error
+          throw err;
+        }
+      }
+      
       console.log("Cámara inicializada correctamente");
       
       const videoTrack = newStream.getVideoTracks()[0];
@@ -153,17 +180,35 @@ const CameraView = ({
 
             if (advancedConstraints.length > 0) {
               console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              await videoTrack.applyConstraints({
-                advanced: advancedConstraints
-              });
+              try {
+                await videoTrack.applyConstraints({
+                  advanced: advancedConstraints
+                });
+              } catch (err) {
+                console.warn("No se pudieron aplicar todas las configuraciones avanzadas:", err);
+                // Try applying one by one to see which ones are supported
+                for (const constraint of advancedConstraints) {
+                  try {
+                    await videoTrack.applyConstraints({
+                      advanced: [constraint]
+                    });
+                  } catch (err) {
+                    console.warn("No se pudo aplicar:", constraint, err);
+                  }
+                }
+              }
             }
 
             if (capabilities.torch) {
               console.log("Activando linterna para mejorar la señal PPG");
-              await videoTrack.applyConstraints({
-                advanced: [{ torch: true }]
-              });
-              setTorchEnabled(true);
+              try {
+                await videoTrack.applyConstraints({
+                  advanced: [{ torch: true }]
+                });
+                setTorchEnabled(true);
+              } catch (err) {
+                console.error("Error activando linterna:", err);
+              }
             } else {
               console.log("La linterna no está disponible en este dispositivo");
             }
