@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 
@@ -225,6 +226,14 @@ const PPGSignalMeter = ({
         height={CANVAS_HEIGHT}
         className="w-full h-[calc(40vh)] mt-20"
       />
+      
+      {/* CharsHealt title positioned about 15mm below the middle of screen */}
+      <div className="absolute left-0 right-0 text-center" style={{ top: 'calc(50% + 15mm)' }}>
+        <h1 className="text-3xl font-bold">
+          <span className="text-white">Chars</span>
+          <span className="text-red-500">Healt</span>
+        </h1>
+      </div>
 
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 gap-px bg-white/80 backdrop-blur-sm border-t border-slate-100">
         <button 
