@@ -11,6 +11,8 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="fullscreen" content="yes">
     <meta name="screen-orientation" content="portrait">
+    <!-- High DPI display support -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
     <title>healthpulse-captain</title>
     <style>
       :root {
@@ -97,6 +99,14 @@
         }
       }
       
+      @media screen and (min-width: 3840px) {
+        .high-res-interface {
+          transform: scale(0.25);
+          width: 400%;
+          height: 400%;
+        }
+      }
+      
       /* Improve text rendering */
       h1, h2, h3, h4, h5, h6, p, span, button {
         text-rendering: geometricPrecision;
@@ -106,6 +116,24 @@
       svg, img, canvas {
         image-rendering: crisp-edges;
         shape-rendering: crispEdges;
+      }
+      
+      /* High density display optimizations */
+      @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+        body {
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
+        
+        button, input, select, textarea {
+          transform: translateZ(0);
+        }
+        
+        canvas, .ppg-graph {
+          backface-visibility: hidden;
+          will-change: transform;
+          transform: translate3d(0, 0, 0);
+        }
       }
     </style>
   </head>
