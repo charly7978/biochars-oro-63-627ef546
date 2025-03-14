@@ -144,13 +144,76 @@ export class VitalSignsProcessor {
       return {
         spo2: 0,
         pressure: "--/--",
-        arrhythmiaStatus: "--"
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
       };
     }
     
     // Amplificar considerablemente los valores PPG para mejorar detección
     const amplifiedValue = ppgValue * 1.5; // Aumentado considerablemente
-    return this.processor.processSignal(amplifiedValue, rrData);
+    
+    // Obtener resultados básicos del procesador principal
+    const baseResults = this.processor.processSignal(amplifiedValue, rrData);
+    
+    // Procesar glucosa manualmente si está disponible el procesador
+    let glucose = 0;
+    if (this.glucoseProcessor && typeof this.glucoseProcessor.calculateGlucose === 'function') {
+      // Obtener datos PPG acumulados del procesador principal si están disponibles
+      let ppgData = [];
+      if (this.processor.signalProcessor && typeof this.processor.signalProcessor.getPPGBuffer === 'function') {
+        ppgData = this.processor.signalProcessor.getPPGBuffer();
+      }
+      
+      // Si hay suficientes datos, procesar glucosa
+      if (ppgData.length > 20) {
+        try {
+          glucose = this.glucoseProcessor.calculateGlucose(ppgData);
+          console.log("VitalSignsProcessor: Glucosa calculada:", glucose);
+        } catch (error) {
+          console.error("Error calculando glucosa:", error);
+        }
+      }
+    }
+    
+    // Procesar lípidos manualmente si está disponible el procesador
+    let totalCholesterol = 0;
+    let triglycerides = 0;
+    if (this.lipidProcessor && typeof this.lipidProcessor.calculateLipids === 'function') {
+      // Obtener datos PPG acumulados del procesador principal si están disponibles
+      let ppgData = [];
+      if (this.processor.signalProcessor && typeof this.processor.signalProcessor.getPPGBuffer === 'function') {
+        ppgData = this.processor.signalProcessor.getPPGBuffer();
+      }
+      
+      // Si hay suficientes datos, procesar lípidos
+      if (ppgData.length > 20) {
+        try {
+          const lipidResults = this.lipidProcessor.calculateLipids(ppgData);
+          totalCholesterol = lipidResults.totalCholesterol;
+          triglycerides = lipidResults.triglycerides;
+          console.log("VitalSignsProcessor: Lípidos calculados:", { totalCholesterol, triglycerides });
+        } catch (error) {
+          console.error("Error calculando lípidos:", error);
+        }
+      }
+    }
+    
+    // Combinar resultados para incluir glucosa y lípidos
+    const enhancedResults = {
+      ...baseResults,
+      glucose: glucose,
+      lipids: {
+        totalCholesterol: totalCholesterol,
+        triglycerides: triglycerides
+      }
+    };
+    
+    console.log("VitalSignsProcessor: Resultados completos:", enhancedResults);
+    return enhancedResults;
   }
   
   /**
