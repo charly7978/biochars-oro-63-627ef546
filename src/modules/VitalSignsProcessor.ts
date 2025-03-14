@@ -1,6 +1,7 @@
 
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
 import './HeartBeatProcessor.extension';
+import { GlucoseProcessor } from './vital-signs/glucose-processor';
 
 /**
  * Wrapper para mantener compatibilidad con implementación original
@@ -9,6 +10,7 @@ import './HeartBeatProcessor.extension';
 export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
   public spo2Processor: any; // Exposición pública del procesador de SpO2
+  public glucoseProcessor: GlucoseProcessor; // Exposición pública del procesador de glucosa
   
   // Constantes para compatibilidad
   private readonly WINDOW_SIZE = 300;
@@ -25,13 +27,18 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Inicializando con enfoque en datos reales");
     this.processor = new NewVitalSignsProcessor();
     
+    // Inicializar procesador de glucosa
+    this.glucoseProcessor = new GlucoseProcessor();
+    
     // Importante: Hacer referencia al procesador de SpO2 para acceso directo
     this.spo2Processor = this.processor.spo2Processor;
     
     // Registro global para otros componentes
     if (typeof window !== 'undefined') {
       (window as any).vitalSignsProcessor = this.processor;
+      (window as any).glucoseProcessor = this.glucoseProcessor; // Registrar globalmente
       console.log('VitalSignsProcessor: Registrado globalmente a través del wrapper');
+      console.log('GlucoseProcessor: Registrado globalmente para acceso directo');
     }
   }
   
