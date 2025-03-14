@@ -42,64 +42,33 @@
   color: #888;
 }
 
-/* High resolution interface enhancements - Enhanced */
+/* High resolution interface enhancements */
 .vital-display {
   font-feature-settings: "tnum";
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 .crisp-text {
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transform: translateZ(0);
 }
 
 .crisp-graphics {
   image-rendering: crisp-edges;
-  image-rendering: -webkit-optimize-contrast;
-  shape-rendering: geometricPrecision;
-  transform: translateZ(0);
-  will-change: transform;
+  shape-rendering: crispEdges;
 }
 
-/* Higher resolution UI elements with hardware acceleration */
+/* Higher resolution UI elements */
 button, .button {
   transform: translateZ(0);
   backface-visibility: hidden;
-  -webkit-font-smoothing: antialiased;
-  will-change: transform;
 }
 
-/* Sharper text for medical displays with subpixel rendering */
+/* Sharper text for medical displays */
 .medical-value {
   font-feature-settings: "tnum";
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   text-shadow: 0 0 1px rgba(255,255,255,0.1);
-  -webkit-font-smoothing: subpixel-antialiased;
-  transform: translateZ(0);
-}
-
-/* Ultra-high definition text rendering */
-.uhd-text {
-  text-rendering: geometricPrecision;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "kern", "liga", "calt", "pnum", "tnum";
-  letter-spacing: -0.02em;
-  transform: translateZ(0);
-}
-
-/* Ultra-high definition numeric values */
-.uhd-value {
-  font-feature-settings: "tnum";
-  font-variant-numeric: tabular-nums;
-  text-rendering: geometricPrecision;
-  -webkit-font-smoothing: subpixel-antialiased;
-  transform: translateZ(0);
-  will-change: contents;
 }
