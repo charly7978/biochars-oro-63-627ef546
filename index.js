@@ -6,7 +6,6 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
-import GlucoseDisplay from "@/components/GlucoseDisplay";
 import { toast } from "sonner";
 
 const Index = () => {
@@ -16,9 +15,7 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--",
-    glucose: 0,
-    confidence: { glucose: 0 }
+    arrhythmiaStatus: "--" 
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
@@ -152,9 +149,7 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      confidence: { glucose: 0 }
+      arrhythmiaStatus: "--" 
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -175,9 +170,7 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      confidence: { glucose: 0 }
+      arrhythmiaStatus: "--" 
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -291,13 +284,6 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
-            />
-          </div>
-
-          <div className="absolute bottom-[260px] left-4">
-            <GlucoseDisplay 
-              value={vitalSigns.glucose || 0}
-              confidence={vitalSigns.confidence?.glucose || 0}
             />
           </div>
 
