@@ -69,59 +69,43 @@ const CameraView = ({
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-      // Platform-specific resolution settings - maintain different resolutions
-      const androidVideoConstraints: MediaTrackConstraints = {
+      // Increased resolution for better clarity
+      const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1080 },
-        height: { ideal: 1920 },
-        frameRate: { ideal: 30, max: 60 }
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       };
 
-      // Fix for Windows - using more compatible constraints
-      const windowsVideoConstraints: MediaTrackConstraints = {
-        facingMode: { exact: 'environment' }, // Try without exact to allow fallback
-        width: { ideal: 720 },
-        height: { ideal: 1280 },
-        frameRate: { ideal: 30 }
-      };
-
-      // Choose appropriate constraints based on platform
-      let baseVideoConstraints = isAndroid ? androidVideoConstraints : windowsVideoConstraints;
-
-      console.log(`Configurando para ${isAndroid ? 'Android (1080p)' : 'Windows (720p)'}`);
-
-      // First try with the platform-specific settings
-      let newStream: MediaStream;
-      try {
-        const constraints: MediaStreamConstraints = {
-          video: baseVideoConstraints,
-          audio: false
-        };
-
-        console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
-        newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (err) {
-        console.warn("Error con configuración específica, intentando con configuración genérica:", err);
-        
-        if (!isAndroid) {
-          // Fallback for Windows: try with simpler constraints if the specific ones fail
-          const fallbackConstraints: MediaStreamConstraints = {
-            video: {
-              facingMode: 'environment', // Remove 'exact' to be more permissive
-              width: { ideal: 640 },     // Lower resolution as fallback
-              height: { ideal: 480 }
-            },
-            audio: false
-          };
-          
-          console.log("Intentando con configuración de respaldo:", JSON.stringify(fallbackConstraints));
-          newStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-        } else {
-          // For Android, just rethrow the error
-          throw err;
-        }
+      if (isAndroid) {
+        console.log("Configurando para Android");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30, max: 60 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        });
+      } else if (isIOS) {
+        console.log("Configurando para iOS");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
+      } else {
+        console.log("Configurando para escritorio con máxima resolución");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
       }
-      
+
+      const constraints: MediaStreamConstraints = {
+        video: baseVideoConstraints,
+        audio: false
+      };
+
+      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       console.log("Cámara inicializada correctamente");
       
       const videoTrack = newStream.getVideoTracks()[0];
@@ -180,35 +164,17 @@ const CameraView = ({
 
             if (advancedConstraints.length > 0) {
               console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              try {
-                await videoTrack.applyConstraints({
-                  advanced: advancedConstraints
-                });
-              } catch (err) {
-                console.warn("No se pudieron aplicar todas las configuraciones avanzadas:", err);
-                // Try applying one by one to see which ones are supported
-                for (const constraint of advancedConstraints) {
-                  try {
-                    await videoTrack.applyConstraints({
-                      advanced: [constraint]
-                    });
-                  } catch (err) {
-                    console.warn("No se pudo aplicar:", constraint, err);
-                  }
-                }
-              }
+              await videoTrack.applyConstraints({
+                advanced: advancedConstraints
+              });
             }
 
             if (capabilities.torch) {
               console.log("Activando linterna para mejorar la señal PPG");
-              try {
-                await videoTrack.applyConstraints({
-                  advanced: [{ torch: true }]
-                });
-                setTorchEnabled(true);
-              } catch (err) {
-                console.error("Error activando linterna:", err);
-              }
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              setTorchEnabled(true);
             } else {
               console.log("La linterna no está disponible en este dispositivo");
             }
@@ -227,14 +193,14 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Only apply hardware acceleration where needed
-        if (isAndroid) {
-          videoRef.current.style.willChange = 'transform';
-          videoRef.current.style.transform = 'translateZ(0)';
-        }
-        
-        // Crisp edges for better text/edge rendering
+        // Apply high performance rendering settings
+        videoRef.current.style.willChange = 'transform';
+        videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
+        
+        // Force hardware acceleration
+        videoRef.current.style.backfaceVisibility = 'hidden';
+        videoRef.current.style.perspective = '1000px';
       }
 
       setStream(newStream);
@@ -315,7 +281,10 @@ const CameraView = ({
       const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }
-  }, [stream, isFingerDetected, torchEnabled, isAndroid]);
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
+
+  const targetFrameInterval = isAndroid ? 1000/10 : 
+                             signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
     <video
@@ -325,8 +294,8 @@ const CameraView = ({
       muted
       className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
       style={{
-        willChange: isAndroid ? 'transform' : 'auto',
-        transform: isAndroid ? 'translateZ(0)' : 'none',
+        willChange: 'transform',
+        transform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
         imageRendering: 'crisp-edges'
       }}
