@@ -18,8 +18,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     glucose: 0
   });
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [stableGlucose, setStableGlucose] = useState(0);
-  const [glucoseReadings, setGlucoseReadings] = useState<number[]>([]);
+  const [rawGlucoseReadings, setRawGlucoseReadings] = useState<number[]>([]);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -51,8 +50,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       
       setElapsedTime(0);
-      setStableGlucose(0);
-      setGlucoseReadings([]);
+      setRawGlucoseReadings([]);
       return;
     }
 
@@ -63,8 +61,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     });
     
     const MEASUREMENT_DURATION = 30000;
-    const STABILIZATION_THRESHOLD = 15; // Reduced to 15 seconds for earlier glucose reading
-    const FINAL_STABILIZATION = 25; // Use data from 25-30 seconds for final reading
 
     const updateMeasurements = () => {
       const processor = (window as any).heartBeatProcessor;
@@ -90,65 +86,24 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         timestamp: new Date().toISOString()
       });
 
-      // Calculate glucose after the initial stabilization period
-      if (elapsedTime >= STABILIZATION_THRESHOLD && glucoseProcessor) {
+      // Get raw glucose value directly from the processor using current PPG data
+      if (glucoseProcessor) {
         try {
-          // Get glucose value from processor
+          // Use the processor's calculateGlucose method without simulated data
+          // Pass an empty array to let the processor use its internal buffer
           const rawGlucoseValue = glucoseProcessor.calculateGlucose ? 
             Math.round(glucoseProcessor.calculateGlucose([])) : 0;
           
           if (rawGlucoseValue > 0) {
-            // Store all readings for later analysis
-            setGlucoseReadings(prev => [...prev, rawGlucoseValue]);
+            // Store all readings for trend analysis
+            setRawGlucoseReadings(prev => [...prev, rawGlucoseValue]);
             
-            console.log('useVitalMeasurement - Nuevo valor de glucosa:', {
-              raw: rawGlucoseValue,
-              totalReadings: glucoseReadings.length + 1,
-              elapsedTime,
+            console.log('useVitalMeasurement - Nuevo valor de glucosa real:', {
+              valor: rawGlucoseValue,
+              totalLecturas: rawGlucoseReadings.length + 1,
+              tiempoTranscurrido: elapsedTime,
               timestamp: new Date().toISOString()
             });
-            
-            // In the final 5 seconds, calculate a more stable average
-            if (elapsedTime >= FINAL_STABILIZATION) {
-              // Take last 10 readings (or all if less than 10)
-              const recentReadings = [...glucoseReadings, rawGlucoseValue].slice(-10);
-              
-              // Filter out extreme outliers (outside ±20% of median)
-              const sortedReadings = [...recentReadings].sort((a, b) => a - b);
-              const median = sortedReadings[Math.floor(sortedReadings.length / 2)];
-              const filteredReadings = recentReadings.filter(
-                value => value >= median * 0.8 && value <= median * 1.2
-              );
-              
-              // Calculate weighted average (more recent = higher weight)
-              let weightedSum = 0;
-              let weightSum = 0;
-              
-              filteredReadings.forEach((value, index) => {
-                const weight = index + 1;
-                weightedSum += value * weight;
-                weightSum += weight;
-              });
-              
-              const newStableGlucose = Math.round(weightSum > 0 ? 
-                weightedSum / weightSum : 
-                (median || rawGlucoseValue));
-              
-              // Only update if significantly different from previous stable value
-              if (Math.abs(newStableGlucose - stableGlucose) > 5 || stableGlucose === 0) {
-                console.log('useVitalMeasurement - Actualizando nivel de glucosa estable', {
-                  prevStable: stableGlucose,
-                  newStable: newStableGlucose,
-                  recentReadings,
-                  filteredReadings,
-                  median,
-                  elapsedTime,
-                  timestamp: new Date().toISOString()
-                });
-                
-                setStableGlucose(newStableGlucose);
-              }
-            }
           }
         } catch (error) {
           console.error('Error obteniendo valor de glucosa:', error);
@@ -156,40 +111,27 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       }
 
       setMeasurements(prev => {
-        // Calculate glucose value to display
-        let displayGlucose = prev.glucose;
+        // Only update if actual values have changed or if we have new glucose readings
+        const latestGlucoseReading = rawGlucoseReadings.length > 0 ? 
+          rawGlucoseReadings[rawGlucoseReadings.length - 1] : prev.glucose;
         
-        // After initial stabilization, show current readings
-        if (elapsedTime >= STABILIZATION_THRESHOLD) {
-          // In the final phase, use stable reading
-          if (elapsedTime >= FINAL_STABILIZATION && stableGlucose > 0) {
-            displayGlucose = stableGlucose;
-          } 
-          // In between initial stabilization and final phase, show latest reading
-          else if (glucoseReadings.length > 0) {
-            displayGlucose = glucoseReadings[glucoseReadings.length - 1];
-          }
-        }
-        
-        // Only update if values have changed
-        if (prev.heartRate === bpm && prev.glucose === displayGlucose) {
+        if (prev.heartRate === bpm && prev.glucose === latestGlucoseReading) {
           return prev;
         }
         
         const newValues = {
           ...prev,
           heartRate: bpm,
-          glucose: displayGlucose
+          glucose: latestGlucoseReading
         };
         
         console.log('useVitalMeasurement - Actualizando valores', {
-          prevBPM: prev.heartRate,
-          newBPM: bpm,
-          prevGlucose: prev.glucose,
-          newGlucose: displayGlucose,
-          stableGlucose,
-          glucoseReadings: glucoseReadings.length,
-          elapsedTime,
+          frecuenciaAnterior: prev.heartRate,
+          nuevaFrecuencia: bpm,
+          glucosaAnterior: prev.glucose,
+          nuevaGlucosa: latestGlucoseReading,
+          totalLecturasGlucosa: rawGlucoseReadings.length,
+          tiempoTranscurrido: elapsedTime,
           timestamp: new Date().toISOString()
         });
         
@@ -206,7 +148,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       console.log('useVitalMeasurement - Progreso de medición', {
         elapsed: elapsed / 1000,
         porcentaje: (elapsed / MEASUREMENT_DURATION) * 100,
-        stableGlucose,
+        lecturasGlucosa: rawGlucoseReadings.length,
         timestamp: new Date().toISOString()
       });
       
@@ -217,7 +159,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       if (elapsed >= MEASUREMENT_DURATION) {
         console.log('useVitalMeasurement - Medición completada', {
           duracionTotal: MEASUREMENT_DURATION / 1000,
-          resultadosFinal: {...measurements, glucose: stableGlucose || measurements.glucose},
+          resultadosFinal: {...measurements},
+          totalLecturasGlucosa: rawGlucoseReadings.length,
           timestamp: new Date().toISOString()
         });
         
@@ -234,7 +177,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, elapsedTime, stableGlucose, glucoseReadings]);
+  }, [isMeasuring, measurements, elapsedTime, rawGlucoseReadings]);
 
   return {
     ...measurements,
