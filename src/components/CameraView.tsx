@@ -218,7 +218,7 @@ const CameraView = ({
             // Aumentamos el contraste para resaltar diferencias en la señal
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.5 }); // Aumentado de 0.6
+              advancedConstraints.push({ contrast: maxContrast * 0.9 }); // Aumentado de 0.6
             }
 
             if (advancedConstraints.length > 0) {
