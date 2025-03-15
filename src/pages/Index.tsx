@@ -353,6 +353,8 @@ const Index = () => {
             videoRef={videoRef} 
             canvasRef={canvasRef} 
             isActive={isMonitoring}
+            isFingerDetected={fingerDetected}
+            signalQuality={signalQuality}
           />
           
           <div className="absolute left-0 right-0 top-0 px-2 py-1">
