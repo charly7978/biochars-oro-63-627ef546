@@ -1,12 +1,11 @@
-
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
   // Tamaño de buffer ampliado para mayor estabilidad
-  private readonly BP_BUFFER_SIZE = 20; // Increased from 15 to 20
+  private readonly BP_BUFFER_SIZE = 15;
   // Parámetros de mediana y promedio ponderado
-  private readonly MEDIAN_WEIGHT = 0.7; // Increased from 0.6 to 0.7
-  private readonly MEAN_WEIGHT = 0.3; // Decreased from 0.4 to 0.3
+  private readonly MEDIAN_WEIGHT = 0.6;
+  private readonly MEAN_WEIGHT = 0.4;
   // Historia de mediciones
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
@@ -18,14 +17,9 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 30;
   private readonly MAX_PULSE_PRESSURE = 60;
   // Umbrales mínimos para aceptar una medición
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.04; // Increased from 0.03 to 0.04
-  private readonly MIN_PEAK_COUNT = 5; // Increased from 4 to 5
-  private readonly MIN_FPS = 25; // Increased from 20 to 25
-  // New parameters for better BP calculation
-  private readonly PTT_COEF = 0.08; // Decreased from 0.09 to 0.08
-  private readonly AMP_COEF = 0.22; // Decreased from 0.25 to 0.22
-  private readonly BASE_SYSTOLIC = 118; // Changed from 115
-  private readonly BASE_DIASTOLIC = 78; // Changed from 75
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.03;
+  private readonly MIN_PEAK_COUNT = 4;
+  private readonly MIN_FPS = 20;
 
   /**
    * Calcula la presión arterial utilizando características de la señal PPG
@@ -36,7 +30,7 @@ export class BloodPressureProcessor {
     diastolic: number;
   } {
     // Validación de calidad de la señal
-    if (values.length < 40 || Math.max(...values) - Math.min(...values) < this.MIN_SIGNAL_AMPLITUDE) {
+    if (values.length < 30 || Math.max(...values) - Math.min(...values) < this.MIN_SIGNAL_AMPLITUDE) {
       return { systolic: 0, diastolic: 0 };
     }
 
@@ -89,7 +83,7 @@ export class BloodPressureProcessor {
       
       filteredPTT.forEach((val, idx) => {
         // Ponderación exponencial que da más peso a muestras más recientes
-        const weight = Math.pow(1.3, idx) / filteredPTT.length; // Increased from 1.2 to 1.3
+        const weight = Math.pow(1.2, idx) / filteredPTT.length;
         weightedSum += val * weight;
         weightSum += weight;
       });
@@ -107,16 +101,16 @@ export class BloodPressureProcessor {
     // Calcular amplitud mejorada de la señal PPG
     const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
     // Menor factor de amplificación para evitar sobreestimación
-    const normalizedAmplitude = Math.min(80, Math.max(0, amplitude * 4.8)); // Changed from 5.0 to 4.8
+    const normalizedAmplitude = Math.min(80, Math.max(0, amplitude * 5.0));
 
     // Coeficientes más conservadores basados en estudios de validación
-    const pttFactor = (800 - normalizedPTT) * this.PTT_COEF;
-    const ampFactor = normalizedAmplitude * this.AMP_COEF;
+    const pttFactor = (800 - normalizedPTT) * 0.09; // Reducido de 0.11
+    const ampFactor = normalizedAmplitude * 0.25;   // Reducido de 0.38
     
     // Usar un modelo de estimación más conservador
-    let instantSystolic = this.BASE_SYSTOLIC + pttFactor + ampFactor;
-    let instantDiastolic = this.BASE_DIASTOLIC + (pttFactor * 0.52) + (ampFactor * 0.22); // Adjusted from 0.55/0.25
-    
+    let instantSystolic = 115 + pttFactor + ampFactor;
+    let instantDiastolic = 75 + (pttFactor * 0.55) + (ampFactor * 0.25);
+
     // Aplicar límites fisiológicos
     instantSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, instantSystolic));
     instantDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, instantDiastolic));

@@ -29,14 +29,14 @@ const VitalSign = ({
         case 'SPO2':
           if (value < 95) return 'Hipoxemia';
           return '';
+        case 'HEMOGLOBINA':
+          if (value < 12) return 'Anemia';
+          if (value > 16) return 'Policitemia';
+          return '';
         case 'GLUCOSA':
           if (value > 126) return 'Hiperglucemia';
           if (value < 70) return 'Hipoglucemia';
           return '';
-        case 'FIB. AURICULAR':
-          if (value > 70) return 'Alto riesgo';
-          if (value > 30) return 'Riesgo moderado';
-          return 'Bajo riesgo';
         default:
           return '';
       }
@@ -83,11 +83,6 @@ const VitalSign = ({
             }
           }
           return '';
-        case 'FIB. AURICULAR':
-          if (value === 'DETECTADA') return 'Detectada';
-          if (value === 'NO DETECTADA') return 'No detectada';
-          if (value === 'POSIBLE') return 'Posible';
-          return '';
         default:
           return '';
       }
@@ -104,18 +99,15 @@ const VitalSign = ({
       case 'Hipertensión':
       case 'Hipercolesterolemia':
       case 'Hipertrigliceridemia':
-      case 'Alto riesgo':
-      case 'Detectada':
         return 'text-[#ea384c]';
       case 'Bradicardia':
       case 'Hipoglucemia':
       case 'Hipotensión':
-      case 'Riesgo moderado':
-      case 'Posible':
         return 'text-[#F97316]';
-      case 'Bajo riesgo':
-      case 'No detectada':
-        return 'text-green-500';
+      case 'Anemia':
+        return 'text-[#FEF7CD]';
+      case 'Policitemia':
+        return 'text-[#F2FCE2]';
       default:
         return '';
     }
@@ -148,56 +140,6 @@ const VitalSign = ({
           Calibrando...
         </div>
       );
-    }
-    
-    return null;
-  };
-
-  const getAFibDisplay = (value: string | number) => {
-    if (typeof value === 'string') {
-      // For string values (DETECTADA, NO DETECTADA, POSIBLE)
-      const status = value;
-      
-      if (status === "DETECTADA") {
-        return (
-          <div className="text-xl font-medium mt-2 text-[#ea384c]">
-            Detectada
-          </div>
-        );
-      } else if (status === "NO DETECTADA") {
-        return (
-          <div className="text-sm font-medium mt-2 text-green-500">
-            No detectada
-          </div>
-        );
-      } else if (status === "POSIBLE") {
-        return (
-          <div className="text-sm font-medium mt-2 text-[#F97316]">
-            Posible
-          </div>
-        );
-      }
-    } else if (typeof value === 'number') {
-      // For number values (confidence percentage)
-      if (value > 70) {
-        return (
-          <div className="text-xl font-medium mt-2 text-[#ea384c]">
-            Alto riesgo
-          </div>
-        );
-      } else if (value > 30) {
-        return (
-          <div className="text-sm font-medium mt-2 text-[#F97316]">
-            Riesgo moderado
-          </div>
-        );
-      } else {
-        return (
-          <div className="text-sm font-medium mt-2 text-green-500">
-            Bajo riesgo
-          </div>
-        );
-      }
     }
     
     return null;
@@ -258,6 +200,21 @@ const VitalSign = ({
           'Dieta alta en sodio'
         ];
         break;
+      case 'HEMOGLOBINA':
+        info.normalRange = '12-16 g/dL (mujeres), 14-17 g/dL (hombres)';
+        info.description = 'La hemoglobina es una proteína en los glóbulos rojos que transporta oxígeno desde los pulmones al resto del cuerpo. Niveles bajos pueden indicar anemia.';
+        info.recommendations = [
+          'Consumir alimentos ricos en hierro',
+          'Incluir vitamina C para mejor absorción del hierro',
+          'Consultar al médico para suplementos si es necesario'
+        ];
+        info.riskFactors = [
+          'Deficiencia de hierro',
+          'Pérdida crónica de sangre',
+          'Enfermedades crónicas',
+          'Malnutrición'
+        ];
+        break;
       case 'GLUCOSA':
         info.normalRange = '70-100 mg/dL en ayunas';
         info.description = 'La glucosa es el principal azúcar en la sangre y la fuente de energía del cuerpo. Niveles altos persistentes pueden indicar diabetes.';
@@ -306,24 +263,6 @@ const VitalSign = ({
           'Apnea del sueño'
         ];
         break;
-      case 'FIB. AURICULAR':
-        info.normalRange = 'No detectada (0%)';
-        info.description = 'La fibrilación auricular es una arritmia cardíaca caracterizada por latidos irregulares. Se detecta analizando la variabilidad entre latidos consecutivos y patrones de irregularidad.';
-        info.recommendations = [
-          'Consultar a un cardiólogo si se detecta repetidamente',
-          'Mantener control regular de la presión arterial',
-          'Limitar consumo de alcohol y cafeína',
-          'Realizar actividad física moderada regular'
-        ];
-        info.riskFactors = [
-          'Edad avanzada',
-          'Hipertensión',
-          'Enfermedades cardíacas',
-          'Apnea del sueño',
-          'Obesidad',
-          'Diabetes'
-        ];
-        break;
       default:
         break;
     }
@@ -332,8 +271,8 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
-    if (label === 'FIB. AURICULAR' && typeof value === 'number') {
-      return `${Math.round(value)}%`;
+    if (label === 'HEMOGLOBINA' && typeof value === 'number') {
+      return Math.round(value);
     }
     return value;
   };
@@ -341,7 +280,6 @@ const VitalSign = ({
   const riskLabel = getRiskLabel(label, value);
   const riskColor = getRiskColor(riskLabel);
   const isArrhytmia = label === 'ARRITMIAS';
-  const isAFib = label === 'FIB. AURICULAR';
   const detailedInfo = getDetailedInfo(label, value);
   const formattedValue = displayValue(label, value);
 
@@ -360,14 +298,13 @@ const VitalSign = ({
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
           </div>
 
-          {!isArrhytmia && !isAFib && riskLabel && (
+          {!isArrhytmia && riskLabel && (
             <div className={`text-sm font-medium mt-1 ${riskColor}`}>
               {riskLabel}
             </div>
           )}
           
           {isArrhytmia && getArrhythmiaDisplay(value)}
-          {isAFib && getAFibDisplay(value)}
           
           {calibrationProgress !== undefined && (
             <div className="absolute inset-0 bg-transparent overflow-hidden pointer-events-none border-0">
