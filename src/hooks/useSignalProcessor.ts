@@ -50,28 +50,39 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Ahora requerimos al menos 2 detecciones positivas en las últimas 3
-    const recentDetections = fingerDetectedHistoryRef.current.slice(-3);
+    // Sistema extremadamente estricto:
+    // 1. Requerimos al menos 3 detecciones positivas en las últimas 4
+    const recentDetections = fingerDetectedHistoryRef.current.slice(-4);
     const recentPositives = recentDetections.filter(d => d).length;
     
-    // Criterio más estricto: al menos 2 de 3 para considerar que hay dedo
-    const robustFingerDetected = recentPositives >= 2 && signal.quality > 45;
+    // 2. Criterio ultra-estricto: al menos 3 de 4 para considerar que hay dedo
+    // Y además calidad mínima de 60
+    const robustFingerDetected = recentPositives >= 3 && signal.quality > 60;
     
-    // Calculamos una calidad más reactiva pero conservadora
-    const recentQualities = qualityHistoryRef.current.slice(-3);
+    // 3. Calidad basada solo en las últimas muestras (más sensible a cambios)
+    const recentQualities = qualityHistoryRef.current.slice(-2);
     const avgQuality = recentQualities.length > 0 
       ? recentQualities.reduce((sum, q) => sum + q, 0) / recentQualities.length 
       : signal.quality;
     
-    // Si estamos detectando dedo, mejoramos ligeramente la calidad
-    const enhancedQuality = (robustFingerDetected && avgQuality > 40)
-      ? Math.min(100, avgQuality * 1.1) 
-      : avgQuality;
+    // 4. Verificación de los valores de entrada (filtrado agresivo)
+    const isInStrictRange = signal.rawValue >= 100 && signal.rawValue <= 200;
     
-    // Verificación final: el valor crudo debe estar dentro del rango esperado
-    // para una medición PPG real
-    const isInExpectedRange = signal.rawValue > 70 && signal.rawValue < 230;
-    const finalDetection = robustFingerDetected && isInExpectedRange;
+    // 5. Verificación adicional para evitar lecturas de calidad falsas
+    const qualityCheck = signal.quality >= 30 || avgQuality >= 30;
+    
+    // 6. Verificación final: todo debe pasar para considerar que hay un dedo
+    const finalDetection = 
+        robustFingerDetected && 
+        isInStrictRange && 
+        qualityCheck && 
+        signal.fingerDetected; // IMPORTANTE: respetamos la detección original
+    
+    // Solo mejoramos la calidad si tenemos confianza alta
+    const enhancedQuality = 
+        (finalDetection && avgQuality > 50) 
+        ? Math.min(100, avgQuality * 1.05) 
+        : avgQuality;
     
     // Devolver señal modificada
     return {
