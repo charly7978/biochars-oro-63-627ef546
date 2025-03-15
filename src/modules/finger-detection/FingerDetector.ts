@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -52,10 +53,10 @@ export class FingerDetector {
   // Configuración con umbrales EXTREMOS para eliminar falsos positivos COMPLETAMENTE
   private config: FingerDetectionConfig = {
     // PRIMERA VARIABLE CRÍTICA: Calidad mínima de señal (perfusión)
-    MIN_QUALITY_FOR_DETECTION: 25,     // Umbral extremadamente alto
+    MIN_QUALITY_FOR_DETECTION: 20,     // AJUSTADO: Reducido para mayor sensibilidad (antes: 25)
     
     // SEGUNDA VARIABLE CRÍTICA: Ratio rojo/verde mínimo (tejido vivo)
-    MIN_RED_GREEN_RATIO: 1.65,         // Umbral biológicamente imposible para objetos inanimados
+    MIN_RED_GREEN_RATIO: 1.45,         // AJUSTADO: Reducido para mayor sensibilidad (antes: 1.65)
     
     // TERCERA VARIABLE CRÍTICA: Valores absolutos mínimos (sangre/tejido)
     MIN_RED_VALUE: 150,                // Valor rojo mínimo para tejido con sangre 
