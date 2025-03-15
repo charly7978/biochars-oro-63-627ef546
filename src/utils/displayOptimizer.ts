@@ -1,4 +1,3 @@
-
 /**
  * Utilities for optimizing display and rendering across various device resolutions
  */
@@ -39,9 +38,39 @@ export function optimizeCanvasRendering(canvas: HTMLCanvasElement, ctx: CanvasRe
 }
 
 /**
- * Requests and maintains fullscreen mode
+ * Optimizes a specific canvas element (function needed by GraphGrid component)
+ * @param canvas Canvas element to optimize
  */
-export async function enableFullscreenMode(): Promise<void> {
+export function optimizeCanvas(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    optimizeCanvasRendering(canvas, ctx);
+  }
+}
+
+/**
+ * Optimizes an HTML element for high DPI displays (function needed by HeartRateDisplay component)
+ * @param element Element to optimize
+ */
+export function optimizeElement(element: HTMLElement): void {
+  if (!element) return;
+  
+  const dpr = window.devicePixelRatio || 1;
+  
+  if (dpr > 1.5) {
+    // For very high DPI displays - use standard CSS properties
+    element.style.setProperty('-webkit-font-smoothing', 'antialiased');
+    element.style.textRendering = 'optimizeLegibility';
+  } else {
+    // For standard displays
+    element.style.textRendering = 'auto';
+  }
+}
+
+/**
+ * Requests and maintains fullscreen mode (function needed by main.tsx)
+ */
+export async function enterImmersiveMode(): Promise<void> {
   const elem = document.documentElement;
   
   try {
@@ -69,33 +98,26 @@ export async function enableFullscreenMode(): Promise<void> {
 }
 
 /**
- * Checks if the device is currently in fullscreen mode
+ * Optimizes UI elements based on device pixel ratio (function needed by main.tsx)
  */
-export function isInFullscreenMode(): boolean {
-  return !!(
-    document.fullscreenElement ||
-    (document as any).webkitFullscreenElement ||
-    (document as any).mozFullScreenElement ||
-    (document as any).msFullscreenElement
-  );
-}
-
-/**
- * Optimizes UI elements based on device pixel ratio
- * @param element Element to optimize
- */
-export function optimizeUIForHighDPI(element: HTMLElement): void {
-  if (!element) return;
-  
-  const dpr = window.devicePixelRatio || 1;
-  
-  if (dpr > 1.5) {
-    // For very high DPI displays
-    element.style.fontSmoothing = 'antialiased';
-    element.style.textRendering = 'optimizeLegibility';
-  } else {
-    // For standard displays
-    element.style.textRendering = 'auto';
+export function optimizeForScreenResolution(): void {
+  // Use CSS transform to counter device pixel ratio for consistent visuals
+  if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
+    // Only adjust for pixel ratios greater than 1 to avoid blurry text on standard screens
+    if (window.devicePixelRatio > 1) {
+      // Add meta viewport tag programmatically
+      let metaViewport = document.querySelector('meta[name="viewport"]');
+      if (!metaViewport) {
+        metaViewport = document.createElement('meta');
+        metaViewport.setAttribute('name', 'viewport');
+        document.head.appendChild(metaViewport);
+      }
+      
+      // Set viewport content for high DPI screens
+      metaViewport.setAttribute('content', `width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no`);
+      
+      console.log(`Screen resolution optimized for pixel ratio: ${window.devicePixelRatio}`);
+    }
   }
 }
 
@@ -129,40 +151,33 @@ export function preventDefaultTouchBehavior(): void {
 }
 
 /**
- * Sets maximum screen resolution for better rendering
+ * Checks if the device is currently in fullscreen mode
  */
-export function setOptimalScreenResolution(): void {
-  // Use CSS transform to counter device pixel ratio for consistent visuals
-  if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-    // Only adjust for pixel ratios greater than 1 to avoid blurry text on standard screens
-    if (window.devicePixelRatio > 1) {
-      // Add meta viewport tag programmatically
-      let metaViewport = document.querySelector('meta[name="viewport"]');
-      if (!metaViewport) {
-        metaViewport = document.createElement('meta');
-        metaViewport.setAttribute('name', 'viewport');
-        document.head.appendChild(metaViewport);
-      }
-      
-      // Set viewport content for high DPI screens
-      metaViewport.setAttribute('content', `width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no`);
-      
-      console.log(`Screen resolution optimized for pixel ratio: ${window.devicePixelRatio}`);
-    }
-  }
+export function isInFullscreenMode(): boolean {
+  return !!(
+    document.fullscreenElement ||
+    (document as any).webkitFullscreenElement ||
+    (document as any).mozFullScreenElement ||
+    (document as any).msFullscreenElement
+  );
 }
 
 /**
- * Locks screen orientation to portrait mode
+ * Optimizes UI elements based on device pixel ratio
+ * @param element Element to optimize
  */
-export async function lockScreenOrientation(): Promise<void> {
-  try {
-    if (screen.orientation?.lock) {
-      await screen.orientation.lock('portrait');
-      console.log('Screen orientation locked to portrait');
-    }
-  } catch (error) {
-    console.error('Failed to lock screen orientation:', error);
+export function optimizeUIForHighDPI(element: HTMLElement): void {
+  if (!element) return;
+  
+  const dpr = window.devicePixelRatio || 1;
+  
+  if (dpr > 1.5) {
+    // For very high DPI displays - use standard CSS properties
+    element.style.setProperty('-webkit-font-smoothing', 'antialiased');
+    element.style.textRendering = 'optimizeLegibility';
+  } else {
+    // For standard displays
+    element.style.textRendering = 'auto';
   }
 }
 
