@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
+import { useAdvancedSignalProcessing } from './useAdvancedSignalProcessing';
 
 interface ProcessorConfig {
   fingerDetectionThreshold?: number;
@@ -31,6 +32,8 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
   
+  const { processSignalQuality, detectRobustFingerPresence } = useAdvancedSignalProcessing();
+  
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
   const HISTORY_SIZE = 5; // Ventana de historial para promedio
@@ -46,25 +49,35 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
+    // Algoritmo mejorado de calidad de señal con ponderación exponencial
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1; // Más peso a las muestras recientes
+      // Función exponencial para dar mucho más peso a las muestras recientes
+      const weight = Math.pow(1.8, index + 1); 
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
+    // Análisis de consenso con umbrales adaptativos
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Usar un umbral más exigente para la detección robusta (3 de 5 = 0.6)
-    const robustFingerDetected = detectionRatio >= 0.6;
-    
-    // Mejora ligera de calidad para mejor experiencia de usuario
-    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    // Análisis avanzado de calidad y presencia de dedo usando la función especializada
+    const { enhancedQuality, robustFingerDetected } = processSignalQuality({
+      original: signal,
+      detectionRatio,
+      rawQuality: avgQuality,
+      historyLength: fingerDetectedHistoryRef.current.length,
+      signalFeatures: {
+        snr: signal.spectralPower && signal.perfusionIndex ? signal.spectralPower / (signal.perfusionIndex + 0.01) : 0,
+        variance: calculateVariance(qualityHistoryRef.current),
+        stability: calculateStability(fingerDetectedHistoryRef.current)
+      }
+    });
     
     console.log("useSignalProcessor: Detección robusta", {
       original: signal.fingerDetected,
@@ -72,8 +85,8 @@ export const useSignalProcessor = () => {
       detectionRatio,
       trueCount,
       historyLength: fingerDetectedHistoryRef.current.length,
-      originalQuality: signal.quality,
-      enhancedQuality,
+      originalQuality: signal.quality.toFixed(2),
+      enhancedQuality: enhancedQuality.toFixed(2),
       rawValue: signal.rawValue.toFixed(2),
       filteredValue: signal.filteredValue.toFixed(2)
     });
@@ -83,7 +96,25 @@ export const useSignalProcessor = () => {
       fingerDetected: robustFingerDetected,
       quality: enhancedQuality
     };
-  }, []);
+  }, [processSignalQuality]);
+
+  // Función auxiliar para calcular la varianza (indicador de estabilidad)
+  const calculateVariance = (values: number[]): number => {
+    if (values.length < 2) return 0;
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+    return squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+  };
+
+  // Función auxiliar para calcular la estabilidad de la detección
+  const calculateStability = (detections: boolean[]): number => {
+    if (detections.length < 2) return 0;
+    let changes = 0;
+    for (let i = 1; i < detections.length; i++) {
+      if (detections[i] !== detections[i-1]) changes++;
+    }
+    return 1 - (changes / (detections.length - 1));
+  };
 
   useEffect(() => {
     console.log("useSignalProcessor: Configurando callbacks", {

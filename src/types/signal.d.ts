@@ -1,5 +1,5 @@
 
-import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
+// Extensión de la definición existente para añadir métricas avanzadas
 
 export interface ProcessedSignal {
   timestamp: number;
@@ -14,6 +14,10 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex?: number;
+  // Nuevas métricas avanzadas
+  spectralPower?: number;    // Potencia espectral total (análisis de espectro)
+  pulseAmplitude?: number;   // Amplitud de pulso 
+  signalSnr?: number;        // Relación señal-ruido (calidad)
 }
 
 export interface ProcessingError {
@@ -23,17 +27,11 @@ export interface ProcessingError {
 }
 
 export interface SignalProcessor {
-  initialize: () => Promise<void>;
-  start: () => void;
-  stop: () => void;
-  calibrate: () => Promise<boolean>;
   onSignalReady?: (signal: ProcessedSignal) => void;
   onError?: (error: ProcessingError) => void;
-  getPPGBuffer?: () => number[]; // Method to access PPG buffer data
-}
-
-declare global {
-  interface Window {
-    heartBeatProcessor: HeartBeatProcessor;
-  }
+  initialize(): Promise<void>;
+  start(): void;
+  stop(): void;
+  calibrate(): Promise<boolean>;
+  processFrame(imageData: ImageData): void;
 }
