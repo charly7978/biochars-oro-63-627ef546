@@ -236,27 +236,17 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      if (lastSignal.fingerDetected) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        setHeartRate(heartBeatResult.bpm);
-        
-        const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData, lastSignal.fingerDetected);
-        if (vitals) {
-          setVitalSigns(vitals);
-          setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      } else {
-        setHeartRate(0);
-        const noSignalVitals = processVitalSigns(0, undefined, false);
-        if (noSignalVitals) {
-          setVitalSigns(noSignalVitals);
-          setArrhythmiaCount("--");
-        }
-        setSignalQuality(0);
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
+      
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
+      
+      setSignalQuality(lastSignal.quality);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
