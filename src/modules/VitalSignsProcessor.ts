@@ -41,7 +41,7 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null },
     rgbValues?: {red: number, green: number}
-  ) {
+  ): VitalSignsResult {
     // Limitar velocidad de procesamiento si es necesario
     const currentTime = Date.now();
     if (currentTime - this.lastProcessedTime < 33 && !this.processingEnabled) { // ~30fps
@@ -50,6 +50,7 @@ export class VitalSignsProcessor {
         pressure: "--/--",
         arrhythmiaStatus: "--",
         glucose: 0,
+        signalQuality: 0,
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
@@ -102,7 +103,9 @@ export class VitalSignsProcessor {
         this.consecutiveValidFrames >= 5 && 
         fingerDetectionResult.quality >= this.fingerDetector.getConfig().MIN_QUALITY_FOR_DETECTION) {
       
-      return this.processor.processSignal(ppgValue, rrData);
+      const vitalSignsResult = this.processor.processSignal(ppgValue, rrData);
+      vitalSignsResult.signalQuality = fingerDetectionResult.quality;
+      return vitalSignsResult;
     }
     
     // Retornar valores por defecto si no hay dedo presente o no cumple criterios
@@ -111,6 +114,7 @@ export class VitalSignsProcessor {
       pressure: "--/--",
       arrhythmiaStatus: "--",
       glucose: 0,
+      signalQuality: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
