@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
@@ -14,12 +15,38 @@ export const useSignalProcessor = () => {
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
   const [error, setError] = useState<ProcessingError | null>(null);
   const [framesProcessed, setFramesProcessed] = useState(0);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [signalStats, setSignalStats] = useState({
     minValue: Infinity,
     maxValue: -Infinity,
     avgValue: 0,
     totalValues: 0
   });
+
+  // Inicialización del procesador con reintentos
+  const initializeProcessor = useCallback(async () => {
+    if (isInitialized) return true;
+    
+    try {
+      console.log("useSignalProcessor: Inicializando procesador", {
+        timestamp: new Date().toISOString()
+      });
+      
+      await processor.initialize();
+      
+      console.log("useSignalProcessor: Procesador inicializado correctamente");
+      setIsInitialized(true);
+      return true;
+    } catch (error) {
+      console.error("useSignalProcessor: Error de inicialización detallado:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
+      
+      return false;
+    }
+  }, [processor, isInitialized]);
 
   useEffect(() => {
     console.log("useSignalProcessor: Configurando callbacks", {
@@ -73,16 +100,9 @@ export const useSignalProcessor = () => {
       setError(error);
     };
 
-    console.log("useSignalProcessor: Iniciando procesador", {
-      timestamp: new Date().toISOString()
-    });
-    
-    processor.initialize().catch(error => {
-      console.error("useSignalProcessor: Error de inicialización detallado:", {
-        message: error.message,
-        stack: error.stack,
-        timestamp: new Date().toISOString()
-      });
+    // Iniciar el procesador al montar
+    initializeProcessor().catch(error => {
+      console.error("useSignalProcessor: Error en inicialización inicial:", error);
     });
 
     return () => {
@@ -96,13 +116,23 @@ export const useSignalProcessor = () => {
       });
       processor.stop();
     };
-  }, [processor]);
+  }, [processor, initializeProcessor, framesProcessed, lastSignal]);
 
-  const startProcessing = useCallback(() => {
+  const startProcessing = useCallback(async () => {
     console.log("useSignalProcessor: Iniciando procesamiento", {
       estadoAnterior: isProcessing,
       timestamp: new Date().toISOString()
     });
+    
+    // Asegurar que el procesador esté inicializado antes de comenzar
+    if (!isInitialized) {
+      console.log("useSignalProcessor: Procesador no inicializado, iniciando inicialización");
+      const success = await initializeProcessor();
+      if (!success) {
+        console.error("useSignalProcessor: No se pudo inicializar el procesador, abortando inicio");
+        return;
+      }
+    }
     
     setIsProcessing(true);
     setFramesProcessed(0);
@@ -114,7 +144,12 @@ export const useSignalProcessor = () => {
     });
     
     processor.start();
-  }, [processor, isProcessing]);
+    
+    // Forzar una recalibración inicial para mejorar la detección
+    processor.calibrate().catch(err => {
+      console.warn("Error en calibración inicial:", err);
+    });
+  }, [processor, isProcessing, isInitialized, initializeProcessor]);
 
   const stopProcessing = useCallback(() => {
     console.log("useSignalProcessor: Deteniendo procesamiento", {
@@ -153,7 +188,7 @@ export const useSignalProcessor = () => {
   }, [processor]);
 
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing) {
+    if (isProcessing && isInitialized) {
       console.log("useSignalProcessor: Procesando nuevo frame", {
         frameNum: framesProcessed + 1,
         dimensions: `${imageData.width}x${imageData.height}`,
@@ -161,12 +196,16 @@ export const useSignalProcessor = () => {
       });
       
       processor.processFrame(imageData);
+    } else if (isProcessing && !isInitialized) {
+      console.log("useSignalProcessor: Frame ignorado (procesador no inicializado)", {
+        timestamp: new Date().toISOString()
+      });
     } else {
       console.log("useSignalProcessor: Frame ignorado (no está procesando)", {
         timestamp: new Date().toISOString()
       });
     }
-  }, [isProcessing, processor, framesProcessed]);
+  }, [isProcessing, isInitialized, processor, framesProcessed]);
 
   return {
     isProcessing,
@@ -174,6 +213,7 @@ export const useSignalProcessor = () => {
     error,
     framesProcessed,
     signalStats,
+    isInitialized,
     startProcessing,
     stopProcessing,
     calibrate,

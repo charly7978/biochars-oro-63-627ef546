@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 
 interface CameraViewProps {
@@ -16,6 +17,7 @@ const CameraView = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
+  const [isStreamReady, setIsStreamReady] = useState(false);
   const frameIntervalRef = useRef<number>(1000 / 30); // 30 FPS
   const lastFrameTimeRef = useRef<number>(0);
 
@@ -40,6 +42,7 @@ const CameraView = ({
       
       setStream(null);
       setTorchEnabled(false);
+      setIsStreamReady(false);
     }
   };
 
@@ -131,15 +134,39 @@ const CameraView = ({
 
       setStream(newStream);
       
-      if (onStreamReady) {
-        onStreamReady(newStream);
-      }
-
-      console.log("Resolución final de la cámara:", videoTrack?.getCapabilities());
+      // No notificamos que el stream está listo inmediatamente,
+      // esperamos a que el video realmente esté listo
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
     }
   };
+
+  // Añadir evento para detectar cuando el video realmente está listo
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    
+    if (videoElement && stream && !isStreamReady) {
+      const handleVideoReady = () => {
+        console.log("Video realmente listo para usar, notificando onStreamReady");
+        setIsStreamReady(true);
+        
+        if (onStreamReady) {
+          onStreamReady(stream);
+        }
+      };
+      
+      // Verificar si el video ya tiene datos
+      if (videoElement.readyState >= 2) {
+        handleVideoReady();
+      } else {
+        // Esperar a que los datos del video estén disponibles
+        videoElement.addEventListener('loadeddata', handleVideoReady);
+        return () => {
+          videoElement.removeEventListener('loadeddata', handleVideoReady);
+        };
+      }
+    }
+  }, [stream, onStreamReady, isStreamReady]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
