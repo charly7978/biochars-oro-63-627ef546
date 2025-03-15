@@ -50,38 +50,37 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Sistema extremadamente estricto:
-    // 1. Requerimos al menos 3 detecciones positivas en las últimas 4
+    // Criterios más permisivos:
+    // 1. Requerimos al menos 2 detecciones positivas en las últimas 4
     const recentDetections = fingerDetectedHistoryRef.current.slice(-4);
     const recentPositives = recentDetections.filter(d => d).length;
     
-    // 2. Criterio ultra-estricto: al menos 3 de 4 para considerar que hay dedo
-    // Y además calidad mínima de 60
-    const robustFingerDetected = recentPositives >= 3 && signal.quality > 60;
+    // 2. Criterio más flexible: al menos 2 de 4 para considerar que hay dedo
+    // Y además calidad mínima de 40
+    const robustFingerDetected = recentPositives >= 2 && signal.quality > 40;
     
-    // 3. Calidad basada solo en las últimas muestras (más sensible a cambios)
-    const recentQualities = qualityHistoryRef.current.slice(-2);
+    // 3. Calidad basada en más muestras para estabilidad
+    const recentQualities = qualityHistoryRef.current.slice(-3);
     const avgQuality = recentQualities.length > 0 
       ? recentQualities.reduce((sum, q) => sum + q, 0) / recentQualities.length 
       : signal.quality;
     
-    // 4. Verificación de los valores de entrada (filtrado agresivo)
-    const isInStrictRange = signal.rawValue >= 100 && signal.rawValue <= 200;
+    // 4. Verificación de los valores de entrada (filtrado menos estricto)
+    const isInStrictRange = signal.rawValue >= 70 && signal.rawValue <= 240;
     
-    // 5. Verificación adicional para evitar lecturas de calidad falsas
-    const qualityCheck = signal.quality >= 30 || avgQuality >= 30;
+    // 5. Verificación adicional para evitar lecturas de calidad falsas (más permisiva)
+    const qualityCheck = signal.quality >= 20 || avgQuality >= 30;
     
-    // 6. Verificación final: todo debe pasar para considerar que hay un dedo
+    // 6. Verificación final: menos estricta - basta que pase la mayoría de criterios
     const finalDetection = 
-        robustFingerDetected && 
+        (robustFingerDetected || signal.fingerDetected) && // Cualquiera de los dos es suficiente
         isInStrictRange && 
-        qualityCheck && 
-        signal.fingerDetected; // IMPORTANTE: respetamos la detección original
+        qualityCheck;
     
-    // Solo mejoramos la calidad si tenemos confianza alta
+    // Solo mejoramos la calidad si tenemos confianza básica
     const enhancedQuality = 
-        (finalDetection && avgQuality > 50) 
-        ? Math.min(100, avgQuality * 1.05) 
+        (finalDetection && avgQuality > 40) 
+        ? Math.min(100, avgQuality * 1.1) 
         : avgQuality;
     
     // Devolver señal modificada
