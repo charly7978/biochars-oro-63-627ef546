@@ -19,8 +19,8 @@ export class SignalProcessor {
   private readonly SG_NORM = 4.4; // Normalization factor for coefficients
   
   // Wavelet denoising thresholds - reducidos para mayor sensibilidad
-  private readonly WAVELET_THRESHOLD = 0.015; // Ajustado para mayor sensibilidad (antes: 0.022)
-  private readonly BASELINE_FACTOR = 0.97; // Ajustado para adaptación más rápida (antes: 0.94)
+  private readonly WAVELET_THRESHOLD = 0.010; // Ajustado para mayor sensibilidad (antes: 0.015)
+  private readonly BASELINE_FACTOR = 0.98; // Ajustado para adaptación más rápida (antes: 0.97)
   private baselineValue: number = 0;
   
   // Multi-spectral analysis parameters (based on research from Univ. of Texas)
@@ -33,9 +33,9 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 0.10; // Ajustado para mayor sensibilidad (antes: 0.18)
+  private readonly MIN_SIGNAL_DIFF = 0.07; // Ajustado para mayor sensibilidad (antes: 0.10)
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 5; // Ajustado para detección más rápida (antes: 8)
+  private readonly REQUIRED_GOOD_FRAMES = 3; // Ajustado para detección más rápida (antes: 5)
   
   // Nuevas variables para análisis de consistencia de picos
   private peakHistory: number[] = [];
@@ -351,7 +351,7 @@ export class SignalProcessor {
     const recentValues = this.ppgValues.slice(-20);
     
     // Criterio 1: Calidad mínima de señal (más permisiva)
-    if (this.signalQuality < 30) return false; // Más permisivo (antes: 40)
+    if (this.signalQuality < 20) return false; // Más permisivo (antes: 30)
     
     // Criterio 2: Variabilidad significativa (señal viva vs estática)
     const max = Math.max(...recentValues);
@@ -366,7 +366,7 @@ export class SignalProcessor {
                         this.redGreenRatioHistory.length;
       
       // Verificación más permisiva (no agresiva)
-      physiologicalCheck = avgRgRatio > (this.MIN_RG_RATIO * 0.8); // Más permisivo (antes: 0.9)
+      physiologicalCheck = avgRgRatio > (this.MIN_RG_RATIO * 0.7); // Más permisivo (antes: 0.8)
     }
     
     return range > this.MIN_SIGNAL_DIFF && 

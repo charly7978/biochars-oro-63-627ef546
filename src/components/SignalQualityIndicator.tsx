@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -31,12 +30,12 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [lastQualityLevel, setLastQualityLevel] = useState<string>('');
   
   // Constantes de configuración - MÁS SENSIBLES
-  const historySize = 5; // Reducido para respuesta más rápida
-  const REQUIRED_FINGER_FRAMES = 5; // Reducido para detección más rápida
-  const QUALITY_THRESHOLD = 50; // Reducido para detectar señales más débiles
-  const LOW_QUALITY_THRESHOLD = 30; // Reducido para mayor sensibilidad
-  const MIN_QUALITY_FOR_DETECTION = 10; // Reducido para mayor sensibilidad
-  const RESET_QUALITY_THRESHOLD = 5; // Reducido para mayor sensibilidad
+  const historySize = 3; // Reducido para respuesta más rápida (antes: 5)
+  const REQUIRED_FINGER_FRAMES = 3; // Reducido para detección más rápida (antes: 5)
+  const QUALITY_THRESHOLD = 40; // Reducido para detectar señales más débiles (antes: 50)
+  const LOW_QUALITY_THRESHOLD = 20; // Reducido para mayor sensibilidad (antes: 30)
+  const MIN_QUALITY_FOR_DETECTION = 5; // Reducido para mayor sensibilidad (antes: 10)
+  const RESET_QUALITY_THRESHOLD = 3; // Reducido para mayor sensibilidad (antes: 5)
 
   // Detectar plataforma
   useEffect(() => {

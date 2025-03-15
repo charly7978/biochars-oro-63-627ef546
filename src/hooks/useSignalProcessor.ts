@@ -40,16 +40,16 @@ export const useSignalProcessor = () => {
   // Referencias para historial de calidad - más sensibles
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 6; // Reducido para respuesta más rápida
+  const HISTORY_SIZE = 4; // Reducido para respuesta más rápida (antes: 6)
   
   // Referencias para seguimiento de estabilidad - más sensibles
   const stableDetectionTimeRef = useRef<number | null>(null);
   const unstableDetectionTimeRef = useRef<number | null>(null);
-  const MIN_STABLE_DETECTION_MS = 200; // Reducido para detección más rápida
+  const MIN_STABLE_DETECTION_MS = 100; // Reducido para detección más rápida (antes: 200)
   
   // Para seguimiento de características físicas
   const physicalSignatureScoreRef = useRef<number[]>([]);
-  const PHYSICAL_SCORE_HISTORY = 4; // Reducido para respuesta más rápida
+  const PHYSICAL_SCORE_HISTORY = 3; // Reducido para respuesta más rápida (antes: 4)
   
   /**
    * Procesa la detección de dedo de manera robusta usando promedio móvil
@@ -77,7 +77,7 @@ export const useSignalProcessor = () => {
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.3, index); // Reducido para sesgo menor
+      const weight = Math.pow(1.5, index); // Aumentado para sesgo mayor (antes: 1.3)
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -99,7 +99,7 @@ export const useSignalProcessor = () => {
     let robustFingerDetected = false;
     
     // Más sensible: umbral reducido
-    if (detectionRatio >= 0.3) { // Reducido para detección más sensible
+    if (detectionRatio >= 0.2) { // Reducido para detección más sensible (antes: 0.3)
       if (stableDetectionTimeRef.current === null) {
         stableDetectionTimeRef.current = now;
       }
@@ -125,10 +125,10 @@ export const useSignalProcessor = () => {
     // Calidad vinculada a características físicas - más sensible
     let enhancedQuality;
     
-    if (robustFingerDetected && avgPhysicalScore > 0.5) {
+    if (robustFingerDetected && avgPhysicalScore > 0.4) { // Reducido (antes: 0.5)
       // Dedo real con buena señal
       enhancedQuality = Math.min(100, Math.max(avgQuality, avgPhysicalScore * 100));
-    } else if (robustFingerDetected && avgPhysicalScore > 0.25) { // Más sensible
+    } else if (robustFingerDetected && avgPhysicalScore > 0.2) { // Más sensible (antes: 0.25)
       // Dedo real pero señal débil
       enhancedQuality = Math.min(75, Math.max(30, avgPhysicalScore * 100));
     } else if (robustFingerDetected) {
@@ -140,7 +140,7 @@ export const useSignalProcessor = () => {
     }
     
     // Si tenemos un score físico alto pero calidad 0, forzar una calidad mínima
-    if (enhancedQuality === 0 && avgPhysicalScore > 0.4) {
+    if (enhancedQuality === 0 && avgPhysicalScore > 0.3) { // Reducido (antes: 0.4)
       enhancedQuality = 20; // Dar algo de calidad para mejorar detección
     }
     
