@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -17,6 +18,7 @@ interface SignalQualityIndicatorProps {
 /**
  * Componente que muestra la calidad de la señal PPG
  * Centraliza toda la detección de dedo a través del FingerDetector
+ * ACTUALIZADO para usar TRIPLE VERIFICACIÓN
  */
 const SignalQualityIndicator = ({ 
   quality, 
@@ -32,6 +34,8 @@ const SignalQualityIndicator = ({
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
   const [helpMessage, setHelpMessage] = useState('');
   const [rgRatio, setRgRatio] = useState(0);
+  const [redValue, setRedValue] = useState(0);
+  const [greenValue, setGreenValue] = useState(0);
   
   // Detector de dedo centralizado (se crea solo una vez)
   const [fingerDetector] = useState(() => new FingerDetector());
@@ -46,17 +50,23 @@ const SignalQualityIndicator = ({
     }
   }, [isMonitoring]);
 
-  // Usar FingerDetector como única fuente de detección de dedo
+  // Usar FingerDetector con TRIPLE VERIFICACIÓN como única fuente de detección
   useEffect(() => {
     if (isMonitoring) {
-      // Calcular ratio rojo/verde si tenemos valores RGB
-      let currentRgRatio = 0;
-      if (rgbValues && rgbValues.green > 0) {
-        currentRgRatio = rgbValues.red / rgbValues.green;
-        setRgRatio(currentRgRatio);
+      // Procesar valores RGB si están disponibles
+      if (rgbValues) {
+        // Guardar valores actuales
+        setRedValue(rgbValues.red);
+        setGreenValue(rgbValues.green);
+        
+        // Calcular ratio rojo/verde
+        if (rgbValues.green > 0) {
+          const currentRgRatio = rgbValues.red / rgbValues.green;
+          setRgRatio(currentRgRatio);
+        }
       }
       
-      // Procesar con el detector centralizado
+      // Procesar con el detector centralizado usando TRIPLE VERIFICACIÓN
       const result = rgbValues 
         ? fingerDetector.processQuality(quality, rgbValues.red, rgbValues.green)
         : fingerDetector.processQuality(quality);
@@ -78,13 +88,18 @@ const SignalQualityIndicator = ({
       }
       
       // Log para depuración (solo ocasionalmente)
-      if (Math.random() < 0.03) {
-        console.log("SignalQualityIndicator: Estado de detección", {
+      if (Math.random() < 0.02) {
+        console.log("SignalQualityIndicator: Estado con TRIPLE VERIFICACIÓN", {
           calidad: quality,
           calidadAjustada: result.quality,
           dedoDetectado: result.isFingerDetected,
-          ratioRG: currentRgRatio,
+          nivelCalidad: result.qualityLevel,
+          ratioRG: rgRatio,
+          valorRojo: redValue,
+          valorVerde: greenValue,
           umbralRG: fingerDetector.getConfig().MIN_RED_GREEN_RATIO,
+          umbralRojo: fingerDetector.getConfig().MIN_RED_VALUE,
+          umbralVerde: fingerDetector.getConfig().MIN_GREEN_VALUE,
           mensaje: result.helpMessage
         });
       }
@@ -93,6 +108,8 @@ const SignalQualityIndicator = ({
       setDisplayQuality(0);
       setIsFingerDetected(false);
       setRgRatio(0);
+      setRedValue(0);
+      setGreenValue(0);
       fingerDetector.reset();
     }
   }, [quality, isMonitoring, fingerDetector, rgbValues]);
@@ -139,19 +156,32 @@ const SignalQualityIndicator = ({
             />
           </div>
           
-          {/* Mostramos el ratio R/G actual si hay valores */}
+          {/* Mostramos el ratio R/G actual y valores */}
           {rgbValues && rgbValues.green > 0 && (
-            <div className="mt-0.5 flex justify-between items-center">
-              <span className="text-[8px] font-semibold text-white/70">Ratio R/G:</span>
-              <span 
-                className="text-[8px] font-medium"
-                style={{ 
-                  color: rgRatio >= fingerDetector.getConfig().MIN_RED_GREEN_RATIO 
-                    ? '#10b981' : '#ef4444' 
-                }}
-              >
-                {rgRatio.toFixed(2)}
-              </span>
+            <div className="mt-0.5 flex flex-col">
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] font-semibold text-white/70">Ratio R/G:</span>
+                <span 
+                  className="text-[8px] font-medium"
+                  style={{ 
+                    color: rgRatio >= fingerDetector.getConfig().MIN_RED_GREEN_RATIO 
+                      ? '#10b981' : '#ef4444' 
+                  }}
+                >
+                  {rgRatio.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] font-semibold text-white/70">R/G:</span>
+                <span 
+                  className="text-[8px] font-medium"
+                  style={{ 
+                    color: isFingerDetected ? '#10b981' : '#ef4444' 
+                  }}
+                >
+                  {Math.round(redValue)}/{Math.round(greenValue)}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -167,7 +197,7 @@ const SignalQualityIndicator = ({
       
       {/* Consejos de ayuda */}
       {showHelpTip && (displayQuality < fingerDetector.getConfig().QUALITY_THRESHOLD || !isFingerDetected) && (
-        <div className="absolute -bottom-[4.5rem] left-0 right-0 bg-black/75 p-2 rounded text-white text-xs flex items-start gap-1.5 border border-white/10">
+        <div className="absolute -bottom-[5rem] left-0 right-0 bg-black/75 p-2 rounded text-white text-xs flex items-start gap-1.5 border border-white/10">
           {tipLevel === 'error' || !isFingerDetected ? (
             <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
           ) : tipLevel === 'warning' ? (

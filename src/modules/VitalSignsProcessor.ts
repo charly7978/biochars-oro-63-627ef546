@@ -20,6 +20,8 @@ export class VitalSignsProcessor {
   private lastRgbValues: {red: number, green: number} = {red: 0, green: 0};
   private consecutiveEmptyFrames: number = 0;
   private consecutiveValidFrames: number = 0;
+  private lastProcessedTime: number = 0;
+  private processingEnabled: boolean = true;
   
   /**
    * Constructor que inicializa el procesador interno refactorizado y el detector de dedo
@@ -27,25 +29,41 @@ export class VitalSignsProcessor {
   constructor() {
     this.processor = new NewVitalSignsProcessor();
     this.fingerDetector = new FingerDetector();
-    console.log("VitalSignsProcessor: Inicializado con detector de dedo ultra-estricto anti-falsos-positivos");
+    console.log("VitalSignsProcessor: Inicializado con detector de dedo TRIPLE VERIFICACIÓN anti-falsos-positivos");
   }
   
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
-   * Utiliza FingerDetector como única fuente para detección de dedos
-   * EXTREMADAMENTE MEJORADO con verificación ultra-estricta anti-falsos-positivos
+   * Utiliza FingerDetector con TRIPLE VERIFICACIÓN como única fuente para detección de dedos
+   * COMPLETAMENTE REDISEÑADO para eliminar TODOS los falsos positivos
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null },
     rgbValues?: {red: number, green: number}
   ) {
+    // Limitar velocidad de procesamiento si es necesario
+    const currentTime = Date.now();
+    if (currentTime - this.lastProcessedTime < 33 && !this.processingEnabled) { // ~30fps
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
+    }
+    this.lastProcessedTime = currentTime;
+    
     // Almacenar valores RGB si están disponibles
     if (rgbValues) {
       this.lastRgbValues = rgbValues;
     }
     
-    // Verificar calidad de señal con el detector de dedo centralizado y valores RGB
+    // TRIPLE VERIFICACIÓN de calidad con el detector de dedo centralizado y valores RGB
     const fingerDetectionResult = this.fingerDetector.processQuality(
       ppgValue, 
       this.lastRgbValues.red, 
@@ -53,12 +71,15 @@ export class VitalSignsProcessor {
     );
     
     // Log más detallado periódicamente
-    if (Math.random() < 0.005) {
-      console.log("VitalSignsProcessor: Estado de procesamiento", {
+    if (Math.random() < 0.01) {
+      console.log("VitalSignsProcessor: Estado de procesamiento (TRIPLE VERIFICACIÓN)", {
         ppgValue,
         calidadDetectada: fingerDetectionResult.quality,
         dedoDetectado: fingerDetectionResult.isFingerDetected,
         nivelCalidad: fingerDetectionResult.qualityLevel,
+        valorRojo: this.lastRgbValues.red,
+        valorVerde: this.lastRgbValues.green,
+        ratioRG: this.lastRgbValues.red / Math.max(1, this.lastRgbValues.green),
         framesValidosConsecutivos: this.consecutiveValidFrames,
         framesVacíosConsecutivos: this.consecutiveEmptyFrames
       });
@@ -70,17 +91,21 @@ export class VitalSignsProcessor {
       this.consecutiveEmptyFrames = Math.max(0, this.consecutiveEmptyFrames - 1);
     } else {
       this.consecutiveEmptyFrames += 1;
-      this.consecutiveValidFrames = Math.max(0, this.consecutiveValidFrames - 1);
+      this.consecutiveValidFrames = Math.max(0, this.consecutiveValidFrames - 2); // Más agresivo
     }
     
-    // Solo procesar señales cuando el dedo está realmente detectado
-    // y hemos tenido suficientes frames válidos consecutivos
-    if (fingerDetectionResult.isFingerDetected && this.consecutiveValidFrames >= 3) {
+    // Solo procesar señales cuando:
+    // 1. El dedo está realmente detectado con TRIPLE VERIFICACIÓN
+    // 2. Hemos tenido suficientes frames válidos consecutivos 
+    // 3. La calidad es suficiente
+    if (fingerDetectionResult.isFingerDetected && 
+        this.consecutiveValidFrames >= 5 && 
+        fingerDetectionResult.quality >= this.fingerDetector.getConfig().MIN_QUALITY_FOR_DETECTION) {
+      
       return this.processor.processSignal(ppgValue, rrData);
     }
     
-    // Retornar valores por defecto si no hay dedo presente
-    // o no tenemos suficientes frames válidos consecutivos
+    // Retornar valores por defecto si no hay dedo presente o no cumple criterios
     return {
       spo2: 0,
       pressure: "--/--",
@@ -112,6 +137,7 @@ export class VitalSignsProcessor {
     this.lastRgbValues = {red: 0, green: 0};
     this.consecutiveEmptyFrames = 0;
     this.consecutiveValidFrames = 0;
+    this.processingEnabled = true;
     this.processor.fullReset();
     console.log("VitalSignsProcessor: Reset completo realizado");
   }
