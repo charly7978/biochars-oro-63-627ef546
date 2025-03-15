@@ -17,6 +17,7 @@ export class CircularBuffer {
   private head: number;
   private tail: number;
   private count: number;
+  private readonly DROPPED_FRAME_TIMEOUT = 500; // Umbral de tiempo para considerar un frame perdido (ms)
 
   constructor(size: number) {
     this.buffer = new Array(size);
@@ -27,6 +28,40 @@ export class CircularBuffer {
   }
 
   push(item: PPGDataPoint): void {
+    // Verificar si hay un gap temporal grande que pueda indicar frames perdidos
+    if (this.count > 0) {
+      const lastTime = this.buffer[(this.head - 1 + this.size) % this.size]?.time || 0;
+      const timeDiff = item.time - lastTime;
+      
+      // Si hay un gap grande (posibles frames perdidos), insertar puntos interpolados
+      if (timeDiff > this.DROPPED_FRAME_TIMEOUT && lastTime > 0) {
+        const steps = Math.min(5, Math.ceil(timeDiff / 100)); // Máximo 5 puntos interpolados
+        const stepTime = timeDiff / (steps + 1);
+        const lastValue = this.buffer[(this.head - 1 + this.size) % this.size]?.value || 0;
+        
+        for (let i = 1; i <= steps; i++) {
+          const interpolatedTime = lastTime + (stepTime * i);
+          // Interpolación lineal simple para el valor
+          const progress = i / (steps + 1);
+          const interpolatedValue = lastValue + ((item.value - lastValue) * progress);
+          
+          this.buffer[this.head] = {
+            time: interpolatedTime,
+            value: interpolatedValue,
+            isArrhythmia: false
+          };
+          
+          this.head = (this.head + 1) % this.size;
+          if (this.count === this.size) {
+            this.tail = (this.tail + 1) % this.size;
+          } else {
+            this.count++;
+          }
+        }
+      }
+    }
+    
+    // Agregar el punto actual
     this.buffer[this.head] = item;
     this.head = (this.head + 1) % this.size;
     
@@ -63,6 +98,43 @@ export class CircularBuffer {
     }
     
     return result;
+  }
+
+  // Obtener los últimos N puntos, útil para análisis reciente
+  getLastPoints(n: number): PPGDataPoint[] {
+    if (this.count === 0 || n <= 0) {
+      return [];
+    }
+    
+    const numPoints = Math.min(n, this.count);
+    const result: PPGDataPoint[] = [];
+    
+    for (let i = 0; i < numPoints; i++) {
+      const index = (this.head - i - 1 + this.size) % this.size;
+      result.unshift(this.buffer[index]);
+    }
+    
+    return result;
+  }
+
+  // Agregar método para verificar estabilidad en la señal
+  getSignalStability(): number {
+    if (this.count < 5) return 0;
+    
+    const recentPoints = this.getLastPoints(10);
+    if (recentPoints.length < 5) return 0;
+    
+    // Calcular varianza de los valores recientes
+    const values = recentPoints.map(p => p.value);
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    
+    // Normalizar estabilidad a un valor entre 0-100
+    // Menor varianza = mayor estabilidad
+    const maxVariance = 100; // Umbral de máxima varianza esperada
+    const stability = Math.max(0, 100 * (1 - Math.min(variance / maxVariance, 1)));
+    
+    return stability;
   }
 
   clear(): void {
