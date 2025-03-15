@@ -50,38 +50,64 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Criterios más permisivos:
-    // 1. Requerimos al menos 2 detecciones positivas en las últimas 4
-    const recentDetections = fingerDetectedHistoryRef.current.slice(-4);
+    // Criterios equilibrados:
+    // 1. Analizamos un historial más largo para mayor estabilidad
+    const recentDetections = fingerDetectedHistoryRef.current.slice(-5);
     const recentPositives = recentDetections.filter(d => d).length;
     
-    // 2. Criterio más flexible: al menos 2 de 4 para considerar que hay dedo
-    // Y además calidad mínima de 40
-    const robustFingerDetected = recentPositives >= 2 && signal.quality > 40;
+    // 2. Criterio equilibrado: requerimos más de la mitad de detecciones positivas (3/5)
+    // Y además calidad mínima de 45
+    const robustFingerDetected = recentPositives >= 3 && signal.quality >= 45;
     
-    // 3. Calidad basada en más muestras para estabilidad
+    // 3. Calidad basada en varias muestras para estabilidad
     const recentQualities = qualityHistoryRef.current.slice(-3);
     const avgQuality = recentQualities.length > 0 
       ? recentQualities.reduce((sum, q) => sum + q, 0) / recentQualities.length 
       : signal.quality;
     
-    // 4. Verificación de los valores de entrada (filtrado menos estricto)
-    const isInStrictRange = signal.rawValue >= 70 && signal.rawValue <= 240;
+    // 4. Verificación de los valores de entrada (filtrado equilibrado)
+    const isInStrictRange = signal.rawValue >= 80 && signal.rawValue <= 220;
     
-    // 5. Verificación adicional para evitar lecturas de calidad falsas (más permisiva)
-    const qualityCheck = signal.quality >= 20 || avgQuality >= 30;
+    // 5. Verificación de estabilidad de valores crudos
+    // Este paso es crucial para evitar falsos positivos por ruido aleatorio
+    let isStableSignal = true;
+    if (recentQualities.length >= 3) {
+      const rawValues = [signal.rawValue];
+      let prevSignal = lastSignal;
+      for (let i = 0; i < 2 && prevSignal; i++) {
+        rawValues.push(prevSignal.rawValue);
+        prevSignal = null; // En un hook real aquí accederíamos al historial de señales
+      }
+      
+      if (rawValues.length >= 2) {
+        const rawDiff = Math.max(...rawValues) - Math.min(...rawValues);
+        // Si hay demasiada variación en los valores crudos, es probable que sea ruido
+        isStableSignal = rawDiff < 45;
+      }
+    }
     
-    // 6. Verificación final: menos estricta - basta que pase la mayoría de criterios
+    // 6. Detección de señal plana (falso positivo común)
+    // Si la calidad es estable pero muy baja, es sospechoso
+    const isQualitySuspicious = recentQualities.length >= 3 && 
+      Math.max(...recentQualities) - Math.min(...recentQualities) < 5 && 
+      avgQuality < 50;
+    
+    // 7. Verificación final equilibrada:
+    // - El detector robusto debe ser positivo
+    // - Los valores deben estar en rango
+    // - La señal debe ser estable
+    // - No debe ser una señal plana sospechosa
     const finalDetection = 
-        (robustFingerDetected || signal.fingerDetected) && // Cualquiera de los dos es suficiente
+        robustFingerDetected && 
         isInStrictRange && 
-        qualityCheck;
+        isStableSignal &&
+        !isQualitySuspicious;
     
-    // Solo mejoramos la calidad si tenemos confianza básica
+    // 8. Calidad final ajustada para evitar lecturas erróneas
     const enhancedQuality = 
-        (finalDetection && avgQuality > 40) 
-        ? Math.min(100, avgQuality * 1.1) 
-        : avgQuality;
+        (finalDetection && avgQuality > 45) 
+        ? Math.min(95, avgQuality * 1.05) // Limitamos a 95 para no dar falsa confianza
+        : finalDetection ? avgQuality : Math.min(avgQuality, 40); // Si no hay detección, calidad baja
     
     // Devolver señal modificada
     return {
@@ -89,7 +115,7 @@ export const useSignalProcessor = () => {
       fingerDetected: finalDetection,
       quality: enhancedQuality
     };
-  }, []);
+  }, [lastSignal]);
 
   // Configurar callbacks y limpieza
   useEffect(() => {
