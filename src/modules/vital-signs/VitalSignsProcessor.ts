@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -48,8 +49,9 @@ export class VitalSignsProcessor {
   private lastValidResults: VitalSignsResult | null = null;
   
   // Umbrales de señal mínima para considerar mediciones válidas
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
+  // Reducidos para mayor sensibilidad en la detección
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Reducido de 0.05 para mayor sensibilidad
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25; // Reducido de 0.4 para mayor sensibilidad
 
   constructor() {
     this.spo2Processor = new SpO2Processor();
@@ -59,7 +61,7 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
+    console.log("VitalSignsProcessor: Inicializado con configuración optimizada para mejor detección");
   }
   
   /**
@@ -70,7 +72,7 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Verificar calidad mínima de señal
+    // Verificar calidad mínima de señal (umbral reducido para mejor detección)
     if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
       return this.getLastValidResults() || this.createEmptyResults();
     }
@@ -84,8 +86,8 @@ export class VitalSignsProcessor {
     // Obtener los valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
     
-    // Solo procesar si hay suficientes datos de PPG
-    if (ppgValues.length < 100) {
+    // Solo procesar si hay suficientes datos de PPG (reducido para procesamiento más temprano)
+    if (ppgValues.length < 50) { // Reducido de 100 para procesar más rápido
       return this.getLastValidResults() || this.createEmptyResults();
     }
     
@@ -134,6 +136,7 @@ export class VitalSignsProcessor {
   
   /**
    * Verifica si una medición tiene suficiente calidad para considerarse válida
+   * Criterios ajustados para mayor sensibilidad
    */
   private isValidMeasurement(result: VitalSignsResult): boolean {
     const { spo2, pressure, glucose, lipids, confidence } = result;

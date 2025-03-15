@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,6 +9,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -42,6 +44,12 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+  
+  const imageProcessorRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const framesProcessedRef = useRef<number>(0);
+  const currentFrameTimeRef = useRef<number>(0);
+  const lastErrorTimeRef = useRef<number>(0);
 
   const enterFullScreen = async () => {
     try {
@@ -88,6 +96,9 @@ const Index = () => {
         arrhythmiaStatus: "SIN ARRITMIAS|0"
       }));
       
+      framesProcessedRef.current = 0;
+      currentFrameTimeRef.current = Date.now();
+      
       // Iniciar temporizador para medición
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
@@ -96,7 +107,7 @@ const Index = () => {
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
+          console.log(`Tiempo transcurrido: ${newTime}s, Frames procesados: ${framesProcessedRef.current}`);
           
           // Finalizar medición después de 30 segundos
           if (newTime >= 30) {
@@ -106,6 +117,10 @@ const Index = () => {
           return newTime;
         });
       }, 1000);
+      
+      toast.success("Acerca tu dedo a la cámara trasera", {
+        duration: 3000,
+      });
     }
   };
 
@@ -121,6 +136,13 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
+    // Limpiar el intervalo de procesamiento
+    if (imageProcessorRef.current) {
+      clearInterval(imageProcessorRef.current);
+      imageProcessorRef.current = null;
+    }
+    
+    // Guardar resultados
     const savedResults = resetVitalSigns();
     if (savedResults) {
       setVitalSigns(savedResults);
@@ -129,6 +151,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
+    streamRef.current = null;
   };
 
   const handleReset = () => {
@@ -141,6 +164,11 @@ const Index = () => {
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
+    }
+    
+    if (imageProcessorRef.current) {
+      clearInterval(imageProcessorRef.current);
+      imageProcessorRef.current = null;
     }
     
     fullResetVitalSigns();
@@ -159,119 +187,120 @@ const Index = () => {
     setArrhythmiaCount("--");
     setSignalQuality(0);
     setLastArrhythmiaData(null);
+    streamRef.current = null;
   };
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
+    // Guardar referencia al stream
+    streamRef.current = stream;
+    
     const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
     
-    // Asegurar que la linterna esté encendida para mediciones de PPG
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
-    
-    // Crear un canvas de tamaño óptimo para el procesamiento
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    // Variables para controlar el rendimiento y la tasa de frames
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30; // Apuntar a 30 FPS para precisión
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
-    
-    // Crearemos un contexto dedicado para el procesamiento de imagen
-    const enhanceCanvas = document.createElement('canvas');
-    const enhanceCtx = enhanceCanvas.getContext('2d', {willReadFrequently: true});
-    enhanceCanvas.width = 320;  // Tamaño óptimo para procesamiento PPG
-    enhanceCanvas.height = 240;
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
+    try {
+      // Asegurar que la linterna esté encendida para mediciones de PPG
+      if (videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna para mejorar la señal PPG");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error activando linterna:", err));
+      } else {
+        console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
+      }
       
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
+      // Configurar capturas de imagen a intervalos regulares en lugar de usar requestAnimationFrame
+      if (imageProcessorRef.current) {
+        clearInterval(imageProcessorRef.current);
+      }
       
-      // Control de tasa de frames para no sobrecargar el dispositivo
-      if (timeSinceLastProcess >= targetFrameInterval) {
-        try {
-          // Capturar frame 
-          const frame = await imageCapture.grabFrame();
-          
-          // Configurar tamaño adecuado del canvas para procesamiento
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          // Dibujar el frame en el canvas
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          // Mejorar la imagen para detección PPG
-          if (enhanceCtx) {
-            // Resetear canvas
-            enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            
-            // Dibujar en el canvas de mejora
-            enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
-            
-            // Opcionales: Ajustes para mejorar la señal roja
-            enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';  // Sutil refuerzo del canal rojo
-            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            enhanceCtx.globalCompositeOperation = 'source-over';
-          
-            // Obtener datos de la imagen mejorada
-            const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            
-            // Procesar el frame mejorado
-            processFrame(imageData);
-          } else {
-            // Fallback a procesamiento normal
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
+      const processImageInterval = 50; // 20 FPS para mejor rendimiento y estabilidad
+      
+      imageProcessorRef.current = window.setInterval(() => {
+        if (!isMonitoring || !streamRef.current) {
+          if (imageProcessorRef.current) {
+            clearInterval(imageProcessorRef.current);
+            imageProcessorRef.current = null;
           }
-          
-          // Actualizar contadores para monitoreo de rendimiento
-          frameCount++;
-          lastProcessTime = now;
-          
-          // Calcular FPS cada segundo
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-          }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
+          return;
         }
+        
+        captureAndProcessFrame();
+      }, processImageInterval);
+      
+      // Mostrar notificación de éxito
+      toast.success("Cámara lista. Coloca tu dedo sobre la lente trasera", {
+        duration: 3000
+      });
+    } catch (error) {
+      console.error("Error configurando la cámara:", error);
+      toast.error("Error al inicializar la cámara. Intente de nuevo.");
+    }
+  };
+  
+  // Función separada para capturar y procesar frames
+  const captureAndProcessFrame = async () => {
+    if (!streamRef.current || !isMonitoring) return;
+    
+    try {
+      const videoTrack = streamRef.current.getVideoTracks()[0];
+      
+      // Verificar que el track sigue activo
+      if (!videoTrack || videoTrack.readyState !== 'live') {
+        console.log("Video track no está activo. Reconectando...");
+        return;
       }
       
-      // Programar el siguiente frame
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
+      const imageCapture = new ImageCapture(videoTrack);
+      
+      // Capturar frame
+      const frame = await imageCapture.grabFrame();
+      
+      // Crear canvas temporal para procesamiento
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+      
+      if (!tempCtx) {
+        console.error("No se pudo obtener el contexto 2D");
+        return;
       }
-    };
-
-    processImage();
+      
+      // Ajustar tamaño de canvas
+      const targetWidth = Math.min(320, frame.width);
+      const targetHeight = Math.min(240, frame.height);
+      
+      tempCanvas.width = targetWidth;
+      tempCanvas.height = targetHeight;
+      
+      // Dibujar frame en canvas
+      tempCtx.drawImage(
+        frame, 
+        0, 0, frame.width, frame.height, 
+        0, 0, targetWidth, targetHeight
+      );
+      
+      // Obtener datos de imagen
+      const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+      
+      // Procesar frame
+      processFrame(imageData);
+      
+      // Incrementar contador de frames
+      framesProcessedRef.current++;
+      
+      // Actualizar tiempo de frame
+      currentFrameTimeRef.current = Date.now();
+      
+    } catch (error) {
+      // Solo mostrar error si ha pasado tiempo desde el último
+      const now = Date.now();
+      const errorCooldown = 5000; // 5 segundos entre mensajes de error
+      
+      if (now - lastErrorTimeRef.current > errorCooldown) {
+        console.error("Error capturando frame:", error);
+        lastErrorTimeRef.current = now;
+      }
+    }
   };
 
   useEffect(() => {
