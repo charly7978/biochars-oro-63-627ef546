@@ -1,9 +1,7 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { isAndroidDevice, optimizeCanvas, throttle, debounce } from '../utils/displayOptimizer';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -44,24 +42,22 @@ const PPGSignalMeter = memo(({
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isAndroid = isAndroidDevice();
 
-  // Configuraciones ajustadas para Android
-  const WINDOW_WIDTH_MS = isAndroid ? 3500 : 4500;
-  const CANVAS_WIDTH = isAndroid ? 800 : 1024;
-  const CANVAS_HEIGHT = isAndroid ? 600 : 768;
-  const GRID_SIZE_X = isAndroid ? 15 : 10;
-  const GRID_SIZE_Y = isAndroid ? 8 : 5;
-  const verticalScale = isAndroid ? 30.0 : 40.0;
-  const SMOOTHING_FACTOR = isAndroid ? 1.8 : 1.6;
-  const TARGET_FPS = isAndroid ? 30 : 60;
+  const WINDOW_WIDTH_MS = 4500;
+  const CANVAS_WIDTH = 1024;
+  const CANVAS_HEIGHT = 768;
+  const GRID_SIZE_X = 10;
+  const GRID_SIZE_Y = 5;
+  const verticalScale = 40.0;
+  const SMOOTHING_FACTOR = 1.6;
+  const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = isAndroid ? 400 : 600;
-  const PEAK_DETECTION_WINDOW = isAndroid ? 6 : 8;
+  const BUFFER_SIZE = 600;
+  const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 2.5;
   const MIN_PEAK_DISTANCE_MS = 220;
-  const IMMEDIATE_RENDERING = !isAndroid; // En Android, respetar el frame time
-  const MAX_PEAKS_TO_DISPLAY = isAndroid ? 10 : 20;
+  const IMMEDIATE_RENDERING = true;
+  const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
   const QUALITY_HISTORY_SIZE = 5;
   const USE_OFFSCREEN_CANVAS = true;
@@ -78,7 +74,7 @@ const PPGSignalMeter = memo(({
       baselineRef.current = null;
       lastValueRef.current = null;
     }
-  }, [preserveResults, isFingerDetected, BUFFER_SIZE]);
+  }, [preserveResults, isFingerDetected]);
 
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
@@ -94,7 +90,6 @@ const PPGSignalMeter = memo(({
   }, [quality, isFingerDetected]);
 
   useEffect(() => {
-    // Crear canvas con dimensiones optimizadas según dispositivo
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
     offscreen.height = CANVAS_HEIGHT;
@@ -109,7 +104,7 @@ const PPGSignalMeter = memo(({
       drawGrid(gridCtx);
       gridCanvasRef.current = gridCanvas;
     }
-  }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
+  }, []);
 
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
@@ -133,7 +128,7 @@ const PPGSignalMeter = memo(({
     if (avgQuality > 65) return 'from-green-500 to-emerald-500';
     if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality, REQUIRED_FINGER_FRAMES]);
+  }, [getAverageQuality]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
@@ -142,65 +137,49 @@ const PPGSignalMeter = memo(({
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality, REQUIRED_FINGER_FRAMES]);
+  }, [getAverageQuality]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
-  }, [SMOOTHING_FACTOR]);
+  }, []);
 
-  // Optimizado para reducir carga gráfica en Android
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    // En Android, usar un fondo más simple
-    if (isAndroid) {
-      ctx.fillStyle = '#F5EED8';
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    } else {
-      const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-      gradient.addColorStop(0, '#E2DCFF');
-      gradient.addColorStop(0.25, '#FFDECF');
-      gradient.addColorStop(0.45, '#F1FBDF');
-      gradient.addColorStop(0.55, '#F1EEE8');
-      gradient.addColorStop(0.75, '#F5EED8');
-      gradient.addColorStop(1, '#F5EED0');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    }
+    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    gradient.addColorStop(0, '#E2DCFF');
+    gradient.addColorStop(0.25, '#FFDECF');
+    gradient.addColorStop(0.45, '#F1FBDF');
+    gradient.addColorStop(0.55, '#F1EEE8');
+    gradient.addColorStop(0.75, '#F5EED8');
+    gradient.addColorStop(1, '#F5EED0');
     
-    // Reducir complejidad de la grilla en Android
-    const gridAlpha = isAndroid ? 0.02 : 0.04;
-    ctx.globalAlpha = gridAlpha;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // En Android, dibujar menos elementos de grilla
-    const gridSpacing = isAndroid ? 40 : 20;
-    for (let i = 0; i < CANVAS_WIDTH; i += gridSpacing) {
-      for (let j = 0; j < CANVAS_HEIGHT; j += gridSpacing) {
+    ctx.globalAlpha = 0.04;
+    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
+      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
         const heightRatio = j / CANVAS_HEIGHT;
         const alphaModifier = 0.01 + (heightRatio * 0.03);
         
-        ctx.fillStyle = j % (gridSpacing * 2) === 0 ? 
+        ctx.fillStyle = j % 40 === 0 ? 
           `rgba(0,0,0,${0.2 + alphaModifier})` : 
           `rgba(255,255,255,${0.2 + alphaModifier})`;
-          
-        const rectSize = isAndroid ? 15 : 10;
-        ctx.fillRect(i, j, rectSize, rectSize);
+        ctx.fillRect(i, j, 10, 10);
       }
     }
     ctx.globalAlpha = 1.0;
     
-    // Dibujar grilla principal con menor densidad en Android
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(60, 60, 60, 0.22)';
     ctx.lineWidth = 0.5;
     
-    // En Android, menos líneas de cuadrícula
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
-      // En Android, mostrar menos etiquetas 
-      if (x % (GRID_SIZE_X * (isAndroid ? 10 : 5)) === 0) {
+      if (x % (GRID_SIZE_X * 5) === 0) {
         ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = isAndroid ? '8px Inter' : '10px Inter';
+        ctx.font = '10px Inter';
         ctx.textAlign = 'center';
         ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
       }
@@ -209,9 +188,9 @@ const PPGSignalMeter = memo(({
     for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
-      if (y % (GRID_SIZE_Y * (isAndroid ? 10 : 5)) === 0) {
+      if (y % (GRID_SIZE_Y * 5) === 0) {
         ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = isAndroid ? '8px Inter' : '10px Inter';
+        ctx.font = '10px Inter';
         ctx.textAlign = 'right';
         ctx.fillText(y.toString(), 15, y + 3);
       }
@@ -228,50 +207,43 @@ const PPGSignalMeter = memo(({
     ctx.stroke();
     ctx.setLineDash([]);
     
-    // Mostrar alertas de arritmia
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
       if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
-        const rectWidth = isAndroid ? 250 : 350;
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-        ctx.fillRect(30, 70, rectWidth, 40);
+        ctx.fillRect(30, 70, 350, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(30, 70, rectWidth, 40);
+        ctx.strokeRect(30, 70, 350, 40);
         
         ctx.fillStyle = '#ef4444';
-        ctx.font = isAndroid ? 'bold 18px Inter' : 'bold 24px Inter';
+        ctx.font = 'bold 24px Inter';
         ctx.textAlign = 'left';
         ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
-        const rectWidth = isAndroid ? 200 : 250;
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-        ctx.fillRect(30, 70, rectWidth, 40);
+        ctx.fillRect(30, 70, 250, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(30, 70, rectWidth, 40);
+        ctx.strokeRect(30, 70, 250, 40);
         
         ctx.fillStyle = '#ef4444';
-        ctx.font = isAndroid ? 'bold 18px Inter' : 'bold 24px Inter';
+        ctx.font = 'bold 24px Inter';
         ctx.textAlign = 'left';
         const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
         ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
       }
     }
-  }, [CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE_X, GRID_SIZE_Y, arrhythmiaStatus, showArrhythmiaAlert, isAndroid]);
+  }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
-  // Optimizado para Android - usando throttle para reducir frecuencia de cálculos
-  const throttledDetectPeaks = useCallback(throttle((points: PPGDataPoint[], now: number) => {
+  const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
     
-    // En Android, analizar menos puntos
-    const skipFactor = isAndroid ? 2 : 1;
-    
-    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i += skipFactor) {
+    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
       
       const recentlyProcessed = peaksRef.current.some(
@@ -282,32 +254,18 @@ const PPGSignalMeter = memo(({
       
       let isPeak = true;
       
-      // Método simplificado para Android
-      if (isAndroid) {
-        // Verificar solo algunos puntos cercanos, no todos
-        const checkPoints = [i-PEAK_DETECTION_WINDOW, i-Math.floor(PEAK_DETECTION_WINDOW/2), i+Math.floor(PEAK_DETECTION_WINDOW/2), i+PEAK_DETECTION_WINDOW];
-        
-        for (const j of checkPoints) {
-          if (j >= 0 && j < points.length && points[j].value >= currentPoint.value) {
+      for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
+        if (points[j].value >= currentPoint.value) {
+          isPeak = false;
+          break;
+        }
+      }
+      
+      if (isPeak) {
+        for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
+          if (j < points.length && points[j].value > currentPoint.value) {
             isPeak = false;
             break;
-          }
-        }
-      } else {
-        // Método original para dispositivos de alto rendimiento
-        for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-          if (points[j].value >= currentPoint.value) {
-            isPeak = false;
-            break;
-          }
-        }
-        
-        if (isPeak) {
-          for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-            if (j < points.length && points[j].value > currentPoint.value) {
-              isPeak = false;
-              break;
-            }
           }
         }
       }
@@ -341,7 +299,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, isAndroid ? 100 : 0), [PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, MIN_PEAK_DISTANCE_MS, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, isAndroid]);
+  }, []);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -352,7 +310,6 @@ const PPGSignalMeter = memo(({
     const currentTime = performance.now();
     const timeSinceLastRender = currentTime - lastRenderTimeRef.current;
     
-    // En Android, asegurar que respetamos el frame time
     if (!IMMEDIATE_RENDERING && timeSinceLastRender < FRAME_TIME) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -419,12 +376,12 @@ const PPGSignalMeter = memo(({
     dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
-    throttledDetectPeaks(points, now);
+    detectPeaks(points, now);
     
     if (points.length > 1) {
       renderCtx.beginPath();
       renderCtx.strokeStyle = '#0EA5E9';
-      renderCtx.lineWidth = isAndroid ? 1.5 : 2; // Línea más delgada en Android
+      renderCtx.lineWidth = 2;
       renderCtx.lineJoin = 'round';
       renderCtx.lineCap = 'round';
       
@@ -433,11 +390,8 @@ const PPGSignalMeter = memo(({
       const pathCoordinates: [number, number][] = [];
       const arrhythmiaSegments: {start: [number, number], end: [number, number]}[] = [];
       
-      // En Android, procesar menos puntos para mejorar rendimiento
-      const skipFactor = isAndroid ? 2 : 1;
-      
-      for (let i = skipFactor; i < points.length; i += skipFactor) {
-        const prevPoint = points[i - skipFactor];
+      for (let i = 1; i < points.length; i++) {
+        const prevPoint = points[i - 1];
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -482,17 +436,11 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Optimizar dibujado de picos en Android
       if (peaksRef.current.length > 0) {
         const normalPeaks: [number, number, number][] = [];
         const arrhythmiaPeaks: [number, number, number][] = [];
         
-        // En Android, limitar la cantidad de picos mostrados
-        const visiblePeaks = isAndroid ? 
-          peaksRef.current.slice(-Math.min(5, MAX_PEAKS_TO_DISPLAY)) : 
-          peaksRef.current;
-        
-        visiblePeaks.forEach(peak => {
+        peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
           const y = (canvas.height / 2) - 40 - peak.value;
           
@@ -510,16 +458,13 @@ const PPGSignalMeter = memo(({
           
           normalPeaks.forEach(([x, y, value]) => {
             renderCtx.beginPath();
-            renderCtx.arc(x, y, isAndroid ? 4 : 5, 0, Math.PI * 2);
+            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
             renderCtx.fill();
             
-            // En Android, texto más pequeño y simple
-            if (!isAndroid || normalPeaks.length < 3) {
-              renderCtx.font = isAndroid ? 'bold 12px Inter' : 'bold 16px Inter';
-              renderCtx.fillStyle = '#000000';
-              renderCtx.textAlign = 'center';
-              renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
-            }
+            renderCtx.font = 'bold 16px Inter';
+            renderCtx.fillStyle = '#000000';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
           });
         }
         
@@ -528,26 +473,24 @@ const PPGSignalMeter = memo(({
           
           arrhythmiaPeaks.forEach(([x, y, value]) => {
             renderCtx.beginPath();
-            renderCtx.arc(x, y, isAndroid ? 4 : 5, 0, Math.PI * 2);
+            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
             renderCtx.fill();
             
             renderCtx.beginPath();
-            renderCtx.arc(x, y, isAndroid ? 8 : 10, 0, Math.PI * 2);
+            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
             renderCtx.strokeStyle = '#FEF7CD';
-            renderCtx.lineWidth = isAndroid ? 2 : 3;
+            renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
-            renderCtx.font = isAndroid ? 'bold 14px Inter' : 'bold 18px Inter';
+            renderCtx.font = 'bold 18px Inter';
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 25);
             
-            if (!isAndroid) {
-              renderCtx.font = 'bold 16px Inter';
-              renderCtx.fillStyle = '#000000';
-              renderCtx.textAlign = 'center';
-              renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
-            }
+            renderCtx.font = 'bold 16px Inter';
+            renderCtx.fillStyle = '#000000';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
           });
         }
       }
@@ -562,7 +505,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, throttledDetectPeaks, smoothValue, preserveResults, WINDOW_WIDTH_MS, FRAME_TIME, IMMEDIATE_RENDERING, USE_OFFSCREEN_CANVAS, verticalScale, isAndroid]);
+  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults]);
 
   useEffect(() => {
     renderSignal();
@@ -583,20 +526,13 @@ const PPGSignalMeter = memo(({
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
-  // Deferrar la renderización inicial del canvas para evitar bloqueos en Android
-  useEffect(() => {
-    if (canvasRef.current) {
-      optimizeCanvas(canvasRef.current);
-    }
-  }, []);
-
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-full absolute inset-0 z-0 object-cover performance-boost android-optimized"
+        className="w-full h-full absolute inset-0 z-0 object-cover performance-boost"
         style={{
           transform: 'translate3d(0,0,0)',
           backfaceVisibility: 'hidden',
@@ -639,16 +575,16 @@ const PPGSignalMeter = memo(({
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 gap-px bg-transparent z-10">
+      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
           onClick={onStartMeasurement}
-          className="w-full h-full bg-black/80 text-2xl font-semibold text-white active:bg-gray-800"
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           INICIAR
         </button>
         <button 
           onClick={handleReset}
-          className="w-full h-full bg-black/80 text-2xl font-semibold text-white active:bg-gray-800"
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           RESET
         </button>
