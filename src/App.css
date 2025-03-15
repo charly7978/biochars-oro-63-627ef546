@@ -165,6 +165,14 @@ button, .button {
   contain: paint layout;
 }
 
+/* Android specific optimizations */
+.android-optimized {
+  /* Optimizaciones específicas para Android */
+  image-rendering: optimizeSpeed;
+  text-rendering: optimizeSpeed;
+  contain: content;
+}
+
 /* Enhanced smooth animations */
 @media screen and (min-width: 30em) {
   .smooth-animation {
@@ -193,6 +201,14 @@ canvas.performance-boost {
   will-change: transform;
 }
 
+/* Android optimized canvas */
+canvas.android-optimized {
+  image-rendering: optimizeSpeed;
+  contain: layout paint size;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
 /* Optimize graphics rendering specifically for graphs */
 .ppg-graph {
   transform: translate3d(0, 0, 0);
@@ -203,6 +219,12 @@ canvas.performance-boost {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Optimizaciones para Android */
+.android-optimized.ppg-graph {
+  contain: layout paint;
+  touch-action: none;
+}
+
 /* Force hardware acceleration for critical animations */
 .force-gpu {
   transform: translate3d(0, 0, 0);
@@ -210,4 +232,16 @@ canvas.performance-boost {
   backface-visibility: hidden;
   perspective: 1000;
   contain: strict;
+}
+
+/* Android specific optimizations for CPU intensive elements */
+.android-performance {
+  /* Configuraciones específicas para Android */
+  animation-duration: 0.5s !important;
+  transition-duration: 0.25s !important;
+  will-change: auto;
+  backface-visibility: hidden;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
 }

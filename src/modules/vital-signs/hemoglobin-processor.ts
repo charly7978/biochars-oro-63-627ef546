@@ -8,16 +8,20 @@ import {
   waveletDenoise,
   findPeaksAndValleysAdaptive
 } from '../../utils/vitalSignsUtils';
+import { isAndroidDevice, throttle } from '../../utils/displayOptimizer';
 
 export class HemoglobinProcessor {
   private values: number[] = [];
   private readonly maxSamples = 300;
   private readonly minSamplesToCalculate = 100;
   private lastQuality: number = 0;
+  private lastCalculation: number = 0;
+  private lastCalculatedValue: number = 0;
+  private readonly RECALCULATION_INTERVAL = isAndroidDevice() ? 250 : 100; // ms
   
   /**
    * Procesa un valor de señal PPG para estimar la hemoglobina
-   * Versión mejorada con filtrado adaptativo
+   * Versión mejorada con filtrado adaptativo y optimizaciones para Android
    * @param ppgValue Valor de la señal PPG filtrada
    * @returns Estimación de hemoglobina en g/dL o 0 si no hay suficientes datos
    */
@@ -31,6 +35,14 @@ export class HemoglobinProcessor {
     if (this.values.length < this.minSamplesToCalculate) {
       return 0;
     }
+    
+    // Limitar frecuencia de cálculos pesados en Android
+    const now = Date.now();
+    if (now - this.lastCalculation < this.RECALCULATION_INTERVAL) {
+      return this.lastCalculatedValue;
+    }
+    
+    this.lastCalculation = now;
     
     // Calcular SNR para determinar la calidad de la señal
     const signalQuality = calculateSNR(this.values.slice(-60));
@@ -52,13 +64,17 @@ export class HemoglobinProcessor {
       processedValues = butterworthFilter(processedValues, 0.15);
     }
     
+    // Optimización para Android: procesar menos datos
+    const dataSize = isAndroidDevice() ? Math.min(processedValues.length, 150) : processedValues.length;
+    const optimizedData = processedValues.slice(-dataSize);
+    
     // Detectar picos y valles con el método mejorado adaptativo
-    const { peakIndices, valleyIndices } = findPeaksAndValleysAdaptive(processedValues, 0.6);
+    const { peakIndices, valleyIndices } = findPeaksAndValleysAdaptive(optimizedData, 0.6);
     
     // Calcular métricas avanzadas de la señal
-    const meanValue = calculateMeanValue(processedValues);
+    const meanValue = calculateMeanValue(optimizedData);
     const peakCount = peakIndices.length;
-    const amplitudeVariation = this.calculateAmplitudeVariation(processedValues);
+    const amplitudeVariation = this.calculateAmplitudeVariation(optimizedData);
     
     // Aplicar algoritmo de estimación de hemoglobina mejorado
     // Esta implementación mejora la precisión basada en características de la onda PPG
@@ -72,8 +88,8 @@ export class HemoglobinProcessor {
     // Ajustes basados en características de la señal
     // Los coeficientes están optimizados para una mejor correlación
     if (peakCount >= 3) {
-      const perfusionIndex = this.calculatePerfusionIndex(processedValues, peakIndices, valleyIndices);
-      const waveformArea = this.calculateWaveformArea(processedValues);
+      const perfusionIndex = this.calculatePerfusionIndex(optimizedData, peakIndices, valleyIndices);
+      const waveformArea = this.calculateWaveformArea(optimizedData);
       
       hemoglobin = baseline + 
                    (amplitudeVariation * 1.8) - 
@@ -86,24 +102,35 @@ export class HemoglobinProcessor {
     }
     
     // Limitar el rango a valores fisiológicamente plausibles
-    return Math.max(8.0, Math.min(18.0, hemoglobin));
+    this.lastCalculatedValue = Math.max(8.0, Math.min(18.0, hemoglobin));
+    return this.lastCalculatedValue;
   }
   
   /**
-   * Calcula la hemoglobina basada en un array de valores PPG
-   * Método de compatibilidad para el VitalSignsProcessor
+   * Calcular hemoglobina sin demasiada carga computacional para Android
    */
-  calculateHemoglobin(ppgValues: number[]): number {
+  private throttledProcess = throttle((values: number[]): number => {
+    // Optimización para Android: procesar en lotes más pequeños
+    const batchSize = isAndroidDevice() ? Math.min(values.length, 100) : values.length;
+    const processedValues = values.slice(-batchSize);
+    
     // Reiniciar el procesador para trabajar con el nuevo conjunto de datos
     this.reset();
     
     // Procesar cada valor del array
     let result = 0;
-    for (const value of ppgValues) {
+    for (const value of processedValues) {
       result = this.processValue(value);
     }
     
     return result;
+  }, isAndroidDevice() ? 300 : 100); // ms
+  
+  /**
+   * Calcular hemoglobina con optimizaciones para dispositivos de bajo rendimiento
+   */
+  calculateHemoglobin(ppgValues: number[]): number {
+    return this.throttledProcess(ppgValues);
   }
   
   /**
@@ -129,7 +156,11 @@ export class HemoglobinProcessor {
     // Calcular AC (componente alternante)
     let acSum = 0;
     let validPeaks = 0;
-    for (let i = 0; i < Math.min(peakIndices.length, valleyIndices.length); i++) {
+    
+    // En Android, limitar el número de picos a procesar
+    const maxPeaks = isAndroidDevice() ? Math.min(peakIndices.length, 5) : peakIndices.length;
+    
+    for (let i = 0; i < Math.min(maxPeaks, valleyIndices.length); i++) {
       if (peakIndices[i] < values.length && valleyIndices[i] < values.length) {
         acSum += values[peakIndices[i]] - values[valleyIndices[i]];
         validPeaks++;
@@ -155,8 +186,17 @@ export class HemoglobinProcessor {
     const min = Math.min(...values);
     const normalized = values.map(v => v - min);
     
-    // Calcular área como la suma de valores (aproximación de la integral)
-    return normalized.reduce((sum, val) => sum + val, 0) / values.length;
+    // Optimización para Android: muestrear menos puntos
+    const sampleRate = isAndroidDevice() ? 2 : 1;
+    let areaSum = 0;
+    let count = 0;
+    
+    for (let i = 0; i < normalized.length; i += sampleRate) {
+      areaSum += normalized[i];
+      count++;
+    }
+    
+    return count > 0 ? areaSum / count : 0;
   }
   
   /**
@@ -172,5 +212,7 @@ export class HemoglobinProcessor {
   reset(): void {
     this.values = [];
     this.lastQuality = 0;
+    this.lastCalculation = 0;
+    this.lastCalculatedValue = 0;
   }
 }
