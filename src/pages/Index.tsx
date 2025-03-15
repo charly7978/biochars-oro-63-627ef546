@@ -8,6 +8,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -284,6 +285,8 @@ const Index = () => {
     if (!lipids) return "--/--";
     const chol = lipids.totalCholesterol || 0;
     const trig = lipids.triglycerides || 0;
+    
+    if (chol === 0 && trig === 0) return "--/--";
     return `${chol}/${trig}`;
   };
 
