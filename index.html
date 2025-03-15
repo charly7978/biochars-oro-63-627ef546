@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="fullscreen" content="yes">
     <meta name="screen-orientation" content="portrait">
-    <!-- High DPI display support with maximum resolution capabilities -->
+    <!-- High DPI display support -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
     <title>healthpulse-captain</title>
     <style>
@@ -107,22 +107,6 @@
         }
       }
       
-      @media screen and (min-width: 5120px) {
-        .high-res-interface {
-          transform: scale(0.2);
-          width: 500%;
-          height: 500%;
-        }
-      }
-      
-      @media screen and (min-width: 7680px) {
-        .high-res-interface {
-          transform: scale(0.125);
-          width: 800%;
-          height: 800%;
-        }
-      }
-      
       /* Improve text rendering */
       h1, h2, h3, h4, h5, h6, p, span, button {
         text-rendering: geometricPrecision;
@@ -157,13 +141,8 @@
         background-color: #000 !important;
       }
       
-      /* Ultra high resolution optimizations */
       .resolution-4k .vital-display,
-      .resolution-4k .precision-number,
-      .resolution-5k .vital-display,
-      .resolution-5k .precision-number,
-      .resolution-8k .vital-display,
-      .resolution-8k .precision-number {
+      .resolution-4k .precision-number {
         font-feature-settings: "tnum";
         letter-spacing: -0.03em;
       }
