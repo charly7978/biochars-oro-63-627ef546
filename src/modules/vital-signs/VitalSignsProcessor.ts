@@ -13,7 +13,7 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
-  signalQuality?: number;
+  signalQuality: number;
   lastArrhythmiaData?: {
     timestamp: number;
     rmssd: number;
@@ -27,6 +27,7 @@ export interface VitalSignsResult {
       arrhythmia: number;
     }
   };
+  rawPPG?: number; // Added for tracking raw PPG value
 }
 
 export class VitalSignsProcessor {
@@ -131,7 +132,8 @@ export class VitalSignsProcessor {
           pressure: Math.min(1, this.ppgValues.length / 150),
           arrhythmia: Math.min(1, timeSinceStart / this.ARRHYTHMIA_LEARNING_PERIOD)
         }
-      }
+      },
+      rawPPG: ppgValue
     };
 
     // Guardar último resultado válido

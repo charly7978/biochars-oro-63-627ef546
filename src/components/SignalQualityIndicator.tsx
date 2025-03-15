@@ -1,213 +1,139 @@
 
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, ThumbsUp, AlertTriangle, Fingerprint } from 'lucide-react';
+import { Vibration } from '../utils/Vibration';
+
+// Import only the necessary config from FingerDetector
 import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 
 interface SignalQualityIndicatorProps {
   quality: number;
-  isMonitoring?: boolean;
-  rgbValues?: {red: number, green: number, blue: number};
+  isFingerPresent: boolean;
+  qualityLevel?: string;
 }
 
 /**
- * Componente que muestra la calidad de la señal PPG
- * Centraliza toda la detección de dedo a través del FingerDetector
- * ACTUALIZADO para usar TRIPLE VERIFICACIÓN
+ * Constants for quality thresholds
  */
-const SignalQualityIndicator = ({ 
-  quality, 
-  isMonitoring = false,
-  rgbValues
-}: SignalQualityIndicatorProps) => {
-  // Estado local
-  const [displayQuality, setDisplayQuality] = useState(0);
-  const [isFingerDetected, setIsFingerDetected] = useState(false);
-  const [qualityText, setQualityText] = useState('Sin Dedo');
-  const [qualityColor, setQualityColor] = useState('#666666');
-  const [showHelpTip, setShowHelpTip] = useState(false);
-  const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
-  const [helpMessage, setHelpMessage] = useState('');
-  const [rgRatio, setRgRatio] = useState(0);
-  const [redValue, setRedValue] = useState(0);
-  const [greenValue, setGreenValue] = useState(0);
-  
-  // Detector de dedo centralizado (se crea solo una vez)
-  const [fingerDetector] = useState(() => new FingerDetector());
-  
-  // Mostrar consejos cuando se comienza a monitorear
-  useEffect(() => {
-    if (isMonitoring) {
-      const timer = setTimeout(() => setShowHelpTip(true), 1000);
-      return () => clearTimeout(timer);
-    } else {
-      setShowHelpTip(false);
-    }
-  }, [isMonitoring]);
+const QUALITY_CONSTANTS = {
+  LOW_QUALITY_THRESHOLD: 25,
+  MEDIUM_QUALITY_THRESHOLD: 50,
+  HIGH_QUALITY_THRESHOLD: 75,
+  QUALITY_THRESHOLD: 70
+};
 
-  // Usar FingerDetector con TRIPLE VERIFICACIÓN como única fuente de detección
-  useEffect(() => {
-    if (isMonitoring) {
-      // Procesar valores RGB si están disponibles
-      if (rgbValues) {
-        // Guardar valores actuales
-        setRedValue(rgbValues.red);
-        setGreenValue(rgbValues.green);
-        
-        // Calcular ratio rojo/verde
-        if (rgbValues.green > 0) {
-          const currentRgRatio = rgbValues.red / rgbValues.green;
-          setRgRatio(currentRgRatio);
-        }
-      }
-      
-      // Procesar con el detector centralizado usando TRIPLE VERIFICACIÓN
-      const result = rgbValues 
-        ? fingerDetector.processQuality(quality, rgbValues.red, rgbValues.green)
-        : fingerDetector.processQuality(quality);
-      
-      // Actualizar estado según resultado
-      setDisplayQuality(result.quality);
-      setIsFingerDetected(result.isFingerDetected);
-      setQualityText(result.qualityLevel);
-      setQualityColor(result.qualityColor);
-      setHelpMessage(result.helpMessage);
-      
-      // Determinar nivel de tip basado en calidad
-      if (!result.isFingerDetected) {
-        setTipLevel('error');
-      } else if (result.quality < fingerDetector.getConfig().LOW_QUALITY_THRESHOLD) {
-        setTipLevel('warning');
-      } else {
-        setTipLevel('info');
-      }
-      
-      // Log para depuración (solo ocasionalmente)
-      if (Math.random() < 0.02) {
-        console.log("SignalQualityIndicator: Estado con TRIPLE VERIFICACIÓN", {
-          calidad: quality,
-          calidadAjustada: result.quality,
-          dedoDetectado: result.isFingerDetected,
-          nivelCalidad: result.qualityLevel,
-          ratioRG: rgRatio,
-          valorRojo: redValue,
-          valorVerde: greenValue,
-          umbralRG: fingerDetector.getConfig().MIN_RED_GREEN_RATIO,
-          umbralRojo: fingerDetector.getConfig().MIN_RED_VALUE,
-          umbralVerde: fingerDetector.getConfig().MIN_GREEN_VALUE,
-          mensaje: result.helpMessage
-        });
-      }
-    } else {
-      // Reset cuando no estamos monitoreando
-      setDisplayQuality(0);
-      setIsFingerDetected(false);
-      setRgRatio(0);
-      setRedValue(0);
-      setGreenValue(0);
-      fingerDetector.reset();
-    }
-  }, [quality, isMonitoring, fingerDetector, rgbValues]);
+const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
+  quality,
+  isFingerPresent,
+  qualityLevel = 'BAJO'
+}) => {
+  const [lastVibrationTime, setLastVibrationTime] = useState(0);
+  const [lastStatus, setLastStatus] = useState('');
 
-  // Estilo de pulso adaptado a la calidad
-  const getPulseClass = () => {
-    if (!isFingerDetected) 
-      return "transition-all duration-300";
-    
-    return "transition-all duration-300 animate-pulse";
+  // Create a detector instance just to get the configuration
+  const fingerDetector = new FingerDetector();
+  const config = fingerDetector.getConfig();
+
+  /**
+   * Determinar color y mensajes basados en la calidad
+   */
+  const getQualityInfo = (quality: number, isFingerPresent: boolean) => {
+    let qualityColor = 'text-red-500';
+    let helpMessage = 'Coloca tu dedo en la cámara';
+
+    if (!isFingerPresent) {
+      return {
+        qualityColor: 'text-gray-400',
+        helpMessage: 'Coloca tu dedo en la cámara'
+      };
+    }
+
+    if (quality >= QUALITY_CONSTANTS.HIGH_QUALITY_THRESHOLD) {
+      qualityColor = 'text-emerald-500';
+      helpMessage = 'Excelente señal! Mantenga esta posición';
+    } else if (quality >= QUALITY_CONSTANTS.MEDIUM_QUALITY_THRESHOLD) {
+      qualityColor = 'text-amber-500';
+      helpMessage = 'Buena señal, mantén el dedo quieto';
+    } else if (quality >= config.MIN_QUALITY_FOR_DETECTION) {
+      qualityColor = 'text-orange-500';
+      helpMessage = 'Señal aceptable, ajusta la posición';
+    } else {
+      qualityColor = 'text-red-500';
+      helpMessage = 'Señal débil, cubre toda la cámara con tu dedo';
+    }
+
+    return { qualityColor, helpMessage };
   };
 
+  const { qualityColor, helpMessage } = getQualityInfo(quality, isFingerPresent);
+
+  // Vibrate and update status when needed
+  useEffect(() => {
+    const currentTime = Date.now();
+    const timeSinceLastVibration = currentTime - lastVibrationTime;
+    const MIN_VIBRATION_INTERVAL = 2000; // 2 seconds between vibrations
+
+    let newStatus = '';
+    
+    if (!isFingerPresent) {
+      newStatus = 'no-finger';
+    } else if (quality >= QUALITY_CONSTANTS.QUALITY_THRESHOLD) {
+      newStatus = 'good-quality';
+    } else {
+      newStatus = 'low-quality';
+    }
+
+    // Only vibrate if status changed and enough time has passed
+    if (newStatus !== lastStatus && timeSinceLastVibration > MIN_VIBRATION_INTERVAL) {
+      if (newStatus === 'no-finger') {
+        Vibration.vibrate(200);
+      } else if (newStatus === 'good-quality') {
+        Vibration.vibrate([100, 100, 100]);
+      }
+      
+      setLastVibrationTime(currentTime);
+    }
+    
+    setLastStatus(newStatus);
+  }, [isFingerPresent, quality, lastVibrationTime, lastStatus]);
+
   return (
-    <div className="bg-black/30 backdrop-blur-md rounded p-1 w-full relative">
-      <div className="flex items-center gap-1">
-        <div 
-          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 ${getPulseClass()}`}
-          style={{
-            borderColor: qualityColor,
-            backgroundColor: `${qualityColor}33`
-          }}
-        >
-          <span className="text-[9px] font-bold text-white">{displayQuality}%</span>
+    <div className="flex flex-col items-center mt-2 overflow-hidden">
+      <div className="flex items-center mb-1">
+        <div className={`text-lg font-semibold ${qualityColor}`}>
+          {isFingerPresent ? `${qualityLevel || 'BAJO'} (${quality}%)` : 'NO DETECTADO'}
         </div>
-
-        <div className="flex-1">
-          <div className="flex justify-between items-center mb-0.5">
-            <span className="text-[9px] font-semibold text-white/90">Calidad de Señal</span>
-            <span 
-              className="text-[9px] font-medium"
-              style={{ color: qualityColor }}
-            >
-              {qualityText}
-            </span>
-          </div>
-
-          <div className="w-full h-0.5 bg-gray-700/50 rounded-full overflow-hidden">
-            <div 
-              className="h-full transition-all duration-300"
-              style={{
-                width: `${displayQuality}%`,
-                backgroundColor: qualityColor
-              }}
-            />
-          </div>
-          
-          {/* Mostramos el ratio R/G actual y valores */}
-          {rgbValues && rgbValues.green > 0 && (
-            <div className="mt-0.5 flex flex-col">
-              <div className="flex justify-between items-center">
-                <span className="text-[8px] font-semibold text-white/70">Ratio R/G:</span>
-                <span 
-                  className="text-[8px] font-medium"
-                  style={{ 
-                    color: rgRatio >= fingerDetector.getConfig().MIN_RED_GREEN_RATIO 
-                      ? '#10b981' : '#ef4444' 
-                  }}
-                >
-                  {rgRatio.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[8px] font-semibold text-white/70">R/G:</span>
-                <span 
-                  className="text-[8px] font-medium"
-                  style={{ 
-                    color: isFingerDetected ? '#10b981' : '#ef4444' 
-                  }}
-                >
-                  {Math.round(redValue)}/{Math.round(greenValue)}
-                </span>
-              </div>
-            </div>
-          )}
+        
+        <div className="ml-2 flex space-x-1">
+          {[...Array(5)].map((_, i) => {
+            let dotColor = 'bg-gray-300';
+            
+            if (isFingerPresent) {
+              if (i < Math.ceil(quality / 20)) {
+                if (quality >= QUALITY_CONSTANTS.HIGH_QUALITY_THRESHOLD) {
+                  dotColor = 'bg-emerald-500';
+                } else if (quality >= QUALITY_CONSTANTS.MEDIUM_QUALITY_THRESHOLD) {
+                  dotColor = 'bg-amber-500';
+                } else if (quality >= config.MIN_QUALITY_FOR_DETECTION) {
+                  dotColor = 'bg-orange-500';
+                } else {
+                  dotColor = 'bg-red-500';
+                }
+              }
+            }
+            
+            return (
+              <div 
+                key={i} 
+                className={`h-2 w-2 rounded-full ${dotColor} transition-colors duration-300`}
+              />
+            );
+          })}
         </div>
       </div>
       
-      {/* Indicador de estado del dedo */}
-      <div className="absolute top-0 right-0 transform translate-x-1 -translate-y-3">
-        <Fingerprint 
-          size={16} 
-          className={`${isFingerDetected ? 'text-green-500' : 'text-gray-400'} transition-colors duration-300`}
-        />
-      </div>
-      
-      {/* Consejos de ayuda */}
-      {showHelpTip && (displayQuality < fingerDetector.getConfig().QUALITY_THRESHOLD || !isFingerDetected) && (
-        <div className="absolute -bottom-[5rem] left-0 right-0 bg-black/75 p-2 rounded text-white text-xs flex items-start gap-1.5 border border-white/10">
-          {tipLevel === 'error' || !isFingerDetected ? (
-            <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
-          ) : tipLevel === 'warning' ? (
-            <AlertTriangle className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-          ) : (
-            <ThumbsUp className="h-4 w-4 text-green-400 flex-shrink-0 mt-0.5" />
-          )}
-          <span>{helpMessage}</span>
-        </div>
-      )}
+      <p className="text-sm text-gray-600 text-center max-w-[250px]">
+        {helpMessage}
+      </p>
     </div>
   );
 };

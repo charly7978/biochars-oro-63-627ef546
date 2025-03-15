@@ -5,7 +5,7 @@
  * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
-import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { VitalSignsProcessor as CoreVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 import { FingerDetector } from './finger-detection/FingerDetector';
 
 /**
@@ -15,7 +15,7 @@ import { FingerDetector } from './finger-detection/FingerDetector';
  * Este archivo centraliza la detección de dedo en FingerDetector
  */
 export class VitalSignsProcessor {
-  private processor: NewVitalSignsProcessor;
+  private processor: CoreVitalSignsProcessor;
   private fingerDetector: FingerDetector;
   private lastRgbValues: {red: number, green: number} = {red: 0, green: 0};
   private consecutiveEmptyFrames: number = 0;
@@ -27,7 +27,7 @@ export class VitalSignsProcessor {
    * Constructor que inicializa el procesador interno refactorizado y el detector de dedo
    */
   constructor() {
-    this.processor = new NewVitalSignsProcessor();
+    this.processor = new CoreVitalSignsProcessor();
     this.fingerDetector = new FingerDetector();
     console.log("VitalSignsProcessor: Inicializado con detector de dedo TRIPLE VERIFICACIÓN anti-falsos-positivos");
   }
