@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+
+import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 
@@ -17,7 +18,7 @@ interface PPGSignalMeterProps {
   preserveResults?: boolean;
 }
 
-const PPGSignalMeter = ({ 
+const PPGSignalMeter = memo(({ 
   value, 
   quality, 
   isFingerDetected,
@@ -40,13 +41,14 @@ const PPGSignalMeter = ({
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1024;
   const CANVAS_HEIGHT = 768;
   const GRID_SIZE_X = 10;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 30.0;
+  const verticalScale = 40.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
@@ -58,6 +60,7 @@ const PPGSignalMeter = ({
   const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
   const QUALITY_HISTORY_SIZE = 5;
+  const USE_OFFSCREEN_CANVAS = true;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -85,6 +88,25 @@ const PPGSignalMeter = ({
       consecutiveFingerFramesRef.current = 0;
     }
   }, [quality, isFingerDetected]);
+
+  // Create offscreen canvas once on mount
+  useEffect(() => {
+    const offscreen = document.createElement('canvas');
+    offscreen.width = CANVAS_WIDTH;
+    offscreen.height = CANVAS_HEIGHT;
+    offscreenCanvasRef.current = offscreen;
+    
+    // Also create the static grid canvas
+    const gridCanvas = document.createElement('canvas');
+    gridCanvas.width = CANVAS_WIDTH;
+    gridCanvas.height = CANVAS_HEIGHT;
+    const gridCtx = gridCanvas.getContext('2d', { alpha: false });
+    
+    if(gridCtx) {
+      drawGrid(gridCtx);
+      gridCanvasRef.current = gridCanvas;
+    }
+  }, []);
 
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
@@ -295,18 +317,34 @@ const PPGSignalMeter = ({
     }
     
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { alpha: false });
+    // Use OffscreenCanvas for rendering to reduce main thread work
+    const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
+      offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
+      canvas.getContext('2d', { alpha: false });
     
-    if (!ctx) {
+    if (!renderCtx) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
     
     const now = Date.now();
     
-    drawGrid(ctx);
+    // Use pre-rendered grid when possible
+    if (gridCanvasRef.current) {
+      renderCtx.drawImage(gridCanvasRef.current, 0, 0);
+    } else {
+      drawGrid(renderCtx);
+    }
     
     if (preserveResults && !isFingerDetected) {
+      // If using offscreen canvas, copy to visible canvas
+      if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
+        const visibleCtx = canvas.getContext('2d', { alpha: false });
+        if (visibleCtx) {
+          visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+        }
+      }
+      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -345,13 +383,17 @@ const PPGSignalMeter = ({
     detectPeaks(points, now);
     
     if (points.length > 1) {
-      ctx.beginPath();
-      ctx.strokeStyle = '#0EA5E9';
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
+      renderCtx.beginPath();
+      renderCtx.strokeStyle = '#0EA5E9';
+      renderCtx.lineWidth = 2;
+      renderCtx.lineJoin = 'round';
+      renderCtx.lineCap = 'round';
       
       let firstPoint = true;
+      
+      // Batch rendering for better performance - process all points at once
+      const pathCoordinates: [number, number][] = [];
+      const arrhythmiaSegments: {start: [number, number], end: [number, number]}[] = [];
       
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
@@ -364,57 +406,112 @@ const PPGSignalMeter = ({
         const y2 = (canvas.height / 2) - 40 - point.value;
         
         if (firstPoint) {
-          ctx.moveTo(x1, y1);
+          pathCoordinates.push([x1, y1]);
           firstPoint = false;
         }
         
-        ctx.lineTo(x2, y2);
+        pathCoordinates.push([x2, y2]);
         
         if (point.isArrhythmia) {
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.strokeStyle = '#DC2626';
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.strokeStyle = '#0EA5E9';
-          ctx.moveTo(x2, y2);
-          firstPoint = true;
+          arrhythmiaSegments.push({
+            start: [x1, y1],
+            end: [x2, y2]
+          });
         }
       }
       
-      ctx.stroke();
-      
-      peaksRef.current.forEach(peak => {
-        const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2) - 40 - peak.value;
-        
-        if (x >= 0 && x <= canvas.width) {
-          ctx.beginPath();
-          ctx.arc(x, y, 5, 0, Math.PI * 2);
-          ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
-          ctx.fill();
-          
-          if (peak.isArrhythmia) {
-            ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.strokeStyle = '#FEF7CD';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            
-            ctx.font = 'bold 18px Inter';
-            ctx.fillStyle = '#F97316';
-            ctx.textAlign = 'center';
-            ctx.fillText('ARRITMIA', x, y - 25);
-          }
-          
-          ctx.font = 'bold 16px Inter';
-          ctx.fillStyle = '#000000';
-          ctx.textAlign = 'center';
-          ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+      // Render main path in one go
+      if (pathCoordinates.length > 0) {
+        renderCtx.beginPath();
+        renderCtx.moveTo(pathCoordinates[0][0], pathCoordinates[0][1]);
+        for (let i = 1; i < pathCoordinates.length; i++) {
+          renderCtx.lineTo(pathCoordinates[i][0], pathCoordinates[i][1]);
         }
-      });
+        renderCtx.stroke();
+      }
+      
+      // Render arrhythmia segments separately
+      if (arrhythmiaSegments.length > 0) {
+        renderCtx.beginPath();
+        renderCtx.strokeStyle = '#DC2626';
+        
+        for (const segment of arrhythmiaSegments) {
+          renderCtx.moveTo(segment.start[0], segment.start[1]);
+          renderCtx.lineTo(segment.end[0], segment.end[1]);
+        }
+        
+        renderCtx.stroke();
+      }
+      
+      // Batch peak rendering
+      if (peaksRef.current.length > 0) {
+        const normalPeaks: [number, number, number][] = []; // x, y, value
+        const arrhythmiaPeaks: [number, number, number][] = []; // x, y, value
+        
+        peaksRef.current.forEach(peak => {
+          const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
+          const y = (canvas.height / 2) - 40 - peak.value;
+          
+          if (x >= 0 && x <= canvas.width) {
+            if (peak.isArrhythmia) {
+              arrhythmiaPeaks.push([x, y, peak.value]);
+            } else {
+              normalPeaks.push([x, y, peak.value]);
+            }
+          }
+        });
+        
+        // Render normal peaks
+        if (normalPeaks.length > 0) {
+          renderCtx.fillStyle = '#0EA5E9';
+          
+          normalPeaks.forEach(([x, y, value]) => {
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
+            renderCtx.fill();
+            
+            renderCtx.font = 'bold 16px Inter';
+            renderCtx.fillStyle = '#000000';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
+          });
+        }
+        
+        // Render arrhythmia peaks
+        if (arrhythmiaPeaks.length > 0) {
+          renderCtx.fillStyle = '#DC2626';
+          
+          arrhythmiaPeaks.forEach(([x, y, value]) => {
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
+            renderCtx.fill();
+            
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
+            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.lineWidth = 3;
+            renderCtx.stroke();
+            
+            renderCtx.font = 'bold 18px Inter';
+            renderCtx.fillStyle = '#F97316';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText('ARRITMIA', x, y - 25);
+            
+            renderCtx.font = 'bold 16px Inter';
+            renderCtx.fillStyle = '#000000';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
+          });
+        }
+      }
+    }
+    
+    // If using offscreen canvas, copy to visible canvas with a single draw operation
+    if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
+      const visibleCtx = canvas.getContext('2d', { alpha: false });
+      if (visibleCtx) {
+        visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+      }
     }
     
     lastRenderTimeRef.current = currentTime;
@@ -431,18 +528,6 @@ const PPGSignalMeter = ({
     };
   }, [renderSignal]);
 
-  useEffect(() => {
-    const offscreen = document.createElement('canvas');
-    offscreen.width = CANVAS_WIDTH;
-    offscreen.height = CANVAS_HEIGHT;
-    const offCtx = offscreen.getContext('2d');
-    
-    if(offCtx){
-      drawGrid(offCtx);
-      gridCanvasRef.current = offscreen;
-    }
-  }, [drawGrid]);
-
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
@@ -453,12 +538,17 @@ const PPGSignalMeter = ({
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col">
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-full absolute inset-0 z-0 object-cover"
+        className="w-full h-full absolute inset-0 z-0 object-cover performance-boost"
+        style={{
+          transform: 'translate3d(0,0,0)',
+          backfaceVisibility: 'hidden',
+          contain: 'paint layout size'
+        }}
       />
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
@@ -510,6 +600,8 @@ const PPGSignalMeter = ({
       </div>
     </div>
   );
-};
+});
+
+PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
