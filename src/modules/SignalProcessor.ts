@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -44,6 +45,17 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly DETECTION_TIMEOUT = 1000; // Aumentado para mayor estabilidad
   private isAndroid: boolean = false;
   
+  // Nuevas variables para análisis de consistencia de picos
+  private peakValues: number[] = [];
+  private readonly PEAK_HISTORY_SIZE = 5;
+  private readonly PEAK_VARIANCE_THRESHOLD = 0.45; // Umbral permisivo de varianza para picos
+  
+  // Nuevas variables para análisis fisiológico
+  private redValues: number[] = [];
+  private greenValues: number[] = [];
+  private readonly RGB_HISTORY_SIZE = 3;
+  private readonly MIN_RG_RATIO = 1.1; // Umbral permisivo para relación rojo/verde
+  
   // Debug information
   private lastDebugLog: number = 0;
   private readonly DEBUG_INTERVAL = 1000; // Log debug info every second
@@ -83,6 +95,12 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.isCurrentlyDetected = false;
       this.lastDetectionTime = 0;
       this.kalmanFilter.reset();
+      
+      // Resetear variables de análisis de picos y fisiológico
+      this.peakValues = [];
+      this.redValues = [];
+      this.greenValues = [];
+      
       console.log("PPGSignalProcessor: Inicializado con configuración:", this.currentConfig);
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -105,6 +123,12 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consecutiveDetections = 0;
     this.isCurrentlyDetected = false;
     this.kalmanFilter.reset();
+    
+    // Limpiar análisis de picos y fisiológico
+    this.peakValues = [];
+    this.redValues = [];
+    this.greenValues = [];
+    
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -163,6 +187,16 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastDebugLog = now;
       }
       
+      // Guardar valores RGB para análisis fisiológico
+      this.redValues.push(extractionResult.avgRed);
+      this.greenValues.push(extractionResult.avgGreen);
+      
+      // Mantener tamaño de historial
+      if (this.redValues.length > this.RGB_HISTORY_SIZE) {
+        this.redValues.shift();
+        this.greenValues.shift();
+      }
+      
       // Aplicar Kalman filter para suavizar la señal
       const filtered = this.kalmanFilter.filter(redValue);
       
@@ -201,7 +235,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     redValue: number, 
     isRedDominant: boolean,
     redGreenRatio: number,
-    brightness: number
+    brightness: number,
+    avgRed: number,
+    avgGreen: number
   } {
     const data = imageData.data;
     let redSum = 0;
@@ -256,7 +292,9 @@ export class PPGSignalProcessor implements SignalProcessor {
       redValue: isRedDominant ? avgRed : 0,
       isRedDominant,
       redGreenRatio,
-      brightness
+      brightness,
+      avgRed,
+      avgGreen
     };
   }
 
@@ -302,6 +340,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     // Determinar si la señal es suficientemente estable
     const isStableNow = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
     
+    // Nuevo: detectar picos para análisis de consistencia
+    this.detectPeaks(filtered);
+    
     // Actualizar contador de detecciones consecutivas
     if (isStableNow) {
       this.consecutiveDetections++;
@@ -345,11 +386,25 @@ export class PPGSignalProcessor implements SignalProcessor {
                           0.5;
       }
       
+      // Nuevo: Score de consistencia de pico
+      const peakConsistencyScore = this.calculatePeakConsistency();
+      
+      // Nuevo: Score de características fisiológicas
+      const physiologicalScore = this.calculatePhysiologicalCharacteristics();
+      
       // Combinar scores con diferentes pesos
       // Dar más peso a estabilidad en Android
       const rawQuality = this.isAndroid ?
-                         (stabilityScore * 0.6 + intensityScore * 0.3 + variabilityScore * 0.1) :
-                         (stabilityScore * 0.5 + intensityScore * 0.3 + variabilityScore * 0.2);
+                         (stabilityScore * 0.45 + 
+                          intensityScore * 0.2 + 
+                          variabilityScore * 0.1 +
+                          peakConsistencyScore * 0.15 +
+                          physiologicalScore * 0.1) :
+                         (stabilityScore * 0.35 + 
+                          intensityScore * 0.2 + 
+                          variabilityScore * 0.15 +
+                          peakConsistencyScore * 0.15 +
+                          physiologicalScore * 0.15);
       
       quality = Math.round(rawQuality * 100);
     }
@@ -376,6 +431,82 @@ export class PPGSignalProcessor implements SignalProcessor {
     const normalizedStability = Math.max(0, Math.min(1, 1 - (avgVariation / threshold)));
     
     return normalizedStability;
+  }
+  
+  /**
+   * Nuevo método: Detecta picos en la señal para análisis de consistencia
+   */
+  private detectPeaks(value: number): void {
+    if (this.lastValues.length < 5) return;
+    
+    // Detectar pico simple (si el valor actual es un máximo local en ventana de 5)
+    const recentValues = this.lastValues.slice(-5);
+    const currentValue = recentValues[recentValues.length - 1];
+    
+    let isPeak = true;
+    for (let i = 0; i < recentValues.length - 1; i++) {
+      if (recentValues[i] >= currentValue) {
+        isPeak = false;
+        break;
+      }
+    }
+    
+    if (isPeak) {
+      this.peakValues.push(value);
+      if (this.peakValues.length > this.PEAK_HISTORY_SIZE) {
+        this.peakValues.shift();
+      }
+    }
+  }
+  
+  /**
+   * Nuevo método: Calcula consistencia de picos en la señal
+   */
+  private calculatePeakConsistency(): number {
+    if (this.peakValues.length < 3) return 0.5; // Score neutral con pocos datos
+    
+    const mean = this.peakValues.reduce((sum, val) => sum + val, 0) / this.peakValues.length;
+    
+    // Calcular variación normalizada
+    const variance = this.peakValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.peakValues.length;
+    const cv = Math.sqrt(variance) / Math.abs(mean);
+    
+    // Convertir a score (0-1)
+    // Función suave: alta consistencia = alto score
+    if (cv < this.PEAK_VARIANCE_THRESHOLD) {
+      return 1 - (cv / this.PEAK_VARIANCE_THRESHOLD);
+    } else {
+      return Math.max(0.2, 0.5 - (cv - this.PEAK_VARIANCE_THRESHOLD));
+    }
+  }
+  
+  /**
+   * Nuevo método: Analiza características fisiológicas de la señal
+   */
+  private calculatePhysiologicalCharacteristics(): number {
+    if (this.redValues.length < 2 || this.greenValues.length < 2) return 0.5; // Score neutral
+    
+    // Calcular promedio de valores RGB
+    const avgRed = this.redValues.reduce((sum, val) => sum + val, 0) / this.redValues.length;
+    const avgGreen = this.greenValues.reduce((sum, val) => sum + val, 0) / this.greenValues.length;
+    
+    if (avgGreen <= 0) return 0.3; // Valores inválidos
+    
+    // Calcular relación R/G
+    const rgRatio = avgRed / avgGreen;
+    
+    // Verificar si la relación está en rango fisiológico (no agresivo)
+    // En tejido humano iluminado por flash, rojo debe ser mayor que verde
+    if (rgRatio < this.MIN_RG_RATIO) {
+      // Por debajo del mínimo esperado para piel
+      return Math.max(0.2, 0.7 * (rgRatio / this.MIN_RG_RATIO));
+    } else if (rgRatio > 2.0) {
+      // Demasiado rojo, probablemente no es tejido humano
+      return Math.max(0.2, 1 - ((rgRatio - 2.0) / 2.0));
+    } else {
+      // En rango óptimo
+      return 0.8 + (0.2 * (1 - Math.abs(rgRatio - 1.5) / 0.5));
+    }
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
