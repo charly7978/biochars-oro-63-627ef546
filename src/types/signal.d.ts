@@ -13,6 +13,13 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex?: number;
+  waveformFeatures?: {
+    systolicPeak: number;
+    diastolicPeak: number;
+    dicroticNotch: number;
+    pulseWidth: number;
+    areaUnderCurve: number;
+  };
 }
 
 export interface ProcessingError {

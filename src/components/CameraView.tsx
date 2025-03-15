@@ -51,16 +51,16 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
+      // Configuración mejorada para la cámara
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
-        height: { ideal: 480 }
+        width: { ideal: 1280 },  // Aumentamos la resolución
+        height: { ideal: 720 },  // HD
+        frameRate: { ideal: 30, max: 30 }
       };
 
       if (isAndroid) {
-        // Ajustes para mejorar la extracción de señal en Android
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }, // Limitamos explícitamente a 30 FPS
           resizeMode: 'crop-and-scale'
         });
       }
@@ -72,33 +72,40 @@ const CameraView = ({
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = newStream.getVideoTracks()[0];
 
-      if (videoTrack && isAndroid) {
+      if (videoTrack) {
         try {
           const capabilities = videoTrack.getCapabilities();
-          const advancedConstraints: MediaTrackConstraintSet[] = [];
+          const settings: MediaTrackConstraintSet = {};
           
-          if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
-          }
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          // Configurar exposición
+          if (capabilities.exposureMode?.includes('manual')) {
+            settings.exposureMode = 'manual';
+          } else if (capabilities.exposureMode?.includes('continuous')) {
+            settings.exposureMode = 'continuous';
           }
 
-          if (advancedConstraints.length > 0) {
+          // Configurar enfoque
+          if (capabilities.focusMode?.includes('manual')) {
+            settings.focusMode = 'manual';
+          } else if (capabilities.focusMode?.includes('continuous')) {
+            settings.focusMode = 'continuous';
+          }
+
+          // Configurar balance de blancos
+          if (capabilities.whiteBalanceMode?.includes('manual')) {
+            settings.whiteBalanceMode = 'manual';
+          } else if (capabilities.whiteBalanceMode?.includes('continuous')) {
+            settings.whiteBalanceMode = 'continuous';
+          }
+
+          // Aplicar configuraciones
+          if (Object.keys(settings).length > 0) {
             await videoTrack.applyConstraints({
-              advanced: advancedConstraints
+              advanced: [settings]
             });
           }
 
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
-          }
-          
-          // Activar linterna (flash) inmediatamente si está disponible
+          // Activar linterna si está disponible
           if (capabilities.torch) {
             console.log("Activando linterna para mejorar la señal PPG");
             await videoTrack.applyConstraints({
@@ -106,17 +113,20 @@ const CameraView = ({
             });
             setTorchEnabled(true);
           }
+
+          // Optimizaciones de rendimiento para el video
+          if (videoRef.current) {
+            videoRef.current.style.transform = 'translateZ(0)';
+            videoRef.current.style.backfaceVisibility = 'hidden';
+            videoRef.current.style.willChange = 'transform';
+          }
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.warn("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        if (isAndroid) {
-          videoRef.current.style.willChange = 'transform';
-          videoRef.current.style.transform = 'translateZ(0)';
-        }
       }
 
       setStream(newStream);
@@ -160,9 +170,6 @@ const CameraView = ({
       }
     }
   }, [stream, isFingerDetected, torchEnabled]);
-
-  // Cambiar la tasa de cuadros a, por ejemplo, 12 FPS:
-  const targetFrameInterval = 1000/12; // Apunta a 12 FPS para menor consumo
 
   return (
     <video
