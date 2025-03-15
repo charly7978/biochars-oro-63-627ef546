@@ -8,30 +8,33 @@
  */
 
 export class PeakDetector {
-  // Parámetros de detección
-  private readonly MIN_PEAK_DISTANCE_MS = 400; // Distancia mínima entre picos
-  private readonly MAX_PEAK_DISTANCE_MS = 1200; // Distancia máxima para considerar picos válidos
+  // Parámetros de detección - recalibrados para reducir falsos positivos
+  private readonly MIN_PEAK_DISTANCE_MS = 450; // Aumentado (antes: 400) para reducir falsos positivos
+  private readonly MAX_PEAK_DISTANCE_MS = 1500; // Aumentado para cubrir ritmos cardíacos más lentos
   private readonly SAMPLING_RATE = 30; // Muestras por segundo (aproximado)
   
-  // Configuración del algoritmo
+  // Configuración del algoritmo - ajustado para mayor precisión
   private readonly SLOPE_SUM_WINDOW = 8; // Ventana para función suma de pendientes
   private readonly DERIVATIVE_WINDOW = 5; // Ventana para derivada
-  private readonly VERIFICATION_WINDOW = 3; // Ventana para verificación de picos
+  private readonly VERIFICATION_WINDOW = 5; // Aumentado (antes: 3) para mejor verificación
   
   // Estado interno
   private lastPeakIndex: number = -1;
   private lastPeakTime: number = 0;
-  private peakThreshold: number = 0.3;
-  private adaptiveThreshold: number = 0.3;
+  private peakThreshold: number = 0.35; // Aumentado (antes: 0.3) para reducir falsos positivos
+  private adaptiveThreshold: number = 0.35; // Aumentado (antes: 0.3)
   private rrIntervals: number[] = [];
+  private consecutiveGoodIntervals: number = 0;
+  private readonly MIN_GOOD_INTERVALS = 3; // Nuevo: mínimo de intervalos válidos consecutivos
   
   constructor() {
-    console.log('Detector avanzado de picos inicializado');
+    console.log('Detector avanzado de picos inicializado con umbral mejorado');
   }
   
   /**
    * Detecta picos en la señal PPG utilizando un algoritmo avanzado
    * basado en derivadas de segundo orden y suma de pendientes
+   * con mejoras para reducción de falsos positivos
    */
   public detectPeaks(values: number[]): {
     peakIndices: number[];
@@ -65,21 +68,28 @@ export class PeakDetector {
     this.updateAdaptiveThreshold(slopeSum);
     
     // Detección de picos usando múltiples criterios
-    for (let i = 2; i < values.length - 2; i++) {
-      // Criterio 1: Pico local en señal original
+    for (let i = 4; i < values.length - 4; i++) {
+      // Criterio 1: Pico local en señal original (ventana ampliada)
       const isPeak = values[i] > values[i-1] && 
                      values[i] > values[i-2] && 
+                     values[i] > values[i-3] && 
                      values[i] > values[i+1] && 
-                     values[i] > values[i+2];
+                     values[i] > values[i+2] &&
+                     values[i] > values[i+3];
       
       // Criterio 2: Segunda derivada negativa (característica de pico)
-      const isInflection = secondDerivative[i-2] < -this.adaptiveThreshold * 0.2;
+      const isInflection = secondDerivative[i-4] < -this.adaptiveThreshold * 0.3; // Más exigente
       
       // Criterio 3: Función suma de pendientes positiva
-      const hasPositiveSlope = slopeSum[i-2] > this.adaptiveThreshold;
+      const hasPositiveSlope = slopeSum[i-4] > this.adaptiveThreshold * 1.2; // Más exigente
       
-      // Combinar criterios
-      if (isPeak && (isInflection || hasPositiveSlope)) {
+      // Criterio adicional: Amplitud mínima del pico relativa al valor promedio
+      const localAvg = this.calculateLocalAverage(values, i, 10);
+      const peakProminence = values[i] - localAvg;
+      const hasMinProminence = peakProminence > this.adaptiveThreshold * 2.5; // Criterio de prominencia
+      
+      // Combinar criterios - más restrictivo para reducir falsos positivos
+      if (isPeak && isInflection && hasPositiveSlope && hasMinProminence) {
         // Verificar distancia mínima desde último pico
         const minSampleDistance = this.MIN_PEAK_DISTANCE_MS / (1000 / this.SAMPLING_RATE);
         
@@ -90,14 +100,21 @@ export class PeakDetector {
           if (this.lastPeakIndex >= 0) {
             const rrInterval = (i - this.lastPeakIndex) * (1000 / this.SAMPLING_RATE);
             
-            // Verificar si el intervalo es fisiológicamente válido
-            if (rrInterval >= this.MIN_PEAK_DISTANCE_MS && rrInterval <= this.MAX_PEAK_DISTANCE_MS) {
+            // Verificar si el intervalo es fisiológicamente válido con criterios más estrictos
+            const isValidInterval = rrInterval >= this.MIN_PEAK_DISTANCE_MS && 
+                                  rrInterval <= this.MAX_PEAK_DISTANCE_MS;
+            
+            if (isValidInterval) {
               this.rrIntervals.push(rrInterval);
+              this.consecutiveGoodIntervals++;
               
               // Mantener un buffer limitado de intervalos
               if (this.rrIntervals.length > 20) {
                 this.rrIntervals.shift();
               }
+            } else {
+              // Reiniciar contador de intervalos consecutivos buenos
+              this.consecutiveGoodIntervals = 0;
             }
           }
           
@@ -106,13 +123,16 @@ export class PeakDetector {
         }
       }
       
-      // Detección de valles (mínimos locales)
+      // Detección de valles (mínimos locales) - criterios más estrictos
       const isValley = values[i] < values[i-1] && 
                        values[i] < values[i-2] && 
                        values[i] < values[i+1] && 
                        values[i] < values[i+2];
                        
-      if (isValley) {
+      const valleyProminence = localAvg - values[i];
+      const hasMinValleyProminence = valleyProminence > this.adaptiveThreshold;
+      
+      if (isValley && hasMinValleyProminence) {
         valleyIndices.push(i);
       }
     }
@@ -120,9 +140,61 @@ export class PeakDetector {
     return {
       peakIndices,
       valleyIndices,
-      intervals: this.rrIntervals,
+      intervals: this.getValidIntervals(),
       lastPeakTime: this.lastPeakTime
     };
+  }
+  
+  /**
+   * Filtra y retorna solo intervalos RR válidos
+   * Nuevo método para mejorar la calidad de los intervalos
+   */
+  private getValidIntervals(): number[] {
+    // Si no hay suficientes intervalos consecutivos buenos, retorna array vacío
+    if (this.consecutiveGoodIntervals < this.MIN_GOOD_INTERVALS) {
+      return [];
+    }
+    
+    // Si hay suficientes intervalos, los filtra para eliminar valores atípicos
+    if (this.rrIntervals.length > 3) {
+      // Calcular media y desviación estándar
+      const sum = this.rrIntervals.reduce((a, b) => a + b, 0);
+      const mean = sum / this.rrIntervals.length;
+      
+      const squaredDiffs = this.rrIntervals.map(val => Math.pow(val - mean, 2));
+      const variance = squaredDiffs.reduce((a, b) => a + b, 0) / this.rrIntervals.length;
+      const stdDev = Math.sqrt(variance);
+      
+      // Filtrar intervalos dentro de 2 desviaciones estándar
+      return this.rrIntervals.filter(interval => 
+        Math.abs(interval - mean) <= 2 * stdDev
+      );
+    }
+    
+    return this.rrIntervals;
+  }
+  
+  /**
+   * Calcula el promedio local alrededor de un punto
+   * Nuevo método para mejor estimación de línea base
+   */
+  private calculateLocalAverage(values: number[], index: number, windowSize: number): number {
+    const halfWindow = Math.floor(windowSize / 2);
+    let sum = 0;
+    let count = 0;
+    
+    const start = Math.max(0, index - halfWindow);
+    const end = Math.min(values.length - 1, index + halfWindow);
+    
+    for (let i = start; i <= end; i++) {
+      // Excluir el punto central y puntos adyacentes para mejor estimación de línea base
+      if (Math.abs(i - index) > 2) {
+        sum += values[i];
+        count++;
+      }
+    }
+    
+    return count > 0 ? sum / count : values[index];
   }
   
   /**
@@ -162,6 +234,7 @@ export class PeakDetector {
   
   /**
    * Actualiza el umbral adaptativo basado en la amplitud de la señal
+   * Mejorado para adaptarse mejor a diferentes calidades de señal
    */
   private updateAdaptiveThreshold(slopeSum: number[]): void {
     if (slopeSum.length < 10) return;
@@ -172,12 +245,12 @@ export class PeakDetector {
     const min = Math.min(...values);
     const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
     
-    // Calcular threshold adaptativo
+    // Calcular threshold adaptativo con factor más restrictivo
     const range = max - min;
-    this.adaptiveThreshold = mean + 0.3 * range;
+    this.adaptiveThreshold = mean + 0.35 * range; // Aumentado de 0.3 a 0.35
     
-    // Limitar a valores razonables
-    this.adaptiveThreshold = Math.max(0.1, Math.min(0.6, this.adaptiveThreshold));
+    // Limitar a valores razonables más restrictivos
+    this.adaptiveThreshold = Math.max(0.15, Math.min(0.7, this.adaptiveThreshold));
   }
   
   /**
@@ -186,8 +259,9 @@ export class PeakDetector {
   public reset(): void {
     this.lastPeakIndex = -1;
     this.lastPeakTime = 0;
-    this.peakThreshold = 0.3;
-    this.adaptiveThreshold = 0.3;
+    this.peakThreshold = 0.35;
+    this.adaptiveThreshold = 0.35;
     this.rrIntervals = [];
+    this.consecutiveGoodIntervals = 0;
   }
 }
