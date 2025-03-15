@@ -1,4 +1,3 @@
-
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -231,7 +230,7 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Validar valor PPG
+    // Validate valor PPG
     if (isNaN(ppgValue) || ppgValue === 0) {
       console.warn("VitalSignsProcessor: Valor PPG inválido recibido", ppgValue);
       return this.getLastValidResults() || {

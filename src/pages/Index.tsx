@@ -407,15 +407,31 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+    if (lastSignal && isMonitoring) {
+      // Improved detection - process even with lower quality signals
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
+      if (heartBeatResult && heartBeatResult.bpm > 0) {
+        setHeartRate(heartBeatResult.bpm);
+      }
       
+      // Process vital signs even with low quality signal to improve detection
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         console.log("Index: Vitales procesados:", vitals);
         
-        setVitalSigns(vitals);
+        // Always update vital signs to see real-time changes
+        setVitalSigns(prevSigns => ({
+          ...prevSigns,
+          spo2: vitals.spo2 || prevSigns.spo2,
+          pressure: vitals.pressure || prevSigns.pressure,
+          arrhythmiaStatus: vitals.arrhythmiaStatus || prevSigns.arrhythmiaStatus,
+          glucose: vitals.glucose || prevSigns.glucose,
+          lipids: {
+            totalCholesterol: vitals.lipids?.totalCholesterol || prevSigns.lipids?.totalCholesterol || 0,
+            triglycerides: vitals.lipids?.triglycerides || prevSigns.lipids?.triglycerides || 0
+          },
+          hemoglobin: vitals.hemoglobin || prevSigns.hemoglobin
+        }));
         
         if (vitals.lastArrhythmiaData) {
           setLastArrhythmiaData(vitals.lastArrhythmiaData);
@@ -424,6 +440,7 @@ const Index = () => {
         }
       }
       
+      // Always update signal quality
       setSignalQuality(lastSignal.quality);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
