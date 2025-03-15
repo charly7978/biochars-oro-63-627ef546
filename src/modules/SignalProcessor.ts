@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -68,7 +69,15 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly BASELINE_FACTOR = 0.95;
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
-  private readonly MIN_PERIODICITY_SCORE = 0.35; // CAMBIO CLAVE 2: Reducido de 0.42 para ser más permisivo con la periodicidad
+  
+  // MODIFICACIÓN CRÍTICA 1: Aumentar el umbral de periodicidad para evitar falsos positivos
+  private readonly MIN_PERIODICITY_SCORE = 0.48; // Aumentado de 0.35 para evitar detectar señales estáticas
+  
+  // MODIFICACIÓN CRÍTICA 2: Nuevas variables para validación física de la señal
+  private lastFramesVariation: number[] = []; 
+  private readonly FRAMES_VARIATION_SIZE = 10;
+  private readonly MIN_VALID_VARIATION = 0.18; // Mínima variación necesaria en señal viva
+  private readonly MAX_STATIC_RATIO = 0.3; // Máximo ratio de frames estáticos permitidos
   
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -90,6 +99,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.kalmanFilter.reset();
       this.baselineValue = 0;
       this.periodicityBuffer = [];
+      this.lastFramesVariation = []; // Inicializar buffer de variación
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -118,6 +128,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.kalmanFilter.reset();
     this.baselineValue = 0;
     this.periodicityBuffer = [];
+    this.lastFramesVariation = []; // Limpiar buffer de variación
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -177,6 +188,9 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Filtrar con Kalman
       const filtered = this.kalmanFilter.filter(denoisedValue);
       
+      // NUEVO: Registrar variación entre frames consecutivos para detectar señales estáticas
+      this.trackFrameVariation(filtered);
+      
       // Almacenar para análisis de periodicidad
       this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
@@ -209,6 +223,42 @@ export class PPGSignalProcessor implements SignalProcessor {
       console.error("PPGSignalProcessor: Error procesando frame", error);
       this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
+  }
+
+  /**
+   * NUEVO: Seguimiento de variación entre frames para detectar señales vivas vs estáticas
+   */
+  private trackFrameVariation(value: number): void {
+    if (this.lastValues.length > 0) {
+      const lastValue = this.lastValues[this.lastValues.length - 1];
+      const variation = Math.abs(value - lastValue);
+      
+      this.lastFramesVariation.push(variation);
+      if (this.lastFramesVariation.length > this.FRAMES_VARIATION_SIZE) {
+        this.lastFramesVariation.shift();
+      }
+    }
+  }
+
+  /**
+   * NUEVO: Evalúa si la señal tiene características físicas de un dedo real
+   * Un dedo real muestra microvariaciones por flujo sanguíneo, mientras
+   * una pared u objeto estático tendrá variaciones mínimas o nulas
+   */
+  private hasValidPhysicalSignature(): boolean {
+    if (this.lastFramesVariation.length < this.FRAMES_VARIATION_SIZE * 0.5) {
+      return false;
+    }
+    
+    // Calcular variación promedio y contar cuántos frames tienen variación significativa
+    const avgVariation = this.lastFramesVariation.reduce((sum, v) => sum + v, 0) / 
+                         this.lastFramesVariation.length;
+    
+    const significantVariations = this.lastFramesVariation.filter(v => v > this.MIN_VALID_VARIATION).length;
+    const variationRatio = significantVariations / this.lastFramesVariation.length;
+    
+    // Una señal viva debe tener variaciones significativas (pulso) y no ser completamente estática
+    return avgVariation > this.MIN_VALID_VARIATION * 0.7 && variationRatio > this.MAX_STATIC_RATIO;
   }
 
   /**
@@ -304,6 +354,9 @@ export class PPGSignalProcessor implements SignalProcessor {
 
     const periodicityScore = this.analyzeSignalPeriodicity();
     
+    // MODIFICACIÓN CRÍTICA 3: Validación física como requisito para calidad alta
+    const hasValidSignature = this.hasValidPhysicalSignature();
+    
     // Calculamos la calidad incluso con niveles bajos de estabilidad
     let quality = 0;
     if (this.stableFrameCount >= (this.MIN_STABILITY_COUNT * 0.8)) { // Permite calidad con menos estabilidad
@@ -312,19 +365,24 @@ export class PPGSignalProcessor implements SignalProcessor {
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      // Cálculo de calidad más gradual
+      // MODIFICACIÓN CRÍTICA 4: Penalización severa para objetos sin firma física válida
+      const physicalSignatureModifier = hasValidSignature ? 1.0 : 0.3;
+      
+      // Cálculo de calidad más riguroso que penaliza señales no fisiológicas
       quality = Math.round((stabilityScore * 0.35 + 
                           intensityScore * 0.25 + 
                           variationScore * 0.2 + 
-                          periodicityScore * 0.2) * 100);
+                          periodicityScore * 0.2) * 100 * physicalSignatureModifier);
                           
-      // Suavizar cambios bruscos en calidad
-      quality = Math.max(20, quality); // Garantizar un mínimo de calidad cuando hay dedo
+      // MODIFICACIÓN CRÍTICA 5: Suavizar cambios bruscos en calidad, 
+      // pero NO garantizar mínimo de calidad si no hay firma física válida
+      quality = hasValidSignature ? Math.max(20, quality) : Math.min(quality, 40);
     }
     
-    // Detección más permisiva
+    // Detección más rigurosa combinando estabilidad, periodicidad Y validación física
     const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
-                             periodicityScore > this.MIN_PERIODICITY_SCORE;
+                             periodicityScore > this.MIN_PERIODICITY_SCORE &&
+                             hasValidSignature;
 
     return { isFingerDetected, quality };
   }
