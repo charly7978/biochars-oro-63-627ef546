@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -41,7 +42,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
+  // Reduced PERFUSION_INDEX_THRESHOLD to increase sensitivity
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
   
   private baselineValue: number = 0;
   private readonly WAVELET_THRESHOLD = 0.025;
@@ -49,7 +51,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
   
-  private readonly MIN_PERIODICITY_SCORE = 0.42;
+  // Reduced MIN_PERIODICITY_SCORE to allow more signals to be detected
+  private readonly MIN_PERIODICITY_SCORE = 0.38;
   
   private readonly SIGNAL_QUALITY_THRESHOLD = 65;
 
