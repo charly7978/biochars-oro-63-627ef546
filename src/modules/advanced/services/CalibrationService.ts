@@ -13,7 +13,8 @@ export class CalibrationService {
     arrhythmia: 0,
     glucose: 0,
     lipids: 0,
-    hemoglobin: 0
+    hemoglobin: 0,
+    atrialFibrillation: 0
   };
 
   /**
@@ -30,6 +31,7 @@ export class CalibrationService {
     this.calibrationProgress.glucose += increment;
     this.calibrationProgress.lipids += increment;
     this.calibrationProgress.hemoglobin += increment;
+    this.calibrationProgress.atrialFibrillation += increment;
     
     if (this.calibrationProgress.heartRate >= 1) {
       this.calibrating = false;
