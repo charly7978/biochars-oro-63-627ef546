@@ -28,14 +28,22 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 1.2; // VARIABLE MODIFICADA: Aumentado dramáticamente de 0.7 a 1.2 para exigir una señal con amplitud extrema
+  private readonly MIN_SIGNAL_DIFF = 1.2; // Modificación previa: Aumentado de 0.7 a 1.2
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 45; // VARIABLE MODIFICADA: Aumentado de 30 a 45 para exigir consistencia extremadamente prolongada
-  private lastSpikeTimestamps: number[] = []; // Nuevo: registro de los últimos picos para análisis de ritmo
+  private readonly REQUIRED_GOOD_FRAMES = 45; // Modificación previa: Aumentado de 30 a 45
+  private lastSpikeTimestamps: number[] = []; // Registro de los últimos picos para análisis de ritmo
   private readonly MIN_BPM = 45; // Mínima frecuencia cardíaca esperada (latidos por minuto)
   private readonly MAX_BPM = 200; // Máxima frecuencia cardíaca esperada
   private readonly MIN_FRAMES_BEFORE_DETECTION = 60; // Exigir un mínimo de frames antes de permitir detección
-  private totalFramesProcessed: number = 0; // Nuevo: contador de frames totales procesados
+  private totalFramesProcessed: number = 0; // Contador de frames totales procesados
+  
+  // NUEVAS VARIABLES para reducir falsos positivos
+  private consecutiveStableFrames: number = 0;
+  private readonly REQUIRED_STABLE_FRAMES = 20; // NUEVO: Requerir estabilidad sostenida
+  private lastPeakValues: number[] = []; // Para análisis de consistencia de picos
+  private readonly CONSISTENCY_WINDOW = 10; // Ventana para análisis de consistencia
+  private readonly MIN_PEAK_CONSISTENCY = 0.7; // Consistencia mínima entre picos para detección válida
+  private readonly AMPLITUDE_CONSISTENCY_THRESHOLD = 0.35; // Umbral para consistencia de amplitud
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
@@ -109,10 +117,16 @@ export class SignalProcessor {
         if (this.lastSpikeTimestamps.length === 0 || 
             now - this.lastSpikeTimestamps[this.lastSpikeTimestamps.length - 1] > 300) {
           this.lastSpikeTimestamps.push(now);
+          this.lastPeakValues.push(value); // NUEVO: Almacenar valor del pico
           
-          // Mantener solo los últimos 10 picos
+          // Mantener solo los últimos 10 picos (timestamps)
           if (this.lastSpikeTimestamps.length > 10) {
             this.lastSpikeTimestamps.shift();
+          }
+          
+          // Mantener solo los últimos N valores de picos (para análisis de consistencia)
+          if (this.lastPeakValues.length > this.CONSISTENCY_WINDOW) {
+            this.lastPeakValues.shift();
           }
         }
       }
@@ -206,24 +220,62 @@ export class SignalProcessor {
     // Característica 4: Análisis de ritmo cardíaco (nuevo)
     let heartRhythmScore = this.analyzeHeartRhythm();
     
+    // NUEVA Característica 5: Consistencia de amplitud entre picos
+    let peakConsistencyScore = this.analyzePeakConsistency();
+    
     // Combinar métricas con diferentes pesos
-    const rawQuality = (amplitudeScore * 0.4) + (consistencyScore * 0.2) + 
-                       (periodicityScore * 0.2) + (heartRhythmScore * 0.2);
+    // MODIFICADO: Ajustado los pesos para dar más importancia a la consistencia
+    const rawQuality = (amplitudeScore * 0.35) + (consistencyScore * 0.25) + 
+                       (periodicityScore * 0.15) + (heartRhythmScore * 0.15) +
+                       (peakConsistencyScore * 0.10); // NUEVO: Incluir consistencia de picos
     
     // Aplicar función de histéresis para evitar cambios abruptos
     this.signalQuality = this.signalQuality * 0.7 + rawQuality * 0.3;
     
     // Manejo de frames consecutivos buenos para estabilidad
-    if (rawQuality > 60) { // MODIFICADO: Más exigente, antes era > 50
+    // MODIFICADO: Umbral mucho más exigente para considerar un frame como "bueno"
+    if (rawQuality > 75) { // MODIFICADO: Aumentado de 60 a 75
       this.consecutiveGoodFrames++;
+      
+      // NUEVO: Contador adicional para estabilidad extrema
+      if (rawQuality > 85) {
+        this.consecutiveStableFrames++;
+      } else {
+        // Decrementar gradualmente para evitar pérdidas inmediatas por fluctuaciones menores
+        this.consecutiveStableFrames = Math.max(0, this.consecutiveStableFrames - 0.5);
+      }
     } else {
-      this.consecutiveGoodFrames = 0;
+      this.consecutiveGoodFrames = Math.max(0, this.consecutiveGoodFrames - 0.5); // Decrementar gradualmente
+      this.consecutiveStableFrames = Math.max(0, this.consecutiveStableFrames - 1); // Decrementar más rápido
     }
     
     // Si tenemos suficientes frames buenos consecutivos, aumentar confianza
     if (this.consecutiveGoodFrames >= this.REQUIRED_GOOD_FRAMES) {
       this.signalQuality = Math.min(100, this.signalQuality * 1.15);
     }
+  }
+  
+  /**
+   * NUEVO: Analiza la consistencia en la amplitud de los picos detectados
+   * Una señal de dedo real debería tener picos relativamente consistentes
+   */
+  private analyzePeakConsistency(): number {
+    if (this.lastPeakValues.length < 4) return 0;
+    
+    // Calcular estadísticas de valores de picos
+    const mean = this.lastPeakValues.reduce((sum, val) => sum + val, 0) / this.lastPeakValues.length;
+    const diffs = this.lastPeakValues.map(val => Math.abs(val - mean));
+    const avgDiff = diffs.reduce((sum, diff) => sum + diff, 0) / diffs.length;
+    const normalizedDiff = avgDiff / Math.abs(mean);
+    
+    // Evaluar consistencia: más bajo es mejor (menos variación)
+    if (normalizedDiff <= this.AMPLITUDE_CONSISTENCY_THRESHOLD) {
+      // Convertir a puntaje (0-100): menor variación = mayor puntaje
+      const consistencyScore = 100 * (1 - (normalizedDiff / this.AMPLITUDE_CONSISTENCY_THRESHOLD));
+      return consistencyScore;
+    }
+    
+    return 0; // Demasiada variación entre picos
   }
   
   /**
@@ -330,7 +382,10 @@ export class SignalProcessor {
   public isFingerPresent(): boolean {
     // Requerir un mínimo de frames totales antes de permitir cualquier detección
     // Esto evita falsos positivos durante el arranque
-    if (this.totalFramesProcessed < this.MIN_FRAMES_BEFORE_DETECTION) return false;
+    if (this.totalFramesProcessed < this.MIN_FRAMES_BEFORE_DETECTION) {
+      console.log("No suficientes frames procesados para iniciar detección");
+      return false;
+    }
     
     // Se requiere un mínimo de datos para determinar presencia
     if (this.ppgValues.length < 30) return false;
@@ -339,30 +394,70 @@ export class SignalProcessor {
     const recentValues = this.ppgValues.slice(-30);
     
     // Criterio 1: Calidad mínima de señal (extremadamente exigente)
-    if (this.signalQuality < 85) return false; 
+    // MODIFICADO: Umbral aumentado para reducir falsos positivos
+    if (this.signalQuality < 90) { // MODIFICADO: Aumentado de 85 a 90
+      console.log("Calidad de señal insuficiente:", this.signalQuality.toFixed(1));
+      return false;
+    }
     
     // Criterio 2: Variabilidad significativa con patrón claro (señal viva vs estática)
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const range = max - min;
     
-    // Criterio 3: Ratio de frames consecutivos buenos (extremadamente exigente)
+    // NUEVO Criterio 3: Periodo adicional de estabilidad extrema
+    // Requerimos una ventana adicional de frames ultra-estables
+    if (this.consecutiveStableFrames < this.REQUIRED_STABLE_FRAMES) {
+      console.log("No suficientes frames estables:", 
+                 this.consecutiveStableFrames, 
+                 "/", 
+                 this.REQUIRED_STABLE_FRAMES);
+      return false;
+    }
+    
+    // Criterio 4: Ratio de frames consecutivos buenos (extremadamente exigente)
     // Exigimos que haya muchos frames buenos consecutivos antes de considerar detección
-    if (this.consecutiveGoodFrames < this.REQUIRED_GOOD_FRAMES * 0.9) return false;
+    if (this.consecutiveGoodFrames < this.REQUIRED_GOOD_FRAMES) {
+      console.log("No suficientes frames buenos consecutivos:", 
+                 this.consecutiveGoodFrames, 
+                 "/", 
+                 this.REQUIRED_GOOD_FRAMES);
+      return false;
+    }
     
-    // Criterio 4: Verificación de periodicidad (solo señales con patrón cardíaco)
+    // Criterio 5: Verificación de periodicidad (solo señales con patrón cardíaco)
     const periodicityCheck = this.checkSignalPeriodicity(recentValues);
-    if (!periodicityCheck) return false;
+    if (!periodicityCheck) {
+      console.log("Periodicidad de señal no detectada");
+      return false;
+    }
     
-    // Criterio 5: Análisis de ritmo cardíaco (nuevo)
+    // Criterio 6: Análisis de ritmo cardíaco
     const heartRhythmCheck = this.verifyHeartRhythm();
-    if (!heartRhythmCheck) return false;
+    if (!heartRhythmCheck) {
+      console.log("Ritmo cardíaco no verificado");
+      return false;
+    }
     
-    // Criterio 6: Verificar estabilidad de señal a través del tiempo
+    // Criterio 7: Verificar estabilidad de señal a través del tiempo
     const signalStability = this.checkSignalStability(recentValues);
-    if (signalStability < 0.65) return false;  // Exigimos alta estabilidad
+    // MODIFICADO: Requerir mayor estabilidad
+    if (signalStability < 0.75) {  // Aumentado de 0.65 a 0.75
+      console.log("Estabilidad de señal insuficiente:", signalStability.toFixed(2));
+      return false;
+    }
+    
+    // NUEVO Criterio 8: Consistencia en la amplitud de picos
+    if (this.lastPeakValues.length >= 4) {
+      const peakConsistency = this.analyzePeakConsistency() / 100; // Convertir a escala 0-1
+      if (peakConsistency < this.MIN_PEAK_CONSISTENCY) {
+        console.log("Consistencia de picos insuficiente:", peakConsistency.toFixed(2));
+        return false;
+      }
+    }
     
     // Solo si pasa todos los criterios estrictos, consideramos que hay un dedo
+    console.log("DEDO DETECTADO ✓ - Todos los criterios cumplidos");
     return range > this.MIN_SIGNAL_DIFF;
   }
 
@@ -485,7 +580,9 @@ export class SignalProcessor {
     this.baselineValue = 0;
     this.signalQuality = 0;
     this.consecutiveGoodFrames = 0;
+    this.consecutiveStableFrames = 0; // NUEVO: Reiniciar contador de estabilidad
     this.lastSpikeTimestamps = [];
+    this.lastPeakValues = []; // NUEVO: Reiniciar valores de picos
     this.totalFramesProcessed = 0;
     console.log("SignalProcessor: Reset completo del procesador de señal");
   }
