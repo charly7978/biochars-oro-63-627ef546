@@ -1,40 +1,33 @@
-
 /**
- * Implementación avanzada de un detector de picos para señales PPG
- * basado en derivadas de segundo orden y análisis morfológico.
- * 
- * NOTA IMPORTANTE: Este módulo implementa técnicas avanzadas manteniendo
- * compatibilidad con las interfaces principales en index.tsx y PPGSignalMeter.tsx.
+ * Detector de picos simplificado con máxima sensibilidad
  */
 
 export class PeakDetector {
-  // Parámetros de detección - recalibrados para reducir falsos positivos
-  private readonly MIN_PEAK_DISTANCE_MS = 450; // Aumentado (antes: 400) para reducir falsos positivos
-  private readonly MAX_PEAK_DISTANCE_MS = 1500; // Aumentado para cubrir ritmos cardíacos más lentos
+  // Parámetros de detección poco restrictivos
+  private readonly MIN_PEAK_DISTANCE_MS = 300; // Muy reducido
+  private readonly MAX_PEAK_DISTANCE_MS = 2000; // Muy ampliado
   private readonly SAMPLING_RATE = 30; // Muestras por segundo (aproximado)
   
-  // Configuración del algoritmo - ajustado para mayor precisión
-  private readonly SLOPE_SUM_WINDOW = 8; // Ventana para función suma de pendientes
-  private readonly DERIVATIVE_WINDOW = 5; // Ventana para derivada
-  private readonly VERIFICATION_WINDOW = 5; // Aumentado (antes: 3) para mejor verificación
+  // Configuración del algoritmo - sensibilidad máxima
+  private readonly SLOPE_SUM_WINDOW = 5; // Ventana reducida
+  private readonly DERIVATIVE_WINDOW = 3; // Ventana reducida
+  private readonly VERIFICATION_WINDOW = 3; // Ventana reducida
   
   // Estado interno
   private lastPeakIndex: number = -1;
   private lastPeakTime: number = 0;
-  private peakThreshold: number = 0.35; // Aumentado (antes: 0.3) para reducir falsos positivos
-  private adaptiveThreshold: number = 0.35; // Aumentado (antes: 0.3)
+  private peakThreshold: number = 0.15; // Reducido al mínimo
+  private adaptiveThreshold: number = 0.15; // Reducido al mínimo
   private rrIntervals: number[] = [];
-  private consecutiveGoodIntervals: number = 0;
-  private readonly MIN_GOOD_INTERVALS = 3; // Nuevo: mínimo de intervalos válidos consecutivos
+  private consecutiveGoodIntervals: number = 3; // Siempre suficientes
+  private readonly MIN_GOOD_INTERVALS = 1; // Sólo requiere 1 intervalo
   
   constructor() {
-    console.log('Detector avanzado de picos inicializado con umbral mejorado');
+    console.log('Detector de picos inicializado con sensibilidad máxima');
   }
   
   /**
-   * Detecta picos en la señal PPG utilizando un algoritmo avanzado
-   * basado en derivadas de segundo orden y suma de pendientes
-   * con mejoras para reducción de falsos positivos
+   * Detecta picos con criterios mínimos
    */
   public detectPeaks(values: number[]): {
     peakIndices: number[];
@@ -51,70 +44,45 @@ export class PeakDetector {
       };
     }
     
-    // Calcular primera derivada
+    // Cálculos simplificados
     const firstDerivative = this.calculateFirstDerivative(values);
-    
-    // Calcular segunda derivada
-    const secondDerivative = this.calculateFirstDerivative(firstDerivative);
-    
-    // Función suma de pendientes para realzar picos
     const slopeSum = this.calculateSlopeSum(firstDerivative);
     
-    // Combinar información para detección robusta
+    // Detectar picos con criterios mínimos
     const peakIndices: number[] = [];
     const valleyIndices: number[] = [];
     
-    // Ajustar threshold basado en amplitud de señal
-    this.updateAdaptiveThreshold(slopeSum);
+    // Umbral adaptativo mínimo
+    this.adaptiveThreshold = 0.15;
     
-    // Detección de picos usando múltiples criterios
-    for (let i = 4; i < values.length - 4; i++) {
-      // Criterio 1: Pico local en señal original (ventana ampliada)
-      const isPeak = values[i] > values[i-1] && 
-                     values[i] > values[i-2] && 
-                     values[i] > values[i-3] && 
-                     values[i] > values[i+1] && 
-                     values[i] > values[i+2] &&
-                     values[i] > values[i+3];
+    // Detección con criterios mínimos
+    for (let i = 3; i < values.length - 3; i++) {
+      // Criterio simplificado: solo busca máximo local
+      const isPeak = values[i] > values[i-1] && values[i] > values[i+1];
       
-      // Criterio 2: Segunda derivada negativa (característica de pico)
-      const isInflection = secondDerivative[i-4] < -this.adaptiveThreshold * 0.3; // Más exigente
-      
-      // Criterio 3: Función suma de pendientes positiva
-      const hasPositiveSlope = slopeSum[i-4] > this.adaptiveThreshold * 1.2; // Más exigente
-      
-      // Criterio adicional: Amplitud mínima del pico relativa al valor promedio
-      const localAvg = this.calculateLocalAverage(values, i, 10);
-      const peakProminence = values[i] - localAvg;
-      const hasMinProminence = peakProminence > this.adaptiveThreshold * 2.5; // Criterio de prominencia
-      
-      // Combinar criterios - más restrictivo para reducir falsos positivos
-      if (isPeak && isInflection && hasPositiveSlope && hasMinProminence) {
-        // Verificar distancia mínima desde último pico
+      if (isPeak) {
+        // Verificar distancia mínima muy permisiva
         const minSampleDistance = this.MIN_PEAK_DISTANCE_MS / (1000 / this.SAMPLING_RATE);
         
-        if (i - this.lastPeakIndex > minSampleDistance) {
+        if (i - this.lastPeakIndex > minSampleDistance / 2) { // Distancia reducida a la mitad
           peakIndices.push(i);
           
           // Calcular intervalo RR en milisegundos
           if (this.lastPeakIndex >= 0) {
             const rrInterval = (i - this.lastPeakIndex) * (1000 / this.SAMPLING_RATE);
             
-            // Verificar si el intervalo es fisiológicamente válido con criterios más estrictos
-            const isValidInterval = rrInterval >= this.MIN_PEAK_DISTANCE_MS && 
-                                  rrInterval <= this.MAX_PEAK_DISTANCE_MS;
+            // Criterio muy permisivo
+            const isValidInterval = rrInterval >= this.MIN_PEAK_DISTANCE_MS / 2 && 
+                                  rrInterval <= this.MAX_PEAK_DISTANCE_MS * 1.5;
             
             if (isValidInterval) {
               this.rrIntervals.push(rrInterval);
-              this.consecutiveGoodIntervals++;
+              this.consecutiveGoodIntervals = 3; // Siempre suficientes
               
-              // Mantener un buffer limitado de intervalos
+              // Mantener buffer limitado
               if (this.rrIntervals.length > 20) {
                 this.rrIntervals.shift();
               }
-            } else {
-              // Reiniciar contador de intervalos consecutivos buenos
-              this.consecutiveGoodIntervals = 0;
             }
           }
           
@@ -123,16 +91,10 @@ export class PeakDetector {
         }
       }
       
-      // Detección de valles (mínimos locales) - criterios más estrictos
-      const isValley = values[i] < values[i-1] && 
-                       values[i] < values[i-2] && 
-                       values[i] < values[i+1] && 
-                       values[i] < values[i+2];
-                       
-      const valleyProminence = localAvg - values[i];
-      const hasMinValleyProminence = valleyProminence > this.adaptiveThreshold;
+      // Detección simple de valles
+      const isValley = values[i] < values[i-1] && values[i] < values[i+1];
       
-      if (isValley && hasMinValleyProminence) {
+      if (isValley) {
         valleyIndices.push(i);
       }
     }
@@ -140,7 +102,7 @@ export class PeakDetector {
     return {
       peakIndices,
       valleyIndices,
-      intervals: this.getValidIntervals(),
+      intervals: this.rrIntervals, // Retornar todos sin filtrar
       lastPeakTime: this.lastPeakTime
     };
   }
@@ -259,9 +221,9 @@ export class PeakDetector {
   public reset(): void {
     this.lastPeakIndex = -1;
     this.lastPeakTime = 0;
-    this.peakThreshold = 0.35;
-    this.adaptiveThreshold = 0.35;
+    this.peakThreshold = 0.15;
+    this.adaptiveThreshold = 0.15;
     this.rrIntervals = [];
-    this.consecutiveGoodIntervals = 0;
+    this.consecutiveGoodIntervals = 3;
   }
 }
