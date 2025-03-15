@@ -41,29 +41,31 @@ export class FingerDetector {
   private displayQuality: number = 0;
   private lastRedValue: number = 0;
   private lastGreenValue: number = 0;
+  private stabilityCounter: number = 0;
+  private lastDetectionState: boolean = false;
   
   // Configuración simplificada con solo dos variables críticas principales
   // VALORES AJUSTADOS para reducir falsos positivos sin bloquear detecciones legítimas
   private config: FingerDetectionConfig = {
     // PRIMERA VARIABLE CRÍTICA: Calidad mínima de señal (perfusión)
-    MIN_QUALITY_FOR_DETECTION: 12,     // Reducido para mejor detección
+    MIN_QUALITY_FOR_DETECTION: 15,     // Aumentado para reducir falsos positivos
     
     // SEGUNDA VARIABLE CRÍTICA: Ratio rojo/verde mínimo
-    MIN_RED_GREEN_RATIO: 1.2,          // Levemente reducido para mejor detección
+    MIN_RED_GREEN_RATIO: 1.35,         // Aumentado para reducir falsos positivos
     
     // Parámetros secundarios (menos críticos) - ajustados para mejor respuesta
-    REQUIRED_FINGER_FRAMES: 2,         // Reducido para respuesta más rápida
-    QUALITY_THRESHOLD: 60,             // Menos exigente para facilitar detección
-    LOW_QUALITY_THRESHOLD: 30,         // Menos exigente para mejor respuesta
-    RESET_QUALITY_THRESHOLD: 8         // Menos sensible a pérdida de señal
+    REQUIRED_FINGER_FRAMES: 3,         // Aumentado para mayor estabilidad
+    QUALITY_THRESHOLD: 60,             // Mantiene mismo valor
+    LOW_QUALITY_THRESHOLD: 30,         // Mantiene mismo valor
+    RESET_QUALITY_THRESHOLD: 8         // Mantiene mismo valor
   };
   
   // Historial reducido para respuesta más rápida
-  private readonly historySize = 5; // Reducido para respuesta más inmediata
+  private readonly historySize = 5; 
   
   constructor() {
     this.detectDeviceType();
-    console.log("FingerDetector: Inicializado con detección simplificada", {
+    console.log("FingerDetector: Inicializado con detección anti-falsos-positivos", {
       umbralPerfusión: this.config.MIN_QUALITY_FOR_DETECTION,
       ratioRojoVerde: this.config.MIN_RED_GREEN_RATIO,
       dispositivo: this.deviceType
@@ -86,8 +88,7 @@ export class FingerDetector {
   
   /**
    * Procesa un nuevo valor de calidad de señal y actualiza el estado
-   * Simplificado para usar solo dos variables críticas
-   * MEJORADO para reducir falsos positivos sin bloquear detecciones legítimas
+   * Mejorado para reducir drásticamente falsos positivos
    */
   public processQuality(quality: number, redValue?: number, greenValue?: number): FingerDetectionResult {
     // Actualizar valores RGB si están disponibles
@@ -96,18 +97,18 @@ export class FingerDetector {
       this.lastGreenValue = greenValue;
     }
     
-    // CRITERIO 1: Verificar calidad mínima (perfusión) - criterio más flexible
+    // CRITERIO 1: Verificar calidad mínima (perfusión) - criterio más estricto
     const hasMinimumQuality = quality >= this.config.MIN_QUALITY_FOR_DETECTION;
     
-    // CRITERIO 2: Verificar ratio rojo/verde (tejido vivo) - más flexible
+    // CRITERIO 2: Verificar ratio rojo/verde (tejido vivo) - más estricto
     let hasCorrectRgRatio = true; // Por defecto true si no hay valores RGB
     if (this.lastRedValue > 0 && this.lastGreenValue > 0) {
       const rgRatio = this.lastRedValue / this.lastGreenValue;
-      // Criterio ligeramente más flexible para evitar bloqueos
+      // Criterio más estricto para evitar falsos positivos
       hasCorrectRgRatio = rgRatio >= this.config.MIN_RED_GREEN_RATIO;
       
       // Log simplificado para entender el proceso de detección
-      if (Math.random() < 0.02) { // Solo logear ocasionalmente
+      if (Math.random() < 0.01) { // Solo logear muy ocasionalmente
         console.log("FingerDetector: Análisis", {
           calidad: quality,
           umbralCalidad: this.config.MIN_QUALITY_FOR_DETECTION,
@@ -118,23 +119,26 @@ export class FingerDetector {
       }
     }
     
-    // Si la calidad es muy baja, reiniciar historial - umbral más bajo
+    // Si la calidad es muy baja, reiniciar historial
     if (quality < this.config.RESET_QUALITY_THRESHOLD) {
       if (this.qualityHistory.length > 0) {
         this.qualityHistory = [];
         this.displayQuality = 0;
         this.consecutiveGoodFrames = 0;
+        this.stabilityCounter = 0;
       }
     } 
-    // Si cumple los dos criterios críticos o está muy cerca
-    else if (hasMinimumQuality && (hasCorrectRgRatio || quality > this.config.MIN_QUALITY_FOR_DETECTION * 1.5)) {
+    // Si cumple los dos criterios críticos
+    else if (hasMinimumQuality && hasCorrectRgRatio) {
       this.qualityHistory.push(quality);
       if (this.qualityHistory.length > this.historySize) {
         this.qualityHistory.shift();
       }
+      this.stabilityCounter = Math.min(10, this.stabilityCounter + 1);
     } 
     // Si no cumple los criterios, limpiar historial pero con más gradualidad
     else {
+      this.stabilityCounter = Math.max(0, this.stabilityCounter - 1);
       if (this.qualityHistory.length > 0) {
         // Reducción gradual del historial para evitar cambios bruscos
         if (this.qualityHistory.length > 1) {
@@ -154,9 +158,21 @@ export class FingerDetector {
     const qualityLevel = this.getQualityText(this.displayQuality);
     this.lastQualityLevel = qualityLevel;
     
-    // Generar resultado completo
+    // Determinar si hay dedo con criterios mejorados anti-falsos-positivos
+    const fingerDetected = this.isFingerDetected();
+    
+    // Aplicar histéresis para evitar fluctuaciones rápidas en la detección
+    // Solo cambiamos estado si hay una tendencia clara
+    if (fingerDetected !== this.lastDetectionState) {
+      if ((fingerDetected && this.stabilityCounter >= 3) || 
+          (!fingerDetected && this.stabilityCounter <= 1)) {
+        this.lastDetectionState = fingerDetected;
+      }
+    }
+    
+    // Generar resultado completo con estado estabilizado
     return {
-      isFingerDetected: this.isFingerDetected(),
+      isFingerDetected: this.lastDetectionState,
       quality: this.displayQuality,
       qualityLevel: qualityLevel,
       qualityColor: this.getQualityColor(this.displayQuality),
@@ -176,10 +192,10 @@ export class FingerDetector {
       return;
     }
     
-    // Frames insuficientes, mostrar calidad parcial pero más generosa
+    // Frames insuficientes, mostrar calidad parcial pero más restrictiva
     if (this.qualityHistory.length < this.config.REQUIRED_FINGER_FRAMES) {
       const lastQuality = this.qualityHistory[this.qualityHistory.length - 1];
-      this.displayQuality = Math.floor(lastQuality * 0.7); // Mostrar calidad más cercana a la real
+      this.displayQuality = Math.floor(lastQuality * 0.6); // Más restrictivo para prevenir falsos positivos
       return;
     }
     
@@ -187,9 +203,9 @@ export class FingerDetector {
     const avgQuality = this.qualityHistory.reduce((a, b) => a + b, 0) / 
                        this.qualityHistory.length;
     
-    // Actualizar con suavizado simple pero más receptivo a mejoras
-    const increaseRate = 0.6; // Más rápido al subir
-    const decreaseRate = 0.4; // Más lento al bajar
+    // Actualizar con suavizado simple pero más exigente ante perturbaciones
+    const increaseRate = 0.4; // Más lento al subir para verificar tendencia real
+    const decreaseRate = 0.6; // Más rápido al bajar para responder a pérdida de calidad
     
     if (avgQuality > this.displayQuality) {
       this.displayQuality = Math.round(
@@ -210,31 +226,26 @@ export class FingerDetector {
   }
   
   /**
-   * Determina si hay un dedo presente con criterios simplificados
-   * MEJORADO para reducir falsos positivos sin bloquear detecciones legítimas
+   * Determina si hay un dedo presente con criterios más estrictos
+   * MEJORADO para reducir drásticamente falsos positivos
    */
   public isFingerDetected(): boolean {
-    // CRITERIOS SIMPLIFICADOS Y MÁS FLEXIBLES:
-    // 1. Calidad mínima con umbral reducido
-    // 2. Suficientes frames consecutivos (reducido)
-    // 3. Ratio R/G correcto pero con más tolerancia
+    // CRITERIOS MÁS ESTRICTOS:
+    // 1. Calidad mínima con umbral aumentado
+    // 2. Suficientes frames consecutivos (aumentado)
+    // 3. Ratio R/G correcto con umbral más alto
     
     const hasMinimumQuality = this.displayQuality >= this.config.MIN_QUALITY_FOR_DETECTION;
     
-    // Más flexible con la cantidad de frames
-    const hasEnoughFrames = this.qualityHistory.length >= Math.max(1, this.config.REQUIRED_FINGER_FRAMES - 1);
+    // Más exigente con la cantidad de frames
+    const hasEnoughFrames = this.qualityHistory.length >= this.config.REQUIRED_FINGER_FRAMES;
     
     let hasCorrectRgRatio = true; // Por defecto true si no hay valores RGB
     if (this.lastRedValue > 0 && this.lastGreenValue > 0) {
       const rgRatio = this.lastRedValue / this.lastGreenValue;
       
-      // Criterio más flexible para el ratio R/G
-      // Si la calidad es muy buena, ser más flexible con el ratio
-      if (this.displayQuality > this.config.QUALITY_THRESHOLD) {
-        hasCorrectRgRatio = rgRatio >= (this.config.MIN_RED_GREEN_RATIO * 0.95);
-      } else {
-        hasCorrectRgRatio = rgRatio >= this.config.MIN_RED_GREEN_RATIO;
-      }
+      // Criterio más estricto para el ratio R/G
+      hasCorrectRgRatio = rgRatio >= this.config.MIN_RED_GREEN_RATIO;
     }
     
     return hasMinimumQuality && hasEnoughFrames && hasCorrectRgRatio;
@@ -310,6 +321,8 @@ export class FingerDetector {
     this.lastQualityLevel = '';
     this.lastRedValue = 0;
     this.lastGreenValue = 0;
+    this.stabilityCounter = 0;
+    this.lastDetectionState = false;
     console.log("FingerDetector: Detector reiniciado completamente");
   }
   
