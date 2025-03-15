@@ -144,6 +144,11 @@ export class AdvancedSignalProcessor {
       }
       
       // Construir resultado avanzado manteniendo compatibilidad con VitalSignsResult
+      const glucoseValue = Math.round(90 + 10 * Math.sin(Date.now() / 10000));
+      const cholesterol = Math.round(180 + 10 * Math.sin(Date.now() / 15000));
+      const triglycerides = Math.round(120 + 15 * Math.sin(Date.now() / 20000));
+      const hemoglobinValue = Math.round(14 + Math.sin(Date.now() / 25000));
+      
       const result: VitalSignsResult = {
         spo2: Math.round(spo2),
         pressure: `${Math.round(bloodPressure.systolic)}/${Math.round(bloodPressure.diastolic)}`,
@@ -156,14 +161,14 @@ export class AdvancedSignalProcessor {
         },
         // Métricas adicionales manteniendo compatibilidad
         glucose: {
-          value: Math.round(90 + 10 * Math.sin(Date.now() / 10000)),
+          value: glucoseValue,
           trend: "stable"
         },
         lipids: {
-          totalCholesterol: Math.round(180 + 10 * Math.sin(Date.now() / 15000)),
-          triglycerides: Math.round(120 + 15 * Math.sin(Date.now() / 20000))
+          totalCholesterol: cholesterol,
+          triglycerides: triglycerides
         },
-        hemoglobin: Math.round(14 + Math.sin(Date.now() / 25000)),
+        hemoglobin: hemoglobinValue,
         // Métricas avanzadas
         advanced: {
           perfusionIndex: this.perfusionIndex,
