@@ -4,7 +4,7 @@
  * que implementa métricas estándar y no lineales.
  */
 
-import { HRVMetrics, TimeMetrics, FrequencyMetrics, NonlinearMetrics } from '../types/HRVTypes';
+import { HRVMetrics, TimeMetrics, FrequencyMetrics, NonlinearMetrics } from '../../vital-signs/types/arrhythmia-types';
 import { HRVTimeMetrics } from './utils/HRVTimeMetrics';
 import { HRVFrequencyMetrics } from './utils/HRVFrequencyMetrics';
 import { HRVNonlinearMetrics } from './utils/HRVNonlinearMetrics';

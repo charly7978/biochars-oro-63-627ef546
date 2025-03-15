@@ -1,5 +1,5 @@
 
-import { TimeMetrics } from '../types/HRVTypes';
+import { TimeMetrics } from '../../../vital-signs/types/arrhythmia-types';
 
 /**
  * Utilidad para cálculo de métricas HRV en el dominio del tiempo

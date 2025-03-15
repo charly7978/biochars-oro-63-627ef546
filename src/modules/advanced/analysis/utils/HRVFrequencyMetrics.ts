@@ -1,5 +1,5 @@
 
-import { FrequencyMetrics } from '../types/HRVTypes';
+import { FrequencyMetrics } from '../../../vital-signs/types/arrhythmia-types';
 
 /**
  * Utilidad para cálculo de métricas HRV en el dominio de la frecuencia

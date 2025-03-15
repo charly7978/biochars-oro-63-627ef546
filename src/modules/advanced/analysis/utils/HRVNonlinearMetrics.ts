@@ -1,105 +1,65 @@
 
-import { NonlinearMetrics } from '../types/HRVTypes';
+import { NonlinearMetrics } from '../../../vital-signs/types/arrhythmia-types';
 
 /**
- * Utilidad para cálculo de métricas HRV no lineales
+ * Utilidad para cálculo de métricas no lineales de HRV
  */
 export class HRVNonlinearMetrics {
   /**
    * Calcula métricas no lineales a partir de intervalos RR
    */
-  public static calculateNonlinearMetrics(intervals: number[], rmssd: number, sdnn: number): NonlinearMetrics {
-    return {
-      ...this.calculatePoincareParameters(intervals, rmssd, sdnn),
-      entropy: this.calculateApproximateEntropy(intervals, sdnn, rmssd)
-    };
-  }
-  
-  /**
-   * Calcula parámetros de Poincaré (SD1, SD2)
-   */
-  private static calculatePoincareParameters(
-    intervals: number[],
-    rmssd: number,
+  public static calculateNonlinearMetrics(
+    intervals: number[], 
+    rmssd: number, 
     sdnn: number
-  ): { sd1: number; sd2: number } {
-    if (intervals.length < 2) {
-      return { sd1: 0, sd2: 0 };
+  ): NonlinearMetrics {
+    if (intervals.length < 10) {
+      return { sd1: 0, sd2: 0, entropy: 0 };
     }
     
-    // SD1 relacionado con RMSSD
-    const sd1 = rmssd / Math.sqrt(2);
+    // Cálculo de SD1 y SD2 basado en RMSSD y SDNN
+    // SD1 está relacionado con RMSSD y representa variabilidad a corto plazo
+    const sd1 = Math.sqrt(rmssd * rmssd / 2);
     
-    // SD2 calculado a partir de SDNN y SD1
-    const sd2 = Math.sqrt(2 * Math.pow(sdnn, 2) - Math.pow(sd1, 2));
+    // SD2 representa variabilidad a largo plazo
+    const sd2 = Math.sqrt(2 * sdnn * sdnn - sd1 * sd1);
+    
+    // Entropía aproximada - implementación simplificada
+    const entropy = this.calculateApproximateEntropy(intervals);
     
     return {
       sd1: Math.max(0, sd1),
-      sd2: Math.max(0, sd2)
+      sd2: Math.max(0, sd2),
+      entropy
     };
   }
   
   /**
-   * Calcula entropía aproximada (simplificada)
+   * Cálculo simplificado de entropía aproximada
    */
-  private static calculateApproximateEntropy(
-    intervals: number[],
-    sdnn: number,
-    rmssd: number
-  ): number {
+  private static calculateApproximateEntropy(intervals: number[]): number {
     if (intervals.length < 10) return 0;
     
     // Implementación simplificada basada en la variabilidad
-    
-    // Normalizar para rango de entropía aproximada típico (0-2)
-    const irregularity = rmssd / sdnn;
-    return Math.min(2, Math.max(0, irregularity * 1.5));
-  }
-  
-  /**
-   * Calcula Shannon Entropy para RR intervals (método avanzado)
-   */
-  public static calculateShannonEntropy(intervals: number[]): number {
-    if (intervals.length < 5) return 0;
-    
-    // Simplified histogram-based entropy calculation
-    const bins: {[key: string]: number} = {};
-    const binWidth = 25; // 25ms bin width
-    
-    intervals.forEach(interval => {
-      const binKey = Math.floor(interval / binWidth);
-      bins[binKey] = (bins[binKey] || 0) + 1;
-    });
-    
-    let entropy = 0;
-    const totalPoints = intervals.length;
-    
-    Object.values(bins).forEach(count => {
-      const probability = count / totalPoints;
-      entropy -= probability * Math.log2(probability);
-    });
-    
-    return entropy;
-  }
-  
-  /**
-   * Estima Sample Entropy (implementación simplificada)
-   */
-  public static estimateSampleEntropy(intervals: number[]): number {
-    if (intervals.length < 10) return 0;
-    
-    // Simplified sample entropy estimation
-    const normalizedIntervals = intervals.map(interval => 
-      (interval - intervals.reduce((a, b) => a + b, 0) / intervals.length) / 
-      Math.max(1, Math.sqrt(intervals.reduce((a, b) => a + Math.pow(b, 2), 0) / intervals.length))
-    );
-    
-    let sumCorr = 0;
-    for (let i = 0; i < normalizedIntervals.length - 1; i++) {
-      sumCorr += Math.abs(normalizedIntervals[i + 1] - normalizedIntervals[i]);
+    const diffs = [];
+    for (let i = 1; i < intervals.length; i++) {
+      diffs.push(Math.abs(intervals[i] - intervals[i-1]));
     }
     
-    // Convert to entropy-like measure
-    return -Math.log(sumCorr / (normalizedIntervals.length - 1));
+    // Ordenar diferencias
+    diffs.sort((a, b) => a - b);
+    
+    // Calcular entropía aproximada utilizando la distribución de diferencias
+    let entropy = 0;
+    const n = diffs.length;
+    
+    for (let i = 0; i < n - 1; i++) {
+      const p = 1 / n;
+      if (p > 0) {
+        entropy -= p * Math.log(p);
+      }
+    }
+    
+    return Math.min(2, Math.max(0, entropy));
   }
 }
