@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -37,20 +38,26 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   
-  // Parámetros de detección de dedo - MUCHO MÁS SENSIBLES
-  private readonly MIN_RED_VALUE = 30;     // Bajado de 60 a 30
-  private readonly MAX_RED_VALUE = 255;    // Subido a máximo absoluto
-  private readonly MIN_RED_RATIO = 1.1;    // Bajado de 1.2 a 1.1
+  // Parámetros de detección de dedo MEJORADOS
+  private readonly MIN_RED_VALUE = 25;     // Reducido para mejor sensibilidad
+  private readonly MAX_RED_VALUE = 255;    
+  private readonly MIN_RED_RATIO = 1.05;   // Reducido para mejor detección
   
   // Tamaño de buffer para análisis de señal
-  private readonly BUFFER_SIZE = 15;       // Reducido para respuesta más rápida
+  private readonly BUFFER_SIZE = 15;
   
-  // Parámetros de análisis de señal PPG - MÁS PERMISIVOS
-  private readonly MIN_PEAK_AMPLITUDE = 2;      // Bajado de 3 a 2
-  private readonly MAX_BPM = 200;              // Subido de 180 a 200
-  private readonly MIN_BPM = 30;               // Bajado de 40 a 30
-  private readonly MIN_PEAK_DISTANCE = Math.round(60 / this.MAX_BPM * 30); // En frames a 30fps
-  private readonly MAX_PEAK_DISTANCE = Math.round(60 / this.MIN_BPM * 30); // En frames a 30fps
+  // Parámetros de análisis de señal PPG
+  private readonly MIN_PEAK_AMPLITUDE = 2;
+  private readonly MAX_BPM = 200;
+  private readonly MIN_BPM = 30;
+  private readonly MIN_PEAK_DISTANCE = Math.round(60 / this.MAX_BPM * 30);
+  private readonly MAX_PEAK_DISTANCE = Math.round(60 / this.MIN_BPM * 30);
+  
+  // Nuevos parámetros para estabilidad de detección
+  private fingerDetectionCounter: number = 0;
+  private readonly MIN_FINGER_DETECTION_FRAMES = 3;
+  private readonly MAX_FINGER_LOSS_FRAMES = 5;
+  private fingerLossCounter: number = 0;
   
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -64,6 +71,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     try {
       this.lastValues = [];
       this.kalmanFilter.reset();
+      this.fingerDetectionCounter = 0;
+      this.fingerLossCounter = 0;
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -75,25 +84,56 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (!this.isProcessing) return;
 
     try {
-      // 1. Detectar dedo - Ahora más sensible
+      // 1. Detectar dedo - Ahora más sensible y estable
       const { redValue, isFingerPresent, redToGreenRatio, redToBlueRatio } = this.detectFinger(imageData);
+      
+      // Implementar histéresis para evitar falsos positivos/negativos
+      let finalFingerDetected = false;
+      
+      if (isFingerPresent) {
+        this.fingerDetectionCounter++;
+        this.fingerLossCounter = 0;
+        
+        if (this.fingerDetectionCounter >= this.MIN_FINGER_DETECTION_FRAMES) {
+          finalFingerDetected = true;
+        }
+      } else {
+        this.fingerLossCounter++;
+        
+        if (this.fingerLossCounter >= this.MAX_FINGER_LOSS_FRAMES) {
+          this.fingerDetectionCounter = 0;
+        } else if (this.fingerDetectionCounter >= this.MIN_FINGER_DETECTION_FRAMES) {
+          // Mantener detección si ya teníamos suficientes frames positivos
+          finalFingerDetected = true;
+        }
+      }
+      
+      // Debug logging
+      console.log("PPGSignalProcessor - Finger Detection:", {
+        redValue,
+        redToGreenRatio,
+        redToBlueRatio,
+        isFingerPresent,
+        counter: this.fingerDetectionCounter,
+        finalDetection: finalFingerDetected
+      });
       
       // Calcular calidad basada en ratios de color
       let baseQuality = 0;
-      if (isFingerPresent) {
+      if (finalFingerDetected) {
         // Calidad base entre 30-100 según qué tan fuerte es la señal roja
         const redStrength = (redValue - this.MIN_RED_VALUE) / (this.MAX_RED_VALUE - this.MIN_RED_VALUE);
         const ratioStrength = Math.min(redToGreenRatio, redToBlueRatio) - this.MIN_RED_RATIO;
         baseQuality = Math.round(Math.min(100, 30 + redStrength * 40 + ratioStrength * 30));
       }
       
-      // Si no hay dedo, retornar con calidad base
-      if (!isFingerPresent) {
+      // Si no hay dedo, retornar con calidad cero
+      if (!finalFingerDetected) {
         const processedSignal: ProcessedSignal = {
           timestamp: Date.now(),
           rawValue: redValue,
-          filteredValue: redValue,
-          quality: baseQuality,
+          filteredValue: 0, // Valor filtrado cero cuando no hay dedo
+          quality: 0,      // Calidad cero cuando no hay dedo
           fingerDetected: false,
           roi: this.detectROI(redValue)
         };
@@ -121,7 +161,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         rawValue: redValue,
         filteredValue: filtered,
         quality: finalQuality,
-        fingerDetected: isFingerPresent, // Solo requerimos presencia de dedo
+        fingerDetected: finalFingerDetected,
         roi: this.detectROI(redValue)
       };
 
@@ -143,11 +183,11 @@ export class PPGSignalProcessor implements SignalProcessor {
     let redSum = 0, greenSum = 0, blueSum = 0;
     let count = 0;
     
-    // Analizar una región más grande (50% central)
-    const startX = Math.floor(imageData.width * 0.25);
-    const endX = Math.floor(imageData.width * 0.75);
-    const startY = Math.floor(imageData.height * 0.25);
-    const endY = Math.floor(imageData.height * 0.75);
+    // Analizar región central más grande (60% central para mayor cobertura)
+    const startX = Math.floor(imageData.width * 0.2);
+    const endX = Math.floor(imageData.width * 0.8);
+    const startY = Math.floor(imageData.height * 0.2);
+    const endY = Math.floor(imageData.height * 0.8);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -168,9 +208,11 @@ export class PPGSignalProcessor implements SignalProcessor {
     const redToGreenRatio = redValue / (greenValue + 1);
     const redToBlueRatio = redValue / (blueValue + 1);
     
-    // Requerir solo que el rojo sea ligeramente mayor que los otros canales
-    const hasValidRatios = redToGreenRatio >= this.MIN_RED_RATIO && 
-                          redToBlueRatio >= this.MIN_RED_RATIO;
+    // Criterio más permisivo: o bien el ratio rojo/verde o el ratio rojo/azul es suficiente
+    const hasValidRatios = (redToGreenRatio >= this.MIN_RED_RATIO || 
+                           redToBlueRatio >= this.MIN_RED_RATIO) &&
+                           // Asegurar que el valor rojo sea significativamente mayor que el promedio de verde y azul
+                           (redValue > ((greenValue + blueValue) / 2) * 1.03);
     
     return {
       redValue,
@@ -290,6 +332,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.isProcessing = false;
     this.lastValues = [];
     this.kalmanFilter.reset();
+    this.fingerDetectionCounter = 0;
+    this.fingerLossCounter = 0;
   }
 
   async calibrate(): Promise<boolean> {

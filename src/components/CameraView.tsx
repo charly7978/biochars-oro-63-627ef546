@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -16,26 +17,21 @@ const CameraView = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
-  const [isFocusing, setIsFocusing] = useState(false);
-  const [isAndroid, setIsAndroid] = useState(false);
-  const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
-  const maxRetryAttempts = 3;
+  const maxRetryAttempts = 5;
+  const [isAndroid, setIsAndroid] = useState(false);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
     const androidDetected = /android/i.test(userAgent);
-    const windowsDetected = /windows nt/i.test(userAgent);
     
     console.log("Plataforma detectada:", {
       userAgent,
       isAndroid: androidDetected,
-      isWindows: windowsDetected,
       isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
     });
     
     setIsAndroid(androidDetected);
-    setIsWindows(windowsDetected);
   }, []);
 
   const stopCamera = async () => {
@@ -73,53 +69,22 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const isWindows = /windows nt/i.test(navigator.userAgent);
 
+      // Configuración optimizada por plataforma
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: isAndroid ? 1280 : 1920 },
+        height: { ideal: isAndroid ? 720 : 1080 },
+        frameRate: { ideal: isAndroid ? 30 : 60 }
       };
 
-      if (isAndroid) {
-        console.log("Configurando para Android");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else if (isIOS) {
-        console.log("Configurando para iOS");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      } else if (isWindows) {
-        console.log("Configurando para Windows con resolución reducida (720p)");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else {
-        console.log("Configurando para escritorio con máxima resolución");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      }
-
-      const constraints: MediaStreamConstraints = {
+      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(baseVideoConstraints));
+      const newStream = await navigator.mediaDevices.getUserMedia({
         video: baseVideoConstraints,
         audio: false
-      };
-
-      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Cámara inicializada correctamente");
+      });
       
+      console.log("Cámara inicializada correctamente");
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack) {
@@ -127,90 +92,52 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
+          // Esperar un momento para que la cámara se inicialice completamente
           await new Promise(resolve => setTimeout(resolve, 500));
           
+          // Activar linterna de inmediato para mejorar la detección de dedo
+          if (capabilities.torch) {
+            console.log("Activando linterna para mejorar la detección de dedo");
+            await videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            });
+            setTorchEnabled(true);
+          } else {
+            console.log("La linterna no está disponible en este dispositivo");
+          }
+          
+          // Optimizaciones adicionales para todas las plataformas
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
-          if (isAndroid) {
-            try {
-              if (capabilities.torch) {
-                console.log("Activando linterna en Android");
-                await videoTrack.applyConstraints({
-                  advanced: [{ torch: true }]
-                });
-                setTorchEnabled(true);
-              }
-            } catch (err) {
-              console.error("Error al activar linterna en Android:", err);
-            }
-          } else {
-            if (capabilities.exposureMode) {
-              const exposureConstraint: MediaTrackConstraintSet = { 
-                exposureMode: 'continuous' 
-              };
-              
-              if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
-              }
-              
-              advancedConstraints.push(exposureConstraint);
-            }
-            
-            if (capabilities.focusMode) {
-              advancedConstraints.push({ focusMode: 'continuous' });
-            }
-            
-            if (capabilities.whiteBalanceMode) {
-              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-            }
-            
-            if (capabilities.brightness && capabilities.brightness.max) {
-              const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
-            }
-            
-            if (capabilities.contrast && capabilities.contrast.max) {
-              const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
-            }
-
-            if (advancedConstraints.length > 0) {
-              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              await videoTrack.applyConstraints({
-                advanced: advancedConstraints
-              });
-            }
-
-            if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
-              await videoTrack.applyConstraints({
-                advanced: [{ torch: true }]
-              });
-              setTorchEnabled(true);
-            } else {
-              console.log("La linterna no está disponible en este dispositivo");
-            }
+          if (capabilities.exposureMode) {
+            advancedConstraints.push({ exposureMode: 'continuous' });
           }
           
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
+          if (capabilities.focusMode) {
+            advancedConstraints.push({ focusMode: 'continuous' });
           }
           
+          if (capabilities.whiteBalanceMode) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          }
+          
+          if (advancedConstraints.length > 0) {
+            console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+            await videoTrack.applyConstraints({
+              advanced: advancedConstraints
+            });
+          }
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.warn("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
-        videoRef.current.style.imageRendering = 'crisp-edges';
-        
         videoRef.current.style.backfaceVisibility = 'hidden';
-        videoRef.current.style.perspective = '1000px';
+        videoRef.current.style.imageRendering = 'crisp-edges';
       }
 
       setStream(newStream);
@@ -234,29 +161,6 @@ const CameraView = ({
     }
   };
 
-  const refreshAutoFocus = useCallback(async () => {
-    if (stream && !isFocusing && !isAndroid) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities()?.focusMode) {
-        try {
-          setIsFocusing(true);
-          await videoTrack.applyConstraints({
-            advanced: [{ focusMode: 'manual' }]
-          });
-          await new Promise(resolve => setTimeout(resolve, 100));
-          await videoTrack.applyConstraints({
-            advanced: [{ focusMode: 'continuous' }]
-          });
-          console.log("Auto-enfoque refrescado con éxito");
-        } catch (err) {
-          console.error("Error al refrescar auto-enfoque:", err);
-        } finally {
-          setIsFocusing(false);
-        }
-      }
-    }
-  }, [stream, isFocusing, isAndroid]);
-
   useEffect(() => {
     if (isMonitoring && !stream) {
       console.log("Starting camera because isMonitoring=true");
@@ -273,10 +177,11 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    if (stream && isFingerDetected && !torchEnabled) {
+    // Asegurar que la linterna esté activada siempre que haya stream
+    if (stream && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo");
+        console.log("Activando linterna porque el stream está activo");
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
         }).then(() => {
@@ -286,15 +191,7 @@ const CameraView = ({
         });
       }
     }
-    
-    if (isFingerDetected && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, 5000);
-      return () => clearInterval(focusInterval);
-    }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
-
-  const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/15;
+  }, [stream, torchEnabled]);
 
   return (
     <video
