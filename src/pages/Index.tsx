@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -9,7 +10,6 @@ import { Link } from 'react-router-dom';
 
 import { useVitalSignsProcessor } from '../hooks/useVitalSignsProcessor';
 import CameraView from '../components/CameraView';
-import VitalResults from '../components/VitalResults';
 import SignalQualityIndicator from '../components/SignalQualityIndicator';
 import PPGSignalMeter from '../components/PPGSignalMeter';
 
@@ -351,7 +351,7 @@ const Index = () => {
           <CameraView 
             videoRef={videoRef} 
             canvasRef={canvasRef} 
-            isMonitoring={isMonitoring}
+            isActive={isMonitoring}
             isFingerDetected={fingerDetected}
             signalQuality={signalQuality}
           />
@@ -364,15 +364,71 @@ const Index = () => {
           </div>
           
           <div className="mt-auto px-4 pb-6">
-            <VitalResults 
-              isMonitoring={isMonitoring} 
-              fingerDetected={fingerDetected}
-              signalQuality={signalQuality}
-              arrhythmiaCount={arrhythmiaCounter}
-              lastValidResults={lastValidResults}
-              onStartMeasurement={handleStartMeasurement}
-              onReset={handleFullReset}
-            />
+            <div className="w-full bg-black/60 backdrop-blur-sm rounded-xl p-4">
+              <div className="mb-4">
+                <h2 className="text-xl font-semibold text-white mb-2">
+                  {isMonitoring 
+                    ? "Procesando señal PPG..." 
+                    : "Medición de signos vitales"}
+                </h2>
+                
+                <p className={`text-sm ${fingerDetected ? 'text-green-400' : 'text-gray-400'}`}>
+                  {fingerDetected 
+                    ? `Dedo detectado - Calidad: ${signalQuality}%` 
+                    : "Coloque su dedo sobre la cámara"}
+                </p>
+              </div>
+              
+              {lastValidResults && (
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="bg-gray-800/50 p-3 rounded-lg">
+                    <p className="text-gray-400 text-xs">Frecuencia cardíaca</p>
+                    <p className="text-white text-lg font-bold">
+                      {lastValidResults.heartRate || "--"} <span className="text-xs">BPM</span>
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-800/50 p-3 rounded-lg">
+                    <p className="text-gray-400 text-xs">SpO2</p>
+                    <p className="text-white text-lg font-bold">
+                      {lastValidResults.spo2 || "--"} <span className="text-xs">%</span>
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-800/50 p-3 rounded-lg">
+                    <p className="text-gray-400 text-xs">Presión arterial</p>
+                    <p className="text-white text-lg font-bold">
+                      {lastValidResults.pressure || "--/--"} <span className="text-xs">mmHg</span>
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-800/50 p-3 rounded-lg">
+                    <p className="text-gray-400 text-xs">Arritmias</p>
+                    <p className="text-white text-lg font-bold">
+                      {arrhythmiaCounter} <span className="text-xs">detectadas</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex gap-2">
+                {!isMonitoring ? (
+                  <button 
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+                    onClick={handleStartMeasurement}
+                  >
+                    Iniciar Medición
+                  </button>
+                ) : (
+                  <button 
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                    onClick={handleFullReset}
+                  >
+                    Detener
+                  </button>
+                )}
+              </div>
+            </div>
             
             <div className="mt-6 text-center">
               <Link 

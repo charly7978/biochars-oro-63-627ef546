@@ -1,22 +1,28 @@
+/**
+ * IMPORTANTE: Esta aplicación es solo para referencia médica.
+ * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones.
+ */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   canvasRef: React.RefObject<HTMLCanvasElement>;
-  isMonitoring: boolean;
+  isActive: boolean;
+  onStreamReady?: (stream: MediaStream) => void;
   isFingerDetected?: boolean;
   signalQuality?: number;
 }
 
 /**
- * CameraView - Componente para gestionar la cámara y detectar señales PPG
- * Todo el procesamiento es real, sin simulaciones o manipulaciones artificiales
+ * Componente que maneja la vista de cámara y optimizaciones de rendimiento
  */
 const CameraView: React.FC<CameraViewProps> = ({ 
   videoRef,
   canvasRef,
-  isMonitoring,
+  isActive,
+  onStreamReady, 
   isFingerDetected = false, 
   signalQuality = 0,
 }: CameraViewProps) => {
@@ -73,7 +79,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
@@ -208,6 +214,11 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
 
       setStream(newStream);
+      
+      if (onStreamReady) {
+        onStreamReady(newStream);
+      }
+      
       retryAttemptsRef.current = 0;
       streamErrorRef.current = false;
       
@@ -223,7 +234,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
     }
-  };
+  });
 
   const refreshAutoFocus = useCallback(async () => {
     if (stream && !isFocusing && !isAndroid) {
@@ -250,19 +261,19 @@ const CameraView: React.FC<CameraViewProps> = ({
 
   // Reiniciar la cámara si se detecta un error de track inválido
   useEffect(() => {
-    if (streamErrorRef.current && isMonitoring) {
+    if (streamErrorRef.current && isActive) {
       console.log("Detectado error de stream, reiniciando cámara...");
       stopCamera();
       setTimeout(startCamera, 1000);
     }
-  }, [isMonitoring]);
+  }, [isActive]);
 
   useEffect(() => {
-    if (isMonitoring && !stream) {
-      console.log("Starting camera because isMonitoring=true");
+    if (isActive && !stream) {
+      console.log("Starting camera because isActive=true");
       startCamera();
-    } else if (!isMonitoring && stream) {
-      console.log("Stopping camera because isMonitoring=false");
+    } else if (!isActive && stream) {
+      console.log("Stopping camera because isActive=false");
       stopCamera();
     }
     
@@ -270,7 +281,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
-  }, [isMonitoring]);
+  }, [isActive]);
 
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
