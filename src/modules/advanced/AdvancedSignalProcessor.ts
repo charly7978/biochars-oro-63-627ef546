@@ -128,7 +128,11 @@ export class AdvancedSignalProcessor {
       );
       
       // Análisis avanzado de fibrilación auricular
-      const afibResults = this.afibDetector.analyze(peakInfo.intervals);
+      // Adaptamos la estructura para que coincida con lo que espera AFibDetector
+      const afibResults = this.afibDetector.analyze({
+        peaks: peakInfo.peakIndices,
+        intervals: peakInfo.intervals
+      });
       
       // Análisis avanzado de HRV
       const hrvMetrics = this.hrvAnalyzer.calculateMetrics(peakInfo.intervals);
@@ -157,13 +161,18 @@ export class AdvancedSignalProcessor {
           : `SIN ARRITMIAS|${afibResults.count}`,
         calibration: {
           isCalibrating: this.calibrating,
-          progress: this.calibrationProgress
+          progress: {
+            heartRate: this.calibrationProgress,
+            spo2: this.calibrationProgress,
+            pressure: this.calibrationProgress,
+            arrhythmia: this.calibrationProgress,
+            glucose: this.calibrationProgress,
+            lipids: this.calibrationProgress,
+            hemoglobin: this.calibrationProgress
+          }
         },
         // Métricas adicionales manteniendo compatibilidad
-        glucose: {
-          value: glucoseValue,
-          trend: "stable"
-        },
+        glucose: glucoseValue,
         lipids: {
           totalCholesterol: cholesterol,
           triglycerides: triglycerides
@@ -190,12 +199,17 @@ export class AdvancedSignalProcessor {
       arrhythmiaStatus: "CALIBRANDO...",
       calibration: {
         isCalibrating: this.calibrating,
-        progress: this.calibrationProgress
+        progress: {
+          heartRate: this.calibrationProgress,
+          spo2: this.calibrationProgress,
+          pressure: this.calibrationProgress,
+          arrhythmia: this.calibrationProgress,
+          glucose: this.calibrationProgress,
+          lipids: this.calibrationProgress,
+          hemoglobin: this.calibrationProgress
+        }
       },
-      glucose: {
-        value: 0,
-        trend: "unknown"
-      },
+      glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0

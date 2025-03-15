@@ -1,291 +1,183 @@
 
 /**
- * Detector avanzado de fibrilación auricular basado en análisis
- * de irregularidad de intervalos entre pulsos.
- * 
- * NOTA IMPORTANTE: Este módulo implementa técnicas avanzadas manteniendo
- * compatibilidad con las interfaces principales en index.tsx y PPGSignalMeter.tsx.
+ * Detector avanzado de Fibrilación Auricular basado en el análisis
+ * de irregularidades en los intervalos RR y patrones anormales.
  */
 
+export interface AFibResult {
+  detected: boolean;
+  count: number;
+  confidence: number;
+  avgHR: number;
+  timeInAFib: number;
+}
+
 export class AFibDetector {
-  // Configuración basada en investigaciones médicas recientes
-  private readonly RMSSD_THRESHOLD = 45; // Umbral de RMSSD para detección de AFib
-  private readonly POINCARE_SD1_THRESHOLD = 35; // Umbral de SD1 para AFib
-  private readonly MIN_RR_INTERVALS = 8; // Mínimo de intervalos para análisis confiable
-  
-  // Parámetros avanzados de detección
-  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.2; // Umbral de entropía muestral
-  private readonly CV_THRESHOLD = 0.15; // Coeficiente de variación umbral
-  private readonly TURNING_POINT_RATIO_THRESHOLD = 0.6; // Ratio de puntos de inflexión
-  
-  // Estado del detector
-  private arrhythmiaCount: number = 0;
-  private consecutiveDetections: number = 0;
+  private intervalHistory: number[] = [];
+  private afibEpisodes: number = 0;
   private lastDetectionTime: number = 0;
-  private MIN_TIME_BETWEEN_DETECTIONS = 3000; // 3 segundos entre detecciones
-  private MAX_DETECTIONS_SESSION = 10; // Máximo de detecciones por sesión
+  private totalTimeInAFib: number = 0;
+  private readonly BUFFER_SIZE = 20;
+  private readonly MIN_INTERVALS = 6;
   
   constructor() {
     console.log('Detector de Fibrilación Auricular inicializado');
   }
   
   /**
-   * Analiza intervalos RR para detectar patrones de fibrilación auricular
+   * Analiza los intervalos RR para detectar patrones de fibrilación auricular
    */
-  public analyze(rrIntervals: number[]): {
-    detected: boolean;
-    confidence: number;
-    count: number;
-    metrics: {
-      rmssd: number;
-      poincareSd1: number;
-      sampleEntropy: number;
-      turningPointRatio: number;
-    };
-  } {
-    // Verificar si tenemos suficientes intervalos para análisis confiable
-    if (!rrIntervals || rrIntervals.length < this.MIN_RR_INTERVALS) {
-      return {
-        detected: false,
-        confidence: 0,
-        count: this.arrhythmiaCount,
-        metrics: {
-          rmssd: 0,
-          poincareSd1: 0,
-          sampleEntropy: 0,
-          turningPointRatio: 0
-        }
-      };
+  public analyze(peakData: { peaks: number[]; intervals: number[] }): AFibResult {
+    const { intervals } = peakData;
+    
+    if (intervals.length < this.MIN_INTERVALS) {
+      return this.getDefaultResult();
     }
     
-    // Usar sólo intervalos fisiológicamente plausibles (filtrar outliers)
-    const validIntervals = this.filterValidIntervals(rrIntervals);
-    
-    if (validIntervals.length < this.MIN_RR_INTERVALS) {
-      return {
-        detected: false,
-        confidence: 0,
-        count: this.arrhythmiaCount,
-        metrics: {
-          rmssd: 0,
-          poincareSd1: 0,
-          sampleEntropy: 0,
-          turningPointRatio: 0
-        }
-      };
-    }
-    
-    // Calcular métricas de variabilidad cardíaca
-    const rmssd = this.calculateRMSSD(validIntervals);
-    const poincareSd1 = this.calculatePoincareSD1(validIntervals);
-    const sampleEntropy = this.calculateSampleEntropy(validIntervals);
-    const turningPointRatio = this.calculateTurningPointRatio(validIntervals);
-    
-    // Algoritmo multi-parámetro para detección de AFib
-    const isRmssdElevated = rmssd > this.RMSSD_THRESHOLD;
-    const isPoincareSd1Elevated = poincareSd1 > this.POINCARE_SD1_THRESHOLD;
-    const isEntropyElevated = sampleEntropy > this.SAMPLE_ENTROPY_THRESHOLD;
-    const isTurningPointHigh = turningPointRatio > this.TURNING_POINT_RATIO_THRESHOLD;
-    
-    // Cálculo de confianza basado en múltiples parámetros
-    const confidenceFactors = [
-      isRmssdElevated ? 0.35 : 0,
-      isPoincareSd1Elevated ? 0.3 : 0,
-      isEntropyElevated ? 0.2 : 0,
-      isTurningPointHigh ? 0.15 : 0
-    ];
-    
-    // Confianza total
-    const confidence = confidenceFactors.reduce((sum, factor) => sum + factor, 0);
-    
-    // Determinar si se detecta fibrilación
-    const afibDetected = confidence >= 0.65;
-    
-    // Gestionar detecciones consecutivas para reducir falsos positivos
-    const currentTime = Date.now();
-    
-    if (afibDetected) {
-      this.consecutiveDetections++;
-      
-      // Actualizar contador sólo si ha pasado suficiente tiempo desde la última detección
-      // y no hemos excedido el máximo de detecciones por sesión
-      if (this.consecutiveDetections >= 2 && 
-          currentTime - this.lastDetectionTime > this.MIN_TIME_BETWEEN_DETECTIONS &&
-          this.arrhythmiaCount < this.MAX_DETECTIONS_SESSION) {
-        this.arrhythmiaCount++;
-        this.lastDetectionTime = currentTime;
-        
-        console.log('AFib detectada', {
-          confidence,
-          rmssd,
-          poincareSd1,
-          sampleEntropy,
-          count: this.arrhythmiaCount
-        });
+    // Añadir nuevos intervalos al historial
+    for (const interval of intervals) {
+      this.intervalHistory.push(interval);
+      if (this.intervalHistory.length > this.BUFFER_SIZE) {
+        this.intervalHistory.shift();
       }
-    } else {
-      // Reducir gradualmente detecciones consecutivas
-      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
     }
+    
+    if (this.intervalHistory.length < this.MIN_INTERVALS) {
+      return this.getDefaultResult();
+    }
+    
+    // Calcular métricas de variabilidad de intervalos RR
+    const rmssd = this.calculateRMSSD();
+    const pNN50 = this.calculatePNN50();
+    const irregularity = this.calculateIrregularity();
+    const variance = this.calculateVariance();
+    
+    // Promediar frecuencia cardíaca
+    const avgInterval = this.intervalHistory.reduce((sum, val) => sum + val, 0) / this.intervalHistory.length;
+    const avgHR = 60000 / avgInterval;
+    
+    // Detectar AFib basado en algoritmo multifactorial
+    const isAFib = rmssd > 40 && pNN50 > 0.15 && irregularity > 0.2 && variance > 2500;
+    
+    // Actualizar contador de episodios
+    const now = Date.now();
+    if (isAFib && now - this.lastDetectionTime > 3000) { // Nuevo episodio después de 3 segundos
+      this.afibEpisodes++;
+      this.lastDetectionTime = now;
+      this.totalTimeInAFib += 3;
+    }
+    
+    // Calcular confianza de la detección
+    const confidence = this.calculateConfidence(rmssd, pNN50, irregularity, variance);
     
     return {
-      detected: afibDetected,
+      detected: isAFib,
+      count: this.afibEpisodes,
       confidence,
-      count: this.arrhythmiaCount,
-      metrics: {
-        rmssd,
-        poincareSd1,
-        sampleEntropy,
-        turningPointRatio
-      }
+      avgHR,
+      timeInAFib: this.totalTimeInAFib
     };
   }
   
   /**
-   * Filtra intervalos RR válidos, eliminando outliers fisiológicos
+   * Calcula la raíz cuadrada del promedio de las diferencias cuadradas sucesivas (RMSSD)
    */
-  private filterValidIntervals(rrIntervals: number[]): number[] {
-    if (rrIntervals.length < 3) return rrIntervals;
+  private calculateRMSSD(): number {
+    if (this.intervalHistory.length < 2) return 0;
     
-    // Calcular estadísticas básicas
-    const sorted = [...rrIntervals].sort((a, b) => a - b);
-    const q1Index = Math.floor(sorted.length / 4);
-    const q3Index = Math.floor(3 * sorted.length / 4);
-    
-    const q1 = sorted[q1Index];
-    const q3 = sorted[q3Index];
-    const iqr = q3 - q1;
-    
-    // Límites para detección de outliers
-    const lowerBound = q1 - 1.5 * iqr;
-    const upperBound = q3 + 1.5 * iqr;
-    
-    // Filtrar sólo intervalos fisiológicamente plausibles
-    return rrIntervals.filter(rr => 
-      rr >= Math.max(300, lowerBound) && 
-      rr <= Math.min(1500, upperBound)
-    );
-  }
-  
-  /**
-   * Calcula RMSSD (Root Mean Square of Successive Differences)
-   * Métrica estándar para variabilidad cardíaca a corto plazo
-   */
-  private calculateRMSSD(rrIntervals: number[]): number {
-    if (rrIntervals.length < 2) return 0;
-    
-    let sumSquaredDiff = 0;
-    
-    for (let i = 1; i < rrIntervals.length; i++) {
-      const diff = rrIntervals[i] - rrIntervals[i-1];
-      sumSquaredDiff += diff * diff;
+    let sumSquaredDiffs = 0;
+    for (let i = 1; i < this.intervalHistory.length; i++) {
+      const diff = this.intervalHistory[i] - this.intervalHistory[i-1];
+      sumSquaredDiffs += diff * diff;
     }
     
-    return Math.sqrt(sumSquaredDiff / (rrIntervals.length - 1));
+    return Math.sqrt(sumSquaredDiffs / (this.intervalHistory.length - 1));
   }
   
   /**
-   * Calcula SD1 del diagrama de Poincaré
-   * Refleja variabilidad cardíaca a corto plazo
+   * Calcula el porcentaje de intervalos consecutivos que difieren en más de 50ms
    */
-  private calculatePoincareSD1(rrIntervals: number[]): number {
-    if (rrIntervals.length < 2) return 0;
+  private calculatePNN50(): number {
+    if (this.intervalHistory.length < 2) return 0;
     
-    // SD1 está relacionado con RMSSD
-    return this.calculateRMSSD(rrIntervals) / Math.sqrt(2);
-  }
-  
-  /**
-   * Implementación simplificada de entropía muestral
-   * para detección de irregularidad en la señal
-   */
-  private calculateSampleEntropy(rrIntervals: number[]): number {
-    if (rrIntervals.length < 4) return 0;
-    
-    // Normalizar valores
-    const mean = rrIntervals.reduce((sum, val) => sum + val, 0) / rrIntervals.length;
-    const std = Math.sqrt(
-      rrIntervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / rrIntervals.length
-    );
-    
-    const normalized = rrIntervals.map(val => (val - mean) / std);
-    
-    // Parámetros para SampEn
-    const m = 2;  // Longitud del patrón
-    const r = 0.2; // Tolerancia
-    
-    // Contar coincidencias para patrones de longitud m y m+1
-    let countM = 0;
-    let countM1 = 0;
-    
-    // Para cada punto, contar patrones similares
-    for (let i = 0; i < normalized.length - m; i++) {
-      for (let j = i + 1; j < normalized.length - m; j++) {
-        // Verificar similitud para patrón de longitud m
-        let matchM = true;
-        
-        for (let k = 0; k < m; k++) {
-          if (Math.abs(normalized[i + k] - normalized[j + k]) > r) {
-            matchM = false;
-            break;
-          }
-        }
-        
-        if (matchM) {
-          countM++;
-          
-          // Verificar similitud para patrón de longitud m+1
-          if (i < normalized.length - m - 1 && j < normalized.length - m - 1) {
-            if (Math.abs(normalized[i + m] - normalized[j + m]) <= r) {
-              countM1++;
-            }
-          }
-        }
+    let count = 0;
+    for (let i = 1; i < this.intervalHistory.length; i++) {
+      const diff = Math.abs(this.intervalHistory[i] - this.intervalHistory[i-1]);
+      if (diff > 50) {
+        count++;
       }
     }
     
-    // Prevenir divisiones por cero
-    if (countM === 0 || countM1 === 0) {
-      return 0;
-    }
-    
-    // Calcular SampEn
-    return -Math.log(countM1 / countM);
+    return count / (this.intervalHistory.length - 1);
   }
   
   /**
-   * Calcula el ratio de puntos de inflexión (turning points)
-   * Alto en fibrilación auricular debido a la irregularidad
+   * Calcula la irregularidad de los intervalos RR
    */
-  private calculateTurningPointRatio(rrIntervals: number[]): number {
-    if (rrIntervals.length < 4) return 0;
+  private calculateIrregularity(): number {
+    if (this.intervalHistory.length < 6) return 0;
     
-    let turningPoints = 0;
-    
-    for (let i = 1; i < rrIntervals.length - 1; i++) {
-      // Un punto de inflexión es un máximo o mínimo local
-      if ((rrIntervals[i] > rrIntervals[i-1] && rrIntervals[i] > rrIntervals[i+1]) ||
-          (rrIntervals[i] < rrIntervals[i-1] && rrIntervals[i] < rrIntervals[i+1])) {
-        turningPoints++;
-      }
+    const diffs: number[] = [];
+    for (let i = 1; i < this.intervalHistory.length; i++) {
+      diffs.push(Math.abs(this.intervalHistory[i] - this.intervalHistory[i-1]));
     }
     
-    // El máximo teórico es 2/3 de la longitud para una secuencia aleatoria
-    const theoreticalMax = 2 * (rrIntervals.length - 2) / 3;
+    diffs.sort((a, b) => a - b);
     
-    return turningPoints / theoreticalMax;
+    const median = diffs[Math.floor(diffs.length / 2)];
+    const mad = diffs.reduce((sum, val) => sum + Math.abs(val - median), 0) / diffs.length;
+    
+    return mad / median;
   }
   
   /**
-   * Reinicia el estado del detector
-   * @param fullReset Si es true, reinicia también el contador de arritmias
+   * Calcula la varianza de los intervalos RR
+   */
+  private calculateVariance(): number {
+    if (this.intervalHistory.length < 2) return 0;
+    
+    const mean = this.intervalHistory.reduce((sum, val) => sum + val, 0) / this.intervalHistory.length;
+    const squaredDiffs = this.intervalHistory.map(val => (val - mean) ** 2);
+    
+    return squaredDiffs.reduce((sum, val) => sum + val, 0) / this.intervalHistory.length;
+  }
+  
+  /**
+   * Calcula la confianza de la detección basada en múltiples parámetros
+   */
+  private calculateConfidence(rmssd: number, pNN50: number, irregularity: number, variance: number): number {
+    const rmssdScore = Math.min(1, rmssd / 60);
+    const pNN50Score = Math.min(1, pNN50 / 0.3);
+    const irregularityScore = Math.min(1, irregularity / 0.4);
+    const varianceScore = Math.min(1, variance / 5000);
+    
+    return (rmssdScore * 0.3 + pNN50Score * 0.3 + irregularityScore * 0.2 + varianceScore * 0.2) * 100;
+  }
+  
+  /**
+   * Resultado por defecto cuando no hay suficientes datos
+   */
+  private getDefaultResult(): AFibResult {
+    return {
+      detected: false,
+      count: this.afibEpisodes,
+      confidence: 0,
+      avgHR: 0,
+      timeInAFib: this.totalTimeInAFib
+    };
+  }
+  
+  /**
+   * Reinicia el detector de AFib
    */
   public reset(fullReset: boolean = true): void {
-    this.consecutiveDetections = 0;
-    this.lastDetectionTime = 0;
+    this.intervalHistory = [];
     
     if (fullReset) {
-      this.arrhythmiaCount = 0;
+      this.afibEpisodes = 0;
+      this.totalTimeInAFib = 0;
     }
+    
+    this.lastDetectionTime = 0;
   }
 }

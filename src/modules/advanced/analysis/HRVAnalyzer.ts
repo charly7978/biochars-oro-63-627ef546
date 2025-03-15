@@ -1,132 +1,261 @@
 
 /**
- * Analizador avanzado de variabilidad de frecuencia cardíaca (HRV)
- * Implementa análisis de series temporales y métodos no lineales
+ * Analizador avanzado de Variabilidad de Frecuencia Cardíaca (HRV)
+ * que implementa métricas estándar y no lineales.
  */
 
 export interface HRVMetrics {
-  sdnn: number;          // Desviación estándar de intervalos NN
-  rmssd: number;         // Raíz cuadrada del promedio de diferencias al cuadrado
-  pnn50: number;         // Porcentaje de intervalos que difieren más de 50ms
-  lfHfRatio: number;     // Relación de potencia de baja y alta frecuencia
-  sampEn: number;        // Entropía muestral (medida de complejidad)
-  sd1: number;           // Dispersión Poincaré a corto plazo
-  sd2: number;           // Dispersión Poincaré a largo plazo
+  rmssd: number;       // Root Mean Square of Successive Differences
+  sdnn: number;        // Standard Deviation of NN intervals
+  pnn50: number;       // Proportion of NN50
+  lf: number;          // Low Frequency power
+  hf: number;          // High Frequency power
+  lfhf: number;        // LF/HF ratio
+  sd1: number;         // Poincaré plot standard deviation perpendicular to line of identity
+  sd2: number;         // Poincaré plot standard deviation along line of identity
+  entropy: number;     // Approximate entropy
 }
 
 export class HRVAnalyzer {
-  private lastMetrics: HRVMetrics = {
-    sdnn: 0,
-    rmssd: 0,
-    pnn50: 0,
-    lfHfRatio: 0,
-    sampEn: 0,
-    sd1: 0,
-    sd2: 0
-  };
+  private rrHistory: number[] = [];
+  private readonly MAX_HISTORY = 300;  // ~5 minutos de historia
+  private lastMetrics: HRVMetrics | null = null;
   
-  private isFirstReset: boolean = true;
-
+  constructor() {
+    console.log('Analizador de HRV inicializado');
+  }
+  
   /**
    * Calcula métricas de HRV a partir de intervalos RR
    */
   public calculateMetrics(intervals: number[]): HRVMetrics {
-    // Si no hay suficientes intervalos, devolver últimas métricas
-    if (!intervals || intervals.length < 10) {
-      return this.lastMetrics;
+    // Añadir nuevos intervalos al historial
+    this.appendIntervals(intervals);
+    
+    if (this.rrHistory.length < 5) {
+      return this.getDefaultMetrics();
+    }
+    
+    // Eliminar valores atípicos (outliers)
+    const filteredIntervals = this.removeOutliers(this.rrHistory);
+    
+    if (filteredIntervals.length < 5) {
+      return this.getDefaultMetrics();
     }
     
     try {
-      // Filtrar valores atípicos
-      const filteredIntervals = this.filterOutliers(intervals);
-      if (filteredIntervals.length < 6) {
-        return this.lastMetrics;
-      }
+      // Calcular métricas en dominio del tiempo
+      const rmssd = this.calculateRMSSD(filteredIntervals);
+      const sdnn = this.calculateSDNN(filteredIntervals);
+      const pnn50 = this.calculatePNN50(filteredIntervals);
       
-      // Calcular SDNN (Desviación estándar de intervalos NN)
-      const mean = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
-      const squaredDiffs = filteredIntervals.map(interval => Math.pow(interval - mean, 2));
-      const sdnn = Math.sqrt(squaredDiffs.reduce((sum, val) => sum + val, 0) / filteredIntervals.length);
+      // Calcular métricas en dominio de frecuencia
+      const frequencyDomain = this.calculateFrequencyDomain(filteredIntervals);
       
-      // Calcular RMSSD (Raíz cuadrada del promedio de diferencias al cuadrado)
-      let sumSquaredDiffs = 0;
-      for (let i = 1; i < filteredIntervals.length; i++) {
-        sumSquaredDiffs += Math.pow(filteredIntervals[i] - filteredIntervals[i-1], 2);
-      }
-      const rmssd = Math.sqrt(sumSquaredDiffs / (filteredIntervals.length - 1));
+      // Calcular métricas no lineales
+      const poincare = this.calculatePoincareParameters(filteredIntervals);
+      const entropy = this.calculateApproximateEntropy(filteredIntervals);
       
-      // Calcular pNN50 (Porcentaje de intervalos que difieren más de 50ms)
-      let nn50Count = 0;
-      for (let i = 1; i < filteredIntervals.length; i++) {
-        if (Math.abs(filteredIntervals[i] - filteredIntervals[i-1]) > 50) {
-          nn50Count++;
-        }
-      }
-      const pnn50 = (nn50Count / (filteredIntervals.length - 1)) * 100;
-      
-      // Simular LF/HF ratio (análisis de dominio de frecuencia)
-      // En una implementación real se usaría FFT o método Lomb-Scargle
-      const lfHfRatio = 0.8 + (Math.random() * 0.8);
-      
-      // Simular SampEn (entropía muestral)
-      // En una implementación real se calcularía comparando patrones
-      const sampEn = 0.9 + (Math.random() * 0.6);
-      
-      // Simular SD1 y SD2 (medidas de dispersión de Poincaré)
-      const sd1 = rmssd * 0.5;
-      const sd2 = Math.sqrt(2 * Math.pow(sdnn, 2) - Math.pow(sd1, 2));
-      
-      this.lastMetrics = {
-        sdnn,
+      const metrics: HRVMetrics = {
         rmssd,
+        sdnn,
         pnn50,
-        lfHfRatio,
-        sampEn,
-        sd1,
-        sd2
+        lf: frequencyDomain.lf,
+        hf: frequencyDomain.hf,
+        lfhf: frequencyDomain.lfhf,
+        sd1: poincare.sd1,
+        sd2: poincare.sd2,
+        entropy
       };
       
-      return this.lastMetrics;
+      this.lastMetrics = metrics;
+      return metrics;
     } catch (error) {
-      console.error('Error al calcular métricas HRV:', error);
-      return this.lastMetrics;
+      console.error('Error calculando métricas HRV:', error);
+      return this.lastMetrics || this.getDefaultMetrics();
     }
   }
   
   /**
-   * Filtra valores atípicos usando método IQR
+   * Añade nuevos intervalos RR al historial
    */
-  private filterOutliers(intervals: number[]): number[] {
-    const sorted = [...intervals].sort((a, b) => a - b);
-    const q1Index = Math.floor(sorted.length * 0.25);
-    const q3Index = Math.floor(sorted.length * 0.75);
+  private appendIntervals(intervals: number[]): void {
+    for (const interval of intervals) {
+      if (interval >= 400 && interval <= 1500) { // Rango fisiológico
+        this.rrHistory.push(interval);
+      }
+    }
     
-    const q1 = sorted[q1Index];
-    const q3 = sorted[q3Index];
-    const iqr = q3 - q1;
-    
-    const lowerBound = q1 - 1.5 * iqr;
-    const upperBound = q3 + 1.5 * iqr;
-    
-    return intervals.filter(v => v >= lowerBound && v <= upperBound);
+    // Mantener tamaño máximo del historial
+    if (this.rrHistory.length > this.MAX_HISTORY) {
+      this.rrHistory = this.rrHistory.slice(-this.MAX_HISTORY);
+    }
   }
   
   /**
-   * Reinicia el analizador
+   * Elimina valores atípicos (outliers) de los intervalos RR
    */
-  public reset(fullReset: boolean): void {
-    if (fullReset || this.isFirstReset) {
-      this.lastMetrics = {
-        sdnn: 0,
-        rmssd: 0,
-        pnn50: 0,
-        lfHfRatio: 0,
-        sampEn: 0,
-        sd1: 0,
-        sd2: 0
-      };
-      
-      this.isFirstReset = false;
+  private removeOutliers(intervals: number[]): number[] {
+    if (intervals.length < 5) return intervals;
+    
+    const sortedIntervals = [...intervals].sort((a, b) => a - b);
+    const q1Index = Math.floor(sortedIntervals.length * 0.25);
+    const q3Index = Math.floor(sortedIntervals.length * 0.75);
+    
+    const q1 = sortedIntervals[q1Index];
+    const q3 = sortedIntervals[q3Index];
+    
+    const iqr = q3 - q1;
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    return intervals.filter(val => val >= lowerBound && val <= upperBound);
+  }
+  
+  /**
+   * Calcula la raíz cuadrada del promedio de las diferencias cuadradas sucesivas (RMSSD)
+   */
+  private calculateRMSSD(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
+    
+    let sumSquaredDiffs = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      const diff = intervals[i] - intervals[i-1];
+      sumSquaredDiffs += diff * diff;
+    }
+    
+    return Math.sqrt(sumSquaredDiffs / (intervals.length - 1));
+  }
+  
+  /**
+   * Calcula la desviación estándar de intervalos RR (SDNN)
+   */
+  private calculateSDNN(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
+    
+    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const squaredDiffs = intervals.map(val => (val - mean) ** 2);
+    
+    return Math.sqrt(squaredDiffs.reduce((sum, val) => sum + val, 0) / intervals.length);
+  }
+  
+  /**
+   * Calcula el porcentaje de intervalos consecutivos que difieren en más de 50ms (pNN50)
+   */
+  private calculatePNN50(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
+    
+    let count = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      const diff = Math.abs(intervals[i] - intervals[i-1]);
+      if (diff > 50) {
+        count++;
+      }
+    }
+    
+    return (count / (intervals.length - 1)) * 100;
+  }
+  
+  /**
+   * Calcula parámetros en el dominio de la frecuencia (simplificado)
+   */
+  private calculateFrequencyDomain(intervals: number[]): { lf: number; hf: number; lfhf: number } {
+    if (intervals.length < 10) {
+      return { lf: 0, hf: 0, lfhf: 1 };
+    }
+    
+    // Implementación simplificada basada en estimaciones
+    const rmssd = this.calculateRMSSD(intervals);
+    const sdnn = this.calculateSDNN(intervals);
+    
+    // Aproximación de HF basada en RMSSD
+    const hf = Math.pow(rmssd, 2) / 2;
+    
+    // Aproximación de LF basada en SDNN y RMSSD
+    const lf = Math.pow(sdnn, 2) - Math.pow(rmssd, 2) / 2;
+    
+    // Ratio LF/HF
+    const lfhf = hf > 0 ? lf / hf : 1;
+    
+    return {
+      lf: Math.max(0, lf),
+      hf: Math.max(0, hf),
+      lfhf: Math.max(0.1, lfhf)
+    };
+  }
+  
+  /**
+   * Calcula parámetros de Poincaré (SD1, SD2)
+   */
+  private calculatePoincareParameters(intervals: number[]): { sd1: number; sd2: number } {
+    if (intervals.length < 2) {
+      return { sd1: 0, sd2: 0 };
+    }
+    
+    // Crear pares de intervalos consecutivos
+    const pairs: { x: number; y: number }[] = [];
+    for (let i = 0; i < intervals.length - 1; i++) {
+      pairs.push({ x: intervals[i], y: intervals[i+1] });
+    }
+    
+    // Calcular SD1 y SD2
+    const rmssd = this.calculateRMSSD(intervals);
+    const sdnn = this.calculateSDNN(intervals);
+    
+    // SD1 relacionado con RMSSD
+    const sd1 = rmssd / Math.sqrt(2);
+    
+    // SD2 calculado a partir de SDNN y SD1
+    const sd2 = Math.sqrt(2 * Math.pow(sdnn, 2) - Math.pow(sd1, 2));
+    
+    return {
+      sd1: Math.max(0, sd1),
+      sd2: Math.max(0, sd2)
+    };
+  }
+  
+  /**
+   * Calcula entropía aproximada (simplificada)
+   */
+  private calculateApproximateEntropy(intervals: number[]): number {
+    if (intervals.length < 10) return 0;
+    
+    // Implementación simplificada basada en la variabilidad
+    const sdnn = this.calculateSDNN(intervals);
+    const rmssd = this.calculateRMSSD(intervals);
+    
+    // Normalizar para rango de entropía aproximada típico (0-2)
+    const irregularity = rmssd / sdnn;
+    return Math.min(2, Math.max(0, irregularity * 1.5));
+  }
+  
+  /**
+   * Retorna métricas por defecto
+   */
+  private getDefaultMetrics(): HRVMetrics {
+    return {
+      rmssd: 0,
+      sdnn: 0,
+      pnn50: 0,
+      lf: 0,
+      hf: 0,
+      lfhf: 1,
+      sd1: 0,
+      sd2: 0,
+      entropy: 0
+    };
+  }
+  
+  /**
+   * Reinicia el analizador de HRV
+   */
+  public reset(fullReset: boolean = true): void {
+    if (fullReset) {
+      this.rrHistory = [];
+      this.lastMetrics = null;
+    } else {
+      // Conservar algunos datos para continuidad
+      this.rrHistory = this.rrHistory.slice(-50);
     }
   }
 }
