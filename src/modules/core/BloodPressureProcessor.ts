@@ -1,4 +1,3 @@
-
 /**
  * NOTA IMPORTANTE: Este es un módulo de procesamiento para presión arterial.
  * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
