@@ -409,10 +409,10 @@ const Index = () => {
     if (lastSignal && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
-      if (heartBeatResult.bpm > 0 && heartBeatResult.confidence > 0.2) {
+      if (heartBeatResult.bpm > 0 && heartBeatResult.confidence > 0.1) {
         setHeartRate(heartBeatResult.bpm);
         
-        console.log("Index: Latido procesado", {
+        console.log("Index: Heartbeat processed", {
           bpm: heartBeatResult.bpm,
           confidence: heartBeatResult.confidence.toFixed(2),
           isPeak: heartBeatResult.isPeak,
@@ -423,9 +423,9 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        console.log("Index: Vitales procesados:", vitals);
+        console.log("Index: Vitals processed:", vitals);
         
-        if (lastSignal.quality > 20 || vitalSigns.spo2 > 0) {
+        if (lastSignal.quality > 5 || vitalSigns.spo2 > 0) {
           setVitalSigns(prevSigns => ({
             ...prevSigns,
             spo2: vitals.spo2 > 0 ? vitals.spo2 : prevSigns.spo2,

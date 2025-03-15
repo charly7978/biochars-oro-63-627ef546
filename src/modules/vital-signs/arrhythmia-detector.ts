@@ -4,9 +4,9 @@
  * Implements multiple algorithms for improved detection accuracy
  */
 export class ArrhythmiaDetector {
-  private readonly RMSSD_THRESHOLD = 12; // Reducido para mejor sensibilidad
-  private readonly RR_VARIATION_THRESHOLD = 0.12; // Reducido para detectar variaciones más sutiles
-  private readonly MIN_TIME_BETWEEN_DETECTIONS = 1500; // Aumentado para reducir falsos positivos
+  private readonly RMSSD_THRESHOLD = 8; // Reduced from 12 for better sensitivity
+  private readonly RR_VARIATION_THRESHOLD = 0.08; // Reduced from 0.12 for better sensitivity
+  private readonly MIN_TIME_BETWEEN_DETECTIONS = 800; // Reduced from 1500 to detect more frequently
   
   private lastArrhythmiaTime: number = 0;
   private lastArrhythmiaData: {
@@ -38,11 +38,11 @@ export class ArrhythmiaDetector {
     // Calculate RMSSD (Root Mean Square of Successive Differences)
     let rmssd = this.calculateRMSSD(recentIntervals);
     
-    // Calculate average RR interval with más peso a los intervalos recientes
+    // Calculate average RR interval with more weight to recent intervals
     let avgRR = 0;
     let weightSum = 0;
     for (let i = 0; i < recentIntervals.length; i++) {
-      const weight = i + 1; // Mayor peso a valores más recientes
+      const weight = i + 1; // Higher weight to more recent values
       avgRR += recentIntervals[i] * weight;
       weightSum += weight;
     }
@@ -56,21 +56,21 @@ export class ArrhythmiaDetector {
     const currentTime = Date.now();
     const timeSinceLastDetection = currentTime - this.lastArrhythmiaTime;
     
-    // Multi-criteria detection algorithm
+    // Multi-criteria detection algorithm with higher sensitivity
     const isArrhythmiaRMSSD = rmssd > this.RMSSD_THRESHOLD;
     const isArrhythmiaVariation = rrVariation > this.RR_VARIATION_THRESHOLD;
     
-    // Detección de taquicardia y bradicardia severas (umbrales más permisivos)
-    const isExtremeTachycardia = lastRR < 0.7 * avgRR; // 30% más rápido que promedio
-    const isExtremeBradycardia = lastRR > 1.3 * avgRR; // 30% más lento que promedio
+    // Detection of severe tachycardia and bradycardia (more permissive thresholds)
+    const isExtremeTachycardia = lastRR < 0.8 * avgRR; // 20% faster than average (was 30%)
+    const isExtremeBradycardia = lastRR > 1.2 * avgRR; // 20% slower than average (was 30%)
     
-    // Combined detection logic - Lógica combinada más sensible
+    // Combined detection logic - More sensitive combined logic
     const isArrhythmia = 
       (isArrhythmiaRMSSD || isArrhythmiaVariation) || 
       isExtremeTachycardia || 
       isExtremeBradycardia;
     
-    // Solo registrar si pasó suficiente tiempo desde la última detección
+    // Only record if enough time has passed since the last detection
     if (isArrhythmia && timeSinceLastDetection >= this.MIN_TIME_BETWEEN_DETECTIONS) {
       this.lastArrhythmiaTime = currentTime;
       this.lastArrhythmiaData = {
@@ -79,15 +79,15 @@ export class ArrhythmiaDetector {
         rrVariation
       };
       
-      // Log detallado para diagnóstico
-      console.log("ArrhythmiaDetector: Arritmia detectada", {
+      // Detailed diagnostic log
+      console.log("ArrhythmiaDetector: Arrhythmia detected", {
         rmssd,
         rrVariation,
         isExtremeTachycardia,
         isExtremeBradycardia,
         avgRR,
         lastRR,
-        ultimosIntervalos: recentIntervals
+        recentIntervals
       });
     }
     
