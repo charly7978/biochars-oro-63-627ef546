@@ -38,23 +38,24 @@ export function detectArrhythmia(params: ArrhythmiaDecisionParams): boolean {
     return false;
   }
   
-  // Multi-parametric decision algorithm with more sensitive thresholds
+  // Multi-parametric decision algorithm with much more sensitive thresholds
+  // Estos valores han sido extremadamente reducidos para aumentar la detección visual
   return (
     // Primary condition: requires multiple criteria to be met with balanced thresholds
-    (rmssd > 40 && // Reducido de 45 a 40
-     rrVariation > 0.20 && // Reducido de 0.25 a 0.20 
-     coefficientOfVariation > 0.12) || // Reducido de 0.15 a 0.12
+    (rmssd > 20 && // Reducido dramáticamente para aumentar sensibilidad
+     rrVariation > 0.10 && // Reducido dramáticamente 
+     coefficientOfVariation > 0.08) || // Reducido dramáticamente
     
     // Secondary condition: requires good signal quality but more sensitive indicators
-    (shannonEntropy > 1.6 && // Reducido de 1.8 a 1.6
-     pnnX > 0.20 && // Reducido de 0.25 a 0.20
-     coefficientOfVariation > 0.18 && // Reducido de 0.2 a 0.18
-     sampleEntropy > 0.9) || // Reducido de 1.1 a 0.9
+    (shannonEntropy > 0.9 && // Reducido dramáticamente 
+     pnnX > 0.10 && // Reducido dramáticamente
+     coefficientOfVariation > 0.09 && // Reducido dramáticamente
+     sampleEntropy > 0.5) || // Reducido dramáticamente
     
     // Extreme variation condition: more sensitive detection
-    (rrVariation > 0.30 && // Reducido de 0.35 a 0.30
-     coefficientOfVariation > 0.22 && // Reducido de 0.25 a 0.22
-     sampleEntropy > 1.2 && // Reducido de 1.4 a 1.2
-     shannonEntropy > 1.4) // Reducido de 1.6 a 1.4
+    (rrVariation > 0.15 && // Reducido dramáticamente
+     coefficientOfVariation > 0.10 && // Reducido dramáticamente
+     sampleEntropy > 0.6 && // Reducido dramáticamente
+     shannonEntropy > 0.7) // Reducido dramáticamente
   );
 }

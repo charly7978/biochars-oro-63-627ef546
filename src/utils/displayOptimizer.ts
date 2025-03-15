@@ -1,3 +1,4 @@
+
 /**
  * Utilities for optimizing display and rendering across various device resolutions
  */
@@ -210,6 +211,65 @@ export function checkWebGLSupport(): { supported: boolean; version: number } {
   }
   
   return { supported: false, version: 0 };
+}
+
+/**
+ * Sets optimal screen resolution for the current device
+ */
+function setOptimalScreenResolution(): void {
+  // Use CSS transform to counter device pixel ratio for consistent visuals
+  if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
+    // Only adjust for pixel ratios greater than 1 to avoid blurry text on standard screens
+    if (window.devicePixelRatio > 1) {
+      // Add meta viewport tag programmatically
+      let metaViewport = document.querySelector('meta[name="viewport"]');
+      if (!metaViewport) {
+        metaViewport = document.createElement('meta');
+        metaViewport.setAttribute('name', 'viewport');
+        document.head.appendChild(metaViewport);
+      }
+      
+      // Set viewport content for high DPI screens
+      metaViewport.setAttribute('content', `width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no`);
+      
+      console.log(`Screen resolution optimized for pixel ratio: ${window.devicePixelRatio}`);
+    }
+  }
+}
+
+/**
+ * Locks screen orientation to portrait or landscape
+ */
+function lockScreenOrientation(): void {
+  try {
+    // Try to lock to portrait mode
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('portrait').catch(error => {
+        console.warn('Screen orientation lock not supported:', error);
+      });
+    }
+  } catch (error) {
+    console.warn('Screen orientation API not supported');
+  }
+}
+
+/**
+ * Enables fullscreen mode for the document
+ */
+function enableFullscreenMode(): Promise<void> {
+  const elem = document.documentElement;
+  
+  if (elem.requestFullscreen) {
+    return elem.requestFullscreen();
+  } else if ((elem as any).webkitRequestFullscreen) {
+    return (elem as any).webkitRequestFullscreen();
+  } else if ((elem as any).mozRequestFullScreen) {
+    return (elem as any).mozRequestFullScreen();
+  } else if ((elem as any).msRequestFullscreen) {
+    return (elem as any).msRequestFullscreen();
+  }
+  
+  return Promise.resolve();
 }
 
 /**
