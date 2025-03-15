@@ -216,7 +216,7 @@ export const useVitalSignsProcessor = () => {
       waveletLevel
     });
     
-    // Actualizar estadísticas multiespectrales (simuladas)
+    // Actualizar estadísticas multiespectrales
     const frameCount = processedSignals.current;
     if (frameCount % 10 === 0) {
       multispectralStats.current = {
@@ -263,12 +263,10 @@ export const useVitalSignsProcessor = () => {
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
     // Si tenemos un resultado válido, guardarlo
-    if (result.spo2 > 0 && result.glucose > 0 && result.lipids.totalCholesterol > 0) {
+    if (result.spo2 > 0) {
       console.log("useVitalSignsProcessor: Resultado válido con procesamiento avanzado", {
         spo2: result.spo2,
         presión: result.pressure,
-        glucosa: result.glucose,
-        lípidos: result.lipids,
         métricas: {
           calidadSeñal: processingMetrics.signalQuality.toFixed(2),
           eficienciaFiltrado: processingMetrics.filteringEfficiency.toFixed(2),

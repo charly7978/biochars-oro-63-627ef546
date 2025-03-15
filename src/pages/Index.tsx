@@ -17,12 +17,7 @@ const Index = () => {
     spo2: 0,
     pressure: "--/--",
     arrhythmiaStatus: "--",
-    glucose: 0,
-    signalQuality: 0,
-    lipids: {
-      totalCholesterol: 0,
-      triglycerides: 0
-    }
+    signalQuality: 0
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState<string | number>("--");
@@ -147,12 +142,7 @@ const Index = () => {
       spo2: 0, 
       pressure: "--/--",
       arrhythmiaStatus: "--",
-      glucose: 0,
-      signalQuality: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      signalQuality: 0
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -345,18 +335,8 @@ const Index = () => {
                 unit="mmHg"
                 highlighted={showResults}
               />
-              <VitalSign 
-                label="GLUCOSA"
-                value={vitalSigns.glucose || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-              />
-              <VitalSign 
-                label="COLESTEROL/TRIGL."
-                value={`${vitalSigns.lipids?.totalCholesterol || "--"}/${vitalSigns.lipids?.triglycerides || "--"}`}
-                unit="mg/dL"
-                highlighted={showResults}
-              />
+              <div></div>
+              <div></div>
               <div></div>
             </div>
           </div>

@@ -9,17 +9,11 @@ import { SignalProcessor } from './signal-processor';
 import { SpO2Calculator } from './spo2-calculator';
 import { BloodPressureCalculator } from './blood-pressure-calculator';
 import { ArrhythmiaDetector } from './arrhythmia-detector';
-import { BiomarkerSimulator } from './biomarker-simulator';
 
 export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
-  glucose: number;
-  lipids: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
   signalQuality: number;
   lastArrhythmiaData?: {
     timestamp: number;
@@ -42,7 +36,6 @@ export class VitalSignsProcessor {
   private spo2Calculator: SpO2Calculator;
   private bpCalculator: BloodPressureCalculator;
   private arrhythmiaDetector: ArrhythmiaDetector;
-  private biomarkerSimulator: BiomarkerSimulator;
   private lastValidResult: VitalSignsResult | null = null;
 
   constructor() {
@@ -50,7 +43,6 @@ export class VitalSignsProcessor {
     this.spo2Calculator = new SpO2Calculator();
     this.bpCalculator = new BloodPressureCalculator();
     this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.biomarkerSimulator = new BiomarkerSimulator();
     
     console.log("VitalSignsProcessor: Inicializado con nueva arquitectura modular");
   }
@@ -94,10 +86,6 @@ export class VitalSignsProcessor {
       rrVariation: rrVariation || 0
     };
 
-    // Simular biomarcadores
-    const glucose = this.biomarkerSimulator.simulateGlucoseReading();
-    const lipids = this.biomarkerSimulator.simulateLipidProfiles();
-
     // Calcular calidad de señal
     const signalQuality = Math.min(100, Math.max(0, recentValues.length / 3));
 
@@ -114,8 +102,6 @@ export class VitalSignsProcessor {
       spo2,
       pressure: pressureString,
       arrhythmiaStatus: `${arrhythmiaStatus}|${arrhythmiaCount}`,
-      glucose,
-      lipids,
       signalQuality,
       lastArrhythmiaData,
       calibration: {

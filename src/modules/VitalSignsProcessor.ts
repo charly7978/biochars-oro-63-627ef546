@@ -49,12 +49,7 @@ export class VitalSignsProcessor {
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
-        glucose: 0,
-        signalQuality: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
+        signalQuality: 0
       };
     }
     this.lastProcessedTime = currentTime;
@@ -113,12 +108,7 @@ export class VitalSignsProcessor {
       spo2: 0,
       pressure: "--/--",
       arrhythmiaStatus: "--",
-      glucose: 0,
-      signalQuality: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      signalQuality: 0
     };
   }
   
