@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -39,13 +40,13 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 3500;
-  const CANVAS_WIDTH = 900;
+  const WINDOW_WIDTH_MS = 2500;
+  const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 600;
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 30.0;
-  const SMOOTHING_FACTOR = 1.2;
+  const verticalScale = 35.0;
+  const SMOOTHING_FACTOR = 1.5;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
@@ -53,7 +54,7 @@ const PPGSignalMeter = ({
   const PEAK_THRESHOLD = 3;
   const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
-  const MAX_PEAKS_TO_DISPLAY = 20;
+  const MAX_PEAKS_TO_DISPLAY = 25;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -89,15 +90,17 @@ const PPGSignalMeter = ({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
+    // Create a more sophisticated gradient background
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E5DEFF');
-    gradient.addColorStop(0.3, '#FDE1D3');
-    gradient.addColorStop(0.7, '#F2FCE2');
-    gradient.addColorStop(1, '#D3E4FD');
+    gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
+    gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
+    gradient.addColorStop(0.7, '#F2FCE2'); // Soft green (lower middle)
+    gradient.addColorStop(1, '#D3E4FD'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
+    // Add subtle texture pattern
     ctx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
@@ -107,10 +110,12 @@ const PPGSignalMeter = ({
     }
     ctx.globalAlpha = 1.0;
     
+    // Draw improved grid lines
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)'; // More subtle grid lines
     ctx.lineWidth = 0.5;
     
+    // Draw vertical grid lines
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
@@ -122,6 +127,7 @@ const PPGSignalMeter = ({
       }
     }
     
+    // Draw horizontal grid lines
     for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
@@ -134,20 +140,22 @@ const PPGSignalMeter = ({
     }
     ctx.stroke();
     
-    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
+    // Draw center line (baseline) with improved style
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, centerLineY);
-    ctx.lineTo(CANVAS_WIDTH, centerLineY);
+    ctx.setLineDash([5, 3]); // Dashed line for the center
+    ctx.moveTo(0, CANVAS_HEIGHT / 2);
+    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.setLineDash([]); // Reset to solid line
     
+    // Draw arrhythmia status if present
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
       if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
+        // Create a highlight box for the first arrhythmia
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(30, 70, 350, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
@@ -160,6 +168,7 @@ const PPGSignalMeter = ({
         ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
+        // Create a highlight box for multiple arrhythmias
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(30, 70, 250, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
@@ -315,10 +324,10 @@ const PPGSignalMeter = ({
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = (canvas.height / 2) - 40 - prevPoint.value;
+        const y1 = canvas.height / 2 - prevPoint.value;
         
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = (canvas.height / 2) - 40 - point.value;
+        const y2 = canvas.height / 2 - point.value;
         
         if (firstPoint) {
           ctx.moveTo(x1, y1);
@@ -345,7 +354,7 @@ const PPGSignalMeter = ({
       
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2) - 40 - peak.value;
+        const y = canvas.height / 2 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
           ctx.beginPath();
@@ -360,13 +369,13 @@ const PPGSignalMeter = ({
             ctx.lineWidth = 3;
             ctx.stroke();
             
-            ctx.font = 'bold 18px Inter';
+            ctx.font = 'bold 18px Inter'; // Increased from 14px to 18px
             ctx.fillStyle = '#F97316';
             ctx.textAlign = 'center';
             ctx.fillText('ARRITMIA', x, y - 25);
           }
           
-          ctx.font = 'bold 16px Inter';
+          ctx.font = 'bold 16px Inter'; // Increased from 14px to 16px
           ctx.fillStyle = '#000000';
           ctx.textAlign = 'center';
           ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
