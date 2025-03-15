@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
@@ -6,14 +7,21 @@ interface SignalQualityIndicatorProps {
   isMonitoring?: boolean;
 }
 
+/**
+ * Componente que muestra la calidad de la señal PPG
+ * Incluye detección específica para Android y consejos de ayuda
+ */
 const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
+  // Estado local
   const [displayQuality, setDisplayQuality] = useState(0);
   const [qualityHistory, setQualityHistory] = useState<number[]>([]);
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
+  
+  // Constantes de configuración
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 8; // PRIMERA VARIABLE MODIFICADA: aumentado de 6 a 8 para reducir aún más falsos positivos
-  const QUALITY_THRESHOLD = 50; // SEGUNDA VARIABLE MODIFICADA: aumentado de 40 a 50 para exigir calidad mucho más alta
+  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
+  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
 
   // Detectar plataforma
   useEffect(() => {
@@ -27,7 +35,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     }
   }, []);
 
-  // Mantener historial de calidad para cálculo de promedio
+  // Mantener historial de calidad para promedio
   useEffect(() => {
     if (isMonitoring) {
       setQualityHistory(prev => {
@@ -40,7 +48,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     }
   }, [quality, isMonitoring]);
 
-  // Calcular calidad promedio con más peso a valores recientes
+  // Calcular calidad ponderada con más peso a valores recientes
   useEffect(() => {
     if (qualityHistory.length === 0) {
       setDisplayQuality(0);
@@ -58,20 +66,26 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     const averageQuality = Math.round(weightedSum / totalWeight);
     
-    // Suavizar cambios con animación
+    // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
       const delta = (averageQuality - prev) * 0.3;
       return Math.round(prev + delta);
     });
   }, [qualityHistory]);
 
+  /**
+   * Obtiene el color basado en la calidad
+   */
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 65) return '#00ff00'; // Umbral reducido para Android
-    if (q > 40) return '#ffff00'; // Umbral reducido para Android
+    if (q > 65) return '#00ff00';
+    if (q > 40) return '#ffff00';
     return '#ff0000';
   };
 
+  /**
+   * Obtiene el texto descriptivo de calidad
+   */
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
     if (q > 65) return 'Excelente';
@@ -79,7 +93,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     return 'Baja';
   };
 
-  // Efecto de pulso más notable para Android
+  // Efecto de pulso adaptado a la plataforma
   const pulseStyle = displayQuality > 0 
     ? isAndroid ? "animate-pulse transition-all duration-500" : "animate-pulse transition-all duration-300" 
     : "transition-all duration-300";
@@ -120,6 +134,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         </div>
       </div>
       
+      {/* Consejos de ayuda específicos para Android */}
       {isAndroid && showHelpTip && displayQuality < QUALITY_THRESHOLD && (
         <div className="absolute -bottom-20 left-0 right-0 bg-black/70 p-2 rounded text-white text-xs flex items-center gap-1">
           <AlertCircle className="h-4 w-4 text-yellow-400 flex-shrink-0" />

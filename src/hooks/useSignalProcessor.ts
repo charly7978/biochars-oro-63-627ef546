@@ -3,14 +3,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
-interface ProcessorConfig {
-  fingerDetectionThreshold?: number;
-  minSignalQuality?: number;
-  adaptiveSensitivity?: boolean;
-  enhancedProcessing?: boolean;
-}
-
+/**
+ * Hook para gestionar el procesamiento de señales PPG.
+ * Esta versión limpia mantiene la misma funcionalidad pero con código más limpio.
+ */
 export const useSignalProcessor = () => {
+  // Creamos una única instancia del procesador
   const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia del procesador", {
       timestamp: new Date().toISOString(),
@@ -20,6 +18,7 @@ export const useSignalProcessor = () => {
     return new PPGSignalProcessor();
   });
   
+  // Estado del procesador
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
   const [error, setError] = useState<ProcessingError | null>(null);
@@ -31,21 +30,28 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
   
+  // Referencias para historial de calidad
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
   const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
+  /**
+   * Procesa la detección de dedo de manera robusta usando promedio móvil
+   */
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
+    // Actualizar historial de calidad
     qualityHistoryRef.current.push(signal.quality);
     if (qualityHistoryRef.current.length > HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
     
+    // Actualizar historial de detección
     fingerDetectedHistoryRef.current.push(signal.fingerDetected);
     if (fingerDetectedHistoryRef.current.length > HISTORY_SIZE) {
       fingerDetectedHistoryRef.current.shift();
     }
     
+    // Cálculo ponderado de calidad
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
@@ -56,28 +62,18 @@ export const useSignalProcessor = () => {
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
+    // Calcular ratio de detección
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Usar un umbral más exigente para la detección robusta (3 de 5 = 0.6)
+    // Usar un umbral más exigente (3 de 5 = 0.6)
     const robustFingerDetected = detectionRatio >= 0.6;
     
-    // Mejora ligera de calidad para mejor experiencia de usuario
+    // Mejora ligera de calidad para mejor UX
     const enhancedQuality = Math.min(100, avgQuality * 1.1);
     
-    console.log("useSignalProcessor: Detección robusta", {
-      original: signal.fingerDetected,
-      robust: robustFingerDetected,
-      detectionRatio,
-      trueCount,
-      historyLength: fingerDetectedHistoryRef.current.length,
-      originalQuality: signal.quality,
-      enhancedQuality,
-      rawValue: signal.rawValue.toFixed(2),
-      filteredValue: signal.filteredValue.toFixed(2)
-    });
-    
+    // Devolver señal modificada
     return {
       ...signal,
       fingerDetected: robustFingerDetected,
@@ -85,31 +81,22 @@ export const useSignalProcessor = () => {
     };
   }, []);
 
+  // Configurar callbacks y limpieza
   useEffect(() => {
     console.log("useSignalProcessor: Configurando callbacks", {
       timestamp: new Date().toISOString(),
       processorExists: !!processor
     });
     
+    // Callback cuando hay señal lista
     processor.onSignalReady = (signal: ProcessedSignal) => {
       const modifiedSignal = processRobustFingerDetection(signal);
-      
-      console.log("useSignalProcessor: Señal procesada:", {
-        timestamp: modifiedSignal.timestamp,
-        formattedTime: new Date(modifiedSignal.timestamp).toISOString(),
-        quality: modifiedSignal.quality.toFixed(1),
-        rawQuality: signal.quality.toFixed(1),
-        rawValue: modifiedSignal.rawValue.toFixed(3),
-        filteredValue: modifiedSignal.filteredValue.toFixed(3),
-        fingerDetected: modifiedSignal.fingerDetected,
-        originalFingerDetected: signal.fingerDetected,
-        processingTime: Date.now() - modifiedSignal.timestamp
-      });
       
       setLastSignal(modifiedSignal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
+      // Actualizar estadísticas
       setSignalStats(prev => {
         const newStats = {
           minValue: Math.min(prev.minValue, modifiedSignal.filteredValue),
@@ -126,6 +113,7 @@ export const useSignalProcessor = () => {
       });
     };
 
+    // Callback de error
     processor.onError = (error: ProcessingError) => {
       console.error("useSignalProcessor: Error detallado:", {
         ...error,
@@ -135,10 +123,7 @@ export const useSignalProcessor = () => {
       setError(error);
     };
 
-    console.log("useSignalProcessor: Iniciando procesador", {
-      timestamp: new Date().toISOString()
-    });
-    
+    // Inicializar procesador
     processor.initialize().catch(error => {
       console.error("useSignalProcessor: Error de inicialización detallado:", {
         message: error.message,
@@ -147,19 +132,15 @@ export const useSignalProcessor = () => {
       });
     });
 
+    // Cleanup al desmontar
     return () => {
-      console.log("useSignalProcessor: Limpiando", {
-        framesProcessados: framesProcessed,
-        ultimaSeñal: lastSignal ? {
-          calidad: lastSignal.quality,
-          dedoDetectado: lastSignal.fingerDetected
-        } : null,
-        timestamp: new Date().toISOString()
-      });
       processor.stop();
     };
   }, [processor, processRobustFingerDetection]);
 
+  /**
+   * Inicia el procesamiento de señales
+   */
   const startProcessing = useCallback(() => {
     console.log("useSignalProcessor: Iniciando procesamiento", {
       estadoAnterior: isProcessing,
@@ -181,18 +162,23 @@ export const useSignalProcessor = () => {
     processor.start();
   }, [processor, isProcessing]);
 
+  /**
+   * Detiene el procesamiento de señales
+   */
   const stopProcessing = useCallback(() => {
     console.log("useSignalProcessor: Deteniendo procesamiento", {
       estadoAnterior: isProcessing,
       framesProcessados: framesProcessed,
-      estadisticasFinales: signalStats,
       timestamp: new Date().toISOString()
     });
     
     setIsProcessing(false);
     processor.stop();
-  }, [processor, isProcessing, framesProcessed, signalStats]);
+  }, [processor, isProcessing, framesProcessed]);
 
+  /**
+   * Calibra el procesador para mejores resultados
+   */
   const calibrate = useCallback(async () => {
     try {
       console.log("useSignalProcessor: Iniciando calibración", {
@@ -217,6 +203,9 @@ export const useSignalProcessor = () => {
     }
   }, [processor]);
 
+  /**
+   * Procesa un frame de imagen
+   */
   const processFrame = useCallback((imageData: ImageData) => {
     if (isProcessing) {
       try {
@@ -228,6 +217,7 @@ export const useSignalProcessor = () => {
     }
   }, [isProcessing, processor]);
 
+  // Devolver la misma interfaz pública que antes
   return {
     isProcessing,
     lastSignal,

@@ -2,14 +2,16 @@
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
 
 /**
- * This is a wrapper class to maintain backward compatibility with
- * the original VitalSignsProcessor implementation while using the 
- * refactored version under the hood.
+ * Wrapper de compatibilidad que mantiene la interfaz original 
+ * mientras usa la implementación refactorizada.
+ * 
+ * Este archivo es crucial para mantener la compatibilidad con el código existente
+ * mientras mejoramos la estructura interna.
  */
 export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
   
-  // Expose constants for compatibility
+  // Exponemos las constantes originales para compatibilidad
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.02;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
@@ -20,10 +22,17 @@ export class VitalSignsProcessor {
   private readonly ARRHYTHMIA_LEARNING_PERIOD = 3000;
   private readonly PEAK_THRESHOLD = 0.3;
   
+  /**
+   * Constructor que inicializa el procesador interno refactorizado
+   */
   constructor() {
     this.processor = new NewVitalSignsProcessor();
   }
   
+  /**
+   * Procesa una señal PPG y datos RR para obtener signos vitales
+   * Mantiene exactamente la misma firma de método para compatibilidad
+   */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
@@ -31,6 +40,10 @@ export class VitalSignsProcessor {
     return this.processor.processSignal(ppgValue, rrData);
   }
   
+  /**
+   * Reinicia el procesador
+   * Mantiene la misma firma de método para compatibilidad
+   */
   public reset(): void {
     this.processor.reset();
   }

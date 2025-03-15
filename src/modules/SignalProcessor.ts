@@ -1,17 +1,25 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
+/**
+ * Implementación del filtro de Kalman para suavizar señales
+ */
 class KalmanFilter {
-  private R: number = 0.01;
-  private Q: number = 0.1;
-  private P: number = 1;
-  private X: number = 0;
-  private K: number = 0;
+  private R: number = 0.01;  // Ruido de medición
+  private Q: number = 0.1;   // Ruido de proceso
+  private P: number = 1;     // Estimación de error
+  private X: number = 0;     // Valor estimado
+  private K: number = 0;     // Ganancia de Kalman
 
   filter(measurement: number): number {
+    // Predicción
     this.P = this.P + this.Q;
+    
+    // Actualización
     this.K = this.P / (this.P + this.R);
     this.X = this.X + this.K * (measurement - this.X);
     this.P = (1 - this.K) * this.P;
+    
     return this.X;
   }
 
@@ -21,10 +29,16 @@ class KalmanFilter {
   }
 }
 
+/**
+ * Procesador de señales PPG (Fotopletismografía)
+ * Implementa la interfaz SignalProcessor
+ */
 export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
+  
+  // Configuración por defecto
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
     MIN_RED_THRESHOLD: 80,
@@ -32,7 +46,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     STABILITY_WINDOW: 4,
     MIN_STABILITY_COUNT: 3
   };
+  
   private currentConfig: typeof this.DEFAULT_CONFIG;
+  
+  // Parámetros de procesamiento
   private readonly BUFFER_SIZE = 15;
   private readonly MIN_RED_THRESHOLD = 80;
   private readonly MAX_RED_THRESHOLD = 230;
@@ -41,17 +58,17 @@ export class PPGSignalProcessor implements SignalProcessor {
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
+  // Parámetros de análisis de calidad
   private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
+  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
   
+  // Análisis de periodicidad
   private baselineValue: number = 0;
   private readonly WAVELET_THRESHOLD = 0.025;
   private readonly BASELINE_FACTOR = 0.95;
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
-  
   private readonly MIN_PERIODICITY_SCORE = 0.42;
-  
-  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -62,6 +79,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     console.log("PPGSignalProcessor: Instancia creada");
   }
 
+  /**
+   * Inicializa el procesador
+   */
   async initialize(): Promise<void> {
     try {
       this.lastValues = [];
@@ -77,6 +97,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
+  /**
+   * Inicia el procesamiento de señales
+   */
   start(): void {
     if (this.isProcessing) return;
     this.isProcessing = true;
@@ -84,6 +107,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     console.log("PPGSignalProcessor: Iniciado");
   }
 
+  /**
+   * Detiene el procesamiento de señales
+   */
   stop(): void {
     this.isProcessing = false;
     this.lastValues = [];
@@ -95,13 +121,18 @@ export class PPGSignalProcessor implements SignalProcessor {
     console.log("PPGSignalProcessor: Detenido");
   }
 
+  /**
+   * Calibra el procesador para mejores resultados
+   */
   async calibrate(): Promise<boolean> {
     try {
       console.log("PPGSignalProcessor: Iniciando calibración");
       await this.initialize();
 
+      // Tiempo para calibración
       await new Promise(resolve => setTimeout(resolve, 2000));
       
+      // Ajustar umbrales basados en las condiciones actuales
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
         MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 5),
@@ -119,37 +150,49 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
+  /**
+   * Restablece configuración por defecto
+   */
   resetToDefault(): void {
     this.currentConfig = { ...this.DEFAULT_CONFIG };
     this.initialize();
     console.log("PPGSignalProcessor: Configuración restaurada a valores por defecto");
   }
 
+  /**
+   * Procesa un frame para extraer información PPG
+   */
   processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
-      console.log("PPGSignalProcessor: No está procesando");
       return;
     }
 
     try {
+      // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
       
+      // Aplicar denoising
       const denoisedValue = this.applyWaveletDenoising(redValue);
       
+      // Filtrar con Kalman
       const filtered = this.kalmanFilter.filter(denoisedValue);
       
+      // Almacenar para análisis de periodicidad
       this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
       }
       
+      // Almacenar para análisis de tendencia
       this.lastValues.push(filtered);
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
 
+      // Analizar calidad y detección de dedo
       const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
 
+      // Crear señal procesada
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
         rawValue: redValue,
@@ -159,6 +202,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         roi: this.detectROI(redValue)
       };
 
+      // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
 
     } catch (error) {
@@ -167,11 +211,16 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
+  /**
+   * Extrae el canal rojo de un frame
+   * El canal rojo es el más sensible a cambios en volumen sanguíneo
+   */
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
     let count = 0;
     
+    // Analizar solo el centro de la imagen (25% central)
     const startX = Math.floor(imageData.width * 0.375);
     const endX = Math.floor(imageData.width * 0.625);
     const startY = Math.floor(imageData.height * 0.375);
@@ -189,6 +238,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     return avgRed;
   }
 
+  /**
+   * Aplica denoising wavelet para reducción de ruido
+   */
   private applyWaveletDenoising(value: number): number {
     if (this.baselineValue === 0) {
       this.baselineValue = value;
@@ -209,6 +261,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     return this.baselineValue + denoisedValue;
   }
 
+  /**
+   * Analiza la señal para determinar calidad y presencia de dedo
+   */
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
@@ -266,6 +321,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     return { isFingerDetected, quality };
   }
 
+  /**
+   * Analiza la periodicidad de la señal para determinar calidad
+   */
   private analyzeSignalPeriodicity(): number {
     if (this.periodicityBuffer.length < 30) {
       return 0;
@@ -320,6 +378,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
+  /**
+   * Detecta región de interés para análisis
+   */
   private detectROI(redValue: number): ProcessedSignal['roi'] {
     return {
       x: 0,
@@ -329,6 +390,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     };
   }
 
+  /**
+   * Maneja errores del procesador
+   */
   private handleError(code: string, message: string): void {
     console.error("PPGSignalProcessor: Error", code, message);
     const error: ProcessingError = {
