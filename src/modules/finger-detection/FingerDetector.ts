@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -148,6 +147,7 @@ export class FingerDetector {
       });
     }
     
+    // Fix the error: Don't compare boolean values directly with === true/false
     // Si la calidad es muy baja o no cumple criterios, reiniciar más agresivamente
     if (quality < this.config.RESET_QUALITY_THRESHOLD || 
         !hasMinimumQuality || !hasCorrectRgRatio || !hasValidAbsoluteValues) {
