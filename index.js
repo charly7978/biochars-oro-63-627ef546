@@ -16,10 +16,10 @@ const Index = () => {
     spo2: 0, 
     pressure: "--/--",
     arrhythmiaStatus: "--",
-    glucose: "--",
+    glucose: 0,
     lipids: {
-      totalCholesterol: "--",
-      triglycerides: "--"
+      totalCholesterol: 0,
+      triglycerides: 0
     }
   });
   const [heartRate, setHeartRate] = useState(0);
@@ -27,6 +27,12 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
+  
+  // Crear una referencia para seguimiento de datos acumulados
+  const accumulatedDataRef = useRef({
+    ppgValues: [],
+    lastUpdate: 0
+  });
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -115,6 +121,12 @@ const Index = () => {
     startProcessing();
     setElapsedTime(0);
     
+    // Limpiar datos acumulados al iniciar nueva medición
+    accumulatedDataRef.current = {
+      ppgValues: [],
+      lastUpdate: 0
+    };
+    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
     }
@@ -155,14 +167,20 @@ const Index = () => {
       spo2: 0, 
       pressure: "--/--",
       arrhythmiaStatus: "--",
-      glucose: "--",
+      glucose: 0,
       lipids: {
-        totalCholesterol: "--",
-        triglycerides: "--"
+        totalCholesterol: 0,
+        triglycerides: 0
       }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    
+    // Limpieza específica para asegurar que se reinicien los datos metabólicos
+    accumulatedDataRef.current = {
+      ppgValues: [],
+      lastUpdate: 0
+    };
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -181,10 +199,10 @@ const Index = () => {
       spo2: 0, 
       pressure: "--/--",
       arrhythmiaStatus: "--",
-      glucose: "--",
+      glucose: 0,
       lipids: {
-        totalCholesterol: "--",
-        triglycerides: "--"
+        totalCholesterol: 0,
+        triglycerides: 0
       }
     });
     setArrhythmiaCount("--");
@@ -256,11 +274,34 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      // Acumular datos PPG para análisis metabólico
+      if (lastSignal.filteredValue) {
+        accumulatedDataRef.current.ppgValues.push(lastSignal.filteredValue);
+        
+        // Mantener un buffer de tamaño razonable
+        if (accumulatedDataRef.current.ppgValues.length > 300) {
+          accumulatedDataRef.current.ppgValues.shift();
+        }
+      }
+      
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       setHeartRate(heartBeatResult.bpm);
       
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      // Pasar datos acumulados para análisis metabólico
+      const vitals = processVitalSigns(
+        lastSignal.filteredValue, 
+        heartBeatResult.rrData, 
+        accumulatedDataRef.current.ppgValues
+      );
+      
       if (vitals) {
+        // Registrar datos metabólicos en la consola para debug
+        console.log("Index: Recibidos datos metabólicos:", {
+          glucose: vitals.glucose,
+          cholesterol: vitals.lipids?.totalCholesterol,
+          triglycerides: vitals.lipids?.triglycerides
+        });
+        
         setVitalSigns(vitals);
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
@@ -312,7 +353,7 @@ const Index = () => {
 
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-2 text-center mb-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
@@ -335,6 +376,27 @@ const Index = () => {
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
                   calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
+                />
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <VitalSign 
+                  label="GLUCOSA"
+                  value={vitalSigns.glucose || "--"}
+                  unit="mg/dL"
+                  calibrationProgress={vitalSigns.calibration?.progress.glucose}
+                />
+                <VitalSign 
+                  label="COLESTEROL"
+                  value={vitalSigns.lipids?.totalCholesterol || "--"}
+                  unit="mg/dL"
+                  calibrationProgress={vitalSigns.calibration?.progress.lipids}
+                />
+                <VitalSign 
+                  label="TRIGLICÉRIDOS"
+                  value={vitalSigns.lipids?.triglycerides || "--"}
+                  unit="mg/dL"
+                  calibrationProgress={vitalSigns.calibration?.progress.lipids}
                 />
               </div>
             </div>

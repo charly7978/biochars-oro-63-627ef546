@@ -1,4 +1,3 @@
-
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
 import './HeartBeatProcessor.extension';
 import { GlucoseProcessor } from './vital-signs/glucose-processor';
@@ -134,10 +133,14 @@ export class VitalSignsProcessor {
   
   /**
    * Procesa señal PPG y calcula signos vitales
+   * @param ppgValue Valor PPG actual
+   * @param rrData Datos de intervalos RR
+   * @param accumulatedPpgValues Valores PPG acumulados para análisis metabólico
    */
   public processSignal(
     ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
+    rrData?: { intervals: number[]; lastPeakTime: number | null },
+    accumulatedPpgValues?: number[]
   ) {
     if (isNaN(ppgValue) || ppgValue === 0) {
       console.warn("VitalSignsProcessor: Valor PPG inválido recibido", ppgValue);
@@ -159,46 +162,34 @@ export class VitalSignsProcessor {
     // Obtener resultados básicos del procesador principal
     const baseResults = this.processor.processSignal(amplifiedValue, rrData);
     
-    // Procesar glucosa manualmente si está disponible el procesador - MODIFICADO PARA DEBUGGEAR
+    // Procesar glucosa manualmente usando datos acumulados
     let glucose = 0;
     if (this.glucoseProcessor && typeof this.glucoseProcessor.calculateGlucose === 'function') {
-      // Obtener datos PPG acumulados del procesador principal si están disponibles
-      let ppgData = [];
-      if (this.processor.signalProcessor && this.processor.signalProcessor.getPPGBuffer) {
-        ppgData = this.processor.signalProcessor.getPPGBuffer();
-      }
+      // Usar datos PPG acumulados si están disponibles
+      const ppgData = accumulatedPpgValues && accumulatedPpgValues.length > 20 
+        ? accumulatedPpgValues 
+        : this.processor.signalProcessor?.getPPGBuffer?.() || [];
       
       // Si hay suficientes datos, procesar glucosa
       if (ppgData.length > 20) {
         try {
           glucose = this.glucoseProcessor.calculateGlucose(ppgData);
           console.log("VitalSignsProcessor: Glucosa calculada:", glucose);
-          
-          // Asegurar un valor predeterminado si no hay suficientes datos pero la calidad es buena
-          if (glucose === 0 && ppgData.length > 50) {
-            glucose = 95 + Math.random() * 10; // Valor simulado entre 95-105 para buena visualización
-            console.log("VitalSignsProcessor: Generando glucosa simulada para visualización:", glucose);
-          }
         } catch (error) {
           console.error("Error calculando glucosa:", error);
-          glucose = 95 + Math.random() * 10; // Valor de respaldo
+          glucose = 0; // Valor de respaldo en caso de error
         }
-      } else {
-        // No hay suficientes datos, usar valor simulado para desarrollo
-        glucose = 95 + Math.random() * 10; // Valor simulado entre 95-105
-        console.log("VitalSignsProcessor: Generando glucosa simulada por falta de datos:", glucose);
       }
     }
     
-    // Procesar lípidos manualmente si está disponible el procesador - MODIFICADO PARA DEBUGGEAR
+    // Procesar lípidos manualmente usando datos acumulados
     let totalCholesterol = 0;
     let triglycerides = 0;
     if (this.lipidProcessor && typeof this.lipidProcessor.calculateLipids === 'function') {
-      // Obtener datos PPG acumulados del procesador principal si están disponibles
-      let ppgData = [];
-      if (this.processor.signalProcessor && this.processor.signalProcessor.getPPGBuffer) {
-        ppgData = this.processor.signalProcessor.getPPGBuffer();
-      }
+      // Usar datos PPG acumulados si están disponibles
+      const ppgData = accumulatedPpgValues && accumulatedPpgValues.length > 20 
+        ? accumulatedPpgValues 
+        : this.processor.signalProcessor?.getPPGBuffer?.() || [];
       
       // Si hay suficientes datos, procesar lípidos
       if (ppgData.length > 20) {
@@ -207,34 +198,26 @@ export class VitalSignsProcessor {
           totalCholesterol = lipidResults.totalCholesterol;
           triglycerides = lipidResults.triglycerides;
           
-          // Asegurar valores predeterminados si no hay suficientes datos pero la calidad es buena
-          if ((totalCholesterol === 0 || triglycerides === 0) && ppgData.length > 50) {
-            totalCholesterol = 180 + Math.random() * 20; // Valor simulado para visualización
-            triglycerides = 110 + Math.random() * 30; // Valor simulado para visualización
-            console.log("VitalSignsProcessor: Generando lípidos simulados para visualización:", { totalCholesterol, triglycerides });
-          }
-          
           console.log("VitalSignsProcessor: Lípidos calculados:", { totalCholesterol, triglycerides });
         } catch (error) {
           console.error("Error calculando lípidos:", error);
-          totalCholesterol = 180 + Math.random() * 20;
-          triglycerides = 110 + Math.random() * 30;
+          totalCholesterol = 0;
+          triglycerides = 0;
         }
-      } else {
-        // No hay suficientes datos, usar valores simulados para desarrollo
-        totalCholesterol = 180 + Math.random() * 20;
-        triglycerides = 110 + Math.random() * 30;
-        console.log("VitalSignsProcessor: Generando lípidos simulados por falta de datos:", { totalCholesterol, triglycerides });
       }
     }
     
-    // Generar presión arterial simulada si no hay un valor válido
+    // Generar presión arterial precisa
     let pressure = baseResults.pressure;
     if (pressure === "--/--" || pressure === "0/0") {
-      const systolic = 120 + Math.floor(Math.random() * 20);
-      const diastolic = 80 + Math.floor(Math.random() * 10);
-      pressure = `${systolic}/${diastolic}`;
-      console.log("VitalSignsProcessor: Generando presión arterial simulada:", pressure);
+      // Intentar usar cálculo directo de presión arterial con datos acumulados
+      if (accumulatedPpgValues && accumulatedPpgValues.length > 30) {
+        const bp = this.calculateBloodPressure(accumulatedPpgValues);
+        if (bp.systolic > 0 && bp.diastolic > 0) {
+          pressure = `${bp.systolic}/${bp.diastolic}`;
+          console.log("VitalSignsProcessor: Presión arterial calculada:", pressure);
+        }
+      }
     }
     
     // Combinar resultados para incluir glucosa y lípidos

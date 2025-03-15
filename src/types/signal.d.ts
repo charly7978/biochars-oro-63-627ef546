@@ -1,4 +1,3 @@
-
 // Extensión de la definición existente para añadir métricas avanzadas
 
 export interface ProcessedSignal {
@@ -18,6 +17,11 @@ export interface ProcessedSignal {
   spectralPower?: number;    // Potencia espectral total (análisis de espectro)
   pulseAmplitude?: number;   // Amplitud de pulso 
   signalSnr?: number;        // Relación señal-ruido (calidad)
+  metabolicEstimates?: {     // Nuevas estimaciones metabólicas
+    glucose?: number;        // Nivel de glucosa estimado (mg/dL)
+    cholesterol?: number;    // Colesterol total estimado (mg/dL)
+    triglycerides?: number;  // Triglicéridos estimados (mg/dL)
+  }
 }
 
 export interface ProcessingError {

@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 
@@ -84,8 +83,17 @@ export const useVitalSignsProcessor = () => {
     processor.forceCalibrationCompletion();
   }, [processor]);
   
-  // Process the signal with improved algorithms
-  const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
+  /**
+   * Process the signal with improved algorithms
+   * @param value Current PPG value
+   * @param rrData RR interval data from heart beat processor
+   * @param accumulatedPpgValues Array of historical PPG values for metabolic analysis
+   */
+  const processSignal = useCallback((
+    value: number, 
+    rrData?: { intervals: number[], lastPeakTime: number | null },
+    accumulatedPpgValues?: number[]
+  ) => {
     processedSignals.current++;
     updateCounter.current++;
     
@@ -93,7 +101,7 @@ export const useVitalSignsProcessor = () => {
       valorEntrada: value,
       rrDataPresente: !!rrData,
       intervalosRR: rrData?.intervals.length || 0,
-      ultimosIntervalos: rrData?.intervals.slice(-3) || [],
+      ppgAcumulados: accumulatedPpgValues?.length || 0,
       contadorArritmias: arrhythmiaCounter,
       señalNúmero: processedSignals.current,
       sessionId: sessionId.current,
@@ -104,7 +112,8 @@ export const useVitalSignsProcessor = () => {
     });
     
     // Process signal through the vital signs processor
-    const result = processor.processSignal(value, rrData);
+    // Pass accumulated PPG values for metabolic analysis if available
+    const result = processor.processSignal(value, rrData, accumulatedPpgValues);
     const currentTime = Date.now();
     
     // Guardar para depuración
@@ -199,6 +208,16 @@ export const useVitalSignsProcessor = () => {
       });
       
       setLastValidResults(adjustedResult);
+    }
+    
+    // Enhanced logging for metabolic parameters
+    if (result.glucose > 0 || (result.lipids && (result.lipids.totalCholesterol > 0 || result.lipids.triglycerides > 0))) {
+      console.log("useVitalSignsProcessor: Parámetros metabólicos detectados", {
+        glucose: result.glucose,
+        cholesterol: result.lipids?.totalCholesterol,
+        triglycerides: result.lipids?.triglycerides,
+        timestamp: new Date().toISOString()
+      });
     }
     
     // Enhanced RR interval analysis (more robust than previous)
