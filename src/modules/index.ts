@@ -5,10 +5,12 @@
  */
 
 // Exportar adaptadores de compatibilidad para uso desde código existente
-export { VitalSignsProcessor, VitalSignsResult, RRData } from './compat/VitalSignsProcessorAdapter';
+export { VitalSignsProcessor } from './compat/VitalSignsProcessorAdapter';
+export type { VitalSignsResult, RRData } from './compat/VitalSignsProcessorAdapter';
 
 // Exportar procesadores principales para uso directo si es necesario
-export { SignalProcessor, ProcessedSignal } from './core/SignalProcessor';
+export { SignalProcessor } from './core/SignalProcessor';
+export type { ProcessedSignal } from './core/SignalProcessor';
 export { SpO2Processor } from './core/SpO2Processor';
 export { BloodPressureProcessor } from './core/BloodPressureProcessor';
 export { ArrhythmiaProcessor } from './core/ArrhythmiaProcessor';
