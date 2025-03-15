@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -37,18 +38,18 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   
-  // Parámetros de detección de dedo
-  private readonly MIN_RED_VALUE = 60;    // Valor mínimo del canal rojo para considerar presencia de dedo
-  private readonly MAX_RED_VALUE = 250;   // Valor máximo del canal rojo (evitar saturación)
-  private readonly MIN_RED_RATIO = 1.2;   // Ratio mínimo entre rojo y otros canales
+  // Parámetros de detección de dedo - AUMENTANDO SENSIBILIDAD
+  private readonly MIN_RED_VALUE = 45;    // Reducido de 60 para mayor sensibilidad
+  private readonly MAX_RED_VALUE = 250;   // Mantenido igual
+  private readonly MIN_RED_RATIO = 1.1;   // Reducido de 1.2 para mayor sensibilidad
   
   // Tamaño de buffer para análisis de señal
   private readonly BUFFER_SIZE = 30;
   
   // Parámetros de análisis de señal PPG
-  private readonly MIN_PEAK_AMPLITUDE = 3;      // Amplitud mínima entre pico y valle (más sensible)
-  private readonly MAX_BPM = 180;              // Máximo ritmo cardíaco fisiológico
-  private readonly MIN_BPM = 40;               // Mínimo ritmo cardíaco fisiológico
+  private readonly MIN_PEAK_AMPLITUDE = 2.5;      // Reducido de 3 para mayor sensibilidad
+  private readonly MAX_BPM = 180;              // Mantenido igual
+  private readonly MIN_BPM = 40;               // Mantenido igual
   private readonly MIN_PEAK_DISTANCE = Math.round(60 / this.MAX_BPM * 30); // En frames a 30fps
   private readonly MAX_PEAK_DISTANCE = Math.round(60 / this.MIN_BPM * 30); // En frames a 30fps
   
@@ -146,15 +147,15 @@ export class PPGSignalProcessor implements SignalProcessor {
     const greenValue = greenSum / count;
     const blueValue = blueSum / count;
     
-    // Verificar presencia de dedo:
-    // 1. El valor del canal rojo debe estar en un rango válido
-    // 2. El canal rojo debe ser significativamente mayor que los otros canales
+    // Verificar presencia de dedo con mayor sensibilidad:
+    // 1. El valor del canal rojo debe estar en un rango válido (ahora más permisivo)
+    // 2. El canal rojo debe ser significativamente mayor que los otros canales (ahora menos exigente)
     const isInRange = redValue >= this.MIN_RED_VALUE && redValue <= this.MAX_RED_VALUE;
     const redToGreenRatio = redValue / (greenValue + 1);  // +1 para evitar división por cero
     const redToBlueRatio = redValue / (blueValue + 1);
     
-    const hasValidRatios = redToGreenRatio >= this.MIN_RED_RATIO && 
-                          redToBlueRatio >= this.MIN_RED_RATIO;
+    const hasValidRatios = redToGreenRatio >= this.MIN_RED_RATIO || 
+                           redToBlueRatio >= this.MIN_RED_RATIO;  // Cambiado "&&" por "||" para mayor sensibilidad
     
     return {
       redValue,
@@ -172,25 +173,26 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     // Si no hay suficientes picos o valles, no es una señal PPG
     if (peaks.length < 2 || valleys.length < 2) {
-      return { quality: 0, isPPGSignal: false };
+      return { quality: 25, isPPGSignal: this.lastValues.length >= 15 }; // Mayor sensibilidad: señal posible con menos datos
     }
 
     // 2. Verificar distancias entre picos (debe corresponder a un ritmo cardíaco fisiológico)
     const peakDistances = [];
     for (let i = 1; i < peaks.length; i++) {
       const distance = peaks[i] - peaks[i-1];
-      if (distance < this.MIN_PEAK_DISTANCE || distance > this.MAX_PEAK_DISTANCE) {
-        return { quality: 0, isPPGSignal: false };
+      // Criterio más flexible para distancias entre picos
+      if (distance < this.MIN_PEAK_DISTANCE * 0.8 || distance > this.MAX_PEAK_DISTANCE * 1.2) {
+        return { quality: 30, isPPGSignal: true }; // Más permisivo: retornar calidad baja pero aceptar la señal
       }
       peakDistances.push(distance);
     }
 
-    // 3. Verificar amplitud pico-valle
+    // 3. Verificar amplitud pico-valle con mayor sensibilidad
     const amplitudes = [];
     for (let i = 0; i < Math.min(peaks.length, valleys.length); i++) {
       const amplitude = Math.abs(this.lastValues[peaks[i]] - this.lastValues[valleys[i]]);
       if (amplitude < this.MIN_PEAK_AMPLITUDE) {
-        return { quality: 0, isPPGSignal: false };
+        return { quality: 30, isPPGSignal: true }; // Más permisivo: retornar calidad baja pero aceptar la señal
       }
       amplitudes.push(amplitude);
     }
@@ -209,14 +211,14 @@ export class PPGSignalProcessor implements SignalProcessor {
     const amplitudeVariability = amplitudes.reduce((acc, amp) => 
       acc + Math.abs(amp - avgAmplitude), 0) / amplitudes.length / avgAmplitude;
 
-    // Calcular calidad (0-100)
+    // Calcular calidad (0-100) - más generoso con la puntuación
     const quality = Math.round(
-      (1 - distanceVariability * 2) * 50 + // 50% basado en regularidad de ritmo
-      (1 - amplitudeVariability * 2) * 50   // 50% basado en regularidad de amplitud
+      (1 - distanceVariability * 1.5) * 50 + // Menos penalización por variabilidad
+      (1 - amplitudeVariability * 1.5) * 50   // Menos penalización por variabilidad
     );
 
-    // Una señal PPG real debe tener una calidad mínima
-    const isPPGSignal = quality >= 35;  // Más permisivo
+    // Una señal PPG real debe tener una calidad mínima - más permisivo
+    const isPPGSignal = quality >= 25;  // Reducido de 35 para mayor sensibilidad
 
     return { quality: Math.max(0, Math.min(100, quality)), isPPGSignal };
   }
