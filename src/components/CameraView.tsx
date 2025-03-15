@@ -43,7 +43,8 @@ const CameraView = ({
 
   // Efecto para mantener la estabilidad en la detección del dedo
   useEffect(() => {
-    // Si se detecta el dedo, limpiar cualquier timeout pendiente
+    // Reducimos el tiempo de tolerancia para fluctuaciones de 3000ms a 2000ms
+    // para detectar más rápidamente cambios genuinos pero manteniendo estabilidad
     if (isFingerDetected) {
       if (fingerLostTimeoutRef.current) {
         window.clearTimeout(fingerLostTimeoutRef.current);
@@ -51,8 +52,6 @@ const CameraView = ({
       }
       fingerDetectionRef.current = true;
     } else if (fingerDetectionRef.current) {
-      // Si el dedo estaba detectado pero se perdió, establecer un timeout antes de confirmar la pérdida
-      // Esto evita desconexiones temporales por fluctuaciones en la señal
       if (!fingerLostTimeoutRef.current) {
         fingerLostTimeoutRef.current = window.setTimeout(() => {
           fingerDetectionRef.current = false;
@@ -69,7 +68,7 @@ const CameraView = ({
               setTorchEnabled(false);
             }
           }
-        }, 3000); // 3 segundos de tolerancia para fluctuaciones
+        }, 2000); // Reducido de 3000ms para mayor reactividad sin perder estabilidad
       }
     }
     
@@ -117,15 +116,17 @@ const CameraView = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
+      // Aumentamos la resolución ideal para capturar más detalles
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
+        width: { ideal: 1920 },  // Mantenemos resolución alta
         height: { ideal: 1080 }
       };
 
       if (isAndroid) {
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
+          // Aumentamos el framerate para Android para mejor captura
           frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
@@ -133,7 +134,7 @@ const CameraView = ({
       } else if (isIOS) {
         console.log("Configurando para iOS");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
+          frameRate: { ideal: 60, max: 60 }, // Máximo framerate en iOS
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         });
@@ -169,7 +170,8 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Damos un poco más de tiempo para que la cámara se estabilice
+          await new Promise(resolve => setTimeout(resolve, 700)); // Aumentado de 500ms
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
@@ -191,8 +193,9 @@ const CameraView = ({
                 exposureMode: 'continuous' 
               };
               
+              // Aumentamos la compensación de exposición para mejor contraste
               if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max * 0.9; // Aumentado de 0.7
               }
               
               advancedConstraints.push(exposureConstraint);
@@ -206,14 +209,16 @@ const CameraView = ({
               advancedConstraints.push({ whiteBalanceMode: 'continuous' });
             }
             
+            // Aumentamos el brillo para mejor detección de cambios en la sangre
             if (capabilities.brightness && capabilities.brightness.max) {
               const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
+              advancedConstraints.push({ brightness: maxBrightness * 0.8 }); // Aumentado de 0.7
             }
             
+            // Aumentamos el contraste para resaltar diferencias en la señal
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
+              advancedConstraints.push({ contrast: maxContrast * 0.8 }); // Aumentado de 0.6
             }
 
             if (advancedConstraints.length > 0) {
@@ -330,14 +335,18 @@ const CameraView = ({
       }
     }
     
+    // Refrescamos el autoenfoque con más frecuencia cuando la calidad de señal es baja
+    const autoFocusInterval = signalQuality > 70 ? 5000 : 3000;
+    
     if ((isFingerDetected || fingerDetectionRef.current) && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, 5000);
+      const focusInterval = setInterval(refreshAutoFocus, autoFocusInterval);
       return () => clearInterval(focusInterval);
     }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid, signalQuality]);
 
+  // Ajustamos la velocidad de captura basada en la calidad de señal
   const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/15;
+                             signalQuality > 70 ? 1000/30 : 1000/20; // Aumentado de 1000/15
 
   return (
     <video

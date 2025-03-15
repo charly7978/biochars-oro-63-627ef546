@@ -4,45 +4,49 @@
  */
 export class SignalProcessor {
   // Ajuste: reducimos la ventana del SMA para mayor reactividad
-  private readonly SMA_WINDOW = 3; // antes: 5
+  private readonly SMA_WINDOW = 3;
   private ppgValues: number[] = [];
   private readonly WINDOW_SIZE = 300;
   
   // Advanced filter coefficients based on Savitzky-Golay filter research
-  private readonly SG_COEFFS = [0.2, 0.3, 0.5, 0.7, 1.0, 0.7, 0.5, 0.3, 0.2];
-  private readonly SG_NORM = 4.4; // Normalization factor for coefficients
+  // Aumento de coeficientes centrales para amplificar picos
+  private readonly SG_COEFFS = [0.2, 0.3, 0.6, 0.8, 1.4, 0.8, 0.6, 0.3, 0.2]; // Aumentados valores centrales 
+  private readonly SG_NORM = 5.2; // Normalization factor adjusted for new coefficients (was 4.4)
   
   // Wavelet denoising thresholds - reducidos para mayor sensibilidad
-  private readonly WAVELET_THRESHOLD = 0.022; // Antes: 0.03
-  private readonly BASELINE_FACTOR = 0.94; // Ajustado para adaptación más rápida (antes: 0.92)
+  private readonly WAVELET_THRESHOLD = 0.018; // Reducido para mayor sensibilidad (antes: 0.022)
+  private readonly BASELINE_FACTOR = 0.92; // Ajustado para adaptación más rápida (antes: 0.94)
   private baselineValue: number = 0;
   
   // Multi-spectral analysis parameters (based on research from Univ. of Texas)
   // Coeficientes ajustados para mejor detección
-  private readonly RED_ABSORPTION_COEFF = 0.72; // Aumentado (antes: 0.684)
-  private readonly IR_ABSORPTION_COEFF = 0.84;  // Aumentado (antes: 0.823)
+  private readonly RED_ABSORPTION_COEFF = 0.76; // Aumentado (antes: 0.72)
+  private readonly IR_ABSORPTION_COEFF = 0.88;  // Aumentado (antes: 0.84)
   private readonly GLUCOSE_CALIBRATION = 0.0452;
   private readonly LIPID_CALIBRATION = 0.0319;
   
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
-  private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 0.18; // Variable modificada para reducir falsos positivos (valor medio)
+  private readonly MAX_SIGNAL_DIFF = 2.2; // Aumentado para tolerancia de picos más altos (antes: 1.8)
+  private readonly MIN_SIGNAL_DIFF = 0.15; // Reducido para detectar señales más sutiles (antes: 0.18)
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 8; // Variable modificada para exigir consistencia (valor medio)
+  private readonly REQUIRED_GOOD_FRAMES = 6; // Reducido para exigir menos consistencia (antes: 8)
   
   // Nuevas variables para análisis de consistencia de picos
   private peakHistory: number[] = [];
   private readonly PEAK_HISTORY_SIZE = 5;
-  private readonly PEAK_VARIANCE_THRESHOLD = 0.4; // Umbral de varianza media para picos
+  private readonly PEAK_VARIANCE_THRESHOLD = 0.5; // Aumentado para permitir más variabilidad (antes: 0.4)
   
   // Nuevas variables para análisis fisiológico
   private redGreenRatioHistory: number[] = [];
   private readonly RG_HISTORY_SIZE = 3;
-  private readonly MIN_RG_RATIO = 1.1; // Umbral medio para relación rojo/verde
-  private readonly MAX_RG_RATIO = 1.8; // Valor máximo esperado para relación rojo/verde
+  private readonly MIN_RG_RATIO = 1.05; // Reducido para detectar más fácilmente (antes: 1.1)
+  private readonly MAX_RG_RATIO = 1.9; // Aumentado para mayor tolerancia (antes: 1.8)
   private lastRedValue: number = 0;
   private lastGreenValue: number = 0;
+  
+  // Nueva variable para amplificación dinámica
+  private readonly DYNAMIC_AMPLIFICATION_FACTOR = 1.35; // Factor de amplificación adicional
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
@@ -73,12 +77,16 @@ export class SignalProcessor {
     // Calcular calidad de señal basada en variabilidad y consistencia
     this.updateSignalQuality();
     
+    // Aplicamos amplificación dinámica basada en calidad de señal
+    const amplificationFactor = Math.max(1.0, this.DYNAMIC_AMPLIFICATION_FACTOR - (this.signalQuality / 100));
+    const amplifiedValue = denoised * amplificationFactor;
+    
     // Aplicar Savitzky-Golay si tenemos suficientes datos
     if (this.ppgValues.length >= this.SG_COEFFS.length) {
-      return this.applySavitzkyGolayFilter(denoised);
+      return this.applySavitzkyGolayFilter(amplifiedValue);
     }
     
-    return denoised;
+    return amplifiedValue;
   }
   
   /**
@@ -300,10 +308,10 @@ export class SignalProcessor {
   private waveletDenoise(value: number): number {
     const normalizedValue = value - this.baselineValue;
     
-    // Umbral adaptativo basado en la intensidad de la señal
+    // Umbral adaptativo basado en la intensidad de la señal con menor penalización
     const adaptiveThreshold = Math.min(
       this.WAVELET_THRESHOLD,
-      this.WAVELET_THRESHOLD * (1 - (this.signalQuality / 200)) // Reducir umbral con mejor calidad
+      this.WAVELET_THRESHOLD * (1 - (this.signalQuality / 250)) // Mayor reducción de umbral con calidad (antes: 200)
     );
     
     // Soft thresholding technique (simplified wavelet approach)
@@ -312,7 +320,8 @@ export class SignalProcessor {
     }
     
     const sign = normalizedValue >= 0 ? 1 : -1;
-    const denoisedValue = sign * (Math.abs(normalizedValue) - adaptiveThreshold);
+    // Amplificamos ligeramente al restar el umbral para resaltar picos
+    const denoisedValue = sign * (Math.abs(normalizedValue) - adaptiveThreshold * 0.85);
     
     return this.baselineValue + denoisedValue;
   }
@@ -345,7 +354,7 @@ export class SignalProcessor {
     const recentValues = this.ppgValues.slice(-20);
     
     // Criterio 1: Calidad mínima de señal (más permisiva)
-    if (this.signalQuality < 40) return false;
+    if (this.signalQuality < 35) return false; // Reducido de 40 para mayor sensibilidad
     
     // Criterio 2: Variabilidad significativa (señal viva vs estática)
     const max = Math.max(...recentValues);
@@ -359,8 +368,8 @@ export class SignalProcessor {
       const avgRgRatio = this.redGreenRatioHistory.reduce((a, b) => a + b, 0) / 
                         this.redGreenRatioHistory.length;
       
-      // Verificación más permisiva (no agresiva)
-      physiologicalCheck = avgRgRatio > (this.MIN_RG_RATIO * 0.9);
+      // Verificación más permisiva
+      physiologicalCheck = avgRgRatio > (this.MIN_RG_RATIO * 0.85); // Más permisivo (antes: 0.9)
     }
     
     return range > this.MIN_SIGNAL_DIFF && 
