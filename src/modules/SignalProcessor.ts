@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -28,10 +27,10 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 75,     // Más sensible para Android
+    MIN_RED_THRESHOLD: 90,     // PRIMERA VARIABLE MODIFICADA: aumentado de 75 a 90 para reducir falsos positivos
     MAX_RED_THRESHOLD: 255,
     STABILITY_WINDOW: 5,
-    MIN_STABILITY_COUNT: 2,    // Reducido para más sensibilidad en Android
+    MIN_STABILITY_COUNT: 3,    // SEGUNDA VARIABLE MODIFICADA: aumentado de 2 a 3 para exigir mayor estabilidad
     HYSTERESIS: 5,
     MIN_CONSECUTIVE_DETECTIONS: 2
   };
@@ -60,10 +59,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (this.isAndroid) {
       this.currentConfig = { 
         ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: 60,  // Umbral mucho más bajo para Android
+        MIN_RED_THRESHOLD: 80,  // Umbral mucho más bajo para Android
         BUFFER_SIZE: 10,        // Buffer más pequeño para procesamiento más rápido
         STABILITY_WINDOW: 4,    // Ventana más pequeña
-        MIN_STABILITY_COUNT: 2  // Requerimiento de estabilidad menor
+        MIN_STABILITY_COUNT: 3  // Requerimiento de estabilidad menor
       };
     } else {
       this.currentConfig = { ...this.DEFAULT_CONFIG };
@@ -118,15 +117,15 @@ export class PPGSignalProcessor implements SignalProcessor {
       if (this.isAndroid) {
         this.currentConfig = {
           ...this.DEFAULT_CONFIG,
-          MIN_RED_THRESHOLD: 60,  // Umbral muy permisivo para Android
-          MIN_STABILITY_COUNT: 2,  // Respuesta más rápida
+          MIN_RED_THRESHOLD: 80,  // Umbral más alto para Android también
+          MIN_STABILITY_COUNT: 3,  // Mayor exigencia
         };
       } else {
         // Para Windows/desktop
         this.currentConfig = {
           ...this.DEFAULT_CONFIG,
-          MIN_RED_THRESHOLD: 80,  // Más permisivo que el original
-          MIN_STABILITY_COUNT: 2, // Respuesta más rápida
+          MIN_RED_THRESHOLD: 95,  // Mucho más exigente para evitar falsos positivos
+          MIN_STABILITY_COUNT: 3, // Mayor exigencia de estabilidad
         };
       }
       

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
@@ -13,8 +12,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 4; // PRIMERA VARIABLE MODIFICADA: aumentado de 3 a 4 para reducir falsos positivos
-  const QUALITY_THRESHOLD = 30; // SEGUNDA VARIABLE MODIFICADA: aumentado de 25 a 30 para exigir mejor calidad
+  const REQUIRED_FINGER_FRAMES = 6; // PRIMERA VARIABLE MODIFICADA: aumentado de 4 a 6 para reducir aún más falsos positivos
+  const QUALITY_THRESHOLD = 40; // SEGUNDA VARIABLE MODIFICADA: aumentado de 30 a 40 para exigir mucho mejor calidad
 
   // Detectar plataforma
   useEffect(() => {
