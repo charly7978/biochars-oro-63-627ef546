@@ -1,17 +1,10 @@
 
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   canvasRef: React.RefObject<HTMLCanvasElement>;
-  isActive: boolean;
-  onStreamReady?: (stream: MediaStream) => void;
+  isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
 }
@@ -23,8 +16,7 @@ interface CameraViewProps {
 const CameraView: React.FC<CameraViewProps> = ({ 
   videoRef,
   canvasRef,
-  isActive,
-  onStreamReady, 
+  isMonitoring,
   isFingerDetected = false, 
   signalQuality = 0,
 }: CameraViewProps) => {
@@ -216,11 +208,6 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
 
       setStream(newStream);
-      
-      if (onStreamReady) {
-        onStreamReady(newStream);
-      }
-      
       retryAttemptsRef.current = 0;
       streamErrorRef.current = false;
       
@@ -263,19 +250,19 @@ const CameraView: React.FC<CameraViewProps> = ({
 
   // Reiniciar la cámara si se detecta un error de track inválido
   useEffect(() => {
-    if (streamErrorRef.current && isActive) {
+    if (streamErrorRef.current && isMonitoring) {
       console.log("Detectado error de stream, reiniciando cámara...");
       stopCamera();
       setTimeout(startCamera, 1000);
     }
-  }, [isActive]);
+  }, [isMonitoring]);
 
   useEffect(() => {
-    if (isActive && !stream) {
-      console.log("Starting camera because isActive=true");
+    if (isMonitoring && !stream) {
+      console.log("Starting camera because isMonitoring=true");
       startCamera();
-    } else if (!isActive && stream) {
-      console.log("Stopping camera because isActive=false");
+    } else if (!isMonitoring && stream) {
+      console.log("Stopping camera because isMonitoring=false");
       stopCamera();
     }
     
@@ -283,7 +270,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
-  }, [isActive]);
+  }, [isMonitoring]);
 
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
