@@ -17,7 +17,7 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex?: number;  // Índice de perfusión opcional
-  spectrumData?: {          // Nuevo: datos del espectro de frecuencia
+  spectrumData?: {          // Datos del espectro de frecuencia
     frequencies: number[];
     amplitudes: number[];
     dominantFrequency: number;
