@@ -1,4 +1,3 @@
-
 import React, { memo, useEffect, useRef } from 'react';
 import { optimizeElement } from '../utils/displayOptimizer';
 
