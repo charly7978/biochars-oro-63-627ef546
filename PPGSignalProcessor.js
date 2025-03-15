@@ -27,26 +27,27 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 10,
-    MIN_RED_THRESHOLD: 70,  // Reducido de 80 para mayor sensibilidad
+    MIN_RED_THRESHOLD: 80,  // Reducido de 85 a 80 para mayor sensibilidad
     MAX_RED_THRESHOLD: 245,
-    STABILITY_WINDOW: 3,    // Reducido de 4 para detección más rápida
-    MIN_STABILITY_COUNT: 2  // Reducido de 3 para evitar falsos negativos
+    STABILITY_WINDOW: 4,    // Reducido de 5 a 4 para detección más rápida
+    MIN_STABILITY_COUNT: 3  // Mantenido en 3 para evitar falsos positivos
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private readonly BUFFER_SIZE = 10;
-  private readonly MIN_RED_THRESHOLD = 70; // Reducido de 85 para mayor sensibilidad
+  private readonly MIN_RED_THRESHOLD = 85;
   private readonly MAX_RED_THRESHOLD = 245;
-  private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 2; // Reducido de 3 para mayor sensibilidad
+  private readonly STABILITY_WINDOW = 5;
+  private readonly MIN_STABILITY_COUNT = 3;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.035; // Reducido de 0.045 para mayor sensibilidad
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Ajustado de 0.05 a 0.045 para mejor sensibilidad sin comprometer precisión
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
   ) {
     this.kalmanFilter = new KalmanFilter();
+    this.currentConfig = { ...this.DEFAULT_CONFIG };
     console.log("PPGSignalProcessor: Instancia creada");
   }
 
@@ -194,7 +195,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    // Análisis mejorado de variación para detectar picos - ahora más sensible
+    // Análisis mejorado de variación para detectar picos
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
@@ -204,29 +205,29 @@ export class PPGSignalProcessor implements SignalProcessor {
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Umbrales adaptativos para mejor detección de picos - más permisivos
-    const adaptiveThreshold = Math.max(1.2, avgValue * 0.025); // Reducido de 0.02 * 1.5 para mayor sensibilidad
-    const isStable = maxVariation < adaptiveThreshold * 2.5 && 
-                    minVariation > -adaptiveThreshold * 2.5; // Umbrales más permisivos
+    // Umbrales adaptativos para mejor detección de picos
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02); // 2% del valor promedio
+    const isStable = maxVariation < adaptiveThreshold * 2 && 
+                    minVariation > -adaptiveThreshold * 2;
 
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1.5, this.MIN_STABILITY_COUNT * 3); // Incremento más rápido
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
       // Reducción más gradual para mantener mejor la detección
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.3); // Reducción más lenta
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
     }
 
-    // Ajuste en la lógica de detección del dedo - más permisiva
+    // Ajuste en la lógica de detección del dedo
     const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT;
     
     let quality = 0;
     if (isFingerDetected) {
-      // Cálculo de calidad mejorado - más generoso
+      // Cálculo de calidad mejorado
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
-      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4))); // Menos penalización
+      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
       quality = Math.round((stabilityScore * 0.4 + intensityScore * 0.3 + variationScore * 0.3) * 100);
     }

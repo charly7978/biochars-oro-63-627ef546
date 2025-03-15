@@ -18,10 +18,10 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
   
-  // Constantes de configuración - mayor sensibilidad
+  // Constantes de configuración
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 5; // Reducido de 8 a 5 para detectar más rápido
-  const QUALITY_THRESHOLD = 40; // Reducido de 50 a 40 para exigir menos calidad
+  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
+  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
 
   // Detectar plataforma
   useEffect(() => {
@@ -30,7 +30,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     
     // Mostrar tip de ayuda en Android después de un delay
     if (androidDetected) {
-      const timer = setTimeout(() => setShowHelpTip(true), 2000); // Más rápido, 2 segundos
+      const timer = setTimeout(() => setShowHelpTip(true), 3000);
       return () => clearTimeout(timer);
     }
   }, []);
@@ -66,9 +66,9 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     const averageQuality = Math.round(weightedSum / totalWeight);
     
-    // Suavizar cambios para mejor UX - respuesta más rápida
+    // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
-      const delta = (averageQuality - prev) * 0.4; // Aumentado de 0.3 para transición más rápida
+      const delta = (averageQuality - prev) * 0.3;
       return Math.round(prev + delta);
     });
   }, [qualityHistory]);
@@ -78,8 +78,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 60) return '#00ff00'; // Reducido de 65 para mostrar verde más rápido
-    if (q > 35) return '#ffff00'; // Reducido de 40 para mostrar amarillo más rápido
+    if (q > 65) return '#00ff00';
+    if (q > 40) return '#ffff00';
     return '#ff0000';
   };
 
@@ -88,8 +88,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
-    if (q > 60) return 'Excelente'; // Reducido de 65 para consistencia
-    if (q > 35) return 'Buena'; // Reducido de 40 para consistencia
+    if (q > 65) return 'Excelente';
+    if (q > 40) return 'Buena';
     return 'Baja';
   };
 
@@ -134,8 +134,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         </div>
       </div>
       
-      {/* Consejos de ayuda - mostrando siempre para mejor UX */}
-      {displayQuality < QUALITY_THRESHOLD && (
+      {/* Consejos de ayuda específicos para Android */}
+      {isAndroid && showHelpTip && displayQuality < QUALITY_THRESHOLD && (
         <div className="absolute -bottom-20 left-0 right-0 bg-black/70 p-2 rounded text-white text-xs flex items-center gap-1">
           <AlertCircle className="h-4 w-4 text-yellow-400 flex-shrink-0" />
           <span>
