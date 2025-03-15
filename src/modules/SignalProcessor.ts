@@ -65,7 +65,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   // Análisis de periodicidad
   private baselineValue: number = 0;
   private readonly WAVELET_THRESHOLD = 0.025;
-  private readonly BASELINE_FACTOR = 0.95;
+  private readonly BASELINE_FACTOR = 0.45;
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
   private readonly MIN_PERIODICITY_SCORE = 0.42;
