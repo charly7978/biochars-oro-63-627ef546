@@ -42,6 +42,23 @@ export class HemoglobinProcessor {
   }
   
   /**
+   * Calcula la hemoglobina basada en un array de valores PPG
+   * Método de compatibilidad para el VitalSignsProcessor
+   */
+  calculateHemoglobin(ppgValues: number[]): number {
+    // Reiniciar el procesador para trabajar con el nuevo conjunto de datos
+    this.reset();
+    
+    // Procesar cada valor del array
+    let result = 0;
+    for (const value of ppgValues) {
+      result = this.processValue(value);
+    }
+    
+    return result;
+  }
+  
+  /**
    * Calcula la variación de amplitud de la señal
    */
   private calculateAmplitudeVariation(values: number[]): number {
