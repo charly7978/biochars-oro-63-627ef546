@@ -17,8 +17,19 @@ const CameraHandler: React.FC<CameraHandlerProps> = ({
   signalQuality,
 }) => {
   const [stream, setStream] = useState<MediaStream | null>(null);
+  
+  useEffect(() => {
+    // Limpiar el stream cuando el componente se desmonta o cuando isCameraOn cambia a false
+    return () => {
+      if (stream) {
+        console.log("CameraHandler: Limpiando stream al desmontar");
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
 
   const handleStreamReady = (newStream: MediaStream) => {
+    console.log("CameraHandler: Stream recibido de CameraView");
     setStream(newStream);
   };
 
@@ -30,7 +41,7 @@ const CameraHandler: React.FC<CameraHandlerProps> = ({
         isFingerDetected={lastSignal?.fingerDetected}
         signalQuality={signalQuality}
       />
-      {stream && (
+      {stream && isMonitoring && (
         <CameraProcessor 
           isMonitoring={isMonitoring} 
           stream={stream} 
