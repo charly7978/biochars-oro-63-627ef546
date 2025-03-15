@@ -28,9 +28,9 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 0.18; // PRIMERA VARIABLE MODIFICADA: Aumentado drásticamente de 0.02 a 0.18 para exigir señal con amplitud mínima real
+  private readonly MIN_SIGNAL_DIFF = 0.35; // PRIMERA VARIABLE MODIFICADA: Aumentado drásticamente de 0.18 a 0.35 para exigir una señal con amplitud mucho mayor
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 8; // SEGUNDA VARIABLE MODIFICADA: Aumentado de 3 a 8 para exigir consistencia prolongada
+  private readonly REQUIRED_GOOD_FRAMES = 15; // SEGUNDA VARIABLE MODIFICADA: Aumentado de 8 a 15 para exigir consistencia mucho más prolongada
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
@@ -215,15 +215,16 @@ export class SignalProcessor {
     // Obtener valores recientes para análisis
     const recentValues = this.ppgValues.slice(-20);
     
-    // Criterio 1: Calidad mínima de señal (más permisiva)
-    if (this.signalQuality < 40) return false;
+    // Criterio 1: Calidad mínima de señal (más exigente)
+    if (this.signalQuality < 45) return false; 
     
     // Criterio 2: Variabilidad significativa (señal viva vs estática)
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const range = max - min;
     
-    return range > this.MIN_SIGNAL_DIFF && this.consecutiveGoodFrames >= 1;
+    // Criterio 3: Ratio de frames consecutivos buenos (más exigente)
+    return range > this.MIN_SIGNAL_DIFF && this.consecutiveGoodFrames >= this.REQUIRED_GOOD_FRAMES / 2;
   }
 
   /**
