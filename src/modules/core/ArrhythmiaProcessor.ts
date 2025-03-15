@@ -19,10 +19,10 @@ export interface ArrhythmiaResult {
 }
 
 export class ArrhythmiaProcessor {
-  private readonly RMSSD_THRESHOLD = 18; // Reducido de 20 para mayor sensibilidad
-  private readonly RR_VARIATION_THRESHOLD = 0.10; // Reducido de 0.12 para mayor sensibilidad
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 2000; // Reducido de 2500ms para detectar más arritmias
-  private readonly MAX_ARRHYTHMIAS_PER_SESSION = 20; // Aumentado de 15 para permitir más detecciones
+  private readonly RMSSD_THRESHOLD = 25;
+  private readonly RR_VARIATION_THRESHOLD = 0.15;
+  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 3000; // ms
+  private readonly MAX_ARRHYTHMIAS_PER_SESSION = 10;
   private readonly REQUIRED_RR_INTERVALS = 5;
   
   private lastArrhythmiaTime: number = 0;
@@ -79,9 +79,6 @@ export class ArrhythmiaProcessor {
         rmssd,
         rrVariation
       };
-      
-      // Log adicional para diagnóstico
-      console.log(`ARRITMIA DETECTADA [${this.arrhythmiaCounter}]: RMSSD=${rmssd.toFixed(2)}, RR_VAR=${rrVariation.toFixed(2)}`);
     }
     
     // Preparar estado de arritmia
