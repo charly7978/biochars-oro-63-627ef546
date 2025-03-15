@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -30,10 +29,8 @@ const CameraView = ({
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
-  const [hasError, setHasError] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
-  const streamCheckIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -76,20 +73,10 @@ const CameraView = ({
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
     }
-    
-    // Clear any existing stream check interval
-    if (streamCheckIntervalRef.current) {
-      window.clearInterval(streamCheckIntervalRef.current);
-      streamCheckIntervalRef.current = null;
-    }
   };
 
   const startCamera = async () => {
     try {
-      // Asegurarnos de que cualquier stream anterior esté detenido
-      await stopCamera();
-      setHasError(false);
-      
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
@@ -249,32 +236,8 @@ const CameraView = ({
       
       retryAttemptsRef.current = 0;
       
-      // Establecer verificación periódica del estado de la pista de video
-      if (streamCheckIntervalRef.current) {
-        window.clearInterval(streamCheckIntervalRef.current);
-      }
-      
-      streamCheckIntervalRef.current = window.setInterval(() => {
-        if (!newStream) return;
-        
-        try {
-          const videoTracks = newStream.getVideoTracks();
-          const isActive = videoTracks.some(track => track.readyState === 'live');
-          
-          if (!isActive && isMonitoring) {
-            console.log("CameraView: Pista de video no activa, reiniciando cámara");
-            window.clearInterval(streamCheckIntervalRef.current!);
-            streamCheckIntervalRef.current = null;
-            startCamera();
-          }
-        } catch (err) {
-          console.warn("Error verificando estado de pista:", err);
-        }
-      }, 3000) as unknown as number;
-      
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
-      setHasError(true);
       
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
@@ -346,37 +309,22 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
+  const targetFrameInterval = isAndroid ? 1000/15 : 1000/25;
+
   return (
-    <>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-        style={{
-          willChange: 'transform',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden',
-          imageRendering: 'crisp-edges'
-        }}
-      />
-      
-      {hasError && isMonitoring && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-30">
-          <div className="bg-white/90 p-4 rounded-lg max-w-[80%] text-center">
-            <h3 className="font-bold text-red-500 mb-2">Error de cámara</h3>
-            <p className="text-sm mb-3">No se pudo acceder a la cámara. Por favor, verifica los permisos.</p>
-            <button 
-              onClick={startCamera}
-              className="bg-blue-500 text-white px-4 py-2 rounded-md text-sm"
-            >
-              Reintentar
-            </button>
-          </div>
-        </div>
-      )}
-    </>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+      style={{
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        imageRendering: 'crisp-edges'
+      }}
+    />
   );
 };
 

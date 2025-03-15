@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { Gauge, Heart, XCircle, AlertCircle, Activity } from 'lucide-react';
+import { Gauge, Heart, XCircle, AlertCircle } from 'lucide-react';
 import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 
 interface SignalQualityIndicatorProps {
@@ -39,7 +39,7 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
     let ringColorClass = "from-red-500 to-rose-500";
     let ringPercentage = quality;
     let fingerStatusText = isFingerDetected ? "Dedo detectado" : "Sin dedo";
-    let infoText = "Coloque su dedo completamente sobre la cámara";
+    let infoText = "Coloque su dedo sobre la cámara";
     
     // Calcular resultado completo para obtener nivel y mensaje
     const detectionResult = fingerDetector.processQuality(quality, 150, 80);
@@ -49,7 +49,7 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
       qualityText = "Sin señal";
       qualityColorClass = "text-gray-400";
       ringColorClass = "from-gray-400 to-gray-500";
-      infoText = "Coloque su dedo sobre la cámara y manténgalo quieto";
+      infoText = detectionResult.helpMessage;
     } else if (quality >= 70) {
       qualityText = "Señal óptima";
       qualityColorClass = "text-green-500";
@@ -103,8 +103,8 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
         </div>
       </div>
       
-      {/* Barra de calidad con visualización mejorada */}
-      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+      {/* Barra de calidad */}
+      <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ease-out ${
             isFingerDetected ? fingerDetector.getConfig().state.fingerDetected ? "from-green-500 to-emerald-500" : "from-gray-400 to-gray-500" : "from-gray-400 to-gray-500"
@@ -112,30 +112,6 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
           style={{ width: `${isFingerDetected ? quality : 0}%` }}
         ></div>
       </div>
-      
-      {/* Visualización de pulso en tiempo real - Nueva característica */}
-      {isFingerDetected && heartRate > 0 && (
-        <div className="w-full h-6 flex items-center mt-1 overflow-hidden">
-          <Activity className={`h-5 w-5 mr-2 ${qualityColorClass}`} />
-          <div className="w-full h-3 relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full h-0.5 bg-gray-300"></div>
-            </div>
-            <div className="relative h-full flex items-center">
-              <div className="animate-pulse w-1.5 h-3 rounded-sm bg-red-500 mx-0.5"
-                  style={{animationDuration: `${60/Math.max(30, heartRate)}s`}}></div>
-              <div className="animate-pulse w-2 h-4 rounded-sm bg-red-500 mx-0.5"
-                  style={{animationDuration: `${60/Math.max(30, heartRate)}s`, animationDelay: '0.1s'}}></div>
-              <div className="animate-pulse w-2.5 h-5 rounded-sm bg-red-500 mx-0.5"
-                  style={{animationDuration: `${60/Math.max(30, heartRate)}s`, animationDelay: '0.2s'}}></div>
-              <div className="animate-pulse w-2 h-4 rounded-sm bg-red-500 mx-0.5"
-                  style={{animationDuration: `${60/Math.max(30, heartRate)}s`, animationDelay: '0.3s'}}></div>
-              <div className="animate-pulse w-1.5 h-3 rounded-sm bg-red-500 mx-0.5"
-                  style={{animationDuration: `${60/Math.max(30, heartRate)}s`, animationDelay: '0.4s'}}></div>
-            </div>
-          </div>
-        </div>
-      )}
       
       {/* Mensaje de ayuda */}
       <div className="w-full text-center">
