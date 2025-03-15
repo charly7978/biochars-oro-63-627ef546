@@ -185,62 +185,54 @@ const Index = () => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
-    if (!videoTrack) {
-      console.error("No video track available");
+    const imageCapture = new ImageCapture(videoTrack);
+    
+    const capabilities = videoTrack.getCapabilities();
+    if (capabilities.width && capabilities.height) {
+      const maxWidth = capabilities.width.max;
+      const maxHeight = capabilities.height.max;
+      
+      videoTrack.applyConstraints({
+        width: { ideal: maxWidth },
+        height: { ideal: maxHeight },
+        torch: true
+      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
+    } else if (videoTrack.getCapabilities()?.torch) {
+      videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      }).catch(err => console.error("Error activando linterna:", err));
+    }
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) {
+      console.error("No se pudo obtener el contexto 2D");
       return;
     }
-
-    setTimeout(async () => {
+    
+    const processImage = async () => {
+      if (!isMonitoring) return;
+      
       try {
-        const imageCapture = new ImageCapture(videoTrack);
+        const frame = await imageCapture.grabFrame();
+        tempCanvas.width = frame.width;
+        tempCanvas.height = frame.height;
+        tempCtx.drawImage(frame, 0, 0);
+        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+        processFrame(imageData);
         
-        const capabilities = videoTrack.getCapabilities();
-        if (capabilities.width && capabilities.height) {
-          const maxWidth = capabilities.width.max;
-          const maxHeight = capabilities.height.max;
-          
-          await videoTrack.applyConstraints({
-            width: { ideal: maxWidth },
-            height: { ideal: maxHeight },
-            torch: true
-          }).catch(err => console.error("Error applying high resolution config:", err));
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
         }
-        
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        if (!tempCtx) {
-          console.error("Could not get 2D context");
-          return;
-        }
-        
-        let isProcessing = false;
-        
-        const processImage = async () => {
-          if (!isMonitoring || isProcessing) return;
-          
-          try {
-            isProcessing = true;
-            const frame = await imageCapture.grabFrame();
-            tempCanvas.width = frame.width;
-            tempCanvas.height = frame.height;
-            tempCtx.drawImage(frame, 0, 0);
-            const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-            processFrame(imageData);
-          } catch (error) {
-            console.error("Error capturing frame:", error);
-          } finally {
-            isProcessing = false;
-            if (isMonitoring) {
-              requestAnimationFrame(processImage);
-            }
-          }
-        };
-
-        processImage();
       } catch (error) {
-        console.error("Error in stream setup:", error);
+        console.error("Error capturando frame:", error);
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
       }
-    }, 1000);
+    };
+
+    processImage();
   };
 
   useEffect(() => {
@@ -363,4 +355,3 @@ const Index = () => {
 };
 
 export default Index;
-

@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -11,6 +12,7 @@ interface HeartBeatResult {
     intervals: number[];
     lastPeakTime: number | null;
   };
+  detectedPeaks?: {timestamp: number, value: number}[];
 }
 
 export const useHeartBeatProcessor = () => {
@@ -18,6 +20,27 @@ export const useHeartBeatProcessor = () => {
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const processingStatsRef = useRef<{
+    latency: number;
+    peakTimestamps: number[];
+  }>({
+    latency: 0,
+    peakTimestamps: []
+  });
+  const inputBufferRef = useRef<{value: number, timestamp: number}[]>([]);
+  const MAX_BUFFER_SIZE = 3; // Reduced from 10 to minimize delay
+  const maxLatencyRef = useRef<number>(0);
+  const lastProcessedTimestampRef = useRef<number>(0);
+  const realTimeRef = useRef<number>(Date.now());
+
+  // Add timer to update realTimeRef with precision
+  useEffect(() => {
+    const timer = setInterval(() => {
+      realTimeRef.current = Date.now();
+    }, 10); // Update every 10ms for more precise timing
+    
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -70,66 +93,89 @@ export const useHeartBeatProcessor = () => {
         rrData: {
           intervals: [],
           lastPeakTime: null
-        }
+        },
+        detectedPeaks: []
       };
     }
 
-    console.log('useHeartBeatProcessor - processSignal detallado:', {
-      inputValue: value,
-      normalizadoValue: value.toFixed(2),
-      currentProcessor: !!processorRef.current,
-      processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-
-    const result = processorRef.current.processSignal(value);
-    const rrData = processorRef.current.getRRIntervals();
-
-    console.log('useHeartBeatProcessor - resultado detallado:', {
-      bpm: result.bpm,
-      confidence: result.confidence,
-      isPeak: result.isPeak,
-      arrhythmiaCount: result.arrhythmiaCount,
-      rrIntervals: JSON.stringify(rrData.intervals),
-      ultimosIntervalos: rrData.intervals.slice(-5),
-      ultimoPico: rrData.lastPeakTime,
-      tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
+    // Use precise realtime instead of Date.now() for better synchronization
+    const now = realTimeRef.current;
     
+    // Minimize input buffer to reduce delay
+    inputBufferRef.current.push({value, timestamp: now});
+    
+    if (inputBufferRef.current.length > MAX_BUFFER_SIZE) {
+      inputBufferRef.current.shift();
+    }
+    
+    const processStart = performance.now();
+    const result = processorRef.current.processSignal(value);
+    const processingLatency = performance.now() - processStart;
+    
+    if (processingLatency > maxLatencyRef.current) {
+      maxLatencyRef.current = processingLatency;
+    }
+    
+    lastProcessedTimestampRef.current = now;
+    
+    const rrData = processorRef.current.getRRIntervals();
+    const processingStats = processorRef.current.getProcessingStats();
+    
+    processingStatsRef.current.latency = processingStats.latency;
+    
+    // Synchronize peak timing with current time to reduce visual delay
+    if (result.isPeak) {
+      // Add current time for accurate peak display
+      processingStatsRef.current.peakTimestamps.push(now);
+      
+      if (processingStatsRef.current.peakTimestamps.length > 10) {
+        processingStatsRef.current.peakTimestamps.shift();
+      }
+      
+      console.log('useHeartBeatProcessor - PEAK DETECTED:', {
+        timestamp: now,
+        systemTime: new Date().toISOString(),
+        peakValue: value,
+        processingLatency: processingLatency.toFixed(2) + 'ms',
+        bufferSize: inputBufferRef.current.length
+      });
+    }
+
     if (result.confidence < 0.7) {
-      console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
         bpm: currentBPM,
         confidence: result.confidence,
         isPeak: false,
         arrhythmiaCount: 0,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+        rrData,
+        detectedPeaks: result.detectedPeaks
       };
     }
 
     if (result.bpm > 0) {
-      console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
-        prevBPM: currentBPM,
-        newBPM: result.bpm,
-        prevConfidence: confidence,
-        newConfidence: result.confidence,
-        sessionId: sessionId.current,
-        timestamp: new Date().toISOString()
-      });
-      
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
+    // Make sure detectedPeaks have accurate timestamps for rendering
+    if (result.detectedPeaks && result.detectedPeaks.length > 0) {
+      // Use current time rather than any delayed time for latest peak
+      const latestPeakIndex = result.detectedPeaks.length - 1;
+      if (result.isPeak && latestPeakIndex >= 0) {
+        result.detectedPeaks[latestPeakIndex].timestamp = now;
+      }
+      
+      // Ensure all peaks have timestamps
+      result.detectedPeaks = result.detectedPeaks.map(peak => ({
+        ...peak,
+        timestamp: peak.timestamp || now
+      }));
+    }
+
     return {
       ...result,
-      rrData
+      rrData,
+      detectedPeaks: result.detectedPeaks
     };
   }, [currentBPM, confidence]);
 
@@ -152,14 +198,37 @@ export const useHeartBeatProcessor = () => {
       });
     }
     
+    processingStatsRef.current = {
+      latency: 0,
+      peakTimestamps: []
+    };
+    
+    inputBufferRef.current = [];
+    maxLatencyRef.current = 0;
+    lastProcessedTimestampRef.current = 0;
+    
     setCurrentBPM(0);
     setConfidence(0);
   }, [currentBPM, confidence]);
+
+  const getProcessingStats = useCallback(() => {
+    const stats = { 
+      ...processingStatsRef.current,
+      maxLatency: maxLatencyRef.current,
+      inputBufferSize: inputBufferRef.current.length,
+      lastProcessedTimestamp: lastProcessedTimestampRef.current,
+      timeSinceLastProcessed: realTimeRef.current - lastProcessedTimestampRef.current,
+      realTime: realTimeRef.current
+    };
+    
+    return stats;
+  }, []);
 
   return {
     currentBPM,
     confidence,
     processSignal,
-    reset
+    reset,
+    getProcessingStats
   };
 };

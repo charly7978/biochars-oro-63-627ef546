@@ -1,394 +1,242 @@
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { ProcessedSignal } from '../types/signal';
-import { detectFinger, calculateSignalQuality } from '../utils/FingerDetection';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { PPGSignalProcessor } from '../modules/SignalProcessor';
+import { ProcessedSignal, ProcessingError } from '../types/signal';
+
+interface ProcessorConfig {
+  fingerDetectionThreshold?: number;
+  minSignalQuality?: number;
+  adaptiveSensitivity?: boolean;
+  enhancedProcessing?: boolean;
+}
 
 export const useSignalProcessor = () => {
-  const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
+  const [processor] = useState(() => {
+    console.log("useSignalProcessor: Creando nueva instancia del procesador", {
+      timestamp: new Date().toISOString(),
+      sessionId: Math.random().toString(36).substring(2, 9)
+    });
+    
+    return new PPGSignalProcessor();
+  });
+  
   const [isProcessing, setIsProcessing] = useState(false);
-  const readyToProcessRef = useRef<boolean>(false);
-  const signalBufferRef = useRef<number[]>([]);
-  const lastTimeRef = useRef<number>(0);
-  const lastFingerDetectedRef = useRef<boolean>(false);
-  const signalQualityRef = useRef<number>(0);
-  const calibrationRef = useRef<boolean>(false);
-  const frameCountRef = useRef<number>(0);
+  const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
+  const [error, setError] = useState<ProcessingError | null>(null);
+  const [framesProcessed, setFramesProcessed] = useState(0);
+  const [signalStats, setSignalStats] = useState({
+    minValue: Infinity,
+    maxValue: -Infinity,
+    avgValue: 0,
+    totalValues: 0
+  });
   
-  // Parámetros de procesamiento ajustados para mayor sensibilidad a dedo humano
-  const MAX_BUFFER_SIZE = 300;
-  const QUALITY_THRESHOLD = 35; // Reducido para detectar señales más tenues
-  const FINGER_DETECTION_FRAMES = 3; // Reducido para respuesta más rápida a presencia de dedo
-  const MIN_SIGNAL_AMPLITUDE = 0.003; // Reducido para captar señales más sutiles
-  const fingerDetectionCounterRef = useRef<number>(0);
+  const qualityHistoryRef = useRef<number[]>([]);
+  const fingerDetectedHistoryRef = useRef<boolean[]>([]);
+  const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
-  // Ajustes de filtrado optimizados para señales cardíacas humanas
-  const LP_ALPHA = 0.1; // Ajustado para mayor sensibilidad a cambios rápidos
-  const SMA_WINDOW = 6; // Reducido para mejor respuesta a cambios
-  const lastFilteredValueRef = useRef<number | null>(null);
-  
-  // Control de amplificación dinámica mejorado
-  const amplificationFactorRef = useRef<number>(80.0); // Factor inicial de amplificación aumentado
-  const previousSignalLevelsRef = useRef<number[]>([]);
-  
-  // Sistema de memoria de señal para mejor continuidad
-  const validSignalMemoryRef = useRef<{value: number, quality: number}[]>([]);
-  const MAX_MEMORY_SIZE = 20;
-  
-  // Estabilidad de detección
-  const consecutiveDetectionsRef = useRef<number>(0);
-  const MAX_CONSECUTIVE_DETECTIONS = 30; // Para evitar sobredetección
-  
-  useEffect(() => {
-    return () => {
-      console.log("useSignalProcessor hook cleanup");
-      setIsProcessing(false);
-      readyToProcessRef.current = false;
+  const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
+    qualityHistoryRef.current.push(signal.quality);
+    if (qualityHistoryRef.current.length > HISTORY_SIZE) {
+      qualityHistoryRef.current.shift();
+    }
+    
+    fingerDetectedHistoryRef.current.push(signal.fingerDetected);
+    if (fingerDetectedHistoryRef.current.length > HISTORY_SIZE) {
+      fingerDetectedHistoryRef.current.shift();
+    }
+    
+    let weightedQualitySum = 0;
+    let weightSum = 0;
+    qualityHistoryRef.current.forEach((quality, index) => {
+      const weight = index + 1; // Más peso a las muestras recientes
+      weightedQualitySum += quality * weight;
+      weightSum += weight;
+    });
+    
+    const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
+    
+    const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
+    const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
+      trueCount / fingerDetectedHistoryRef.current.length : 0;
+    
+    // Usar un umbral más exigente para la detección robusta (3 de 5 = 0.6)
+    const robustFingerDetected = detectionRatio >= 0.6;
+    
+    // Mejora ligera de calidad para mejor experiencia de usuario
+    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    
+    console.log("useSignalProcessor: Detección robusta", {
+      original: signal.fingerDetected,
+      robust: robustFingerDetected,
+      detectionRatio,
+      trueCount,
+      historyLength: fingerDetectedHistoryRef.current.length,
+      originalQuality: signal.quality,
+      enhancedQuality,
+      rawValue: signal.rawValue.toFixed(2),
+      filteredValue: signal.filteredValue.toFixed(2)
+    });
+    
+    return {
+      ...signal,
+      fingerDetected: robustFingerDetected,
+      quality: enhancedQuality
     };
   }, []);
 
-  // Función mejorada para ajustar la amplificación basada en la intensidad real de sangre oxigenada
-  const adjustAmplification = useCallback((value: number) => {
-    const MAX_BUFFER = 10;
-    previousSignalLevelsRef.current.push(Math.abs(value));
-    if (previousSignalLevelsRef.current.length > MAX_BUFFER) {
-      previousSignalLevelsRef.current.shift();
-    }
-    
-    if (previousSignalLevelsRef.current.length >= 5) {
-      // Calcular amplitud promedio reciente
-      const avgAmplitude = previousSignalLevelsRef.current.reduce((sum, val) => sum + val, 0) / 
-                          previousSignalLevelsRef.current.length;
-      
-      // Estrategia adaptativa específica para dedo humano
-      if (avgAmplitude < 0.008) {
-        // Señal muy débil, posiblemente dedo mal colocado - aumentar amplificación significativamente
-        amplificationFactorRef.current = Math.min(150, amplificationFactorRef.current * 1.08);
-      } 
-      else if (avgAmplitude < 0.02) {
-        // Señal débil pero probablemente válida - aumentar gradualmente
-        amplificationFactorRef.current = Math.min(120, amplificationFactorRef.current * 1.03);
-      }
-      // Para señales muy fuertes, reducir la amplificación
-      else if (avgAmplitude > 0.25) {
-        amplificationFactorRef.current = Math.max(20, amplificationFactorRef.current * 0.92);
-      }
-      // Para señales en rango alto pero aceptable
-      else if (avgAmplitude > 0.1) {
-        amplificationFactorRef.current = Math.max(30, amplificationFactorRef.current * 0.97);
-      } 
-      // Para señales en rango ideal, mantener estabilidad
-      else if (avgAmplitude > 0.05) {
-        // No ajustar - estamos en el rango óptimo
-      } 
-      else {
-        // Señal ligeramente débil pero detectada - aumentar ligeramente
-        amplificationFactorRef.current = Math.min(100, amplificationFactorRef.current * 1.01);
-      }
-      
-      console.log(`Señal: ${avgAmplitude.toFixed(4)}, Amplificación: ${amplificationFactorRef.current.toFixed(1)}`);
-    }
-    
-    return value * amplificationFactorRef.current;
-  }, []);
-
-  const startProcessing = useCallback(() => {
-    console.log("Signal processor: iniciando procesamiento");
-    setIsProcessing(true);
-    
-    // Resetear todos los buffers y estados
-    signalBufferRef.current = [];
-    lastTimeRef.current = Date.now();
-    lastFingerDetectedRef.current = false;
-    lastFilteredValueRef.current = null;
-    signalQualityRef.current = 0;
-    frameCountRef.current = 0;
-    fingerDetectionCounterRef.current = 0;
-    previousSignalLevelsRef.current = [];
-    validSignalMemoryRef.current = [];
-    consecutiveDetectionsRef.current = 0;
-    amplificationFactorRef.current = 80.0; // Amplificación inicial mayor para mejor respuesta
-    setLastSignal(null);
-    
-    // Esperar un momento más corto antes de permitir procesamiento para respuesta más rápida
-    setTimeout(() => {
-      console.log("Signal processor: listo para procesar");
-      readyToProcessRef.current = true;
-      calibrationRef.current = true;
-      
-      // Tiempo de calibración
-      setTimeout(() => {
-        calibrationRef.current = false;
-      }, 2500); // Tiempo de calibración reducido para respuesta más rápida
-    }, 1500);
-  }, []);
-
-  const stopProcessing = useCallback(() => {
-    console.log("Signal processor: deteniendo procesamiento");
-    setIsProcessing(false);
-    readyToProcessRef.current = false;
-  }, []);
-
-  // Aplicar un filtro paso bajo para suavizar la señal
-  const applyLowPassFilter = useCallback((newValue: number, previousValue: number | null): number => {
-    if (previousValue === null) return newValue;
-    return previousValue + LP_ALPHA * (newValue - previousValue);
-  }, []);
-  
-  // Aplicar un filtro de promedio móvil simple
-  const applySMAFilter = useCallback((buffer: number[]): number => {
-    if (buffer.length === 0) return 0;
-    if (buffer.length === 1) return buffer[0];
-    
-    const windowSize = Math.min(SMA_WINDOW, buffer.length);
-    const recentValues = buffer.slice(-windowSize);
-    const sum = recentValues.reduce((acc, val) => acc + val, 0);
-    return sum / windowSize;
-  }, []);
-
-  // Mejora de extracción de canal rojo específica para sangre oxigenada
-  const extractRedChannel = useCallback((imageData: ImageData): number => {
-    const width = imageData.width;
-    const height = imageData.height;
-    
-    // Usar región central con detección de mejor área de señal
-    const centerX = Math.floor(width / 2);
-    const centerY = Math.floor(height / 2);
-    const regionSize = Math.min(100, Math.floor(width / 4)); // Región ajustada para mayor precisión
-    
-    const startX = centerX - Math.floor(regionSize / 2);
-    const startY = centerY - Math.floor(regionSize / 2);
-    const endX = startX + regionSize;
-    const endY = startY + regionSize;
-    
-    // Dividir la región en subregiones para encontrar la mejor señal
-    const GRID_SIZE = 3; // 3x3 grid
-    const subRegionWidth = regionSize / GRID_SIZE;
-    const subRegionHeight = regionSize / GRID_SIZE;
-    const subRegions: {red: number, green: number, blue: number, quality: number}[] = [];
-    
-    // Analizar cada subregión
-    for (let i = 0; i < GRID_SIZE; i++) {
-      for (let j = 0; j < GRID_SIZE; j++) {
-        const subStartX = startX + (i * subRegionWidth);
-        const subStartY = startY + (j * subRegionHeight);
-        
-        let redSum = 0;
-        let greenSum = 0;
-        let blueSum = 0;
-        let pixelCount = 0;
-        
-        // Analizar píxeles en la subregión
-        for (let y = subStartY; y < subStartY + subRegionHeight; y++) {
-          for (let x = subStartX; x < subStartX + subRegionWidth; x++) {
-            if (x >= 0 && x < width && y >= 0 && y < height) {
-              const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
-              redSum += imageData.data[idx]; // Canal rojo
-              greenSum += imageData.data[idx + 1]; // Canal verde
-              blueSum += imageData.data[idx + 2]; // Canal azul
-              pixelCount++;
-            }
-          }
-        }
-        
-        if (pixelCount > 0) {
-          const avgRed = redSum / pixelCount;
-          const avgGreen = greenSum / pixelCount;
-          const avgBlue = blueSum / pixelCount;
-          
-          // Calcular calidad de la subregión basada en dominancia de rojo y brillo
-          // La mejor región para PPG tiene alto rojo y diferencia adecuada con otros canales
-          const redDominance = avgRed - ((avgGreen + avgBlue) / 2);
-          const brightness = (avgRed + avgGreen + avgBlue) / 3;
-          
-          // La calidad es mejor cuando el rojo domina pero no hay saturación
-          const quality = redDominance * (avgRed > 50 && avgRed < 220 ? 1.0 : 0.5);
-          
-          subRegions.push({
-            red: avgRed,
-            green: avgGreen,
-            blue: avgBlue,
-            quality: quality
-          });
-        }
-      }
-    }
-    
-    // Seleccionar la mejor subregión para extraer la señal PPG
-    let bestSubRegion = {red: 0, green: 0, blue: 0, quality: -1};
-    for (const region of subRegions) {
-      if (region.quality > bestSubRegion.quality) {
-        bestSubRegion = region;
-      }
-    }
-    
-    // Calcular la señal PPG optimizada para sangre humana
-    // Esta técnica resalta las variaciones de sangre oxigenada específicas del dedo humano
-    const redNormalized = bestSubRegion.quality > 0 ? 
-      bestSubRegion.red - (0.65 * bestSubRegion.green + 0.35 * bestSubRegion.blue) :
-      0;
-    
-    return redNormalized;
-  }, []);
-
-  const processFrame = useCallback((imageData: ImageData, fingerDetectedOverride?: boolean) => {
-    frameCountRef.current++;
-    
-    // Si no estamos procesando o no estamos listos, ignorar
-    if (!isProcessing || !readyToProcessRef.current) {
-      return;
-    }
-    
-    // Sistema mejorado de detección de dedo específico para piel humana
-    const detectionResult = detectFinger(imageData, {
-      redThreshold: 70,               // Más sensible para detectar dedo
-      brightnessThreshold: 50,        // Más sensible a luz ambiental
-      redDominanceThreshold: 15,      // Exigente en dominancia de rojo (característica de piel)
-      regionSize: 35,                 // Región óptima para análisis
-      adaptiveMode: true,             // Usar detección adaptativa
-      maxIntensityThreshold: 220      // Evitar superficies demasiado brillantes (paredes)
+  useEffect(() => {
+    console.log("useSignalProcessor: Configurando callbacks", {
+      timestamp: new Date().toISOString(),
+      processorExists: !!processor
     });
     
-    let fingerDetected = detectionResult.detected;
-    
-    // Si se provee un override, usarlo
-    if (fingerDetectedOverride !== undefined) {
-      fingerDetected = fingerDetectedOverride;
-    }
-    
-    // Lógica mejorada para detección más rápida pero estable
-    if (fingerDetected) {
-      // Incrementar contador de detecciones consecutivas
-      fingerDetectionCounterRef.current++;
+    processor.onSignalReady = (signal: ProcessedSignal) => {
+      const modifiedSignal = processRobustFingerDetection(signal);
       
-      // Si ya tenemos suficientes detecciones consecutivas, confirmar detección
-      if (!lastFingerDetectedRef.current && fingerDetectionCounterRef.current >= FINGER_DETECTION_FRAMES) {
-        console.log("Dedo detectado después de", fingerDetectionCounterRef.current, "frames");
-        lastFingerDetectedRef.current = true;
-        consecutiveDetectionsRef.current = 0;
-      }
-    } else {
-      // Si no hay detección, resetear contador
-      fingerDetectionCounterRef.current = 0;
-      
-      // Dar un pequeño margen antes de considerar que ya no hay dedo (para evitar parpadeos)
-      if (lastFingerDetectedRef.current) {
-        consecutiveDetectionsRef.current++;
-        
-        // Solo después de varios frames sin detección, confirmar que no hay dedo
-        if (consecutiveDetectionsRef.current >= 6) { // Un poco más de margen
-          lastFingerDetectedRef.current = false;
-          consecutiveDetectionsRef.current = 0;
-        }
-      }
-    }
-    
-    // Calcular calidad de señal
-    const signalQuality = calculateSignalQuality(detectionResult);
-    signalQualityRef.current = signalQuality;
-    
-    // Extraer canal rojo (donde se captura mejor el pulso sanguíneo)
-    const redValue = extractRedChannel(imageData);
-    
-    // Solo procesar si hay un dedo detectado con calidad suficiente
-    if (lastFingerDetectedRef.current) {  // Usar estado estable, no detección instantánea
-      // Añadir al buffer
-      signalBufferRef.current.push(redValue);
-      
-      // Limitar tamaño del buffer
-      if (signalBufferRef.current.length > MAX_BUFFER_SIZE) {
-        signalBufferRef.current.shift();
-      }
-      
-      // Aplicar filtros para limpiar y amplificar la señal
-      // 1. Primero SMA para suavizar ruido
-      const smoothedValue = applySMAFilter(signalBufferRef.current);
-      
-      // 2. Después filtro paso bajo para continuidad temporal
-      const basicFiltered = applyLowPassFilter(smoothedValue, lastFilteredValueRef.current);
-      
-      // 3. Finalmente, amplificación dinámica para visualización
-      const amplifiedValue = adjustAmplification(basicFiltered);
-      
-      lastFilteredValueRef.current = basicFiltered; // Guardar valor sin amplificar
-      
-      // Guardar en memoria de señal válida
-      validSignalMemoryRef.current.push({
-        value: amplifiedValue,
-        quality: signalQuality
+      console.log("useSignalProcessor: Señal procesada:", {
+        timestamp: modifiedSignal.timestamp,
+        formattedTime: new Date(modifiedSignal.timestamp).toISOString(),
+        quality: modifiedSignal.quality.toFixed(1),
+        rawQuality: signal.quality.toFixed(1),
+        rawValue: modifiedSignal.rawValue.toFixed(3),
+        filteredValue: modifiedSignal.filteredValue.toFixed(3),
+        fingerDetected: modifiedSignal.fingerDetected,
+        originalFingerDetected: signal.fingerDetected,
+        processingTime: Date.now() - modifiedSignal.timestamp
       });
       
-      // Limitar tamaño de memoria
-      if (validSignalMemoryRef.current.length > MAX_MEMORY_SIZE) {
-        validSignalMemoryRef.current.shift();
-      }
+      setLastSignal(modifiedSignal);
+      setError(null);
+      setFramesProcessed(prev => prev + 1);
       
-      // Verificar que haya suficiente amplitud en la señal o calidad
-      const signalValid = signalQuality > QUALITY_THRESHOLD || 
-                         Math.abs(amplifiedValue) > MIN_SIGNAL_AMPLITUDE;
-      
-      if (signalValid) {
-        const now = Date.now();
-        
-        // Creamos el objeto de señal procesada
-        const processedSignal: ProcessedSignal = {
-          timestamp: now,
-          rawValue: redValue,
-          filteredValue: amplifiedValue, // Usar valor amplificado
-          quality: signalQuality,
-          fingerDetected: lastFingerDetectedRef.current,
-          roi: {
-            x: Math.floor(imageData.width / 4),
-            y: Math.floor(imageData.height / 4),
-            width: Math.floor(imageData.width / 2),
-            height: Math.floor(imageData.height / 2)
-          }
+      setSignalStats(prev => {
+        const newStats = {
+          minValue: Math.min(prev.minValue, modifiedSignal.filteredValue),
+          maxValue: Math.max(prev.maxValue, modifiedSignal.filteredValue),
+          avgValue: (prev.avgValue * prev.totalValues + modifiedSignal.filteredValue) / (prev.totalValues + 1),
+          totalValues: prev.totalValues + 1
         };
         
-        // Actualizar lastSignal
-        setLastSignal(processedSignal);
-        lastTimeRef.current = now;
-      }
-    } else {
-      // Si no hay dedo detectado, informar de estado vacío pero con mayor continuidad
-      // para evitar cambios bruscos en la visualización
-      
-      const emptySignal: ProcessedSignal = {
-        timestamp: Date.now(),
-        rawValue: 0,
-        filteredValue: 0,
-        quality: 0,
-        fingerDetected: false,
-        roi: {
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0
+        if (prev.totalValues % 50 === 0) {
+          console.log("useSignalProcessor: Estadísticas de señal:", newStats);
         }
-      };
+        
+        return newStats;
+      });
+    };
+
+    processor.onError = (error: ProcessingError) => {
+      console.error("useSignalProcessor: Error detallado:", {
+        ...error,
+        formattedTime: new Date(error.timestamp).toISOString(),
+        stack: new Error().stack
+      });
+      setError(error);
+    };
+
+    console.log("useSignalProcessor: Iniciando procesador", {
+      timestamp: new Date().toISOString()
+    });
+    
+    processor.initialize().catch(error => {
+      console.error("useSignalProcessor: Error de inicialización detallado:", {
+        message: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    return () => {
+      console.log("useSignalProcessor: Limpiando", {
+        framesProcessados: framesProcessed,
+        ultimaSeñal: lastSignal ? {
+          calidad: lastSignal.quality,
+          dedoDetectado: lastSignal.fingerDetected
+        } : null,
+        timestamp: new Date().toISOString()
+      });
+      processor.stop();
+    };
+  }, [processor, processRobustFingerDetection]);
+
+  const startProcessing = useCallback(() => {
+    console.log("useSignalProcessor: Iniciando procesamiento", {
+      estadoAnterior: isProcessing,
+      timestamp: new Date().toISOString()
+    });
+    
+    setIsProcessing(true);
+    setFramesProcessed(0);
+    setSignalStats({
+      minValue: Infinity,
+      maxValue: -Infinity,
+      avgValue: 0,
+      totalValues: 0
+    });
+    
+    qualityHistoryRef.current = [];
+    fingerDetectedHistoryRef.current = [];
+    
+    processor.start();
+  }, [processor, isProcessing]);
+
+  const stopProcessing = useCallback(() => {
+    console.log("useSignalProcessor: Deteniendo procesamiento", {
+      estadoAnterior: isProcessing,
+      framesProcessados: framesProcessed,
+      estadisticasFinales: signalStats,
+      timestamp: new Date().toISOString()
+    });
+    
+    setIsProcessing(false);
+    processor.stop();
+  }, [processor, isProcessing, framesProcessed, signalStats]);
+
+  const calibrate = useCallback(async () => {
+    try {
+      console.log("useSignalProcessor: Iniciando calibración", {
+        timestamp: new Date().toISOString()
+      });
       
-      setLastSignal(emptySignal);
+      await processor.calibrate();
       
-      // Limpiar buffer y valores previos para evitar contaminación
-      // pero con una pequeña desaceleración para evitar reinicialización brusca
-      if (signalBufferRef.current.length > 20) {
-        signalBufferRef.current = signalBufferRef.current.slice(-10);
-      } else {
-        signalBufferRef.current = [];
-      }
+      console.log("useSignalProcessor: Calibración exitosa", {
+        timestamp: new Date().toISOString()
+      });
       
-      lastFilteredValueRef.current = null;
-      previousSignalLevelsRef.current = [];
-      amplificationFactorRef.current = 80.0; // Reiniciar amplificación
+      return true;
+    } catch (error) {
+      console.error("useSignalProcessor: Error de calibración detallado:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
+      
+      return false;
     }
-  }, [isProcessing, applyLowPassFilter, applySMAFilter, extractRedChannel, adjustAmplification]);
+  }, [processor]);
+
+  const processFrame = useCallback((imageData: ImageData) => {
+    if (isProcessing) {
+      try {
+        processor.processFrame(imageData);
+        setFramesProcessed(prev => prev + 1);
+      } catch (err) {
+        console.error("useSignalProcessor: Error procesando frame:", err);
+      }
+    }
+  }, [isProcessing, processor]);
 
   return {
-    lastSignal,
     isProcessing,
+    lastSignal,
+    error,
+    framesProcessed,
+    signalStats,
     startProcessing,
     stopProcessing,
-    processFrame,
-    signalBuffer: signalBufferRef.current,
-    signalQuality: signalQualityRef.current
+    calibrate,
+    processFrame
   };
 };

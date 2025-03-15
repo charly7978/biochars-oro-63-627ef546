@@ -4,6 +4,21 @@ interface MediaTrackCapabilities {
   exposureMode?: string;
   focusMode?: string;
   whiteBalanceMode?: string;
+  exposureCompensation?: {
+    max?: number;
+    min?: number;
+    step?: number;
+  };
+  brightness?: {
+    max?: number;
+    min?: number;
+    step?: number;
+  };
+  contrast?: {
+    max?: number;
+    min?: number;
+    step?: number;
+  };
 }
 
 interface MediaTrackConstraintSet {
@@ -11,6 +26,9 @@ interface MediaTrackConstraintSet {
   exposureMode?: ConstrainDOMString;
   focusMode?: ConstrainDOMString;
   whiteBalanceMode?: ConstrainDOMString;
+  exposureCompensation?: ConstrainDouble;
+  brightness?: ConstrainDouble;
+  contrast?: ConstrainDouble;
 }
 
 declare class ImageCapture {
