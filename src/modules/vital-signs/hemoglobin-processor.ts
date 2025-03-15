@@ -1,44 +1,64 @@
 
-import { 
-  normalizeValues, 
-  SIGNAL_CONSTANTS
-} from './shared-signal-utils';
+import { calculateMeanValue, smoothSignal } from '../../utils/vitalSignsUtils';
 
-/**
- * Procesador para el cálculo estimado de hemoglobina basado en señal PPG
- */
 export class HemoglobinProcessor {
-  private readonly MIN_VALID_VALUES = SIGNAL_CONSTANTS.MIN_VALID_VALUES;
-  private readonly MIN_AMPLITUDE = SIGNAL_CONSTANTS.MIN_AMPLITUDE;
-  private readonly BASE_HEMOGLOBIN = 14.5; // g/dL (valor promedio normal)
+  private values: number[] = [];
+  private readonly maxSamples = 300;
+  private readonly minSamplesToCalculate = 100;
   
   /**
-   * Calcula nivel de hemoglobina estimado basado en características de la señal PPG
-   * Implementa un enfoque conservador basado en múltiples estudios
+   * Procesa un valor de señal PPG para estimar la hemoglobina
+   * @param ppgValue Valor de la señal PPG filtrada
+   * @returns Estimación de hemoglobina en g/dL o 0 si no hay suficientes datos
    */
-  public calculateHemoglobin(ppgValues: number[]): number {
-    if (ppgValues.length < this.MIN_VALID_VALUES) return 0;
+  processValue(ppgValue: number): number {
+    if (this.values.length >= this.maxSamples) {
+      this.values.shift();
+    }
     
-    // Normalizar valores usando la utilidad compartida
-    const normalized = normalizeValues(ppgValues);
+    this.values.push(ppgValue);
     
-    // Verificar si la normalización fue exitosa
-    if (normalized.every(v => v === 0)) return 0;
+    if (this.values.length < this.minSamplesToCalculate) {
+      return 0;
+    }
     
-    // Calcular área bajo la curva como indicador de contenido de hemoglobina
-    const auc = normalized.reduce((sum, val) => sum + val, 0) / normalized.length;
+    // Aplicar suavizado a la señal para reducir el ruido
+    const smoothedValues = smoothSignal(this.values, 0.85);
     
-    // Aplicar modelo conservador basado en investigación óptica
-    const hemoglobin = this.BASE_HEMOGLOBIN - ((0.6 - auc) * 8);
+    // Calcular el valor medio de la señal suavizada
+    const meanValue = calculateMeanValue(smoothedValues);
     
-    // Limitar a rango fisiológico normal
-    return Math.max(10, Math.min(17, hemoglobin));
+    // Aplicar algoritmo de estimación de hemoglobina basado en características de la señal PPG
+    // Esta es una implementación simple que requiere calibración clínica para mayor precisión
+    const amplitudeVariation = this.calculateAmplitudeVariation(smoothedValues);
+    const baseline = 12.5; // Valor de referencia de hemoglobina normal
+    
+    // La estimación se basa en la variación de amplitud de la señal PPG
+    // Los coeficientes son aproximados y deberían ser calibrados con datos clínicos
+    const hemoglobin = baseline + (amplitudeVariation * 2.5) - (Math.abs(meanValue) * 0.08);
+    
+    // Limitar el rango a valores fisiológicamente plausibles
+    return Math.max(8.0, Math.min(18.0, hemoglobin));
+  }
+  
+  /**
+   * Calcula la variación de amplitud de la señal
+   */
+  private calculateAmplitudeVariation(values: number[]): number {
+    if (values.length < 2) return 0;
+    
+    let sumVariation = 0;
+    for (let i = 1; i < values.length; i++) {
+      sumVariation += Math.abs(values[i] - values[i-1]);
+    }
+    
+    return sumVariation / (values.length - 1);
   }
   
   /**
    * Reinicia el procesador
    */
-  public reset(): void {
-    // No tiene estado interno que reiniciar
+  reset(): void {
+    this.values = [];
   }
 }
