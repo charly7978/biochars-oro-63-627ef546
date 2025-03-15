@@ -19,18 +19,24 @@ const CameraView = ({
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
     const androidDetected = /android/i.test(userAgent);
+    const windowsDetected = /windows nt/i.test(userAgent);
+    
     console.log("Plataforma detectada:", {
       userAgent,
       isAndroid: androidDetected,
+      isWindows: windowsDetected,
       isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
     });
+    
     setIsAndroid(androidDetected);
+    setIsWindows(windowsDetected);
   }, []);
 
   const stopCamera = async () => {
@@ -68,6 +74,7 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isWindows = /windows nt/i.test(navigator.userAgent);
 
       // Increased resolution for better clarity
       const baseVideoConstraints: MediaTrackConstraints = {
@@ -89,6 +96,13 @@ const CameraView = ({
           frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
+        });
+      } else if (isWindows) {
+        console.log("Configurando para Windows con resolución reducida (720p)");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30, max: 60 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         });
       } else {
         console.log("Configurando para escritorio con máxima resolución");

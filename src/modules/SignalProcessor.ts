@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -41,17 +40,17 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly MIN_STABILITY_COUNT = 3;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045;
   
-  // Variables para el análisis de wavelet y periodicidad
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.06;
+  
   private baselineValue: number = 0;
   private readonly WAVELET_THRESHOLD = 0.025; // Umbral moderado para wavelets
   private readonly BASELINE_FACTOR = 0.95; // Factor de adaptación de línea base
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40; // Tamaño buffer para análisis de periodicidad
-  private readonly MIN_PERIODICITY_SCORE = 0.3; // Puntuación mínima de periodicidad (moderada)
   
-  // Nueva variable para el umbral de calidad de la señal (60%)
+  private readonly MIN_PERIODICITY_SCORE = 0.4; // Puntuación mínima de periodicidad (más exigente)
+  
   private readonly SIGNAL_QUALITY_THRESHOLD = 60; // Umbral moderado para calidad de la señal
 
   constructor(
@@ -101,10 +100,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       console.log("PPGSignalProcessor: Iniciando calibración");
       await this.initialize();
 
-      // Simulamos el proceso de calibración
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Ajustamos los umbrales basados en las condiciones actuales
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
         MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 5),
@@ -137,13 +134,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     try {
       const redValue = this.extractRedChannel(imageData);
       
-      // Aplicar filtro wavelet adaptativo para reducir ruido
       const denoisedValue = this.applyWaveletDenoising(redValue);
       
-      // Aplicar Kalman como segunda etapa de filtrado
       const filtered = this.kalmanFilter.filter(denoisedValue);
       
-      // Almacenar para análisis de periodicidad
       this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
@@ -154,7 +148,6 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // Análisis mejorado de la señal con periodicidad
       const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
 
       const processedSignal: ProcessedSignal = {
@@ -179,7 +172,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     let redSum = 0;
     let count = 0;
     
-    // Analizar solo el centro de la imagen (25% central)
     const startX = Math.floor(imageData.width * 0.375);
     const endX = Math.floor(imageData.width * 0.625);
     const startY = Math.floor(imageData.height * 0.375);
@@ -197,39 +189,27 @@ export class PPGSignalProcessor implements SignalProcessor {
     return avgRed;
   }
 
-  /**
-   * Nuevo método: Aplica un filtro wavelet simple para reducir ruido
-   * manteniendo características importantes de la señal PPG
-   */
   private applyWaveletDenoising(value: number): number {
-    // Inicializar valor baseline si es necesario
     if (this.baselineValue === 0) {
       this.baselineValue = value;
     } else {
-      // Actualización adaptativa de la línea base
       this.baselineValue = this.baselineValue * this.BASELINE_FACTOR + 
                           value * (1 - this.BASELINE_FACTOR);
     }
     
-    // Calcular diferencia respecto a la línea base
     const normalizedValue = value - this.baselineValue;
     
-    // Aplicar umbral simple de wavelet (soft thresholding)
-    // Si la diferencia es menor que el umbral, se considera ruido
     if (Math.abs(normalizedValue) < this.WAVELET_THRESHOLD) {
-      return this.baselineValue; // Devolver la línea base (eliminar ruido)
+      return this.baselineValue;
     }
     
-    // Reducir ligeramente la señal que supera el umbral (soft thresholding)
     const sign = normalizedValue >= 0 ? 1 : -1;
     const denoisedValue = sign * (Math.abs(normalizedValue) - this.WAVELET_THRESHOLD * 0.5);
     
-    // Devolver el valor original con menor ruido
     return this.baselineValue + denoisedValue;
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Invertimos la lógica: si el valor está fuera del rango, NO hay dedo
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
@@ -242,22 +222,18 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Mejora en la detección de estabilidad para picos cardíacos
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    // Análisis mejorado de variación para detectar picos
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
-    // Detección más sensible de picos cardíacos
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Umbrales adaptativos para mejor detección de picos
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02); // 2% del valor promedio
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
     const isStable = maxVariation < adaptiveThreshold * 2 && 
                     minVariation > -adaptiveThreshold * 2;
 
@@ -265,61 +241,44 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      // Reducción más gradual para mantener mejor la detección
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
     }
 
-    // Integrar análisis de periodicidad en la detección
     const periodicityScore = this.analyzeSignalPeriodicity();
     
-    // Calcular calidad de la señal
     let quality = 0;
     if (this.stableFrameCount >= this.MIN_STABILITY_COUNT) {
-      // Cálculo de calidad mejorado con periodicidad
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      // Integrar periodicidad en el cálculo de calidad (con peso moderado)
       quality = Math.round((stabilityScore * 0.35 + 
                           intensityScore * 0.25 + 
                           variationScore * 0.2 + 
                           periodicityScore * 0.2) * 100);
     }
     
-    // Modificación: Ahora tomamos en cuenta el umbral de calidad de señal
-    // para detectar el dedo. Se requiere una calidad mínima del 60%
     const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
                             periodicityScore > this.MIN_PERIODICITY_SCORE &&
                             quality >= this.SIGNAL_QUALITY_THRESHOLD;
 
     return { isFingerDetected, quality };
   }
-  
-  /**
-   * Nuevo método: Analiza la periodicidad de la señal PPG
-   * Las señales de pulso cardíaco tienen una periodicidad natural
-   * Retorna puntuación de 0 a 1
-   */
+
   private analyzeSignalPeriodicity(): number {
-    // Si no tenemos suficientes datos, no podemos analizar periodicidad
     if (this.periodicityBuffer.length < 30) {
       return 0;
     }
     
-    // Obtener los últimos valores para análisis
     const signal = this.periodicityBuffer.slice(-30);
     const signalMean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
     
-    // Normalizar señal
     const normalizedSignal = signal.map(val => val - signalMean);
     
-    // Calcular autocorrelación para diferentes retrasos (lags)
-    const maxLag = 20; // Máximo retraso a considerar
+    const maxLag = 20;
     const correlations: number[] = [];
     
-    // Calcular la autocorrelación normalizada para cada retraso
     for (let lag = 1; lag <= maxLag; lag++) {
       let correlation = 0;
       let denominator = 0;
@@ -329,7 +288,6 @@ export class PPGSignalProcessor implements SignalProcessor {
         denominator += normalizedSignal[i] * normalizedSignal[i];
       }
       
-      // Normalizar la correlación
       if (denominator > 0) {
         correlation /= Math.sqrt(denominator);
         correlations.push(Math.abs(correlation));
@@ -338,19 +296,14 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
     }
     
-    // Buscar picos en la autocorrelación (posibles períodos)
     let maxCorrelation = 0;
     let periodFound = false;
     
-    // Considerar solo correlaciones que sean picos
     for (let i = 1; i < correlations.length - 1; i++) {
-      // Es un pico si es mayor que los vecinos
       if (correlations[i] > correlations[i-1] && 
           correlations[i] > correlations[i+1] && 
-          correlations[i] > 0.2) { // Umbral mínimo de correlación
-          
-        // Verificamos si está en el rango de frecuencia cardíaca (40-180 BPM)
-        // Para 30 muestras a ~30 FPS, un período de 4-15 muestras es cardíaco
+          correlations[i] > 0.2) {
+        
         if (i >= 4 && i <= 15) {
           if (correlations[i] > maxCorrelation) {
             maxCorrelation = correlations[i];
@@ -361,10 +314,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
     
     if (periodFound) {
-      // Devolver una puntuación basada en la correlación máxima (0.2-1.0)
       return Math.min(1.0, maxCorrelation);
     } else {
-      // Sin periodicidad clara
       return 0.1;
     }
   }
