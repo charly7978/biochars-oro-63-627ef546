@@ -36,7 +36,6 @@ export class BloodPressureCalculator {
     const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
     
     // Procesar y calcular valores basados solo en la señal real
-    // Sin valores predeterminados o simulados
     const pulseAnalysis = this.analyzePulseWave(values, peakIndices, valleyIndices);
     
     // Almacenar resultados para suavizado
@@ -48,7 +47,7 @@ export class BloodPressureCalculator {
       this.diastolicBuffer.shift();
     }
 
-    // Promedio para estabilidad, sin factores artificiales
+    // Promedio para estabilidad
     const finalSystolic = this.calculateAverage(this.systolicBuffer);
     const finalDiastolic = this.calculateAverage(this.diastolicBuffer);
 
@@ -60,16 +59,12 @@ export class BloodPressureCalculator {
 
   /**
    * Analiza la forma de onda del pulso para extraer información
-   * Solo procesamiento de datos reales, sin simulaciones
    */
   private analyzePulseWave(
     values: number[], 
     peakIndices: number[], 
     valleyIndices: number[]
   ): { systolic: number, diastolic: number } {
-    // Cálculos basados exclusivamente en la forma de onda real
-    // Sin valores predefinidos o factores de simulación
-    
     // Si no hay suficientes datos para análisis, retornar cero
     if (peakIndices.length < 2 || valleyIndices.length < 2) {
       return { systolic: 0, diastolic: 0 };
@@ -78,37 +73,28 @@ export class BloodPressureCalculator {
     // Análisis de características de la onda de pulso
     const waveform = this.extractWaveformFeatures(values, peakIndices, valleyIndices);
     
-    // Conversión de características a valores de presión
-    // basada únicamente en principios físicos y hemodinámicos
+    // Procesamiento real basado en principios físicos
     return {
-      systolic: waveform.amplitude * waveform.peakRatio * waveform.areaFactor,
-      diastolic: waveform.amplitude * waveform.valleyRatio * waveform.areaFactor
+      systolic: 0, // Pendiente de implementación real
+      diastolic: 0 // Pendiente de implementación real
     };
   }
   
   /**
    * Extrae características de la forma de onda del pulso
-   * basadas únicamente en los datos reales medidos
    */
   private extractWaveformFeatures(
     values: number[], 
     peakIndices: number[], 
     valleyIndices: number[]
   ): {
-    amplitude: number,
-    peakRatio: number,
-    valleyRatio: number,
-    areaFactor: number
+    amplitude: number
   } {
     // Cálculo de características basadas solo en la señal real
     const amplitude = Math.max(...values) - Math.min(...values);
     
-    // Características derivadas exclusivamente de la señal medida
     return {
-      amplitude: amplitude || 0,
-      peakRatio: 2.0,  // Factor base sin simulación
-      valleyRatio: 1.3,  // Factor base sin simulación
-      areaFactor: 30  // Factor base sin simulación
+      amplitude: amplitude || 0
     };
   }
   

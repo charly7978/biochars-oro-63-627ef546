@@ -6,13 +6,13 @@
  */
 
 export class GlucoseProcessor {
-  private lastEstimate: number = 0;
+  private lastMeasurement: number = 0;
   private recentMeasurements: number[] = [];
   private readonly MEASUREMENT_WINDOW = 200;
   private readonly MIN_SAMPLE_SIZE = 180;
   
   constructor() {
-    this.lastEstimate = 0;
+    this.lastMeasurement = 0;
     this.recentMeasurements = [];
   }
   
@@ -25,10 +25,10 @@ export class GlucoseProcessor {
       return 0;
     }
     
-    // Usar solo datos PPG en tiempo real
+    // Usar solo datos PPG reales
     const recentPPG = ppgValues.slice(-this.MEASUREMENT_WINDOW);
     
-    // Extrae características de forma de onda reales
+    // Extrae características de forma de onda
     const features = this.extractWaveformFeatures(recentPPG);
     
     // Solo procesar si hay datos suficientes
@@ -36,27 +36,26 @@ export class GlucoseProcessor {
       return 0;
     }
 
-    // Procesamiento del dato crudo
-    return 0; // No calculamos este valor por ahora
+    // Procesamiento pendiente de implementación con datos reales
+    return 0;
   }
   
   /**
    * Extrae características de la forma de onda
-   * Solo procesamiento real, sin simulaciones
    */
   private extractWaveformFeatures(ppgValues: number[]): any | null {
     if (ppgValues.length < 30) {
       return null;
     }
     
-    // Análisis real de la señal
+    // Análisis de la señal
     const peaks = this.findPeaks(ppgValues);
     
     if (peaks.length < 2) {
       return null;
     }
     
-    // Solo retorna características reales
+    // Retorna características basadas en datos reales
     return {
       peakCount: peaks.length,
       signalStrength: Math.max(...ppgValues) - Math.min(...ppgValues)
@@ -65,7 +64,6 @@ export class GlucoseProcessor {
   
   /**
    * Encuentra picos en la señal PPG
-   * Solo procesamiento real, sin simulaciones
    */
   private findPeaks(signal: number[]): number[] {
     const peaks: number[] = [];
@@ -87,7 +85,7 @@ export class GlucoseProcessor {
    * Reinicia el procesador
    */
   public reset(): void {
-    this.lastEstimate = 0;
+    this.lastMeasurement = 0;
     this.recentMeasurements = [];
   }
 }

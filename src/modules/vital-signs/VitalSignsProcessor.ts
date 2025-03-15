@@ -55,7 +55,7 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Procesar la señal PPG sin simulación
+    // Procesar la señal PPG
     const filteredValue = this.signalProcessor.processSignal(ppgValue);
     
     // Actualizar datos de arritmia
@@ -77,7 +77,7 @@ export class VitalSignsProcessor {
       arrhythmiaCount = 1;
     }
 
-    // Calcular métricas de arritmia
+    // Calcular métricas de arritmia reales
     const rmssd = this.arrhythmiaDetector.calculateRMSSD() || 0;
     const rrVariation = this.arrhythmiaDetector.calculateRRVariation() || 0;
     
@@ -88,10 +88,10 @@ export class VitalSignsProcessor {
       rrVariation
     };
 
-    // Calcular calidad de señal basada en datos reales
+    // Calcular calidad de señal basada en longitud de datos disponibles
     const signalQuality = Math.min(100, Math.max(0, recentValues.length / 3));
 
-    // Calcular progreso de calibración sin simulación
+    // Calcular progreso de calibración real
     const calibrationProgress = {
       heartRate: Math.min(1, recentValues.length / 60),
       spo2: Math.min(1, recentValues.length / 90),

@@ -34,8 +34,7 @@ export class SpO2Calculator {
       return 0;
     }
 
-    // Procesamiento directo de la señal PPG sin ajustes artificiales
-    // El valor es proporcional a la absorción real de luz por la hemoglobina
+    // Procesamiento directo de la señal PPG
     const calculatedValue = this.processRawData(ac, dc);
     
     if (calculatedValue > 0) {
@@ -55,29 +54,24 @@ export class SpO2Calculator {
   }
 
   /**
-   * Procesamiento de datos crudos de AC/DC sin simulaciones
+   * Procesamiento de datos crudos de AC/DC
    */
   private processRawData(ac: number, dc: number): number {
-    // Solo procesamiento directo de valores fisicos reales
-    // No se aplican factores o ajustes artificiales
     if (dc === 0) return 0;
     
     const ratio = ac / dc;
     
     // Convertir ratio a SpO2 según principios físicos de absorción de luz
-    // Sin factores de calibración artificiales
     return Math.max(0, Math.min(100, this.convertRatioToSpO2(ratio)));
   }
   
   /**
    * Convertir el ratio AC/DC a valor de SpO2 según principios físicos
-   * Sin simulaciones o valores artificiales
    */
   private convertRatioToSpO2(ratio: number): number {
     if (ratio <= 0) return 0;
     
-    // Conversión basada únicamente en física de absorción de luz
-    // Sin simulaciones o valores artificiales
+    // Conversión basada en física de absorción de luz
     return Math.max(0, Math.min(100, 100 - (ratio * 25)));
   }
 

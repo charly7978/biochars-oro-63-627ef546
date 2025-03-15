@@ -1,4 +1,3 @@
-
 import { findPeaksAndValleys, calculateAmplitude } from '../../utils/vitalSignsUtils';
 
 export class BloodPressureProcessor {
