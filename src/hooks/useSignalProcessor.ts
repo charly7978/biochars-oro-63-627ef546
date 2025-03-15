@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -51,29 +50,29 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Cálculo ponderado de calidad
+    // Cálculo ponderado de calidad con más peso en valores recientes
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1; // Más peso a las muestras recientes
+      const weight = Math.pow(2, index); // Peso exponencial para valores más recientes
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // Calcular ratio de detección
+    // Calcular ratio de detección más permisivo
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Usar un umbral más exigente (3 de 5 = 0.6)
-    const robustFingerDetected = detectionRatio >= 0.6;
+    // Usar un umbral más permisivo (2 de 5 = 0.4)
+    const robustFingerDetected = detectionRatio >= 0.4 || signal.fingerDetected;
     
-    // Mejora ligera de calidad para mejor UX
-    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    // Mejora de calidad más agresiva para mejor UX
+    const enhancedQuality = Math.min(100, avgQuality * 1.2);
     
-    // Devolver señal modificada
+    // Devolver señal modificada con detección más sensible
     return {
       ...signal,
       fingerDetected: robustFingerDetected,

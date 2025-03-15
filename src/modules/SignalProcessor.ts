@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -40,35 +39,35 @@ export class PPGSignalProcessor implements SignalProcessor {
   
   // Configuración por defecto
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 80,
-    MAX_RED_THRESHOLD: 230,
-    STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 3
+    BUFFER_SIZE: 10,                // Reducido para respuesta más rápida
+    MIN_RED_THRESHOLD: 70,          // Más permisivo para diferentes tonos de piel
+    MAX_RED_THRESHOLD: 240,         // Aumentado para mayor rango
+    STABILITY_WINDOW: 3,            // Reducido para detección más rápida
+    MIN_STABILITY_COUNT: 2          // Reducido para mayor sensibilidad
   };
   
   private currentConfig: typeof this.DEFAULT_CONFIG;
   
   // Parámetros de procesamiento
-  private readonly BUFFER_SIZE = 15;
-  private readonly MIN_RED_THRESHOLD = 80;
-  private readonly MAX_RED_THRESHOLD = 230;
-  private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 3;
+  private readonly BUFFER_SIZE = 10;
+  private readonly MIN_RED_THRESHOLD = 70;
+  private readonly MAX_RED_THRESHOLD = 240;
+  private readonly STABILITY_WINDOW = 3;
+  private readonly MIN_STABILITY_COUNT = 2;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
   // Parámetros de análisis de calidad
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
-  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.035;  // Reducido para mayor sensibilidad
+  private readonly SIGNAL_QUALITY_THRESHOLD = 35;      // Reducido para detección más permisiva
   
   // Análisis de periodicidad
   private baselineValue: number = 0;
-  private readonly WAVELET_THRESHOLD = 0.025;
-  private readonly BASELINE_FACTOR = 0.45;
+  private readonly WAVELET_THRESHOLD = 0.02;           // Reducido para captar señales más débiles
+  private readonly BASELINE_FACTOR = 0.5;              // Ajustado para adaptación más rápida
   private periodicityBuffer: number[] = [];
-  private readonly PERIODICITY_BUFFER_SIZE = 40;
-  private readonly MIN_PERIODICITY_SCORE = 0.42;
+  private readonly PERIODICITY_BUFFER_SIZE = 30;       // Reducido para respuesta más rápida
+  private readonly MIN_PERIODICITY_SCORE = 0.3;        // Reducido para mayor sensibilidad
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -268,32 +267,35 @@ export class PPGSignalProcessor implements SignalProcessor {
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
-      this.stableFrameCount = 0;
-      this.lastStableValue = 0;
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);  // Degradación gradual
       return { isFingerDetected: false, quality: 0 };
     }
 
     if (this.lastValues.length < this.STABILITY_WINDOW) {
-      return { isFingerDetected: false, quality: 0 };
+      return { isFingerDetected: false, quality: Math.round((rawValue - this.MIN_RED_THRESHOLD) / 
+        (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD) * 30) }; // Calidad inicial basada en intensidad
     }
 
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
+    // Cálculo de variaciones más permisivo
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
-      return val - arr[i-1];
+      return Math.abs(val - arr[i-1]);
     });
 
-    const maxVariation = Math.max(...variations.map(Math.abs));
-    const minVariation = Math.min(...variations);
+    const maxVariation = Math.max(...variations);
+    const avgVariation = variations.reduce((sum, val) => sum + val, 0) / variations.length;
     
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
-    const isStable = maxVariation < adaptiveThreshold * 2 && 
-                    minVariation > -adaptiveThreshold * 2;
+    // Umbral adaptativo más permisivo
+    const adaptiveThreshold = Math.max(2, avgValue * 0.03);
+    
+    // Criterios de estabilidad más flexibles
+    const isStable = maxVariation < adaptiveThreshold * 3 && avgVariation > adaptiveThreshold * 0.1;
 
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 3);
       this.lastStableValue = filtered;
     } else {
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
@@ -306,17 +308,19 @@ export class PPGSignalProcessor implements SignalProcessor {
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
-      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
+      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
       
-      quality = Math.round((stabilityScore * 0.35 + 
-                          intensityScore * 0.25 + 
+      // Pesos ajustados para favorecer la detección
+      quality = Math.round((stabilityScore * 0.3 + 
+                          intensityScore * 0.4 + 
                           variationScore * 0.2 + 
-                          periodicityScore * 0.2) * 100);
+                          periodicityScore * 0.1) * 100);
     }
     
+    // Criterios de detección más permisivos
     const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
-                            periodicityScore > this.MIN_PERIODICITY_SCORE &&
-                            quality >= this.SIGNAL_QUALITY_THRESHOLD;
+                            (periodicityScore > this.MIN_PERIODICITY_SCORE || 
+                             quality >= this.SIGNAL_QUALITY_THRESHOLD);
 
     return { isFingerDetected, quality };
   }
