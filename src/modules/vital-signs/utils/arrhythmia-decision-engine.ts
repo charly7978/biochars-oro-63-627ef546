@@ -1,7 +1,7 @@
 
 /**
- * Decision engine for arrhythmia detection based on multiple parameters
- * Configuración ultrasensible para detección de arritmias
+ * Motor de decisión para detección de arritmias basado en múltiples parámetros
+ * Configuración sensible pero realista para detección clínicamente relevante
  */
 
 import { NonLinearMetrics } from '../types/arrhythmia-types';
@@ -16,8 +16,8 @@ interface ArrhythmiaDecisionParams {
 }
 
 /**
- * Multi-parametric decision algorithm for arrhythmia detection
- * Umbrales extremadamente sensibles para detectar cualquier variación
+ * Algoritmo de decisión multiparamétrico para detección de arritmias
+ * Utiliza umbrales basados en literatura científica y estándares médicos
  */
 export function detectArrhythmia(params: ArrhythmiaDecisionParams): boolean {
   const {
@@ -31,28 +31,28 @@ export function detectArrhythmia(params: ArrhythmiaDecisionParams): boolean {
   
   const { shannonEntropy, sampleEntropy, pnnX } = nonLinearMetrics;
   
-  // Intervalo mínimo entre arritmias muy reducido
-  if (timeSinceLastArrhythmia < minArrhythmiaInterval / 2) {
+  // Respetar intervalo mínimo entre arritmias para evitar falsos positivos
+  if (timeSinceLastArrhythmia < minArrhythmiaInterval) {
     return false;
   }
   
-  // Condiciones extremadamente sensibles - detectará casi cualquier variación
+  // Umbrales basados en literatura médica para relevancia clínica
   return (
-    // Primary condition: valores drásticamente reducidos
-    (rmssd > 5 && // Extremadamente reducido para sensibilidad máxima
-     rrVariation > 0.04 && // Extremadamente reducido 
-     coefficientOfVariation > 0.03) || // Extremadamente reducido
+    // Condición primaria: variabilidad significativa + irregularidad
+    (rmssd > 25 && // Umbral estándar en literatura médica
+     rrVariation > 0.12 && // Variación significativa
+     coefficientOfVariation > 0.1) || // Coeficiente de variación significativo
     
-    // Secondary condition: alta sensibilidad
-    (shannonEntropy > 0.3 && // Extremadamente reducido 
-     pnnX > 0.04 && // Extremadamente reducido
-     coefficientOfVariation > 0.03 && // Extremadamente reducido
-     sampleEntropy > 0.2) || // Extremadamente reducido
+    // Condición secundaria: entropía elevada + variabilidad
+    (shannonEntropy > 0.6 && // Entropía elevada indica irregularidad
+     pnnX > 0.15 && // Proporción significativa de intervalos NN
+     coefficientOfVariation > 0.08 && 
+     sampleEntropy > 0.5) || // Entropía muestral elevada
     
-    // Extreme variation condition: sensibilidad extrema
-    (rrVariation > 0.06 && // Extremadamente reducido
-     coefficientOfVariation > 0.04 && // Extremadamente reducido
-     sampleEntropy > 0.25 && // Extremadamente reducido
-     shannonEntropy > 0.25) // Extremadamente reducido
+    // Condición de variación extrema: claramente patológica
+    (rrVariation > 0.2 && // Variación muy alta
+     coefficientOfVariation > 0.15 && 
+     sampleEntropy > 0.7 && 
+     shannonEntropy > 0.65)
   );
 }
