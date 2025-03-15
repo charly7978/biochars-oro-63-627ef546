@@ -43,7 +43,16 @@ export class ArrhythmiaProcessor {
   /**
    * Procesa datos de intervalos RR para detectar arritmias
    */
-  public processRRData(rrData?: RRData): ArrhythmiaResult {
+  public processRRData(rrData?: RRData, isFingerDetected: boolean = false): ArrhythmiaResult {
+    // CAMBIO CRÍTICO: Verificar si hay un dedo detectado antes de procesar
+    if (!isFingerDetected) {
+      console.log("ArrhythmiaProcessor: No hay dedo detectado, devolviendo sin arritmias");
+      return {
+        arrhythmiaStatus: `SIN ARRITMIAS|${this.arrhythmiaCounter}`,
+        lastArrhythmiaData: this.lastArrhythmiaData
+      };
+    }
+    
     if (!rrData || rrData.intervals.length < this.REQUIRED_RR_INTERVALS) {
       return {
         arrhythmiaStatus: `SIN ARRITMIAS|${this.arrhythmiaCounter}`,

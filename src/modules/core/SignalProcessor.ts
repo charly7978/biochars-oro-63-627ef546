@@ -30,6 +30,10 @@ export class SignalProcessor {
    * Procesa la señal PPG aplicando filtrado y análisis de calidad
    */
   public processSignal(value: number): ProcessedSignal {
+    // VERIFICACIÓN CRÍTICA: Comprobar si el valor indica ausencia de dedo
+    // Valores muy bajos o cero indican que no hay dedo
+    const isPossiblyValidValue = value > 10 && value < 250;
+    
     // Aplicar filtro SMA para reducción de ruido
     const { filteredValue, updatedBuffer } = applySMAFilter(value, this.smaBuffer, this.SMA_WINDOW_SIZE);
     this.smaBuffer = updatedBuffer;
@@ -41,7 +45,7 @@ export class SignalProcessor {
     }
     
     // Análisis de señal para calidad y detección de dedo
-    const { quality, fingerDetected } = this.analyzeSignal(filteredValue);
+    const { quality, fingerDetected } = this.analyzeSignal(filteredValue, isPossiblyValidValue);
     
     // Actualizar tiempo de procesamiento
     this.lastProcessedTime = Date.now();
@@ -57,9 +61,15 @@ export class SignalProcessor {
   /**
    * Analiza la calidad de la señal y detecta si hay un dedo presente
    */
-  private analyzeSignal(value: number): { quality: number, fingerDetected: boolean } {
+  private analyzeSignal(value: number, isPossiblyValidValue: boolean): { quality: number, fingerDetected: boolean } {
     // Calcular calidad basada en características de la señal
     let quality = 0;
+    
+    // Si el valor no es válido, no hay dedo
+    if (!isPossiblyValidValue) {
+      this.consecutiveFingerFrames = 0;
+      return { quality: 0, fingerDetected: false };
+    }
     
     if (this.ppgValues.length >= 10) {
       const recentValues = this.ppgValues.slice(-10);
@@ -76,19 +86,30 @@ export class SignalProcessor {
       
       // Calcular indicadores de calidad
       const snr = range / (stdDev > 0 ? stdDev : 1); // Relación señal-ruido
-      const perfusion = calculatePerfusionIndex(min, max); // Fixed: Passing min and max as arguments
+      const perfusion = calculatePerfusionIndex(min, max);
       
       // Calcular puntuación de calidad (0-100)
       quality = Math.min(100, Math.max(0, 
         (snr * 10) + (perfusion * 100) + (range * 5)
       ));
       
+      // VERIFICACIÓN CRÍTICA: Asegurar que hay suficiente variación para ser una señal PPG real
+      const hasEnoughVariation = range > 10 && stdDev > 2;
+      
       // Actualizar conteo de frames consecutivos con dedo
-      if (quality >= this.QUALITY_THRESHOLD && range > 10) {
+      if (quality >= this.QUALITY_THRESHOLD && hasEnoughVariation) {
         this.consecutiveFingerFrames = Math.min(this.consecutiveFingerFrames + 1, 20);
       } else {
         this.consecutiveFingerFrames = Math.max(0, this.consecutiveFingerFrames - 1);
       }
+      
+      console.log("SignalProcessor: Análisis de señal", {
+        calidad: quality,
+        rango: range,
+        desviación: stdDev,
+        framesConsecutivos: this.consecutiveFingerFrames,
+        hayDedo: this.consecutiveFingerFrames >= this.MIN_FINGER_FRAMES
+      });
     }
     
     // Determinar si hay un dedo presente basado en calidad y consistencia

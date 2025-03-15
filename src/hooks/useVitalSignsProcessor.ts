@@ -12,10 +12,10 @@ export function useVitalSignsProcessor() {
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignalsRef = useRef<number>(0);
   const arrhythmiaCounterRef = useRef<number>(0);
-  const fingerDetectedRef = useRef<boolean>(true); // Siempre asume dedo detectado
+  const fingerDetectedRef = useRef<boolean>(false); // CAMBIO CRÍTICO: Iniciar como false
   const lastFingerDetectionTimeRef = useRef<number>(Date.now());
-  const consecutiveGoodSignalsRef = useRef<number>(5); // Siempre suficientes
-  const qualityThreshold = 10; // Umbral muy bajo
+  const consecutiveGoodSignalsRef = useRef<number>(0);
+  const qualityThreshold = 10;
 
   // Inicializar el procesador si no existe
   if (!processorRef.current) {
@@ -28,23 +28,33 @@ export function useVitalSignsProcessor() {
   const processSignal = useCallback((
     value: number,
     rrData?: RRData,
-    isFingerDetected: boolean = true // Ignora este parámetro
+    isFingerDetected: boolean = false // CAMBIO CRÍTICO: Default a false
   ): VitalSignsResult | null => {
     if (!processorRef.current) return null;
 
-    // Siempre asume que el dedo está detectado
-    fingerDetectedRef.current = true;
+    // CAMBIO CRÍTICO: Usar el valor real de detección de dedo
+    fingerDetectedRef.current = isFingerDetected;
+    
+    // CAMBIO CRÍTICO: Si no hay dedo detectado, devolver valores en cero o mensajes adecuados
+    if (!isFingerDetected) {
+      console.log("useVitalSignsProcessor: No hay dedo detectado, devolviendo valores en blanco");
+      
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "SIN ARRITMIAS|0",
+        lastArrhythmiaData: null
+      };
+    }
+    
     lastFingerDetectionTimeRef.current = Date.now();
     
     // Incrementar contador de señales procesadas
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal directamente
-      const result = processorRef.current.processSignal(value, rrData);
-      
-      // No hay validación de los valores, usar directamente
-      consecutiveGoodSignalsRef.current = 5; // Siempre suficientes señales
+      // Procesar la señal
+      const result = processorRef.current.processSignal(value, rrData, isFingerDetected);
       
       // Rastrear contador de arritmias
       if (result.arrhythmiaStatus.includes('ARRITMIA')) {
@@ -57,7 +67,7 @@ export function useVitalSignsProcessor() {
         }
       }
       
-      // Guardar y retornar resultados directamente
+      // Guardar y retornar resultados
       setLastValidResults(result);
       return result;
       
@@ -74,9 +84,10 @@ export function useVitalSignsProcessor() {
     if (!processorRef.current) return null;
     
     try {
-      // Reiniciar procesador pero mantener resultados
+      // Reiniciar procesador
       const savedResults = processorRef.current.reset();
-      consecutiveGoodSignalsRef.current = 5; // Restablecer a valor válido
+      consecutiveGoodSignalsRef.current = 0; // CAMBIO CRÍTICO: Iniciar en 0
+      fingerDetectedRef.current = false; // CAMBIO CRÍTICO: Reiniciar detección de dedo
       return savedResults;
     } catch (error) {
       console.error("Error reiniciando procesador:", error);
@@ -96,8 +107,8 @@ export function useVitalSignsProcessor() {
       setLastValidResults(null);
       arrhythmiaCounterRef.current = 0;
       processedSignalsRef.current = 0;
-      fingerDetectedRef.current = true; // Siempre dedo detectado
-      consecutiveGoodSignalsRef.current = 5; // Siempre suficientes señales
+      fingerDetectedRef.current = false; // CAMBIO CRÍTICO: Siempre iniciar como false
+      consecutiveGoodSignalsRef.current = 0;
       lastFingerDetectionTimeRef.current = Date.now();
       sessionIdRef.current = Math.random().toString(36).substring(2, 9);
     } catch (error) {
@@ -138,6 +149,6 @@ export function useVitalSignsProcessor() {
     lastValidResults,
     startCalibration,
     forceCalibrationCompletion,
-    isFingerDetected: () => true // Siempre retorna true
+    isFingerDetected: () => fingerDetectedRef.current // CAMBIO CRÍTICO: Devolver el valor real
   };
 }
