@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -32,14 +33,8 @@ export const useSignalProcessor = () => {
   
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const redGreenRatioHistoryRef = useRef<number[]>([]);
-  const pulsatilityHistoryRef = useRef<number[]>([]);
-  const HISTORY_SIZE = 5;
+  const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
-  const MIN_RED_GREEN_RATIO = 1.15;
-  const MIN_PULSATILITY = 0.2;
-  const MAX_PULSATILITY = 2.0;
-
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
     qualityHistoryRef.current.push(signal.quality);
     if (qualityHistoryRef.current.length > HISTORY_SIZE) {
@@ -51,24 +46,10 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    if (signal.redGreenRatio !== undefined) {
-      redGreenRatioHistoryRef.current.push(signal.redGreenRatio);
-      if (redGreenRatioHistoryRef.current.length > HISTORY_SIZE) {
-        redGreenRatioHistoryRef.current.shift();
-      }
-    }
-    
-    if (signal.pulsatility !== undefined) {
-      pulsatilityHistoryRef.current.push(signal.pulsatility);
-      if (pulsatilityHistoryRef.current.length > HISTORY_SIZE) {
-        pulsatilityHistoryRef.current.shift();
-      }
-    }
-    
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1;
+      const weight = index + 1; // Más peso a las muestras recientes
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -79,47 +60,20 @@ export const useSignalProcessor = () => {
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    const avgRedGreenRatio = redGreenRatioHistoryRef.current.length > 0 ?
-      redGreenRatioHistoryRef.current.reduce((sum, val) => sum + val, 0) / redGreenRatioHistoryRef.current.length : 0;
+    // Usar un umbral más exigente para la detección robusta (3 de 5 = 0.6)
+    const robustFingerDetected = detectionRatio >= 0.6;
     
-    const avgPulsatility = pulsatilityHistoryRef.current.length > 0 ?
-      pulsatilityHistoryRef.current.reduce((sum, val) => sum + val, 0) / pulsatilityHistoryRef.current.length : 0;
-    
-    let isTissueLike = false;
-    if (redGreenRatioHistoryRef.current.length >= 3 && pulsatilityHistoryRef.current.length >= 3) {
-      const hasValidRGRatio = avgRedGreenRatio >= MIN_RED_GREEN_RATIO;
-      const hasValidPulsatility = avgPulsatility >= MIN_PULSATILITY && avgPulsatility <= MAX_PULSATILITY;
-      
-      const rgRatioStability = calculateStability(redGreenRatioHistoryRef.current);
-      const pulsatilityStability = calculateStability(pulsatilityHistoryRef.current);
-      
-      isTissueLike = hasValidRGRatio && hasValidPulsatility && 
-                    rgRatioStability > 0.6 && pulsatilityStability > 0.4;
-                    
-      console.log("useSignalProcessor: Análisis fisiológico", {
-        avgRedGreenRatio: avgRedGreenRatio.toFixed(2),
-        minRequired: MIN_RED_GREEN_RATIO,
-        hasValidRGRatio,
-        avgPulsatility: avgPulsatility.toFixed(2),
-        pulsRange: `${MIN_PULSATILITY}-${MAX_PULSATILITY}`,
-        hasValidPulsatility,
-        rgStability: rgRatioStability.toFixed(2),
-        pulsStability: pulsatilityStability.toFixed(2),
-        isTissueLike
-      });
-    }
-    
-    const robustFingerDetected = isTissueLike && (detectionRatio >= 0.6 || avgQuality >= 75);
-    
-    const enhancedQuality = robustFingerDetected ? Math.min(100, avgQuality * 1.1) : avgQuality;
+    // Mejora ligera de calidad para mejor experiencia de usuario
+    const enhancedQuality = Math.min(100, avgQuality * 1.1);
     
     console.log("useSignalProcessor: Detección robusta", {
       original: signal.fingerDetected,
       robust: robustFingerDetected,
-      isTissueLike,
       detectionRatio,
-      avgQuality: avgQuality.toFixed(1),
-      enhancedQuality: enhancedQuality.toFixed(1),
+      trueCount,
+      historyLength: fingerDetectedHistoryRef.current.length,
+      originalQuality: signal.quality,
+      enhancedQuality,
       rawValue: signal.rawValue.toFixed(2),
       filteredValue: signal.filteredValue.toFixed(2)
     });
@@ -130,16 +84,6 @@ export const useSignalProcessor = () => {
       quality: enhancedQuality
     };
   }, []);
-
-  const calculateStability = (values: number[]): number => {
-    if (values.length < 3) return 0;
-    
-    const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const diffs = values.map(val => Math.abs(val - avg) / Math.max(0.1, avg));
-    const avgDiff = diffs.reduce((sum, diff) => sum + diff, 0) / diffs.length;
-    
-    return Math.max(0, Math.min(1, 1 - avgDiff));
-  };
 
   useEffect(() => {
     console.log("useSignalProcessor: Configurando callbacks", {
@@ -233,8 +177,8 @@ export const useSignalProcessor = () => {
     
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
-    redGreenRatioHistoryRef.current = [];
-    pulsatilityHistoryRef.current = [];
+    
+    processor.start();
   }, [processor, isProcessing]);
 
   const stopProcessing = useCallback(() => {
