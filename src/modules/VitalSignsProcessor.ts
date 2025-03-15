@@ -1,3 +1,4 @@
+
 import { VitalSignsProcessor as NewVitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
 import './HeartBeatProcessor.extension';
 import { GlucoseProcessor } from './vital-signs/glucose-processor';
@@ -342,8 +343,9 @@ export class VitalSignsProcessor {
   
   /**
    * Reinicia todos los procesadores
+   * @returns El último estado válido de los valores
    */
-  public reset(): void {
+  public reset(): any {
     console.log("VitalSignsProcessor: Reiniciando todos los procesadores");
     this.processor.reset();
     this.glucoseProcessor.reset();
@@ -428,4 +430,3 @@ export class VitalSignsProcessor {
     return 0; // Indicar imposibilidad de medición
   }
 }
-
