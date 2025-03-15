@@ -16,8 +16,8 @@ interface SignalQualityIndicatorProps {
 }
 
 /**
- * Componente mejorado que muestra la calidad de la señal PPG
- * Incluye detección específica con validación fisiológica estricta
+ * Componente simplificado que muestra la calidad de la señal PPG
+ * Con énfasis en las dos variables clave: perfusión y ratio rojo/verde
  */
 const SignalQualityIndicator = ({ 
   quality, 
@@ -32,6 +32,7 @@ const SignalQualityIndicator = ({
   const [showHelpTip, setShowHelpTip] = useState(false);
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
   const [helpMessage, setHelpMessage] = useState('');
+  const [rgRatio, setRgRatio] = useState(0);
   
   // Detector de dedo centralizado (se crea solo una vez)
   const [fingerDetector] = useState(() => new FingerDetector());
@@ -46,10 +47,17 @@ const SignalQualityIndicator = ({
     }
   }, [isMonitoring]);
 
-  // Procesar calidad de señal a través del detector centralizado con criterios fisiológicos
+  // Procesar calidad de señal a través del detector con énfasis en las dos variables clave
   useEffect(() => {
     if (isMonitoring) {
-      // Si tenemos valores RGB, usarlos para detección fisiológica
+      // Calcular ratio rojo/verde si tenemos valores RGB
+      let currentRgRatio = 0;
+      if (rgbValues && rgbValues.green > 0) {
+        currentRgRatio = rgbValues.red / rgbValues.green;
+        setRgRatio(currentRgRatio);
+      }
+      
+      // Procesar con el detector simplificado
       const result = rgbValues 
         ? fingerDetector.processQuality(quality, rgbValues.red, rgbValues.green)
         : fingerDetector.processQuality(quality);
@@ -62,17 +70,30 @@ const SignalQualityIndicator = ({
       setHelpMessage(result.helpMessage);
       
       // Determinar nivel de tip basado en calidad
-      if (!result.isFingerDetected || result.quality < fingerDetector.getConfig().LOW_QUALITY_THRESHOLD) {
+      if (!result.isFingerDetected) {
         setTipLevel('error');
-      } else if (result.quality < fingerDetector.getConfig().QUALITY_THRESHOLD) {
+      } else if (result.quality < fingerDetector.getConfig().LOW_QUALITY_THRESHOLD) {
         setTipLevel('warning');
       } else {
         setTipLevel('info');
+      }
+      
+      // Log para depuración (solo ocasionalmente)
+      if (Math.random() < 0.03) {
+        console.log("SignalQualityIndicator: Estado de detección", {
+          calidad: quality,
+          calidadAjustada: result.quality,
+          dedoDetectado: result.isFingerDetected,
+          ratioRG: currentRgRatio,
+          umbralRG: fingerDetector.getConfig().MIN_RED_GREEN_RATIO,
+          mensaje: result.helpMessage
+        });
       }
     } else {
       // Reset cuando no estamos monitoreando
       setDisplayQuality(0);
       setIsFingerDetected(false);
+      setRgRatio(0);
       fingerDetector.reset();
     }
   }, [quality, isMonitoring, fingerDetector, rgbValues]);
@@ -118,6 +139,22 @@ const SignalQualityIndicator = ({
               }}
             />
           </div>
+          
+          {/* Mostramos el ratio R/G actual si hay valores */}
+          {rgbValues && rgbValues.green > 0 && (
+            <div className="mt-0.5 flex justify-between items-center">
+              <span className="text-[8px] font-semibold text-white/70">Ratio R/G:</span>
+              <span 
+                className="text-[8px] font-medium"
+                style={{ 
+                  color: rgRatio >= fingerDetector.getConfig().MIN_RED_GREEN_RATIO 
+                    ? '#10b981' : '#ef4444' 
+                }}
+              >
+                {rgRatio.toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       
