@@ -39,7 +39,7 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
     let ringColorClass = "from-red-500 to-rose-500";
     let ringPercentage = quality;
     let fingerStatusText = isFingerDetected ? "Dedo detectado" : "Sin dedo";
-    let infoText = "Coloque su dedo sobre la cámara";
+    let infoText = "Coloque su dedo completamente sobre la cámara";
     
     // Calcular resultado completo para obtener nivel y mensaje
     const detectionResult = fingerDetector.processQuality(quality, 150, 80);
@@ -49,7 +49,7 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
       qualityText = "Sin señal";
       qualityColorClass = "text-gray-400";
       ringColorClass = "from-gray-400 to-gray-500";
-      infoText = detectionResult.helpMessage;
+      infoText = "Coloque su dedo sobre la cámara y manténgalo quieto";
     } else if (quality >= 70) {
       qualityText = "Señal óptima";
       qualityColorClass = "text-green-500";

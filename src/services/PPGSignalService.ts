@@ -22,6 +22,8 @@ export class PPGSignalService {
   private lastProcessedSignal: ProcessedSignal | null = null;
   private rgbSummary: {red: number, green: number, blue: number} = {red: 0, green: 0, blue: 0};
   private frameCount: number = 0;
+  private lastFrameTime: number = 0;
+  private noSignalFrames: number = 0;
   
   // Variables para procesamiento avanzado
   private readonly USE_PHASE_PRESERVING = true;  // Habilitar filtrado de fase preservada
@@ -30,13 +32,14 @@ export class PPGSignalService {
   private readonly OUTLIER_REJECTION = true;     // Habilitar rechazo de valores atípicos
   
   // Parámetros de procesamiento adaptativo
-  private adaptiveROISize: number = 0.25;       // Tamaño inicial ROI: 25% del centro
-  private signalQualityHistory: number[] = [];  // Historial para calidad de señal
+  private adaptiveROISize: number = 0.3;         // Tamaño inicial ROI: 30% del centro (aumentado)
+  private signalQualityHistory: number[] = [];   // Historial para calidad de señal
+  private readonly MAX_NO_SIGNAL_FRAMES = 30;    // Número máximo de frames sin señal válida
   
   constructor() {
     this.fingerDetector = new FingerDetector();
     this.signalProcessor = new SignalProcessor();
-    console.log("PPGSignalService: Servicio inicializado con algoritmos avanzados");
+    console.log("PPGSignalService: Servicio inicializado con algoritmos avanzados y detección mejorada");
   }
   
   /**
@@ -45,8 +48,10 @@ export class PPGSignalService {
   public startProcessing(): void {
     this.isProcessing = true;
     this.frameCount = 0;
+    this.lastFrameTime = 0;
+    this.noSignalFrames = 0;
     this.signalQualityHistory = [];
-    this.adaptiveROISize = 0.25;
+    this.adaptiveROISize = 0.3;
     console.log("PPGSignalService: Procesamiento iniciado");
   }
   
@@ -69,9 +74,34 @@ export class PPGSignalService {
   public processFrame(imageData: ImageData): ProcessedSignal | null {
     if (!this.isProcessing) return null;
     
+    const now = Date.now();
+    const timeSinceLastFrame = now - this.lastFrameTime;
+    this.lastFrameTime = now;
+    
+    // Control de framerate - evitar procesamiento demasiado frecuente
+    if (timeSinceLastFrame < 15 && this.frameCount > 0) {
+      return this.lastProcessedSignal;
+    }
+    
     this.frameCount++;
     
     try {
+      // Verificar validez de ImageData
+      if (!imageData || !imageData.data || imageData.width <= 0 || imageData.height <= 0) {
+        console.warn("PPGSignalService: ImageData inválido recibido");
+        this.noSignalFrames++;
+        
+        // Si hay demasiados frames inválidos consecutivos, informar
+        if (this.noSignalFrames > this.MAX_NO_SIGNAL_FRAMES) {
+          console.error("PPGSignalService: Demasiados frames inválidos, verificar estado de cámara");
+        }
+        
+        return this.lastProcessedSignal;
+      }
+      
+      // Resetear contador de frames inválidos
+      this.noSignalFrames = 0;
+      
       // Extraer valores RGB del frame adaptando la ROI según calidad
       const { rawValue, redValue, greenValue, blueValue } = this.extractFrameValuesWithAdaptiveROI(imageData);
       
@@ -135,7 +165,7 @@ export class PPGSignalService {
         this.updateAdaptiveROISize(signalQuality);
       }
       
-      // Determinar si hay dedo presente
+      // Determinar si hay dedo presente - usando valores mejorados
       const fingerDetectionResult = this.fingerDetector.processQuality(
         signalQuality,
         redValue,
@@ -144,7 +174,7 @@ export class PPGSignalService {
       
       // Construir objeto de señal procesada
       const signal: ProcessedSignal = {
-        timestamp: Date.now(),
+        timestamp: now,
         rawValue: rawValue,
         filteredValue: filteredValue,
         quality: signalQuality,
@@ -163,7 +193,8 @@ export class PPGSignalService {
           valorVerde: greenValue,
           ratioRG: redValue / Math.max(1, greenValue),
           frame: this.frameCount,
-          roiSize: this.adaptiveROISize.toFixed(2)
+          roiSize: this.adaptiveROISize.toFixed(2),
+          fps: timeSinceLastFrame > 0 ? Math.round(1000 / timeSinceLastFrame) : 0
         });
       }
       
@@ -171,7 +202,7 @@ export class PPGSignalService {
       return signal;
     } catch (error) {
       console.error("PPGSignalService: Error procesando frame", error);
-      return null;
+      return this.lastProcessedSignal; // Devolver último válido en caso de error
     }
   }
   
@@ -206,14 +237,20 @@ export class PPGSignalService {
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const idx = (y * width + x) * 4;
-        redSum += pixels[idx];
-        greenSum += pixels[idx + 1];
-        blueSum += pixels[idx + 2];
-        pixelCount++;
+        if (idx >= 0 && idx < pixels.length) {
+          redSum += pixels[idx];
+          greenSum += pixels[idx + 1];
+          blueSum += pixels[idx + 2];
+          pixelCount++;
+        }
       }
     }
     
-    // Calcular promedios
+    // Calcular promedios - evitar división por cero
+    if (pixelCount === 0) {
+      return { rawValue: 0, redValue: 0, greenValue: 0, blueValue: 0 };
+    }
+    
     const avgRed = redSum / pixelCount;
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
@@ -292,7 +329,9 @@ export class PPGSignalService {
     this.stopProcessing();
     this.lastProcessedSignal = null;
     this.frameCount = 0;
-    this.adaptiveROISize = 0.25;
+    this.lastFrameTime = 0;
+    this.noSignalFrames = 0;
+    this.adaptiveROISize = 0.3;
     this.signalQualityHistory = [];
     console.log("PPGSignalService: Servicio reiniciado completamente");
   }

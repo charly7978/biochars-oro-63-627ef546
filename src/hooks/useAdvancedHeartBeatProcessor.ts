@@ -25,6 +25,9 @@ export const useAdvancedHeartBeatProcessor = () => {
   
   const signalBufferRef = useRef<number[]>([]);
   const lastProcessedTimeRef = useRef<number>(0);
+  const consecutiveValidSignalsRef = useRef<number>(0);
+  const signalQualityHistoryRef = useRef<number[]>([]);
+  const throttleCountRef = useRef<number>(0);
   
   // Configurar opciones avanzadas
   useEffect(() => {
@@ -37,17 +40,36 @@ export const useAdvancedHeartBeatProcessor = () => {
   }, [processor]);
   
   /**
-   * Procesa una nueva muestra de señal PPG
+   * Procesa una nueva muestra de señal PPG con mejoras de rendimiento y estabilidad
    */
   const processSignal = useCallback((signal: number) => {
     const now = Date.now();
     
+    // Control de frecuencia de procesamiento para optimizar rendimiento
+    throttleCountRef.current++;
+    const shouldProcess = throttleCountRef.current % 2 === 0; // Procesar cada 2 muestras
+    
     // Limitar a máximo 60 FPS para evitar sobrecarga
-    if (now - lastProcessedTimeRef.current < 16) {
+    if (!shouldProcess || now - lastProcessedTimeRef.current < 16) {
+      // Actualizar buffer para visualización incluso si no procesamos
+      signalBufferRef.current.push(signal);
+      if (signalBufferRef.current.length > 100) {
+        signalBufferRef.current.shift();
+      }
       return null;
     }
     
     lastProcessedTimeRef.current = now;
+    
+    // Validación básica de la señal
+    if (isNaN(signal) || !isFinite(signal)) {
+      console.warn("useAdvancedHeartBeatProcessor: Señal inválida recibida", signal);
+      consecutiveValidSignalsRef.current = 0;
+      return null;
+    }
+    
+    // Incrementar contador de señales válidas consecutivas
+    consecutiveValidSignalsRef.current++;
     
     // Actualizar buffer para visualización
     signalBufferRef.current.push(signal);
@@ -58,12 +80,32 @@ export const useAdvancedHeartBeatProcessor = () => {
     // Procesar señal
     const result = processor.processSignal(signal);
     
-    // Actualizar estado
-    setHeartRate(result.bpm);
-    setConfidence(result.confidence);
-    setPeakIndices(result.peakIndices);
-    setHrvData(result.hrvData);
-    setProcessorState(processor.getProcessorState());
+    // Mantener historial de calidad de señal
+    signalQualityHistoryRef.current.push(result.confidence * 100);
+    if (signalQualityHistoryRef.current.length > 20) {
+      signalQualityHistoryRef.current.shift();
+    }
+    
+    // Calcular calidad media ponderando más los valores recientes
+    let weightedConfidenceSum = 0;
+    let weightSum = 0;
+    for (let i = 0; i < signalQualityHistoryRef.current.length; i++) {
+      const weight = i + 1; // Más peso a valores más recientes
+      weightedConfidenceSum += signalQualityHistoryRef.current[i] * weight;
+      weightSum += weight;
+    }
+    const averageConfidence = weightedConfidenceSum / weightSum;
+    
+    // Solo actualizar estado si tenemos suficientes señales válidas consecutivas
+    // y la calidad es suficiente
+    if (consecutiveValidSignalsRef.current > 5 && averageConfidence > 50) {
+      // Actualizar estado
+      setHeartRate(result.bpm);
+      setConfidence(result.confidence);
+      setPeakIndices(result.peakIndices);
+      setHrvData(result.hrvData);
+      setProcessorState(processor.getProcessorState());
+    }
     
     return result;
   }, [processor]);
@@ -79,6 +121,9 @@ export const useAdvancedHeartBeatProcessor = () => {
     setHrvData({ sdnn: 0, rmssd: 0, pnn50: 0 });
     signalBufferRef.current = [];
     lastProcessedTimeRef.current = 0;
+    consecutiveValidSignalsRef.current = 0;
+    signalQualityHistoryRef.current = [];
+    throttleCountRef.current = 0;
   }, [processor]);
   
   /**

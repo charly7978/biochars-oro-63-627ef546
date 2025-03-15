@@ -11,23 +11,23 @@
  */
 export class FingerDetector {
   // Umbrales clave para detección robusta basados en investigación
-  private readonly PERFUSION_THRESHOLD: number = 25;
-  private readonly R_G_RATIO_MIN: number = 1.65;
-  private readonly RED_MIN_VALUE: number = 150;
-  private readonly GREEN_MIN_VALUE: number = 30;
+  private readonly PERFUSION_THRESHOLD: number = 20; // Reducido para mayor sensibilidad
+  private readonly R_G_RATIO_MIN: number = 1.45; // Reducido para mejor detección
+  private readonly RED_MIN_VALUE: number = 140; // Reducido para mejorar detección
+  private readonly GREEN_MIN_VALUE: number = 25; // Reducido para mejorar detección
   
   // Estado interno
   private fingerDetected: boolean = false;
   private consecutiveDetections: number = 0;
-  private readonly REQUIRED_FRAMES: number = 5;
+  private readonly REQUIRED_FRAMES: number = 3; // Reducido para respuesta más rápida
   private readonly DEVICE_TYPE: string;
   private recentQualityReadings: number[] = [];
   private readonly MAX_QUALITY_READINGS: number = 10;
   
   // Nuevos parámetros para estabilidad
-  private readonly STABILITY_THRESHOLD: number = 5;
-  private readonly STABILITY_CHANGE_THRESHOLD: number = 15;
-  private readonly MAX_PERCENT_CHANGE: number = 10;
+  private readonly STABILITY_THRESHOLD: number = 3; // Reducido para mejor respuesta
+  private readonly STABILITY_CHANGE_THRESHOLD: number = 12; // Ajustado
+  private readonly MAX_PERCENT_CHANGE: number = 15; // Aumentado para tolerar más cambios
   private qualityStability: number = 0;
   private previousQuality: number = 0;
   
@@ -44,7 +44,7 @@ export class FingerDetector {
       this.DEVICE_TYPE = "unknown";
     }
     
-    console.log("FingerDetector: REIMPLEMENTADO con TRIPLE verificación anti-falsos-positivos", {
+    console.log("FingerDetector: MEJORADO con umbrales optimizados", {
       umbralPerfusión: this.PERFUSION_THRESHOLD,
       ratioRojoVerde: this.R_G_RATIO_MIN,
       valorRojoMínimo: this.RED_MIN_VALUE,
@@ -69,6 +69,18 @@ export class FingerDetector {
     redValue: number,
     greenValue: number
   ): { isFingerDetected: boolean; quality: number; qualityLevel: string; qualityColor: string; helpMessage: string } {
+    // Verificación de valores de entrada (protección contra errores)
+    if (isNaN(quality) || isNaN(redValue) || isNaN(greenValue)) {
+      console.warn("FingerDetector: Valores inválidos recibidos", { quality, redValue, greenValue });
+      return {
+        isFingerDetected: false,
+        quality: 0,
+        qualityLevel: "error",
+        qualityColor: "from-gray-400 to-gray-500",
+        helpMessage: "Error en procesamiento. Reintentar."
+      };
+    }
+    
     // Calcular relación rojo/verde (indicador fisiológico clave)
     const redGreenRatio = greenValue > 0 ? redValue / greenValue : 0;
     
@@ -115,20 +127,17 @@ export class FingerDetector {
     let isCurrentlyDetected = false;
     
     if (this.DEVICE_TYPE === "android") {
-      // En Android priorizamos ratio R/G y estabilidad
-      isCurrentlyDetected = physiologicalCheck && 
-                          (qualityCheck || opticalCheck) &&
-                          stabilityCheck;
+      // En Android priorizamos ratio R/G y calidad
+      isCurrentlyDetected = (qualityCheck && physiologicalCheck) || 
+                           (physiologicalCheck && opticalCheck && stabilityCheck);
     } else if (this.DEVICE_TYPE === "ios") {
-      // En iOS equilibramos todos los factores
-      isCurrentlyDetected = (physiologicalCheck && qualityCheck) || 
-                          (physiologicalCheck && opticalCheck && stabilityCheck);
+      // En iOS enfocamos más en calidad y menos en ratio R/G
+      isCurrentlyDetected = (qualityCheck && opticalCheck) || 
+                           (qualityCheck && physiologicalCheck && stabilityCheck);
     } else {
-      // En otros dispositivos (incluido escritorio) usar verificación completa
-      isCurrentlyDetected = qualityCheck && 
-                          opticalCheck && 
-                          physiologicalCheck && 
-                          stabilityCheck;
+      // En otros dispositivos (incluido escritorio) usamos criterios más flexibles
+      isCurrentlyDetected = (qualityCheck && (opticalCheck || physiologicalCheck)) || 
+                           (opticalCheck && physiologicalCheck && stabilityCheck);
     }
     
     // Lógica de persistencia: requiere N frames consecutivos para confirmar
@@ -137,7 +146,7 @@ export class FingerDetector {
       this.consecutiveDetections += 1;
       if (this.consecutiveDetections >= this.REQUIRED_FRAMES && !this.fingerDetected) {
         this.fingerDetected = true;
-        console.log("FingerDetector: Dedo detectado con triple verificación", {
+        console.log("FingerDetector: Dedo detectado correctamente", {
           calidad: filteredQuality,
           redValue,
           greenValue,
@@ -213,7 +222,7 @@ export class FingerDetector {
     
     // Calcular media sin valores extremos (más robusta)
     const filteredReadings = sortedReadings.filter(
-      q => q >= median * 0.7 && q <= median * 1.3
+      q => q >= median * 0.6 && q <= median * 1.4 // Ampliado para mayor flexibilidad
     );
     
     if (filteredReadings.length === 0) return median;
@@ -299,6 +308,7 @@ export class FingerDetector {
     this.recentQualityReadings = [];
     this.qualityStability = 0;
     this.previousQuality = 0;
+    console.log("FingerDetector: Reset completo realizado");
   }
   
   /**
@@ -315,7 +325,8 @@ export class FingerDetector {
         greenMin: this.GREEN_MIN_VALUE,
         stability: this.STABILITY_THRESHOLD,
         stabilityChange: this.STABILITY_CHANGE_THRESHOLD,
-        maxPercentChange: this.MAX_PERCENT_CHANGE
+        maxPercentChange: this.MAX_PERCENT_CHANGE,
+        requiredFrames: this.REQUIRED_FRAMES
       },
       state: {
         fingerDetected: this.fingerDetected,
