@@ -10,7 +10,7 @@ import { HRVFrequencyMetrics } from './utils/HRVFrequencyMetrics';
 import { HRVNonlinearMetrics } from './utils/HRVNonlinearMetrics';
 import { RRIntervalUtils } from './utils/RRIntervalUtils';
 
-// Change the export to 'export type' to fix the TypeScript error
+// Using 'export type' syntax to fix the TypeScript error with isolatedModules
 export type { HRVMetrics };
 
 export class HRVAnalyzer {
