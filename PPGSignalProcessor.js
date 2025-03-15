@@ -1,8 +1,9 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
-  private R: number = 0.01;
-  private Q: number = 0.1;
+  private R: number = 0.008; // Reducido de 0.01 a 0.008 para menor ruido
+  private Q: number = 0.12;  // Aumentado de 0.1 a 0.12 para mejor seguimiento de cambios rápidos
   private P: number = 1;
   private X: number = 0;
   private K: number = 0;
@@ -26,21 +27,27 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 10,
-    MIN_RED_THRESHOLD: 80,  // Reducido de 85 a 80 para mayor sensibilidad
+    BUFFER_SIZE: 12,  // Aumentado de 10 a 12 para mejor análisis espectral
+    MIN_RED_THRESHOLD: 75,  // Reducido de 80 a 75 para mayor sensibilidad
     MAX_RED_THRESHOLD: 245,
-    STABILITY_WINDOW: 4,    // Reducido de 5 a 4 para detección más rápida
-    MIN_STABILITY_COUNT: 3  // Mantenido en 3 para evitar falsos positivos
+    STABILITY_WINDOW: 4,
+    MIN_STABILITY_COUNT: 2  // Reducido de 3 a 2 para detección más rápida
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
-  private readonly BUFFER_SIZE = 10;
-  private readonly MIN_RED_THRESHOLD = 85;
+  private readonly BUFFER_SIZE = 12; // Actualizado
+  private readonly MIN_RED_THRESHOLD = 75; // Actualizado
   private readonly MAX_RED_THRESHOLD = 245;
-  private readonly STABILITY_WINDOW = 5;
-  private readonly MIN_STABILITY_COUNT = 3;
+  private readonly STABILITY_WINDOW = 4;
+  private readonly MIN_STABILITY_COUNT = 2; // Actualizado
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Ajustado de 0.05 a 0.045 para mejor sensibilidad sin comprometer precisión
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.04; // Reducido para mayor sensibilidad
+
+  // Nuevas variables para adaptación dinámica
+  private dynamicThreshold: number = 0;
+  private signalHistory: number[] = [];
+  private readonly HISTORY_SIZE = 20;
+  private readonly ADAPTATION_RATE = 0.15; // Tasa de adaptación para umbrales dinámicos
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -57,6 +64,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
       this.kalmanFilter.reset();
+      this.signalHistory = [];
+      this.dynamicThreshold = 0;
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -77,6 +86,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.stableFrameCount = 0;
     this.lastStableValue = 0;
     this.kalmanFilter.reset();
+    this.signalHistory = [];
+    this.dynamicThreshold = 0;
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -86,12 +97,12 @@ export class PPGSignalProcessor implements SignalProcessor {
       await this.initialize();
 
       // Simulamos el proceso de calibración
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1800)); // Reducido de 2000ms a 1800ms
       
       // Ajustamos los umbrales basados en las condiciones actuales
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 5),
+        MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 8), // Más agresivo
         MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
         STABILITY_WINDOW: this.STABILITY_WINDOW,
         MIN_STABILITY_COUNT: this.MIN_STABILITY_COUNT
@@ -123,18 +134,33 @@ export class PPGSignalProcessor implements SignalProcessor {
       const filtered = this.kalmanFilter.filter(redValue);
       this.lastValues.push(filtered);
       
+      // Actualizar historial para adaptación dinámica
+      this.signalHistory.push(filtered);
+      if (this.signalHistory.length > this.HISTORY_SIZE) {
+        this.signalHistory.shift();
+      }
+      
+      // Actualizar umbral dinámico si tenemos suficientes datos
+      if (this.signalHistory.length >= this.HISTORY_SIZE / 2) {
+        this.updateDynamicThreshold();
+      }
+      
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
 
       const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
 
+      const perfusionIndex = this.calculatePerfusionIndex();
+
       console.log("PPGSignalProcessor: Análisis", {
         redValue,
         filtered,
         isFingerDetected,
         quality,
-        stableFrames: this.stableFrameCount
+        stableFrames: this.stableFrameCount,
+        perfusionIndex,
+        dynamicThreshold: this.dynamicThreshold
       });
 
       const processedSignal: ProcessedSignal = {
@@ -143,7 +169,8 @@ export class PPGSignalProcessor implements SignalProcessor {
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue)
+        roi: this.detectROI(redValue),
+        perfusionIndex
       };
 
       this.onSignalReady?.(processedSignal);
@@ -154,16 +181,49 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
+  // Nuevo método para actualizar umbrales dinámicamente
+  private updateDynamicThreshold(): void {
+    const min = Math.min(...this.signalHistory);
+    const max = Math.max(...this.signalHistory);
+    const range = max - min;
+    
+    // Calcular nuevo umbral basado en el rango de la señal
+    const newThreshold = range * 0.25; // 25% del rango como umbral
+    
+    // Actualizar dinámicamente con suavizado
+    if (this.dynamicThreshold === 0) {
+      this.dynamicThreshold = newThreshold;
+    } else {
+      this.dynamicThreshold = (1 - this.ADAPTATION_RATE) * this.dynamicThreshold + 
+                             this.ADAPTATION_RATE * newThreshold;
+    }
+  }
+
+  // Nuevo método para calcular índice de perfusión
+  private calculatePerfusionIndex(): number {
+    if (this.lastValues.length < 5) return 0;
+    
+    const recent = this.lastValues.slice(-5);
+    const min = Math.min(...recent);
+    const max = Math.max(...recent);
+    
+    // PI = (AC/DC)
+    const ac = max - min;
+    const dc = (max + min) / 2;
+    
+    return dc > 0 ? ac / dc : 0;
+  }
+
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
     let count = 0;
     
-    // Analizar solo el centro de la imagen (25% central)
-    const startX = Math.floor(imageData.width * 0.375);
-    const endX = Math.floor(imageData.width * 0.625);
-    const startY = Math.floor(imageData.height * 0.375);
-    const endY = Math.floor(imageData.height * 0.625);
+    // Analizar solo el centro de la imagen (30% central en lugar de 25%)
+    const startX = Math.floor(imageData.width * 0.35);
+    const endX = Math.floor(imageData.width * 0.65);
+    const startY = Math.floor(imageData.height * 0.35);
+    const endY = Math.floor(imageData.height * 0.65);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -178,8 +238,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
+    // Usar umbral dinámico si está disponible, o caer en el valor estático
+    const effectiveThreshold = this.dynamicThreshold > 0 ? 
+                              this.dynamicThreshold : 
+                              this.MIN_RED_THRESHOLD;
+                              
     // Invertimos la lógica: si el valor está fuera del rango, NO hay dedo
-    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
+    const isInRange = rawValue >= effectiveThreshold && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
       this.stableFrameCount = 0;
@@ -206,16 +271,16 @@ export class PPGSignalProcessor implements SignalProcessor {
     const minVariation = Math.min(...variations);
     
     // Umbrales adaptativos para mejor detección de picos
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02); // 2% del valor promedio
-    const isStable = maxVariation < adaptiveThreshold * 2 && 
-                    minVariation > -adaptiveThreshold * 2;
+    const adaptiveThreshold = Math.max(1.2, avgValue * 0.018); // Reducido de 0.02 a 0.018
+    const isStable = maxVariation < adaptiveThreshold * 2.2 && // Aumentado de 2 a 2.2
+                    minVariation > -adaptiveThreshold * 2.2;
 
     if (isStable) {
       this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
       // Reducción más gradual para mantener mejor la detección
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.4); // Más gradual (0.5 -> 0.4)
     }
 
     // Ajuste en la lógica de detección del dedo
@@ -225,11 +290,11 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (isFingerDetected) {
       // Cálculo de calidad mejorado
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
-      const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
-                                    (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
+      const intensityScore = Math.min((rawValue - effectiveThreshold) / 
+                                    (this.MAX_RED_THRESHOLD - effectiveThreshold), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      quality = Math.round((stabilityScore * 0.4 + intensityScore * 0.3 + variationScore * 0.3) * 100);
+      quality = Math.round((stabilityScore * 0.35 + intensityScore * 0.35 + variationScore * 0.3) * 100);
     }
 
     return { isFingerDetected, quality };

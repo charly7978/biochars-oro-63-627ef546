@@ -25,6 +25,8 @@ export class ArrhythmiaAnalyzer {
   private hasDetectedArrhythmia: boolean = false;
   private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
+  private consecutiveAbnormalIntervals: number = 0;
+  private readonly CONSECUTIVE_THRESHOLD = 2; // Nuevo: número de intervalos anormales consecutivos para confirmar
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
@@ -77,11 +79,21 @@ export class ArrhythmiaAnalyzer {
       if (hasArrhythmia) {
         logPossibleArrhythmia(analysisData);
         
-        if (shouldIncrementCounter) {
+        // Nuevo: análisis de continuidad de anomalías
+        if (hasArrhythmia) {
+          this.consecutiveAbnormalIntervals++;
+        } else {
+          this.consecutiveAbnormalIntervals = 0;
+        }
+        
+        // Verificar si debemos incrementar contador (con umbral mejorado)
+        if (shouldIncrementCounter && 
+            (this.consecutiveAbnormalIntervals >= this.CONSECUTIVE_THRESHOLD)) {
           // Confirmamos la arritmia e incrementamos el contador
           this.hasDetectedArrhythmia = true;
           this.arrhythmiaCounter += 1;
           this.lastArrhythmiaTime = currentTime;
+          this.consecutiveAbnormalIntervals = 0; // Reiniciar contador de anomalías
           
           // Registrar la arritmia confirmada
           logConfirmedArrhythmia(analysisData, lastThreeIntervals, this.arrhythmiaCounter);
@@ -103,6 +115,9 @@ export class ArrhythmiaAnalyzer {
             this.arrhythmiaCounter
           );
         }
+      } else {
+        // Si no hay arritmia, resetear contador de anomalías
+        this.consecutiveAbnormalIntervals = 0;
       }
     }
     
@@ -143,5 +158,6 @@ export class ArrhythmiaAnalyzer {
     this.lastArrhythmiaTime = 0;
     this.hasDetectedArrhythmia = false;
     this.arrhythmiaCounter = 0;
+    this.consecutiveAbnormalIntervals = 0;
   }
 }
