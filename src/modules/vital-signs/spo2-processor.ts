@@ -11,13 +11,13 @@ export class SpO2Processor {
   private readonly SPO2_CALIBRATION_FACTOR = 1.05;
   
   // PRIMERA VARIABLE CRÍTICA: Umbral de perfusión
-  // Ajustado para detección real del dedo con mayor sensibilidad
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.08; // Reducido para mayor sensibilidad
+  // Ajustado para detección real del dedo con sensibilidad óptima
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.12; // Aumentado para mejor detección
   
   // SEGUNDA VARIABLE CRÍTICA: Ratio rojo/verde (detección de tejido vivo)
-  private readonly MIN_RED_GREEN_RATIO = 1.15; // Parámetro clave para detectar tejido vivo
+  private readonly MIN_RED_GREEN_RATIO = 1.25; // Aumentado para detección más segura de tejido vivo
   
-  private readonly SPO2_BUFFER_SIZE = 5; // Reducido para respuesta más inmediata
+  private readonly SPO2_BUFFER_SIZE = 5;
   private spo2Buffer: number[] = [];
   private lastRedValue: number = 0;
   private lastGreenValue: number = 0;
@@ -34,7 +34,7 @@ export class SpO2Processor {
     }
     
     // Si no hay suficientes datos, no calcular
-    if (values.length < 40) { // Reducido para mayor velocidad de respuesta
+    if (values.length < 40) {
       return 0;
     }
 
@@ -77,28 +77,24 @@ export class SpO2Processor {
     }
 
     // Fórmula empírica basada en investigación médica real
-    // No hay números mágicos o simulaciones aquí
     const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
     
     // Algoritmo simplificado basado en la relación R
-    // Rango realista: 90-100% para personas sanas
     let spO2 = Math.round(110 - (25 * R));
     
     // Limitar a rangos fisiológicos realistas
     spO2 = Math.max(70, Math.min(100, spO2));
 
     // Log diagnóstico para valores calculados
-    if (Math.random() < 0.05) { // Logear solo 5% de las mediciones para no saturar la consola
-      console.log("SpO2: Cálculo real", {
-        perfusión: perfusionIndex,
-        relación_R: R,
-        spO2_calculado: spO2,
-        rgRatio: this.lastRedValue > 0 ? (this.lastRedValue / this.lastGreenValue) : 0
-      });
-    }
+    console.log("SpO2: Cálculo real", {
+      perfusión: perfusionIndex,
+      relación_R: R,
+      spO2_calculado: spO2,
+      rgRatio: this.lastRedValue > 0 ? (this.lastRedValue / this.lastGreenValue) : 0
+    });
 
     // Solo usar buffer si el valor es válido
-    if (spO2 > 85) { // Umbral aumentado para mayor precisión
+    if (spO2 > 85) {
       this.spo2Buffer.push(spO2);
       if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
         this.spo2Buffer.shift();
@@ -134,17 +130,28 @@ export class SpO2Processor {
     const ac = calculateAC(values);
     const perfusionIndex = ac / dc;
     
-    // CRITERIO 1: Índice de perfusión mínimo
+    // CRITERIO 1: Índice de perfusión mínimo (ahora más exigente)
     const hasSufficientPerfusion = perfusionIndex >= this.PERFUSION_INDEX_THRESHOLD;
     
-    // CRITERIO 2: Ratio rojo/verde correcto para tejido vivo
+    // CRITERIO 2: Ratio rojo/verde correcto para tejido vivo (ahora más estricto)
     let hasCorrectRGRatio = false;
     if (this.lastRedValue > 0 && this.lastGreenValue > 0) {
       const rgRatio = this.lastRedValue / this.lastGreenValue;
       hasCorrectRGRatio = rgRatio >= this.MIN_RED_GREEN_RATIO;
+      
+      // Log para diagnóstico
+      console.log("SpO2: Verificación de dedo", {
+        perfusionIndex,
+        umbralPerfusion: this.PERFUSION_INDEX_THRESHOLD,
+        rgRatio,
+        umbralRG: this.MIN_RED_GREEN_RATIO,
+        hasSufficientPerfusion,
+        hasCorrectRGRatio,
+        veredicto: hasSufficientPerfusion && hasCorrectRGRatio
+      });
     }
     
-    // Ambos criterios deben cumplirse
-    return hasSufficientPerfusion && (hasCorrectRGRatio || this.lastRedValue === 0);
+    // Ambos criterios deben cumplirse de manera estricta
+    return hasSufficientPerfusion && hasCorrectRGRatio;
   }
 }
