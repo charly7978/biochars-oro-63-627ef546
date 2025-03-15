@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { 
@@ -192,7 +193,7 @@ export const useVitalSignsProcessor = () => {
   /**
    * Actualiza métricas de procesamiento para monitorear rendimiento
    */
-  private updateProcessingMetrics = useCallback((signal: number, result: VitalSignsResult) => {
+  const updateProcessingMetrics = useCallback((signal: number, result: VitalSignsResult) => {
     // Calcular eficiencia de filtrado como reducción de ruido
     // (diferencia entre señal original y procesada, normalizada)
     const rawSignalValue = Math.abs(signal);
