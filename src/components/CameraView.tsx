@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -21,6 +22,8 @@ const CameraView = ({
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
+  const fingerDetectionRef = useRef<boolean>(false);
+  const fingerLostTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -37,6 +40,45 @@ const CameraView = ({
     setIsAndroid(androidDetected);
     setIsWindows(windowsDetected);
   }, []);
+
+  // Efecto para mantener la estabilidad en la detección del dedo
+  useEffect(() => {
+    // Si se detecta el dedo, limpiar cualquier timeout pendiente
+    if (isFingerDetected) {
+      if (fingerLostTimeoutRef.current) {
+        window.clearTimeout(fingerLostTimeoutRef.current);
+        fingerLostTimeoutRef.current = null;
+      }
+      fingerDetectionRef.current = true;
+    } else if (fingerDetectionRef.current) {
+      // Si el dedo estaba detectado pero se perdió, establecer un timeout antes de confirmar la pérdida
+      // Esto evita desconexiones temporales por fluctuaciones en la señal
+      if (!fingerLostTimeoutRef.current) {
+        fingerLostTimeoutRef.current = window.setTimeout(() => {
+          fingerDetectionRef.current = false;
+          fingerLostTimeoutRef.current = null;
+          
+          // Solo apagar la linterna si realmente se perdió el dedo por un tiempo
+          if (stream) {
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack && torchEnabled && videoTrack.getCapabilities()?.torch) {
+              console.log("Apagando linterna después de pérdida confirmada de dedo");
+              videoTrack.applyConstraints({
+                advanced: [{ torch: false }]
+              }).catch(err => console.error("Error desactivando linterna:", err));
+              setTorchEnabled(false);
+            }
+          }
+        }, 3000); // 3 segundos de tolerancia para fluctuaciones
+      }
+    }
+    
+    return () => {
+      if (fingerLostTimeoutRef.current) {
+        window.clearTimeout(fingerLostTimeoutRef.current);
+      }
+    };
+  }, [isFingerDetected, stream, torchEnabled]);
 
   const stopCamera = async () => {
     if (stream) {
@@ -273,7 +315,8 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    if (stream && isFingerDetected && !torchEnabled) {
+    // Mejorado: Persistencia en la detección del dedo y manejo del estado de la linterna
+    if (stream && (isFingerDetected || fingerDetectionRef.current) && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
         console.log("Activando linterna después de detectar dedo");
@@ -287,7 +330,7 @@ const CameraView = ({
       }
     }
     
-    if (isFingerDetected && !isAndroid) {
+    if ((isFingerDetected || fingerDetectionRef.current) && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }

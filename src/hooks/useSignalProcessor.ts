@@ -32,27 +32,36 @@ export const useSignalProcessor = () => {
   // Referencias para historial y estabilización
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 8; // Aumentado de 5 a 8 para más estabilidad en la detección
+  const HISTORY_SIZE = 12; // Aumentado para mayor estabilidad
   
-  // Nuevas variables para manejo adaptativo
+  // Nuevas variables para manejo adaptativo con mayor estabilidad
   const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.65); // Aumentado de 0.6 a 0.65 para reducir falsos positivos
+  const detectionThresholdRef = useRef<number>(0.60); // Umbral inicial más estricto
   const adaptiveCounterRef = useRef<number>(0);
-  const ADAPTIVE_ADJUSTMENT_INTERVAL = 50; // Frames entre ajustes adaptativos
-  const MIN_DETECTION_THRESHOLD = 0.55; // Aumentado de 0.4 a 0.55 para reducir falsos positivos
+  const ADAPTIVE_ADJUSTMENT_INTERVAL = 40; // Reducido para adaptación más rápida
+  const MIN_DETECTION_THRESHOLD = 0.40; // Más permisivo para recuperar señal perdida
   
-  // Contador y umbral para evitar pérdidas rápidas de señal
+  // Umbral mejorado para evitar pérdidas rápidas de señal
   const signalLockCounterRef = useRef<number>(0);
-  const MAX_SIGNAL_LOCK = 6; // Número de frames para "asegurar" detección (aumentado para estabilidad)
-  const RELEASE_GRACE_PERIOD = 2; // Reducido de 3 a 2 para soltar señal más rápido ante falsos positivos
+  const MAX_SIGNAL_LOCK = 10; // Aumentado para mayor resistencia a fluctuaciones
+  const RELEASE_GRACE_PERIOD = 8; // Aumentado para mantener detección
   
-  // Nuevo: análisis de patrón fisiológico
+  // Nuevas variables para estabilizar la señal
+  const stabilityCounterRef = useRef<number>(0);
+  const STABILITY_THRESHOLD = 5; // Mínimo de frames estables para confirmar detección
+  const lastDetectionTimeRef = useRef<number>(0);
+  const DETECTION_COOLDOWN_MS = 2000; // Tiempo de espera para cambiar estado de detección
+  
+  // Análisis de patrón fisiológico mejorado
   const physiologicalPatternRef = useRef<number[]>([]);
-  const PATTERN_BUFFER_SIZE = 15; // Tamaño para análisis de patrón
+  const PATTERN_BUFFER_SIZE = 20; // Aumentado para análisis más robusto
   const lastValidPatternTimeRef = useRef<number>(0);
   
+  // Nueva referencia para mantener estabilidad en la detección
+  const stableDetectionRef = useRef<boolean>(false);
+  
   /**
-   * Nuevo: Analiza si el patrón de señal parece fisiológico (cardíaco)
+   * Analiza si el patrón de señal parece fisiológico (cardíaco)
    * Busca variaciones periódicas y coherentes típicas del pulso
    */
   const analyzePhysiologicalPattern = useCallback((filteredValue: number): boolean => {
@@ -65,12 +74,11 @@ export const useSignalProcessor = () => {
     }
     
     // Requiere suficientes muestras para análisis
-    if (physiologicalPatternRef.current.length < PATTERN_BUFFER_SIZE) {
+    if (physiologicalPatternRef.current.length < PATTERN_BUFFER_SIZE * 0.7) {
       return false;
     }
     
-    // Análisis de patrón cardíaco:
-    // 1. Verificar si hay picos y valles (característico de señal PPG)
+    // Análisis de patrón cardíaco más robusto:
     const values = physiologicalPatternRef.current;
     const diffs = values.slice(1).map((val, i) => val - values[i]);
     
@@ -81,20 +89,19 @@ export const useSignalProcessor = () => {
       }
     }
     
-    // 2. Mínimo de cambios de dirección en la señal (picos/valles)
-    const hasEnoughChanges = signChanges >= 3;
+    // Mínimo de cambios de dirección en la señal (picos/valles)
+    const hasEnoughChanges = signChanges >= 4; // Incrementado para mejor validación
     
-    // 3. Analizar varianza: debe ser moderada (ni muy baja ni extrema)
+    // Analizar varianza para identificar patrones cardíacos
     const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
     const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
     const stdDev = Math.sqrt(variance);
     const coeffVar = stdDev / Math.abs(mean || 1);
     
     // La señal PPG típica tiene variación moderada
-    const hasReasonableVariance = coeffVar > 0.015 && coeffVar < 0.5;
+    const hasReasonableVariance = coeffVar > 0.01 && coeffVar < 0.5;
     
-    // 4. Verificar consistencia con características fisiológicas (60-180 BPM)
-    // Una buena señal PPG tiene estos cambios en frecuencia compatible con ritmo cardíaco
+    // Verificar consistencia con características fisiológicas
     const isPhysiological = hasEnoughChanges && hasReasonableVariance;
     
     // Registrar timestamp de último patrón válido
@@ -102,8 +109,8 @@ export const useSignalProcessor = () => {
       lastValidPatternTimeRef.current = now;
     }
     
-    // En caso de duda, mantener la detección por un corto tiempo si hubo un patrón válido reciente
-    const patternTimeout = 2000; // 2 segundos
+    // Patrón válido reciente cuenta como válido
+    const patternTimeout = 3000; // Extendido para mayor estabilidad
     const hasRecentValidPattern = (now - lastValidPatternTimeRef.current) < patternTimeout;
     
     return isPhysiological || hasRecentValidPattern;
@@ -111,8 +118,11 @@ export const useSignalProcessor = () => {
   
   /**
    * Procesa la detección de dedo de manera robusta y adaptativa
+   * con mayor estabilidad
    */
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
+    const now = Date.now();
+    
     // Actualizar historial de calidad y detección
     qualityHistoryRef.current.push(signal.quality);
     if (qualityHistoryRef.current.length > HISTORY_SIZE) {
@@ -124,15 +134,16 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Calcular detección y calidad promedio
+    // Calcular detección y calidad promedio con ponderación
     const rawDetectionRatio = fingerDetectedHistoryRef.current.filter(d => d).length / 
-                             Math.max(1, fingerDetectedHistoryRef.current.length);
+                              Math.max(1, fingerDetectedHistoryRef.current.length);
     
-    // Cálculo de calidad con ponderación (más peso a valores recientes)
+    // Calcular calidad media ponderada (más peso a valores recientes)
     let weightedQualitySum = 0;
     let weightSum = 0;
+    
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.5, index); // Ponderación exponencial
+      const weight = Math.pow(1.3, index); // Ponderación exponencial
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -141,34 +152,35 @@ export const useSignalProcessor = () => {
     
     // Lógica adaptativa para ajustar el umbral de detección
     adaptiveCounterRef.current++;
+    
     if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
       adaptiveCounterRef.current = 0;
       
-      // Si estamos consistentemente detectando o no detectando, ajustar umbral
-      const consistentDetection = rawDetectionRatio > 0.8;
-      const consistentNonDetection = rawDetectionRatio < 0.2;
+      // Ajustar umbral basado en detección consistente
+      const consistentDetection = rawDetectionRatio > 0.85; // Más estricto
+      const consistentNonDetection = rawDetectionRatio < 0.15; // Más estricto
       
       if (consistentNonDetection) {
-        // Hacer más fácil la detección si hay problemas persistentes
+        // Hacer más fácil la detección
         detectionThresholdRef.current = Math.max(
           MIN_DETECTION_THRESHOLD,
           detectionThresholdRef.current - 0.05
         );
         console.log("Ajustando umbral de detección hacia abajo:", detectionThresholdRef.current);
-      } else if (consistentDetection && avgQuality < 40) {
-        // Si detectamos consistentemente pero la calidad es mala, ser más estrictos
+      } else if (consistentDetection && avgQuality < 30) {
+        // Si detectamos consistentemente pero calidad baja, ser más estrictos
         detectionThresholdRef.current = Math.min(
-          0.75,
+          0.8,
           detectionThresholdRef.current + 0.03
         );
         console.log("Ajustando umbral de detección hacia arriba:", detectionThresholdRef.current);
       }
     }
     
-    // Nuevo: Verificar si el patrón parece fisiológico (reduce falsos positivos)
+    // Verificar patrón fisiológico
     const hasPhysiologicalPattern = analyzePhysiologicalPattern(signal.filteredValue);
     
-    // Lógica de "lock-in" para evitar pérdidas rápidas de señal
+    // Lógica de estabilidad mejorada para evitar fluctuaciones rápidas
     if (signal.fingerDetected && hasPhysiologicalPattern) {
       consecutiveNonDetectionRef.current = 0;
       
@@ -177,38 +189,89 @@ export const useSignalProcessor = () => {
         MAX_SIGNAL_LOCK,
         signalLockCounterRef.current + 1
       );
+      
+      // Incrementar contador de estabilidad
+      stabilityCounterRef.current = Math.min(
+        STABILITY_THRESHOLD + 5, // Permitir superar el umbral
+        stabilityCounterRef.current + 1
+      );
     } else {
-      // Reducir el contador de bloqueo pero mantener un período de gracia
-      if (signalLockCounterRef.current >= MAX_SIGNAL_LOCK) {
-        // Solo empezar a reducir después de llegar al máximo bloqueo
-        consecutiveNonDetectionRef.current++;
-        
-        if (consecutiveNonDetectionRef.current > RELEASE_GRACE_PERIOD) {
-          signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
-        }
+      // Nueva lógica de enfriamiento para estabilidad
+      const timeSinceLastDetection = now - lastDetectionTimeRef.current;
+      
+      if (stableDetectionRef.current && timeSinceLastDetection < DETECTION_COOLDOWN_MS) {
+        // Si estamos en estado estable y aún no ha pasado el tiempo de enfriamiento,
+        // mantener la detección a pesar de la señal débil
+        signalLockCounterRef.current = Math.max(MAX_SIGNAL_LOCK / 2, signalLockCounterRef.current);
       } else {
-        signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
+        // Reducir contadores de forma paulatina
+        if (signalLockCounterRef.current >= MAX_SIGNAL_LOCK) {
+          // Solo empezar a reducir después de alcanzar máximo bloqueo
+          consecutiveNonDetectionRef.current++;
+          
+          if (consecutiveNonDetectionRef.current > RELEASE_GRACE_PERIOD) {
+            signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
+            // Reducir contador de estabilidad de forma más lenta
+            stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 0.5);
+          }
+        } else {
+          // Reducción normal
+          signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
+          stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 0.5);
+        }
       }
     }
     
-    // Determinación final de detección
-    const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
+    // Determinación final de detección con mayor estabilidad
+    const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 2;
     const currentThreshold = detectionThresholdRef.current;
+    const isStable = stabilityCounterRef.current >= STABILITY_THRESHOLD;
     
-    // Nueva condición más estricta: combinar detección básica con validación de patrón fisiológico
-    const robustFingerDetected = (isLockedIn || rawDetectionRatio >= currentThreshold) && 
-                               (hasPhysiologicalPattern || isLockedIn);
+    let finalDetection;
     
-    // Ligera mejora de calidad (máximo 10%) para experiencia de usuario más suave
-    const enhancementFactor = robustFingerDetected ? 1.1 : 1.0;
+    // Si ya tenemos detección estable, ser más permisivos para mantenerla
+    if (stableDetectionRef.current) {
+      finalDetection = isLockedIn || rawDetectionRatio >= (currentThreshold - 0.1) || isStable;
+    } else {
+      // Si no tenemos detección estable, ser más estrictos para iniciarla
+      finalDetection = (isLockedIn || rawDetectionRatio >= currentThreshold) && 
+                       (hasPhysiologicalPattern || isLockedIn);
+    }
+    
+    // Actualizar estado de detección estable
+    if (finalDetection && !stableDetectionRef.current) {
+      if (isStable) {
+        stableDetectionRef.current = true;
+        lastDetectionTimeRef.current = now;
+        console.log("Detección de dedo estable activada");
+      }
+    } else if (!finalDetection && stableDetectionRef.current) {
+      // Solo cambiar a no detección después del tiempo de enfriamiento
+      const timeSinceLastStable = now - lastDetectionTimeRef.current;
+      if (timeSinceLastStable > DETECTION_COOLDOWN_MS && stabilityCounterRef.current < 1) {
+        stableDetectionRef.current = false;
+        console.log("Detección de dedo estable desactivada");
+      } else if (timeSinceLastStable <= DETECTION_COOLDOWN_MS) {
+        // Mantener detección durante enfriamiento
+        finalDetection = true; 
+      }
+    }
+    
+    // Actualizar timestamp si hay detección
+    if (finalDetection) {
+      lastDetectionTimeRef.current = now;
+    }
+    
+    // Mejora de calidad para suavizar cambios
+    const enhancementFactor = finalDetection ? 1.15 : 1.0;
     const enhancedQuality = Math.min(100, avgQuality * enhancementFactor);
     
     // Devolver señal modificada
     return {
       ...signal,
-      fingerDetected: robustFingerDetected,
+      fingerDetected: finalDetection,
       quality: enhancedQuality,
-      // Mantenemos la información de perfusión y espectro intacta
+      // Mantener información intacta
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
