@@ -486,7 +486,7 @@ export class SignalProcessor {
     if (this.ppgValues.length < 25) return false; // Reduced from 30
     
     // Criterio 1: Calidad mínima de señal (más sensible)
-    if (this.signalQuality < 65) { // Reduced from 75
+    if (this.signalQuality < 60) { // VARIABLE MODIFICADA #1: Reduced from 65 to 60 for greater sensitivity
       console.log("Calidad de señal insuficiente:", this.signalQuality.toFixed(1));
       return false;
     }
@@ -517,7 +517,7 @@ export class SignalProcessor {
     
     // Criterio 5: Verificación de periodicidad (solo para señales con patrón cardíaco)
     // Hacemos este check menos estricto
-    if (!this.lastSpikeTimestamps.length >= 4) {
+    if (this.lastSpikeTimestamps.length < 4) { // FIXED: changed from boolean comparison to proper number comparison
       console.log("No se detectaron suficientes picos cardíacos");
       const periodicityCheck = this.checkSignalPeriodicity(recentValues);
       if (!periodicityCheck) {
@@ -531,7 +531,7 @@ export class SignalProcessor {
     
     // Criterio 7: Verificar estabilidad de señal a través del tiempo
     const signalStability = this.checkSignalStability(recentValues);
-    if (signalStability < 0.60) {  // Reduced from 0.65
+    if (signalStability < 0.55) {  // VARIABLE MODIFICADA #2: Reduced from 0.60 to 0.55 for greater sensitivity
       console.log("Estabilidad de señal insuficiente:", signalStability.toFixed(2));
       return false;
     }
@@ -659,3 +659,4 @@ export class SignalProcessor {
     return [...this.ppgValues];
   }
 }
+
