@@ -24,11 +24,9 @@ export class HeartBeatProcessor {
   private readonly MIN_BEEP_INTERVAL_MS = 300;
 
   // ────────── AUTO-RESET SI LA SEÑAL ES MUY BAJA ──────────
-  private readonly LOW_SIGNAL_THRESHOLD = 0.08; // Aumentado para ser más estricto
-  private readonly LOW_SIGNAL_FRAMES = 5; // Reducido para reaccionar más rápido
-  private readonly MAX_NO_FINGER_FRAMES = 5;
+  private readonly LOW_SIGNAL_THRESHOLD = 0.03;
+  private readonly LOW_SIGNAL_FRAMES = 10;
   private lowSignalCount = 0;
-  private noFingerDetectedCount = 0;
 
   // Variables internas
   private signalBuffer: number[] = [];
@@ -54,10 +52,6 @@ export class HeartBeatProcessor {
   constructor() {
     this.initAudio();
     this.startTime = Date.now();
-    console.log("HeartBeatProcessor: Inicializado con umbral bajo estricto", {
-      umbral: this.LOW_SIGNAL_THRESHOLD,
-      framesNecesarios: this.LOW_SIGNAL_FRAMES
-    });
   }
 
   private async initAudio() {
@@ -163,40 +157,13 @@ export class HeartBeatProcessor {
     return this.smoothedValue;
   }
 
-  public processSignal(value: number, fingerDetected: boolean = false): {
+  public processSignal(value: number): {
     bpm: number;
     confidence: number;
     isPeak: boolean;
     filteredValue: number;
     arrhythmiaCount: number;
-    rrData: any;
   } {
-    // NUEVO: Si no hay dedo detectado, incrementar contador
-    if (!fingerDetected) {
-      this.noFingerDetectedCount++;
-      
-      // Si llevamos varios frames sin dedo, retornar BPM 0
-      if (this.noFingerDetectedCount >= this.MAX_NO_FINGER_FRAMES) {
-        if (this.noFingerDetectedCount % 10 === 0) {
-          console.log("HeartBeatProcessor: Sin dedo detectado, retornando BPM 0");
-        }
-        return {
-          bpm: 0,
-          confidence: 0,
-          isPeak: false,
-          filteredValue: value,
-          arrhythmiaCount: 0,
-          rrData: {
-            intervals: [],
-            lastPeakTime: null
-          }
-        };
-      }
-    } else {
-      // Resetear contador si hay dedo
-      this.noFingerDetectedCount = 0;
-    }
-    
     // Filtros sucesivos para mejorar la señal
     const medVal = this.medianFilter(value);
     const movAvgVal = this.calculateMovingAverage(medVal);
@@ -213,11 +180,7 @@ export class HeartBeatProcessor {
         confidence: 0,
         isPeak: false,
         filteredValue: smoothed,
-        arrhythmiaCount: 0,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+        arrhythmiaCount: 0
       };
     }
 
@@ -225,7 +188,7 @@ export class HeartBeatProcessor {
       this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
 
     const normalizedValue = smoothed - this.baseline;
-    this.autoResetIfSignalIsLow(Math.abs(normalizedValue), fingerDetected);
+    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
 
     this.values.push(smoothed);
     if (this.values.length > 3) {
@@ -255,43 +218,20 @@ export class HeartBeatProcessor {
       }
     }
 
-    const currentBPM = this.getSmoothBPM();
-    
-    // NUEVO: validación de BPM
-    if (currentBPM > 0 && (currentBPM < 40 || currentBPM > 200)) {
-      console.log("HeartBeatProcessor: BPM fuera de rango fisiológico", {
-        bpm: currentBPM,
-        confianza: confidence
-      });
-      return {
-        bpm: 0,
-        confidence: confidence * 0.5, // Reducir confianza
-        isPeak: isConfirmedPeak && !this.isInWarmup(),
-        filteredValue: smoothed,
-        arrhythmiaCount: 0,
-        rrData: this.getRRIntervals()
-      };
-    }
-
     return {
-      bpm: Math.round(currentBPM),
+      bpm: Math.round(this.getSmoothBPM()),
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue: smoothed,
-      arrhythmiaCount: 0,
-      rrData: this.getRRIntervals()
+      arrhythmiaCount: 0
     };
   }
 
-  private autoResetIfSignalIsLow(amplitude: number, fingerDetected: boolean) {
-    // MEJORADO: Considerar detección de dedo en reseteo automático
-    if (amplitude < this.LOW_SIGNAL_THRESHOLD || !fingerDetected) {
+  private autoResetIfSignalIsLow(amplitude: number) {
+    if (amplitude < this.LOW_SIGNAL_THRESHOLD) {
       this.lowSignalCount++;
       if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
         this.resetDetectionStates();
-        if (this.lowSignalCount % 10 === 0) {
-          console.log("HeartBeatProcessor: Señal baja o sin dedo - auto-reset");
-        }
       }
     } else {
       this.lowSignalCount = 0;
@@ -435,7 +375,6 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
-    this.noFingerDetectedCount = 0;
   }
 
   public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {
