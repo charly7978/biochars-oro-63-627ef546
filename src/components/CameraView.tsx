@@ -305,7 +305,7 @@ const CameraView = ({
     
     // Refrescar auto-focus con más frecuencia cuando el dedo está detectado
     if (isFingerDetected && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, 3000); // Reducido para respuesta más rápida
+      const focusInterval = setInterval(refreshAutoFocus, 2000); // Reducido para respuesta más rápida
       return () => clearInterval(focusInterval);
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
