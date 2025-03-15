@@ -1,3 +1,4 @@
+
 /**
  * Enhanced Signal Processor based on advanced biomedical signal processing techniques
  * Implements wavelet denoising and adaptive filter techniques from IEEE publications
@@ -17,13 +18,6 @@ export class SignalProcessor {
   private readonly BASELINE_FACTOR = 0.94; // Ajustado para adaptación más rápida (antes: 0.92)
   private baselineValue: number = 0;
   
-  // Nuevos parámetros para reducir latencia
-  private readonly MAX_LATENCY_MS = 200; // Máxima latencia permitida
-  private latencyCompensation: number = 0;
-  private lastProcessTime: number = 0;
-  private processingLatency: number[] = [];
-  private readonly MAX_LATENCY_SAMPLES = 20;
-  
   // Multi-spectral analysis parameters (based on research from Univ. of Texas)
   // Coeficientes ajustados para mejor detección
   private readonly RED_ABSORPTION_COEFF = 0.72; // Aumentado (antes: 0.684)
@@ -38,62 +32,11 @@ export class SignalProcessor {
   private consecutiveGoodFrames: number = 0;
   private readonly REQUIRED_GOOD_FRAMES = 3; // Frames buenos requeridos para confirmar señal
   
-  // Zero latency processing buffer
-  private processingQueue: {value: number, timestamp: number}[] = [];
-  private readonly MAX_QUEUE_SIZE = 5;
-  private isProcessing: boolean = false;
-  
-  constructor() {
-    // Initialize processing monitoring
-    this.lastProcessTime = Date.now();
-  }
-  
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
    * Technique adapted from "Advanced methods for ECG signal processing" (IEEE)
    */
   public applySMAFilter(value: number): number {
-    const now = Date.now();
-    
-    // Monitor processing latency
-    if (this.lastProcessTime > 0) {
-      const currentLatency = now - this.lastProcessTime;
-      this.processingLatency.push(currentLatency);
-      
-      // Keep only recent latency measurements
-      if (this.processingLatency.length > this.MAX_LATENCY_SAMPLES) {
-        this.processingLatency.shift();
-      }
-      
-      // Calculate average latency
-      const avgLatency = this.processingLatency.reduce((sum, val) => sum + val, 0) / 
-                        this.processingLatency.length;
-      
-      // Adjust latency compensation dynamically
-      if (avgLatency > this.MAX_LATENCY_MS && this.latencyCompensation < 0.5) {
-        this.latencyCompensation += 0.05;
-      } else if (avgLatency < this.MAX_LATENCY_MS/2 && this.latencyCompensation > 0) {
-        this.latencyCompensation -= 0.05;
-      }
-    }
-    
-    this.lastProcessTime = now;
-    
-    // Store value in processing queue
-    this.processingQueue.push({value, timestamp: now});
-    
-    // Process immediately to reduce latency
-    const processedValue = this.processImmediately(value);
-    
-    // Keep queue at manageable size
-    if (this.processingQueue.length > this.MAX_QUEUE_SIZE) {
-      this.processingQueue.shift();
-    }
-    
-    return processedValue;
-  }
-  
-  private processImmediately(value: number): number {
     this.ppgValues.push(value);
     if (this.ppgValues.length > this.WINDOW_SIZE) {
       this.ppgValues.shift();
@@ -222,21 +165,6 @@ export class SignalProcessor {
   }
   
   /**
-   * Obtener estadísticas de procesamiento para monitoreo
-   */
-  public getProcessingStats(): {latency: number, avgLatency: number, compensation: number} {
-    const avgLatency = this.processingLatency.length > 0 ? 
-                      this.processingLatency.reduce((sum, val) => sum + val, 0) / 
-                      this.processingLatency.length : 0;
-    
-    return {
-      latency: this.processingLatency[this.processingLatency.length - 1] || 0,
-      avgLatency,
-      compensation: this.latencyCompensation
-    };
-  }
-  
-  /**
    * Simplified wavelet denoising based on soft thresholding
    * Adapted from "Wavelet-based denoising for biomedical signals" research
    */
@@ -281,9 +209,11 @@ export class SignalProcessor {
    * y características de la forma de onda
    */
   public isFingerPresent(): boolean {
-    if (this.ppgValues.length < 10) return false;
+    // Se requiere un mínimo de datos para determinar presencia
+    if (this.ppgValues.length < 20) return false;
     
-    const recentValues = this.ppgValues.slice(-10);
+    // Obtener valores recientes para análisis
+    const recentValues = this.ppgValues.slice(-20);
     
     // Criterio 1: Calidad mínima de señal (más permisiva)
     if (this.signalQuality < 40) return false;
@@ -298,27 +228,18 @@ export class SignalProcessor {
 
   /**
    * Estimates blood glucose levels based on PPG waveform characteristics
+   * ... keep existing code
    */
-  public estimateBloodGlucose(): number {
-    // Implementation of blood glucose estimation logic
-    return 0; // Placeholder
-  }
-
+  
   /**
    * Estimates lipid profile based on PPG characteristics and spectral analysis
+   * ... keep existing code
    */
-  public estimateLipidProfile(): number {
-    // Implementation of lipid profile estimation logic
-    return 0; // Placeholder
-  }
-
+  
   /**
    * Simplified Discrete Wavelet Transform for frequency band analysis
+   * ... keep existing code
    */
-  public performDiscreteWaveletTransform(): number[] {
-    // Implementation of DWT logic
-    return []; // Placeholder
-  }
 
   /**
    * Reset the signal processor state
@@ -328,10 +249,6 @@ export class SignalProcessor {
     this.baselineValue = 0;
     this.signalQuality = 0;
     this.consecutiveGoodFrames = 0;
-    this.processingLatency = [];
-    this.latencyCompensation = 0;
-    this.lastProcessTime = 0;
-    this.processingQueue = [];
     console.log("SignalProcessor: Reset completo del procesador de señal");
   }
 
