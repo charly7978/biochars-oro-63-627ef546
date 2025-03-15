@@ -6,11 +6,11 @@ import { startCalibration as startCalibrationUtil, forceCalibrationCompletion as
 import { updateSignalLog } from '../utils/signalLogUtils';
 
 /**
- * Custom hook for processing vital signs with advanced algorithms
- * Uses improved signal processing and arrhythmia detection based on medical research
+ * Custom hook para procesar signos vitales con algoritmos avanzados
+ * Usa procesamiento de señal mejorado y detección de arritmias basada en investigación médica
  */
 export const useVitalSignsProcessor = () => {
-  // State and refs
+  // State y refs
   const [processor] = useState(() => {
     console.log("useVitalSignsProcessor: Creando nueva instancia", {
       timestamp: new Date().toISOString()
@@ -25,10 +25,10 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Advanced configuration based on clinical guidelines
-  const MIN_TIME_BETWEEN_ARRHYTHMIAS = 1000; // Minimum 1 second between arrhythmias
-  const MAX_ARRHYTHMIAS_PER_SESSION = 20; // Reasonable maximum for 30 seconds
-  const SIGNAL_QUALITY_THRESHOLD = 0.55; // Signal quality required for reliable detection
+  // Configuración avanzada basada en guías clínicas
+  const MIN_TIME_BETWEEN_ARRHYTHMIAS = 1000; // Mínimo 1 segundo entre arritmias
+  const MAX_ARRHYTHMIAS_PER_SESSION = 20; // Máximo razonable para 30 segundos
+  const SIGNAL_QUALITY_THRESHOLD = 0.55; // Calidad de señal requerida para detección confiable
   
   useEffect(() => {
     console.log("useVitalSignsProcessor: Hook inicializado", {
@@ -52,34 +52,34 @@ export const useVitalSignsProcessor = () => {
   }, []);
   
   /**
-   * Start calibration for all vital signs
+   * Iniciar calibración para todos los signos vitales
    */
   const startCalibration = useCallback(() => {
     startCalibrationUtil(processor);
   }, [processor]);
   
   /**
-   * Force calibration to complete immediately
+   * Forzar finalización inmediata de la calibración
    */
   const forceCalibrationCompletion = useCallback(() => {
     forceCalibrationCompletionUtil(processor);
   }, [processor]);
   
-  // Process the signal with improved algorithms
+  // Procesar la señal con algoritmos mejorados
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     processedSignals.current++;
     
-    // Log signal processing
+    // Registrar procesamiento de señal
     logSignalProcessing(value, rrData, arrhythmiaCounter, processedSignals.current, sessionId.current, processor);
     
-    // Process signal through the vital signs processor
+    // Procesar señal a través del procesador de signos vitales
     const result = processor.processSignal(value, rrData);
     const currentTime = Date.now();
     
     // Actualizar log de señales
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
-    // Si tenemos un resultado válido, guárdalo
+    // Si tenemos un resultado válido, guardarlo
     if (result.spo2 > 0 && result.glucose > 0 && result.lipids.totalCholesterol > 0) {
       logValidResults(result);
       setLastValidResults(result);
@@ -139,7 +139,7 @@ export const useVitalSignsProcessor = () => {
       }
     }
     
-    // If we previously detected an arrhythmia, maintain that state
+    // Si previamente detectamos una arritmia, mantener ese estado
     if (hasDetectedArrhythmia.current) {
       return {
         ...result,
@@ -148,7 +148,7 @@ export const useVitalSignsProcessor = () => {
       };
     }
     
-    // No arrhythmias detected
+    // No se detectaron arritmias
     return {
       ...result,
       arrhythmiaStatus: `SIN ARRITMIAS|${arrhythmiaCounter}`
