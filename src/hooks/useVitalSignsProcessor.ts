@@ -3,8 +3,9 @@ import { useRef, useState, useCallback } from 'react';
 import { VitalSignsProcessor, VitalSignsResult, RRData } from '../modules';
 
 /**
- * Hook para procesamiento de signos vitales sin validaciones estrictas
- * Muestra resultados directamente sin filtrado
+ * Hook para procesamiento de signos vitales que mantiene un estado consistente
+ * NOTA: Este hook utiliza los procesadores modulares refactorizados pero mantiene
+ * la interfaz original para compatibilidad con index.tsx y PPGSignalMeter.tsx
  */
 export function useVitalSignsProcessor() {
   const processorRef = useRef<VitalSignsProcessor | null>(null);
@@ -12,10 +13,6 @@ export function useVitalSignsProcessor() {
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignalsRef = useRef<number>(0);
   const arrhythmiaCounterRef = useRef<number>(0);
-  const fingerDetectedRef = useRef<boolean>(false); // CAMBIO CRÍTICO: Iniciar como false
-  const lastFingerDetectionTimeRef = useRef<number>(Date.now());
-  const consecutiveGoodSignalsRef = useRef<number>(0);
-  const qualityThreshold = 10;
 
   // Inicializar el procesador si no existe
   if (!processorRef.current) {
@@ -23,43 +20,19 @@ export function useVitalSignsProcessor() {
   }
 
   /**
-   * Procesa una señal PPG y calcula signos vitales sin validación estricta
+   * Procesa una señal PPG y calcula signos vitales
    */
   const processSignal = useCallback((
     value: number,
-    rrData?: RRData,
-    isFingerDetected: boolean = false // CAMBIO CRÍTICO: Default a false
+    rrData?: RRData
   ): VitalSignsResult | null => {
     if (!processorRef.current) return null;
 
-    // CAMBIO CRÍTICO: Usar el valor real de detección de dedo
-    fingerDetectedRef.current = isFingerDetected;
-    
-    // CAMBIO CRÍTICO: Si no hay dedo detectado, devolver valores en cero o mensajes adecuados
-    if (!isFingerDetected) {
-      console.log("useVitalSignsProcessor: No hay dedo detectado, devolviendo valores en blanco");
-      
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "SIN ARRITMIAS|0",
-        lastArrhythmiaData: null,
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0
-      };
-    }
-    
-    lastFingerDetectionTimeRef.current = Date.now();
-    
     // Incrementar contador de señales procesadas
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal - Pasar correctamente los parámetros a processSignal
+      // Procesar la señal
       const result = processorRef.current.processSignal(value, rrData);
       
       // Rastrear contador de arritmias
@@ -73,10 +46,16 @@ export function useVitalSignsProcessor() {
         }
       }
       
-      // Guardar y retornar resultados
-      setLastValidResults(result);
-      return result;
+      // Actualizar resultados válidos si hay sustancia
+      if (
+        result.spo2 > 0 && 
+        result.pressure !== "--/--" && 
+        result.pressure !== "0/0"
+      ) {
+        setLastValidResults(result);
+      }
       
+      return result;
     } catch (error) {
       console.error("Error procesando señal vital:", error);
       return null;
@@ -90,10 +69,8 @@ export function useVitalSignsProcessor() {
     if (!processorRef.current) return null;
     
     try {
-      // Reiniciar procesador
+      // Reiniciar procesador pero mantener resultados
       const savedResults = processorRef.current.reset();
-      consecutiveGoodSignalsRef.current = 0; // CAMBIO CRÍTICO: Iniciar en 0
-      fingerDetectedRef.current = false; // CAMBIO CRÍTICO: Reiniciar detección de dedo
       return savedResults;
     } catch (error) {
       console.error("Error reiniciando procesador:", error);
@@ -113,9 +90,6 @@ export function useVitalSignsProcessor() {
       setLastValidResults(null);
       arrhythmiaCounterRef.current = 0;
       processedSignalsRef.current = 0;
-      fingerDetectedRef.current = false; // CAMBIO CRÍTICO: Siempre iniciar como false
-      consecutiveGoodSignalsRef.current = 0;
-      lastFingerDetectionTimeRef.current = Date.now();
       sessionIdRef.current = Math.random().toString(36).substring(2, 9);
     } catch (error) {
       console.error("Error en reinicio completo:", error);
@@ -154,7 +128,6 @@ export function useVitalSignsProcessor() {
     fullReset,
     lastValidResults,
     startCalibration,
-    forceCalibrationCompletion,
-    isFingerDetected: () => fingerDetectedRef.current // CAMBIO CRÍTICO: Devolver el valor real
+    forceCalibrationCompletion
   };
 }

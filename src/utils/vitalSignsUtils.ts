@@ -1,177 +1,136 @@
 
 /**
- * Aplica un filtro de Media Móvil Simple (SMA) a un valor
+ * Utilidades para procesamiento de señales vitales
  */
-export function applySMAFilter(
-  value: number, 
-  buffer: number[], 
-  windowSize: number
-): { filteredValue: number, updatedBuffer: number[] } {
-  // Crear una copia del buffer para no mutar el original
-  const updatedBuffer = [...buffer, value];
+
+/**
+ * Aplica un filtro de Media Móvil Simple
+ * @param value El valor actual a filtrar
+ * @param buffer El buffer de valores previos
+ * @param windowSize El tamaño de la ventana de filtrado
+ */
+export const applySMAFilter = (value: number, buffer: number[], windowSize: number) => {
+  const updatedBuffer = [...buffer, value].slice(-windowSize);
   
-  // Mantener el tamaño del buffer limitado a la ventana
-  while (updatedBuffer.length > windowSize) {
-    updatedBuffer.shift();
-  }
-  
-  // Calcular la media móvil
-  const filteredValue = updatedBuffer.reduce((sum, val) => sum + val, 0) / updatedBuffer.length;
+  const sum = updatedBuffer.reduce((acc, val) => acc + val, 0);
+  const filteredValue = sum / updatedBuffer.length;
   
   return { filteredValue, updatedBuffer };
-}
+};
 
 /**
- * Calcula el índice de perfusión basado en valores mínimos y máximos
- * El índice de perfusión es una medida de la fuerza de la pulsación
+ * Calcula el índice de perfusión
+ * @param ac Componente AC de la señal PPG
+ * @param dc Componente DC de la señal PPG
  */
-export function calculatePerfusionIndex(min: number, max: number): number {
-  if (max <= 0 || min >= max) return 0;
-  
-  // Fórmula estándar para PI = (AC/DC) * 100%
-  // Donde AC es la componente pulsátil y DC es la componente continua
-  const ac = max - min;
-  const dc = max;
-  
-  const perfusionIndex = (ac / dc) * 100;
-  
-  // Normalizar a un rango típico de 0-1 para facilitar uso
-  return Math.min(perfusionIndex / 100, 1);
-}
+export const calculatePerfusionIndex = (ac: number, dc: number): number => {
+  if (dc === 0) return 0;
+  return ac / dc;
+};
 
 /**
- * Calcula el índice de perfusión a partir de un array de valores
+ * Calcula la componente AC de la señal PPG
+ * @param values Array de valores PPG
  */
-export function calculatePerfusionIndexFromValues(values: number[]): number {
+export const calculateAC = (values: number[]): number => {
   if (values.length < 2) return 0;
   
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const sorted = [...values].sort((a, b) => a - b);
+  const lowerPercentile = sorted[Math.floor(sorted.length * 0.1)];
+  const upperPercentile = sorted[Math.floor(sorted.length * 0.9)];
   
-  return calculatePerfusionIndex(min, max);
-}
+  return upperPercentile - lowerPercentile;
+};
 
 /**
- * Formatea la presión arterial para mostrarla en la UI
+ * Calcula la componente DC de la señal PPG
+ * @param values Array de valores PPG
  */
-export function formatBloodPressure(bp: { systolic: number, diastolic: number }): string {
-  if (bp.systolic <= 0 || bp.diastolic <= 0) {
-    return "--/--";
-  }
-  
-  return `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}`;
-}
-
-/**
- * Valida un valor de SpO2 
- */
-export function validateSpO2(value: number): number {
-  if (value < 80 || value > 100 || isNaN(value)) {
-    return 0; // Valor no válido
-  }
-  
-  return Math.round(value);
-}
-
-/**
- * Verifica si hay un dedo presente basado en la calidad de la señal
- */
-export function isFingerPresent(quality: number, threshold: number = 30): boolean {
-  return quality >= threshold;
-}
+export const calculateDC = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, val) => sum + val, 0) / values.length;
+};
 
 /**
  * Encuentra picos y valles en una señal PPG
+ * @param values Los valores de la señal PPG
  */
-export function findPeaksAndValleys(values: number[]): {
-  peakIndices: number[];
-  valleyIndices: number[];
-} {
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
+export const findPeaksAndValleys = (values: number[]): {
+  peaks: { index: number; value: number }[];
+  valleys: { index: number; value: number }[];
+} => {
+  const peaks: { index: number; value: number }[] = [];
+  const valleys: { index: number; value: number }[] = [];
   
   if (values.length < 3) {
-    return { peakIndices, valleyIndices };
+    return { peaks, valleys };
   }
   
-  // Usar ventana deslizante para detectar picos y valles
   for (let i = 1; i < values.length - 1; i++) {
     const prev = values[i - 1];
     const current = values[i];
     const next = values[i + 1];
     
-    // Detectar pico: valor actual mayor que vecinos
     if (current > prev && current > next) {
-      peakIndices.push(i);
+      peaks.push({ index: i, value: current });
     }
     
-    // Detectar valle: valor actual menor que vecinos
     if (current < prev && current < next) {
-      valleyIndices.push(i);
+      valleys.push({ index: i, value: current });
     }
   }
   
-  return { peakIndices, valleyIndices };
-}
+  return { peaks, valleys };
+};
 
 /**
- * Calcula la amplitud de la señal PPG usando los picos y valles identificados
+ * Calcula la amplitud de la señal PPG
+ * @param values Los valores de la señal PPG
+ * @param peaks Índices de los picos detectados
+ * @param valleys Índices de los valles detectados
  */
-export function calculateAmplitude(
+export const calculateAmplitude = (
   values: number[],
-  peakIndices: number[],
-  valleyIndices: number[]
-): number {
-  if (peakIndices.length === 0 || valleyIndices.length === 0) {
+  peaks: { index: number; value: number }[],
+  valleys: { index: number; value: number }[]
+): number => {
+  if (peaks.length === 0 || valleys.length === 0) {
     return 0;
   }
   
-  // Calcular amplitudes promedio entre picos y valles
   let totalAmplitude = 0;
   let count = 0;
   
-  // Calcular la amplitud para cada ciclo completo de la señal
-  for (let i = 0; i < Math.min(peakIndices.length, valleyIndices.length); i++) {
-    const peakIdx = peakIndices[i];
+  for (const peak of peaks) {
     // Encontrar el valle más cercano anterior al pico
-    let nearestValleyIdx = -1;
-    for (const valleyIdx of valleyIndices) {
-      if (valleyIdx < peakIdx) {
-        nearestValleyIdx = valleyIdx;
-      } else {
-        break;
+    let closestValley = null;
+    let minDistance = Number.MAX_VALUE;
+    
+    for (const valley of valleys) {
+      if (valley.index < peak.index) {
+        const distance = peak.index - valley.index;
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestValley = valley;
+        }
       }
     }
     
-    if (nearestValleyIdx !== -1) {
-      const peak = values[peakIdx];
-      const valley = values[nearestValleyIdx];
-      totalAmplitude += Math.abs(peak - valley);
+    if (closestValley) {
+      totalAmplitude += Math.abs(peak.value - closestValley.value);
       count++;
     }
   }
   
   return count > 0 ? totalAmplitude / count : 0;
-}
+};
 
 /**
- * Calcula la componente AC (alternante) de una señal PPG
+ * Formatea un valor de presión arterial
+ * @param systolic Valor sistólico
+ * @param diastolic Valor diastólico
  */
-export function calculateAC(values: number[]): number {
-  if (values.length < 2) return 0;
-  
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  
-  return max - min;
-}
-
-/**
- * Calcula la componente DC (continua) de una señal PPG
- */
-export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  
-  // La componente DC se puede aproximar como el valor máximo
-  return Math.max(...values);
-}
+export const formatBloodPressure = (systolic: number, diastolic: number): string => {
+  if (systolic === 0 || diastolic === 0) return "--/--";
+  return `${Math.round(systolic)}/${Math.round(diastolic)}`;
+};
