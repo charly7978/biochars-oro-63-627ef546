@@ -43,13 +43,7 @@ export function useVitalSignsProcessor() {
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "SIN ARRITMIAS|0",
-        lastArrhythmiaData: null,
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0
+        lastArrhythmiaData: null
       };
     }
     
@@ -59,8 +53,8 @@ export function useVitalSignsProcessor() {
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal - Pasar correctamente los parámetros a processSignal
-      const result = processorRef.current.processSignal(value, rrData);
+      // Procesar la señal
+      const result = processorRef.current.processSignal(value, rrData, isFingerDetected);
       
       // Rastrear contador de arritmias
       if (result.arrhythmiaStatus.includes('ARRITMIA')) {
