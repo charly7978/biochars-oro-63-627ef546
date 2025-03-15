@@ -36,6 +36,7 @@ const SignalQualityIndicator = ({
   const [rgRatio, setRgRatio] = useState(0);
   const [redValue, setRedValue] = useState(0);
   const [greenValue, setGreenValue] = useState(0);
+  const [showDetailedRGB, setShowDetailedRGB] = useState(true); // Mostrar siempre por defecto
   
   // Detector de dedo centralizado (se crea solo una vez)
   const [fingerDetector] = useState(() => new FingerDetector());
@@ -156,9 +157,19 @@ const SignalQualityIndicator = ({
             />
           </div>
           
-          {/* Mostramos el ratio R/G actual y valores */}
-          {rgbValues && rgbValues.green > 0 && (
-            <div className="mt-0.5 flex flex-col">
+          {/* Panel de Valores RGB DESTACADO para análisis */}
+          <div className="mt-1 p-1 bg-black/40 rounded-sm border border-white/10">
+            <div className="flex justify-between items-center mb-0.5">
+              <span className="text-[9px] font-semibold text-white/90">Parámetros RGB</span>
+              {isFingerDetected ? (
+                <span className="text-[8px] font-medium text-green-400">Validado</span>
+              ) : (
+                <span className="text-[8px] font-medium text-red-400">No Válido</span>
+              )}
+            </div>
+            
+            {/* Valor de ratio R/G con barras de progreso */}
+            <div className="mb-0.5">
               <div className="flex justify-between items-center">
                 <span className="text-[8px] font-semibold text-white/70">Ratio R/G:</span>
                 <span 
@@ -168,22 +179,78 @@ const SignalQualityIndicator = ({
                       ? '#10b981' : '#ef4444' 
                   }}
                 >
-                  {rgRatio.toFixed(2)}
+                  {rgRatio.toFixed(2)} 
+                  <span className="text-[7px] text-white/50">
+                    (Mín: {fingerDetector.getConfig().MIN_RED_GREEN_RATIO.toFixed(2)})
+                  </span>
                 </span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[8px] font-semibold text-white/70">R/G:</span>
-                <span 
-                  className="text-[8px] font-medium"
-                  style={{ 
-                    color: isFingerDetected ? '#10b981' : '#ef4444' 
+              
+              {/* Barra de progreso para Ratio R/G */}
+              <div className="w-full h-0.5 bg-gray-700/50 rounded-full overflow-hidden">
+                <div 
+                  className="h-full transition-all duration-300"
+                  style={{
+                    width: `${Math.min(100, (rgRatio / fingerDetector.getConfig().MIN_RED_GREEN_RATIO) * 100)}%`,
+                    backgroundColor: rgRatio >= fingerDetector.getConfig().MIN_RED_GREEN_RATIO ? '#10b981' : '#ef4444'
                   }}
-                >
-                  {Math.round(redValue)}/{Math.round(greenValue)}
-                </span>
+                />
               </div>
             </div>
-          )}
+            
+            {/* Valores absolutos R y G con barras de progreso */}
+            <div className="grid grid-cols-2 gap-1">
+              {/* Valor Rojo */}
+              <div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[8px] font-semibold text-white/70">Rojo:</span>
+                  <span 
+                    className="text-[8px] font-medium"
+                    style={{ 
+                      color: redValue >= fingerDetector.getConfig().MIN_RED_VALUE 
+                        ? '#10b981' : '#ef4444' 
+                    }}
+                  >
+                    {Math.round(redValue)}
+                  </span>
+                </div>
+                <div className="w-full h-0.5 bg-gray-700/50 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (redValue / fingerDetector.getConfig().MIN_RED_VALUE) * 100)}%`,
+                      backgroundColor: redValue >= fingerDetector.getConfig().MIN_RED_VALUE ? '#10b981' : '#ef4444'
+                    }}
+                  />
+                </div>
+              </div>
+              
+              {/* Valor Verde */}
+              <div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[8px] font-semibold text-white/70">Verde:</span>
+                  <span 
+                    className="text-[8px] font-medium"
+                    style={{ 
+                      color: greenValue >= fingerDetector.getConfig().MIN_GREEN_VALUE 
+                        ? '#10b981' : '#ef4444' 
+                    }}
+                  >
+                    {Math.round(greenValue)}
+                  </span>
+                </div>
+                <div className="w-full h-0.5 bg-gray-700/50 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (greenValue / fingerDetector.getConfig().MIN_GREEN_VALUE) * 100)}%`,
+                      backgroundColor: greenValue >= fingerDetector.getConfig().MIN_GREEN_VALUE ? '#10b981' : '#ef4444'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       

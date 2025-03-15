@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -22,6 +23,11 @@ interface FingerDetectionConfig {
   QUALITY_THRESHOLD: number;
   LOW_QUALITY_THRESHOLD: number;
   RESET_QUALITY_THRESHOLD: number;
+  
+  // NUEVO: Parámetros de estabilidad
+  STABILITY_THRESHOLD: number;
+  STABILITY_CHANGE_THRESHOLD: number;
+  MAX_QUALITY_RATE_CHANGE: number;
 }
 
 interface FingerDetectionResult {
@@ -35,6 +41,7 @@ interface FingerDetectionResult {
 /**
  * Clase para detección de dedo en la cámara
  * COMPLETAMENTE REDISEÑADA con triple verificación para eliminar falsos positivos
+ * y MEJORADA para estabilidad de lectura
  */
 export class FingerDetector {
   private qualityHistory: number[] = [];
@@ -48,8 +55,12 @@ export class FingerDetector {
   private lastDetectionState: boolean = false;
   private noDetectionCounter: number = 0;
   private goodDetectionCounter: number = 0;
+  private previousValues: number[] = [];
+  private stabilityScore: number = 0;
+  private lastQualityValue: number = 0;
   
   // Configuración con umbrales EXTREMOS para eliminar falsos positivos COMPLETAMENTE
+  // MEJORADA para mayor estabilidad en las lecturas
   private config: FingerDetectionConfig = {
     // PRIMERA VARIABLE CRÍTICA: Calidad mínima de señal (perfusión)
     MIN_QUALITY_FOR_DETECTION: 25,     // Umbral extremadamente alto
@@ -65,11 +76,16 @@ export class FingerDetector {
     REQUIRED_FINGER_FRAMES: 5,         // Más frames para garantizar consistencia
     QUALITY_THRESHOLD: 60,             // Mantiene mismo valor
     LOW_QUALITY_THRESHOLD: 30,         // Mantiene mismo valor
-    RESET_QUALITY_THRESHOLD: 10        // Más alto para reset más agresivo
+    RESET_QUALITY_THRESHOLD: 10,       // Más alto para reset más agresivo
+    
+    // NUEVO: Parámetros de estabilidad
+    STABILITY_THRESHOLD: 5,            // Umbral para considerar señal estable
+    STABILITY_CHANGE_THRESHOLD: 15,    // Cambio máximo permitido entre frames para estabilidad
+    MAX_QUALITY_RATE_CHANGE: 10        // Cambio máximo permitido en calidad entre frames
   };
   
-  // Historial reducido para respuesta más rápida
-  private readonly historySize = 5; 
+  // Historial reducido para respuesta más rápida pero ahora con más estabilidad
+  private readonly historySize = 8; 
   
   constructor() {
     this.detectDeviceType();
@@ -79,7 +95,11 @@ export class FingerDetector {
       valorRojoMínimo: this.config.MIN_RED_VALUE,
       valorVerdeMínimo: this.config.MIN_GREEN_VALUE,
       framesRequeridos: this.config.REQUIRED_FINGER_FRAMES,
-      dispositivo: this.deviceType
+      dispositivo: this.deviceType,
+      // NUEVO: Parámetros de estabilidad
+      umbralEstabilidad: this.config.STABILITY_THRESHOLD,
+      umbralCambioEstabilidad: this.config.STABILITY_CHANGE_THRESHOLD,
+      cambioPorcentajeMax: this.config.MAX_QUALITY_RATE_CHANGE
     });
   }
   
@@ -100,6 +120,7 @@ export class FingerDetector {
   /**
    * Procesa un nuevo valor de calidad de señal y actualiza el estado
    * COMPLETAMENTE REDISEÑADO con TRIPLE verificación para eliminar TODOS los falsos positivos
+   * MEJORADO para lograr mayor estabilidad en las lecturas
    */
   public processQuality(quality: number, redValue?: number, greenValue?: number): FingerDetectionResult {
     // Actualizar valores RGB si están disponibles
@@ -143,11 +164,11 @@ export class FingerDetector {
         cumpleValoresAbsolutos: hasValidAbsoluteValues,
         
         todosCriteriosCumplidos: hasMinimumQuality && hasCorrectRgRatio && hasValidAbsoluteValues,
-        estabilidad: this.stabilityCounter
+        estabilidad: this.stabilityCounter,
+        puntuaciónEstabilidad: this.stabilityScore
       });
     }
     
-    // Fix the error: Don't compare boolean values directly with === true/false
     // Si la calidad es muy baja o no cumple criterios, reiniciar más agresivamente
     if (quality < this.config.RESET_QUALITY_THRESHOLD || 
         !hasMinimumQuality || !hasCorrectRgRatio || !hasValidAbsoluteValues) {
@@ -158,23 +179,36 @@ export class FingerDetector {
         this.stabilityCounter = 0;
         this.noDetectionCounter += 2; // Incrementar contador de no detección
         this.goodDetectionCounter = Math.max(0, this.goodDetectionCounter - 2);
+        this.stabilityScore = 0; // Reset de estabilidad
+        this.previousValues = []; // Reset de valores previos
       }
     } 
     // Si cumple TODOS los tres criterios estrictos a la vez
     else if (hasMinimumQuality && hasCorrectRgRatio && hasValidAbsoluteValues) {
-      this.qualityHistory.push(quality);
-      if (this.qualityHistory.length > this.historySize) {
-        this.qualityHistory.shift();
+      // NUEVO: Verificar estabilidad antes de aceptar grandes cambios
+      const isStableChange = this.checkStability(quality);
+      
+      if (isStableChange) {
+        this.qualityHistory.push(quality);
+        if (this.qualityHistory.length > this.historySize) {
+          this.qualityHistory.shift();
+        }
+        this.stabilityCounter = Math.min(12, this.stabilityCounter + 1);
+        this.goodDetectionCounter += 1;
+        this.noDetectionCounter = Math.max(0, this.noDetectionCounter - 1);
+        this.stabilityScore = Math.min(10, this.stabilityScore + 0.5); // Aumenta estabilidad gradualmente
+      } else {
+        // Si el cambio no es estable, sólo registrar parcialmente
+        this.stabilityCounter = Math.max(1, this.stabilityCounter);
+        this.stabilityScore = Math.max(0, this.stabilityScore - 1); // Disminuye estabilidad
       }
-      this.stabilityCounter = Math.min(12, this.stabilityCounter + 1);
-      this.goodDetectionCounter += 1;
-      this.noDetectionCounter = Math.max(0, this.noDetectionCounter - 1);
     } 
     // Si no cumple todos los criterios, comenzar a limpiar historial
     else {
       this.stabilityCounter = Math.max(0, this.stabilityCounter - 2);
       this.noDetectionCounter += 1;
       this.goodDetectionCounter = Math.max(0, this.goodDetectionCounter - 1);
+      this.stabilityScore = Math.max(0, this.stabilityScore - 1); // Disminuye estabilidad
       
       if (this.qualityHistory.length > 0) {
         // Reducción más agresiva del historial
@@ -188,7 +222,14 @@ export class FingerDetector {
       }
     }
     
-    // Calcular calidad a mostrar (más restrictivo)
+    // NUEVO: Registrar valor para cálculos de estabilidad
+    this.previousValues.push(quality);
+    if (this.previousValues.length > 10) {
+      this.previousValues.shift();
+    }
+    this.lastQualityValue = quality;
+    
+    // Calcular calidad a mostrar con NUEVAS REGLAS DE ESTABILIDAD
     this.updateDisplayQuality();
     
     // Determinar nivel de calidad actual
@@ -244,8 +285,26 @@ export class FingerDetector {
   }
   
   /**
+   * NUEVO: Comprueba la estabilidad de los cambios de calidad
+   * Evita cambios bruscos que causan las oscilaciones
+   */
+  private checkStability(newQuality: number): boolean {
+    // Si no hay suficientes datos previos, aceptar cambio
+    if (this.previousValues.length < 3) return true;
+    
+    // Calcular promedio de valores recientes
+    const recentAvg = this.previousValues.slice(-3).reduce((a, b) => a + b, 0) / 3;
+    
+    // Calcular cambio porcentual
+    const changePercent = Math.abs((newQuality - recentAvg) / Math.max(1, recentAvg)) * 100;
+    
+    // Si el cambio es demasiado brusco, considerarlo inestable
+    return changePercent <= this.config.MAX_QUALITY_RATE_CHANGE;
+  }
+  
+  /**
    * Actualiza el valor de calidad para mostrar
-   * MEJORADO para evitar lecturas irreales
+   * MEJORADO para mayor estabilidad con suavizado avanzado
    */
   private updateDisplayQuality(): void {
     // Sin datos, calidad cero
@@ -258,6 +317,7 @@ export class FingerDetector {
     // Frames insuficientes, mostrar calidad parcial pero mucho más restrictiva
     if (this.qualityHistory.length < this.config.REQUIRED_FINGER_FRAMES) {
       const lastQuality = this.qualityHistory[this.qualityHistory.length - 1];
+      // IMPORTANTE: Más restrictivo inicialmente para evitar falsas señales excelentes
       this.displayQuality = Math.floor(lastQuality * 0.4); // Aún más restrictivo
       return;
     }
@@ -270,9 +330,13 @@ export class FingerDetector {
     
     const avgQuality = filteredValues.reduce((a, b) => a + b, 0) / filteredValues.length;
     
-    // Actualizar con suavizado restrictivo
-    const increaseRate = 0.25; // Muy lento al subir
-    const decreaseRate = 0.75; // Muy rápido al bajar
+    // MEJORADO: Suavizado adaptativo basado en estabilidad
+    // Cuanto más estable es la señal, más gradual es el cambio
+    const stabilityFactor = Math.min(1, this.stabilityScore / 10); // 0-1 basado en estabilidad
+    
+    // Actualizar con suavizado adaptativo - más restrictivo al subir, más flexible al bajar
+    const increaseRate = 0.15 + (0.15 * stabilityFactor); // 0.15-0.30 dependiendo de estabilidad
+    const decreaseRate = 0.60 - (0.30 * stabilityFactor); // 0.60-0.30 dependiendo de estabilidad
     
     if (avgQuality > this.displayQuality) {
       this.displayQuality = Math.round(
@@ -395,6 +459,9 @@ export class FingerDetector {
     this.lastDetectionState = false;
     this.noDetectionCounter = 0;
     this.goodDetectionCounter = 0;
+    this.previousValues = [];
+    this.stabilityScore = 0;
+    this.lastQualityValue = 0;
     console.log("FingerDetector: Detector reiniciado completamente");
   }
   
