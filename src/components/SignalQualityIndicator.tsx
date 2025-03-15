@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -6,6 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, ThumbsUp, AlertTriangle, Fingerprint } from 'lucide-react';
+import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 
 interface SignalQualityIndicatorProps {
   quality: number;
@@ -22,200 +24,58 @@ interface SignalQualityIndicatorProps {
 const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
   // Estado local
   const [displayQuality, setDisplayQuality] = useState(0);
-  const [qualityHistory, setQualityHistory] = useState<number[]>([]);
-  const [isAndroid, setIsAndroid] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [isFingerDetected, setIsFingerDetected] = useState(false);
+  const [qualityText, setQualityText] = useState('Sin Dedo');
+  const [qualityColor, setQualityColor] = useState('#666666');
   const [showHelpTip, setShowHelpTip] = useState(false);
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
-  const [lastQualityLevel, setLastQualityLevel] = useState<string>('');
+  const [helpMessage, setHelpMessage] = useState('');
   
-  // Constantes de configuración - EXTREMADAMENTE SENSIBLES (SOLO DOS VARIABLES CRÍTICAS MODIFICADAS)
-  const historySize = 3; 
-  const REQUIRED_FINGER_FRAMES = 1; // PRIMERA VARIABLE CRÍTICA: Reducida al mínimo absoluto para detección inmediata
-  const QUALITY_THRESHOLD = 40; 
-  const LOW_QUALITY_THRESHOLD = 20; 
-  const MIN_QUALITY_FOR_DETECTION = 0.5; // SEGUNDA VARIABLE CRÍTICA: Reducida drásticamente para máxima sensibilidad
-  const RESET_QUALITY_THRESHOLD = 3;
-
-  // Detectar plataforma
+  // Detector de dedo centralizado (se crea solo una vez)
+  const [fingerDetector] = useState(() => new FingerDetector());
+  
+  // Mostrar consejos cuando se comienza a monitorear
   useEffect(() => {
-    const androidDetected = /android/i.test(navigator.userAgent);
-    const iosDetected = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    setIsAndroid(androidDetected);
-    setIsIOS(iosDetected);
-    
-    // Mostrar tip de ayuda después de un delay corto para respuesta rápida
     if (isMonitoring) {
       const timer = setTimeout(() => setShowHelpTip(true), 1000);
       return () => clearTimeout(timer);
     }
   }, [isMonitoring]);
 
-  // Mantener historial de calidad para promedio ponderado
+  // Procesar calidad de señal a través del detector centralizado
   useEffect(() => {
     if (isMonitoring) {
-      // Si la calidad es muy baja, reiniciar historial
-      if (quality < RESET_QUALITY_THRESHOLD) {
-        if (qualityHistory.length > 0) {
-          setQualityHistory([]);
-          setDisplayQuality(0);
-        }
-        return;
-      }
+      const result = fingerDetector.processQuality(quality);
       
-      // Extremadamente sensible: cualquier señal mínima es suficiente
-      if (quality > MIN_QUALITY_FOR_DETECTION) {
-        setQualityHistory(prev => {
-          const newHistory = [...prev, quality];
-          return newHistory.slice(-historySize);
-        });
+      // Actualizar estado según resultado
+      setDisplayQuality(result.quality);
+      setIsFingerDetected(result.isFingerDetected);
+      setQualityText(result.qualityLevel);
+      setQualityColor(result.qualityColor);
+      setHelpMessage(result.helpMessage);
+      
+      // Determinar nivel de tip basado en calidad
+      if (result.quality < fingerDetector.getConfig().LOW_QUALITY_THRESHOLD) {
+        setTipLevel('error');
+      } else if (result.quality < fingerDetector.getConfig().QUALITY_THRESHOLD) {
+        setTipLevel('warning');
       } else {
-        // Si la calidad es muy baja pero no llega al umbral de reset
-        if (qualityHistory.length > 0 && quality < MIN_QUALITY_FOR_DETECTION * 0.5) {
-          setQualityHistory([]);
-          setDisplayQuality(0);
-        }
+        setTipLevel('info');
       }
     } else {
-      setQualityHistory([]);
+      // Reset cuando no estamos monitoreando
       setDisplayQuality(0);
+      setIsFingerDetected(false);
+      fingerDetector.reset();
     }
-  }, [quality, isMonitoring, qualityHistory.length]);
+  }, [quality, isMonitoring, fingerDetector]);
 
-  // Calcular calidad ponderada con más peso a valores recientes y más sensible
-  useEffect(() => {
-    if (qualityHistory.length === 0) {
-      setDisplayQuality(0);
-      return;
-    }
-
-    // Verificar si hay suficientes frames consecutivos - máxima sensibilidad
-    if (qualityHistory.length < REQUIRED_FINGER_FRAMES) {
-      // Mostrar calidad parcial para feedback inmediato - aumentado para mejor respuesta
-      setDisplayQuality(Math.max(0, Math.min(25, quality))); 
-      return;
-    }
-
-    // Cálculo ponderado donde los valores más recientes tienen mayor influencia
-    let weightedSum = 0;
-    let totalWeight = 0;
-
-    qualityHistory.forEach((q, index) => {
-      const weight = Math.pow(1.3, index); // Reducido para menor sesgo
-      weightedSum += q * weight;
-      totalWeight += weight;
-    });
-
-    const averageQuality = Math.round(weightedSum / totalWeight);
-    
-    // Verificación menos estricta para falsas lecturas
-    const recentValues = qualityHistory.slice(-3); // Reducido para respuesta más rápida
-    const minRecent = Math.min(...recentValues);
-    const maxRecent = Math.max(...recentValues);
-    const rangeRecent = maxRecent - minRecent;
-    
-    let finalQuality = averageQuality;
-    
-    // Prácticamente sin penalización
-    if (rangeRecent > 40 && qualityHistory.length < historySize) {
-      finalQuality = Math.round(finalQuality * 0.9); // Penalización mínima
-    }
-    
-    // Suavizar cambios para mejor UX pero con respuesta inmediata
-    setDisplayQuality(prev => {
-      const delta = (finalQuality - prev) * 0.6; // Aumentado para respuesta inmediata
-      return Math.round(prev + delta);
-    });
-    
-    // Determinar nivel de tip basado en calidad
-    if (finalQuality < LOW_QUALITY_THRESHOLD) {
-      setTipLevel('error');
-    } else if (finalQuality < QUALITY_THRESHOLD) {
-      setTipLevel('warning');
-    } else {
-      setTipLevel('info');
-    }
-    
-    // Actualizar último nivel de calidad para mensajes
-    const newQualityLevel = getQualityText(finalQuality);
-    if (newQualityLevel !== lastQualityLevel) {
-      setLastQualityLevel(newQualityLevel);
-    }
-    
-  }, [qualityHistory, lastQualityLevel, quality]);
-
-  /**
-   * Obtiene el color basado en la calidad (más granular y más sensible)
-   */
-  const getQualityColor = (q: number) => {
-    if (q === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) return '#666666';
-    if (q > 80) return '#059669'; // Verde más saturado
-    if (q > 65) return '#10b981'; // Verde medio
-    if (q > 50) return '#22c55e'; // Verde normal
-    if (q > 35) return '#a3e635'; // Verde-amarillo
-    if (q > 20) return '#eab308'; // Amarillo
-    if (q > 10) return '#f97316'; // Naranja
-    if (q > 5) return '#ef4444'; // Rojo
-    return '#b91c1c';            // Rojo oscuro
-  };
-
-  /**
-   * Obtiene el texto descriptivo de calidad con umbrales más sensibles
-   */
-  const getQualityText = (q: number) => {
-    if (q === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) return 'Sin Dedo';
-    if (q > 80) return 'Excelente';
-    if (q > 65) return 'Muy Buena';
-    if (q > 50) return 'Buena';
-    if (q > 35) return 'Aceptable';
-    if (q > 20) return 'Baja';
-    if (q > 10) return 'Muy Baja';
-    return 'Crítica';
-  };
-
-  /**
-   * Obtiene el mensaje de ayuda basado en la plataforma y calidad
-   */
-  const getHelpMessage = () => {
-    // Sin dedo detectado
-    if (displayQuality === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) {
-      return "Cubra la cámara trasera y el flash con su dedo índice. Presione firmemente pero no muy fuerte.";
-    }
-    
-    // Con dedo pero baja calidad
-    if (displayQuality < LOW_QUALITY_THRESHOLD) {
-      if (isAndroid) {
-        return "Presione más firmemente pero sin exceso. Mantenga el dedo estable sobre la cámara trasera.";
-      } else if (isIOS) {
-        return "Cubra completamente la cámara trasera. Presione con firmeza moderada y mantenga el dedo quieto.";
-      } else {
-        return "Asegúrese que su dedo cubra la cámara trasera y manténgalo quieto. Evite presionar demasiado fuerte.";
-      }
-    }
-    
-    // Calidad media
-    if (displayQuality < QUALITY_THRESHOLD) {
-      return "Buen avance. Mantenga esta posición y evite movimientos.";
-    }
-    
-    // Buena calidad
-    return "¡Buena señal! Mantenga esta misma presión para óptimos resultados.";
-  };
-
-  // Estilo de pulso adaptado a la plataforma y calidad
+  // Estilo de pulso adaptado a la calidad
   const getPulseClass = () => {
-    if (displayQuality === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) 
+    if (!isFingerDetected) 
       return "transition-all duration-300";
     
-    const baseClass = "transition-all duration-300";
-    const pulseSpeed = "animate-pulse";
-    
-    return `${baseClass} ${pulseSpeed}`;
-  };
-
-  // Determina si hay un dedo realmente presente - extremadamente sensible
-  const isFingerActuallyDetected = () => {
-    return displayQuality > 0 && qualityHistory.length >= REQUIRED_FINGER_FRAMES;
+    return "transition-all duration-300 animate-pulse";
   };
 
   return (
@@ -224,8 +84,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         <div 
           className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 ${getPulseClass()}`}
           style={{
-            borderColor: getQualityColor(displayQuality),
-            backgroundColor: `${getQualityColor(displayQuality)}33`
+            borderColor: qualityColor,
+            backgroundColor: `${qualityColor}33`
           }}
         >
           <span className="text-[9px] font-bold text-white">{displayQuality}%</span>
@@ -236,9 +96,9 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
             <span className="text-[9px] font-semibold text-white/90">Calidad de Señal</span>
             <span 
               className="text-[9px] font-medium"
-              style={{ color: getQualityColor(displayQuality) }}
+              style={{ color: qualityColor }}
             >
-              {getQualityText(displayQuality)}
+              {qualityText}
             </span>
           </div>
 
@@ -247,7 +107,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
               className="h-full transition-all duration-300"
               style={{
                 width: `${displayQuality}%`,
-                backgroundColor: getQualityColor(displayQuality)
+                backgroundColor: qualityColor
               }}
             />
           </div>
@@ -258,23 +118,21 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       <div className="absolute top-0 right-0 transform translate-x-1 -translate-y-3">
         <Fingerprint 
           size={16} 
-          className={`${isFingerActuallyDetected() ? 'text-green-500' : 'text-gray-400'} transition-colors duration-300`}
+          className={`${isFingerDetected ? 'text-green-500' : 'text-gray-400'} transition-colors duration-300`}
         />
       </div>
       
-      {/* Consejos de ayuda mejorados */}
-      {showHelpTip && (displayQuality < QUALITY_THRESHOLD || !isFingerActuallyDetected()) && (
+      {/* Consejos de ayuda */}
+      {showHelpTip && (displayQuality < fingerDetector.getConfig().QUALITY_THRESHOLD || !isFingerDetected) && (
         <div className="absolute -bottom-[4.5rem] left-0 right-0 bg-black/75 p-2 rounded text-white text-xs flex items-start gap-1.5 border border-white/10">
-          {tipLevel === 'error' || !isFingerActuallyDetected() ? (
+          {tipLevel === 'error' || !isFingerDetected ? (
             <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
           ) : tipLevel === 'warning' ? (
             <AlertTriangle className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" />
           ) : (
             <ThumbsUp className="h-4 w-4 text-green-400 flex-shrink-0 mt-0.5" />
           )}
-          <span>
-            {getHelpMessage()}
-          </span>
+          <span>{helpMessage}</span>
         </div>
       )}
     </div>
