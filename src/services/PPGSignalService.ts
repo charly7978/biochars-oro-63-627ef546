@@ -18,6 +18,8 @@ export class PPGSignalService {
   private signalProcessor: SignalProcessor;
   private isProcessing: boolean = false;
   private lastProcessedSignal: ProcessedSignal | null = null;
+  private rgbSummary: {red: number, green: number, blue: number} = {red: 0, green: 0, blue: 0};
+  private frameCount: number = 0;
   
   constructor() {
     this.fingerDetector = new FingerDetector();
@@ -30,6 +32,7 @@ export class PPGSignalService {
    */
   public startProcessing(): void {
     this.isProcessing = true;
+    this.frameCount = 0;
     console.log("PPGSignalService: Procesamiento iniciado");
   }
   
@@ -52,34 +55,65 @@ export class PPGSignalService {
   public processFrame(imageData: ImageData): ProcessedSignal | null {
     if (!this.isProcessing) return null;
     
-    // Extraer valores RGB del frame para análisis
-    const { rawValue, redValue, greenValue } = this.extractFrameValues(imageData);
+    this.frameCount++;
     
-    // Proporcionar valores RGB al procesador para análisis fisiológico
-    this.signalProcessor.setRGBValues(redValue, greenValue);
-    
-    // Aplicar filtro para obtener señal limpia
-    const filteredValue = this.signalProcessor.applySMAFilter(rawValue);
-    
-    // Obtener calidad de señal del procesador
-    const signalQuality = this.signalProcessor.getSignalQuality();
-    
-    // Determinar si hay dedo presente mediante procesador especializado
-    const fingerDetectionResult = this.fingerDetector.processQuality(signalQuality);
-    
-    // Construir objeto de señal procesada
-    const signal: ProcessedSignal = {
-      timestamp: Date.now(),
-      rawValue: rawValue,
-      filteredValue: filteredValue,
-      quality: signalQuality,
-      fingerDetected: fingerDetectionResult.isFingerDetected,
-      roi: this.calculateROI(imageData.width, imageData.height),
-      physicalSignatureScore: fingerDetectionResult.quality
-    };
-    
-    this.lastProcessedSignal = signal;
-    return signal;
+    try {
+      // Extraer valores RGB del frame para análisis
+      const { rawValue, redValue, greenValue, blueValue } = this.extractFrameValues(imageData);
+      
+      // Guardar valores RGB para análisis fisiológico
+      this.rgbSummary = {
+        red: redValue,
+        green: greenValue,
+        blue: blueValue
+      };
+      
+      // Proporcionar valores RGB al procesador para análisis fisiológico
+      this.signalProcessor.setRGBValues(redValue, greenValue);
+      
+      // Aplicar filtro para obtener señal limpia
+      const filteredValue = this.signalProcessor.applySMAFilter(rawValue);
+      
+      // Obtener calidad de señal del procesador
+      const signalQuality = this.signalProcessor.getSignalQuality();
+      
+      // Determinar si hay dedo presente mediante procesador especializado con verificación fisiológica
+      const fingerDetectionResult = this.fingerDetector.processQuality(
+        signalQuality,
+        redValue,
+        greenValue
+      );
+      
+      // Construir objeto de señal procesada
+      const signal: ProcessedSignal = {
+        timestamp: Date.now(),
+        rawValue: rawValue,
+        filteredValue: filteredValue,
+        quality: signalQuality,
+        fingerDetected: fingerDetectionResult.isFingerDetected,
+        roi: this.calculateROI(imageData.width, imageData.height),
+        physicalSignatureScore: fingerDetectionResult.quality,
+        rgbValues: this.rgbSummary
+      };
+      
+      // Log detallado cada 30 frames para análisis
+      if (this.frameCount % 30 === 0) {
+        console.log("PPGSignalService: Análisis de calidad de señal", {
+          calidad: signalQuality,
+          dedoDetectado: fingerDetectionResult.isFingerDetected,
+          valorRojo: redValue,
+          valorVerde: greenValue,
+          ratioRG: redValue / Math.max(1, greenValue),
+          frame: this.frameCount
+        });
+      }
+      
+      this.lastProcessedSignal = signal;
+      return signal;
+    } catch (error) {
+      console.error("PPGSignalService: Error procesando frame", error);
+      return null;
+    }
   }
   
   /**
@@ -88,7 +122,8 @@ export class PPGSignalService {
   private extractFrameValues(imageData: ImageData): { 
     rawValue: number, 
     redValue: number, 
-    greenValue: number 
+    greenValue: number,
+    blueValue: number
   } {
     const width = imageData.width;
     const height = imageData.height;
@@ -124,14 +159,14 @@ export class PPGSignalService {
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
     
-    // Valor principal: intensidad roja o promedio de canales
-    // La señal PPG se detecta mejor en el canal rojo para la mayoría de las cámaras
+    // Valor principal: intensidad roja para análisis PPG
     const rawValue = avgRed;
     
     return {
       rawValue,
       redValue: avgRed,
-      greenValue: avgGreen
+      greenValue: avgGreen,
+      blueValue: avgBlue
     };
   }
   
@@ -164,11 +199,19 @@ export class PPGSignalService {
   }
   
   /**
+   * Obtiene el resumen de valores RGB actuales
+   */
+  public getRGBSummary(): {red: number, green: number, blue: number} {
+    return {...this.rgbSummary};
+  }
+  
+  /**
    * Reinicia completamente el servicio
    */
   public reset(): void {
     this.stopProcessing();
     this.lastProcessedSignal = null;
+    this.frameCount = 0;
     console.log("PPGSignalService: Servicio reiniciado completamente");
   }
 }

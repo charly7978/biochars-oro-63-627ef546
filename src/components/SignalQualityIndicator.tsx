@@ -12,16 +12,18 @@ import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 interface SignalQualityIndicatorProps {
   quality: number;
   isMonitoring?: boolean;
+  rgbValues?: {red: number, green: number, blue: number};
 }
 
 /**
  * Componente mejorado que muestra la calidad de la señal PPG
- * Incluye detección específica para diferentes dispositivos y consejos más detallados
- * 
- * IMPORTANTE: Esta aplicación es solo para referencia médica, no reemplaza dispositivos médicos certificados.
- * La detección de señal es real, basada en datos de la cámara sin simulaciones.
+ * Incluye detección específica con validación fisiológica estricta
  */
-const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
+const SignalQualityIndicator = ({ 
+  quality, 
+  isMonitoring = false,
+  rgbValues
+}: SignalQualityIndicatorProps) => {
   // Estado local
   const [displayQuality, setDisplayQuality] = useState(0);
   const [isFingerDetected, setIsFingerDetected] = useState(false);
@@ -39,13 +41,18 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     if (isMonitoring) {
       const timer = setTimeout(() => setShowHelpTip(true), 1000);
       return () => clearTimeout(timer);
+    } else {
+      setShowHelpTip(false);
     }
   }, [isMonitoring]);
 
-  // Procesar calidad de señal a través del detector centralizado
+  // Procesar calidad de señal a través del detector centralizado con criterios fisiológicos
   useEffect(() => {
     if (isMonitoring) {
-      const result = fingerDetector.processQuality(quality);
+      // Si tenemos valores RGB, usarlos para detección fisiológica
+      const result = rgbValues 
+        ? fingerDetector.processQuality(quality, rgbValues.red, rgbValues.green)
+        : fingerDetector.processQuality(quality);
       
       // Actualizar estado según resultado
       setDisplayQuality(result.quality);
@@ -55,7 +62,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       setHelpMessage(result.helpMessage);
       
       // Determinar nivel de tip basado en calidad
-      if (result.quality < fingerDetector.getConfig().LOW_QUALITY_THRESHOLD) {
+      if (!result.isFingerDetected || result.quality < fingerDetector.getConfig().LOW_QUALITY_THRESHOLD) {
         setTipLevel('error');
       } else if (result.quality < fingerDetector.getConfig().QUALITY_THRESHOLD) {
         setTipLevel('warning');
@@ -68,7 +75,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       setIsFingerDetected(false);
       fingerDetector.reset();
     }
-  }, [quality, isMonitoring, fingerDetector]);
+  }, [quality, isMonitoring, fingerDetector, rgbValues]);
 
   // Estilo de pulso adaptado a la calidad
   const getPulseClass = () => {
