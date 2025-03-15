@@ -28,41 +28,39 @@ export class PPGSignalProcessor implements SignalProcessor {
   // Actualización: configuración por defecto optimizada para detección de dedo sin falsos positivos
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
+<<<<<<< HEAD
     MIN_RED_THRESHOLD: 80,      // antes: 85
     MAX_RED_THRESHOLD: 230,     // antes: 255
     STABILITY_WINDOW: 4,        // antes: 5
+=======
+    MIN_RED_THRESHOLD: 80,
+    MAX_RED_THRESHOLD: 230,
+    STABILITY_WINDOW: 4,
+>>>>>>> a9050434b348e8b21e6f0df56217d53aab420de9
     MIN_STABILITY_COUNT: 3
   };
-
   private currentConfig: typeof this.DEFAULT_CONFIG;
+  private readonly BUFFER_SIZE = 15;
+  private readonly MIN_RED_THRESHOLD = 80;
+  private readonly MAX_RED_THRESHOLD = 230;
+  private readonly STABILITY_WINDOW = 4;
+  private readonly MIN_STABILITY_COUNT = 3;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private isCurrentlyDetected: boolean = false;
-  private lastDetectionTime: number = 0;
-  private readonly DETECTION_TIMEOUT = 1000;
-  private isAndroid: boolean = false;
-  // Adding the missing property
-  private consecutiveDetections: number = 0;
   
-  private redHistory: number[] = [];
-  private greenHistory: number[] = [];
-  private blueHistory: number[] = [];
-  private filteredValueHistory: number[] = [];
-  private readonly PHYSIO_HISTORY_SIZE = 20;
-  private lastPulsePeakTime: number = 0;
-  private lastRedGreenRatio: number = 0;
-  private lastPulsatility: number = 0;
+  // Reduced PERFUSION_INDEX_THRESHOLD to increase sensitivity
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
   
-  // Increased sensitivity - Lower minimum pulse amplitude for better detection
-  private readonly MIN_PULSE_AMPLITUDE = 0.35; // Reduced from 0.5
-  private readonly MAX_PULSE_AMPLITUDE = 4.0;
-  // Reduced minimum red/green ratio for better sensitivity
-  private readonly MIN_RED_GREEN_RATIO = 1.05; // Reduced from 1.08
-  private readonly MIN_PULSE_INTERVAL_MS = 250;
-  private readonly MAX_PULSE_INTERVAL_MS = 1500;
+  private baselineValue: number = 0;
+  private readonly WAVELET_THRESHOLD = 0.025;
+  private readonly BASELINE_FACTOR = 0.95;
+  private periodicityBuffer: number[] = [];
+  private readonly PERIODICITY_BUFFER_SIZE = 40;
   
-  private lastDebugLog: number = 0;
-  private readonly DEBUG_INTERVAL = 1000;
+  // Reduced MIN_PERIODICITY_SCORE to allow more signals to be detected
+  private readonly MIN_PERIODICITY_SCORE = 0.38;
+  
+  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
 
   // Nueva calibración: constantes adicionales para optimizar la detección
   private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
@@ -79,23 +77,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     public onError?: (error: ProcessingError) => void
   ) {
     this.kalmanFilter = new KalmanFilter();
-    this.isAndroid = /android/i.test(navigator.userAgent);
-    
-    if (this.isAndroid) {
-      this.currentConfig = { 
-        ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: 80,
-        BUFFER_SIZE: 10,
-        STABILITY_WINDOW: 4
-      };
-    } else {
-      this.currentConfig = { ...this.DEFAULT_CONFIG };
-    }
-    
-    console.log("PPGSignalProcessor: Instancia creada con configuración específica para plataforma", {
-      isAndroid: this.isAndroid,
-      config: this.currentConfig
-    });
+    this.currentConfig = { ...this.DEFAULT_CONFIG };
+    console.log("PPGSignalProcessor: Instancia creada");
   }
 
   async initialize(): Promise<void> {
@@ -103,11 +86,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.lastValues = [];
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
-      this.consecutiveDetections = 0;
-      this.isCurrentlyDetected = false;
-      this.lastDetectionTime = 0;
       this.kalmanFilter.reset();
-      console.log("PPGSignalProcessor: Inicializado con configuración:", this.currentConfig);
+      this.baselineValue = 0;
+      this.periodicityBuffer = [];
+      console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
       this.handleError("INIT_ERROR", "Error al inicializar el procesador");
@@ -126,9 +108,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.lastValues = [];
     this.stableFrameCount = 0;
     this.lastStableValue = 0;
-    this.consecutiveDetections = 0;
-    this.isCurrentlyDetected = false;
     this.kalmanFilter.reset();
+    this.baselineValue = 0;
+    this.periodicityBuffer = [];
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -136,26 +118,18 @@ export class PPGSignalProcessor implements SignalProcessor {
     try {
       console.log("PPGSignalProcessor: Iniciando calibración");
       await this.initialize();
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
-      if (this.isAndroid) {
-        this.currentConfig = {
-          ...this.DEFAULT_CONFIG,
-          MIN_RED_THRESHOLD: 80
-        };
-      } else {
-        this.currentConfig = {
-          ...this.DEFAULT_CONFIG,
-          MIN_RED_THRESHOLD: 90
-        };
-      }
-      
-      this.redHistory = [];
-      this.greenHistory = [];
-      this.blueHistory = [];
-      this.filteredValueHistory = [];
-      this.lastPulsePeakTime = 0;
-      
-      console.log("PPGSignalProcessor: Calibración completada con configuración:", this.currentConfig);
+      this.currentConfig = {
+        ...this.DEFAULT_CONFIG,
+        MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 5),
+        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
+        STABILITY_WINDOW: this.STABILITY_WINDOW,
+        MIN_STABILITY_COUNT: this.MIN_STABILITY_COUNT
+      };
+
+      console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
       return true;
     } catch (error) {
       console.error("PPGSignalProcessor: Error de calibración", error);
@@ -164,60 +138,47 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
+  resetToDefault(): void {
+    this.currentConfig = { ...this.DEFAULT_CONFIG };
+    this.initialize();
+    console.log("PPGSignalProcessor: Configuración restaurada a valores por defecto");
+  }
+
   processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
+      console.log("PPGSignalProcessor: No está procesando");
       return;
     }
 
     try {
-      const extractionResult = this.extractImageFeatures(imageData);
-      const redValue = extractionResult.redValue;
-      const redGreenRatio = extractionResult.redGreenRatio;
+      const redValue = this.extractRedChannel(imageData);
       
-      const now = Date.now();
-      if (now - this.lastDebugLog > this.DEBUG_INTERVAL) {
-        console.log("PPGSignalProcessor: Datos de extracción:", {
-          redValue: redValue.toFixed(2),
-          redGreenRatio: redGreenRatio.toFixed(2),
-          brightness: extractionResult.brightness.toFixed(2),
-          isRedDominant: extractionResult.isRedDominant,
-          threshold: this.currentConfig.MIN_RED_THRESHOLD,
-          isAndroid: this.isAndroid,
-          time: new Date().toISOString()
-        });
-        this.lastDebugLog = now;
+      const denoisedValue = this.applyWaveletDenoising(redValue);
+      
+      const filtered = this.kalmanFilter.filter(denoisedValue);
+      
+      this.periodicityBuffer.push(filtered);
+      if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
+        this.periodicityBuffer.shift();
       }
       
-      const filtered = this.kalmanFilter.filter(redValue);
-      this.updatePhysiologicalFeatures(now, redValue, 
-                                      extractionResult.greenValue,
-                                      extractionResult.blueValue,
-                                      filtered);
-      
-      const { isFingerDetected, quality } = this.analyzeSignalPhysiological(filtered, redValue, now);
-      
-      const pulsatility = this.calculatePulsatility();
-      
+      this.lastValues.push(filtered);
+      if (this.lastValues.length > this.BUFFER_SIZE) {
+        this.lastValues.shift();
+      }
+
+      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
+
       const processedSignal: ProcessedSignal = {
-        timestamp: now,
+        timestamp: Date.now(),
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
-        perfusionIndex: redValue > 0 ? 
-          Math.abs(filtered - this.lastStableValue) / Math.max(1, redValue) : 0,
-        redGreenRatio: redGreenRatio,
-        pulsatility: pulsatility
+        roi: this.detectROI(redValue)
       };
-      
-      if (this.onSignalReady) {
-        this.onSignalReady(processedSignal);
-      }
-      
-      if (isFingerDetected) {
-        this.lastStableValue = filtered;
-      }
+
+      this.onSignalReady?.(processedSignal);
 
     } catch (error) {
       console.error("PPGSignalProcessor: Error procesando frame", error);
@@ -225,322 +186,157 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
-  private extractImageFeatures(imageData: ImageData): { 
-    redValue: number, 
-    greenValue: number,
-    blueValue: number,
-    isRedDominant: boolean,
-    redGreenRatio: number,
-    brightness: number
-  } {
+  private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
-    let greenSum = 0;
-    let blueSum = 0;
-    let pixelCount = 0;
+    let count = 0;
     
-    const roiSize = this.isAndroid ? 
-                    Math.min(imageData.width, imageData.height) * 0.5 :
-                    Math.min(imageData.width, imageData.height) * 0.4;
-    
-    const centerX = Math.floor(imageData.width / 2);
-    const centerY = Math.floor(imageData.height / 2);
-    
-    const startX = Math.max(0, Math.floor(centerX - roiSize / 2));
-    const endX = Math.min(imageData.width, Math.floor(centerX + roiSize / 2));
-    const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
-    const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
+    const startX = Math.floor(imageData.width * 0.375);
+    const endX = Math.floor(imageData.width * 0.625);
+    const startY = Math.floor(imageData.height * 0.375);
+    const endY = Math.floor(imageData.height * 0.625);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
-        const r = data[i];     // Canal rojo
-        const g = data[i+1];   // Canal verde
-        const b = data[i+2];   // Canal azul
-        
-        redSum += r;
-        greenSum += g;
-        blueSum += b;
-        pixelCount++;
+        redSum += data[i];  // Canal rojo
+        count++;
       }
     }
     
-    const avgRed = pixelCount > 0 ? redSum / pixelCount : 0;
-    const avgGreen = pixelCount > 0 ? greenSum / pixelCount : 0;
-    const avgBlue = pixelCount > 0 ? blueSum / pixelCount : 0;
-    
-    const brightness = (avgRed + avgGreen + avgBlue) / 3;
-    
-    const redGreenRatio = avgGreen > 0 ? avgRed / avgGreen : 1;
-    
-    const redThreshold = this.isAndroid ? this.currentConfig.MIN_RED_THRESHOLD * 0.9 : this.currentConfig.MIN_RED_THRESHOLD;
-    const isRedDominant = redGreenRatio > this.MIN_RED_GREEN_RATIO && 
-                          avgRed > redThreshold;
-    
-    this.updateColorHistory(avgRed, avgGreen, avgBlue);
-    
-    return {
-      redValue: isRedDominant ? avgRed : 0,
-      greenValue: avgGreen,
-      blueValue: avgBlue,
-      isRedDominant,
-      redGreenRatio,
-      brightness
-    };
+    const avgRed = redSum / count;
+    return avgRed;
   }
 
-  private updateColorHistory(red: number, green: number, blue: number): void {
-    this.redHistory.push(red);
-    this.greenHistory.push(green);
-    this.blueHistory.push(blue);
-    
-    if (this.redHistory.length > this.PHYSIO_HISTORY_SIZE) {
-      this.redHistory.shift();
-      this.greenHistory.shift();
-      this.blueHistory.shift();
+  private applyWaveletDenoising(value: number): number {
+    if (this.baselineValue === 0) {
+      this.baselineValue = value;
+    } else {
+      this.baselineValue = this.baselineValue * this.BASELINE_FACTOR + 
+                          value * (1 - this.BASELINE_FACTOR);
     }
+    
+    const normalizedValue = value - this.baselineValue;
+    
+    if (Math.abs(normalizedValue) < this.WAVELET_THRESHOLD) {
+      return this.baselineValue;
+    }
+    
+    const sign = normalizedValue >= 0 ? 1 : -1;
+    const denoisedValue = sign * (Math.abs(normalizedValue) - this.WAVELET_THRESHOLD * 0.5);
+    
+    return this.baselineValue + denoisedValue;
   }
 
-  private updatePhysiologicalFeatures(timestamp: number, red: number, green: number, blue: number, filtered: number): void {
-    this.filteredValueHistory.push(filtered);
-    if (this.filteredValueHistory.length > this.PHYSIO_HISTORY_SIZE) {
-      this.filteredValueHistory.shift();
-    }
+  private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
+    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
-    this.lastRedGreenRatio = green > 0 ? red / green : 1;
-    
-    if (this.filteredValueHistory.length >= 5) {
-      this.detectPulsePeaks(timestamp, filtered);
-    }
-  }
-
-  private detectPulsePeaks(timestamp: number, value: number): void {
-    if (this.filteredValueHistory.length < 5) return;
-    
-    const windowSize = Math.min(5, Math.floor(this.filteredValueHistory.length / 2));
-    const recentValues = this.filteredValueHistory.slice(-windowSize * 2);
-    
-    let isPeak = true;
-    
-    for (let i = recentValues.length - windowSize; i < recentValues.length - 1; i++) {
-      if (value <= recentValues[i]) {
-        isPeak = false;
-        break;
-      }
-    }
-    
-    if (isPeak && this.lastPulsePeakTime > 0) {
-      const interval = timestamp - this.lastPulsePeakTime;
-      
-      if (interval >= this.MIN_PULSE_INTERVAL_MS && interval <= this.MAX_PULSE_INTERVAL_MS) {
-        const min = Math.min(...recentValues);
-        const amplitude = value - min;
-        
-        if (amplitude >= this.MIN_PULSE_AMPLITUDE && amplitude <= this.MAX_PULSE_AMPLITUDE) {
-          this.lastPulsatility = amplitude;
-        }
-      }
-      
-      this.lastPulsePeakTime = timestamp;
-    }
-  }
-
-  private calculatePulsatility(): number {
-    if (this.filteredValueHistory.length < 3) return 0;
-    
-    if (this.lastPulsatility > 0) {
-      return this.lastPulsatility;
-    }
-    
-    const recentValues = this.filteredValueHistory.slice(-10);
-    const max = Math.max(...recentValues);
-    const min = Math.min(...recentValues);
-    const peakToPeak = max - min;
-    
-    return Math.min(this.MAX_PULSE_AMPLITUDE, peakToPeak);
-  }
-
-  private analyzeSignalPhysiological(filtered: number, rawValue: number, timestamp: number): { 
-    isFingerDetected: boolean, 
-    quality: number 
-  } {
-    const currentTime = timestamp;
-    
-    if (rawValue <= 0) {
+    if (!isInRange) {
       this.stableFrameCount = 0;
-      this.isCurrentlyDetected = false;
+      this.lastStableValue = 0;
       return { isFingerDetected: false, quality: 0 };
     }
-    
-    this.lastValues.push(filtered);
-    if (this.lastValues.length > this.currentConfig.BUFFER_SIZE) {
-      this.lastValues.shift();
+
+    if (this.lastValues.length < this.STABILITY_WINDOW) {
+      return { isFingerDetected: false, quality: 0 };
     }
+
+    const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
+    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    let physiologicalScore = this.evaluatePhysiologicalFeatures();
+    const variations = recentValues.map((val, i, arr) => {
+      if (i === 0) return 0;
+      return val - arr[i-1];
+    });
+
+    const maxVariation = Math.max(...variations.map(Math.abs));
+    const minVariation = Math.min(...variations);
     
-    const stability = this.calculateStability();
-    // Increased sensitivity - reduced stability requirement
-    const isStable = stability > (this.isAndroid ? 0.5 : 0.6); // Reduced from 0.6/0.7
-    
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
+    const isStable = maxVariation < adaptiveThreshold * 2 && 
+                    minVariation > -adaptiveThreshold * 2;
+
     if (isStable) {
-      this.stableFrameCount = Math.min(
-        this.stableFrameCount + 1,
-        this.currentConfig.MIN_STABILITY_COUNT * 2
-      );
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
+      this.lastStableValue = filtered;
     } else {
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
     }
-    
-    const isStableNow = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
-    
-    let newDetection = false;
-    
-    // Increased sensitivity - lower physiological score threshold
-    if (physiologicalScore > 50 && isStableNow) { // Reduced from 60
-      newDetection = true;
-      this.lastDetectionTime = currentTime;
-    } else if (this.isCurrentlyDetected && 
-              (currentTime - this.lastDetectionTime < this.DETECTION_TIMEOUT)) {
-      newDetection = true;
-    } else {
-      newDetection = false;
-    }
-    
-    this.isCurrentlyDetected = newDetection;
+
+    const periodicityScore = this.analyzeSignalPeriodicity();
     
     let quality = 0;
-    if (this.isCurrentlyDetected) {
-      const stabilityScore = Math.min(1, this.stableFrameCount / (this.currentConfig.MIN_STABILITY_COUNT * 2));
+    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT) {
+      const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
+      const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
+                                    (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
+      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      quality = Math.round((physiologicalScore * 0.7 + stabilityScore * 100 * 0.3));
+      quality = Math.round((stabilityScore * 0.35 + 
+                          intensityScore * 0.25 + 
+                          variationScore * 0.2 + 
+                          periodicityScore * 0.2) * 100);
     }
     
-    return {
-      isFingerDetected: this.isCurrentlyDetected,
-      quality
-    };
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
+                            periodicityScore > this.MIN_PERIODICITY_SCORE &&
+                            quality >= this.SIGNAL_QUALITY_THRESHOLD;
+
+    return { isFingerDetected, quality };
   }
 
-  private evaluatePhysiologicalFeatures(): number {
-    if (this.redHistory.length < 5 || this.filteredValueHistory.length < 5) {
+  private analyzeSignalPeriodicity(): number {
+    if (this.periodicityBuffer.length < 30) {
       return 0;
     }
     
-    const avgRedGreenRatio = this.redHistory.length > 0 && this.greenHistory.length > 0 ?
-      this.redHistory.reduce((sum, val) => sum + val, 0) / this.redHistory.length /
-      (this.greenHistory.reduce((sum, val) => sum + val, 0) / this.greenHistory.length) : 0;
+    const signal = this.periodicityBuffer.slice(-30);
+    const signalMean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
     
-    const rgRatioScore = avgRedGreenRatio >= this.MIN_RED_GREEN_RATIO ?
-      100 * Math.min(1, avgRedGreenRatio / (this.MIN_RED_GREEN_RATIO * 1.5)) : 0;
+    const normalizedSignal = signal.map(val => val - signalMean);
     
-    const pulsatility = this.calculatePulsatility();
-    let pulsatilityScore = 0;
+    const maxLag = 20;
+    const correlations: number[] = [];
     
-    if (pulsatility >= this.MIN_PULSE_AMPLITUDE && pulsatility <= this.MAX_PULSE_AMPLITUDE) {
-      const optimalPulse = (this.MIN_PULSE_AMPLITUDE + this.MAX_PULSE_AMPLITUDE) / 2;
-      const normalizedDistance = Math.abs(pulsatility - optimalPulse) / (this.MAX_PULSE_AMPLITUDE - this.MIN_PULSE_AMPLITUDE);
-      pulsatilityScore = 100 * (1 - Math.min(1, normalizedDistance * 2));
-    }
-    
-    const colorDistributionScore = this.evaluateColorDistribution();
-    
-    const temporalScore = this.evaluateTemporalStability();
-    
-    const physiologicalScore = (
-      rgRatioScore * 0.35 +
-      pulsatilityScore * 0.30 +
-      colorDistributionScore * 0.20 +
-      temporalScore * 0.15
-    );
-    
-    console.log("PPGSignalProcessor: Características fisiológicas", {
-      rgRatio: avgRedGreenRatio.toFixed(2),
-      rgScore: rgRatioScore.toFixed(0),
-      pulsatility: pulsatility.toFixed(2),
-      pulsScore: pulsatilityScore.toFixed(0),
-      colorScore: colorDistributionScore.toFixed(0),
-      tempScore: temporalScore.toFixed(0),
-      total: physiologicalScore.toFixed(0)
-    });
-    
-    return physiologicalScore;
-  }
-
-  private evaluateColorDistribution(): number {
-    if (this.redHistory.length < 3 || this.greenHistory.length < 3 || this.blueHistory.length < 3) {
-      return 0;
-    }
-    
-    const avgRed = this.redHistory.reduce((sum, val) => sum + val, 0) / this.redHistory.length;
-    const avgGreen = this.greenHistory.reduce((sum, val) => sum + val, 0) / this.greenHistory.length;
-    const avgBlue = this.blueHistory.reduce((sum, val) => sum + val, 0) / this.blueHistory.length;
-    
-    if (avgRed <= avgGreen || avgGreen <= avgBlue) {
-      return 0;
-    }
-    
-    const redGreenDiff = avgRed - avgGreen;
-    const greenBlueDiff = avgGreen - avgBlue;
-    
-    const isNaturalRGDiff = redGreenDiff > 10 && redGreenDiff < 100;
-    const isNaturalGBDiff = greenBlueDiff > 5 && greenBlueDiff < 50;
-    
-    if (!isNaturalRGDiff || !isNaturalGBDiff) {
-      return 30;
-    }
-    
-    const idealRGDiff = 40;
-    const idealGBDiff = 20;
-    
-    const rgSimilarity = 1 - Math.min(1, Math.abs(redGreenDiff - idealRGDiff) / idealRGDiff);
-    const gbSimilarity = 1 - Math.min(1, Math.abs(greenBlueDiff - idealGBDiff) / idealGBDiff);
-    
-    return 100 * ((rgSimilarity * 0.7) + (gbSimilarity * 0.3));
-  }
-
-  private evaluateTemporalStability(): number {
-    if (this.redHistory.length < 5 || this.filteredValueHistory.length < 5) {
-      return 0;
-    }
-    
-    const rgRatios = [];
-    for (let i = 0; i < Math.min(this.redHistory.length, this.greenHistory.length); i++) {
-      if (this.greenHistory[i] > 0) {
-        rgRatios.push(this.redHistory[i] / this.greenHistory[i]);
+    for (let lag = 1; lag <= maxLag; lag++) {
+      let correlation = 0;
+      let denominator = 0;
+      
+      for (let i = 0; i < normalizedSignal.length - lag; i++) {
+        correlation += normalizedSignal[i] * normalizedSignal[i + lag];
+        denominator += normalizedSignal[i] * normalizedSignal[i];
+      }
+      
+      if (denominator > 0) {
+        correlation /= Math.sqrt(denominator);
+        correlations.push(Math.abs(correlation));
+      } else {
+        correlations.push(0);
       }
     }
     
-    if (rgRatios.length < 3) return 0;
+    let maxCorrelation = 0;
+    let periodFound = false;
     
-    const avgRgRatio = rgRatios.reduce((sum, val) => sum + val, 0) / rgRatios.length;
-    const rgVariations = rgRatios.map(ratio => Math.abs(ratio - avgRgRatio) / avgRgRatio);
-    const avgRgVariation = rgVariations.reduce((sum, val) => sum + val, 0) / rgVariations.length;
-    
-    if (avgRgVariation < 0.01 || avgRgVariation > 0.3) {
-      return 30;
+    for (let i = 1; i < correlations.length - 1; i++) {
+      if (correlations[i] > correlations[i-1] && 
+          correlations[i] > correlations[i+1] && 
+          correlations[i] > 0.2) {
+        
+        if (i >= 4 && i <= 15) {
+          if (correlations[i] > maxCorrelation) {
+            maxCorrelation = correlations[i];
+            periodFound = true;
+          }
+        }
+      }
     }
     
-    const optimalVariation = 0.05;
-    const stabilityScore = 100 * (1 - Math.min(1, Math.abs(avgRgVariation - optimalVariation) / 0.1));
-    
-    return stabilityScore;
-  }
-
-  private calculateStability(): number {
-    if (this.lastValues.length < 3) return 0;
-    
-    const variations = [];
-    for (let i = 1; i < this.lastValues.length; i++) {
-      variations.push(Math.abs(this.lastValues[i] - this.lastValues[i-1]));
+    if (periodFound) {
+      return Math.min(1.0, maxCorrelation);
+    } else {
+      return 0.1;
     }
-    
-    const avgVariation = variations.reduce((sum, val) => sum + val, 0) / variations.length;
-    
-    const threshold = this.isAndroid ? 8 : 5;
-    const normalizedStability = Math.max(0, Math.min(1, 1 - (avgVariation / threshold)));
-    
-    return normalizedStability;
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
