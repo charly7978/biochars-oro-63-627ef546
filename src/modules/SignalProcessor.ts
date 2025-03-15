@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -26,13 +25,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
+  // Actualización: configuración por defecto optimizada para detección de dedo sin falsos positivos
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 85,
-    MAX_RED_THRESHOLD: 255,
-    STABILITY_WINDOW: 5,
-    MIN_STABILITY_COUNT: 3,
-    HYSTERESIS: 5
+    MIN_RED_THRESHOLD: 80,      // antes: 85
+    MAX_RED_THRESHOLD: 230,     // antes: 255
+    STABILITY_WINDOW: 4,        // antes: 5
+    MIN_STABILITY_COUNT: 3
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -64,6 +63,16 @@ export class PPGSignalProcessor implements SignalProcessor {
   
   private lastDebugLog: number = 0;
   private readonly DEBUG_INTERVAL = 1000;
+
+  // Nueva calibración: constantes adicionales para optimizar la detección
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
+  private baselineValue: number = 0;
+  private readonly WAVELET_THRESHOLD = 0.025;
+  private readonly BASELINE_FACTOR = 0.95;
+  private periodicityBuffer: number[] = [];
+  private readonly PERIODICITY_BUFFER_SIZE = 40;
+  private readonly MIN_PERIODICITY_SCORE = 0.38;
+  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
