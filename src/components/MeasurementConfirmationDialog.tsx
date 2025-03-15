@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import { CheckCircle, XCircle } from 'lucide-react';
 
 interface MeasurementConfirmationDialogProps {
@@ -39,33 +40,19 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   cholesterol = '--',
   triglycerides = '--'
 }) => {
-  // Format values to correctly display "--" for 0, null, or undefined values
-  const formatValue = (value: number | string | undefined): string => {
-    if (value === 0 || value === null || value === undefined || value === '') {
-      return '--';
-    }
-    return String(value);
-  };
+  // Formatear valores para mostrar correctamente, usando '--' para valores 0, null o undefined
+  const formattedGlucose = glucose === 0 || glucose === null || glucose === undefined ? '--' : glucose;
+  const formattedCholesterol = cholesterol === 0 || cholesterol === null || cholesterol === undefined ? '--' : cholesterol;
+  const formattedTriglycerides = triglycerides === 0 || triglycerides === null || triglycerides === undefined ? '--' : triglycerides;
 
-  const formattedHeartRate = formatValue(heartRate);
-  const formattedSpo2 = formatValue(spo2);
-  const formattedGlucose = formatValue(glucose);
-  const formattedCholesterol = formatValue(cholesterol);
-  const formattedTriglycerides = formatValue(triglycerides);
-
-  // Debug logging
+  // Consolelog para depuración
   console.log("MeasurementConfirmationDialog - Valores recibidos:", {
     heartRate,
     spo2,
     pressure,
     glucose,
     cholesterol,
-    triglycerides
-  });
-  
-  console.log("MeasurementConfirmationDialog - Valores formateados:", {
-    formattedHeartRate,
-    formattedSpo2,
+    triglycerides,
     formattedGlucose,
     formattedCholesterol,
     formattedTriglycerides
@@ -88,11 +75,11 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
           <div className="grid grid-cols-3 gap-2 text-center mb-2">
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Frecuencia Cardíaca</div>
-              <div className="font-bold text-lg">{formattedHeartRate} BPM</div>
+              <div className="font-bold text-lg">{heartRate} BPM</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">SPO2</div>
-              <div className="font-bold text-lg">{formattedSpo2}%</div>
+              <div className="font-bold text-lg">{spo2}%</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Presión</div>
