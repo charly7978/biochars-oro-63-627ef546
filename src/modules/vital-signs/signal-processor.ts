@@ -1,13 +1,7 @@
-
 /**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- * 
- * Procesador de señales mejorado basado en técnicas avanzadas de procesamiento de señales biomédicas
- * Implementa técnicas de filtrado adaptativo y análisis de forma de onda desde publicaciones IEEE
+ * Enhanced Signal Processor based on advanced biomedical signal processing techniques
+ * Implements wavelet denoising and adaptive filter techniques from IEEE publications
  */
-
 export class SignalProcessor {
   // Ajuste: reducimos la ventana del SMA para mayor reactividad
   private readonly SMA_WINDOW = 3; // antes: 5

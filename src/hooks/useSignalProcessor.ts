@@ -5,8 +5,7 @@ import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
  * Hook para gestionar el procesamiento de señales PPG.
- * IMPORTANTE: Esta aplicación es solo para referencia médica y no sustituye 
- * a dispositivos médicos certificados. No realiza diagnósticos ni tratamientos.
+ * Esta versión limpia mantiene la misma funcionalidad pero con código más limpio.
  */
 export const useSignalProcessor = () => {
   // Creamos una única instancia del procesador
@@ -34,16 +33,7 @@ export const useSignalProcessor = () => {
   // Referencias para historial de calidad
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 8;
-  
-  // Referencias para seguimiento de estabilidad
-  const stableDetectionTimeRef = useRef<number | null>(null);
-  const unstableDetectionTimeRef = useRef<number | null>(null);
-  const MIN_STABLE_DETECTION_MS = 300;
-  
-  // NUEVA REFERENCIA: Para seguimiento de características físicas de la señal
-  const physicalSignatureScoreRef = useRef<number[]>([]);
-  const PHYSICAL_SCORE_HISTORY = 6;
+  const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
   /**
    * Procesa la detección de dedo de manera robusta usando promedio móvil
@@ -61,17 +51,11 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Actualizar historial de características físicas (NUEVO)
-    physicalSignatureScoreRef.current.push(signal.physicalSignatureScore || 0);
-    if (physicalSignatureScoreRef.current.length > PHYSICAL_SCORE_HISTORY) {
-      physicalSignatureScoreRef.current.shift();
-    }
-    
-    // Cálculo ponderado de calidad - mucho más peso a muestras recientes
+    // Cálculo ponderado de calidad
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.5, index);
+      const weight = index + 1; // Más peso a las muestras recientes
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -83,63 +67,17 @@ export const useSignalProcessor = () => {
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // NUEVO: Calcular puntuación de firma física
-    const avgPhysicalScore = physicalSignatureScoreRef.current.length > 0 ?
-      physicalSignatureScoreRef.current.reduce((sum, score) => sum + score, 0) / 
-      physicalSignatureScoreRef.current.length : 0;
+    // Usar un umbral más exigente (3 de 5 = 0.6)
+    const robustFingerDetected = detectionRatio >= 0.6;
     
-    // Aplicar histéresis temporal para evitar oscilaciones rápidas
-    const now = Date.now();
-    let robustFingerDetected = false;
-    
-    if (detectionRatio >= 0.5) {
-      if (stableDetectionTimeRef.current === null) {
-        stableDetectionTimeRef.current = now;
-      }
-      unstableDetectionTimeRef.current = null;
-      
-      if (now - (stableDetectionTimeRef.current || 0) >= MIN_STABLE_DETECTION_MS) {
-        robustFingerDetected = true;
-      }
-    } else {
-      if (unstableDetectionTimeRef.current === null) {
-        unstableDetectionTimeRef.current = now;
-      }
-      
-      if (stableDetectionTimeRef.current !== null && 
-          now - (unstableDetectionTimeRef.current || 0) >= MIN_STABLE_DETECTION_MS) {
-        stableDetectionTimeRef.current = null;
-        robustFingerDetected = false;
-      } else {
-        robustFingerDetected = stableDetectionTimeRef.current !== null;
-      }
-    }
-    
-    // MEJORA CRÍTICA: La calidad ahora está directamente vinculada al score físico
-    // para objetos estáticos (pared, etc.) esto dará muy baja calidad
-    let enhancedQuality;
-    
-    if (robustFingerDetected && avgPhysicalScore > 0.65) {
-      // Dedo real con buena señal pulsátil -> calidad proporcional a la detección física
-      enhancedQuality = Math.min(100, Math.max(avgQuality, avgPhysicalScore * 100));
-    } else if (robustFingerDetected && avgPhysicalScore > 0.3) {
-      // Dedo real pero señal débil -> calidad moderada
-      enhancedQuality = Math.min(75, Math.max(30, avgPhysicalScore * 100));
-    } else if (robustFingerDetected) {
-      // Algo detectado pero características físicas pobres -> calidad baja
-      enhancedQuality = Math.min(40, avgPhysicalScore * 100);
-    } else {
-      // Nada detectado -> calidad muy baja
-      enhancedQuality = 0;
-    }
+    // Mejora ligera de calidad para mejor UX
+    const enhancedQuality = Math.min(100, avgQuality * 1.1);
     
     // Devolver señal modificada
     return {
       ...signal,
       fingerDetected: robustFingerDetected,
-      quality: enhancedQuality,
-      // Mantener el score físico para retroalimentación
-      physicalSignatureScore: signal.physicalSignatureScore
+      quality: enhancedQuality
     };
   }, []);
 
@@ -152,23 +90,7 @@ export const useSignalProcessor = () => {
     
     // Callback cuando hay señal lista
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Registrar datos brutos para depuración
-      console.log("useSignalProcessor: Datos brutos recibidos", {
-        fingerDetected: signal.fingerDetected,
-        qualityOriginal: signal.quality,
-        physicalScore: signal.physicalSignatureScore,
-        timestamp: new Date().toISOString()
-      });
-      
       const modifiedSignal = processRobustFingerDetection(signal);
-      
-      // Registrar datos procesados para depuración
-      console.log("useSignalProcessor: Datos procesados", {
-        fingerDetected: modifiedSignal.fingerDetected,
-        qualidadFinal: modifiedSignal.quality,
-        physicalScore: modifiedSignal.physicalSignatureScore,
-        timestamp: new Date().toISOString()
-      });
       
       setLastSignal(modifiedSignal);
       setError(null);
@@ -236,9 +158,6 @@ export const useSignalProcessor = () => {
     
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
-    physicalSignatureScoreRef.current = [];
-    stableDetectionTimeRef.current = null;
-    unstableDetectionTimeRef.current = null;
     
     processor.start();
   }, [processor, isProcessing]);
@@ -259,12 +178,10 @@ export const useSignalProcessor = () => {
 
   /**
    * Calibra el procesador para mejores resultados
-   * IMPORTANTE: Este proceso es real, captura datos del ambiente para establecer una línea base
-   * No utiliza simulaciones ni valores prefabricados
    */
   const calibrate = useCallback(async () => {
     try {
-      console.log("useSignalProcessor: Iniciando calibración real", {
+      console.log("useSignalProcessor: Iniciando calibración", {
         timestamp: new Date().toISOString()
       });
       

@@ -11,12 +11,6 @@ import {
 import { updateSignalLog } from '../utils/signalLogUtils';
 
 /**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
-/**
  * Configuración para detección de arritmias
  */
 interface ArrhythmiaConfig {
