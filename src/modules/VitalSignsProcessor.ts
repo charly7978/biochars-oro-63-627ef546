@@ -1,5 +1,5 @@
 
-import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { VitalSignsProcessor as CoreVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 
 /**
  * Wrapper de compatibilidad que mantiene la interfaz original 
@@ -9,7 +9,7 @@ import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from 
  * mientras mejoramos la estructura interna.
  */
 export class VitalSignsProcessor {
-  private processor: NewVitalSignsProcessor;
+  private processor: CoreVitalSignsProcessor;
   
   // Exponemos las constantes originales para compatibilidad
   private readonly WINDOW_SIZE = 300;
@@ -26,7 +26,7 @@ export class VitalSignsProcessor {
    * Constructor que inicializa el procesador interno refactorizado
    */
   constructor() {
-    this.processor = new NewVitalSignsProcessor();
+    this.processor = new CoreVitalSignsProcessor();
   }
   
   /**
@@ -36,7 +36,7 @@ export class VitalSignsProcessor {
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ) {
+  ): VitalSignsResult {
     return this.processor.processSignal(ppgValue, rrData);
   }
   

@@ -1,4 +1,3 @@
-
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -49,6 +48,9 @@ export class VitalSignsProcessor {
   private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
   private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
 
+  /**
+   * Constructor que inicializa el procesador interno refactorizado
+   */
   constructor() {
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
