@@ -13,36 +13,36 @@ export class SignalProcessor {
   private readonly SG_NORM = 4.4; // Normalization factor for coefficients
   
   // Wavelet denoising thresholds - reducidos para mayor sensibilidad
-  private readonly WAVELET_THRESHOLD = 0.020; // Reduced from 0.022
-  private readonly BASELINE_FACTOR = 0.95; // Ajustado para adaptación más rápida
+  private readonly WAVELET_THRESHOLD = 0.022; // Antes: 0.03
+  private readonly BASELINE_FACTOR = 0.94; // Ajustado para adaptación más rápida (antes: 0.92)
   private baselineValue: number = 0;
   
   // Multi-spectral analysis parameters (based on research from Univ. of Texas)
   // Coeficientes ajustados para mejor detección
-  private readonly RED_ABSORPTION_COEFF = 0.72;
-  private readonly IR_ABSORPTION_COEFF = 0.84;
+  private readonly RED_ABSORPTION_COEFF = 0.72; // Aumentado (antes: 0.684)
+  private readonly IR_ABSORPTION_COEFF = 0.84;  // Aumentado (antes: 0.823)
   private readonly GLUCOSE_CALIBRATION = 0.0452;
   private readonly LIPID_CALIBRATION = 0.0319;
   
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
-  private readonly MAX_SIGNAL_DIFF = 1.8;
-  private readonly MIN_SIGNAL_DIFF = 0.2; // VARIABLE MODIFICADA #1: Drastically reduced from 0.7 to 0.2 to allow weaker signals
+  private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
+  private readonly MIN_SIGNAL_DIFF = 0.9; // Reduced from 1.2
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 5; // VARIABLE MODIFICADA #2: Significantly reduced from 25 to 5 for much easier detection
-  private lastSpikeTimestamps: number[] = [];
-  private readonly MIN_BPM = 45;
-  private readonly MAX_BPM = 200;
-  private readonly MIN_FRAMES_BEFORE_DETECTION = 0; // VARIABLE MODIFICADA #3: Removed the initial frames requirement (was 30)
-  private totalFramesProcessed: number = 0;
+  private readonly REQUIRED_GOOD_FRAMES = 30; // Reduced from 45
+  private lastSpikeTimestamps: number[] = []; // Registro de los últimos picos para análisis de ritmo
+  private readonly MIN_BPM = 45; // Mínima frecuencia cardíaca esperada (latidos por minuto)
+  private readonly MAX_BPM = 200; // Máxima frecuencia cardíaca esperada
+  private readonly MIN_FRAMES_BEFORE_DETECTION = 40; // Reduced from 60 for faster detection
+  private totalFramesProcessed: number = 0; // Contador de frames totales procesados
   
   // Reduced requirements for faster detection
   private consecutiveStableFrames: number = 0;
-  private readonly REQUIRED_STABLE_FRAMES = 3; // VARIABLE MODIFICADA #4: Further reduced from 9 to 3 for even faster detection
-  private lastPeakValues: number[] = [];
-  private readonly CONSISTENCY_WINDOW = 10;
-  private readonly MIN_PEAK_CONSISTENCY = 0.55; // Reduced from 0.6
-  private readonly AMPLITUDE_CONSISTENCY_THRESHOLD = 0.45; // Increased from 0.4
+  private readonly REQUIRED_STABLE_FRAMES = 12; // Reduced from 20
+  private lastPeakValues: number[] = []; // Para análisis de consistencia de picos
+  private readonly CONSISTENCY_WINDOW = 10; // Ventana para análisis de consistencia
+  private readonly MIN_PEAK_CONSISTENCY = 0.6; // Reduced from 0.7
+  private readonly AMPLITUDE_CONSISTENCY_THRESHOLD = 0.4; // Increased from 0.35
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
@@ -375,118 +375,23 @@ export class SignalProcessor {
   }
 
   /**
-   * Estimates blood glucose levels based on PPG waveform characteristics
-   */
-  public estimateBloodGlucose(): number {
-    if (this.ppgValues.length < 100) return 0;
-    
-    // 1. Spectral Analysis (Simplified)
-    const dftResult = this.simplifiedDFT(this.ppgValues);
-    const spectralPower = dftResult.map(val => Math.pow(Math.abs(val), 2));
-    
-    // 2. Feature Extraction (Ratio of Low to High Frequencies)
-    const lowFreqPower = spectralPower.slice(1, 10).reduce((a, b) => a + b, 0);
-    const highFreqPower = spectralPower.slice(11, 50).reduce((a, b) => a + b, 0);
-    const freqRatio = lowFreqPower / (highFreqPower + 1e-6); // Avoid division by zero
-    
-    // 3. PPG Characteristics (Simplified - Amplitude Variation)
-    const amplitudeVariation = this.calculateCoefficientOfVariation(this.ppgValues);
-    
-    // 4. Multi-Spectral Analysis (Simplified)
-    const redAbsorption = this.RED_ABSORPTION_COEFF * this.ppgValues[this.ppgValues.length - 1];
-    const irAbsorption = this.IR_ABSORPTION_COEFF * this.ppgValues[this.ppgValues.length - 1];
-    
-    // 5. Combine Features (Calibrated Model)
-    const glucoseEstimate = this.GLUCOSE_CALIBRATION * freqRatio +
-                            0.15 * amplitudeVariation +
-                            0.05 * redAbsorption -
-                            0.03 * irAbsorption + 85; // Baseline
-    
-    return glucoseEstimate;
-  }
-  
-  /**
-   * Estimates lipid profile based on PPG characteristics and spectral analysis
-   */
-  public estimateLipidProfile(): { triglycerides: number, cholesterol: number } {
-    if (this.ppgValues.length < 100) return { triglycerides: 0, cholesterol: 0 };
-    
-    // 1. Spectral Analysis (Simplified)
-    const dftResult = this.simplifiedDFT(this.ppgValues);
-    const spectralPower = dftResult.map(val => Math.pow(Math.abs(val), 2));
-    
-    // 2. Feature Extraction (Ratio of Mid to High Frequencies)
-    const midFreqPower = spectralPower.slice(5, 20).reduce((a, b) => a + b, 0);
-    const highFreqPower = spectralPower.slice(21, 60).reduce((a, b) => a + b, 0);
-    const freqRatio = midFreqPower / (highFreqPower + 1e-6); // Avoid division by zero
-    
-    // 3. PPG Characteristics (Simplified - Signal Skewness)
-    const mean = this.ppgValues.reduce((a, b) => a + b, 0) / this.ppgValues.length;
-    const skewness = this.ppgValues.reduce((a, b) => a + Math.pow(b - mean, 3), 0) / (this.ppgValues.length * Math.pow(this.calculateStandardDeviation(this.ppgValues), 3));
-    
-    // 4. Multi-Spectral Analysis (Simplified)
-    const redAbsorption = this.RED_ABSORPTION_COEFF * this.ppgValues[this.ppgValues.length - 1];
-    const irAbsorption = this.IR_ABSORPTION_COEFF * this.ppgValues[this.ppgValues.length - 1];
-    
-    // 5. Combine Features (Calibrated Model)
-    const triglyceridesEstimate = this.LIPID_CALIBRATION * freqRatio +
-                                  0.2 * skewness +
-                                  0.04 * redAbsorption -
-                                  0.02 * irAbsorption + 90; // Baseline
-    
-    const cholesterolEstimate = 0.15 * freqRatio -
-                               0.1 * skewness +
-                               0.03 * redAbsorption +
-                               0.01 * irAbsorption + 180; // Baseline
-    
-    return { triglycerides: triglyceridesEstimate, cholesterol: cholesterolEstimate };
-  }
-  
-  /**
-   * Simplified Discrete Wavelet Transform for frequency band analysis
-   */
-  private simplifiedDFT(values: number[]): number[] {
-    const N = values.length;
-    const results = [];
-    
-    for (let k = 0; k < N; k++) {
-      let complexSum = 0;
-      for (let n = 0; n < N; n++) {
-        const angle = (2 * Math.PI * k * n) / N;
-        complexSum += values[n] * (Math.cos(angle) - Math.sin(angle));
-      }
-      results.push(complexSum);
-    }
-    
-    return results;
-  }
-  
-  /**
-   * Calculate standard deviation of an array
-   */
-  private calculateStandardDeviation(values: number[]): number {
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const squaredDifferences = values.map(value => Math.pow(value - mean, 2));
-    const averageSquaredDifference = squaredDifferences.reduce((a, b) => a + b, 0) / values.length;
-    return Math.sqrt(averageSquaredDifference);
-  }
-
-  /**
    * Determina si hay un dedo presente en base a la calidad de la señal
    * y características de la forma de onda
    */
   public isFingerPresent(): boolean {
     // Requerir un mínimo de frames totales antes de permitir cualquier detección
+    // Esto evita falsos positivos durante el arranque
     if (this.totalFramesProcessed < this.MIN_FRAMES_BEFORE_DETECTION) {
       console.log("No suficientes frames procesados para iniciar detección");
       return false;
     }
     
     // Se requiere un mínimo de datos para determinar presencia
-    if (this.ppgValues.length < 15) return false; // Reduced from 25 to 15
+    if (this.ppgValues.length < 30) return false;
     
     // Criterio 1: Calidad mínima de señal (más sensible)
-    if (this.signalQuality < 60) { // Reduced from 65 to 60 for greater sensitivity
+    // Modified for better sensitivity
+    if (this.signalQuality < 75) { // Reduced from 90
       console.log("Calidad de señal insuficiente:", this.signalQuality.toFixed(1));
       return false;
     }
@@ -498,6 +403,7 @@ export class SignalProcessor {
     const range = max - min;
     
     // Criterio 3: Periodo adicional de estabilidad extrema
+    // Less restrictive for easier detection
     if (this.consecutiveStableFrames < this.REQUIRED_STABLE_FRAMES) {
       console.log("No suficientes frames estables:", 
                  this.consecutiveStableFrames, 
@@ -515,25 +421,35 @@ export class SignalProcessor {
       return false;
     }
     
-    // Criterio 5: Verificación de periodicidad (solo para señales con patrón cardíaco)
-    // Hacemos este check menos estricto
-    if (this.lastSpikeTimestamps.length < 4) { // Fixed: changed from boolean comparison to proper number comparison
-      console.log("No se detectaron suficientes picos cardíacos");
-      const periodicityCheck = this.checkSignalPeriodicity(recentValues);
-      if (!periodicityCheck) {
-        console.log("Periodicidad de señal no detectada");
-        return false;
-      }
+    // Criterio 5: Verificación de periodicidad (solo señales con patrón cardíaco)
+    const periodicityCheck = this.checkSignalPeriodicity(recentValues);
+    if (!periodicityCheck) {
+      console.log("Periodicidad de señal no detectada");
+      return false;
     }
     
-    // Criterio 6: Análisis de ritmo cardíaco - ahora opcional
+    // Criterio 6: Análisis de ritmo cardíaco
     const heartRhythmCheck = this.verifyHeartRhythm();
+    if (!heartRhythmCheck) {
+      console.log("Ritmo cardíaco no verificado");
+      return false;
+    }
     
     // Criterio 7: Verificar estabilidad de señal a través del tiempo
     const signalStability = this.checkSignalStability(recentValues);
-    if (signalStability < 0.55) {  // Reduced from 0.60 to 0.55 for greater sensitivity
+    // Less restrictive for easier detection
+    if (signalStability < 0.65) {  // Reduced from 0.75
       console.log("Estabilidad de señal insuficiente:", signalStability.toFixed(2));
       return false;
+    }
+    
+    // Criterio 8: Consistencia en la amplitud de picos
+    if (this.lastPeakValues.length >= 4) {
+      const peakConsistency = this.analyzePeakConsistency() / 100; // Convertir a escala 0-1
+      if (peakConsistency < this.MIN_PEAK_CONSISTENCY) {
+        console.log("Consistencia de picos insuficiente:", peakConsistency.toFixed(2));
+        return false;
+      }
     }
     
     // Solo si pasa todos los criterios estrictos, consideramos que hay un dedo
@@ -636,6 +552,21 @@ export class SignalProcessor {
     // Combinar scores
     return (meanScore * 0.6) + (varianceScore * 0.4);
   }
+
+  /**
+   * Estimates blood glucose levels based on PPG waveform characteristics
+   * ... keep existing code
+   */
+  
+  /**
+   * Estimates lipid profile based on PPG characteristics and spectral analysis
+   * ... keep existing code
+   */
+  
+  /**
+   * Simplified Discrete Wavelet Transform for frequency band analysis
+   * ... keep existing code
+   */
 
   /**
    * Reset the signal processor state

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -37,8 +36,8 @@ export const useSignalProcessor = () => {
   const pulsatilityHistoryRef = useRef<number[]>([]);
   const HISTORY_SIZE = 5;
   
-  const MIN_RED_GREEN_RATIO = 1.10; // Reduced from 1.15
-  const MIN_PULSATILITY = 0.15; // Reduced from 0.2
+  const MIN_RED_GREEN_RATIO = 1.15;
+  const MIN_PULSATILITY = 0.2;
   const MAX_PULSATILITY = 2.0;
 
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
@@ -87,7 +86,7 @@ export const useSignalProcessor = () => {
       pulsatilityHistoryRef.current.reduce((sum, val) => sum + val, 0) / pulsatilityHistoryRef.current.length : 0;
     
     let isTissueLike = false;
-    if (redGreenRatioHistoryRef.current.length >= 2 && pulsatilityHistoryRef.current.length >= 2) { // Reduced from 3
+    if (redGreenRatioHistoryRef.current.length >= 3 && pulsatilityHistoryRef.current.length >= 3) {
       const hasValidRGRatio = avgRedGreenRatio >= MIN_RED_GREEN_RATIO;
       const hasValidPulsatility = avgPulsatility >= MIN_PULSATILITY && avgPulsatility <= MAX_PULSATILITY;
       
@@ -95,7 +94,7 @@ export const useSignalProcessor = () => {
       const pulsatilityStability = calculateStability(pulsatilityHistoryRef.current);
       
       isTissueLike = hasValidRGRatio && hasValidPulsatility && 
-                    rgRatioStability > 0.5 && pulsatilityStability > 0.3; // Reduced from 0.6 and 0.4
+                    rgRatioStability > 0.6 && pulsatilityStability > 0.4;
                     
       console.log("useSignalProcessor: Análisis fisiológico", {
         avgRedGreenRatio: avgRedGreenRatio.toFixed(2),
@@ -110,12 +109,9 @@ export const useSignalProcessor = () => {
       });
     }
     
-    // Make detection more sensitive
-    const robustFingerDetected = signal.fingerDetected || 
-                               (isTissueLike && (detectionRatio >= 0.5 || avgQuality >= 65)); // Reduced from 0.6 and 75
+    const robustFingerDetected = isTissueLike && (detectionRatio >= 0.6 || avgQuality >= 75);
     
-    // Boost quality a bit to help with detection
-    const enhancedQuality = robustFingerDetected ? Math.min(100, avgQuality * 1.15) : avgQuality;
+    const enhancedQuality = robustFingerDetected ? Math.min(100, avgQuality * 1.1) : avgQuality;
     
     console.log("useSignalProcessor: Detección robusta", {
       original: signal.fingerDetected,
