@@ -57,13 +57,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private cameraController: CameraController;
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 15,          // Buffer más pequeño para respuesta rápida
-    MIN_RED_THRESHOLD: 35,    // Umbral más bajo
-    MAX_RED_THRESHOLD: 280,   // Máximo permitido
-    STABILITY_WINDOW: 3,      // Ventana pequeña
-    MIN_STABILITY_COUNT: 3,   // Pocos frames necesarios
-    HYSTERESIS: 5,           // Poca histéresis
-    MIN_CONSECUTIVE_DETECTIONS: 1  // Detección inmediata
+    BUFFER_SIZE: 15,          // Buffer para análisis
+    MIN_RED_THRESHOLD: 35,    // Umbral de detección rojo
+    MAX_RED_THRESHOLD: 255,   // Máximo permitido
+    STABILITY_WINDOW: 8,      // Aumentado: analiza más frames para mejor estabilidad
+    MIN_STABILITY_COUNT: 6,   // Aumentado: requiere más frames estables consecutivos
+    HYSTERESIS: 10,          // Aumentado: más resistencia a cambios rápidos
+    MIN_CONSECUTIVE_DETECTIONS: 2  // Requiere 2 detecciones consecutivas para confirmar
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -292,7 +292,6 @@ export class PPGSignalProcessor implements SignalProcessor {
       areaUnderCurve: number
     }
   } {
-    // Verificar dominancia del canal rojo (r > 0, g ≈ 0, b ≈ 0)
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
     const centerIndex = (centerY * imageData.width + centerX) * 4;
@@ -301,89 +300,82 @@ export class PPGSignalProcessor implements SignalProcessor {
     const centerB = imageData.data[centerIndex + 2];
     
     const isRedDominant = centerR > 50 && centerG < 10 && centerB < 10;
-    
-    // Verificación con compensación de exposición más permisiva
     const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
-                     rawValue <= 240 && isRedDominant; 
+                     rawValue <= 240 && isRedDominant;
     
     if (!isInRange) {
-        this.consecutiveDetections = 0;
+        this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
         return { isFingerDetected: false, quality: 0 };
     }
 
-    if (this.lastValues.length >= 3) {
-        const window = this.lastValues.slice(-3);
+    if (this.lastValues.length >= this.currentConfig.STABILITY_WINDOW) {
+        const window = this.lastValues.slice(-this.currentConfig.STABILITY_WINDOW);
         
-        // Normalizar valores usando un rango más amplio
+        // Normalizar valores
         const normalizedWindow = window.map(v => v / 255 * 100);
-        const peakToPeak = Math.max(...normalizedWindow) - Math.min(...normalizedWindow);
-        const mean = normalizedWindow.reduce((a, b) => a + b, 0) / normalizedWindow.length;
         
-        // Reducir el umbral de sensibilidad
-        const sensitivityFactor = 0.001;
+        // Calcular estabilidad usando ventana deslizante
+        const variations = [];
+        for (let i = 1; i < normalizedWindow.length; i++) {
+            variations.push(Math.abs(normalizedWindow[i] - normalizedWindow[i-1]));
+        }
         
-        const normalizedVariation = peakToPeak / (mean + 0.1);
-        const hasVariation = normalizedVariation > sensitivityFactor;
+        // Calcular promedio y desviación estándar de variaciones
+        const avgVariation = variations.reduce((a, b) => a + b, 0) / variations.length;
+        const stdDeviation = Math.sqrt(
+            variations.reduce((a, b) => a + Math.pow(b - avgVariation, 2), 0) / variations.length
+        );
         
-        // Calcular calidad basada en múltiples factores
-        let quality = 0;
-        if (hasVariation) {
+        // Criterios de estabilidad más estrictos
+        const isStable = avgVariation < 2.0 && stdDeviation < 1.5;
+        
+        if (isStable) {
             this.consecutiveDetections++;
-            
-            // Factor de dominancia roja
-            const redDominance = centerR / (centerG + centerB + 1);
-            const redQuality = Math.min(100, redDominance * 50);
-            
-            // Factor de variación
-            const variationQuality = Math.min(100, (normalizedVariation / 0.01) * 100);
-            
-            // Factor de estabilidad
-            const stabilityQuality = this.calculateStabilityScore(window) * 100;
-            
-            // Combinar factores
-            quality = Math.round((redQuality + variationQuality + stabilityQuality) / 3);
-            
-            return {
-                isFingerDetected: true,
-                quality: Math.max(40, quality),
-                waveformFeatures: this.extractWaveformFeatures(normalizedWindow, this.findPeaksAndValleys(normalizedWindow))
-            };
+            if (this.consecutiveDetections >= this.currentConfig.MIN_STABILITY_COUNT) {
+                // Calcular calidad basada en estabilidad
+                const stabilityScore = Math.max(0, 1 - (avgVariation / 2.0));
+                const variationScore = Math.max(0, 1 - (stdDeviation / 1.5));
+                const quality = Math.round((stabilityScore * 0.6 + variationScore * 0.4) * 100);
+                
+                return {
+                    isFingerDetected: true,
+                    quality: Math.max(40, quality),
+                    waveformFeatures: this.extractWaveformFeatures(normalizedWindow)
+                };
+            }
+        } else {
+            // Reducción gradual de detecciones consecutivas
+            this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 0.5);
         }
     }
 
     return { isFingerDetected: false, quality: 0 };
   }
 
-  private findPeaksAndValleys(window: number[]): Array<{index: number, value: number, type: 'peak' | 'valley'}> {
-    const result = [];
-    for (let i = 1; i < window.length - 1; i++) {
-      if (window[i] > window[i-1] && window[i] > window[i+1]) {
-        result.push({index: i, value: window[i], type: 'peak'});
-      } else if (window[i] < window[i-1] && window[i] < window[i+1]) {
-        result.push({index: i, value: window[i], type: 'valley'});
-      }
-    }
-    return result;
-  }
-
-  private extractWaveformFeatures(window: number[], peaks: Array<{index: number, value: number, type: string}>) {
+  private extractWaveformFeatures(normalizedWindow: number[]): {
+    systolicPeak: number,
+    diastolicPeak: number,
+    dicroticNotch: number,
+    pulseWidth: number,
+    areaUnderCurve: number
+  } {
     // Encontrar pico sistólico (pico principal)
-    const systolicPeak = Math.max(...peaks.filter(p => p.type === 'peak').map(p => p.value));
+    const systolicPeak = Math.max(...normalizedWindow);
     
     // Encontrar valle diastólico (valle más profundo)
-    const diastolicPeak = Math.min(...peaks.filter(p => p.type === 'valley').map(p => p.value));
+    const diastolicPeak = Math.min(...normalizedWindow);
     
     // Detectar muesca dicrótica (segundo pico más pequeño después del pico sistólico)
-    const peaksSorted = peaks.filter(p => p.type === 'peak')
-                            .sort((a, b) => b.value - a.value);
-    const dicroticNotch = peaksSorted.length > 1 ? peaksSorted[1].value : 0;
+    const peaksSorted = normalizedWindow.filter(v => v === systolicPeak || v === diastolicPeak)
+                            .sort((a, b) => b - a);
+    const dicroticNotch = peaksSorted.length > 1 ? peaksSorted[1] : 0;
     
     // Calcular ancho del pulso
-    const pulseWidth = peaks.length >= 2 ? 
-      peaks[peaks.length - 1].index - peaks[0].index : 0;
+    const pulseWidth = normalizedWindow.length >= 2 ? 
+      normalizedWindow[normalizedWindow.length - 1] - normalizedWindow[0] : 0;
     
     // Calcular área bajo la curva usando método trapezoidal
-    const areaUnderCurve = this.calculateAreaUnderCurve(window);
+    const areaUnderCurve = this.calculateAreaUnderCurve(normalizedWindow);
     
     return {
       systolicPeak,

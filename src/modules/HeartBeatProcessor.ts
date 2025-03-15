@@ -2,8 +2,8 @@ export class HeartBeatProcessor {
   // ────────── CONFIGURACIONES PRINCIPALES ──────────
   private readonly SAMPLE_RATE = 30;
   private readonly WINDOW_SIZE = 60;
-  private readonly MIN_BPM = 20;
-  private readonly MAX_BPM = 220; // Se mantiene amplio para no perder picos fuera de rango
+  private readonly MIN_BPM = 40;
+  private readonly MAX_BPM = 200; // Se mantiene amplio para no perder picos fuera de rango
   private readonly SIGNAL_THRESHOLD = 0.40; 
   private readonly MIN_CONFIDENCE = 0.60;
   private readonly DERIVATIVE_THRESHOLD = -0.03; 
@@ -14,7 +14,7 @@ export class HeartBeatProcessor {
   private readonly MEDIAN_FILTER_WINDOW = 3; 
   private readonly MOVING_AVERAGE_WINDOW = 3; 
   private readonly EMA_ALPHA = 0.4; 
-  private readonly BASELINE_FACTOR = 1.2; 
+  private readonly BASELINE_FACTOR = 1.0; 
 
   // Parámetros de beep
   private readonly BEEP_PRIMARY_FREQUENCY = 880; 
