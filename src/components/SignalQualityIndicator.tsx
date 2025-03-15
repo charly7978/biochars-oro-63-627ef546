@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
@@ -12,8 +13,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 7; // Reduced from 8 for faster detection
-  const QUALITY_THRESHOLD = 45; // Reduced from 50 for more sensitivity
+  const REQUIRED_FINGER_FRAMES = 5; // Reduced from 7 for faster detection
+  const QUALITY_THRESHOLD = 35; // Reduced from 45 for more sensitivity
 
   // Detectar plataforma
   useEffect(() => {
@@ -67,15 +68,15 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 60) return '#00ff00'; // Threshold reduced from 65
-    if (q > 35) return '#ffff00'; // Threshold reduced from 40
+    if (q > 50) return '#00ff00'; // Threshold reduced from 60 to 50
+    if (q > 30) return '#ffff00'; // Threshold reduced from 35 to 30
     return '#ff0000';
   };
 
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
-    if (q > 60) return 'Excelente'; // Threshold reduced from 65
-    if (q > 35) return 'Buena'; // Threshold reduced from 40
+    if (q > 50) return 'Excelente'; // Threshold reduced from 60 to 50
+    if (q > 30) return 'Buena'; // Threshold reduced from 35 to 30
     return 'Baja';
   };
 
