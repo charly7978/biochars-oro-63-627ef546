@@ -30,10 +30,10 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
   
-  // Referencias para historial de calidad
+  // Referencias para historial de calidad - MODIFICACIÓN CRUCIAL
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 5; // Ventana de historial para promedio
+  const HISTORY_SIZE = 7; // CAMBIO 1: Aumentado de 5 a 7 para tener más muestras y estabilidad
   
   /**
    * Procesa la detección de dedo de manera robusta usando promedio móvil
@@ -51,27 +51,29 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Cálculo ponderado de calidad
+    // Cálculo ponderado de calidad - más peso a muestras recientes
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1; // Más peso a las muestras recientes
+      const weight = Math.pow(1.3, index); // CAMBIO 2: Función exponencial para dar mucho más peso a las muestras recientes
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // Calcular ratio de detección
+    // Calcular ratio de detección - más permisivo
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Usar un umbral más exigente (3 de 5 = 0.6)
-    const robustFingerDetected = detectionRatio >= 0.6;
+    // Usar un umbral más permisivo (0.45 en vez de 0.6)
+    const robustFingerDetected = detectionRatio >= 0.45;
     
-    // Mejora ligera de calidad para mejor UX
-    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    // Mantener un nivel mínimo de calidad cuando se detecta dedo
+    const enhancedQuality = robustFingerDetected ? 
+      Math.max(40, Math.min(100, avgQuality * 1.1)) : 
+      Math.min(100, avgQuality * 0.9);
     
     // Devolver señal modificada
     return {

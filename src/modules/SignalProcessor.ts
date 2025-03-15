@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -38,29 +37,30 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   
-  // Configuración por defecto
+  // Configuración por defecto - MODIFICACIÓN 1: Reducir el umbral de estabilidad y mantener más muestras
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 80,
+    MIN_RED_THRESHOLD: 75, // Reducido de 80 para ser más permisivo
     MAX_RED_THRESHOLD: 230,
     STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 3
+    MIN_STABILITY_COUNT: 2  // CAMBIO CLAVE 1: Reducido de 3 a 2 para detección más rápida
   };
   
   private currentConfig: typeof this.DEFAULT_CONFIG;
   
   // Parámetros de procesamiento
   private readonly BUFFER_SIZE = 15;
-  private readonly MIN_RED_THRESHOLD = 80;
+  private readonly MIN_RED_THRESHOLD = 75; // Actualizado igual que en DEFAULT_CONFIG
   private readonly MAX_RED_THRESHOLD = 230;
   private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 3;
+  private readonly MIN_STABILITY_COUNT = 2; // Actualizado igual que en DEFAULT_CONFIG
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
   // Parámetros de análisis de calidad
   private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
-  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
+  // MODIFICACIÓN 2: Reducir el umbral de calidad para aceptar más señales
+  private readonly SIGNAL_QUALITY_THRESHOLD = 55; // Reducido de 65 para ser más permisivo
   
   // Análisis de periodicidad
   private baselineValue: number = 0;
@@ -68,8 +68,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly BASELINE_FACTOR = 0.95;
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
-  private readonly MIN_PERIODICITY_SCORE = 0.42;
-
+  private readonly MIN_PERIODICITY_SCORE = 0.35; // CAMBIO CLAVE 2: Reducido de 0.42 para ser más permisivo con la periodicidad
+  
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
@@ -288,35 +288,43 @@ export class PPGSignalProcessor implements SignalProcessor {
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
-    const isStable = maxVariation < adaptiveThreshold * 2 && 
-                    minVariation > -adaptiveThreshold * 2;
+    // Mejorado: Umbral adaptativo con mayor tolerancia
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.025); // Aumentado de 0.02 a 0.025
+    const isStable = maxVariation < adaptiveThreshold * 2.2 && // Aumentado de 2 a 2.2
+                    minVariation > -adaptiveThreshold * 2.2;
 
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
+      // Incremento más rápido de la estabilidad
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1.2, this.MIN_STABILITY_COUNT * 3);
       this.lastStableValue = filtered;
     } else {
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      // Reducción más gradual para mantener detección
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.4); // Reducido de 0.5 a 0.4
     }
 
     const periodicityScore = this.analyzeSignalPeriodicity();
     
+    // Calculamos la calidad incluso con niveles bajos de estabilidad
     let quality = 0;
-    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT) {
+    if (this.stableFrameCount >= (this.MIN_STABILITY_COUNT * 0.8)) { // Permite calidad con menos estabilidad
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
+      // Cálculo de calidad más gradual
       quality = Math.round((stabilityScore * 0.35 + 
                           intensityScore * 0.25 + 
                           variationScore * 0.2 + 
                           periodicityScore * 0.2) * 100);
+                          
+      // Suavizar cambios bruscos en calidad
+      quality = Math.max(20, quality); // Garantizar un mínimo de calidad cuando hay dedo
     }
     
+    // Detección más permisiva
     const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
-                            periodicityScore > this.MIN_PERIODICITY_SCORE &&
-                            quality >= this.SIGNAL_QUALITY_THRESHOLD;
+                             periodicityScore > this.MIN_PERIODICITY_SCORE;
 
     return { isFingerDetected, quality };
   }
