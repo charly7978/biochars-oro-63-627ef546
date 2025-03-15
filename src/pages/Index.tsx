@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -75,8 +74,7 @@ const Index = () => {
         calibration: lastValidResults.calibration ? {
           isCalibrating: lastValidResults.calibration.isCalibrating,
           progress: {
-            ...lastValidResults.calibration.progress,
-            atrialFibrillation: lastValidResults.calibration.progress.atrialFibrillation || 0
+            ...lastValidResults.calibration.progress
           }
         } : undefined
       });
@@ -147,8 +145,7 @@ const Index = () => {
         arrhythmia: 0,
         glucose: 0,
         lipids: 0,
-        hemoglobin: 0,
-        atrialFibrillation: 0
+        hemoglobin: 0
       }
     });
     
@@ -177,8 +174,7 @@ const Index = () => {
             arrhythmia: Math.max(0, progressPercent - 15),
             glucose: Math.max(0, progressPercent - 5),
             lipids: Math.max(0, progressPercent - 25),
-            hemoglobin: Math.max(0, progressPercent - 30),
-            atrialFibrillation: Math.max(0, progressPercent - 12)
+            hemoglobin: Math.max(0, progressPercent - 30)
           }
         });
       } else {
@@ -203,8 +199,7 @@ const Index = () => {
               arrhythmia: 100,
               glucose: 100,
               lipids: 100,
-              hemoglobin: 100,
-              atrialFibrillation: 100
+              hemoglobin: 100
             }
           });
           
@@ -234,8 +229,7 @@ const Index = () => {
             arrhythmia: 100,
             glucose: 100,
             lipids: 100,
-            hemoglobin: 100,
-            atrialFibrillation: 100
+            hemoglobin: 100
           }
         });
       }

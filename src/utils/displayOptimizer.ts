@@ -1,157 +1,229 @@
 
 /**
- * Utilities for optimizing display and immersive experience
+ * Utilities for optimizing display and rendering across various device resolutions
  */
 
 /**
- * Optimizes display appearance based on screen resolution
+ * Optimizes canvas rendering for high-DPI displays
+ * @param canvas Canvas element to optimize
+ * @param ctx Canvas rendering context
  */
-export function optimizeForScreenResolution() {
-  const pixelRatio = window.devicePixelRatio || 1;
+export function optimizeCanvasRendering(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): void {
+  if (!canvas || !ctx) return;
   
-  // Apply high-resolution optimizations
-  if (pixelRatio > 1) {
-    // Create a CSS variable with the device pixel ratio
-    document.documentElement.style.setProperty('--device-pixel-ratio', pixelRatio.toString());
+  // Get device pixel ratio
+  const dpr = window.devicePixelRatio || 1;
+  
+  if (dpr > 1) {
+    // Get current size
+    const originalWidth = canvas.width;
+    const originalHeight = canvas.height;
     
-    // Add class based on DPI
-    document.documentElement.classList.add('high-dpi');
-    if (pixelRatio >= 2) {
-      document.documentElement.classList.add('retina');
-    }
-    if (pixelRatio >= 3) {
-      document.documentElement.classList.add('ultra-hd');
-    }
+    // Scale canvas by device pixel ratio
+    canvas.width = originalWidth * dpr;
+    canvas.height = originalHeight * dpr;
     
-    // Apply better font rendering for high-DPI displays
-    const style = document.createElement('style');
-    style.textContent = `
-      body {
-        text-rendering: optimizeLegibility;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
-      
-      .ppg-signal-meter {
-        will-change: transform;
-        transform: translateZ(0);
-      }
-      
-      canvas, svg {
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-      }
-    `;
-    document.head.appendChild(style);
+    // Scale back using CSS
+    canvas.style.width = `${originalWidth}px`;
+    canvas.style.height = `${originalHeight}px`;
+    
+    // Scale the context
+    ctx.scale(dpr, dpr);
+    
+    // Set appropriate rendering settings
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
   }
   
-  // Set up resolution-based classes
-  const { width, height } = window.screen;
-  const minDimension = Math.min(width, height);
-  const maxDimension = Math.max(width, height);
-  
-  if (minDimension >= 768) {
-    document.documentElement.classList.add('high-res');
-  }
-  
-  if (maxDimension >= 1920) {
-    document.documentElement.classList.add('ultra-wide');
-  }
+  console.log(`Canvas optimized for pixel ratio: ${dpr}`);
 }
 
 /**
- * Enters immersive fullscreen mode
+ * Requests and maintains fullscreen mode
  */
-export async function enterImmersiveMode(): Promise<void> {
+export async function enableFullscreenMode(): Promise<void> {
+  const elem = document.documentElement;
+  
   try {
-    if (!document.fullscreenElement) {
-      const docElm = document.documentElement;
-      
-      // Try standard fullscreen API
-      if (docElm.requestFullscreen) {
-        await docElm.requestFullscreen();
-      } 
-      // Handle vendor prefixes for older browsers
-      else if (docElm.requestFullscreen) {
-        await docElm.requestFullscreen();
-      }
-      
-      // Apply immersive optimizations after entering fullscreen
-      if (document.fullscreenElement) {
-        // Lock orientation if supported and on mobile
-        if (screen.orientation && 'lock' in screen.orientation) {
-          try {
-            // Lock to current orientation
-            await screen.orientation.lock(screen.orientation.type);
-          } catch (orientErr) {
-            console.error('Orientation lock error:', orientErr);
-          }
-        }
-        
-        // Prevent sleep if available
-        if (navigator.wakeLock) {
-          try {
-            const wakeLock = await navigator.wakeLock.request('screen');
-            wakeLock.addEventListener('release', () => {
-              console.log('Wake Lock was released');
-            });
-          } catch (wakeErr) {
-            console.error('Wake Lock error:', wakeErr);
-          }
-        }
+    if (elem.requestFullscreen) {
+      await elem.requestFullscreen();
+    } else if ((elem as any).webkitRequestFullscreen) {
+      await (elem as any).webkitRequestFullscreen();
+    } else if ((elem as any).mozRequestFullScreen) {
+      await (elem as any).mozRequestFullScreen();
+    } else if ((elem as any).msRequestFullscreen) {
+      await (elem as any).msRequestFullscreen();
+    }
+    
+    // For Android-specific immersive mode
+    if (window.navigator.userAgent.match(/Android/i)) {
+      if ((window as any).AndroidFullScreen) {
+        (window as any).AndroidFullScreen.immersiveMode();
       }
     }
-  } catch (err) {
-    console.error('Failed to enter immersive fullscreen mode:', err);
+    
+    console.log("Fullscreen mode enabled");
+  } catch (error) {
+    console.error("Error enabling fullscreen mode:", error);
   }
 }
 
 /**
- * Checks if the device has high-performance capabilities
+ * Checks if the device is currently in fullscreen mode
  */
-export function checkHighPerformanceDevice(): boolean {
-  const highPerformance = 
-    // Check for hardware concurrency (CPU cores)
-    (navigator.hardwareConcurrency && navigator.hardwareConcurrency >= 4) || 
-    // Check for device memory API
-    ('deviceMemory' in navigator && (navigator as any).deviceMemory >= 4) ||
-    // Check for high-end GPU (indirect detection)
-    checkForHighEndGPU();
-  
-  if (highPerformance) {
-    document.documentElement.classList.add('high-performance-device');
-  }
-  
-  return highPerformance;
+export function isInFullscreenMode(): boolean {
+  return !!(
+    document.fullscreenElement ||
+    (document as any).webkitFullscreenElement ||
+    (document as any).mozFullScreenElement ||
+    (document as any).msFullscreenElement
+  );
 }
 
 /**
- * Attempts to detect high-end GPU capabilities
+ * Optimizes UI elements based on device pixel ratio
+ * @param element Element to optimize
  */
-function checkForHighEndGPU(): boolean {
+export function optimizeUIForHighDPI(element: HTMLElement): void {
+  if (!element) return;
+  
+  const dpr = window.devicePixelRatio || 1;
+  
+  if (dpr > 1.5) {
+    // For very high DPI displays
+    element.style.fontSmoothing = 'antialiased';
+    element.style.textRendering = 'optimizeLegibility';
+  } else {
+    // For standard displays
+    element.style.textRendering = 'auto';
+  }
+}
+
+/**
+ * Prevents scrolling and pinch zooming on mobile devices
+ */
+export function preventDefaultTouchBehavior(): void {
+  // Prevent scrolling
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+  document.body.style.position = 'fixed';
+  document.body.style.width = '100%';
+  document.body.style.height = '100%';
+  
+  // Prevent pinch zoom
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 1) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+  
+  // Prevent double-tap zoom
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd < 300) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
+}
+
+/**
+ * Sets maximum screen resolution for better rendering
+ */
+export function setOptimalScreenResolution(): void {
+  // Use CSS transform to counter device pixel ratio for consistent visuals
+  if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
+    // Only adjust for pixel ratios greater than 1 to avoid blurry text on standard screens
+    if (window.devicePixelRatio > 1) {
+      // Add meta viewport tag programmatically
+      let metaViewport = document.querySelector('meta[name="viewport"]');
+      if (!metaViewport) {
+        metaViewport = document.createElement('meta');
+        metaViewport.setAttribute('name', 'viewport');
+        document.head.appendChild(metaViewport);
+      }
+      
+      // Set viewport content for high DPI screens
+      metaViewport.setAttribute('content', `width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no`);
+      
+      console.log(`Screen resolution optimized for pixel ratio: ${window.devicePixelRatio}`);
+    }
+  }
+}
+
+/**
+ * Locks screen orientation to portrait mode
+ */
+export async function lockScreenOrientation(): Promise<void> {
   try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    
-    if (!gl) {
-      return false;
+    if (screen.orientation?.lock) {
+      await screen.orientation.lock('portrait');
+      console.log('Screen orientation locked to portrait');
     }
-    
-    // Check for some advanced WebGL capabilities
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    if (debugInfo) {
-      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-      // Check for high-end GPU keywords
-      const highEndGPUKeywords = ['nvidia', 'amd', 'radeon', 'intel iris', 'apple gpu'];
-      return highEndGPUKeywords.some(keyword => 
-        renderer.toLowerCase().includes(keyword)
-      );
+  } catch (error) {
+    console.error('Failed to lock screen orientation:', error);
+  }
+}
+
+/**
+ * Checks WebGL capabilities for rendering optimization
+ */
+export function checkWebGLSupport(): { supported: boolean; version: number } {
+  let canvas = document.createElement('canvas');
+  let gl: WebGLRenderingContext | null = null;
+  let gl2: WebGL2RenderingContext | null = null;
+  
+  // Try WebGL 2 first
+  try {
+    gl2 = canvas.getContext('webgl2') as WebGL2RenderingContext;
+    if (gl2) {
+      return { supported: true, version: 2 };
     }
-    
-    // If can't get specific info, check for WebGL2 support as proxy for better hardware
-    return !!canvas.getContext('webgl2');
-    
   } catch (e) {
-    return false;
+    console.warn('WebGL 2 not supported');
   }
+  
+  // Fallback to WebGL 1
+  try {
+    gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext;
+    if (gl) {
+      return { supported: true, version: 1 };
+    }
+  } catch (e) {
+    console.warn('WebGL 1 not supported');
+  }
+  
+  return { supported: false, version: 0 };
+}
+
+/**
+ * Full optimization for all display aspects
+ */
+export function optimizeDisplay(): void {
+  // Apply all optimizations
+  setOptimalScreenResolution();
+  preventDefaultTouchBehavior();
+  lockScreenOrientation();
+  
+  // Enable fullscreen on first user interaction
+  document.addEventListener('click', async () => {
+    if (!isInFullscreenMode()) {
+      await enableFullscreenMode();
+    }
+  }, { once: true });
+  
+  // Continuously check fullscreen status (required for some mobile browsers)
+  setInterval(() => {
+    if (!isInFullscreenMode()) {
+      enableFullscreenMode();
+    }
+  }, 3000);
+  
+  console.log('Display optimization complete');
+}
+
+// Export a version check function for compatibility
+export function getDisplayApiVersion(): string {
+  return '2.1.0';
 }
