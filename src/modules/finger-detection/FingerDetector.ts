@@ -43,12 +43,13 @@ export class FingerDetector {
   private lastGreenValue: number = 0;
   
   // Configuración simplificada con solo dos variables críticas principales
+  // ALINEADA con SpO2Processor para comportamiento consistente
   private config: FingerDetectionConfig = {
     // PRIMERA VARIABLE CRÍTICA: Calidad mínima de señal (perfusión)
-    MIN_QUALITY_FOR_DETECTION: 15,     // Reducido para mayor sensibilidad
+    MIN_QUALITY_FOR_DETECTION: 15,     // Alineado con SpO2 (0.12 escalado)
     
     // SEGUNDA VARIABLE CRÍTICA: Ratio rojo/verde mínimo
-    MIN_RED_GREEN_RATIO: 1.15,         // Ratio típico para tejido vivo
+    MIN_RED_GREEN_RATIO: 1.25,         // Alineado exactamente con SpO2
     
     // Parámetros secundarios (menos críticos)
     REQUIRED_FINGER_FRAMES: 3,         // Reducido para respuesta más rápida
