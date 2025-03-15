@@ -13,6 +13,9 @@ interface CalibrationDialogProps {
   onCalibrationEnd: () => void;
 }
 
+/**
+ * Diálogo de calibración manual para signos vitales
+ */
 const CalibrationDialog: React.FC<CalibrationDialogProps> = ({ 
   isOpen, 
   onClose,
@@ -23,6 +26,9 @@ const CalibrationDialog: React.FC<CalibrationDialogProps> = ({
   const [diastolic, setDiastolic] = React.useState<string>("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
+  /**
+   * Maneja la calibración manual con valores de presión arterial
+   */
   const handleCalibration = async () => {
     try {
       setIsSubmitting(true);

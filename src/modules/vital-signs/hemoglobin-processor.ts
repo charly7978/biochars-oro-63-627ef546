@@ -1,10 +1,15 @@
 
+import { 
+  normalizeValues, 
+  SIGNAL_CONSTANTS
+} from './shared-signal-utils';
+
 /**
  * Procesador para el cálculo estimado de hemoglobina basado en señal PPG
  */
 export class HemoglobinProcessor {
-  private readonly MIN_VALID_VALUES = 120;
-  private readonly MIN_AMPLITUDE = 0.05;
+  private readonly MIN_VALID_VALUES = SIGNAL_CONSTANTS.MIN_VALID_VALUES;
+  private readonly MIN_AMPLITUDE = SIGNAL_CONSTANTS.MIN_AMPLITUDE;
   private readonly BASE_HEMOGLOBIN = 14.5; // g/dL (valor promedio normal)
   
   /**
@@ -14,12 +19,11 @@ export class HemoglobinProcessor {
   public calculateHemoglobin(ppgValues: number[]): number {
     if (ppgValues.length < this.MIN_VALID_VALUES) return 0;
     
-    // Normalizar valores
-    const min = Math.min(...ppgValues);
-    const max = Math.max(...ppgValues);
-    if (max - min < this.MIN_AMPLITUDE) return 0; // Amplitud insuficiente
+    // Normalizar valores usando la utilidad compartida
+    const normalized = normalizeValues(ppgValues);
     
-    const normalized = ppgValues.map(v => (v - min) / (max - min));
+    // Verificar si la normalización fue exitosa
+    if (normalized.every(v => v === 0)) return 0;
     
     // Calcular área bajo la curva como indicador de contenido de hemoglobina
     const auc = normalized.reduce((sum, val) => sum + val, 0) / normalized.length;
