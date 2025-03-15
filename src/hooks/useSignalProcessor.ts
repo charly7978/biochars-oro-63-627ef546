@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -32,72 +33,53 @@ export const useSignalProcessor = () => {
   // Referencias para historial de calidad
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const detectionHistory = useRef<boolean[]>([]);
-  const rawValueHistory = useRef<number[]>([]);
   const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
   /**
-   * Procesa la detección de dedo con máxima sensibilidad
+   * Procesa la detección de dedo de manera robusta usando promedio móvil
    */
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
-    // Actualizar historial de detecciones con el último resultado
-    detectionHistory.current.push(signal.fingerDetected);
-    if (detectionHistory.current.length > 3) {
-      detectionHistory.current.shift();
-    }
-
     // Actualizar historial de calidad
     qualityHistoryRef.current.push(signal.quality);
-    if (qualityHistoryRef.current.length > 3) {
+    if (qualityHistoryRef.current.length > HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
-
-    // Actualizar historial de valores brutos
-    rawValueHistory.current.push(signal.rawValue);
-    if (rawValueHistory.current.length > 3) {
-      rawValueHistory.current.shift();
+    
+    // Actualizar historial de detección
+    fingerDetectedHistoryRef.current.push(signal.fingerDetected);
+    if (fingerDetectedHistoryRef.current.length > HISTORY_SIZE) {
+      fingerDetectedHistoryRef.current.shift();
     }
-
-    // Calcular calidad promedio con criterios muy permisivos
-    const avgQuality = calculateAvgQuality(qualityHistoryRef.current);
     
-    // Ultra sensibilidad: solo necesitamos una detección positiva reciente
-    const hasAnyPositiveDetection = detectionHistory.current.some(Boolean);
-    
-    // Criterios de valores brutos extremadamente permisivos
-    const hasReasonableValues = rawValueHistory.current.some(val => val >= 70 && val <= 240);
-    
-    // Alta sensibilidad: cualquier indicio de detección es suficiente
-    const isFingerDetected = hasAnyPositiveDetection || hasReasonableValues || signal.fingerDetected || avgQuality >= 20;
-    
-    // Siempre asignamos una calidad mínima si hay cualquier indicio de dedo
-    const enhancedQuality = isFingerDetected ? Math.max(25, avgQuality) : signal.quality;
-    
-    // Devolver señal con detección mejorada de máxima sensibilidad
-    return {
-      ...signal,
-      fingerDetected: isFingerDetected,
-      quality: enhancedQuality
-    };
-  }, []);
-  
-  /**
-   * Calcula la calidad promedio ponderada (dando más peso a valores recientes)
-   */
-  const calculateAvgQuality = (qualities: number[]): number => {
-    if (qualities.length === 0) return 0;
-    
-    let weightedSum = 0;
+    // Cálculo ponderado de calidad
+    let weightedQualitySum = 0;
     let weightSum = 0;
-    
-    qualities.forEach((q, index) => {
-      const weight = Math.pow(1.5, index); // Más peso a valores recientes
-      weightedSum += q * weight;
+    qualityHistoryRef.current.forEach((quality, index) => {
+      const weight = index + 1; // Más peso a las muestras recientes
+      weightedQualitySum += quality * weight;
       weightSum += weight;
     });
     
-    return weightSum > 0 ? Math.min(95, weightedSum / weightSum) : 0;
-  };
+    const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
+    
+    // Calcular ratio de detección
+    const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
+    const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
+      trueCount / fingerDetectedHistoryRef.current.length : 0;
+    
+    // Usar un umbral más exigente (3 de 5 = 0.6)
+    const robustFingerDetected = detectionRatio >= 0.6;
+    
+    // Mejora ligera de calidad para mejor UX
+    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    
+    // Devolver señal modificada
+    return {
+      ...signal,
+      fingerDetected: robustFingerDetected,
+      quality: enhancedQuality
+    };
+  }, []);
 
   // Configurar callbacks y limpieza
   useEffect(() => {
@@ -176,8 +158,6 @@ export const useSignalProcessor = () => {
     
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
-    detectionHistory.current = [];
-    rawValueHistory.current = [];
     
     processor.start();
   }, [processor, isProcessing]);

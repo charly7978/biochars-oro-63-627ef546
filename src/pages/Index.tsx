@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,7 +9,6 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { Fingerprint } from "lucide-react";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -278,32 +278,22 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      // Actualizar siempre la calidad de la señal para feedback visual
-      setSignalQuality(lastSignal.quality || 0);
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
       
-      // Mensaje de depuración para ver estado de detección
-      console.log(`Detección de dedo: ${lastSignal.fingerDetected ? 'SÍ' : 'NO'}, Calidad: ${lastSignal.quality}, Valor: ${lastSignal.rawValue}`);
-      
-      // Procesar la señal sólo cuando el procesador detecta un dedo
-      if (lastSignal.fingerDetected) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        setHeartRate(heartBeatResult.bpm);
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
         
-        const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-        if (vitals) {
-          setVitalSigns(vitals);
-          
-          if (vitals.lastArrhythmiaData) {
-            setLastArrhythmiaData(vitals.lastArrhythmiaData);
-            const [status, count] = vitals.arrhythmiaStatus.split('|');
-            setArrhythmiaCount(count || "0");
-          }
+        if (vitals.lastArrhythmiaData) {
+          setLastArrhythmiaData(vitals.lastArrhythmiaData);
+          const [status, count] = vitals.arrhythmiaStatus.split('|');
+          setArrhythmiaCount(count || "0");
         }
-      } else {
-        // Feedback visual cuando no hay dedo detectado
-        console.log("Esperando detección de dedo...");
       }
+      
+      setSignalQuality(lastSignal.quality);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
@@ -337,14 +327,11 @@ const Index = () => {
 
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-white text-lg flex items-center">
-              <div className={`w-3 h-3 rounded-full mr-2 ${signalQuality > 70 ? 'bg-green-500' : signalQuality > 40 ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
+            <div className="text-white text-lg">
               Calidad: {signalQuality}
             </div>
-            <div className={`text-white text-lg flex items-center ${lastSignal?.fingerDetected ? 'text-green-500' : 'text-red-400'}`}>
-              {lastSignal?.fingerDetected 
-                ? <span className="flex items-center"><Fingerprint className="w-5 h-5 mr-1" /> Dedo detectado</span> 
-                : <span className="flex items-center animate-pulse"><Fingerprint className="w-5 h-5 mr-1" /> Coloque su dedo</span>}
+            <div className="text-white text-lg">
+              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
 
