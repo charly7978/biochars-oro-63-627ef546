@@ -10,10 +10,10 @@
  */
 export class FingerDetector {
   // Umbrales clave para detección robusta basados en investigación
-  private readonly PERFUSION_THRESHOLD: number = 15; // Reducido para mayor sensibilidad
-  private readonly R_G_RATIO_MIN: number = 1.40; // Reducido para mejor detección
-  private readonly RED_MIN_VALUE: number = 130; // Reducido para mejorar detección
-  private readonly GREEN_MIN_VALUE: number = 20; // Reducido para mejorar detección
+  private readonly PERFUSION_THRESHOLD: number = 12; // Ajustado para mayor sensibilidad
+  private readonly R_G_RATIO_MIN: number = 1.25; // Ajustado para mejor detección
+  private readonly RED_MIN_VALUE: number = 120; // Ajustado para mejor detección
+  private readonly GREEN_MIN_VALUE: number = 20; // Ajustado para mejor detección
   
   // Estado interno
   private fingerDetected: boolean = false;
@@ -31,7 +31,7 @@ export class FingerDetector {
   // Nuevos parámetros para estabilidad
   private readonly STABILITY_THRESHOLD: number = 2; // Reducido para mejor respuesta
   private readonly STABILITY_CHANGE_THRESHOLD: number = 10; // Ajustado
-  private readonly MAX_PERCENT_CHANGE: number = 20; // Aumentado para tolerar más cambios
+  private readonly MAX_PERCENT_CHANGE: number = 25; // Aumentado para tolerar más cambios
   private qualityStability: number = 0;
   private previousQuality: number = 0;
   
@@ -48,7 +48,7 @@ export class FingerDetector {
       this.DEVICE_TYPE = "unknown";
     }
     
-    console.log("FingerDetector: MEJORADO con umbrales optimizados", {
+    console.log("FingerDetector: Inicializado con umbrales optimizados", {
       umbralPerfusión: this.PERFUSION_THRESHOLD,
       ratioRojoVerde: this.R_G_RATIO_MIN,
       valorRojoMínimo: this.RED_MIN_VALUE,
@@ -143,22 +143,20 @@ export class FingerDetector {
       // 4. Verificación de estabilidad (anti-falsos positivos)
       const stabilityCheck = this.qualityStability >= this.STABILITY_THRESHOLD;
       
-      // Lógica de decisión con mayor peso en propiedades fisiológicas
-      // Las propiedades fisiológicas son las más difíciles de falsificar
+      // Lógica de decisión con umbral más flexible para mejorar detección
       let isCurrentlyDetected = false;
       
       if (this.DEVICE_TYPE === "android") {
-        // En Android priorizamos ratio R/G y calidad
-        isCurrentlyDetected = (qualityCheck && physiologicalCheck) || 
-                             (physiologicalCheck && opticalCheck && stabilityCheck);
+        // En Android usamos una detección más flexible
+        isCurrentlyDetected = (qualityCheck && (physiologicalCheck || opticalCheck)) || 
+                             (physiologicalCheck && opticalCheck);
       } else if (this.DEVICE_TYPE === "ios") {
         // En iOS enfocamos más en calidad y menos en ratio R/G
         isCurrentlyDetected = (qualityCheck && opticalCheck) || 
-                             (qualityCheck && physiologicalCheck && stabilityCheck);
+                             (physiologicalCheck && opticalCheck);
       } else {
-        // En otros dispositivos (incluido escritorio) usamos criterios más flexibles
-        isCurrentlyDetected = (qualityCheck && (opticalCheck || physiologicalCheck)) || 
-                             (opticalCheck && physiologicalCheck && stabilityCheck);
+        // En otros dispositivos usamos criterios más flexibles aún
+        isCurrentlyDetected = qualityCheck || (opticalCheck && physiologicalCheck);
       }
       
       // Lógica de persistencia: requiere N frames consecutivos para confirmar
@@ -177,7 +175,7 @@ export class FingerDetector {
         }
       } else {
         // Requiere N frames consecutivos para confirmar que se quitó el dedo
-        // Esto previene falsos negativos por fluctuaciones momentáneas
+        // Pero somos más lentos para determinar que ya no hay dedo
         this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
         
         if (this.consecutiveDetections === 0 && this.fingerDetected) {
@@ -206,7 +204,7 @@ export class FingerDetector {
       } else if (filteredQuality >= 25) {
         qualityLevel = "aceptable";
         qualityColor = "from-yellow-500 to-orange-500";
-        helpMessage = "Ajuste el dedo para mejorar la señal";
+        helpMessage = "Ajuste ligeramente el dedo para mejorar la señal";
       }
       
       if (!this.fingerDetected) {

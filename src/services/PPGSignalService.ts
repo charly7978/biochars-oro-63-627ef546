@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -8,7 +7,7 @@
 import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 import { SignalProcessor } from '../modules/vital-signs/signal-processor';
 import type { ProcessedSignal } from '../types/signal';
-import { phasePreservingFilter, performSimplifiedEMD } from '../utils/advancedSignalProcessing';
+import { phasePreservingFilter } from '../utils/advancedSignalProcessing';
 
 /**
  * Servicio centralizado para procesamiento de señal PPG
@@ -26,10 +25,11 @@ export class PPGSignalService {
   private noSignalFrames: number = 0;
   private frameProcessingErrors: number = 0;
   private lastErrorTime: number = 0;
+  private serviceRestartCount: number = 0;
+  private lastRestartTime: number = 0;
   
   // Variables para procesamiento avanzado
   private readonly USE_PHASE_PRESERVING = true;  // Habilitar filtrado de fase preservada
-  private readonly USE_EMD = true;               // Habilitar descomposición en modo empírico
   private readonly ROI_ADAPTIVE_SIZE = true;     // Habilitar tamaño adaptativo de ROI
   private readonly OUTLIER_REJECTION = true;     // Habilitar rechazo de valores atípicos
   
@@ -37,7 +37,9 @@ export class PPGSignalService {
   private adaptiveROISize: number = 0.3;         // Tamaño inicial ROI: 30% del centro (aumentado)
   private signalQualityHistory: number[] = [];   // Historial para calidad de señal
   private readonly MAX_NO_SIGNAL_FRAMES = 30;    // Número máximo de frames sin señal válida
-  private readonly MAX_PROCESSING_ERRORS = 10;   // Umbral de errores para reiniciar
+  private readonly MAX_PROCESSING_ERRORS = 8;    // Umbral de errores para reiniciar (reducido)
+  private readonly MAX_SERVICE_RESTARTS = 3;     // Número máximo de reinicios automáticos
+  private readonly SERVICE_RESTART_COOLDOWN = 30000; // Periodo de espera entre reinicios (ms)
   
   constructor() {
     this.fingerDetector = new FingerDetector();
@@ -103,6 +105,7 @@ export class PPGSignalService {
         // Si hay demasiados frames inválidos consecutivos, informar
         if (this.noSignalFrames > this.MAX_NO_SIGNAL_FRAMES) {
           console.error("PPGSignalService: Demasiados frames inválidos, verificar estado de cámara");
+          this._considerServiceRestart();
         }
         
         return this.lastProcessedSignal;
@@ -226,11 +229,38 @@ export class PPGSignalService {
       // Reiniciar el servicio si hay demasiados errores consecutivos
       if (this.frameProcessingErrors > this.MAX_PROCESSING_ERRORS) {
         console.warn("PPGSignalService: Demasiados errores consecutivos, reiniciando servicio");
-        this.reset();
-        return null;
+        this._considerServiceRestart();
       }
       
       return this.lastProcessedSignal; // Devolver último válido en caso de error
+    }
+  }
+  
+  /**
+   * Considera reiniciar el servicio completo basado en la frecuencia de errores
+   */
+  private _considerServiceRestart(): void {
+    const now = Date.now();
+    const timeSinceLastRestart = now - this.lastRestartTime;
+    
+    // Evitar reinicios demasiado frecuentes
+    if (timeSinceLastRestart < this.SERVICE_RESTART_COOLDOWN) {
+      console.log("PPGSignalService: Cooldown de reinicio activo, esperando...");
+      return;
+    }
+    
+    // Incrementar contador de reinicios
+    this.serviceRestartCount++;
+    this.lastRestartTime = now;
+    
+    // Verificar si no excedemos el máximo de reinicios
+    if (this.serviceRestartCount <= this.MAX_SERVICE_RESTARTS) {
+      console.log(`PPGSignalService: Reiniciando servicio (${this.serviceRestartCount}/${this.MAX_SERVICE_RESTARTS})`);
+      this.reset();
+      this.startProcessing();
+    } else {
+      console.error("PPGSignalService: Demasiados reinicios, deteniendo servicio");
+      this.stopProcessing();
     }
   }
   
@@ -370,13 +400,11 @@ export class PPGSignalService {
    */
   public getConfig(): {
     usePhasePreserving: boolean;
-    useEMD: boolean;
     adaptiveROISize: number;
     useOutlierRejection: boolean;
   } {
     return {
       usePhasePreserving: this.USE_PHASE_PRESERVING,
-      useEMD: this.USE_EMD,
       adaptiveROISize: this.adaptiveROISize,
       useOutlierRejection: this.OUTLIER_REJECTION
     };

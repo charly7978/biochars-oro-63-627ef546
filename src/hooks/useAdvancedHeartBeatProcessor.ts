@@ -29,6 +29,8 @@ export const useAdvancedHeartBeatProcessor = () => {
   const signalQualityHistoryRef = useRef<number[]>([]);
   const throttleCountRef = useRef<number>(0);
   const processorActiveRef = useRef<boolean>(true);
+  const errorCountRef = useRef<number>(0);
+  const lastErrorTimeRef = useRef<number>(0);
   
   // Configurar opciones avanzadas
   useEffect(() => {
@@ -72,8 +74,21 @@ export const useAdvancedHeartBeatProcessor = () => {
     if (isNaN(signal) || !isFinite(signal)) {
       console.warn("useAdvancedHeartBeatProcessor: Señal inválida recibida", signal);
       consecutiveValidSignalsRef.current = 0;
+      
+      // Incrementar contador de errores
+      errorCountRef.current++;
+      
+      // Si hay demasiados errores consecutivos, reiniciar
+      if (errorCountRef.current > 10) {
+        console.warn("useAdvancedHeartBeatProcessor: Demasiados errores consecutivos, reiniciando");
+        reset();
+      }
+      
       return null;
     }
+    
+    // Resetear contador de errores al recibir señales válidas
+    errorCountRef.current = 0;
     
     // Incrementar contador de señales válidas consecutivas
     consecutiveValidSignalsRef.current++;
@@ -105,8 +120,8 @@ export const useAdvancedHeartBeatProcessor = () => {
       const averageConfidence = weightedConfidenceSum / weightSum;
       
       // Solo actualizar estado si tenemos suficientes señales válidas consecutivas
-      // y la calidad es suficiente
-      if (consecutiveValidSignalsRef.current > 5 && averageConfidence > 50) {
+      // Umbral de calidad reducido para mejor detección
+      if (consecutiveValidSignalsRef.current > 5 && averageConfidence > 40) {
         // Actualizar estado
         setHeartRate(result.bpm);
         setConfidence(result.confidence);
@@ -118,6 +133,23 @@ export const useAdvancedHeartBeatProcessor = () => {
       return result;
     } catch (error) {
       console.error("useAdvancedHeartBeatProcessor: Error procesando señal", error);
+      
+      // Incrementar contador de errores
+      errorCountRef.current++;
+      const currentTime = Date.now();
+      
+      // Limitar frecuencia de logs de error
+      if (currentTime - lastErrorTimeRef.current > 1000) {
+        console.error("useAdvancedHeartBeatProcessor: Error procesando señal", error);
+        lastErrorTimeRef.current = currentTime;
+      }
+      
+      // Si hay demasiados errores consecutivos, reiniciar
+      if (errorCountRef.current > 10) {
+        console.warn("useAdvancedHeartBeatProcessor: Demasiados errores consecutivos, reiniciando");
+        reset();
+      }
+      
       return null;
     }
   }, [processor]);
@@ -136,7 +168,10 @@ export const useAdvancedHeartBeatProcessor = () => {
     consecutiveValidSignalsRef.current = 0;
     signalQualityHistoryRef.current = [];
     throttleCountRef.current = 0;
+    errorCountRef.current = 0;
+    lastErrorTimeRef.current = 0;
     processorActiveRef.current = true;
+    console.log("useAdvancedHeartBeatProcessor: Procesador reiniciado completamente");
   }, [processor]);
   
   /**
