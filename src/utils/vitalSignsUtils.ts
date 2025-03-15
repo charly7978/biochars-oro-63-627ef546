@@ -1,3 +1,4 @@
+
 /**
  * Utility functions for vital signs processing
  */
@@ -102,4 +103,83 @@ export function rollingAverage(values: number[], windowSize: number): number[] {
   }
 
   return result;
+}
+
+/**
+ * Finds peaks and valleys in a signal
+ * @param values The array of values to analyze
+ * @returns Object containing indices of peaks and valleys
+ */
+export function findPeaksAndValleys(values: number[]) {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+
+  for (let i = 2; i < values.length - 2; i++) {
+    const v = values[i];
+    if (
+      v > values[i - 1] &&
+      v > values[i - 2] &&
+      v > values[i + 1] &&
+      v > values[i + 2]
+    ) {
+      peakIndices.push(i);
+    }
+    if (
+      v < values[i - 1] &&
+      v < values[i - 2] &&
+      v < values[i + 1] &&
+      v < values[i + 2]
+    ) {
+      valleyIndices.push(i);
+    }
+  }
+  return { peakIndices, valleyIndices };
+}
+
+/**
+ * Calculates the AC component (amplitude) of a PPG signal
+ * @param values The array of PPG values
+ * @returns The AC component value
+ */
+export function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/**
+ * Calculates the DC component (baseline) of a PPG signal
+ * @param values The array of PPG values
+ * @returns The DC component value
+ */
+export function calculateDC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/**
+ * Calculates the amplitude of a PPG signal using peaks and valleys
+ * @param values The PPG signal values
+ * @param peaks Indices of peaks in the signal
+ * @param valleys Indices of valleys in the signal
+ * @returns The mean amplitude
+ */
+export function calculateAmplitude(
+  values: number[],
+  peaks: number[],
+  valleys: number[]
+): number {
+  if (peaks.length === 0 || valleys.length === 0) return 0;
+
+  const amps: number[] = [];
+  const len = Math.min(peaks.length, valleys.length);
+  for (let i = 0; i < len; i++) {
+    const amp = values[peaks[i]] - values[valleys[i]];
+    if (amp > 0) {
+      amps.push(amp);
+    }
+  }
+  if (amps.length === 0) return 0;
+
+  const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
+  return mean;
 }
