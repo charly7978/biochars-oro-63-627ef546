@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -176,6 +175,28 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.baselineHistory = [];
     this.hasEstablishedBaseline = false;
     console.log("PPGSignalProcessor: Detenido");
+  }
+
+  /**
+   * Restablece el procesador a su estado inicial
+   * Necesario para implementar la interfaz SignalProcessor
+   */
+  reset(): void {
+    this.stop();
+    this.lastValues = [];
+    this.stableFrameCount = 0;
+    this.lastStableValue = 0;
+    this.kalmanFilter.reset();
+    this.baselineValue = 0;
+    this.periodicityBuffer = [];
+    this.lastFramesVariation = [];
+    this.pulsationPatternBuffer = [];
+    this.intensityHistory = [];
+    this.detectionHistory = [];
+    this.frameCounter = 0;
+    this.baselineHistory = [];
+    this.hasEstablishedBaseline = false;
+    console.log("PPGSignalProcessor: Reset aplicado, procesador en estado inicial");
   }
 
   /**
