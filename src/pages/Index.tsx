@@ -73,25 +73,7 @@ const Index = () => {
     if (lastValidResults && !isMonitoring) {
       console.log("Index: Actualizando resultados finales:", lastValidResults);
       
-      const enhancedResults = {
-        ...lastValidResults,
-        glucose: lastValidResults.glucose > 0 
-          ? lastValidResults.glucose 
-          : Math.round(95 + Math.random() * 10),
-        lipids: {
-          totalCholesterol: lastValidResults.lipids?.totalCholesterol > 0 
-            ? lastValidResults.lipids.totalCholesterol 
-            : Math.round(180 + Math.random() * 20),
-          triglycerides: lastValidResults.lipids?.triglycerides > 0 
-            ? lastValidResults.lipids.triglycerides 
-            : Math.round(110 + Math.random() * 30)
-        },
-        pressure: lastValidResults.pressure !== "--/--" && lastValidResults.pressure !== "0/0" 
-          ? lastValidResults.pressure 
-          : `${Math.round(120 + Math.random() * 20)}/${Math.round(80 + Math.random() * 10)}`
-      };
-      
-      setVitalSigns(enhancedResults);
+      setVitalSigns(lastValidResults);
       setShowResults(true);
     }
   }, [lastValidResults, isMonitoring]);
@@ -105,13 +87,22 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       
+      setHeartRate(0);
+      setVitalSigns({
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        },
+        hemoglobin: 0
+      });
+      
       startProcessing();
       
       setElapsedTime(0);
-      setVitalSigns(prev => ({
-        ...prev,
-        arrhythmiaStatus: "SIN ARRITMIAS|0"
-      }));
       
       console.log("Iniciando fase de calibración automática");
       startAutoCalibration();
@@ -231,7 +222,7 @@ const Index = () => {
   };
 
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición: manteniendo resultados");
+    console.log("Finalizando medición: manteniendo resultados reales");
     
     if (isCalibrating) {
       console.log("Calibración en progreso al finalizar, forzando finalización");
@@ -252,25 +243,7 @@ const Index = () => {
     if (savedResults) {
       console.log("Resultados guardados después de finalizar:", savedResults);
       
-      const enhancedResults = {
-        ...savedResults,
-        glucose: savedResults.glucose > 0 
-          ? savedResults.glucose 
-          : Math.round(95 + Math.random() * 10),
-        lipids: {
-          totalCholesterol: savedResults.lipids?.totalCholesterol > 0 
-            ? savedResults.lipids.totalCholesterol 
-            : Math.round(180 + Math.random() * 20),
-          triglycerides: savedResults.lipids?.triglycerides > 0 
-            ? savedResults.lipids.triglycerides 
-            : Math.round(110 + Math.random() * 30)
-        },
-        pressure: savedResults.pressure !== "--/--" && savedResults.pressure !== "0/0" 
-          ? savedResults.pressure 
-          : `${Math.round(120 + Math.random() * 20)}/${Math.round(80 + Math.random() * 10)}`
-      };
-      
-      setVitalSigns(enhancedResults);
+      setVitalSigns(savedResults);
       setShowResults(true);
       
       toast.success("Medición completada", {
@@ -437,25 +410,9 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        console.log("Index: Vitales procesados:", vitals);
+        console.log("Index: Vitales procesados (sin modificación):", vitals);
         
-        const enhancedVitals = {
-          ...vitals,
-          glucose: vitals.glucose > 0 ? vitals.glucose : Math.round(95 + Math.random() * 10),
-          lipids: {
-            totalCholesterol: vitals.lipids?.totalCholesterol > 0 
-              ? vitals.lipids.totalCholesterol 
-              : Math.round(180 + Math.random() * 20),
-            triglycerides: vitals.lipids?.triglycerides > 0 
-              ? vitals.lipids.triglycerides 
-              : Math.round(110 + Math.random() * 30)
-          },
-          pressure: vitals.pressure !== "--/--" && vitals.pressure !== "0/0" 
-            ? vitals.pressure 
-            : `${Math.round(120 + Math.random() * 20)}/${Math.round(80 + Math.random() * 10)}`
-        };
-        
-        setVitalSigns(enhancedVitals);
+        setVitalSigns(vitals);
         
         if (vitals.lastArrhythmiaData) {
           setLastArrhythmiaData(vitals.lastArrhythmiaData);
