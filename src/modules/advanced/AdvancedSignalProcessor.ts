@@ -17,6 +17,9 @@ import { AFibDetector } from './analysis/AFibDetector';
 import { PPGMorphologyAnalyzer } from './analysis/PPGMorphologyAnalyzer';
 import { HRVAnalyzer } from './analysis/HRVAnalyzer';
 import { BPEstimator } from './analysis/BPEstimator';
+import { applyPressureCompensation, adaptPeakData } from './utils/SignalProcessingUtils';
+import { CalibrationService } from './services/CalibrationService';
+import { ResultGenerator } from './services/ResultGenerator';
 
 /**
  * Procesador avanzado que implementa algoritmos de vanguardia para
@@ -35,19 +38,13 @@ export class AdvancedSignalProcessor {
   private hrvAnalyzer: HRVAnalyzer;
   private bpEstimator: BPEstimator;
   
+  // Servicios
+  private calibrationService: CalibrationService;
+  private resultGenerator: ResultGenerator;
+  
   // Buffer de señales y estado
   private ppgValues: number[] = [];
   private readonly BUFFER_SIZE = 300;
-  private calibrating: boolean = false;
-  private calibrationProgress = {
-    heartRate: 0,
-    spo2: 0,
-    pressure: 0,
-    arrhythmia: 0,
-    glucose: 0,
-    lipids: 0,
-    hemoglobin: 0
-  };
   private isLowPowerMode: boolean = false;
   
   // Métricas avanzadas
@@ -70,6 +67,10 @@ export class AdvancedSignalProcessor {
     this.morphologyAnalyzer = new PPGMorphologyAnalyzer();
     this.hrvAnalyzer = new HRVAnalyzer();
     this.bpEstimator = new BPEstimator();
+    
+    // Inicializar servicios
+    this.calibrationService = new CalibrationService();
+    this.resultGenerator = new ResultGenerator();
     
     console.log('Procesador avanzado de señales PPG inicializado');
   }
@@ -109,7 +110,7 @@ export class AdvancedSignalProcessor {
     
     // Aplicar compensación de artefactos si es necesario
     const compensatedValues = this.pressureArtifactLevel > 0.3 
-      ? this.applyPressureCompensation(this.ppgValues)
+      ? applyPressureCompensation(this.ppgValues, this.pressureArtifactLevel)
       : this.ppgValues;
     
     // Análisis multivariante si hay suficientes muestras
@@ -137,10 +138,7 @@ export class AdvancedSignalProcessor {
       
       // Análisis avanzado de fibrilación auricular
       // Adaptamos el objeto para que coincida con la estructura esperada por AFibDetector
-      const afibResults = this.afibDetector.analyze({
-        peaks: peakInfo.peakIndices,
-        intervals: peakInfo.intervals
-      });
+      const afibResults = this.afibDetector.analyze(adaptPeakData(peakInfo));
       
       // Análisis avanzado de HRV
       const hrvMetrics = this.hrvAnalyzer.calculateMetrics(peakInfo.intervals);
@@ -151,124 +149,52 @@ export class AdvancedSignalProcessor {
         : null;
       
       // Si estamos calibrando, actualizar progreso
-      if (this.calibrating) {
-        this.updateCalibration();
+      const calibrationComplete = this.calibrationService.updateCalibration();
+      if (calibrationComplete) {
+        // Configurar parámetros calibrados
+        this.waveletDenoiser.updateParameters(this.signalQuality);
+        this.bpEstimator.calibrate(this.ppgValues);
       }
       
       // Construir resultado avanzado manteniendo compatibilidad con VitalSignsResult
-      const result: VitalSignsResult = {
-        spo2: Math.round(spo2),
-        pressure: `${Math.round(bloodPressure.systolic)}/${Math.round(bloodPressure.diastolic)}`,
-        arrhythmiaStatus: afibResults.detected 
-          ? `ARRITMIA DETECTADA|${afibResults.count}` 
-          : `SIN ARRITMIAS|${afibResults.count}`,
-        glucose: Math.round(90 + 10 * Math.sin(Date.now() / 10000)),
-        lipids: {
-          totalCholesterol: Math.round(180 + 10 * Math.sin(Date.now() / 15000)),
-          triglycerides: Math.round(120 + 15 * Math.sin(Date.now() / 20000))
-        },
-        hemoglobin: Math.round(14 + Math.sin(Date.now() / 25000)),
-        calibration: {
-          isCalibrating: this.calibrating,
-          progress: this.calibrationProgress
-        },
-        lastArrhythmiaData: afibResults.detected ? {
-          timestamp: Date.now(),
-          rmssd: hrvMetrics.rmssd,
-          rrVariation: afibResults.confidence / 100
-        } : null
-      };
+      const result = this.resultGenerator.generateResult({
+        spo2,
+        bloodPressure,
+        afibResults,
+        calibration: this.calibrationService.getCalibrationState(),
+        perfusionIndex: this.perfusionIndex,
+        pressureArtifactLevel: this.pressureArtifactLevel,
+        hrvMetrics
+      });
       
       this.lastResult = result;
       return result;
     }
     
     // Si no hay suficientes muestras, retornar valores por defecto
-    const defaultResult: VitalSignsResult = {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "CALIBRANDO...",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      },
-      hemoglobin: 0,
-      calibration: {
-        isCalibrating: this.calibrating,
-        progress: this.calibrationProgress
-      }
-    };
+    const defaultResult = this.resultGenerator.generateDefaultResult(
+      this.calibrationService.getCalibrationState()
+    );
     
     return this.lastResult || defaultResult;
-  }
-  
-  /**
-   * Aplica compensación de artefactos por presión
-   */
-  private applyPressureCompensation(values: number[]): number[] {
-    // Implementación simplificada de compensación de artefactos
-    return values.map(v => v * (1 + this.pressureArtifactLevel * 0.2));
-  }
-  
-  /**
-   * Actualiza el progreso de calibración
-   */
-  private updateCalibration(): void {
-    if (!this.calibrating) return;
-    
-    const increment = 0.02;
-    this.calibrationProgress.heartRate += increment;
-    this.calibrationProgress.spo2 += increment;
-    this.calibrationProgress.pressure += increment;
-    this.calibrationProgress.arrhythmia += increment;
-    this.calibrationProgress.glucose += increment;
-    this.calibrationProgress.lipids += increment;
-    this.calibrationProgress.hemoglobin += increment;
-    
-    if (this.calibrationProgress.heartRate >= 100) {
-      this.calibrating = false;
-      
-      // Reiniciar progreso de calibración
-      Object.keys(this.calibrationProgress).forEach(key => {
-        this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
-      });
-      
-      // Configurar parámetros calibrados
-      this.waveletDenoiser.updateParameters(this.signalQuality);
-      this.bpEstimator.calibrate(this.ppgValues);
-      
-      console.log('Calibración completada');
-    }
   }
   
   /**
    * Inicia el proceso de calibración
    */
   public startCalibration(): void {
-    this.calibrating = true;
-    Object.keys(this.calibrationProgress).forEach(key => {
-      this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
-    });
-    console.log('Iniciando calibración avanzada');
+    this.calibrationService.startCalibration();
   }
   
   /**
    * Fuerza la finalización del proceso de calibración
    */
   public forceCalibrationCompletion(): void {
-    if (this.calibrating) {
-      this.calibrating = false;
-      Object.keys(this.calibrationProgress).forEach(key => {
-        this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
-      });
-      
-      // Aplicar valores predeterminados de calibración
-      this.waveletDenoiser.resetToDefaults();
-      this.bpEstimator.resetToDefaults();
-      
-      console.log('Calibración forzada a finalizar');
-    }
+    this.calibrationService.forceCalibrationCompletion();
+    
+    // Aplicar valores predeterminados de calibración
+    this.waveletDenoiser.resetToDefaults();
+    this.bpEstimator.resetToDefaults();
   }
   
   /**
@@ -298,10 +224,6 @@ export class AdvancedSignalProcessor {
     // Reiniciar todos los procesadores completamente
     this.ppgValues = [];
     this.lastResult = null;
-    this.calibrating = false;
-    Object.keys(this.calibrationProgress).forEach(key => {
-      this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
-    });
     this.perfusionIndex = 0;
     this.signalQuality = 0;
     this.pressureArtifactLevel = 0;
@@ -315,6 +237,7 @@ export class AdvancedSignalProcessor {
     this.morphologyAnalyzer.reset();
     this.hrvAnalyzer.reset(true);   // Reinicio completo
     this.bpEstimator.resetToDefaults();
+    this.calibrationService.reset();
     
     console.log('Procesador avanzado reiniciado completamente');
   }
