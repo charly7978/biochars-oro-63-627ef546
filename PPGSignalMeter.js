@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Fingerprint } from 'lucide-react';
 
@@ -8,7 +7,8 @@ const PPGSignalMeter = ({
   isFingerDetected,
   onStartMeasurement,
   onReset,
-  arrhythmiaStatus
+  arrhythmiaStatus,
+  detectedPeaks = []
 }) => {
   const canvasRef = useRef(null);
   const dataRef = useRef([]);
@@ -22,6 +22,7 @@ const PPGSignalMeter = ({
   const verticalScale = 32.0;
   const baselineRef = useRef(null);
   const lastValueRef = useRef(0);
+  const peaksRef = useRef([]);
   
   // Performance optimization references
   const cachedWaveformRef = useRef(null);
@@ -54,6 +55,7 @@ const PPGSignalMeter = ({
 
   const handleReset = () => {
     dataRef.current = [];
+    peaksRef.current = [];
     baselineRef.current = null;
     lastValueRef.current = 0;
     setStartTime(Date.now());
@@ -156,6 +158,29 @@ const PPGSignalMeter = ({
     ctx.drawImage(gridCanvasRef.current, 0, 0);
   }, []);
 
+  // Update peaksRef from detected peaks props
+  useEffect(() => {
+    if (detectedPeaks && detectedPeaks.length > 0) {
+      console.log("Actualizando picos desde props:", detectedPeaks.length);
+      
+      // Merge detected peaks with existing peaks, avoid duplicates
+      const now = Date.now();
+      const recentPeaks = peaksRef.current.filter(p => now - p.time < WINDOW_WIDTH_MS);
+      
+      // Filter out any peaks that are too close in time to existing ones
+      const newPeaks = detectedPeaks.filter(newPeak => {
+        return !recentPeaks.some(existingPeak => 
+          Math.abs(existingPeak.time - newPeak.time) < 200);
+      });
+      
+      peaksRef.current = [...recentPeaks, ...newPeaks];
+      
+      // Keep only recent peaks
+      peaksRef.current = peaksRef.current.filter(peak => 
+        now - peak.time < WINDOW_WIDTH_MS);
+    }
+  }, [detectedPeaks, WINDOW_WIDTH_MS]);
+
   // Optimized rendering function with adaptive FPS and double buffering
   const renderOptimizedSignal = useCallback(() => {
     const canvas = canvasRef.current;
@@ -238,6 +263,83 @@ const PPGSignalMeter = ({
           
           offCtx.stroke();
         }
+        
+        // Draw peak circles with values
+        const peaks = peaksRef.current;
+        if (peaks.length > 0) {
+          console.log(`Dibujando ${peaks.length} picos`);
+        }
+        
+        peaks.forEach(peak => {
+          const timeSinceNow = currentTime - peak.time;
+          if (timeSinceNow <= WINDOW_WIDTH_MS) {
+            const x = CANVAS_WIDTH - (timeSinceNow * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+            const y = CANVAS_HEIGHT / 2 + peak.value;
+            
+            // Draw glow effect first for peaks
+            offCtx.beginPath();
+            const gradient = offCtx.createRadialGradient(x, y, 3, x, y, 15);
+            if (peak.isArrhythmia) {
+              gradient.addColorStop(0, 'rgba(254, 240, 138, 0.6)'); // Yellow glow for arrhythmia
+              gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            } else {
+              gradient.addColorStop(0, 'rgba(14, 165, 233, 0.6)'); // Blue glow for normal peaks
+              gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            }
+            offCtx.arc(x, y, 15, 0, Math.PI * 2);
+            offCtx.fillStyle = gradient;
+            offCtx.fill();
+            
+            // Draw circle at peak
+            offCtx.beginPath();
+            offCtx.arc(x, y, 8, 0, Math.PI * 2);
+            offCtx.fillStyle = peak.isArrhythmia ? '#FEF08A' : '#0ea5e9';
+            offCtx.fill();
+            
+            // Draw white stroke around circle
+            offCtx.beginPath();
+            offCtx.arc(x, y, 8, 0, Math.PI * 2);
+            offCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            offCtx.lineWidth = 1.5;
+            offCtx.stroke();
+            
+            // Add value label
+            offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            offCtx.fillRect(x - 20, y - 30, 40, 20);
+            
+            offCtx.font = '10px Arial';
+            offCtx.fillStyle = 'white';
+            offCtx.textAlign = 'center';
+            const displayValue = Math.abs(peak.value / verticalScale).toFixed(3);
+            offCtx.fillText(displayValue, x, y - 15);
+            
+            // Add time label
+            offCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            offCtx.fillRect(x - 20, y + 10, 40, 15);
+            offCtx.fillStyle = 'white';
+            offCtx.fillText(`${Math.round(timeSinceNow)}ms`, x, y + 20);
+            
+            // Special label for arrhythmia peaks with flashing animation
+            if (peak.isArrhythmia) {
+              // Pulsating ring around arrhythmia peaks
+              const pulseSize = 15 + Math.sin(currentTime * 0.01) * 2;
+              offCtx.beginPath();
+              offCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
+              offCtx.strokeStyle = '#FEF08A';
+              offCtx.lineWidth = 2;
+              offCtx.setLineDash([3, 2]);
+              offCtx.stroke();
+              offCtx.setLineDash([]);
+              
+              // "LATIDO PREMATURO" label for arrhythmia
+              offCtx.font = 'bold 12px Arial';
+              offCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+              offCtx.fillRect(x - 70, y - 55, 140, 20);
+              offCtx.fillStyle = '#FEF08A';
+              offCtx.fillText("LATIDO PREMATURO", x, y - 40);
+            }
+          }
+        });
       }
       
       // Copy the offscreen canvas to the visible canvas in a single operation
@@ -363,4 +465,4 @@ const PPGSignalMeter = ({
   );
 };
 
-export default PPGSignalMeter; 
+export default PPGSignalMeter;

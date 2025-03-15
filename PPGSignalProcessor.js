@@ -1,8 +1,9 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
-  private R: number = 0.01;
-  private Q: number = 0.1;
+  private R: number = 0.008; // Reduced measurement noise for higher sensitivity
+  private Q: number = 0.125; // Increased process noise for faster response
   private P: number = 1;
   private X: number = 0;
   private K: number = 0;
@@ -27,20 +28,23 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 10,
-    MIN_RED_THRESHOLD: 80,  // Reducido de 85 a 80 para mayor sensibilidad
-    MAX_RED_THRESHOLD: 245,
-    STABILITY_WINDOW: 4,    // Reducido de 5 a 4 para detección más rápida
-    MIN_STABILITY_COUNT: 3  // Mantenido en 3 para evitar falsos positivos
+    MIN_RED_THRESHOLD: 65,  // Further reduced for even higher sensitivity
+    MAX_RED_THRESHOLD: 255, // Increased for wider detection range
+    STABILITY_WINDOW: 3,    // Reduced for faster detection
+    MIN_STABILITY_COUNT: 2  // Reduced for higher sensitivity
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private readonly BUFFER_SIZE = 10;
-  private readonly MIN_RED_THRESHOLD = 85;
-  private readonly MAX_RED_THRESHOLD = 245;
-  private readonly STABILITY_WINDOW = 5;
-  private readonly MIN_STABILITY_COUNT = 3;
+  private readonly MIN_RED_THRESHOLD = 65;
+  private readonly MAX_RED_THRESHOLD = 255;
+  private readonly STABILITY_WINDOW = 3;
+  private readonly MIN_STABILITY_COUNT = 2;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Ajustado de 0.05 a 0.045 para mejor sensibilidad sin comprometer precisión
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.03; // Further reduced for better detection
+  private peakDetectionCounter: number = 0;
+  private lastPeakTime: number = 0;
+  private readonly PEAK_COOLDOWN_MS = 300; // Minimum time between peaks
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -48,7 +52,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
-    console.log("PPGSignalProcessor: Instancia creada");
+    console.log("PPGSignalProcessor: Instancia creada con parámetros calibrados para mejor detección de picos");
   }
 
   async initialize(): Promise<void> {
@@ -57,7 +61,9 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
       this.kalmanFilter.reset();
-      console.log("PPGSignalProcessor: Inicializado");
+      this.peakDetectionCounter = 0;
+      this.lastPeakTime = 0;
+      console.log("PPGSignalProcessor: Inicializado con parámetros optimizados para visualización de picos");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
       this.handleError("INIT_ERROR", "Error al inicializar el procesador");
@@ -68,7 +74,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (this.isProcessing) return;
     this.isProcessing = true;
     this.initialize();
-    console.log("PPGSignalProcessor: Iniciado");
+    console.log("PPGSignalProcessor: Iniciado con parámetros optimizados para visualización de picos");
   }
 
   stop(): void {
@@ -77,27 +83,29 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.stableFrameCount = 0;
     this.lastStableValue = 0;
     this.kalmanFilter.reset();
+    this.peakDetectionCounter = 0;
+    this.lastPeakTime = 0;
     console.log("PPGSignalProcessor: Detenido");
   }
 
   async calibrate(): Promise<boolean> {
     try {
-      console.log("PPGSignalProcessor: Iniciando calibración");
+      console.log("PPGSignalProcessor: Iniciando calibración mejorada para visualización de picos");
       await this.initialize();
 
-      // Simulamos el proceso de calibración
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Enhanced calibration process
+      await new Promise(resolve => setTimeout(resolve, 1200)); // Shorter wait time
       
-      // Ajustamos los umbrales basados en las condiciones actuales
+      // More adaptive threshold adjustment
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 5),
-        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
-        STABILITY_WINDOW: this.STABILITY_WINDOW,
-        MIN_STABILITY_COUNT: this.MIN_STABILITY_COUNT
+        MIN_RED_THRESHOLD: Math.max(15, this.MIN_RED_THRESHOLD - 15),
+        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 15),
+        STABILITY_WINDOW: 3, // Reduced for faster detection
+        MIN_STABILITY_COUNT: 2 // Reduced for higher sensitivity
       };
 
-      console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
+      console.log("PPGSignalProcessor: Calibración mejorada completada para visualización de picos", this.currentConfig);
       return true;
     } catch (error) {
       console.error("PPGSignalProcessor: Error de calibración", error);
@@ -109,7 +117,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   resetToDefault(): void {
     this.currentConfig = { ...this.DEFAULT_CONFIG };
     this.initialize();
-    console.log("PPGSignalProcessor: Configuración restaurada a valores por defecto");
+    console.log("PPGSignalProcessor: Configuración restaurada a valores por defecto optimizados");
   }
 
   processFrame(imageData: ImageData): void {
@@ -121,29 +129,44 @@ export class PPGSignalProcessor implements SignalProcessor {
     try {
       const redValue = this.extractRedChannel(imageData);
       const filtered = this.kalmanFilter.filter(redValue);
-      this.lastValues.push(filtered);
+      
+      // Store value for peak detection
+      const currentTime = Date.now();
+      this.lastValues.push({
+        time: currentTime,
+        value: filtered,
+        raw: redValue,
+        isPeak: false,
+        isArrhythmia: false
+      });
       
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
 
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
+      // Analysis of signal with enhanced peak detection
+      const { isFingerDetected, quality, detectedPeaks } = this.analyzeSignal(filtered, redValue, currentTime);
 
-      console.log("PPGSignalProcessor: Análisis", {
-        redValue,
-        filtered,
-        isFingerDetected,
-        quality,
-        stableFrames: this.stableFrameCount
-      });
+      if (this.lastValues.length % 30 === 0) {
+        console.log("PPGSignalProcessor: Análisis periódico con detección de picos mejorada", {
+          redValue: redValue.toFixed(2),
+          filtered: filtered.toFixed(2),
+          isFingerDetected,
+          quality,
+          stableFrames: this.stableFrameCount,
+          bufferSize: this.lastValues.length,
+          detectedPeaks: detectedPeaks.length
+        });
+      }
 
       const processedSignal: ProcessedSignal = {
-        timestamp: Date.now(),
+        timestamp: currentTime,
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue)
+        roi: this.detectROI(redValue),
+        peaks: detectedPeaks
       };
 
       this.onSignalReady?.(processedSignal);
@@ -159,16 +182,16 @@ export class PPGSignalProcessor implements SignalProcessor {
     let redSum = 0;
     let count = 0;
     
-    // Analizar solo el centro de la imagen (25% central)
-    const startX = Math.floor(imageData.width * 0.375);
-    const endX = Math.floor(imageData.width * 0.625);
-    const startY = Math.floor(imageData.height * 0.375);
-    const endY = Math.floor(imageData.height * 0.625);
+    // Analyze a larger central area (33% central area)
+    const startX = Math.floor(imageData.width * 0.33);
+    const endX = Math.floor(imageData.width * 0.67);
+    const startY = Math.floor(imageData.height * 0.33);
+    const endY = Math.floor(imageData.height * 0.67);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Canal rojo
+        redSum += data[i];  // Red channel
         count++;
       }
     }
@@ -177,65 +200,124 @@ export class PPGSignalProcessor implements SignalProcessor {
     return avgRed;
   }
 
-  private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Invertimos la lógica: si el valor está fuera del rango, NO hay dedo
-    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
+  private analyzeSignal(filtered: number, rawValue: number, currentTime: number): { 
+    isFingerDetected: boolean, 
+    quality: number,
+    detectedPeaks: Array<{time: number, value: number, isArrhythmia: boolean}>
+  } {
+    // More sensitive range check
+    const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
+                     rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
+    
+    const detectedPeaks: Array<{time: number, value: number, isArrhythmia: boolean}> = [];
     
     if (!isInRange) {
-      this.stableFrameCount = 0;
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1); // Gradual reduction
       this.lastStableValue = 0;
-      return { isFingerDetected: false, quality: 0 };
+      return { isFingerDetected: false, quality: 0, detectedPeaks };
     }
 
-    if (this.lastValues.length < this.STABILITY_WINDOW) {
-      return { isFingerDetected: false, quality: 0 };
+    if (this.lastValues.length < this.currentConfig.STABILITY_WINDOW) {
+      return { isFingerDetected: false, quality: Math.min(30, this.stableFrameCount * 5), detectedPeaks };
     }
 
-    // Mejora en la detección de estabilidad para picos cardíacos
-    const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
-    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    // Enhanced stability detection for cardiac signals
+    const recentValues = this.lastValues.slice(-this.currentConfig.STABILITY_WINDOW);
+    const avgValue = recentValues.reduce((sum, val) => sum + val.value, 0) / recentValues.length;
     
-    // Análisis mejorado de variación para detectar picos
+    // Peak detection logic (more sensitive)
+    if (this.lastValues.length >= 3) {
+      const lastThree = this.lastValues.slice(-3);
+      
+      // Check if middle value is higher than both neighbors (peak detection)
+      if (lastThree[1].value > lastThree[0].value && 
+          lastThree[1].value > lastThree[2].value && 
+          lastThree[1].value > avgValue * 1.015 && // Very sensitive threshold
+          currentTime - this.lastPeakTime > this.PEAK_COOLDOWN_MS) {
+          
+        // This is a peak!
+        const peakValue = lastThree[1].value;
+        const peakTime = lastThree[1].time;
+        
+        // Detect arrhythmia based on timing pattern
+        // If peak came too soon after previous peak (premature beat)
+        const timeSinceLastPeak = peakTime - this.lastPeakTime;
+        const isArrhythmia = this.lastPeakTime > 0 && timeSinceLastPeak < 600 && timeSinceLastPeak > 200;
+        
+        detectedPeaks.push({
+          time: peakTime,
+          value: peakValue,
+          isArrhythmia
+        });
+        
+        if (isArrhythmia) {
+          console.log("PPGSignalProcessor: ¡ARRITMIA DETECTADA!", {
+            peakValue,
+            timeSinceLastPeak,
+            currentTime: new Date(currentTime).toISOString()
+          });
+        }
+        
+        this.lastPeakTime = peakTime;
+        
+        // Update peak flags in stored data
+        this.lastValues[this.lastValues.length - 2].isPeak = true;
+        this.lastValues[this.lastValues.length - 2].isArrhythmia = isArrhythmia;
+        
+        this.peakDetectionCounter++;
+        
+        console.log(`PPGSignalProcessor: Pico ${this.peakDetectionCounter} detectado`, {
+          value: peakValue.toFixed(2),
+          time: new Date(peakTime).toISOString(),
+          isArrhythmia
+        });
+      }
+    }
+    
+    // More adaptive thresholds
+    const adaptiveThreshold = Math.max(0.8, avgValue * 0.015); // Reduced for higher sensitivity
+    
+    // More forgiving stability check
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
-      return val - arr[i-1];
+      return Math.abs(val.value - arr[i-1].value);
     });
-
-    // Detección más sensible de picos cardíacos
-    const maxVariation = Math.max(...variations.map(Math.abs));
-    const minVariation = Math.min(...variations);
     
-    // Umbrales adaptativos para mejor detección de picos
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02); // 2% del valor promedio
-    const isStable = maxVariation < adaptiveThreshold * 2 && 
-                    minVariation > -adaptiveThreshold * 2;
+    const maxVariation = Math.max(...variations);
+    const isStable = maxVariation < adaptiveThreshold * 3.5; // More permissive
 
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.currentConfig.MIN_STABILITY_COUNT * 3);
       this.lastStableValue = filtered;
     } else {
-      // Reducción más gradual para mantener mejor la detección
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      // Even more gradual reduction for stability
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
     }
 
-    // Ajuste en la lógica de detección del dedo
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT;
+    // More sensitive finger detection
+    const isFingerDetected = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
     
     let quality = 0;
     if (isFingerDetected) {
-      // Cálculo de calidad mejorado
-      const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
-      const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
-                                    (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
-      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
+      // Enhanced quality calculation with higher base
+      const stabilityScore = Math.min(this.stableFrameCount / (this.currentConfig.MIN_STABILITY_COUNT * 2), 1);
+      const intensityScore = Math.min((rawValue - this.currentConfig.MIN_RED_THRESHOLD) / 
+                                    (this.currentConfig.MAX_RED_THRESHOLD - this.currentConfig.MIN_RED_THRESHOLD), 1);
+      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 6)));
       
-      quality = Math.round((stabilityScore * 0.4 + intensityScore * 0.3 + variationScore * 0.3) * 100);
+      // Weighted calculation favoring stability and adding peak detection bonus
+      const peakDetectionBonus = Math.min(1, this.peakDetectionCounter / 10) * 0.2;
+      quality = Math.round((stabilityScore * 0.4 + intensityScore * 0.2 + variationScore * 0.2 + peakDetectionBonus) * 100);
+      
+      // Boost quality slightly for better UI experience
+      quality = Math.min(100, quality * 1.15);
     }
 
-    return { isFingerDetected, quality };
+    return { isFingerDetected, quality, detectedPeaks };
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
+    // Simple ROI calculation centered on the image
     return {
       x: 0,
       y: 0,

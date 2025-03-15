@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -24,6 +23,10 @@ const Index = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [detectedPeaks, setDetectedPeaks] = useState([]);
   const measurementTimerRef = useRef(null);
+  const processingActiveRef = useRef(false);
+  const frameProcessingRef = useRef(null);
+  const cameraErrorCountRef = useRef(0);
+  const lastCameraErrorRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -76,6 +79,10 @@ const Index = () => {
     setIsCameraOn(true);
     startProcessing();
     setElapsedTime(0);
+    processingActiveRef.current = true;
+    setDetectedPeaks([]);
+    cameraErrorCountRef.current = 0;
+    lastCameraErrorRef.current = null;
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -116,6 +123,7 @@ const Index = () => {
   };
 
   const completeMonitoring = () => {
+    processingActiveRef.current = false;
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -127,6 +135,7 @@ const Index = () => {
   };
 
   const stopMonitoring = () => {
+    processingActiveRef.current = false;
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -146,12 +155,30 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
+    
+    if (frameProcessingRef.current) {
+      cancelAnimationFrame(frameProcessingRef.current);
+      frameProcessingRef.current = null;
+    }
   };
 
   const handleStreamReady = (stream) => {
+    console.log("Stream recibido en Index", {
+      isMonitoring,
+      trackState: stream?.getVideoTracks()[0]?.readyState
+    });
+    
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack || videoTrack.readyState !== 'live') {
+      console.log("Video track no disponible o no activo");
+      return;
+    }
+    
+    cameraErrorCountRef.current = 0;
+    lastCameraErrorRef.current = null;
+    
     const imageCapture = new ImageCapture(videoTrack);
     
     if (videoTrack.getCapabilities()?.torch) {
@@ -161,35 +188,76 @@ const Index = () => {
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
     }
     
     const processImage = async () => {
-      if (!isMonitoring) return;
+      if (!processingActiveRef.current || !isMonitoring) {
+        console.log("Procesamiento detenido - monitoreo desactivado");
+        return;
+      }
       
       try {
+        if (!videoTrack || videoTrack.readyState !== 'live') {
+          console.log("Video track no disponible o no activo - saltando frame");
+          
+          if (processingActiveRef.current) {
+            frameProcessingRef.current = setTimeout(() => {
+              frameProcessingRef.current = requestAnimationFrame(processImage);
+            }, 500);
+          }
+          return;
+        }
+        
         const frame = await imageCapture.grabFrame();
         tempCanvas.width = frame.width;
         tempCanvas.height = frame.height;
         tempCtx.drawImage(frame, 0, 0);
+        
         const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
         processFrame(imageData);
         
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+        if (processingActiveRef.current) {
+          frameProcessingRef.current = requestAnimationFrame(processImage);
         }
       } catch (error) {
         console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+        
+        cameraErrorCountRef.current++;
+        lastCameraErrorRef.current = error;
+        
+        const retryDelay = Math.min(1000 * Math.pow(1.5, Math.min(cameraErrorCountRef.current - 1, 5)), 10000);
+        
+        console.log(`Error de cámara #${cameraErrorCountRef.current}. Reintentando en ${retryDelay}ms`, error);
+        
+        if (processingActiveRef.current) {
+          frameProcessingRef.current = setTimeout(() => {
+            if (processingActiveRef.current) {
+              if (cameraErrorCountRef.current > 5 && cameraErrorCountRef.current % 5 === 0) {
+                console.log("Demasiados errores, intentando reiniciar cámara...");
+                setIsCameraOn(false);
+                setTimeout(() => {
+                  if (processingActiveRef.current) {
+                    setIsCameraOn(true);
+                  }
+                }, 1000);
+              } else {
+                frameProcessingRef.current = requestAnimationFrame(processImage);
+              }
+            }
+          }, retryDelay);
         }
       }
     };
 
-    processImage();
+    setTimeout(() => {
+      if (processingActiveRef.current) {
+        processImage();
+      }
+    }, 500);
   };
 
   useEffect(() => {
@@ -198,9 +266,33 @@ const Index = () => {
       const calculatedHeartRate = heartBeatResult.bpm > 0 ? heartBeatResult.bpm : 0;
       setHeartRate(calculatedHeartRate);
       
-      // Guardar los picos detectados para sincronización visual
-      if (heartBeatResult.detectedPeaks) {
-        setDetectedPeaks(heartBeatResult.detectedPeaks);
+      if (heartBeatResult.detectedPeaks && heartBeatResult.detectedPeaks.length > 0) {
+        console.log("Picos detectados en Index:", heartBeatResult.detectedPeaks.length);
+        
+        const now = Date.now();
+        const peaksWithMetadata = heartBeatResult.detectedPeaks.map(peak => ({
+          ...peak,
+          time: peak.timestamp || (now - (peak.offset || 0)),
+          value: peak.value || (lastSignal.filteredValue * 40)
+        }));
+        
+        // Ensure we mark arrhythmia peaks if detected in vital signs
+        if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes('ARRITMIA')) {
+          // Mark the most recent peak as arrhythmia
+          if (peaksWithMetadata.length > 0) {
+            const lastIndex = peaksWithMetadata.length - 1;
+            peaksWithMetadata[lastIndex].isArrhythmia = true;
+          }
+        }
+        
+        // Log peaks for debugging
+        console.log("Peaks with metadata:", peaksWithMetadata.map(p => ({
+          value: p.value,
+          time: p.time,
+          isArrhythmia: p.isArrhythmia
+        })));
+        
+        setDetectedPeaks(peaksWithMetadata);
       }
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -210,7 +302,18 @@ const Index = () => {
           pressure: vitals.pressure || "--/--",
           arrhythmiaStatus: vitals.arrhythmiaStatus || "--"
         });
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        
+        if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('ARRITMIA')) {
+          const arrhythmiaCount = vitals.arrhythmiaStatus.split('|')[1] || "--";
+          setArrhythmiaCount(arrhythmiaCount);
+          
+          if (heartBeatResult.detectedPeaks && heartBeatResult.detectedPeaks.length > 0) {
+            const lastIndex = heartBeatResult.detectedPeaks.length - 1;
+            heartBeatResult.detectedPeaks[lastIndex].isArrhythmia = true;
+            
+            setDetectedPeaks([...heartBeatResult.detectedPeaks]);
+          }
+        }
       }
       
       setSignalQuality(lastSignal.quality);
@@ -223,8 +326,17 @@ const Index = () => {
       });
       setArrhythmiaCount("--");
       setSignalQuality(0);
+      setDetectedPeaks([]);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+
+  useEffect(() => {
+    if (detectedPeaks.length > 0) {
+      console.log("Peaks for visualization updated:", detectedPeaks.length, 
+        "Sample:", JSON.stringify(detectedPeaks[0])
+      );
+    }
+  }, [detectedPeaks]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -240,6 +352,7 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
+            detectedPeaks={detectedPeaks} // Pass peaks to the CameraView
           />
         </div>
 
@@ -253,6 +366,7 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              detectedPeaks={detectedPeaks}
             />
           </div>
 
