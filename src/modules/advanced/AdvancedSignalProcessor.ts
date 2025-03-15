@@ -39,7 +39,15 @@ export class AdvancedSignalProcessor {
   private ppgValues: number[] = [];
   private readonly BUFFER_SIZE = 300;
   private calibrating: boolean = false;
-  private calibrationProgress: number = 0;
+  private calibrationProgress = {
+    heartRate: 0,
+    spo2: 0,
+    pressure: 0,
+    arrhythmia: 0,
+    glucose: 0,
+    lipids: 0,
+    hemoglobin: 0
+  };
   private isLowPowerMode: boolean = false;
   
   // Métricas avanzadas
@@ -128,7 +136,7 @@ export class AdvancedSignalProcessor {
       );
       
       // Análisis avanzado de fibrilación auricular
-      // Adaptamos la estructura para que coincida con lo que espera AFibDetector
+      // Adaptamos el objeto para que coincida con la estructura esperada por AFibDetector
       const afibResults = this.afibDetector.analyze({
         peaks: peakInfo.peakIndices,
         intervals: peakInfo.intervals
@@ -148,44 +156,27 @@ export class AdvancedSignalProcessor {
       }
       
       // Construir resultado avanzado manteniendo compatibilidad con VitalSignsResult
-      const glucoseValue = Math.round(90 + 10 * Math.sin(Date.now() / 10000));
-      const cholesterol = Math.round(180 + 10 * Math.sin(Date.now() / 15000));
-      const triglycerides = Math.round(120 + 15 * Math.sin(Date.now() / 20000));
-      const hemoglobinValue = Math.round(14 + Math.sin(Date.now() / 25000));
-      
       const result: VitalSignsResult = {
         spo2: Math.round(spo2),
         pressure: `${Math.round(bloodPressure.systolic)}/${Math.round(bloodPressure.diastolic)}`,
         arrhythmiaStatus: afibResults.detected 
           ? `ARRITMIA DETECTADA|${afibResults.count}` 
           : `SIN ARRITMIAS|${afibResults.count}`,
+        glucose: Math.round(90 + 10 * Math.sin(Date.now() / 10000)),
+        lipids: {
+          totalCholesterol: Math.round(180 + 10 * Math.sin(Date.now() / 15000)),
+          triglycerides: Math.round(120 + 15 * Math.sin(Date.now() / 20000))
+        },
+        hemoglobin: Math.round(14 + Math.sin(Date.now() / 25000)),
         calibration: {
           isCalibrating: this.calibrating,
-          progress: {
-            heartRate: this.calibrationProgress,
-            spo2: this.calibrationProgress,
-            pressure: this.calibrationProgress,
-            arrhythmia: this.calibrationProgress,
-            glucose: this.calibrationProgress,
-            lipids: this.calibrationProgress,
-            hemoglobin: this.calibrationProgress
-          }
+          progress: this.calibrationProgress
         },
-        // Métricas adicionales manteniendo compatibilidad
-        glucose: glucoseValue,
-        lipids: {
-          totalCholesterol: cholesterol,
-          triglycerides: triglycerides
-        },
-        hemoglobin: hemoglobinValue,
-        // Métricas avanzadas
-        advanced: {
-          perfusionIndex: this.perfusionIndex,
-          signalQuality: this.signalQuality,
-          pressureArtifact: this.pressureArtifactLevel,
-          hrv: hrvMetrics,
-          waveformMorphology: morphologyFeatures
-        }
+        lastArrhythmiaData: afibResults.detected ? {
+          timestamp: Date.now(),
+          rmssd: hrvMetrics.rmssd,
+          rrVariation: afibResults.confidence / 100
+        } : null
       };
       
       this.lastResult = result;
@@ -197,24 +188,16 @@ export class AdvancedSignalProcessor {
       spo2: 0,
       pressure: "--/--",
       arrhythmiaStatus: "CALIBRANDO...",
-      calibration: {
-        isCalibrating: this.calibrating,
-        progress: {
-          heartRate: this.calibrationProgress,
-          spo2: this.calibrationProgress,
-          pressure: this.calibrationProgress,
-          arrhythmia: this.calibrationProgress,
-          glucose: this.calibrationProgress,
-          lipids: this.calibrationProgress,
-          hemoglobin: this.calibrationProgress
-        }
-      },
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hemoglobin: 0
+      hemoglobin: 0,
+      calibration: {
+        isCalibrating: this.calibrating,
+        progress: this.calibrationProgress
+      }
     };
     
     return this.lastResult || defaultResult;
@@ -234,10 +217,22 @@ export class AdvancedSignalProcessor {
   private updateCalibration(): void {
     if (!this.calibrating) return;
     
-    this.calibrationProgress += 0.02;
-    if (this.calibrationProgress >= 1) {
+    const increment = 0.02;
+    this.calibrationProgress.heartRate += increment;
+    this.calibrationProgress.spo2 += increment;
+    this.calibrationProgress.pressure += increment;
+    this.calibrationProgress.arrhythmia += increment;
+    this.calibrationProgress.glucose += increment;
+    this.calibrationProgress.lipids += increment;
+    this.calibrationProgress.hemoglobin += increment;
+    
+    if (this.calibrationProgress.heartRate >= 100) {
       this.calibrating = false;
-      this.calibrationProgress = 0;
+      
+      // Reiniciar progreso de calibración
+      Object.keys(this.calibrationProgress).forEach(key => {
+        this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
+      });
       
       // Configurar parámetros calibrados
       this.waveletDenoiser.updateParameters(this.signalQuality);
@@ -252,7 +247,9 @@ export class AdvancedSignalProcessor {
    */
   public startCalibration(): void {
     this.calibrating = true;
-    this.calibrationProgress = 0;
+    Object.keys(this.calibrationProgress).forEach(key => {
+      this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
+    });
     console.log('Iniciando calibración avanzada');
   }
   
@@ -262,7 +259,9 @@ export class AdvancedSignalProcessor {
   public forceCalibrationCompletion(): void {
     if (this.calibrating) {
       this.calibrating = false;
-      this.calibrationProgress = 0;
+      Object.keys(this.calibrationProgress).forEach(key => {
+        this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
+      });
       
       // Aplicar valores predeterminados de calibración
       this.waveletDenoiser.resetToDefaults();
@@ -300,7 +299,9 @@ export class AdvancedSignalProcessor {
     this.ppgValues = [];
     this.lastResult = null;
     this.calibrating = false;
-    this.calibrationProgress = 0;
+    Object.keys(this.calibrationProgress).forEach(key => {
+      this.calibrationProgress[key as keyof typeof this.calibrationProgress] = 0;
+    });
     this.perfusionIndex = 0;
     this.signalQuality = 0;
     this.pressureArtifactLevel = 0;
