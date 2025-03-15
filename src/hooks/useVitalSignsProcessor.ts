@@ -94,6 +94,7 @@ export const useVitalSignsProcessor = () => {
         presión: result.pressure,
         glucosa: result.glucose,
         lípidos: result.lipids,
+        hemoglobina: result.hemoglobin,
         timestamp: new Date().toISOString()
       });
       setLastValidResults(result);
@@ -127,7 +128,10 @@ export const useVitalSignsProcessor = () => {
         resultadosGuardados: {
           spo2: savedResults.spo2,
           presión: savedResults.pressure,
-          estadoArritmia: savedResults.arrhythmiaStatus
+          estadoArritmia: savedResults.arrhythmiaStatus,
+          glucosa: savedResults.glucose,
+          lípidos: savedResults.lipids,
+          hemoglobina: savedResults.hemoglobin
         },
         timestamp: new Date().toISOString()
       });
