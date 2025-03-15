@@ -4,3 +4,5 @@
  * y mantener un único punto de verdad para estas funciones.
  */
 export * from '../../utils/vitalSignsUtils';
+export * from '../../utils/signalProcessingUtils';
+

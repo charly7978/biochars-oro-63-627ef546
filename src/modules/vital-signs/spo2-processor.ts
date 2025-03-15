@@ -1,11 +1,10 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
  * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
-import { calculateAC, calculateDC } from './utils';
+import { calculateAC, calculateDC } from '../../utils/vitalSignsUtils';
 
 export class SpO2Processor {
   private readonly SPO2_CALIBRATION_FACTOR = 1.02;

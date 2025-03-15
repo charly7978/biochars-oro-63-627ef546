@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -8,7 +7,8 @@
 import { 
   applyMovingAverageFilter, 
   applyWeightedFilter, 
-  calculateSignalQuality 
+  calculateSignalQuality,
+  detectPeaks 
 } from './signalProcessingUtils';
 
 /**
@@ -175,4 +175,86 @@ export const evaluateVitalSigns = (
   }
   
   return 'caution';
+};
+
+/**
+ * Calcula la componente AC de una señal PPG
+ * @param values Valores de la señal
+ * @returns Componente AC
+ */
+export const calculateAC = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+};
+
+/**
+ * Calcula la componente DC de una señal PPG
+ * @param values Valores de la señal
+ * @returns Componente DC
+ */
+export const calculateDC = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+};
+
+/**
+ * Encuentra picos y valles en una señal PPG
+ * @param values Valores de la señal
+ * @returns Índices de picos y valles
+ */
+export const findPeaksAndValleys = (values: number[]): {
+  peakIndices: number[];
+  valleyIndices: number[];
+} => {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+
+  for (let i = 2; i < values.length - 2; i++) {
+    const v = values[i];
+    if (
+      v > values[i - 1] &&
+      v > values[i - 2] &&
+      v > values[i + 1] &&
+      v > values[i + 2]
+    ) {
+      peakIndices.push(i);
+    }
+    if (
+      v < values[i - 1] &&
+      v < values[i - 2] &&
+      v < values[i + 1] &&
+      v < values[i + 2]
+    ) {
+      valleyIndices.push(i);
+    }
+  }
+  return { peakIndices, valleyIndices };
+};
+
+/**
+ * Calcula la amplitud de una señal PPG usando picos y valles
+ * @param values Valores de la señal
+ * @param peaks Índices de picos
+ * @param valleys Índices de valles
+ * @returns Amplitud media
+ */
+export const calculateAmplitude = (
+  values: number[],
+  peaks: number[],
+  valleys: number[]
+): number => {
+  if (peaks.length === 0 || valleys.length === 0) return 0;
+
+  const amps: number[] = [];
+  const len = Math.min(peaks.length, valleys.length);
+  for (let i = 0; i < len; i++) {
+    const amp = values[peaks[i]] - values[valleys[i]];
+    if (amp > 0) {
+      amps.push(amp);
+    }
+  }
+  if (amps.length === 0) return 0;
+
+  const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
+  return mean;
 };
