@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -38,56 +37,70 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   
-  // Configuración por defecto
+  // Configuración por defecto - Valores mucho más estrictos
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 75,
+    MIN_RED_THRESHOLD: 80,      // Más alto para exigir más intensidad
     MAX_RED_THRESHOLD: 230,
-    STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 2
+    STABILITY_WINDOW: 6,        // Ventana más grande para exigir más estabilidad
+    MIN_STABILITY_COUNT: 4      // Más frames estables requeridos
   };
   
   private currentConfig: typeof this.DEFAULT_CONFIG;
   
-  // Parámetros de procesamiento
+  // Parámetros de procesamiento - Valores más estrictos
   private readonly BUFFER_SIZE = 15;
-  private readonly MIN_RED_THRESHOLD = 75;
+  private readonly MIN_RED_THRESHOLD = 80;
   private readonly MAX_RED_THRESHOLD = 230;
-  private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 2;
+  private readonly STABILITY_WINDOW = 6;
+  private readonly MIN_STABILITY_COUNT = 4;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
-  // Parámetros de análisis de calidad
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
-  private readonly SIGNAL_QUALITY_THRESHOLD = 55;
+  // Parámetros de análisis de calidad - Más exigentes
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.07;
+  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
   
   // Análisis de periodicidad
   private baselineValue: number = 0;
-  private readonly WAVELET_THRESHOLD = 0.025;
-  private readonly BASELINE_FACTOR = 0.95;
+  private readonly WAVELET_THRESHOLD = 0.03;  // Menos tolerante al ruido
+  private readonly BASELINE_FACTOR = 0.92;
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
   
-  // Valor exigente para periodicidad para evitar falsos positivos
-  private readonly MIN_PERIODICITY_SCORE = 0.45;
+  // Valor MUY exigente para periodicidad para evitar falsos positivos
+  private readonly MIN_PERIODICITY_SCORE = 0.55;  // Mucho más alto
   
   // Variables para validación física de la señal
   private lastFramesVariation: number[] = []; 
-  private readonly FRAMES_VARIATION_SIZE = 10;
-  private readonly MIN_VALID_VARIATION = 0.18;
-  private readonly MAX_STATIC_RATIO = 0.3;
+  private readonly FRAMES_VARIATION_SIZE = 15;    // Más frames para mejor análisis
+  private readonly MIN_VALID_VARIATION = 0.25;    // Variación mínima más alta
+  private readonly MAX_STATIC_RATIO = 0.4;
   
-  // NUEVA MEJORA: Variables para análisis de patrones de pulsación
+  // Variables para análisis de patrones de pulsación
   private pulsationPatternBuffer: number[] = [];
   private readonly PULSATION_BUFFER_SIZE = 30;
   private readonly PULSATION_FREQUENCY_MIN = 0.8;  // ~48 BPM
   private readonly PULSATION_FREQUENCY_MAX = 2.5;  // ~150 BPM
   
-  // NUEVA MEJORA: Historial de intensidad de valores para fingerprint detection
+  // Historial de intensidad de valores para fingerprint detection
   private intensityHistory: number[] = [];
   private readonly INTENSITY_HISTORY_SIZE = 20;
-  private readonly MIN_INTENSITY_VARIATION = 4.0;
+  private readonly MIN_INTENSITY_VARIATION = 6.0;   // Más alta
+  
+  // Nuevo: historial de valores de detección para reducir falsos positivos
+  private detectionHistory: boolean[] = [];
+  private readonly DETECTION_HISTORY_SIZE = 10;
+  private readonly MIN_DETECTION_RATIO = 0.7;      // Más exigente
+  
+  // Nuevo: contador para prevenir detecciones inmediatas
+  private frameCounter: number = 0;
+  private readonly MIN_FRAMES_BEFORE_DETECTION = 10;
+  
+  // Nuevo: memoria de valores de base para comparación
+  private baselineHistory: number[] = [];
+  private readonly BASELINE_HISTORY_SIZE = 20;
+  private hasEstablishedBaseline: boolean = false;
   
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -95,7 +108,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
-    console.log("PPGSignalProcessor: Instancia creada");
+    console.log("PPGSignalProcessor: Instancia creada - Configuración de alta exigencia");
   }
 
   /**
@@ -112,7 +125,11 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.lastFramesVariation = [];
       this.pulsationPatternBuffer = [];
       this.intensityHistory = [];
-      console.log("PPGSignalProcessor: Inicializado");
+      this.detectionHistory = [];
+      this.frameCounter = 0;
+      this.baselineHistory = [];
+      this.hasEstablishedBaseline = false;
+      console.log("PPGSignalProcessor: Inicializado con parámetros estrictos");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
       this.handleError("INIT_ERROR", "Error al inicializar el procesador");
@@ -143,6 +160,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.lastFramesVariation = [];
     this.pulsationPatternBuffer = [];
     this.intensityHistory = [];
+    this.detectionHistory = [];
+    this.frameCounter = 0;
+    this.baselineHistory = [];
+    this.hasEstablishedBaseline = false;
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -151,22 +172,18 @@ export class PPGSignalProcessor implements SignalProcessor {
    */
   async calibrate(): Promise<boolean> {
     try {
-      console.log("PPGSignalProcessor: Iniciando calibración");
+      console.log("PPGSignalProcessor: Iniciando calibración rigurosa");
       await this.initialize();
 
-      // Tiempo para calibración
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Tiempo de calibración más largo para mejor baseline
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
-      // Ajustar umbrales basados en las condiciones actuales
+      // Los umbrales se mantienen estrictos incluso después de calibración
       this.currentConfig = {
-        ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 5),
-        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
-        STABILITY_WINDOW: this.STABILITY_WINDOW,
-        MIN_STABILITY_COUNT: this.MIN_STABILITY_COUNT
+        ...this.DEFAULT_CONFIG
       };
 
-      console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
+      console.log("PPGSignalProcessor: Calibración completada con parámetros estrictos", this.currentConfig);
       return true;
     } catch (error) {
       console.error("PPGSignalProcessor: Error de calibración", error);
@@ -193,8 +210,48 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
 
     try {
+      // Incrementar contador de frames global
+      this.frameCounter++;
+      
       // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
+      
+      // Recolectar datos de baseline antes de empezar a procesar
+      if (!this.hasEstablishedBaseline) {
+        this.collectBaseline(redValue);
+        
+        // No procesar aún si no hay baseline
+        if (!this.hasEstablishedBaseline) {
+          // Notificar que estamos en fase de calibración
+          const calibrationSignal: ProcessedSignal = {
+            timestamp: Date.now(),
+            rawValue: redValue,
+            filteredValue: 0,
+            quality: 0,
+            fingerDetected: false,
+            roi: this.detectROI(redValue),
+            physicalSignatureScore: 0
+          };
+          this.onSignalReady?.(calibrationSignal);
+          return;
+        }
+      }
+      
+      // Rechazar inmediatamente si los valores están fuera de rango
+      if (redValue < this.MIN_RED_THRESHOLD || redValue > this.MAX_RED_THRESHOLD) {
+        this.updateDetectionHistory(false);
+        const poorSignal: ProcessedSignal = {
+          timestamp: Date.now(),
+          rawValue: redValue,
+          filteredValue: 0,
+          quality: 0,
+          fingerDetected: false,
+          roi: this.detectROI(redValue),
+          physicalSignatureScore: 0
+        };
+        this.onSignalReady?.(poorSignal);
+        return;
+      }
       
       // Aplicar denoising
       const denoisedValue = this.applyWaveletDenoising(redValue);
@@ -205,10 +262,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Registrar variación entre frames consecutivos
       this.trackFrameVariation(filtered);
       
-      // Registrar los valores de intensidad (NUEVO)
+      // Registrar los valores de intensidad
       this.trackIntensityVariation(redValue);
       
-      // Registrar el patrón de pulsación (NUEVO)
+      // Registrar el patrón de pulsación
       this.trackPulsationPattern(filtered);
       
       // Almacenar para análisis de periodicidad
@@ -225,17 +282,44 @@ export class PPGSignalProcessor implements SignalProcessor {
 
       // Analizar calidad y detección de dedo
       const { isFingerDetected, quality, physicalSignatureScore } = this.analyzeSignal(filtered, redValue);
+      
+      // Actualizar historial de detección
+      this.updateDetectionHistory(isFingerDetected);
+      
+      // Aplicar lógica de histéresis para evitar falsos positivos
+      const robustDetection = this.applyDetectionHysteresis();
+      
+      // Ajustar calidad basada en la robustez de la detección
+      const adjustedQuality = robustDetection ? quality : 0;
+      
+      // Aplicar umbral mínimo de frames para detección inicial
+      const finalDetection = robustDetection && this.frameCounter > this.MIN_FRAMES_BEFORE_DETECTION;
 
-      // Crear señal procesada
+      // Crear señal procesada final
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
         rawValue: redValue,
         filteredValue: filtered,
-        quality: quality,
-        fingerDetected: isFingerDetected,
+        quality: adjustedQuality,
+        fingerDetected: finalDetection,
         roi: this.detectROI(redValue),
         physicalSignatureScore: physicalSignatureScore
       };
+
+      // Logs detallados para depuración
+      console.log("PPGSignalProcessor: Análisis completo", {
+        rawValue: redValue,
+        filteredValue: filtered.toFixed(2),
+        initialDetection: isFingerDetected,
+        robustDetection,
+        finalDetection,
+        rawQuality: quality,
+        adjustedQuality,
+        physicalScore: physicalSignatureScore,
+        frameCount: this.frameCounter,
+        detectionRatio: this.calculateDetectionRatio(),
+        timestamp: new Date().toISOString()
+      });
 
       // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
@@ -244,6 +328,63 @@ export class PPGSignalProcessor implements SignalProcessor {
       console.error("PPGSignalProcessor: Error procesando frame", error);
       this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
+  }
+
+  /**
+   * Nueva función: Recolecta valores de baseline para establecer referencia
+   */
+  private collectBaseline(value: number): void {
+    this.baselineHistory.push(value);
+    
+    if (this.baselineHistory.length > this.BASELINE_HISTORY_SIZE) {
+      this.baselineHistory.shift();
+      
+      // Calcular estadísticas del baseline
+      const avg = this.baselineHistory.reduce((sum, v) => sum + v, 0) / this.baselineHistory.length;
+      const variance = this.baselineHistory.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / this.baselineHistory.length;
+      const stdDev = Math.sqrt(variance);
+      
+      // Establecer baseline solo si los valores son estables (baja variación)
+      if (stdDev < 10) {
+        this.hasEstablishedBaseline = true;
+        this.baselineValue = avg;
+        console.log("PPGSignalProcessor: Baseline establecido", {
+          valor: this.baselineValue,
+          desviación: stdDev,
+          frameCount: this.frameCounter
+        });
+      }
+    }
+  }
+
+  /**
+   * Nueva función: Actualiza el historial de detección
+   */
+  private updateDetectionHistory(detected: boolean): void {
+    this.detectionHistory.push(detected);
+    if (this.detectionHistory.length > this.DETECTION_HISTORY_SIZE) {
+      this.detectionHistory.shift();
+    }
+  }
+
+  /**
+   * Nueva función: Aplica histéresis para evitar detecciones intermitentes
+   */
+  private applyDetectionHysteresis(): boolean {
+    if (this.detectionHistory.length < 5) return false;
+    
+    const ratio = this.calculateDetectionRatio();
+    return ratio >= this.MIN_DETECTION_RATIO;
+  }
+
+  /**
+   * Nueva función: Calcula ratio de detección en el historial
+   */
+  private calculateDetectionRatio(): number {
+    if (this.detectionHistory.length === 0) return 0;
+    
+    const trueCount = this.detectionHistory.filter(value => value).length;
+    return trueCount / this.detectionHistory.length;
   }
 
   /**
@@ -283,60 +424,62 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * MEJORADO: Evalúa si la señal tiene características físicas de un dedo real
-   * Un dedo real muestra pulsaciones, variación de intensidad y patrones específicos
+   * Evalúa si la señal tiene características físicas de un dedo real
+   * Con criterios más estrictos
    */
   private analyzePhysicalSignature(): number {
-    if (this.lastFramesVariation.length < this.FRAMES_VARIATION_SIZE * 0.5 ||
-        this.intensityHistory.length < this.INTENSITY_HISTORY_SIZE * 0.5 ||
-        this.pulsationPatternBuffer.length < this.PULSATION_BUFFER_SIZE * 0.5) {
+    if (this.lastFramesVariation.length < this.FRAMES_VARIATION_SIZE * 0.7 ||
+        this.intensityHistory.length < this.INTENSITY_HISTORY_SIZE * 0.7 ||
+        this.pulsationPatternBuffer.length < this.PULSATION_BUFFER_SIZE * 0.7) {
       return 0;
     }
     
-    // 1. Análisis de Variación Temporal
+    // 1. Análisis de Variación Temporal - Más estricto
     const avgVariation = this.lastFramesVariation.reduce((sum, v) => sum + v, 0) / 
                          this.lastFramesVariation.length;
     
     const significantVariations = this.lastFramesVariation.filter(v => v > this.MIN_VALID_VARIATION).length;
     const variationRatio = significantVariations / this.lastFramesVariation.length;
     
-    // 2. Análisis de Variación de Intensidad
+    // 2. Análisis de Variación de Intensidad - Más estricto
     const maxIntensity = Math.max(...this.intensityHistory);
     const minIntensity = Math.min(...this.intensityHistory);
     const intensityRange = maxIntensity - minIntensity;
     
-    // 3. Análisis de Frecuencia de Pulsación (FFT simplificado)
+    // 3. Análisis de Frecuencia de Pulsación - Más preciso
     const pulsationScore = this.analyzeSignalFrequencies();
     
-    // 4. Análisis de Perfil de Cambio (derivada)
+    // 4. Análisis de Perfil de Cambio - Más riguroso
     const changeProfile = this.analyzeChangeProfile();
     
     // Combinar todos los factores para un score físico global
-    // Cada factor tiene un peso diferente en la puntuación final
-    const variationScore = (avgVariation > this.MIN_VALID_VARIATION * 0.7 && variationRatio > this.MAX_STATIC_RATIO) ? 
+    // Con pesos ajustados para mayor exigencia
+    const variationScore = (avgVariation > this.MIN_VALID_VARIATION && variationRatio > this.MAX_STATIC_RATIO) ? 
                           Math.min(1.0, avgVariation / (this.MIN_VALID_VARIATION * 2)) : 0;
     
     const intensityScore = intensityRange > this.MIN_INTENSITY_VARIATION ? 
-                          Math.min(1.0, intensityRange / (this.MIN_INTENSITY_VARIATION * 3)) : 0;
+                          Math.min(1.0, intensityRange / (this.MIN_INTENSITY_VARIATION * 2)) : 0;
     
-    // Puntuación combinada - los pesos se ajustan para que los patrones de pulsación
-    // sean el factor más importante
+    // Puntuación combinada - Mayor peso a los patrones de pulsación y variación
     const combinedScore = 
-      variationScore * 0.25 + 
+      variationScore * 0.30 + 
       intensityScore * 0.15 + 
-      pulsationScore * 0.4 + 
-      changeProfile * 0.2;
+      pulsationScore * 0.40 + 
+      changeProfile * 0.15;
+    
+    // Penalizar severamente puntuaciones bajas - no escala lineal
+    const adjustedScore = combinedScore >= 0.6 ? combinedScore : combinedScore * 0.5;
     
     console.log("PPGSignalProcessor: Análisis físico detallado", {
-      variationScore,
-      intensityScore,
-      pulsationScore,
-      changeProfile,
-      combinedScore,
-      timestamp: new Date().toISOString()
+      variationScore: variationScore.toFixed(2),
+      intensityScore: intensityScore.toFixed(2),
+      pulsationScore: pulsationScore.toFixed(2),
+      changeProfile: changeProfile.toFixed(2),
+      combinedScore: combinedScore.toFixed(2),
+      adjustedScore: adjustedScore.toFixed(2)
     });
     
-    return combinedScore;
+    return adjustedScore;
   }
 
   /**
@@ -370,7 +513,12 @@ export class PPGSignalProcessor implements SignalProcessor {
         denominator += normalizedSignal[i] * normalizedSignal[i];
       }
       
-      correlations.push(denominator > 0 ? correlation / Math.sqrt(denominator) : 0);
+      if (denominator > 0) {
+        correlation /= Math.sqrt(denominator);
+        correlations.push(Math.abs(correlation));
+      } else {
+        correlations.push(0);
+      }
     }
     
     // 3. Buscar pico de autocorrelación en el rango de frecuencia cardíaca
@@ -438,29 +586,63 @@ export class PPGSignalProcessor implements SignalProcessor {
 
   /**
    * Extrae el canal rojo de un frame
-   * El canal rojo es el más sensible a cambios en volumen sanguíneo
+   * Mejora: Análisis de múltiples regiones para mayor precisión
    */
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
-    let redSum = 0;
-    let count = 0;
     
-    // Analizar solo el centro de la imagen (25% central)
-    const startX = Math.floor(imageData.width * 0.375);
-    const endX = Math.floor(imageData.width * 0.625);
-    const startY = Math.floor(imageData.height * 0.375);
-    const endY = Math.floor(imageData.height * 0.625);
+    // Analizar varias regiones con diferentes pesos
+    const regions = [
+      // Centro (peso alto)
+      {
+        startX: Math.floor(imageData.width * 0.4),
+        endX: Math.floor(imageData.width * 0.6),
+        startY: Math.floor(imageData.height * 0.4),
+        endY: Math.floor(imageData.height * 0.6),
+        weight: 0.7
+      },
+      // Alrededor del centro (peso medio)
+      {
+        startX: Math.floor(imageData.width * 0.3),
+        endX: Math.floor(imageData.width * 0.7),
+        startY: Math.floor(imageData.height * 0.3),
+        endY: Math.floor(imageData.height * 0.7),
+        weight: 0.3
+      }
+    ];
     
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Canal rojo
-        count++;
+    let weightedSum = 0;
+    let totalWeight = 0;
+    
+    // Procesar cada región
+    for (const region of regions) {
+      let redSum = 0;
+      let count = 0;
+      
+      for (let y = region.startY; y < region.endY; y++) {
+        for (let x = region.startX; x < region.endX; x++) {
+          const i = (y * imageData.width + x) * 4;
+          redSum += data[i];  // Canal rojo
+          count++;
+        }
+      }
+      
+      if (count > 0) {
+        const avgRed = redSum / count;
+        weightedSum += avgRed * region.weight;
+        totalWeight += region.weight;
+        
+        // Registrar valores para depuración
+        console.log(`PPGSignalProcessor: Región [${region.startX}-${region.endX}, ${region.startY}-${region.endY}]`, {
+          avgRed: avgRed.toFixed(2),
+          weight: region.weight,
+          pixelCount: count
+        });
       }
     }
     
-    const avgRed = redSum / count;
-    return avgRed;
+    // Resultado ponderado final
+    return totalWeight > 0 ? weightedSum / totalWeight : 0;
   }
 
   /**
@@ -488,12 +670,14 @@ export class PPGSignalProcessor implements SignalProcessor {
 
   /**
    * Analiza la señal para determinar calidad y presencia de dedo
+   * Con criterios mucho más estrictos
    */
   private analyzeSignal(filtered: number, rawValue: number): { 
     isFingerDetected: boolean, 
     quality: number, 
     physicalSignatureScore: number
   } {
+    // Verificar que estamos en el rango adecuado de valores
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
@@ -502,63 +686,74 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0, physicalSignatureScore: 0 };
     }
 
+    // Verificar que tenemos suficientes datos
     if (this.lastValues.length < this.STABILITY_WINDOW) {
       return { isFingerDetected: false, quality: 0, physicalSignatureScore: 0 };
     }
 
+    // Analizar estabilidad
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
+    // Calcular variaciones entre frames consecutivos
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
+    // Análisis estadístico más riguroso
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
+    const avgVariation = variations.reduce((sum, val) => sum + Math.abs(val), 0) / variations.length;
     
-    // Umbral adaptativo con mayor tolerancia
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.025);
-    const isStable = maxVariation < adaptiveThreshold * 2.2 && 
-                    minVariation > -adaptiveThreshold * 2.2;
+    // Umbral adaptativo más estricto
+    const adaptiveThreshold = Math.max(1.2, avgValue * 0.02);
+    
+    // Criterios de estabilidad más exigentes
+    const isStable = maxVariation < adaptiveThreshold * 1.8 && 
+                    minVariation > -adaptiveThreshold * 1.8 &&
+                    avgVariation > adaptiveThreshold * 0.2; // Exigir un mínimo de variación
 
+    // Actualizar contador de estabilidad con más castigo por inestabilidad
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1.2, this.MIN_STABILITY_COUNT * 3);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 0.8, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.4);
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1.2);
     }
 
-    // CRÍTICO: Análisis físico para distinguir dedos reales de objetos estáticos
+    // Análisis físico para distinguir dedos reales de objetos estáticos
     const physicalSignatureScore = this.analyzePhysicalSignature();
     
+    // Análisis de periodicidad
     const periodicityScore = this.analyzeSignalPeriodicity();
     
-    // Calculamos la calidad incluso con niveles bajos de estabilidad
+    // Calculamos la calidad con criterios más exigentes
     let quality = 0;
     
-    if (this.stableFrameCount >= (this.MIN_STABILITY_COUNT * 0.8)) {
+    if (this.stableFrameCount >= (this.MIN_STABILITY_COUNT * 0.75)) {
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      // CRÍTICO: La calidad ahora depende FUERTEMENTE del score físico
-      // Un objeto inanimado NUNCA debe tener calidad alta
-      const physicalSignatureModifier = Math.pow(physicalSignatureScore, 1.5);
+      // La calidad depende FUERTEMENTE del score físico
+      // Se aplica una función de potencia para penalizar scores físicos bajos
+      const physicalSignatureModifier = Math.pow(physicalSignatureScore, 1.8);
       
-      // Cálculo de calidad más riguroso que penaliza señales no fisiológicas
-      quality = Math.round((stabilityScore * 0.3 + 
-                          intensityScore * 0.2 + 
-                          variationScore * 0.2 + 
-                          periodicityScore * 0.3) * 100 * physicalSignatureModifier);
+      // Cálculo de calidad que exige características fisiológicas
+      quality = Math.round((
+        stabilityScore * 0.2 + 
+        intensityScore * 0.15 + 
+        variationScore * 0.15 + 
+        periodicityScore * 0.5) * 100 * physicalSignatureModifier);
     }
     
-    // La detección de dedo ahora requiere un mínimo de características físicas
-    // Un objeto estático NO DEBE ser detectado como dedo
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
-                            periodicityScore > this.MIN_PERIODICITY_SCORE &&
-                            physicalSignatureScore > 0.3;
+    // Para detección del dedo, exigir alta periodicidad y score físico
+    const isFingerDetected = 
+      this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
+      periodicityScore > this.MIN_PERIODICITY_SCORE &&
+      physicalSignatureScore > 0.45;
 
     return { 
       isFingerDetected, 
@@ -568,7 +763,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Analiza la periodicidad de la señal para determinar calidad
+   * Analiza la periodicidad de la señal
+   * Con mayor exigencia para características cardíacas
    */
   private analyzeSignalPeriodicity(): number {
     if (this.periodicityBuffer.length < 30) {
@@ -580,6 +776,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     const normalizedSignal = signal.map(val => val - signalMean);
     
+    // Análisis espectral simplificado
     const maxLag = 20;
     const correlations: number[] = [];
     
@@ -600,27 +797,29 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
     }
     
+    // Buscar periodicidad en rango cardíaco humano (típicamente 4-15 frames por ciclo)
     let maxCorrelation = 0;
     let periodFound = false;
     
-    for (let i = 1; i < correlations.length - 1; i++) {
-      if (correlations[i] > correlations[i-1] && 
-          correlations[i] > correlations[i+1] && 
-          correlations[i] > 0.2) {
+    for (let i = 4; i <= 15; i++) {
+      if (i < correlations.length && 
+          correlations[i] > correlations[Math.max(0, i-1)] && 
+          correlations[i] > correlations[Math.min(correlations.length-1, i+1)] && 
+          correlations[i] > 0.25) {
         
-        if (i >= 4 && i <= 15) {
-          if (correlations[i] > maxCorrelation) {
-            maxCorrelation = correlations[i];
-            periodFound = true;
-          }
+        if (correlations[i] > maxCorrelation) {
+          maxCorrelation = correlations[i];
+          periodFound = true;
         }
       }
     }
     
     if (periodFound) {
-      return Math.min(1.0, maxCorrelation);
+      // Recompensa para correlaciones fuertes
+      return Math.pow(Math.min(1.0, maxCorrelation), 0.8);
     } else {
-      return 0.1;
+      // Penalización severa si no hay periodicidad
+      return 0;
     }
   }
 
