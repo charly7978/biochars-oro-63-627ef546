@@ -1,7 +1,7 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
+import AppTitle from './AppTitle';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -89,14 +89,12 @@ const PPGSignalMeter = memo(({
     }
   }, [quality, isFingerDetected]);
 
-  // Create offscreen canvas once on mount
   useEffect(() => {
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
     offscreen.height = CANVAS_HEIGHT;
     offscreenCanvasRef.current = offscreen;
     
-    // Also create the static grid canvas
     const gridCanvas = document.createElement('canvas');
     gridCanvas.width = CANVAS_WIDTH;
     gridCanvas.height = CANVAS_HEIGHT;
@@ -150,9 +148,10 @@ const PPGSignalMeter = memo(({
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E2DCFF');
     gradient.addColorStop(0.25, '#FFDECF');
-    gradient.addColorStop(0.5, '#F1FBDF');
-    gradient.addColorStop(0.75, '#D8E8FF');
-    gradient.addColorStop(1, '#C0DAFF');
+    gradient.addColorStop(0.45, '#F1FBDF');
+    gradient.addColorStop(0.55, '#F1EEE8');
+    gradient.addColorStop(0.75, '#F5EED8');
+    gradient.addColorStop(1, '#F5EED0');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -317,7 +316,6 @@ const PPGSignalMeter = memo(({
     }
     
     const canvas = canvasRef.current;
-    // Use OffscreenCanvas for rendering to reduce main thread work
     const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
       offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
       canvas.getContext('2d', { alpha: false });
@@ -329,7 +327,6 @@ const PPGSignalMeter = memo(({
     
     const now = Date.now();
     
-    // Use pre-rendered grid when possible
     if (gridCanvasRef.current) {
       renderCtx.drawImage(gridCanvasRef.current, 0, 0);
     } else {
@@ -337,7 +334,6 @@ const PPGSignalMeter = memo(({
     }
     
     if (preserveResults && !isFingerDetected) {
-      // If using offscreen canvas, copy to visible canvas
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
         const visibleCtx = canvas.getContext('2d', { alpha: false });
         if (visibleCtx) {
@@ -391,7 +387,6 @@ const PPGSignalMeter = memo(({
       
       let firstPoint = true;
       
-      // Batch rendering for better performance - process all points at once
       const pathCoordinates: [number, number][] = [];
       const arrhythmiaSegments: {start: [number, number], end: [number, number]}[] = [];
       
@@ -420,7 +415,6 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      // Render main path in one go
       if (pathCoordinates.length > 0) {
         renderCtx.beginPath();
         renderCtx.moveTo(pathCoordinates[0][0], pathCoordinates[0][1]);
@@ -430,7 +424,6 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Render arrhythmia segments separately
       if (arrhythmiaSegments.length > 0) {
         renderCtx.beginPath();
         renderCtx.strokeStyle = '#DC2626';
@@ -443,10 +436,9 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Batch peak rendering
       if (peaksRef.current.length > 0) {
-        const normalPeaks: [number, number, number][] = []; // x, y, value
-        const arrhythmiaPeaks: [number, number, number][] = []; // x, y, value
+        const normalPeaks: [number, number, number][] = [];
+        const arrhythmiaPeaks: [number, number, number][] = [];
         
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -461,7 +453,6 @@ const PPGSignalMeter = memo(({
           }
         });
         
-        // Render normal peaks
         if (normalPeaks.length > 0) {
           renderCtx.fillStyle = '#0EA5E9';
           
@@ -477,7 +468,6 @@ const PPGSignalMeter = memo(({
           });
         }
         
-        // Render arrhythmia peaks
         if (arrhythmiaPeaks.length > 0) {
           renderCtx.fillStyle = '#DC2626';
           
@@ -506,7 +496,6 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    // If using offscreen canvas, copy to visible canvas with a single draw operation
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
       const visibleCtx = canvas.getContext('2d', { alpha: false });
       if (visibleCtx) {
@@ -551,26 +540,28 @@ const PPGSignalMeter = memo(({
         }}
       />
 
-      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-black/80">PPG</span>
-          <div className="w-[180px]">
+      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-1">
+        <div className="flex items-center gap-1 ml-2 mt-0" style={{transform: 'translateY(-2mm)'}}>
+          <div className="w-[120px]">
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
                 style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
               />
             </div>
-            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+            <span className="text-[7px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
                   style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
+          </div>
+          <div style={{ marginLeft: '2mm' }}>
+            <AppTitle />
           </div>
         </div>
 
         <div className="flex flex-col items-center">
           <Fingerprint
-            className={`h-8 w-8 transition-colors duration-300 ${
+            className={`h-7 w-7 transition-colors duration-300 ${
               !displayFingerDetected ? 'text-gray-400' :
               displayQuality > 65 ? 'text-green-500' :
               displayQuality > 40 ? 'text-yellow-500' :
@@ -578,7 +569,7 @@ const PPGSignalMeter = memo(({
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[8px] text-center font-medium text-black/80">
+          <span className="text-[7px] text-center font-medium text-black/80">
             {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
