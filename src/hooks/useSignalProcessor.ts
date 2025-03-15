@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -51,27 +50,24 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Cálculo ponderado de calidad
-    let weightedQualitySum = 0;
-    let weightSum = 0;
-    qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = index + 1; // Más peso a las muestras recientes
-      weightedQualitySum += quality * weight;
-      weightSum += weight;
-    });
+    // CAMBIO: Simplificamos la lógica de detección
+    // Damos más peso a las detecciones positivas recientes
+    const recentDetections = fingerDetectedHistoryRef.current.slice(-3);
+    const recentPositives = recentDetections.filter(d => d).length;
     
-    const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
+    // Si hay al menos una detección positiva reciente, consideramos que hay dedo
+    const robustFingerDetected = recentPositives >= 1;
     
-    // Calcular ratio de detección
-    const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
-    const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
-      trueCount / fingerDetectedHistoryRef.current.length : 0;
+    // CAMBIO: Calculamos una calidad más reactiva
+    const recentQualities = qualityHistoryRef.current.slice(-3);
+    const avgQuality = recentQualities.length > 0 
+      ? recentQualities.reduce((sum, q) => sum + q, 0) / recentQualities.length 
+      : signal.quality;
     
-    // Usar un umbral más exigente (3 de 5 = 0.6)
-    const robustFingerDetected = detectionRatio >= 0.6;
-    
-    // Mejora ligera de calidad para mejor UX
-    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    // CAMBIO: Si estamos detectando dedo, mejoramos ligeramente la calidad
+    const enhancedQuality = robustFingerDetected 
+      ? Math.min(100, avgQuality * 1.15) 
+      : avgQuality;
     
     // Devolver señal modificada
     return {

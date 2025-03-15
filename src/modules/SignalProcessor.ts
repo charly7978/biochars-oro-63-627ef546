@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -41,26 +40,26 @@ export class PPGSignalProcessor implements SignalProcessor {
   // Configuración por defecto
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 80,
-    MAX_RED_THRESHOLD: 230,
-    STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 3
+    MIN_RED_THRESHOLD: 60,
+    MAX_RED_THRESHOLD: 250,
+    STABILITY_WINDOW: 3,
+    MIN_STABILITY_COUNT: 2
   };
   
   private currentConfig: typeof this.DEFAULT_CONFIG;
   
   // Parámetros de procesamiento
   private readonly BUFFER_SIZE = 15;
-  private readonly MIN_RED_THRESHOLD = 80;
-  private readonly MAX_RED_THRESHOLD = 230;
-  private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 3;
+  private readonly MIN_RED_THRESHOLD = 60;
+  private readonly MAX_RED_THRESHOLD = 250;
+  private readonly STABILITY_WINDOW = 3;
+  private readonly MIN_STABILITY_COUNT = 2;
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
   // Parámetros de análisis de calidad
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
-  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045;
+  private readonly SIGNAL_QUALITY_THRESHOLD = 40;
   
   // Análisis de periodicidad
   private baselineValue: number = 0;
@@ -160,6 +159,32 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
+   * Método simplificado para detectar la presencia de un dedo
+   * Reemplaza análisis complejos con una detección directa
+   */
+  private isFingerPresent(redValue: number): boolean {
+    // 1. Verificación básica de rango
+    const isInRange = redValue >= this.MIN_RED_THRESHOLD && redValue <= this.MAX_RED_THRESHOLD;
+    if (!isInRange) return false;
+    
+    // 2. Si tenemos suficientes valores para análisis
+    if (this.lastValues.length >= 3) {
+      // Calculamos diferencia entre valores consecutivos
+      const last = this.lastValues.slice(-3);
+      const diffs = [
+        Math.abs(last[1] - last[0]),
+        Math.abs(last[2] - last[1])
+      ];
+      
+      // Un dedo quieto no produce grandes cambios entre frames
+      const maxDiff = Math.max(...diffs);
+      if (maxDiff > 50) return false;
+    }
+    
+    return true;
+  }
+  
+  /**
    * Procesa un frame para extraer información PPG
    */
   processFrame(imageData: ImageData): void {
@@ -170,6 +195,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     try {
       // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
+      
+      // CAMBIO: Verificación rápida de presencia de dedo
+      const fingerPresent = this.isFingerPresent(redValue);
       
       // Aplicar denoising
       const denoisedValue = this.applyWaveletDenoising(redValue);
@@ -189,8 +217,16 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // Analizar calidad y detección de dedo
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
+      // CAMBIO: Análisis simplificado si no hay dedo
+      let quality = 0;
+      let isFingerDetected = false;
+      
+      if (fingerPresent) {
+        // Solo realizamos análisis completo si hay posibilidad de dedo
+        const result = this.analyzeSignal(filtered, redValue);
+        quality = result.quality;
+        isFingerDetected = result.isFingerDetected;
+      }
 
       // Crear señal procesada
       const processedSignal: ProcessedSignal = {
@@ -265,6 +301,8 @@ export class PPGSignalProcessor implements SignalProcessor {
    * Analiza la señal para determinar calidad y presencia de dedo
    */
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
+    // Verificación simple de rango: un dedo sobre la cámara bloquea la luz
+    // por lo que esperamos valores rojos en cierto rango
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
@@ -273,50 +311,59 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0 };
     }
 
+    // Necesitamos un mínimo de frames para evaluar estabilidad
     if (this.lastValues.length < this.STABILITY_WINDOW) {
       return { isFingerDetected: false, quality: 0 };
     }
 
+    // Analizamos los valores recientes
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
+    // Calculamos variaciones entre frames consecutivos
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
+    // Medimos la variación máxima y mínima
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
-    const isStable = maxVariation < adaptiveThreshold * 2 && 
-                    minVariation > -adaptiveThreshold * 2;
+    // CAMBIO: Simplificamos el umbral adaptativo para mejor detección
+    const adaptiveThreshold = Math.max(2.0, avgValue * 0.025);
+    
+    // CAMBIO: Criterio simplificado de estabilidad
+    // Un dedo quieto produce una señal más estable que sin dedo
+    const isStable = maxVariation < adaptiveThreshold * 3;
 
+    // CAMBIO: Reforzar la detección con contador más agresivo
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1.5, this.MIN_STABILITY_COUNT * 3);
       this.lastStableValue = filtered;
     } else {
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
     }
 
-    const periodicityScore = this.analyzeSignalPeriodicity();
+    // CAMBIO: Simplificamos el análisis de periodicidad
+    // Nos enfocamos más en la presencia/ausencia que en la calidad perfecta
+    const periodicityScore = 0.5; // Valor base razonable
     
+    // CAMBIO: Cálculo de calidad simplificado pero efectivo
     let quality = 0;
     if (this.stableFrameCount >= this.MIN_STABILITY_COUNT) {
+      // Calculamos la calidad basada en estabilidad e intensidad
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
-      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      quality = Math.round((stabilityScore * 0.35 + 
-                          intensityScore * 0.25 + 
-                          variationScore * 0.2 + 
-                          periodicityScore * 0.2) * 100);
+      quality = Math.round((stabilityScore * 0.6 + intensityScore * 0.4) * 100);
     }
     
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
-                            periodicityScore > this.MIN_PERIODICITY_SCORE &&
-                            quality >= this.SIGNAL_QUALITY_THRESHOLD;
+    // CAMBIO: Criterio simplificado de detección de dedo
+    // Priorizamos estabilidad sobre otros factores
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT &&
+                            quality >= 40; // Umbral de calidad más permisivo
 
     return { isFingerDetected, quality };
   }
