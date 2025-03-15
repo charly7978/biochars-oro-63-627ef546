@@ -1,121 +1,48 @@
 
 /**
- * Utility functions for vital signs processing
+ * Utilidades reutilizables para todos los procesadores de signos vitales
+ * Evita duplicación de código entre diferentes módulos
  */
 
 /**
- * Applies a simple moving average filter to smooth the signal
- * @param values The array of values to smooth
- * @param alpha The smoothing factor (0-1, higher means less smoothing)
- * @returns The smoothed array
+ * Calcula el componente AC (amplitud pico a pico) de una señal
  */
-export function smoothSignal(values: number[], alpha: number = 0.8): number[] {
-  if (values.length <= 1) return [...values];
-  
-  const result: number[] = [values[0]];
-  
-  for (let i = 1; i < values.length; i++) {
-    const smoothed = alpha * values[i] + (1 - alpha) * result[i - 1];
-    result.push(smoothed);
-  }
-  
-  return result;
+export function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
 }
 
 /**
- * Calculates the mean value of an array of numbers
- * @param values The array of values
- * @returns The mean value
+ * Calcula el componente DC (valor promedio) de una señal
  */
-export function calculateMeanValue(values: number[]): number {
+export function calculateDC(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, val) => sum + val, 0) / values.length;
 }
 
 /**
- * Calculates the median value of an array of numbers
- * @param values The array of values
- * @returns The median value
- */
-export function calculateMedianValue(values: number[]): number {
-  if (values.length === 0) return 0;
-
-  const sortedValues = [...values].sort((a, b) => a - b);
-  const middleIndex = Math.floor(sortedValues.length / 2);
-
-  if (sortedValues.length % 2 === 0) {
-    // If the array has an even number of elements, return the average of the two middle elements
-    return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
-  } else {
-    // If the array has an odd number of elements, return the middle element
-    return sortedValues[middleIndex];
-  }
-}
-
-/**
- * Normalizes an array of numbers to a range between 0 and 1
- * @param values The array of values
- * @returns The normalized array
- */
-export function normalizeValues(values: number[]): number[] {
-  if (values.length === 0) return [];
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-
-  if (min === max) {
-    return values.map(() => 0); // Avoid division by zero
-  }
-
-  return values.map(val => (val - min) / (max - min));
-}
-
-/**
- * Calculates the standard deviation of an array of numbers
- * @param values The array of values
- * @returns The standard deviation
+ * Calcula la desviación estándar de un conjunto de valores
  */
 export function calculateStandardDeviation(values: number[]): number {
-  if (values.length === 0) return 0;
-
-  const mean = calculateMeanValue(values);
-  const squaredDifferences = values.map(value => Math.pow(value - mean, 2));
-  const averageSquaredDifference = calculateMeanValue(squaredDifferences);
-
-  return Math.sqrt(averageSquaredDifference);
+  const n = values.length;
+  if (n === 0) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
+  return Math.sqrt(avgSqDiff);
 }
 
 /**
- * Applies a rolling average to an array of numbers
- * @param values The array of values
- * @param windowSize The number of values to average
- * @returns The array of rolling averages
+ * Encuentra picos y valles en una señal
  */
-export function rollingAverage(values: number[], windowSize: number): number[] {
-  if (values.length < windowSize) {
-    return values; // Not enough values to calculate a rolling average
-  }
-
-  const result: number[] = [];
-  for (let i = windowSize - 1; i < values.length; i++) {
-    const window = values.slice(i - windowSize + 1, i + 1);
-    result.push(calculateMeanValue(window));
-  }
-
-  return result;
-}
-
-/**
- * Finds peaks and valleys in a signal
- * @param values The array of values to analyze
- * @returns Object containing indices of peaks and valleys
- */
-export function findPeaksAndValleys(values: number[]) {
+export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
+  // Algoritmo mejorado para detección de picos y valles usando ventana de 5 puntos
   for (let i = 2; i < values.length - 2; i++) {
     const v = values[i];
+    // Detección de picos (punto más alto en una ventana de 5 puntos)
     if (
       v > values[i - 1] &&
       v > values[i - 2] &&
@@ -124,6 +51,7 @@ export function findPeaksAndValleys(values: number[]) {
     ) {
       peakIndices.push(i);
     }
+    // Detección de valles (punto más bajo en una ventana de 5 puntos)
     if (
       v < values[i - 1] &&
       v < values[i - 2] &&
@@ -137,49 +65,50 @@ export function findPeaksAndValleys(values: number[]) {
 }
 
 /**
- * Calculates the AC component (amplitude) of a PPG signal
- * @param values The array of PPG values
- * @returns The AC component value
- */
-export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
-
-/**
- * Calculates the DC component (baseline) of a PPG signal
- * @param values The array of PPG values
- * @returns The DC component value
- */
-export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-/**
- * Calculates the amplitude of a PPG signal using peaks and valleys
- * @param values The PPG signal values
- * @param peaks Indices of peaks in the signal
- * @param valleys Indices of valleys in the signal
- * @returns The mean amplitude
+ * Calcula la amplitud entre picos y valles
  */
 export function calculateAmplitude(
   values: number[],
-  peaks: number[],
-  valleys: number[]
+  peakIndices: number[],
+  valleyIndices: number[]
 ): number {
-  if (peaks.length === 0 || valleys.length === 0) return 0;
+  if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
   const amps: number[] = [];
-  const len = Math.min(peaks.length, valleys.length);
+  const len = Math.min(peakIndices.length, valleyIndices.length);
+  
   for (let i = 0; i < len; i++) {
-    const amp = values[peaks[i]] - values[valleys[i]];
+    const amp = values[peakIndices[i]] - values[valleyIndices[i]];
     if (amp > 0) {
       amps.push(amp);
     }
   }
+  
   if (amps.length === 0) return 0;
 
-  const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
-  return mean;
+  // Calcular la media robusta (sin outliers)
+  amps.sort((a, b) => a - b);
+  const trimmedAmps = amps.slice(
+    Math.floor(amps.length * 0.1),
+    Math.ceil(amps.length * 0.9)
+  );
+  
+  return trimmedAmps.length > 0
+    ? trimmedAmps.reduce((a, b) => a + b, 0) / trimmedAmps.length
+    : amps.reduce((a, b) => a + b, 0) / amps.length;
+}
+
+/**
+ * Aplica un filtro de Media Móvil Simple (SMA) a un valor
+ */
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  const updatedBuffer = [...buffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
+  }
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
 }
