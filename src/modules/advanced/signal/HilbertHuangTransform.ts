@@ -12,7 +12,8 @@ import { normalizeSignal } from './utils/SignalUtils';
 import { EmpiricalModeDecomposition } from './EmpiricalModeDecomposition';
 import { HilbertTransformer } from './HilbertTransformer';
 
-export { IMF };
+// Fix the re-export by using 'export type'
+export type { IMF };
 
 export class HilbertHuangTransform {
   // Configuración
