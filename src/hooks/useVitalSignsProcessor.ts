@@ -87,12 +87,10 @@ export const useVitalSignsProcessor = () => {
    * Process the signal with improved algorithms
    * @param value Current PPG value
    * @param rrData RR interval data from heart beat processor
-   * @param accumulatedPpgValues Array of historical PPG values for metabolic analysis
    */
   const processSignal = useCallback((
     value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null },
-    accumulatedPpgValues?: number[]
+    rrData?: { intervals: number[], lastPeakTime: number | null }
   ) => {
     processedSignals.current++;
     updateCounter.current++;
@@ -101,7 +99,6 @@ export const useVitalSignsProcessor = () => {
       valorEntrada: value,
       rrDataPresente: !!rrData,
       intervalosRR: rrData?.intervals.length || 0,
-      ppgAcumulados: accumulatedPpgValues?.length || 0,
       contadorArritmias: arrhythmiaCounter,
       señalNúmero: processedSignals.current,
       sessionId: sessionId.current,
@@ -111,9 +108,8 @@ export const useVitalSignsProcessor = () => {
       tiempoTranscurrido: Date.now() - measurementStartTime.current
     });
     
-    // Process signal through the vital signs processor
-    // Pass accumulated PPG values for metabolic analysis if available
-    const result = processor.processSignal(value, rrData, accumulatedPpgValues);
+    // Process signal through the vital signs processor - now with only 2 arguments to fix the TS error
+    const result = processor.processSignal(value, rrData);
     const currentTime = Date.now();
     
     // Guardar para depuración

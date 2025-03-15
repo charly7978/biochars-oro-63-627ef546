@@ -33,7 +33,7 @@ const Index = () => {
   const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
   const [lastProcessTime, setLastProcessTime] = useState(Date.now());
   const measurementTimerRef = useRef<number | null>(null);
-  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
+  const [lastArrhythmiaData, setLastArrhythmiaData<{
     timestamp: number;
     rmssd: number;
     rrVariation: number;
@@ -408,9 +408,10 @@ const Index = () => {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       setHeartRate(heartBeatResult.bpm);
       
+      // Removed the third argument (accumulatedPpgValues) to match the hook signature
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        console.log("Index: Vitales procesados (sin modificación):", vitals);
+        console.log("Index: Vitales procesados:", vitals);
         
         setVitalSigns(vitals);
         
