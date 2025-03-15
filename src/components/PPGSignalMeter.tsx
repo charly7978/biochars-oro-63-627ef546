@@ -146,35 +146,33 @@ const PPGSignalMeter = memo(({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Intensified background gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E0D8FF');  // Slightly more saturated purple
-    gradient.addColorStop(0.25, '#FFDBCA'); // Slightly more saturated orange
-    gradient.addColorStop(0.45, '#F0FBDA'); // Slightly more saturated green
-    gradient.addColorStop(0.55, '#F1EDE6'); // Slightly more saturated cream
-    gradient.addColorStop(0.75, '#F5ECD2'); // Slightly more saturated yellow
-    gradient.addColorStop(1, '#F6EBC8');    // Slightly more saturated gold
+    gradient.addColorStop(0, '#E2DCFF');
+    gradient.addColorStop(0.25, '#FFDECF');
+    gradient.addColorStop(0.45, '#F1FBDF');
+    gradient.addColorStop(0.55, '#F1EEE8');
+    gradient.addColorStop(0.75, '#F5EED8');
+    gradient.addColorStop(1, '#F5EED0');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Slightly more visible grid lines
-    ctx.globalAlpha = 0.05; // Slightly more visible from 0.04
+    ctx.globalAlpha = 0.04;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
         const heightRatio = j / CANVAS_HEIGHT;
-        const alphaModifier = 0.012 + (heightRatio * 0.035); // Slightly stronger
+        const alphaModifier = 0.01 + (heightRatio * 0.03);
         
         ctx.fillStyle = j % 40 === 0 ? 
-          `rgba(0,0,0,${0.22 + alphaModifier})` : 
-          `rgba(255,255,255,${0.22 + alphaModifier})`;
+          `rgba(0,0,0,${0.2 + alphaModifier})` : 
+          `rgba(255,255,255,${0.2 + alphaModifier})`;
         ctx.fillRect(i, j, 10, 10);
       }
     }
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.24)'; // Slightly darker lines
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.22)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
@@ -202,7 +200,7 @@ const PPGSignalMeter = memo(({
     
     const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.48)'; // Slightly darker center line
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
     ctx.moveTo(0, centerLineY);
@@ -430,6 +428,7 @@ const PPGSignalMeter = memo(({
       if (arrhythmiaSegments.length > 0) {
         renderCtx.beginPath();
         renderCtx.strokeStyle = '#DC2626';
+        renderCtx.lineWidth = 3; // Línea más gruesa para arritmias
         
         for (const segment of arrhythmiaSegments) {
           renderCtx.moveTo(segment.start[0], segment.start[1]);
@@ -475,21 +474,35 @@ const PPGSignalMeter = memo(({
           renderCtx.fillStyle = '#DC2626';
           
           arrhythmiaPeaks.forEach(([x, y, value]) => {
+            // Círculo interno rojo
             renderCtx.beginPath();
-            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
+            renderCtx.arc(x, y, 6, 0, Math.PI * 2);
             renderCtx.fill();
             
+            // Círculo amarillo alrededor
             renderCtx.beginPath();
             renderCtx.arc(x, y, 10, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.strokeStyle = '#FBBF24';
             renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
+            // Efecto expansivo (animación)
+            const animPhase = (Date.now() % 1000) / 1000;
+            const pulseSize = 5 + 15 * Math.sin(animPhase * Math.PI);
+            
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 10 + pulseSize, 0, Math.PI * 2);
+            renderCtx.strokeStyle = `rgba(239, 68, 68, ${0.7 - animPhase * 0.6})`;
+            renderCtx.lineWidth = 2;
+            renderCtx.stroke();
+            
+            // Texto "LATIDO PREMATURO"
             renderCtx.font = 'bold 18px Inter';
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
-            renderCtx.fillText('ARRITMIA', x, y - 25);
+            renderCtx.fillText('LATIDO PREMATURO', x, y - 25);
             
+            // Valor numérico
             renderCtx.font = 'bold 16px Inter';
             renderCtx.fillStyle = '#000000';
             renderCtx.textAlign = 'center';
