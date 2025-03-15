@@ -49,87 +49,56 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      // Primero consultar los dispositivos disponibles
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cameras = devices.filter(device => device.kind === 'videoinput');
-      console.log("Cámaras disponibles:", cameras);
+      const isAndroid = /android/i.test(navigator.userAgent);
 
-      // Intentar con resolución HD estricta
-      const hdConstraints: MediaStreamConstraints = {
-        video: {
-          facingMode: 'environment',
-          width: { min: 1280, ideal: 1280 },
-          height: { min: 720, ideal: 720 },
-          frameRate: { min: 30, ideal: 30 },
-          deviceId: cameras.length > 0 ? { ideal: cameras[0].deviceId } : undefined
-        }
+      const baseVideoConstraints: MediaTrackConstraints = {
+        facingMode: 'environment',
+        width: { ideal: 720 },
+        height: { ideal: 480 }
       };
 
-      let newStream: MediaStream;
-      try {
-        console.log("Intentando obtener stream HD...");
-        newStream = await navigator.mediaDevices.getUserMedia(hdConstraints);
-      } catch (e) {
-        console.log("No se pudo obtener HD, intentando resolución media:", e);
-        const mediumConstraints: MediaStreamConstraints = {
-          video: {
-            facingMode: 'environment',
-            width: { min: 640, ideal: 640 },
-            height: { min: 480, ideal: 480 },
-            frameRate: { min: 30, ideal: 30 },
-            deviceId: cameras.length > 0 ? { ideal: cameras[0].deviceId } : undefined
-          }
-        };
-        newStream = await navigator.mediaDevices.getUserMedia(mediumConstraints);
+      if (isAndroid) {
+        // Ajustes para mejorar la extracción de señal en Android
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30, max: 30 }, // Limitamos explícitamente a 30 FPS
+          resizeMode: 'crop-and-scale'
+        });
       }
 
-      const videoTrack = newStream.getVideoTracks()[0];
-      console.log("Capacidades de la cámara:", videoTrack.getCapabilities());
-      
-      // Verificar resolución inicial
-      const initialSettings = videoTrack.getSettings();
-      console.log("Configuración inicial:", initialSettings);
+      const constraints: MediaStreamConstraints = {
+        video: baseVideoConstraints
+      };
 
-      if (videoTrack) {
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const videoTrack = newStream.getVideoTracks()[0];
+
+      if (videoTrack && isAndroid) {
         try {
           const capabilities = videoTrack.getCapabilities();
-          console.log("Intentando aplicar máxima resolución disponible...");
+          const advancedConstraints: MediaTrackConstraintSet[] = [];
           
-          // Forzar la resolución más alta disponible
-          if (capabilities.width && capabilities.height) {
-            const constraints = {
-              width: { exact: Math.min(1280, capabilities.width.max || 1280) },
-              height: { exact: Math.min(720, capabilities.height.max || 720) }
-            };
-            
-            console.log("Aplicando constraints:", constraints);
-            await videoTrack.applyConstraints(constraints);
+          if (capabilities.exposureMode) {
+            advancedConstraints.push({ exposureMode: 'continuous' });
+          }
+          if (capabilities.focusMode) {
+            advancedConstraints.push({ focusMode: 'continuous' });
+          }
+          if (capabilities.whiteBalanceMode) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
           }
 
-          // Verificar configuración después de forzar resolución
-          const afterResolutionSettings = videoTrack.getSettings();
-          console.log("Configuración después de forzar resolución:", afterResolutionSettings);
-
-          // Configurar otros parámetros
-          const settings: MediaTrackConstraintSet = {};
-          
-          if (capabilities.exposureMode?.includes('manual')) {
-            settings.exposureMode = 'manual';
-          }
-          if (capabilities.focusMode?.includes('manual')) {
-            settings.focusMode = 'manual';
-          }
-          if (capabilities.whiteBalanceMode?.includes('manual')) {
-            settings.whiteBalanceMode = 'manual';
-          }
-
-          if (Object.keys(settings).length > 0) {
+          if (advancedConstraints.length > 0) {
             await videoTrack.applyConstraints({
-              advanced: [settings]
+              advanced: advancedConstraints
             });
           }
 
-          // Activar linterna si está disponible
+          if (videoRef.current) {
+            videoRef.current.style.transform = 'translateZ(0)';
+            videoRef.current.style.backfaceVisibility = 'hidden';
+          }
+          
+          // Activar linterna (flash) inmediatamente si está disponible
           if (capabilities.torch) {
             console.log("Activando linterna para mejorar la señal PPG");
             await videoTrack.applyConstraints({
@@ -137,20 +106,17 @@ const CameraView = ({
             });
             setTorchEnabled(true);
           }
-
-          // Verificar configuración final
-          const finalSettings = videoTrack.getSettings();
-          console.log("Configuración final de la cámara:", finalSettings);
-
         } catch (err) {
-          console.warn("Error al aplicar configuraciones:", err);
+          console.log("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        videoRef.current.width = 1280;
-        videoRef.current.height = 720;
+        if (isAndroid) {
+          videoRef.current.style.willChange = 'transform';
+          videoRef.current.style.transform = 'translateZ(0)';
+        }
       }
 
       setStream(newStream);
@@ -195,21 +161,34 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled]);
 
+  useEffect(() => {
+    // Si se detecta dedo pero la linterna no está activa, volver a forzarla.
+    if (stream && isFingerDetected && !torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Reactivando linterna porque se detecta dedo");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => setTorchEnabled(true))
+          .catch(err => console.error("Error reactivando la linterna:", err));
+      }
+    }
+  }, [stream, isFingerDetected, torchEnabled]);
+  
+  // Cambiar la tasa de cuadros a, por ejemplo, 12 FPS:
+  const targetFrameInterval = 1000/12; // Apunta a 12 FPS para menor consumo
+
   return (
     <video
       ref={videoRef}
       autoPlay
       playsInline
       muted
-      width={1280}
-      height={720}
-      className="absolute top-0 left-0 w-auto h-auto z-0 object-cover"
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
       style={{
         willChange: 'transform',
         transform: 'translateZ(0)',
-        backfaceVisibility: 'hidden',
-        minWidth: '100%',
-        minHeight: '100%'
+        backfaceVisibility: 'hidden'
       }}
     />
   );
