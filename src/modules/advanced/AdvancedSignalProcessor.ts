@@ -7,7 +7,7 @@
  * principales que están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
  */
 
-import type { VitalSignsResult } from '../vital-signs/VitalSignsProcessor';
+import type { VitalSignsResult } from '../core/VitalSignsProcessor';
 import type { RRData } from '../core/ArrhythmiaProcessor';
 import { AFibDetector } from './analysis/AFibDetector';
 import { PPGMorphologyAnalyzer } from './analysis/PPGMorphologyAnalyzer';
