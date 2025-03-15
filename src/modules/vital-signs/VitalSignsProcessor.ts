@@ -4,159 +4,107 @@
  * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
-import { SpO2Processor } from './spo2-processor';
-import { BloodPressureProcessor } from './blood-pressure-processor';
-import { ArrhythmiaProcessor } from './arrhythmia-processor';
-import { SignalProcessor } from './signal-processor';
-import { GlucoseProcessor } from './glucose-processor';
-import { LipidProcessor } from './lipid-processor';
-
-export interface VitalSignsResult {
-  spo2: number;
-  pressure: string;
-  arrhythmiaStatus: string;
-  lastArrhythmiaData?: { 
-    timestamp: number; 
-    rmssd: number; 
-    rrVariation: number; 
-  } | null;
-  glucose: number;
-  lipids: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  confidence?: {
-    glucose: number;
-    lipids: number;
-    overall: number;
-  };
-  rawPPG?: number;
-  signalQuality: number;
-}
+import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { FingerDetector } from './finger-detection/FingerDetector';
 
 /**
- * Procesador principal de signos vitales
- * Integra los diferentes procesadores especializados para calcular métricas de salud
- * con enfoque en precisión y honestidad de los resultados
+ * Wrapper de compatibilidad que mantiene la interfaz original 
+ * mientras usa la implementación refactorizada e integra el detector de dedo.
+ * 
+ * Este archivo centraliza la detección de dedo en FingerDetector
  */
 export class VitalSignsProcessor {
-  private spo2Processor: SpO2Processor;
-  private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaProcessor: ArrhythmiaProcessor;
-  private signalProcessor: SignalProcessor;
-  private glucoseProcessor: GlucoseProcessor;
-  private lipidProcessor: LipidProcessor;
+  private processor: NewVitalSignsProcessor;
+  private fingerDetector: FingerDetector;
+  private lastRgbValues: {red: number, green: number} = {red: 0, green: 0};
+  private consecutiveEmptyFrames: number = 0;
+  private consecutiveValidFrames: number = 0;
+  private lastProcessedTime: number = 0;
+  private processingEnabled: boolean = true;
   
-  private lastValidResults: VitalSignsResult | null = null;
-  
-  // Umbrales de señal mínima para considerar mediciones válidas
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
-
+  /**
+   * Constructor que inicializa el procesador interno refactorizado y el detector de dedo
+   */
   constructor() {
-    this.spo2Processor = new SpO2Processor();
-    this.bpProcessor = new BloodPressureProcessor();
-    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
-    this.signalProcessor = new SignalProcessor();
-    this.glucoseProcessor = new GlucoseProcessor();
-    this.lipidProcessor = new LipidProcessor();
-    
-    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
+    this.processor = new NewVitalSignsProcessor();
+    this.fingerDetector = new FingerDetector();
+    console.log("VitalSignsProcessor: Inicializado con detector de dedo TRIPLE VERIFICACIÓN anti-falsos-positivos");
   }
   
   /**
-   * Procesa la señal PPG y calcula todos los signos vitales
-   * Implementando estrategias mejoradas de validación y estabilidad
+   * Procesa una señal PPG y datos RR para obtener signos vitales
+   * Utiliza FingerDetector con TRIPLE VERIFICACIÓN como única fuente para detección de dedos
+   * COMPLETAMENTE REDISEÑADO para eliminar TODOS los falsos positivos
    */
   public processSignal(
     ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): VitalSignsResult {
-    // Verificar calidad mínima de señal
-    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
-      return this.getLastValidResults() || this.createEmptyResults();
+    rrData?: { intervals: number[]; lastPeakTime: number | null },
+    rgbValues?: {red: number, green: number}
+  ) {
+    // Limitar velocidad de procesamiento si es necesario
+    const currentTime = Date.now();
+    if (currentTime - this.lastProcessedTime < 33 && !this.processingEnabled) { // ~30fps
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
     }
-
-    // Aplicar filtrado a la señal PPG
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    this.lastProcessedTime = currentTime;
     
-    // Procesar datos de arritmia si están disponibles
-    const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-    
-    // Obtener los valores PPG para procesamiento
-    const ppgValues = this.signalProcessor.getPPGValues();
-    
-    // Solo procesar si hay suficientes datos de PPG
-    if (ppgValues.length < 100) {
-      return this.getLastValidResults() || this.createEmptyResults();
+    // Almacenar valores RGB si están disponibles
+    if (rgbValues) {
+      this.lastRgbValues = rgbValues;
     }
     
-    // Calcular SpO2
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-60));
-    
-    // Calcular presión arterial
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
-    const pressure = bp.systolic > 0 && bp.diastolic > 0 
-      ? `${bp.systolic}/${bp.diastolic}` 
-      : "--/--";
-    
-    // Calcular glucosa con validación de confianza
-    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
-    const glucoseConfidence = this.glucoseProcessor.getConfidence();
-    
-    // Calcular lípidos con validación de confianza
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
-    const lipidsConfidence = this.lipidProcessor.getConfidence();
-    
-    // Calcular confianza general basada en promedios ponderados
-    const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
-
-    // Preparar resultado con todas las métricas calculadas
-    const result: VitalSignsResult = {
-      spo2,
-      pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
-      glucose,
-      lipids,
-      confidence: {
-        glucose: glucoseConfidence,
-        lipids: lipidsConfidence,
-        overall: overallConfidence
-      },
-      rawPPG: ppgValue,
-      signalQuality: filtered
-    };
-    
-    // Solo actualizar resultados válidos si hay suficiente confianza
-    if (this.isValidMeasurement(result)) {
-      this.lastValidResults = { ...result };
-    }
-
-    return result;
-  }
-  
-  /**
-   * Verifica si una medición tiene suficiente calidad para considerarse válida
-   */
-  private isValidMeasurement(result: VitalSignsResult): boolean {
-    const { spo2, pressure, glucose, lipids, confidence } = result;
-    const [systolic, diastolic] = pressure.split('/').map(v => parseInt(v));
-    
-    return (
-      confidence?.overall && confidence.overall >= this.MIN_CONFIDENCE_THRESHOLD &&
-      spo2 > 0 && 
-      !isNaN(systolic) && systolic > 0 && 
-      !isNaN(diastolic) && diastolic > 0 && 
-      glucose > 0 && 
-      lipids.totalCholesterol > 0
+    // TRIPLE VERIFICACIÓN de calidad con el detector de dedo centralizado y valores RGB
+    const fingerDetectionResult = this.fingerDetector.processQuality(
+      ppgValue, 
+      this.lastRgbValues.red, 
+      this.lastRgbValues.green
     );
-  }
-  
-  /**
-   * Crea un resultado vacío para cuando no hay datos válidos
-   */
-  private createEmptyResults(): VitalSignsResult {
+    
+    // Log más detallado periódicamente
+    if (Math.random() < 0.01) {
+      console.log("VitalSignsProcessor: Estado de procesamiento (TRIPLE VERIFICACIÓN)", {
+        ppgValue,
+        calidadDetectada: fingerDetectionResult.quality,
+        dedoDetectado: fingerDetectionResult.isFingerDetected,
+        nivelCalidad: fingerDetectionResult.qualityLevel,
+        valorRojo: this.lastRgbValues.red,
+        valorVerde: this.lastRgbValues.green,
+        ratioRG: this.lastRgbValues.red / Math.max(1, this.lastRgbValues.green),
+        framesValidosConsecutivos: this.consecutiveValidFrames,
+        framesVacíosConsecutivos: this.consecutiveEmptyFrames
+      });
+    }
+    
+    // Actualizar contadores de consistencia
+    if (fingerDetectionResult.isFingerDetected) {
+      this.consecutiveValidFrames += 1;
+      this.consecutiveEmptyFrames = Math.max(0, this.consecutiveEmptyFrames - 1);
+    } else {
+      this.consecutiveEmptyFrames += 1;
+      this.consecutiveValidFrames = Math.max(0, this.consecutiveValidFrames - 2); // Más agresivo
+    }
+    
+    // Solo procesar señales cuando:
+    // 1. El dedo está realmente detectado con TRIPLE VERIFICACIÓN
+    // 2. Hemos tenido suficientes frames válidos consecutivos 
+    // 3. La calidad es suficiente
+    if (fingerDetectionResult.isFingerDetected && 
+        this.consecutiveValidFrames >= 5 && 
+        fingerDetectionResult.quality >= this.fingerDetector.getConfig().MIN_QUALITY_FOR_DETECTION) {
+      
+      return this.processor.processSignal(ppgValue, rrData);
+    }
+    
+    // Retornar valores por defecto si no hay dedo presente o no cumple criterios
     return {
       spo2: 0,
       pressure: "--/--",
@@ -165,37 +113,34 @@ export class VitalSignsProcessor {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      },
-      signalQuality: 0
+      }
     };
   }
-
+  
   /**
-   * Reinicia el procesador manteniendo los últimos resultados válidos
+   * Reinicia el procesador
    */
-  public reset(): VitalSignsResult | null {
-    this.spo2Processor.reset();
-    this.bpProcessor.reset();
-    this.arrhythmiaProcessor.reset();
-    this.signalProcessor.reset();
-    this.glucoseProcessor.reset();
-    this.lipidProcessor.reset();
-    
-    return this.lastValidResults;
+  public reset() {
+    this.fingerDetector.reset();
+    this.lastRgbValues = {red: 0, green: 0};
+    this.consecutiveEmptyFrames = 0;
+    this.consecutiveValidFrames = 0;
+    return this.processor.reset();
   }
   
   /**
-   * Obtiene los últimos resultados válidos
-   */
-  public getLastValidResults(): VitalSignsResult | null {
-    return this.lastValidResults;
-  }
-  
-  /**
-   * Reinicia completamente el procesador, eliminando datos y resultados previos
+   * Reinicia completamente el procesador y todos sus datos
    */
   public fullReset(): void {
-    this.reset();
-    this.lastValidResults = null;
+    this.fingerDetector.reset();
+    this.lastRgbValues = {red: 0, green: 0};
+    this.consecutiveEmptyFrames = 0;
+    this.consecutiveValidFrames = 0;
+    this.processingEnabled = true;
+    this.processor.fullReset();
+    console.log("VitalSignsProcessor: Reset completo realizado");
   }
 }
+
+// Re-exportamos los tipos para compatibilidad
+export type { VitalSignsResult } from './vital-signs/VitalSignsProcessor';

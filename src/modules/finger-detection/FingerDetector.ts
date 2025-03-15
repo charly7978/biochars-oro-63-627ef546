@@ -13,9 +13,9 @@ export class FingerDetector {
   
   // Configuración con umbrales optimizados para máxima precisión
   private config = {
-    MIN_QUALITY_FOR_DETECTION: 18, // Reducido de 20 a 18 para mayor sensibilidad
+    MIN_QUALITY_FOR_DETECTION: 15, // PRIMERA VARIABLE MODIFICADA: Reducido de 18 a 15 para mayor sensibilidad en la detección
     REQUIRED_FINGER_FRAMES: 5,
-    MIN_RED_GREEN_RATIO: 1.35, // Reducido de 1.45 a 1.35 para mayor sensibilidad
+    MIN_RED_GREEN_RATIO: 1.25, // SEGUNDA VARIABLE MODIFICADA: Reducido de 1.35 a 1.25 para mejorar detección en diferentes tonos de piel
     MIN_RED_VALUE: 80,
     MIN_GREEN_VALUE: 30,
     QUALITY_THRESHOLD: 60,
