@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -7,25 +8,23 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
-  videoRef: React.RefObject<HTMLVideoElement>;
-  canvasRef: React.RefObject<HTMLCanvasElement>;
-  isActive: boolean;
   onStreamReady?: (stream: MediaStream) => void;
+  isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
 }
 
 /**
- * Componente que maneja la vista de cámara y optimizaciones de rendimiento
+ * CameraView - Componente para gestionar la cámara y detectar señales PPG
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones artificiales
  */
-const CameraView: React.FC<CameraViewProps> = ({ 
-  videoRef,
-  canvasRef,
-  isActive,
+const CameraView = ({ 
   onStreamReady, 
+  isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
 }: CameraViewProps) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
@@ -79,7 +78,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   };
 
-  const startCamera = useCallback(async () => {
+  const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
@@ -89,6 +88,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
+      // Configuración simplificada para mayor compatibilidad
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
         width: { ideal: 640 }, // Reducida para mejor compatibilidad
@@ -124,7 +124,8 @@ const CameraView: React.FC<CameraViewProps> = ({
 
       console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
       
-      const timeoutPromise = new Promise<MediaStream>((_, reject) => {
+      // Agregando un timeout para la solicitud de getUserMedia
+      const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error("Timeout al acceder a la cámara")), 10000);
       });
       
@@ -142,10 +143,13 @@ const CameraView: React.FC<CameraViewProps> = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
+          // Pequeña pausa para estabilización
           await new Promise(resolve => setTimeout(resolve, 300));
           
+          // Configuraciones específicas para plataformas
           if (isAndroid) {
             try {
+              // Activar linterna inmediatamente
               if (capabilities.torch) {
                 console.log("Activando linterna en Android");
                 await videoTrack.applyConstraints({
@@ -157,6 +161,7 @@ const CameraView: React.FC<CameraViewProps> = ({
               console.error("Error al activar linterna en Android:", err);
             }
           } else {
+            // Optimizaciones para otros sistemas
             const advancedConstraints: MediaTrackConstraintSet[] = [];
             
             if (capabilities.exposureMode) {
@@ -174,6 +179,7 @@ const CameraView: React.FC<CameraViewProps> = ({
               });
             }
 
+            // Activar linterna también en otras plataformas
             if (capabilities.torch) {
               console.log("Activando linterna para mejorar la señal PPG");
               await videoTrack.applyConstraints({
@@ -198,6 +204,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
+        // Optimizaciones de rendimiento
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
@@ -226,7 +233,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
     }
-  });
+  };
 
   const refreshAutoFocus = useCallback(async () => {
     if (stream && !isFocusing && !isAndroid) {
@@ -251,20 +258,21 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   }, [stream, isFocusing, isAndroid]);
 
+  // Reiniciar la cámara si se detecta un error de track inválido
   useEffect(() => {
-    if (streamErrorRef.current && isActive) {
+    if (streamErrorRef.current && isMonitoring) {
       console.log("Detectado error de stream, reiniciando cámara...");
       stopCamera();
       setTimeout(startCamera, 1000);
     }
-  }, [isActive]);
+  }, [isMonitoring]);
 
   useEffect(() => {
-    if (isActive && !stream) {
-      console.log("Starting camera because isActive=true");
+    if (isMonitoring && !stream) {
+      console.log("Starting camera because isMonitoring=true");
       startCamera();
-    } else if (!isActive && stream) {
-      console.log("Stopping camera because isActive=false");
+    } else if (!isMonitoring && stream) {
+      console.log("Stopping camera because isMonitoring=false");
       stopCamera();
     }
     
@@ -272,7 +280,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
-  }, [isActive]);
+  }, [isMonitoring]);
 
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
@@ -289,6 +297,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
     }
     
+    // Refrescar auto-focus con más frecuencia cuando el dedo está detectado
     if (isFingerDetected && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 3000);
       return () => clearInterval(focusInterval);
