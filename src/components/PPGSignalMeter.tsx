@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -428,7 +427,6 @@ const PPGSignalMeter = memo(({
       if (arrhythmiaSegments.length > 0) {
         renderCtx.beginPath();
         renderCtx.strokeStyle = '#DC2626';
-        renderCtx.lineWidth = 3; // Línea más gruesa para arritmias
         
         for (const segment of arrhythmiaSegments) {
           renderCtx.moveTo(segment.start[0], segment.start[1]);
@@ -474,35 +472,21 @@ const PPGSignalMeter = memo(({
           renderCtx.fillStyle = '#DC2626';
           
           arrhythmiaPeaks.forEach(([x, y, value]) => {
-            // Círculo interno rojo
             renderCtx.beginPath();
-            renderCtx.arc(x, y, 6, 0, Math.PI * 2);
+            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
             renderCtx.fill();
             
-            // Círculo amarillo alrededor
             renderCtx.beginPath();
             renderCtx.arc(x, y, 10, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FBBF24';
+            renderCtx.strokeStyle = '#FEF7CD';
             renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
-            // Efecto expansivo (animación)
-            const animPhase = (Date.now() % 1000) / 1000;
-            const pulseSize = 5 + 15 * Math.sin(animPhase * Math.PI);
-            
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, 10 + pulseSize, 0, Math.PI * 2);
-            renderCtx.strokeStyle = `rgba(239, 68, 68, ${0.7 - animPhase * 0.6})`;
-            renderCtx.lineWidth = 2;
-            renderCtx.stroke();
-            
-            // Texto "LATIDO PREMATURO"
             renderCtx.font = 'bold 18px Inter';
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
-            renderCtx.fillText('LATIDO PREMATURO', x, y - 25);
+            renderCtx.fillText('ARRITMIA', x, y - 25);
             
-            // Valor numérico
             renderCtx.font = 'bold 16px Inter';
             renderCtx.fillStyle = '#000000';
             renderCtx.textAlign = 'center';

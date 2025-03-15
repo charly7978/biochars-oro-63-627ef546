@@ -13,7 +13,6 @@ export function useVitalSignsProcessor() {
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignalsRef = useRef<number>(0);
   const arrhythmiaCounterRef = useRef<number>(0);
-  const fingerDetectedRef = useRef<boolean>(false);
 
   // Inicializar el procesador si no existe
   if (!processorRef.current) {
@@ -25,49 +24,15 @@ export function useVitalSignsProcessor() {
    */
   const processSignal = useCallback((
     value: number,
-    rrData?: RRData,
-    isFingerDetected: boolean = false
+    rrData?: RRData
   ): VitalSignsResult | null => {
     if (!processorRef.current) return null;
 
-    // Actualizar estado de detección de dedo
-    fingerDetectedRef.current = isFingerDetected;
-    
-    // Si no hay dedo detectado, retornar valores vacíos claramente indicados como "sin señal"
-    if (!isFingerDetected) {
-      console.log("useVitalSignsProcessor: Sin dedo detectado, retornando valores vacíos");
-      return {
-        spo2: 0,
-        pressure: "SIN SEÑAL",
-        arrhythmiaStatus: "SIN SEÑAL",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0,
-        calibration: {
-          isCalibrating: false,
-          progress: {
-            heartRate: 0,
-            spo2: 0,
-            pressure: 0,
-            arrhythmia: 0,
-            glucose: 0,
-            lipids: 0,
-            hemoglobin: 0,
-            atrialFibrillation: 0
-          }
-        },
-        lastArrhythmiaData: null
-      };
-    }
-    
     // Incrementar contador de señales procesadas
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal sólo si el dedo está detectado
+      // Procesar la señal
       const result = processorRef.current.processSignal(value, rrData);
       
       // Rastrear contador de arritmias
@@ -85,8 +50,7 @@ export function useVitalSignsProcessor() {
       if (
         result.spo2 > 0 && 
         result.pressure !== "--/--" && 
-        result.pressure !== "0/0" &&
-        result.pressure !== "SIN SEÑAL"
+        result.pressure !== "0/0"
       ) {
         setLastValidResults(result);
       }
@@ -126,7 +90,6 @@ export function useVitalSignsProcessor() {
       setLastValidResults(null);
       arrhythmiaCounterRef.current = 0;
       processedSignalsRef.current = 0;
-      fingerDetectedRef.current = false;
       sessionIdRef.current = Math.random().toString(36).substring(2, 9);
     } catch (error) {
       console.error("Error en reinicio completo:", error);
@@ -165,7 +128,6 @@ export function useVitalSignsProcessor() {
     fullReset,
     lastValidResults,
     startCalibration,
-    forceCalibrationCompletion,
-    isFingerDetected: () => fingerDetectedRef.current
+    forceCalibrationCompletion
   };
 }
