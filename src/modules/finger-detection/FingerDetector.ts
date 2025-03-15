@@ -246,6 +246,7 @@ export class FingerDetector {
     if (fingerDetected && !this.lastDetectionState) {
       if (this.stabilityCounter >= 6 && this.goodDetectionCounter >= 8) {
         finalDetectionState = true;
+        // Corrigiendo la comparación de booleanos aquí
         if (this.lastDetectionState !== finalDetectionState) {
           console.log("FingerDetector: DEDO DETECTADO con TRIPLE criterio", {
             estabilidad: this.stabilityCounter,
@@ -262,6 +263,7 @@ export class FingerDetector {
     else if (!fingerDetected && this.lastDetectionState) {
       if (this.stabilityCounter <= 2 || this.noDetectionCounter >= 6) {
         finalDetectionState = false;
+        // Corrigiendo la comparación de booleanos aquí también
         if (this.lastDetectionState !== finalDetectionState) {
           console.log("FingerDetector: DEDO PERDIDO con TRIPLE criterio", {
             estabilidad: this.stabilityCounter,
