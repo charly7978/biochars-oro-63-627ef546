@@ -20,7 +20,7 @@ export class ResultGenerator {
   }: {
     spo2: number;
     bloodPressure: { systolic: number; diastolic: number };
-    afibResults: { detected: boolean; count: number; confidence: number };
+    afibResults: { detected: boolean; count: number; confidence: number; irregularIntervals?: number };
     calibration: { isCalibrating: boolean; progress: CalibrationProgress };
     perfusionIndex: number;
     pressureArtifactLevel: number;
@@ -37,7 +37,11 @@ export class ResultGenerator {
         totalCholesterol: Math.round(180 + 10 * Math.sin(Date.now() / 15000)),
         triglycerides: Math.round(120 + 15 * Math.sin(Date.now() / 20000))
       },
-      hemoglobin: Math.round(14 + Math.sin(Date.now() / 25000)),
+      atrialFibrillation: {
+        detected: afibResults.detected,
+        confidence: afibResults.confidence,
+        irregularIntervals: afibResults.irregularIntervals || 0
+      },
       calibration: calibration,
       lastArrhythmiaData: afibResults.detected ? {
         timestamp: Date.now(),
@@ -63,7 +67,11 @@ export class ResultGenerator {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hemoglobin: 0,
+      atrialFibrillation: {
+        detected: false,
+        confidence: 0,
+        irregularIntervals: 0
+      },
       calibration: calibration,
       lastArrhythmiaData: null
     };

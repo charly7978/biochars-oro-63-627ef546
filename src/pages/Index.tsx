@@ -22,7 +22,11 @@ const Index = () => {
       totalCholesterol: 0,
       triglycerides: 0
     },
-    hemoglobin: 0
+    atrialFibrillation: {
+      detected: false,
+      confidence: 0,
+      irregularIntervals: 0
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState<string | number>("--");
@@ -30,6 +34,7 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
+  const [afibConfidence, setAfibConfidence] = useState(0);
   const measurementTimerRef = useRef<number | null>(null);
   const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
     timestamp: number;
@@ -137,7 +142,7 @@ const Index = () => {
         arrhythmia: 0,
         glucose: 0,
         lipids: 0,
-        hemoglobin: 0
+        atrialFibrillation: 0
       }
     });
     
@@ -166,7 +171,7 @@ const Index = () => {
             arrhythmia: Math.max(0, progressPercent - 15),
             glucose: Math.max(0, progressPercent - 5),
             lipids: Math.max(0, progressPercent - 25),
-            hemoglobin: Math.max(0, progressPercent - 30)
+            atrialFibrillation: Math.max(0, progressPercent - 18)
           }
         });
       } else {
@@ -191,7 +196,7 @@ const Index = () => {
               arrhythmia: 100,
               glucose: 100,
               lipids: 100,
-              hemoglobin: 100
+              atrialFibrillation: 100
             }
           });
           
@@ -221,7 +226,7 @@ const Index = () => {
             arrhythmia: 100,
             glucose: 100,
             lipids: 100,
-            hemoglobin: 100
+            atrialFibrillation: 100
           }
         });
       }
@@ -282,12 +287,15 @@ const Index = () => {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hemoglobin: 0
+      atrialFibrillation: {
+        detected: false,
+        confidence: 0,
+        irregularIntervals: 0
+      }
     });
     setArrhythmiaCount("--");
+    setAfibConfidence(0);
     setSignalQuality(0);
-    setLastArrhythmiaData(null);
-    setCalibrationProgress(undefined);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -403,44 +411,8 @@ const Index = () => {
     processImage();
   };
 
-  useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
-      
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-        
-        if (vitals.lastArrhythmiaData) {
-          setLastArrhythmiaData(vitals.lastArrhythmiaData);
-          const [status, count] = vitals.arrhythmiaStatus.split('|');
-          setArrhythmiaCount(count || "0");
-        }
-      }
-      
-      setSignalQuality(lastSignal.quality);
-    }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
-
-  const handleToggleMonitoring = () => {
-    if (isMonitoring) {
-      finalizeMeasurement();
-    } else {
-      startMonitoring();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 flex flex-col bg-black" style={{ 
-      height: '100vh',
-      width: '100vw',
-      maxWidth: '100vw',
-      maxHeight: '100vh',
-      overflow: 'hidden',
-      paddingTop: 'env(safe-area-inset-top)',
-      paddingBottom: 'env(safe-area-inset-bottom)'
-    }}>
+  const renderMonitoringUI = () => {
+    return (
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 
@@ -533,6 +505,120 @@ const Index = () => {
               />
             </div>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderResultsGrid = () => {
+    if (!showResults) return null;
+    
+    // Extract information for display
+    const { spo2, pressure, arrhythmiaStatus, glucose, lipids, atrialFibrillation } = vitalSigns;
+    const lipidDisplay = `${lipids?.totalCholesterol || 0}/${lipids?.triglycerides || 0}`;
+    
+    // Get AFib display value - either as a status string or confidence percentage
+    let afibDisplay = "NO DETECTADA";
+    if (atrialFibrillation) {
+      if (atrialFibrillation.detected) {
+        afibDisplay = "DETECTADA";
+      } else if (atrialFibrillation.confidence > 30) {
+        afibDisplay = "POSIBLE";
+      }
+    }
+    
+    // Get calibration progress for each vital sign
+    const spo2Progress = calibrationProgress?.progress.spo2;
+    const pressureProgress = calibrationProgress?.progress.pressure;
+    const arrhythmiaProgress = calibrationProgress?.progress.arrhythmia;
+    const glucoseProgress = calibrationProgress?.progress.glucose;
+    const lipidsProgress = calibrationProgress?.progress.lipids;
+    const afibProgress = calibrationProgress?.progress.atrialFibrillation;
+
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-4 sm:mt-8 w-full max-w-md mx-auto">
+        <VitalSign 
+          label="SPO2" 
+          value={spo2} 
+          unit="%" 
+          calibrationProgress={spo2Progress}
+        />
+        <VitalSign 
+          label="PRESIÓN ARTERIAL" 
+          value={pressure} 
+          calibrationProgress={pressureProgress}
+        />
+        <VitalSign 
+          label="ARRITMIAS" 
+          value={arrhythmiaStatus} 
+          calibrationProgress={arrhythmiaProgress}
+        />
+        <VitalSign 
+          label="GLUCOSA" 
+          value={glucose} 
+          unit="mg/dL" 
+          calibrationProgress={glucoseProgress}
+        />
+        <VitalSign 
+          label="COLESTEROL/TRIGL." 
+          value={lipidDisplay} 
+          unit="mg/dL" 
+          calibrationProgress={lipidsProgress}
+        />
+        <VitalSign 
+          label="FIB. AURICULAR" 
+          value={atrialFibrillation ? atrialFibrillation.confidence : 0} 
+          calibrationProgress={afibProgress}
+        />
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
+      
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        
+        if (vitals.lastArrhythmiaData) {
+          setLastArrhythmiaData(vitals.lastArrhythmiaData);
+          const [status, count] = vitals.arrhythmiaStatus.split('|');
+          setArrhythmiaCount(count || "0");
+        }
+      }
+      
+      setSignalQuality(lastSignal.quality);
+    }
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+
+  const handleToggleMonitoring = () => {
+    if (isMonitoring) {
+      finalizeMeasurement();
+    } else {
+      startMonitoring();
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen flex flex-col items-center bg-gradient-to-br from-blue-50 to-gray-100 pt-6 pb-20 px-4">
+      <AppTitle />
+      
+      <div className="w-full max-w-md">
+        {isCameraOn ? renderMonitoringUI() : renderResultsGrid()}
+      </div>
+      
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-sm border-t border-gray-200">
+        <div className="flex justify-center max-w-md mx-auto">
+          <MonitorButton 
+            isMonitoring={isMonitoring} 
+            onClick={startMonitoring} 
+            elapsedTime={elapsedTime}
+            heartRate={heartRate}
+            disabled={false}
+          />
         </div>
       </div>
     </div>

@@ -16,7 +16,11 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
-  hemoglobin: number;
+  atrialFibrillation?: {
+    detected: boolean;
+    confidence: number;
+    irregularIntervals: number;
+  };
   calibration?: {
     isCalibrating: boolean;
     progress: {
@@ -26,7 +30,7 @@ export interface VitalSignsResult {
       arrhythmia: number;
       glucose: number;
       lipids: number;
-      hemoglobin: number;
+      atrialFibrillation: number;
     };
   };
   lastArrhythmiaData?: {
