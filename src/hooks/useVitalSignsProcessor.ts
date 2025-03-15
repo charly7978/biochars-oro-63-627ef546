@@ -1,3 +1,4 @@
+
 import { useRef, useState, useCallback } from 'react';
 import { VitalSignsProcessor, VitalSignsResult, RRData } from '../modules';
 
@@ -12,10 +13,6 @@ export function useVitalSignsProcessor() {
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignalsRef = useRef<number>(0);
   const arrhythmiaCounterRef = useRef<number>(0);
-  const fingerDetectedRef = useRef<boolean>(false);
-  const lastFingerDetectionTimeRef = useRef<number>(0);
-  const consecutiveGoodSignalsRef = useRef<number>(0);
-  const qualityThreshold = 50; // Umbral más estricto de calidad
 
   // Inicializar el procesador si no existe
   if (!processorRef.current) {
@@ -27,80 +24,16 @@ export function useVitalSignsProcessor() {
    */
   const processSignal = useCallback((
     value: number,
-    rrData?: RRData,
-    isFingerDetected: boolean = false
+    rrData?: RRData
   ): VitalSignsResult | null => {
     if (!processorRef.current) return null;
 
-    // Actualizar estado de detección de dedo
-    fingerDetectedRef.current = isFingerDetected;
-    
-    // Implementación más estricta para la detección de dedo
-    const now = Date.now();
-    if (!isFingerDetected) {
-      // Reinicio agresivo de contadores cuando se pierde la detección
-      consecutiveGoodSignalsRef.current = 0;
-      lastFingerDetectionTimeRef.current = 0;
-      
-      console.log("useVitalSignsProcessor: Sin dedo detectado, retornando valores vacíos");
-      return {
-        spo2: 0,
-        pressure: "SIN SEÑAL",
-        arrhythmiaStatus: "SIN SEÑAL",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0,
-        calibration: {
-          isCalibrating: false,
-          progress: {
-            heartRate: 0,
-            spo2: 0,
-            pressure: 0,
-            arrhythmia: 0,
-            glucose: 0,
-            lipids: 0,
-            hemoglobin: 0,
-            atrialFibrillation: 0
-          }
-        },
-        lastArrhythmiaData: null
-      };
-    }
-    
-    // Requerir detección consistente de dedo
-    lastFingerDetectionTimeRef.current = now;
-    
     // Incrementar contador de señales procesadas
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal sólo si el dedo está detectado
+      // Procesar la señal
       const result = processorRef.current.processSignal(value, rrData);
-      
-      // Validación crítica: si los valores no son realistas, rechazar la lectura
-      if (result.spo2 < 80 || result.spo2 > 100 || result.pressure === "--/--" || result.pressure === "0/0") {
-        consecutiveGoodSignalsRef.current = 0;
-        console.log("useVitalSignsProcessor: Valores fuera de rango fisiológico rechazados", {
-          spo2: result.spo2,
-          pressure: result.pressure
-        });
-        return {
-          spo2: 0,
-          pressure: "CALIBRANDO...",
-          arrhythmiaStatus: "ESPERANDO DATOS",
-          glucose: 0,
-          lipids: { totalCholesterol: 0, triglycerides: 0 },
-          hemoglobin: 0,
-          calibration: result.calibration,
-          lastArrhythmiaData: null
-        };
-      }
-      
-      // Incrementar contador de señales buenas consecutivas
-      consecutiveGoodSignalsRef.current++;
       
       // Rastrear contador de arritmias
       if (result.arrhythmiaStatus.includes('ARRITMIA')) {
@@ -113,29 +46,13 @@ export function useVitalSignsProcessor() {
         }
       }
       
-      // Solo actualizar resultados válidos después de un mínimo de señales buenas consecutivas
-      if (consecutiveGoodSignalsRef.current >= 5 && 
-          result.spo2 > 80 && 
-          result.pressure !== "--/--" && 
-          result.pressure !== "0/0" &&
-          result.pressure !== "SIN SEÑAL") {
+      // Actualizar resultados válidos si hay sustancia
+      if (
+        result.spo2 > 0 && 
+        result.pressure !== "--/--" && 
+        result.pressure !== "0/0"
+      ) {
         setLastValidResults(result);
-        return result;
-      } else if (consecutiveGoodSignalsRef.current < 5) {
-        // Si aún no tenemos suficientes señales buenas, mostrar "calibrando"
-        console.log("useVitalSignsProcessor: Esperando más señales buenas consecutivas", {
-          actual: consecutiveGoodSignalsRef.current,
-          requerido: 5
-        });
-        return {
-          ...result,
-          spo2: 0,
-          pressure: "CALIBRANDO...",
-          arrhythmiaStatus: "ESPERANDO DATOS",
-          glucose: 0,
-          lipids: { totalCholesterol: 0, triglycerides: 0 },
-          hemoglobin: 0
-        };
       }
       
       return result;
@@ -154,7 +71,6 @@ export function useVitalSignsProcessor() {
     try {
       // Reiniciar procesador pero mantener resultados
       const savedResults = processorRef.current.reset();
-      consecutiveGoodSignalsRef.current = 0;
       return savedResults;
     } catch (error) {
       console.error("Error reiniciando procesador:", error);
@@ -174,9 +90,6 @@ export function useVitalSignsProcessor() {
       setLastValidResults(null);
       arrhythmiaCounterRef.current = 0;
       processedSignalsRef.current = 0;
-      fingerDetectedRef.current = false;
-      consecutiveGoodSignalsRef.current = 0;
-      lastFingerDetectionTimeRef.current = 0;
       sessionIdRef.current = Math.random().toString(36).substring(2, 9);
     } catch (error) {
       console.error("Error en reinicio completo:", error);
@@ -215,7 +128,6 @@ export function useVitalSignsProcessor() {
     fullReset,
     lastValidResults,
     startCalibration,
-    forceCalibrationCompletion,
-    isFingerDetected: () => fingerDetectedRef.current
+    forceCalibrationCompletion
   };
 }

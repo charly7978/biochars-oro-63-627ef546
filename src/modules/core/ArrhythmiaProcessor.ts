@@ -19,11 +19,11 @@ export interface ArrhythmiaResult {
 }
 
 export class ArrhythmiaProcessor {
-  private readonly RMSSD_THRESHOLD = 5; // Extremadamente reducido para máxima sensibilidad
-  private readonly RR_VARIATION_THRESHOLD = 0.03; // Extremadamente reducido para máxima sensibilidad
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 500; // Reducido a 0.5 segundos para detectar más arritmias
-  private readonly MAX_ARRHYTHMIAS_PER_SESSION = 50; // Aumentado para permitir muchas más detecciones
-  private readonly REQUIRED_RR_INTERVALS = 2; // Reducido al mínimo para detectar más rápido
+  private readonly RMSSD_THRESHOLD = 18; // Reducido de 20 para mayor sensibilidad
+  private readonly RR_VARIATION_THRESHOLD = 0.10; // Reducido de 0.12 para mayor sensibilidad
+  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 2000; // Reducido de 2500ms para detectar más arritmias
+  private readonly MAX_ARRHYTHMIAS_PER_SESSION = 20; // Aumentado de 15 para permitir más detecciones
+  private readonly REQUIRED_RR_INTERVALS = 5;
   
   private lastArrhythmiaTime: number = 0;
   private arrhythmiaCounter: number = 0;

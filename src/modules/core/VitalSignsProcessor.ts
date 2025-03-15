@@ -1,3 +1,4 @@
+
 /**
  * NOTA IMPORTANTE: Este es el módulo principal de procesamiento de signos vitales.
  * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
@@ -29,7 +30,6 @@ export interface VitalSignsResult {
       glucose: number;
       lipids: number;
       hemoglobin: number;
-      atrialFibrillation: number;
     };
   };
   lastArrhythmiaData?: {
@@ -63,8 +63,7 @@ export class VitalSignsProcessor {
     arrhythmia: 0,
     glucose: 0,
     lipids: 0,
-    hemoglobin: 0,
-    atrialFibrillation: 0
+    hemoglobin: 0
   };
   
   private forceCompleteCalibration: boolean = false;
@@ -101,8 +100,7 @@ export class VitalSignsProcessor {
       arrhythmia: 0,
       glucose: 0,
       lipids: 0,
-      hemoglobin: 0,
-      atrialFibrillation: 0
+      hemoglobin: 0
     };
 
     // Configurar temporizador para completar la calibración después del tiempo máximo
@@ -142,8 +140,7 @@ export class VitalSignsProcessor {
         arrhythmia: progressRate * 100,
         glucose: progressRate * 100,
         lipids: progressRate * 100,
-        hemoglobin: progressRate * 100,
-        atrialFibrillation: progressRate * 100
+        hemoglobin: progressRate * 100
       };
       
       return;
@@ -158,8 +155,7 @@ export class VitalSignsProcessor {
         arrhythmia: 100,
         glucose: 100,
         lipids: 100,
-        hemoglobin: 100,
-        atrialFibrillation: 100
+        hemoglobin: 100
       };
       
       console.log("VitalSignsProcessor: Calibración completada exitosamente", {
@@ -208,8 +204,7 @@ export class VitalSignsProcessor {
         arrhythmia: progressRate * 100,
         glucose: progressRate * 100,
         lipids: progressRate * 100,
-        hemoglobin: progressRate * 100,
-        atrialFibrillation: progressRate * 100
+        hemoglobin: progressRate * 100
       };
     }
     
