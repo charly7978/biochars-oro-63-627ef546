@@ -12,6 +12,7 @@ import type { ProcessedSignal } from '../types/signal';
 /**
  * Servicio centralizado para procesamiento de señal PPG
  * Coordina el detector de dedo y el procesador de señal
+ * Implementa técnicas avanzadas de extracción multiespectral
  */
 export class PPGSignalService {
   private fingerDetector: FingerDetector;
@@ -21,10 +22,18 @@ export class PPGSignalService {
   private rgbSummary: {red: number, green: number, blue: number} = {red: 0, green: 0, blue: 0};
   private frameCount: number = 0;
   
+  // Nuevos parámetros para extracción multiespectral
+  private channelQualityHistory: {red: number[], green: number[], blue: number[]} = {
+    red: [],
+    green: [],
+    blue: []
+  };
+  private readonly CHANNEL_HISTORY_SIZE = 10;
+  
   constructor() {
     this.fingerDetector = new FingerDetector();
     this.signalProcessor = new SignalProcessor();
-    console.log("PPGSignalService: Servicio inicializado");
+    console.log("PPGSignalService: Servicio inicializado con extracción multiespectral adaptativa");
   }
   
   /**
@@ -33,7 +42,9 @@ export class PPGSignalService {
   public startProcessing(): void {
     this.isProcessing = true;
     this.frameCount = 0;
-    console.log("PPGSignalService: Procesamiento iniciado");
+    // Reiniciar historial de calidad de canales
+    this.channelQualityHistory = { red: [], green: [], blue: [] };
+    console.log("PPGSignalService: Procesamiento iniciado con extracción multiespectral");
   }
   
   /**
@@ -48,7 +59,7 @@ export class PPGSignalService {
   }
   
   /**
-   * Procesa un frame de imagen y extrae la señal PPG
+   * Procesa un frame de imagen y extrae la señal PPG con técnicas multiespectrales
    * @param imageData Datos de imagen del frame de la cámara
    * @returns Señal procesada o null si no se está procesando
    */
@@ -58,8 +69,15 @@ export class PPGSignalService {
     this.frameCount++;
     
     try {
-      // Extraer valores RGB del frame para análisis
-      const { rawValue, redValue, greenValue, blueValue } = this.extractFrameValues(imageData);
+      // Extracción multiespectral adaptativa
+      const { 
+        rawValue, 
+        redValue, 
+        greenValue, 
+        blueValue,
+        channelQualities,
+        multispectralValue
+      } = this.extractMultispectralValues(imageData);
       
       // Guardar valores RGB para análisis fisiológico
       this.rgbSummary = {
@@ -71,8 +89,8 @@ export class PPGSignalService {
       // Proporcionar valores RGB al procesador para análisis fisiológico
       this.signalProcessor.setRGBValues(redValue, greenValue);
       
-      // Aplicar filtro para obtener señal limpia
-      const filteredValue = this.signalProcessor.applySMAFilter(rawValue);
+      // Aplicar filtro para obtener señal limpia usando el valor multiespectral
+      const filteredValue = this.signalProcessor.applySMAFilter(multispectralValue);
       
       // Obtener calidad de señal del procesador
       const signalQuality = this.signalProcessor.getSignalQuality();
@@ -87,7 +105,7 @@ export class PPGSignalService {
       // Construir objeto de señal procesada
       const signal: ProcessedSignal = {
         timestamp: Date.now(),
-        rawValue: rawValue,
+        rawValue: multispectralValue, // Ahora usamos el valor multiespectral
         filteredValue: filteredValue,
         quality: signalQuality,
         fingerDetected: fingerDetectionResult.isFingerDetected,
@@ -98,12 +116,13 @@ export class PPGSignalService {
       
       // Log detallado cada 30 frames para análisis
       if (this.frameCount % 30 === 0) {
-        console.log("PPGSignalService: Análisis de calidad de señal", {
+        console.log("PPGSignalService: Análisis multiespectral", {
           calidad: signalQuality,
           dedoDetectado: fingerDetectionResult.isFingerDetected,
-          valorRojo: redValue,
-          valorVerde: greenValue,
-          ratioRG: redValue / Math.max(1, greenValue),
+          valorMultiespectral: multispectralValue.toFixed(2),
+          pesoRojo: channelQualities.redWeight.toFixed(2),
+          pesoVerde: channelQualities.greenWeight.toFixed(2),
+          pesoAzul: channelQualities.blueWeight.toFixed(2),
           frame: this.frameCount
         });
       }
@@ -117,13 +136,23 @@ export class PPGSignalService {
   }
   
   /**
-   * Extrae valores RGB promedio del frame para análisis
+   * Extrae valores RGB promedio del frame usando técnica multiespectral adaptativa
+   * Implementa ponderación dinámica basada en calidad de señal de cada canal
    */
-  private extractFrameValues(imageData: ImageData): { 
+  private extractMultispectralValues(imageData: ImageData): { 
     rawValue: number, 
     redValue: number, 
     greenValue: number,
-    blueValue: number
+    blueValue: number,
+    channelQualities: {
+      redQuality: number,
+      greenQuality: number,
+      blueQuality: number,
+      redWeight: number,
+      greenWeight: number,
+      blueWeight: number
+    },
+    multispectralValue: number
   } {
     const width = imageData.width;
     const height = imageData.height;
@@ -159,15 +188,148 @@ export class PPGSignalService {
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
     
-    // Valor principal: intensidad roja para análisis PPG
-    const rawValue = avgRed;
+    // Analizar calidad de cada canal
+    const redQuality = this.analyzeChannelQuality(avgRed, this.channelQualityHistory.red);
+    const greenQuality = this.analyzeChannelQuality(avgGreen, this.channelQualityHistory.green);
+    const blueQuality = this.analyzeChannelQuality(avgBlue, this.channelQualityHistory.blue);
+    
+    // Actualizar historial de calidad de canales
+    this.updateChannelQualityHistory(avgRed, avgGreen, avgBlue);
+    
+    // Calcular pesos dinámicos basados en calidad
+    const totalQuality = redQuality + greenQuality + blueQuality;
+    
+    // Establecer pesos predeterminados si no hay suficiente información de calidad
+    let redWeight = 0.7;    // Canal rojo tradicionalmente tiene más información PPG
+    let greenWeight = 0.25; // Canal verde tiene información complementaria
+    let blueWeight = 0.05;  // Canal azul típicamente tiene menos información PPG pero puede ayudar
+    
+    // Aplicar pesos dinámicos si hay suficiente información de calidad
+    if (totalQuality > 0) {
+      redWeight = redQuality / totalQuality;
+      greenWeight = greenQuality / totalQuality;
+      blueWeight = blueQuality / totalQuality;
+    }
+    
+    // Calcular valor multiespectral ponderado
+    const multispectralValue = (avgRed * redWeight) + (avgGreen * greenWeight) + (avgBlue * blueWeight);
     
     return {
-      rawValue,
+      rawValue: avgRed, // Mantenemos el valor rojo como referencia para compatibilidad
       redValue: avgRed,
       greenValue: avgGreen,
-      blueValue: avgBlue
+      blueValue: avgBlue,
+      channelQualities: {
+        redQuality,
+        greenQuality,
+        blueQuality,
+        redWeight,
+        greenWeight,
+        blueWeight
+      },
+      multispectralValue
     };
+  }
+  
+  /**
+   * Analiza la calidad de un canal basado en su variabilidad y otros factores
+   * @param currentValue Valor actual del canal
+   * @param history Historial de valores del canal
+   * @returns Puntuación de calidad del canal
+   */
+  private analyzeChannelQuality(currentValue: number, history: number[]): number {
+    if (history.length < 3) return 0.5; // Valor neutral si no hay suficiente historial
+    
+    // Calcular variación (deseable cierta variación para señal PPG)
+    const mean = history.reduce((sum, val) => sum + val, 0) / history.length;
+    const variance = history.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / history.length;
+    const stdDev = Math.sqrt(variance);
+    const coeffVar = stdDev / mean;
+    
+    // Una buena señal PPG debe tener cierta variabilidad (no demasiada, no demasiado poca)
+    let variabilityScore = 0;
+    if (coeffVar < 0.001) {
+      variabilityScore = 0; // Demasiado estable, probablemente no es PPG
+    } else if (coeffVar > 0.1) {
+      variabilityScore = 0; // Demasiado variable, probablemente ruido
+    } else {
+      // Óptimo alrededor de 0.01-0.02
+      variabilityScore = 1.0 - Math.abs(0.015 - coeffVar) / 0.015;
+      variabilityScore = Math.max(0, Math.min(1, variabilityScore));
+    }
+    
+    // Buscar patrones periódicos (señal de PPG es periódica)
+    const periodicityScore = this.detectPeriodicity(history);
+    
+    // Rango de intensidad adecuado (los canales con intensidad muy baja o muy alta son menos útiles)
+    let intensityScore = 0;
+    if (currentValue < 20 || currentValue > 235) {
+      intensityScore = 0; // Muy bajo o muy alto, probablemente saturado o sin señal
+    } else {
+      // Preferir valores en rango medio
+      intensityScore = 1.0 - Math.abs(128 - currentValue) / 128;
+      intensityScore = Math.max(0, Math.min(1, intensityScore));
+    }
+    
+    // Combinar factores para calidad final
+    return (variabilityScore * 0.5) + (periodicityScore * 0.3) + (intensityScore * 0.2);
+  }
+  
+  /**
+   * Detecta periodicidad en un canal, importante para identificar señal PPG
+   * @param history Historial de valores del canal
+   * @returns Puntuación de periodicidad
+   */
+  private detectPeriodicity(history: number[]): number {
+    if (history.length < 6) return 0;
+    
+    // Implementación simplificada de detección de periodicidad
+    // Utilizamos autocorrelación para detectar patrones repetitivos
+    const maxLag = Math.min(5, Math.floor(history.length / 2));
+    const correlations: number[] = [];
+    
+    // Calcular media para normalización
+    const mean = history.reduce((sum, val) => sum + val, 0) / history.length;
+    
+    // Calcular autocorrelación para diferentes retrasos
+    for (let lag = 1; lag <= maxLag; lag++) {
+      let correlation = 0;
+      for (let i = 0; i < history.length - lag; i++) {
+        correlation += (history[i] - mean) * (history[i + lag] - mean);
+      }
+      
+      // Normalizar
+      let denominator = 0;
+      for (let i = 0; i < history.length; i++) {
+        denominator += Math.pow(history[i] - mean, 2);
+      }
+      
+      if (denominator > 0) {
+        correlation /= denominator;
+        correlations.push(Math.abs(correlation));
+      } else {
+        correlations.push(0);
+      }
+    }
+    
+    // La mayor autocorrelación indica nivel de periodicidad
+    return correlations.length > 0 ? Math.max(...correlations) : 0;
+  }
+  
+  /**
+   * Actualiza el historial de calidad de canales
+   */
+  private updateChannelQualityHistory(red: number, green: number, blue: number): void {
+    this.channelQualityHistory.red.push(red);
+    this.channelQualityHistory.green.push(green);
+    this.channelQualityHistory.blue.push(blue);
+    
+    // Mantener tamaño limitado
+    if (this.channelQualityHistory.red.length > this.CHANNEL_HISTORY_SIZE) {
+      this.channelQualityHistory.red.shift();
+      this.channelQualityHistory.green.shift();
+      this.channelQualityHistory.blue.shift();
+    }
   }
   
   /**
@@ -212,6 +374,7 @@ export class PPGSignalService {
     this.stopProcessing();
     this.lastProcessedSignal = null;
     this.frameCount = 0;
+    this.channelQualityHistory = { red: [], green: [], blue: [] };
     console.log("PPGSignalService: Servicio reiniciado completamente");
   }
 }
