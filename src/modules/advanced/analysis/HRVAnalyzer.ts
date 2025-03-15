@@ -10,7 +10,7 @@ import { HRVFrequencyMetrics } from './utils/HRVFrequencyMetrics';
 import { HRVNonlinearMetrics } from './utils/HRVNonlinearMetrics';
 import { RRIntervalUtils } from './utils/RRIntervalUtils';
 
-export { HRVMetrics };
+export type { HRVMetrics };
 
 export class HRVAnalyzer {
   private rrHistory: number[] = [];
