@@ -1,4 +1,5 @@
-import { calculateAmplitude, findPeaksAndValleys } from '../../utils/vitalSignsUtils';
+
+import { findPeaksAndValleys, calculateAmplitude } from '../../utils/vitalSignsUtils';
 
 export class BloodPressureProcessor {
   // Tamaño de buffer ampliado para mayor estabilidad
