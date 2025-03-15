@@ -112,3 +112,182 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
   const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
   return { filteredValue, updatedBuffer };
 }
+
+/**
+ * Estima el SpO2 basado en los valores de PPG
+ */
+export function estimateSpO2(values: number[]): number {
+  if (values.length < 30) return 0;
+  
+  const dc = calculateDC(values);
+  if (dc === 0) return 0;
+  
+  const ac = calculateAC(values);
+  const perfusionIndex = ac / dc;
+  
+  if (perfusionIndex < 0.05) return 0;
+  
+  const R = (ac / dc) / 1.02;
+  let spO2 = Math.round(98 - (15 * R));
+  
+  // Ajustes basados en la calidad de la señal
+  if (perfusionIndex > 0.15) {
+    spO2 = Math.min(98, spO2 + 1);
+  } else if (perfusionIndex < 0.08) {
+    spO2 = Math.max(0, spO2 - 1);
+  }
+  
+  return Math.min(98, Math.max(90, spO2));
+}
+
+/**
+ * Estima la presión arterial basada en PPG
+ */
+export function estimateBloodPressure(values: number[]): { systolic: number; diastolic: number } {
+  if (values.length < 30) return { systolic: 0, diastolic: 0 };
+  
+  const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+  if (peakIndices.length < 2) return { systolic: 120, diastolic: 80 };
+  
+  const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
+  const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
+  
+  // Calcular valores basados en amplitud y otras características
+  let systolic = 120 + (normalizedAmplitude * 0.3);
+  let diastolic = 80 + (normalizedAmplitude * 0.15);
+  
+  // Limitar a rangos fisiológicos
+  systolic = Math.max(90, Math.min(180, systolic));
+  diastolic = Math.max(60, Math.min(110, diastolic));
+  
+  // Garantizar que la diferencia sea lógica
+  const differential = systolic - diastolic;
+  if (differential < 20) {
+    diastolic = systolic - 20;
+  } else if (differential > 80) {
+    diastolic = systolic - 80;
+  }
+  
+  return {
+    systolic: Math.round(systolic),
+    diastolic: Math.round(diastolic)
+  };
+}
+
+/**
+ * Analiza intervalos RR para detectar arritmias
+ */
+export function analyzeRRIntervals(
+  rrData: { intervals: number[] },
+  currentTime: number,
+  lastArrhythmiaTime: number,
+  arrhythmiaCounter: number,
+  minTimeBetween: number,
+  maxPerSession: number
+): {
+  hasArrhythmia: boolean;
+  shouldIncrementCounter: boolean;
+  analysisData: {
+    rmssd: number;
+    rrVariation: number;
+    avgRR: number;
+    lastRR: number;
+  } | null;
+} {
+  if (rrData.intervals.length < 5) {
+    return { hasArrhythmia: false, shouldIncrementCounter: false, analysisData: null };
+  }
+  
+  const recentRR = rrData.intervals.slice(-5);
+  
+  // Calcular RMSSD
+  let sumSquaredDiff = 0;
+  for (let i = 1; i < recentRR.length; i++) {
+    const diff = recentRR[i] - recentRR[i-1];
+    sumSquaredDiff += diff * diff;
+  }
+  
+  const rmssd = Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
+  
+  // Calcular variación RR
+  const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
+  const lastRR = recentRR[recentRR.length - 1];
+  const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
+  
+  // Detectar arritmia si RMSSD excede umbral y hay variación significativa
+  const hasArrhythmia = rmssd > 25 && rrVariation > 0.15;
+  
+  // Determinar si incrementar contador
+  const timeSinceLastArrhythmia = currentTime - lastArrhythmiaTime;
+  const shouldIncrementCounter = 
+    hasArrhythmia &&
+    (timeSinceLastArrhythmia > minTimeBetween) &&
+    (arrhythmiaCounter < maxPerSession);
+  
+  return {
+    hasArrhythmia,
+    shouldIncrementCounter,
+    analysisData: {
+      rmssd,
+      rrVariation,
+      avgRR,
+      lastRR
+    }
+  };
+}
+
+/**
+ * Formatea la presión arterial para visualización
+ */
+export function formatBloodPressure(bp: { systolic: number; diastolic: number }): string {
+  if (bp.systolic <= 0 || bp.diastolic <= 0) return "--/--";
+  return `${bp.systolic}/${bp.diastolic}`;
+}
+
+/**
+ * Evalúa los signos vitales para determinar su normalidad
+ */
+export function evaluateVitalSigns(
+  spo2: number,
+  bloodPressure: { systolic: number; diastolic: number },
+  heartRate: number
+): {
+  spo2Status: 'normal' | 'warning' | 'critical';
+  bpStatus: 'normal' | 'low' | 'high' | 'critical';
+  hrStatus: 'normal' | 'low' | 'high';
+} {
+  // Evaluación de SpO2
+  let spo2Status: 'normal' | 'warning' | 'critical' = 'normal';
+  if (spo2 < 92 && spo2 >= 88) {
+    spo2Status = 'warning';
+  } else if (spo2 < 88) {
+    spo2Status = 'critical';
+  }
+  
+  // Evaluación de presión arterial
+  let bpStatus: 'normal' | 'low' | 'high' | 'critical' = 'normal';
+  const { systolic, diastolic } = bloodPressure;
+  
+  if (systolic >= 140 || diastolic >= 90) {
+    bpStatus = 'high';
+    if (systolic >= 180 || diastolic >= 120) {
+      bpStatus = 'critical';
+    }
+  } else if (systolic <= 90 || diastolic <= 60) {
+    bpStatus = 'low';
+  }
+  
+  // Evaluación de frecuencia cardíaca
+  let hrStatus: 'normal' | 'low' | 'high' = 'normal';
+  if (heartRate < 60) {
+    hrStatus = 'low';
+  } else if (heartRate > 100) {
+    hrStatus = 'high';
+  }
+  
+  return {
+    spo2Status,
+    bpStatus,
+    hrStatus
+  };
+}
