@@ -8,7 +8,10 @@
 import { calculateAC, calculateDC } from '../../utils/signalProcessingUtils';
 
 export class SpO2Calculator {
+  private readonly SPO2_CALIBRATION_FACTOR = 1.02;
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
   private readonly SPO2_BUFFER_SIZE = 10;
+  
   private spo2Buffer: number[] = [];
 
   /**
@@ -17,62 +20,58 @@ export class SpO2Calculator {
    * @returns Valor de SpO2 calculado
    */
   public calculateSpO2(values: number[]): number {
-    // Sin suficientes datos, no calcular
     if (values.length < 30) {
+      if (this.spo2Buffer.length > 0) {
+        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+        return Math.max(0, lastValid - 1);
+      }
       return 0;
     }
 
     const dc = calculateDC(values);
     if (dc === 0) {
+      if (this.spo2Buffer.length > 0) {
+        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+        return Math.max(0, lastValid - 1);
+      }
       return 0;
     }
 
     const ac = calculateAC(values);
     
-    // No hay señal pulsátil suficiente
-    if (ac === 0 || ac/dc < 0.01) {
+    const perfusionIndex = ac / dc;
+    
+    if (perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
+      if (this.spo2Buffer.length > 0) {
+        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+        return Math.max(0, lastValid - 2);
+      }
       return 0;
     }
 
-    // Procesamiento directo de la señal PPG
-    const calculatedValue = this.processRawData(ac, dc);
+    const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
     
-    if (calculatedValue > 0) {
-      this.spo2Buffer.push(calculatedValue);
-      if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
-        this.spo2Buffer.shift();
-      }
-
-      // Promedio de valores recientes para estabilidad
-      if (this.spo2Buffer.length > 0) {
-        const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-        return Math.round(sum / this.spo2Buffer.length);
-      }
+    let spO2 = Math.round(98 - (15 * R));
+    
+    if (perfusionIndex > 0.15) {
+      spO2 = Math.min(98, spO2 + 1);
+    } else if (perfusionIndex < 0.08) {
+      spO2 = Math.max(0, spO2 - 1);
     }
 
-    return 0;
-  }
+    spO2 = Math.min(98, spO2);
 
-  /**
-   * Procesamiento de datos crudos de AC/DC
-   */
-  private processRawData(ac: number, dc: number): number {
-    if (dc === 0) return 0;
-    
-    const ratio = ac / dc;
-    
-    // Convertir ratio a SpO2 según principios físicos de absorción de luz
-    return Math.max(0, Math.min(100, this.convertRatioToSpO2(ratio)));
-  }
-  
-  /**
-   * Convertir el ratio AC/DC a valor de SpO2 según principios físicos
-   */
-  private convertRatioToSpO2(ratio: number): number {
-    if (ratio <= 0) return 0;
-    
-    // Conversión basada en física de absorción de luz
-    return Math.max(0, Math.min(100, 100 - (ratio * 25)));
+    this.spo2Buffer.push(spO2);
+    if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
+      this.spo2Buffer.shift();
+    }
+
+    if (this.spo2Buffer.length > 0) {
+      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
+      spO2 = Math.round(sum / this.spo2Buffer.length);
+    }
+
+    return spO2;
   }
 
   /**

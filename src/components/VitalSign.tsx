@@ -1,9 +1,8 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp, TestTube, Droplet } from 'lucide-react';
+import { ChevronUp, X } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
@@ -275,27 +274,7 @@ const VitalSign = ({
     if (label === 'HEMOGLOBINA' && typeof value === 'number') {
       return Math.round(value);
     }
-    
-    if (label === 'COLESTEROL/TRIGL.' && typeof value === 'string') {
-      return value;
-    }
-
-    if (label === 'GLUCOSA' && typeof value === 'number') {
-      return Math.round(value);
-    }
-    
     return value;
-  };
-
-  const getVitalSignIcon = (label: string) => {
-    switch(label) {
-      case 'GLUCOSA':
-        return <Droplet className="h-4 w-4 text-amber-400 opacity-70" />;
-      case 'COLESTEROL/TRIGL.':
-        return <TestTube className="h-4 w-4 text-blue-400 opacity-70" />;
-      default:
-        return null;
-    }
   };
 
   const riskLabel = getRiskLabel(label, value);
@@ -303,28 +282,17 @@ const VitalSign = ({
   const isArrhytmia = label === 'ARRITMIAS';
   const detailedInfo = getDetailedInfo(label, value);
   const formattedValue = displayValue(label, value);
-  const icon = getVitalSignIcon(label);
 
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className={cn(
-          "relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200",
-          highlighted && "bg-gradient-to-b from-blue-500/10 to-transparent"
-        )}>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1 flex items-center gap-1">
-            {icon}
+        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
             {label}
           </div>
           
-          <div className={cn(
-            "font-bold text-xl sm:text-2xl transition-all duration-300",
-            highlighted && "text-2xl sm:text-3xl"
-          )}>
-            <span className={cn(
-              "text-gradient-soft",
-              highlighted && "text-blue-500"
-            )}>
+          <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
+            <span className="text-gradient-soft">
               {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
