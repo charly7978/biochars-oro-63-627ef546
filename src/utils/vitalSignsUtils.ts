@@ -124,3 +124,13 @@ export const calculateAmplitude = (
   
   return count > 0 ? totalAmplitude / count : 0;
 };
+
+/**
+ * Formatea un valor de presión arterial
+ * @param systolic Valor sistólico
+ * @param diastolic Valor diastólico
+ */
+export const formatBloodPressure = (systolic: number, diastolic: number): string => {
+  if (systolic === 0 || diastolic === 0) return "--/--";
+  return `${Math.round(systolic)}/${Math.round(diastolic)}`;
+};

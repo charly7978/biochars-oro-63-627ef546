@@ -145,6 +145,10 @@ export const useSignalProcessor = () => {
     stop,
     processFrame,
     getSignalQuality,
-    isSignalValid
+    isSignalValid,
+    // Agregamos aliases para mantener compatibilidad con código existente
+    startProcessing: start,
+    stopProcessing: stop,
+    lastSignal: lastProcessedSignal
   };
 };

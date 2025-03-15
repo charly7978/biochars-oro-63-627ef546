@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -23,7 +24,7 @@ const Index = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
   
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
+  const { start, stop, lastProcessedSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
   const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
 
@@ -107,7 +108,7 @@ const Index = () => {
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
-    startProcessing();
+    start();
     setElapsedTime(0);
     
     if (measurementTimerRef.current) {
@@ -142,7 +143,7 @@ const Index = () => {
   const completeMonitoring = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
-    stopProcessing();
+    stop();
     resetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
@@ -163,7 +164,7 @@ const Index = () => {
   const stopMonitoring = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
-    stopProcessing();
+    stop();
     resetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
@@ -236,19 +237,19 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+    if (lastProcessedSignal && lastProcessedSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastProcessedSignal.filteredValue);
       setHeartRate(heartBeatResult.bpm);
       
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      const vitals = processVitalSigns(lastProcessedSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         setVitalSigns(vitals);
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
-      setSignalQuality(lastSignal.quality);
+      setSignalQuality(lastProcessedSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastProcessedSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -269,7 +270,7 @@ const Index = () => {
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
-            isFingerDetected={lastSignal?.fingerDetected}
+            isFingerDetected={lastProcessedSignal?.fingerDetected}
             signalQuality={signalQuality}
           />
         </div>
@@ -277,9 +278,9 @@ const Index = () => {
         <div className="relative z-10 h-full flex flex-col">
           <div className="flex-1">
             <PPGSignalMeter 
-              value={lastSignal?.filteredValue || 0}
-              quality={lastSignal?.quality || 0}
-              isFingerDetected={lastSignal?.fingerDetected || false}
+              value={lastProcessedSignal?.filteredValue || 0}
+              quality={lastProcessedSignal?.quality || 0}
+              isFingerDetected={lastProcessedSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
