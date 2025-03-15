@@ -30,6 +30,8 @@ export interface VitalSignsResult {
     lipids: number;
     overall: number;
   };
+  rawPPG?: number;
+  signalQuality: number;
 }
 
 /**
@@ -121,7 +123,9 @@ export class VitalSignsProcessor {
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
         overall: overallConfidence
-      }
+      },
+      rawPPG: ppgValue,
+      signalQuality: filtered
     };
     
     // Solo actualizar resultados válidos si hay suficiente confianza

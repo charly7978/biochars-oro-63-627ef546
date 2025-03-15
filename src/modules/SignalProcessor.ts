@@ -268,7 +268,8 @@ export class PPGSignalProcessor implements SignalProcessor {
             quality: 0,
             fingerDetected: false,
             roi: this.detectROI(redValue),
-            physicalSignatureScore: 0
+            physicalSignatureScore: 0,
+            rgbValues: { red: 0, green: 0, blue: 0 }
           };
           this.onSignalReady?.(calibrationSignal);
           return;
@@ -285,7 +286,8 @@ export class PPGSignalProcessor implements SignalProcessor {
           quality: 0,
           fingerDetected: false,
           roi: this.detectROI(redValue),
-          physicalSignatureScore: 0
+          physicalSignatureScore: 0,
+          rgbValues: { red: 0, green: 0, blue: 0 }
         };
         this.onSignalReady?.(poorSignal);
         return;
@@ -341,7 +343,8 @@ export class PPGSignalProcessor implements SignalProcessor {
         quality: adjustedQuality,
         fingerDetected: finalDetection,
         roi: this.detectROI(redValue),
-        physicalSignatureScore: physicalSignatureScore
+        physicalSignatureScore: physicalSignatureScore,
+        rgbValues: { red: redValue, green: 0, blue: 0 }
       };
 
       // Logs detallados para depuración
@@ -886,3 +889,4 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.onError?.(error);
   }
 }
+
