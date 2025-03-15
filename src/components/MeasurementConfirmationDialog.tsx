@@ -51,7 +51,7 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   // Valores formateados para mostrar
   const formattedHeartRate = formatValue(heartRate);
   const formattedSpo2 = formatValue(spo2);
-  const formattedPressure = pressure === '0/0' ? '--/--' : pressure;
+  const formattedPressure = pressure === '0/0' || pressure === '--/--' ? '--/--' : pressure;
   const formattedGlucose = formatValue(glucose);
   const formattedCholesterol = formatValue(cholesterol);
   const formattedTriglycerides = formatValue(triglycerides);
@@ -86,11 +86,11 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
           <div className="grid grid-cols-3 gap-2 text-center mb-2">
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Frecuencia Cardíaca</div>
-              <div className="font-bold text-lg">{formattedHeartRate} BPM</div>
+              <div className="font-bold text-lg">{formattedHeartRate} {formattedHeartRate !== '--' ? 'BPM' : ''}</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">SPO2</div>
-              <div className="font-bold text-lg">{formattedSpo2}%</div>
+              <div className="font-bold text-lg">{formattedSpo2}{formattedSpo2 !== '--' ? '%' : ''}</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Presión</div>
@@ -101,15 +101,15 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Glucosa</div>
-              <div className="font-bold text-lg">{formattedGlucose} mg/dL</div>
+              <div className="font-bold text-lg">{formattedGlucose}{formattedGlucose !== '--' ? ' mg/dL' : ''}</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Colesterol</div>
-              <div className="font-bold text-lg">{formattedCholesterol} mg/dL</div>
+              <div className="font-bold text-lg">{formattedCholesterol}{formattedCholesterol !== '--' ? ' mg/dL' : ''}</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Triglicéridos</div>
-              <div className="font-bold text-lg">{formattedTriglycerides} mg/dL</div>
+              <div className="font-bold text-lg">{formattedTriglycerides}{formattedTriglycerides !== '--' ? ' mg/dL' : ''}</div>
             </div>
           </div>
         </div>
