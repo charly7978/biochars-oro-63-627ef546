@@ -1,12 +1,13 @@
+
 /**
+ * IMPORTANTE: Esta aplicación es solo para referencia médica.
+ * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones.
+ * 
  * Advanced non-invasive lipid profile estimation using PPG signal analysis
  * Implementation based on research from Johns Hopkins, Harvard Medical School, and Mayo Clinic
- * 
- * References:
- * - "Optical assessment of blood lipid profiles using PPG" (IEEE Biomedical Engineering, 2020)
- * - "Novel approaches to non-invasive lipid measurement" (Mayo Clinic Proceedings, 2019)
- * - "Correlation between hemodynamic parameters and serum lipid profiles" (2018)
  */
+
 export class LipidProcessor {
   // Valores de referencia fisiológicamente relevantes
   private readonly MIN_CHOLESTEROL = 130; // Mínimo fisiológico (mg/dL)

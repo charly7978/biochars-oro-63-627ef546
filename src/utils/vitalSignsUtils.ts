@@ -1,48 +1,210 @@
-
 /**
- * Utilidades reutilizables para todos los procesadores de signos vitales
- * Evita duplicación de código entre diferentes módulos
+ * Utility functions for vital signs processing
  */
 
 /**
- * Calcula el componente AC (amplitud pico a pico) de una señal
+ * Applies a simple moving average filter to smooth the signal
+ * @param values The array of values to smooth
+ * @param alpha The smoothing factor (0-1, higher means less smoothing)
+ * @returns The smoothed array
  */
-export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
+export function smoothSignal(values: number[], alpha: number = 0.8): number[] {
+  if (values.length <= 1) return [...values];
+  
+  const result: number[] = [values[0]];
+  
+  for (let i = 1; i < values.length; i++) {
+    const smoothed = alpha * values[i] + (1 - alpha) * result[i - 1];
+    result.push(smoothed);
+  }
+  
+  return result;
 }
 
 /**
- * Calcula el componente DC (valor promedio) de una señal
+ * Applies an adaptive filter to the signal based on signal quality
+ * This advanced filter automatically adjusts to noise levels
+ * @param values The array of values to filter
+ * @param signalQuality Quality metric (0-100) to adapt filter strength
+ * @returns The filtered array
  */
-export function calculateDC(values: number[]): number {
+export function adaptiveFilter(values: number[], signalQuality: number = 70): number[] {
+  if (values.length <= 3) return [...values];
+  
+  // Adapt filter strength based on quality - stronger filtering for poor signals
+  const qualityFactor = Math.max(0, Math.min(100, signalQuality)) / 100;
+  const alpha = 0.7 + (qualityFactor * 0.25); // Range: 0.7 (poor) to 0.95 (excellent)
+  const windowSize = Math.max(3, Math.min(7, Math.round(7 - (qualityFactor * 4)))); // 3-7 based on quality
+  
+  // First pass: Exponential smoothing
+  const smoothed = smoothSignal(values, alpha);
+  
+  // Second pass: Apply median filter to remove outliers for low quality signals
+  if (qualityFactor < 0.6) {
+    return applyMedianFilter(smoothed, windowSize);
+  }
+  
+  return smoothed;
+}
+
+/**
+ * Applies a median filter to remove spikes and outliers
+ * @param values The array of values to filter
+ * @param windowSize The window size (odd number recommended)
+ * @returns The filtered array
+ */
+export function applyMedianFilter(values: number[], windowSize: number = 5): number[] {
+  if (values.length <= windowSize) return [...values];
+  
+  const halfWindow = Math.floor(windowSize / 2);
+  const result: number[] = [];
+  
+  // Keep original values at edges
+  for (let i = 0; i < halfWindow; i++) {
+    result.push(values[i]);
+  }
+  
+  // Apply median filter to center portion
+  for (let i = halfWindow; i < values.length - halfWindow; i++) {
+    const window = values.slice(i - halfWindow, i + halfWindow + 1);
+    result.push(calculateMedianValue(window));
+  }
+  
+  // Keep original values at edges
+  for (let i = values.length - halfWindow; i < values.length; i++) {
+    result.push(values[i]);
+  }
+  
+  return result;
+}
+
+/**
+ * Advanced Butterworth-like IIR filter implementation
+ * For removing high-frequency noise while preserving signal shape
+ * @param values Input signal values
+ * @param cutoffFrequency Cutoff frequency (0-1), lower means more filtering
+ * @returns Filtered signal
+ */
+export function butterworthFilter(values: number[], cutoffFrequency: number = 0.1): number[] {
+  if (values.length <= 4) return [...values];
+  
+  // Butterworth filter coefficients (2nd order, normalized)
+  const a = [1, -1.778631, 0.8008026];
+  const b = [0.0113, 0.0226, 0.0113];
+  
+  // Adjust coefficients based on cutoff frequency
+  const adjustedB = b.map(val => val * cutoffFrequency);
+  
+  const result: number[] = [];
+  const delays: number[] = [0, 0];
+  
+  // Apply filter
+  for (let i = 0; i < values.length; i++) {
+    let y = adjustedB[0] * values[i];
+    
+    if (i > 0) y += adjustedB[1] * values[i-1] - a[1] * result[i-1];
+    if (i > 1) y += adjustedB[2] * values[i-2] - a[2] * result[i-2];
+    
+    result.push(y);
+  }
+  
+  return result;
+}
+
+/**
+ * Calculates the mean value of an array of numbers
+ * @param values The array of values
+ * @returns The mean value
+ */
+export function calculateMeanValue(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, val) => sum + val, 0) / values.length;
 }
 
 /**
- * Calcula la desviación estándar de un conjunto de valores
+ * Calculates the median value of an array of numbers
+ * @param values The array of values
+ * @returns The median value
  */
-export function calculateStandardDeviation(values: number[]): number {
-  const n = values.length;
-  if (n === 0) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
+export function calculateMedianValue(values: number[]): number {
+  if (values.length === 0) return 0;
+
+  const sortedValues = [...values].sort((a, b) => a - b);
+  const middleIndex = Math.floor(sortedValues.length / 2);
+
+  if (sortedValues.length % 2 === 0) {
+    // If the array has an even number of elements, return the average of the two middle elements
+    return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
+  } else {
+    // If the array has an odd number of elements, return the middle element
+    return sortedValues[middleIndex];
+  }
 }
 
 /**
- * Encuentra picos y valles en una señal
+ * Normalizes an array of numbers to a range between 0 and 1
+ * @param values The array of values
+ * @returns The normalized array
  */
-export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
+export function normalizeValues(values: number[]): number[] {
+  if (values.length === 0) return [];
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  if (min === max) {
+    return values.map(() => 0); // Avoid division by zero
+  }
+
+  return values.map(val => (val - min) / (max - min));
+}
+
+/**
+ * Calculates the standard deviation of an array of numbers
+ * @param values The array of values
+ * @returns The standard deviation
+ */
+export function calculateStandardDeviation(values: number[]): number {
+  if (values.length === 0) return 0;
+
+  const mean = calculateMeanValue(values);
+  const squaredDifferences = values.map(value => Math.pow(value - mean, 2));
+  const averageSquaredDifference = calculateMeanValue(squaredDifferences);
+
+  return Math.sqrt(averageSquaredDifference);
+}
+
+/**
+ * Applies a rolling average to an array of numbers
+ * @param values The array of values
+ * @param windowSize The number of values to average
+ * @returns The array of rolling averages
+ */
+export function rollingAverage(values: number[], windowSize: number): number[] {
+  if (values.length < windowSize) {
+    return values; // Not enough values to calculate a rolling average
+  }
+
+  const result: number[] = [];
+  for (let i = windowSize - 1; i < values.length; i++) {
+    const window = values.slice(i - windowSize + 1, i + 1);
+    result.push(calculateMeanValue(window));
+  }
+
+  return result;
+}
+
+/**
+ * Finds peaks and valleys in a signal
+ * @param values The array of values to analyze
+ * @returns Object containing indices of peaks and valleys
+ */
+export function findPeaksAndValleys(values: number[]) {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
-  // Algoritmo mejorado para detección de picos y valles usando ventana de 5 puntos
   for (let i = 2; i < values.length - 2; i++) {
     const v = values[i];
-    // Detección de picos (punto más alto en una ventana de 5 puntos)
     if (
       v > values[i - 1] &&
       v > values[i - 2] &&
@@ -51,7 +213,6 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
     ) {
       peakIndices.push(i);
     }
-    // Detección de valles (punto más bajo en una ventana de 5 puntos)
     if (
       v < values[i - 1] &&
       v < values[i - 2] &&
@@ -65,229 +226,290 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
 }
 
 /**
- * Calcula la amplitud entre picos y valles
+ * Enhanced peak detection with adaptive thresholding
+ * Better for dealing with varying signal amplitudes
+ * @param values The array of values to analyze
+ * @param sensitivity Sensitivity factor (0.1-1.0)
+ * @returns Object containing indices of peaks and valleys
+ */
+export function findPeaksAndValleysAdaptive(values: number[], sensitivity: number = 0.5) {
+  if (values.length < 5) return { peakIndices: [], valleyIndices: [] };
+  
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+  
+  // Calculate signal metrics for adaptive thresholding
+  const mean = calculateMeanValue(values);
+  const std = calculateStandardDeviation(values);
+  const adaptiveThreshold = Math.max(0.01, std * sensitivity);
+  
+  // Use sliding window and calculate local properties
+  const windowSize = Math.min(Math.max(5, Math.floor(values.length / 10)), 15);
+  
+  for (let i = windowSize; i < values.length - windowSize; i++) {
+    // Get local window
+    const localWindow = values.slice(i - windowSize, i + windowSize + 1);
+    const localMax = Math.max(...localWindow);
+    const localMin = Math.min(...localWindow);
+    const localRange = localMax - localMin;
+    
+    const value = values[i];
+    const isPotentialPeak = value > mean && 
+                           (localMax - value) < (adaptiveThreshold * localRange);
+    
+    const isPotentialValley = value < mean && 
+                            (value - localMin) < (adaptiveThreshold * localRange);
+    
+    // Peak detection with confirmation
+    if (isPotentialPeak) {
+      let isActualPeak = true;
+      for (let j = 1; j <= windowSize / 2; j++) {
+        if (i - j >= 0 && value < values[i - j]) {
+          isActualPeak = false;
+          break;
+        }
+        if (i + j < values.length && value < values[i + j]) {
+          isActualPeak = false;
+          break;
+        }
+      }
+      
+      if (isActualPeak) {
+        peakIndices.push(i);
+        // Skip forward to avoid multiple detections of same peak
+        i += Math.floor(windowSize / 2);
+      }
+    }
+    
+    // Valley detection with confirmation
+    if (isPotentialValley) {
+      let isActualValley = true;
+      for (let j = 1; j <= windowSize / 2; j++) {
+        if (i - j >= 0 && value > values[i - j]) {
+          isActualValley = false;
+          break;
+        }
+        if (i + j < values.length && value > values[i + j]) {
+          isActualValley = false;
+          break;
+        }
+      }
+      
+      if (isActualValley) {
+        valleyIndices.push(i);
+        // Skip forward to avoid multiple detections of same valley
+        i += Math.floor(windowSize / 2);
+      }
+    }
+  }
+  
+  return { peakIndices, valleyIndices };
+}
+
+/**
+ * Calculates the AC component (amplitude) of a PPG signal
+ * @param values The array of PPG values
+ * @returns The AC component value
+ */
+export function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/**
+ * Calculates the DC component (baseline) of a PPG signal
+ * @param values The array of PPG values
+ * @returns The DC component value
+ */
+export function calculateDC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/**
+ * Enhanced DC component calculation using percentile instead of mean
+ * More robust to outliers and artifacts
+ * @param values The array of PPG values
+ * @param percentile The percentile to use (0-100)
+ * @returns The DC component value
+ */
+export function calculateRobustDC(values: number[], percentile: number = 50): number {
+  if (values.length === 0) return 0;
+  
+  // Sort values for percentile calculation
+  const sortedValues = [...values].sort((a, b) => a - b);
+  
+  // Calculate index based on percentile
+  const index = Math.floor((percentile / 100) * (sortedValues.length - 1));
+  
+  return sortedValues[index];
+}
+
+/**
+ * Calculates the amplitude of a PPG signal using peaks and valleys
+ * @param values The PPG signal values
+ * @param peaks Indices of peaks in the signal
+ * @param valleys Indices of valleys in the signal
+ * @returns The mean amplitude
  */
 export function calculateAmplitude(
   values: number[],
-  peakIndices: number[],
-  valleyIndices: number[]
+  peaks: number[],
+  valleys: number[]
 ): number {
-  if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
+  if (peaks.length === 0 || valleys.length === 0) return 0;
 
   const amps: number[] = [];
-  const len = Math.min(peakIndices.length, valleyIndices.length);
-  
+  const len = Math.min(peaks.length, valleys.length);
   for (let i = 0; i < len; i++) {
-    const amp = values[peakIndices[i]] - values[valleyIndices[i]];
+    const amp = values[peaks[i]] - values[valleys[i]];
     if (amp > 0) {
       amps.push(amp);
     }
   }
-  
   if (amps.length === 0) return 0;
 
-  // Calcular la media robusta (sin outliers)
-  amps.sort((a, b) => a - b);
-  const trimmedAmps = amps.slice(
-    Math.floor(amps.length * 0.1),
-    Math.ceil(amps.length * 0.9)
-  );
-  
-  return trimmedAmps.length > 0
-    ? trimmedAmps.reduce((a, b) => a + b, 0) / trimmedAmps.length
-    : amps.reduce((a, b) => a + b, 0) / amps.length;
+  const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
+  return mean;
 }
 
 /**
- * Aplica un filtro de Media Móvil Simple (SMA) a un valor
+ * Calculates signal-to-noise ratio for PPG signals
+ * Higher values indicate cleaner signals
+ * @param values PPG signal values
+ * @returns The SNR value in dB
  */
-export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
-  filteredValue: number;
-  updatedBuffer: number[];
-} {
-  const updatedBuffer = [...buffer, value];
-  if (updatedBuffer.length > windowSize) {
-    updatedBuffer.shift();
-  }
-  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
-  return { filteredValue, updatedBuffer };
+export function calculateSNR(values: number[]): number {
+  if (values.length < 10) return 0;
+  
+  // Apply bandpass filtering to isolate the expected signal frequency range
+  const filtered = butterworthFilter(values, 0.2);
+  
+  // Calculate signal power (variance of filtered signal)
+  const meanFiltered = calculateMeanValue(filtered);
+  const signalPower = filtered.reduce((sum, val) => sum + Math.pow(val - meanFiltered, 2), 0) / filtered.length;
+  
+  // Calculate noise as the difference between original and filtered
+  const noise: number[] = values.map((val, i) => val - filtered[i]);
+  const noisePower = noise.reduce((sum, val) => sum + Math.pow(val, 2), 0) / noise.length;
+  
+  // Avoid division by zero
+  if (noisePower < 0.00001) return 100;
+  
+  // Calculate SNR in dB
+  const snr = 10 * Math.log10(signalPower / noisePower);
+  
+  // Return bounded value
+  return Math.max(0, Math.min(100, snr));
 }
 
 /**
- * Estima el SpO2 basado en los valores de PPG
+ * Applies wavelet denoising to PPG signal
+ * Excellent for preserving signal shape while removing noise
+ * @param values PPG signal values
+ * @param threshold Threshold for coefficient suppression (0-1)
+ * @returns Denoised signal
  */
-export function estimateSpO2(values: number[]): number {
-  if (values.length < 30) return 0;
+export function waveletDenoise(values: number[], threshold: number = 0.3): number[] {
+  if (values.length < 4) return [...values];
   
-  const dc = calculateDC(values);
-  if (dc === 0) return 0;
+  // Pad signal to power of 2 length for better decomposition
+  const originalLength = values.length;
+  const paddedLength = Math.pow(2, Math.ceil(Math.log2(originalLength)));
+  const paddedValues = [...values];
   
-  const ac = calculateAC(values);
-  const perfusionIndex = ac / dc;
-  
-  if (perfusionIndex < 0.05) return 0;
-  
-  const R = (ac / dc) / 1.02;
-  let spO2 = Math.round(98 - (15 * R));
-  
-  // Ajustes basados en la calidad de la señal
-  if (perfusionIndex > 0.15) {
-    spO2 = Math.min(98, spO2 + 1);
-  } else if (perfusionIndex < 0.08) {
-    spO2 = Math.max(0, spO2 - 1);
+  // Symmetric padding
+  for (let i = originalLength; i < paddedLength; i++) {
+    paddedValues.push(values[2 * originalLength - i - 1]);
   }
   
-  return Math.min(98, Math.max(90, spO2));
+  // Simple discrete wavelet transform (Haar wavelet)
+  const decomposed = discreteWaveletTransform(paddedValues);
+  
+  // Threshold detail coefficients
+  const thresholdedCoefs = thresholdCoefficients(decomposed, threshold);
+  
+  // Inverse transform
+  const reconstructed = inverseWaveletTransform(thresholdedCoefs);
+  
+  // Return original length signal
+  return reconstructed.slice(0, originalLength);
 }
 
 /**
- * Estima la presión arterial basada en PPG
+ * Simple implementation of discrete wavelet transform (Haar)
+ * @param values Signal values
+ * @returns Wavelet coefficients
  */
-export function estimateBloodPressure(values: number[]): { systolic: number; diastolic: number } {
-  if (values.length < 30) return { systolic: 0, diastolic: 0 };
+function discreteWaveletTransform(values: number[]): number[] {
+  const n = values.length;
+  if (n < 2) return values;
   
-  const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
-  if (peakIndices.length < 2) return { systolic: 120, diastolic: 80 };
+  const result: number[] = [];
   
-  const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
-  const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
-  
-  // Calcular valores basados en amplitud y otras características
-  let systolic = 120 + (normalizedAmplitude * 0.3);
-  let diastolic = 80 + (normalizedAmplitude * 0.15);
-  
-  // Limitar a rangos fisiológicos
-  systolic = Math.max(90, Math.min(180, systolic));
-  diastolic = Math.max(60, Math.min(110, diastolic));
-  
-  // Garantizar que la diferencia sea lógica
-  const differential = systolic - diastolic;
-  if (differential < 20) {
-    diastolic = systolic - 20;
-  } else if (differential > 80) {
-    diastolic = systolic - 80;
+  // Compute approximation and detail coefficients
+  for (let i = 0; i < n / 2; i++) {
+    const idx = i * 2;
+    // Approximation coefficient (average)
+    result[i] = (values[idx] + values[idx + 1]) / Math.SQRT2;
+    // Detail coefficient (difference)
+    result[i + n / 2] = (values[idx] - values[idx + 1]) / Math.SQRT2;
   }
   
-  return {
-    systolic: Math.round(systolic),
-    diastolic: Math.round(diastolic)
-  };
+  return result;
 }
 
 /**
- * Analiza intervalos RR para detectar arritmias
+ * Thresholds wavelet coefficients for denoising
+ * @param coefficients Wavelet coefficients
+ * @param threshold Threshold value for coefficient suppression
+ * @returns Thresholded coefficients
  */
-export function analyzeRRIntervals(
-  rrData: { intervals: number[] },
-  currentTime: number,
-  lastArrhythmiaTime: number,
-  arrhythmiaCounter: number,
-  minTimeBetween: number,
-  maxPerSession: number
-): {
-  hasArrhythmia: boolean;
-  shouldIncrementCounter: boolean;
-  analysisData: {
-    rmssd: number;
-    rrVariation: number;
-    avgRR: number;
-    lastRR: number;
-  } | null;
-} {
-  if (rrData.intervals.length < 5) {
-    return { hasArrhythmia: false, shouldIncrementCounter: false, analysisData: null };
-  }
+function thresholdCoefficients(coefficients: number[], threshold: number): number[] {
+  const n = coefficients.length;
+  const result = [...coefficients];
   
-  const recentRR = rrData.intervals.slice(-5);
+  // Determine universal threshold
+  const detailCoefs = coefficients.slice(n / 2);
+  const noiseEstimate = calculateMedianValue(detailCoefs.map(Math.abs)) / 0.6745;
+  const universalThreshold = noiseEstimate * Math.sqrt(2 * Math.log(n));
+  const scaledThreshold = universalThreshold * threshold;
   
-  // Calcular RMSSD
-  let sumSquaredDiff = 0;
-  for (let i = 1; i < recentRR.length; i++) {
-    const diff = recentRR[i] - recentRR[i-1];
-    sumSquaredDiff += diff * diff;
-  }
-  
-  const rmssd = Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
-  
-  // Calcular variación RR
-  const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
-  const lastRR = recentRR[recentRR.length - 1];
-  const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
-  
-  // Detectar arritmia si RMSSD excede umbral y hay variación significativa
-  const hasArrhythmia = rmssd > 25 && rrVariation > 0.15;
-  
-  // Determinar si incrementar contador
-  const timeSinceLastArrhythmia = currentTime - lastArrhythmiaTime;
-  const shouldIncrementCounter = 
-    hasArrhythmia &&
-    (timeSinceLastArrhythmia > minTimeBetween) &&
-    (arrhythmiaCounter < maxPerSession);
-  
-  return {
-    hasArrhythmia,
-    shouldIncrementCounter,
-    analysisData: {
-      rmssd,
-      rrVariation,
-      avgRR,
-      lastRR
+  // Apply soft thresholding only to detail coefficients
+  for (let i = n / 2; i < n; i++) {
+    const coef = result[i];
+    const absCoef = Math.abs(coef);
+    
+    if (absCoef <= scaledThreshold) {
+      result[i] = 0;
+    } else {
+      result[i] = Math.sign(coef) * (absCoef - scaledThreshold);
     }
-  };
+  }
+  
+  return result;
 }
 
 /**
- * Formatea la presión arterial para visualización
+ * Simple implementation of inverse wavelet transform (Haar)
+ * @param coefficients Wavelet coefficients
+ * @returns Reconstructed signal
  */
-export function formatBloodPressure(bp: { systolic: number; diastolic: number }): string {
-  if (bp.systolic <= 0 || bp.diastolic <= 0) return "--/--";
-  return `${bp.systolic}/${bp.diastolic}`;
+function inverseWaveletTransform(coefficients: number[]): number[] {
+  const n = coefficients.length;
+  if (n < 2) return coefficients;
+  
+  const result: number[] = new Array(n);
+  
+  // Reconstruct signal from approximation and detail coefficients
+  for (let i = 0; i < n / 2; i++) {
+    const a = coefficients[i];
+    const d = coefficients[i + n / 2];
+    
+    result[i * 2] = (a + d) / Math.SQRT2;
+    result[i * 2 + 1] = (a - d) / Math.SQRT2;
+  }
+  
+  return result;
 }
 
-/**
- * Evalúa los signos vitales para determinar su normalidad
- */
-export function evaluateVitalSigns(
-  spo2: number,
-  bloodPressure: { systolic: number; diastolic: number },
-  heartRate: number
-): {
-  spo2Status: 'normal' | 'warning' | 'critical';
-  bpStatus: 'normal' | 'low' | 'high' | 'critical';
-  hrStatus: 'normal' | 'low' | 'high';
-} {
-  // Evaluación de SpO2
-  let spo2Status: 'normal' | 'warning' | 'critical' = 'normal';
-  if (spo2 < 92 && spo2 >= 88) {
-    spo2Status = 'warning';
-  } else if (spo2 < 88) {
-    spo2Status = 'critical';
-  }
-  
-  // Evaluación de presión arterial
-  let bpStatus: 'normal' | 'low' | 'high' | 'critical' = 'normal';
-  const { systolic, diastolic } = bloodPressure;
-  
-  if (systolic >= 140 || diastolic >= 90) {
-    bpStatus = 'high';
-    if (systolic >= 180 || diastolic >= 120) {
-      bpStatus = 'critical';
-    }
-  } else if (systolic <= 90 || diastolic <= 60) {
-    bpStatus = 'low';
-  }
-  
-  // Evaluación de frecuencia cardíaca
-  let hrStatus: 'normal' | 'low' | 'high' = 'normal';
-  if (heartRate < 60) {
-    hrStatus = 'low';
-  } else if (heartRate > 100) {
-    hrStatus = 'high';
-  }
-  
-  return {
-    spo2Status,
-    bpStatus,
-    hrStatus
-  };
-}

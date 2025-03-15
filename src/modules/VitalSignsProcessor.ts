@@ -1,4 +1,10 @@
 
+/**
+ * IMPORTANTE: Esta aplicación es solo para referencia médica.
+ * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones.
+ */
+
 import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 
 /**
@@ -10,17 +16,6 @@ import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from 
  */
 export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
-  
-  // Exponemos las constantes originales para compatibilidad
-  private readonly WINDOW_SIZE = 300;
-  private readonly SPO2_CALIBRATION_FACTOR = 1.02;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
-  private readonly SPO2_WINDOW = 10;
-  private readonly SMA_WINDOW = 3;
-  private readonly RR_WINDOW_SIZE = 5;
-  private readonly RMSSD_THRESHOLD = 25;
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 3000;
-  private readonly PEAK_THRESHOLD = 0.3;
   
   /**
    * Constructor que inicializa el procesador interno refactorizado
@@ -52,34 +47,6 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.processor.fullReset();
-  }
-  
-  /**
-   * Verifica si está en proceso de calibración
-   */
-  public isCurrentlyCalibrating(): boolean {
-    return this.processor.isCurrentlyCalibrating();
-  }
-
-  /**
-   * Obtiene el progreso actual de calibración
-   */
-  public getCalibrationProgress() {
-    return this.processor.getCalibrationProgress();
-  }
-  
-  /**
-   * Inicia el proceso de calibración
-   */
-  public startCalibration(): void {
-    this.processor.startCalibration();
-  }
-  
-  /**
-   * Fuerza la finalización del proceso de calibración
-   */
-  public forceCalibrationCompletion(): void {
-    this.processor.forceCalibrationCompletion();
   }
 }
 
