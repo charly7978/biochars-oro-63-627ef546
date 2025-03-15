@@ -212,13 +212,13 @@ const CameraView = ({
             // Aumentamos el brillo para mejor detección de cambios en la sangre
             if (capabilities.brightness && capabilities.brightness.max) {
               const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.2 }); // Aumentado de 0.7
+              advancedConstraints.push({ brightness: maxBrightness * 0.8 }); // Aumentado de 0.7
             }
             
             // Aumentamos el contraste para resaltar diferencias en la señal
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.9 }); // Aumentado de 0.6
+              advancedConstraints.push({ contrast: maxContrast * 1.2 }); // Aumentado de 0.6
             }
 
             if (advancedConstraints.length > 0) {
