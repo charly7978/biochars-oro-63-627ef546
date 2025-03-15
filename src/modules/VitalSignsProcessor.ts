@@ -17,7 +17,6 @@ import { FingerDetector } from './finger-detection/FingerDetector';
 export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
   private fingerDetector: FingerDetector;
-  private lastRgbValues: {red: number, green: number} = {red: 0, green: 0};
   
   /**
    * Constructor que inicializa el procesador interno refactorizado y el detector de dedo
@@ -25,32 +24,22 @@ export class VitalSignsProcessor {
   constructor() {
     this.processor = new NewVitalSignsProcessor();
     this.fingerDetector = new FingerDetector();
-    console.log("VitalSignsProcessor: Inicializado con detector de dedo anti-falsos-positivos");
+    console.log("VitalSignsProcessor: Inicializado con detector de dedo centralizado en FingerDetector");
   }
   
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
    * Utiliza FingerDetector como única fuente para detección de dedos
-   * MEJORADO con verificación más estricta anti-falsos-positivos
    */
   public processSignal(
     ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null },
-    rgbValues?: {red: number, green: number}
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
   ) {
-    // Almacenar valores RGB si están disponibles
-    if (rgbValues) {
-      this.lastRgbValues = rgbValues;
-    }
-    
-    // Verificar calidad de señal con el detector de dedo centralizado y valores RGB
-    const fingerDetectionResult = this.fingerDetector.processQuality(
-      ppgValue, 
-      this.lastRgbValues.red, 
-      this.lastRgbValues.green
-    );
+    // Verificar calidad de señal con el detector de dedo centralizado
+    const fingerDetectionResult = this.fingerDetector.processQuality(ppgValue);
     
     // Solo procesar señales cuando el dedo está realmente detectado
+    // Reducimos el umbral para evitar bloquear la detección del dedo
     if (fingerDetectionResult.isFingerDetected) {
       return this.processor.processSignal(ppgValue, rrData);
     }
@@ -73,7 +62,6 @@ export class VitalSignsProcessor {
    */
   public reset() {
     this.fingerDetector.reset();
-    this.lastRgbValues = {red: 0, green: 0};
     return this.processor.reset();
   }
   
@@ -82,7 +70,6 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.fingerDetector.reset();
-    this.lastRgbValues = {red: 0, green: 0};
     this.processor.fullReset();
     console.log("VitalSignsProcessor: Reset completo realizado");
   }
