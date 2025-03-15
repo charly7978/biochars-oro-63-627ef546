@@ -23,19 +23,19 @@ export interface NonLinearMetrics {
   pnnX: number;
 }
 
-// Added interfaces for HRV analysis
+// HRV analysis interfaces
 export interface HRVMetrics {
-  // Dominio del tiempo
+  // Time domain
   rmssd: number;       // Root Mean Square of Successive Differences
   sdnn: number;        // Standard Deviation of NN intervals
   pnn50: number;       // Proportion of NN50
   
-  // Dominio de la frecuencia
+  // Frequency domain
   lf: number;          // Low Frequency power
   hf: number;          // High Frequency power
   lfhf: number;        // LF/HF ratio
   
-  // Medidas no lineales
+  // Nonlinear measures
   sd1: number;         // Poincaré plot standard deviation perpendicular to line of identity
   sd2: number;         // Poincaré plot standard deviation along line of identity
   entropy: number;     // Approximate entropy
