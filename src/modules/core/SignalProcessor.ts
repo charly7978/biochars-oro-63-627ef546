@@ -16,21 +16,24 @@ export interface ProcessedSignal {
 export class SignalProcessor {
   private readonly BUFFER_SIZE = 300;
   private readonly SMA_WINDOW_SIZE = 5;
-  private readonly QUALITY_THRESHOLD = 0.08; // Aumentado de 0.05 a 0.08 para reducir falsos positivos
-  private readonly FINGER_DETECTION_THRESHOLD = 35; // Aumentado de 30 a 35
+  private readonly QUALITY_THRESHOLD = 0.15; // Aumentado significativamente para reducir falsos positivos
+  private readonly FINGER_DETECTION_THRESHOLD = 50; // Umbral mucho más alto
   
   private ppgValues: number[] = [];
   private smaBuffer: number[] = [];
   private lastProcessedTime: number = 0;
   private consecutiveFingerFrames: number = 0;
-  private readonly MIN_FINGER_FRAMES = 5; // Aumentado de 3 a 5 para mayor estabilidad
-  private readonly MAX_QUALITY_VARIANCE = 15; // Nuevo umbral para varianza de calidad
-  private qualityHistory: number[] = []; // Historial de calidad para análisis de estabilidad
-  private readonly QUALITY_HISTORY_SIZE = 10; // Tamaño del historial
+  private readonly MIN_FINGER_FRAMES = 8; // Exigimos más frames de confirmación
+  private readonly MAX_QUALITY_VARIANCE = 8; // Umbral más estricto
+  private qualityHistory: number[] = [];
+  private readonly QUALITY_HISTORY_SIZE = 15; // Mayor historial para estabilidad
+  private signalDiffHistory: number[] = []; // Nuevo: historial de cambios en la señal
+  private readonly SIGNAL_DIFF_HISTORY_SIZE = 10;
+  private readonly MIN_SIGNAL_VARIATION = 0.5; // Nuevo: requerimiento mínimo de variación
   
   /**
    * Procesa una señal PPG (fotopletismografía) y devuelve valores filtrados y análisis
-   * Versión recalibrada para reducir falsos positivos
+   * Versión recalibrada para reducir drásticamente los falsos positivos
    */
   public processSignal(value: number): ProcessedSignal {
     // Aplicar filtro SMA para suavizar la señal
@@ -52,17 +55,39 @@ export class SignalProcessor {
       this.qualityHistory.shift();
     }
     
-    // Detección de dedo en el sensor con análisis de estabilidad
+    // Actualizar historial de cambios en la señal (nueva lógica)
+    if (this.ppgValues.length >= 2) {
+      const diff = Math.abs(this.ppgValues[this.ppgValues.length - 1] - this.ppgValues[this.ppgValues.length - 2]);
+      this.signalDiffHistory.push(diff);
+      if (this.signalDiffHistory.length > this.SIGNAL_DIFF_HISTORY_SIZE) {
+        this.signalDiffHistory.shift();
+      }
+    }
+    
+    // Detección de dedo en el sensor con análisis de estabilidad y variación
     let fingerDetected = false;
     
-    if (quality > this.QUALITY_THRESHOLD && this.isQualityStable()) {
+    if (quality > this.QUALITY_THRESHOLD && this.isQualityStable() && this.hasSignificantVariation()) {
       this.consecutiveFingerFrames++;
       if (this.consecutiveFingerFrames >= this.MIN_FINGER_FRAMES) {
         fingerDetected = true;
       }
     } else {
-      // Degradación gradual para evitar parpadeo
-      this.consecutiveFingerFrames = Math.max(0, this.consecutiveFingerFrames - 2);
+      // Degradación rápida para evitar falsos positivos
+      this.consecutiveFingerFrames = Math.max(0, this.consecutiveFingerFrames - 3);
+    }
+    
+    // Log detallado para depuración
+    if (this.ppgValues.length % 30 === 0) {
+      console.log("SignalProcessor: Análisis de detección", {
+        quality,
+        threshold: this.QUALITY_THRESHOLD,
+        estable: this.isQualityStable(),
+        variacionSignificativa: this.hasSignificantVariation(),
+        framesConsecutivos: this.consecutiveFingerFrames,
+        framesRequeridos: this.MIN_FINGER_FRAMES,
+        dedoDetectado: fingerDetected
+      });
     }
     
     // Actualizar tiempo de procesamiento
@@ -77,14 +102,71 @@ export class SignalProcessor {
   }
   
   /**
+   * NUEVA FUNCIÓN: Verifica si hay variación significativa en la señal
+   * Esto es crítico para distinguir un dedo real de objetos estáticos
+   */
+  private hasSignificantVariation(): boolean {
+    if (this.signalDiffHistory.length < this.SIGNAL_DIFF_HISTORY_SIZE/2) {
+      return false;
+    }
+    
+    // Calcular variación promedio
+    const avgVariation = this.signalDiffHistory.reduce((sum, diff) => sum + diff, 0) / this.signalDiffHistory.length;
+    
+    // Requerir variación mínima (un dedo real siempre muestra pulsaciones)
+    const hasVariation = avgVariation > this.MIN_SIGNAL_VARIATION;
+    
+    // Verificar también periodicidad (característica clave de PPG real)
+    const hasPeriodicPattern = this.detectPeriodicPattern();
+    
+    return hasVariation && hasPeriodicPattern;
+  }
+  
+  /**
+   * NUEVA FUNCIÓN: Detecta patrones periódicos típicos de pulsaciones cardíacas
+   */
+  private detectPeriodicPattern(): boolean {
+    if (this.ppgValues.length < 30) return false;
+    
+    // Obtener valores recientes
+    const recentValues = this.ppgValues.slice(-30);
+    
+    // Calcular autocorrelación simple (buscar periodicidad)
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    let maxCorrelation = 0;
+    
+    // Buscar correlaciones en diferentes intervalos (aproximadamente 40-180 BPM)
+    for (let lag = 5; lag <= 15; lag++) {
+      let correlation = 0;
+      let n = 0;
+      
+      for (let i = 0; i < recentValues.length - lag; i++) {
+        correlation += (recentValues[i] - mean) * (recentValues[i + lag] - mean);
+        n++;
+      }
+      
+      if (n > 0) {
+        correlation /= n;
+        maxCorrelation = Math.max(maxCorrelation, correlation);
+      }
+    }
+    
+    // Normalizar y verificar si hay suficiente correlación
+    const variance = recentValues.reduce((sum, val) => sum + (val - mean) * (val - mean), 0) / recentValues.length;
+    const normalizedCorrelation = variance > 0 ? maxCorrelation / variance : 0;
+    
+    return normalizedCorrelation > 0.2; // Umbral de correlación significativa
+  }
+  
+  /**
    * Verifica si la calidad de la señal es estable
-   * Nuevo método para reducir falsos positivos
+   * Método mejorado para detectar señales fisiológicas reales
    */
   private isQualityStable(): boolean {
-    if (this.qualityHistory.length < 5) return false;
+    if (this.qualityHistory.length < 10) return false;
     
     // Obtener datos recientes
-    const recentQuality = this.qualityHistory.slice(-5);
+    const recentQuality = this.qualityHistory.slice(-10);
     
     // Calcular varianza
     const mean = recentQuality.reduce((sum, q) => sum + q, 0) / recentQuality.length;
@@ -97,15 +179,15 @@ export class SignalProcessor {
     const coefficient = Math.sqrt(variance) / (mean > 0 ? mean : 0.001);
     
     // Señal estable: baja varianza, tendencia no negativa significativa
-    return coefficient < 0.25 && trend > -0.01;
+    return coefficient < 0.2 && trend > -0.01;
   }
   
   /**
    * Calcula la calidad de la señal PPG
-   * Mejorado para clasificación más precisa
+   * Mejorado para clasificación más precisa y exigente
    */
   private calculateSignalQuality(value: number): number {
-    if (this.ppgValues.length < 15) return 0; // Aumentado requisito de muestras
+    if (this.ppgValues.length < 20) return 0; // Más datos requeridos
     
     // Usar los últimos 30 valores para el cálculo
     const recentValues = this.ppgValues.slice(-30);
@@ -126,7 +208,8 @@ export class SignalProcessor {
     const physiologicalCorrection = this.calculatePhysiologicalFactor(recentValues);
     
     // Aplicar corrección de calidad basada en análisis morfológico
-    const normalizedQuality = Math.min(1, perfusionIndex * 12 * physiologicalCorrection);
+    // Umbral más estricto para calidad
+    const normalizedQuality = Math.min(1, perfusionIndex * 10 * physiologicalCorrection);
     
     return normalizedQuality;
   }
