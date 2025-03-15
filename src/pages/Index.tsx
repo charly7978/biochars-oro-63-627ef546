@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -9,6 +10,13 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 import { toast } from "sonner";
+
+// Define the ArrhythmiaData type to make code more maintainable
+type ArrhythmiaData = {
+  timestamp: number;
+  rmssd: number;
+  rrVariation: number;
+} | null;
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -33,11 +41,7 @@ const Index = () => {
   const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
   const [lastProcessTime, setLastProcessTime] = useState(Date.now());
   const measurementTimerRef = useRef<number | null>(null);
-  const [lastArrhythmiaData, setLastArrhythmiaData<{
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null>(null);
+  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<ArrhythmiaData>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -408,7 +412,6 @@ const Index = () => {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       setHeartRate(heartBeatResult.bpm);
       
-      // Removed the third argument (accumulatedPpgValues) to match the hook signature
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         console.log("Index: Vitales procesados:", vitals);
