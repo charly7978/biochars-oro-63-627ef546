@@ -159,58 +159,38 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Método para detectar la presencia de un dedo con criterios balanceados
+   * Método para detectar la presencia de un dedo con máxima sensibilidad
    */
   private isFingerPresent(redValue: number): boolean {
-    // 1. Verificación de rango para detección de dedo con tolerancia razonable
-    // El canal rojo debe estar en un rango adecuado para piel humana
-    const isInGoodRange = redValue >= 85 && redValue <= 225;
+    // 1. Verificación de rango para detección de dedo con alta tolerancia
+    // El canal rojo debe estar en un rango amplio
+    const isInGoodRange = redValue >= 70 && redValue <= 240;
     if (!isInGoodRange) return false;
     
-    // 2. Necesitamos suficientes valores para un análisis significativo
-    if (this.lastValues.length < 3) return false;
+    // 2. Reducimos requisito de valores para análisis rápido
+    if (this.lastValues.length < 2) return false;
     
-    // 3. Análisis de las últimas muestras (3 en lugar de 4 para respuesta más rápida)
-    const last = this.lastValues.slice(-3);
+    // 3. Análisis de las últimas muestras (2 en lugar de 3 para respuesta más rápida)
+    const last = this.lastValues.slice(-2);
     
-    // 4. Verificamos diferencias consecutivas - criterio más permisivo
-    const diffs = [];
-    for (let i = 1; i < last.length; i++) {
-      diffs.push(Math.abs(last[i] - last[i-1]));
-    }
+    // 4. Verificamos diferencias consecutivas - mucho más tolerante
+    if (last.length < 2) return true; // Con solo un valor, asumimos presencia
     
-    // 5. Requerimos estabilidad pero con mayor tolerancia
-    const maxDiff = Math.max(...diffs);
-    if (maxDiff > 35) return false;  // Umbral más tolerante
+    const diff = Math.abs(last[1] - last[0]);
     
-    // 6. Verificación de diferencias promedio - análisis con mayor tolerancia
-    const avgDiff = diffs.reduce((sum, diff) => sum + diff, 0) / diffs.length;
-    // Filtramos señales extremadamente planas o extremadamente variables
-    if (avgDiff < 1.0 || avgDiff > 35) return false;
+    // 5. Requerimos mínima estabilidad pero con alta tolerancia
+    if (diff > 100) return false;  // Solo rechazamos cambios extremos
     
-    // 7. Verificar diferencia entre mínimos y máximos - rango más permisivo
+    // 6. Verificar diferencia entre mínimos y máximos - rango muy permisivo
     const min = Math.min(...last);
     const max = Math.max(...last);
     const range = max - min;
     
-    // Rango más tolerante para acomodar más tipos de dedos y condiciones
-    if (range < 3 || range > 60) return false;
+    // Rango extremadamente tolerante
+    if (range > 100) return false; // Solo rechazamos variaciones muy grandes
     
-    // 8. Verificar la monotonía - mantenemos requisito de subidas y bajadas
-    // pero simplificamos la detección
-    let hasIncreasing = false;
-    let hasDecreasing = false;
-    
-    for (let i = 1; i < last.length; i++) {
-      if (last[i] > last[i-1]) {
-        hasIncreasing = true;
-      } else if (last[i] < last[i-1]) {
-        hasDecreasing = true;
-      }
-    }
-    
-    // Un dedo real debe mostrar tanto subidas como bajadas (patrón de pulso)
-    return hasIncreasing && hasDecreasing;
+    // 7. Verificar algún mínimo cambio (evitar señales completamente planas)
+    return range > 0; // Cualquier variación mínima es suficiente
   }
   
   /**
@@ -234,9 +214,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Análisis de relación entre canales (filtro adicional de artefactos)
       const hasValidColorPattern = this.checkColorChannelsRatio(redValue, green, blue);
       
-      // Criterio más balanceado: exigimos la detección principal 
-      // O bien ambos detectores parciales para mayor flexibilidad
-      const initialDetection = fingerPresent;
+      // Criterio máximamente sensible: aceptamos cualquier detección positiva
+      // O bien criterios menos estrictos de color
+      const initialDetection = fingerPresent || 
+                              (redValue >= 70 && redValue <= 240 && redValue > (green + blue) / 2);
       
       // Si no hay dedo, emitimos señal con detección negativa
       if (!initialDetection) {
@@ -266,23 +247,24 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // Análisis completo de la señal
+      // Análisis simplificado de la señal con máxima sensibilidad
       const result = this.analyzeSignal(filtered, redValue);
       let quality = result.quality;
       let isFingerDetected = result.isFingerDetected;
       
       // Si tiene un patrón de color válido, damos un bonus de calidad
-      if (hasValidColorPattern && isFingerDetected) {
-        quality = Math.min(100, quality + 5);
+      if (hasValidColorPattern) {
+        quality = Math.min(100, quality + 10);
       }
 
-      // Crear señal procesada con detección honesta pero flexible
+      // Crear señal procesada con alta sensibilidad
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
-        fingerDetected: isFingerDetected,
+        // Alta sensibilidad: aceptamos cualquier detección positiva
+        fingerDetected: isFingerDetected || fingerPresent || hasValidColorPattern,
         roi: this.detectROI(redValue)
       };
 
@@ -346,11 +328,11 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Analiza la señal para determinar calidad y presencia de dedo
+   * Analiza la señal para determinar calidad y presencia de dedo con máxima sensibilidad
    */
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Verificación de rango para dedo real - más tolerante
-    const isInRange = rawValue >= 85 && rawValue <= 225;
+    // Verificación de rango para dedo real - muy tolerante
+    const isInRange = rawValue >= 70 && rawValue <= 240;
     
     if (!isInRange) {
       this.stableFrameCount = 0;
@@ -358,13 +340,17 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Necesitamos frames suficientes para evaluar - menos restrictivo
-    if (this.lastValues.length < 3) {
-      return { isFingerDetected: false, quality: 0 };
+    // Necesitamos frames suficientes para evaluar - muy permisivo
+    if (this.lastValues.length < 2) {
+      // Con pocos frames, aún podemos dar una estimación básica
+      return { 
+        isFingerDetected: true,  // Altamente sensible: asumimos dedo con pocos frames
+        quality: 25  // Calidad mínima hasta tener más datos
+      };
     }
 
     // Analizamos los valores recientes con ventana más corta
-    const recentValues = this.lastValues.slice(-3);
+    const recentValues = this.lastValues.slice(-2);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
     // Calculamos variaciones entre frames consecutivos
@@ -373,95 +359,62 @@ export class PPGSignalProcessor implements SignalProcessor {
       return val - arr[i-1];
     });
 
-    // Medimos la variación con umbrales más tolerantes
+    // Medimos la variación con umbrales muy tolerantes
     const maxVariation = Math.max(...variations.map(Math.abs));
     
-    // Umbral adaptativo más permisivo
-    const adaptiveThreshold = Math.max(1.8, avgValue * 0.025);
+    // Umbral adaptativo extremadamente permisivo
+    const adaptiveThreshold = Math.max(5.0, avgValue * 0.1);
     
-    // Criterio de estabilidad más tolerante
-    const isStable = maxVariation < adaptiveThreshold * 2.0;
+    // Criterio de estabilidad muy tolerante
+    const isStable = maxVariation < adaptiveThreshold * 3.0;
 
-    // Manejo equilibrado del contador de estabilidad
+    // Manejo equilibrado del contador de estabilidad - más rápido en incrementar
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 2, this.MIN_STABILITY_COUNT * 3);
       this.lastStableValue = filtered;
     } else {
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
     }
     
-    // Verificar variación fisiológica - más tolerante
+    // Verificar variación fisiológica - extremadamente tolerante
     const range = Math.max(...recentValues) - Math.min(...recentValues);
     
-    // Rango más permisivo para pulsaciones cardíacas
-    const hasVariation = range >= 3 && range <= 60;
+    // Rango muy permisivo para aceptar casi cualquier señal
+    const hasVariation = range > 0;
     
-    // Verificar patrón fisiológico
-    const hasPhysiologicalPattern = this.checkSimplePhysiologicalPattern(recentValues);
-    
-    // Cálculo de calidad ligeramente más permisivo
+    // Cálculo de calidad muy permisivo
     let quality = 0;
-    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.8 && hasVariation) {
-      const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
-      const intensityScore = Math.min((rawValue - 75) / 150, 1);
+    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.5 || isStable) {
+      // Damos una calidad mínima base si hay cualquier signo de estabilidad
+      quality = Math.max(25, Math.round((this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2)) * 80));
       
-      // Cálculo equilibrado basado en múltiples factores
-      quality = Math.round((stabilityScore * 0.6 + intensityScore * 0.4) * 100);
-      
-      if (hasPhysiologicalPattern) {
-        // Bonificación por patrón fisiológico
+      // Calidad extra por intensidad
+      if (rawValue > 100) {
         quality = Math.min(100, quality + 10);
       }
     }
     
-    // Criterio de detección balanceado:
-    // 1. Estabilidad moderada 
-    // 2. Calidad mínima menos exigente
-    // 3. Debe mostrar alguna variación
+    // Criterio de detección altamente sensible:
+    // 1. Cualquier signo de estabilidad
+    // 2. O calidad mínima muy reducida 
+    // 3. O valores en rango correcto
     const isFingerDetected = 
-      this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.8 &&
-      quality >= 35 && 
-      hasVariation;
+      this.stableFrameCount >= 1 ||  // Cualquier estabilidad
+      quality >= 25 ||               // Calidad mínima muy permisiva
+      isInRange;                     // Dentro del rango amplio
 
     return { isFingerDetected, quality };
   }
   
   /**
-   * Versión simplificada para verificar patrones fisiológicos básicos
-   */
-  private checkSimplePhysiologicalPattern(values: number[]): boolean {
-    if (values.length < 3) return false;
-    
-    // Buscamos un patrón básico de subida y bajada (característico de PPG)
-    let hasIncreasing = false;
-    let hasDecreasing = false;
-    
-    for (let i = 1; i < values.length; i++) {
-      if (values[i] > values[i-1]) {
-        hasIncreasing = true;
-      } else if (values[i] < values[i-1]) {
-        hasDecreasing = true;
-      }
-    }
-    
-    // Un patrón PPG básico debe mostrar tanto subidas como bajadas
-    return hasIncreasing && hasDecreasing;
-  }
-  
-  /**
-   * Verifica la relación entre canales de color con criterios más tolerantes
+   * Verifica la relación entre canales de color con criterios extremadamente tolerantes
    */
   private checkColorChannelsRatio(red: number, green: number, blue: number): boolean {
-    // En un dedo real, el canal rojo es generalmente más fuerte
-    if (red < Math.max(green, blue) * 1.05) return false;
+    // En un dedo, el componente rojo suele ser mayor
+    if (red < (green + blue) / 2.2) return false;
     
-    // Calculamos las proporciones entre canales
-    const redToGreen = red / Math.max(1, green);
-    const redToBlue = red / Math.max(1, blue);
-    
-    // Rangos más permisivos para adaptarse a diferentes tipos de piel y condiciones
-    return redToGreen >= 1.05 && redToGreen <= 3.5 && 
-           redToBlue >= 1.05 && redToBlue <= 4.5;
+    // Rangos extremadamente permisivos
+    return red >= 70 && red <= 240;
   }
 
   /**

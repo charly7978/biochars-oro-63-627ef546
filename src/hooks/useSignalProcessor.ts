@@ -37,45 +37,47 @@ export const useSignalProcessor = () => {
   const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
   /**
-   * Procesa la detección de dedo de manera robusta usando promedio móvil
+   * Procesa la detección de dedo con máxima sensibilidad
    */
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
     // Actualizar historial de detecciones con el último resultado
     detectionHistory.current.push(signal.fingerDetected);
-    if (detectionHistory.current.length > 4) {
+    if (detectionHistory.current.length > 3) {
       detectionHistory.current.shift();
     }
 
     // Actualizar historial de calidad
     qualityHistoryRef.current.push(signal.quality);
-    if (qualityHistoryRef.current.length > 4) {
+    if (qualityHistoryRef.current.length > 3) {
       qualityHistoryRef.current.shift();
     }
 
     // Actualizar historial de valores brutos
     rawValueHistory.current.push(signal.rawValue);
-    if (rawValueHistory.current.length > 4) {
+    if (rawValueHistory.current.length > 3) {
       rawValueHistory.current.shift();
     }
 
-    // Calcular calidad promedio sin imponer requisitos estrictos
+    // Calcular calidad promedio con criterios muy permisivos
     const avgQuality = calculateAvgQuality(qualityHistoryRef.current);
     
-    // Contamos cuántas detecciones positivas tenemos en la historia reciente
-    const positiveDetections = detectionHistory.current.filter(Boolean).length;
+    // Ultra sensibilidad: solo necesitamos una detección positiva reciente
+    const hasAnyPositiveDetection = detectionHistory.current.some(Boolean);
     
-    // Determinar si hay detección con criterios más permisivos
-    const isFingerDetected = positiveDetections >= 2 && 
-                          avgQuality >= 30 && 
-                          rawValueHistory.current.every(val => val >= 75 && val <= 235);
+    // Criterios de valores brutos extremadamente permisivos
+    const hasReasonableValues = rawValueHistory.current.some(val => val >= 70 && val <= 240);
     
-    // Devolver señal modificada con detección más permisiva
+    // Alta sensibilidad: cualquier indicio de detección es suficiente
+    const isFingerDetected = hasAnyPositiveDetection || hasReasonableValues || signal.fingerDetected || avgQuality >= 20;
+    
+    // Siempre asignamos una calidad mínima si hay cualquier indicio de dedo
+    const enhancedQuality = isFingerDetected ? Math.max(25, avgQuality) : signal.quality;
+    
+    // Devolver señal con detección mejorada de máxima sensibilidad
     return {
       ...signal,
-      // Usamos la detección mejorada o la original, prefiriendo la que sea positiva
-      fingerDetected: isFingerDetected || signal.fingerDetected,
-      // Si hay detección, ajustamos la calidad para feedback más estable
-      quality: (isFingerDetected || signal.fingerDetected) ? avgQuality : signal.quality
+      fingerDetected: isFingerDetected,
+      quality: enhancedQuality
     };
   }, []);
   

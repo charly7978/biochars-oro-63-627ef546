@@ -75,39 +75,41 @@ const CameraView = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
+      // Usar resoluciones más bajas para mejorar el rendimiento y la sensibilidad
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: 640 },  // Resolución reducida para mejor rendimiento
+        height: { ideal: 480 }, // y más sensibilidad en la captura de luz
+        frameRate: { ideal: 30, min: 15 }  // Priorizar frames por segundo
       };
 
       if (isAndroid) {
-        console.log("Configurando para Android");
+        console.log("Configurando para Android con prioridad en sensibilidad");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          frameRate: { ideal: 30, min: 15 },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         });
       } else if (isIOS) {
-        console.log("Configurando para iOS");
+        console.log("Configurando para iOS con prioridad en sensibilidad");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          frameRate: { ideal: 30, min: 15 },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         });
       } else if (isWindows) {
-        console.log("Configurando para Windows con resolución reducida (720p)");
+        console.log("Configurando para Windows con prioridad en sensibilidad");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          frameRate: { ideal: 30, min: 15 },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         });
       } else {
-        console.log("Configurando para escritorio con máxima resolución");
+        console.log("Configurando para escritorio con prioridad en sensibilidad");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          frameRate: { ideal: 30, min: 15 },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         });
       }
 
@@ -116,9 +118,9 @@ const CameraView = ({
         audio: false
       };
 
-      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
+      console.log("Intentando acceder a la cámara con configuración para máxima sensibilidad:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Cámara inicializada correctamente");
+      console.log("Cámara inicializada correctamente para máxima sensibilidad");
       
       const videoTrack = newStream.getVideoTracks()[0];
 
@@ -127,74 +129,72 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const advancedConstraints: MediaTrackConstraintSet[] = [];
-          
-          if (isAndroid) {
+          // Activar la linterna inmediatamente es crítico para la detección
+          if (capabilities.torch) {
+            console.log("Activando linterna inmediatamente");
             try {
-              if (capabilities.torch) {
-                console.log("Activando linterna en Android");
-                await videoTrack.applyConstraints({
-                  advanced: [{ torch: true }]
-                });
-                setTorchEnabled(true);
-              }
-            } catch (err) {
-              console.error("Error al activar linterna en Android:", err);
-            }
-          } else {
-            if (capabilities.exposureMode) {
-              const exposureConstraint: MediaTrackConstraintSet = { 
-                exposureMode: 'continuous' 
-              };
-              
-              if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
-              }
-              
-              advancedConstraints.push(exposureConstraint);
-            }
-            
-            if (capabilities.focusMode) {
-              advancedConstraints.push({ focusMode: 'continuous' });
-            }
-            
-            if (capabilities.whiteBalanceMode) {
-              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-            }
-            
-            if (capabilities.brightness && capabilities.brightness.max) {
-              const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
-            }
-            
-            if (capabilities.contrast && capabilities.contrast.max) {
-              const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
-            }
-
-            if (advancedConstraints.length > 0) {
-              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              await videoTrack.applyConstraints({
-                advanced: advancedConstraints
-              });
-            }
-
-            if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
               await videoTrack.applyConstraints({
                 advanced: [{ torch: true }]
               });
               setTorchEnabled(true);
-            } else {
-              console.log("La linterna no está disponible en este dispositivo");
+              console.log("Linterna activada con éxito");
+            } catch (err) {
+              console.error("Error al activar linterna:", err);
+              // Intentamos de nuevo
+              setTimeout(async () => {
+                try {
+                  await videoTrack.applyConstraints({
+                    advanced: [{ torch: true }]
+                  });
+                  setTorchEnabled(true);
+                  console.log("Linterna activada con éxito en segundo intento");
+                } catch (err) {
+                  console.error("Error al activar linterna en segundo intento:", err);
+                }
+              }, 1000);
+            }
+          } else {
+            console.log("ADVERTENCIA: La linterna no está disponible en este dispositivo");
+          }
+          
+          // Aplicar configuraciones agresivas para maximizar brillo/exposición
+          const advancedConstraints: MediaTrackConstraintSet[] = [];
+          
+          if (capabilities.exposureMode) {
+            advancedConstraints.push({ 
+              exposureMode: 'manual'
+            });
+            
+            if (capabilities.exposureCompensation?.max) {
+              advancedConstraints.push({
+                exposureCompensation: capabilities.exposureCompensation.max
+              });
             }
           }
           
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
+          if (capabilities.brightness && capabilities.brightness.max) {
+            advancedConstraints.push({ 
+              brightness: capabilities.brightness.max
+            });
+          }
+          
+          if (capabilities.contrast && capabilities.contrast.max) {
+            advancedConstraints.push({ 
+              contrast: capabilities.contrast.max * 0.9
+            });
+          }
+
+          if (advancedConstraints.length > 0) {
+            console.log("Aplicando configuraciones agresivas para máxima sensibilidad:", advancedConstraints);
+            for (const constraint of advancedConstraints) {
+              try {
+                await videoTrack.applyConstraints({
+                  advanced: [constraint]
+                });
+              } catch (err) {
+                console.warn("No se pudo aplicar configuración:", constraint, err);
+              }
+            }
           }
           
         } catch (err) {
@@ -205,10 +205,10 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
+        // Optimizaciones para rendimiento de video
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
-        
         videoRef.current.style.backfaceVisibility = 'hidden';
         videoRef.current.style.perspective = '1000px';
       }
