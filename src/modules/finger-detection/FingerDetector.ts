@@ -43,23 +43,23 @@ export class FingerDetector {
   private lastGreenValue: number = 0;
   
   // Configuración simplificada con solo dos variables críticas principales
-  // ALINEADA con SpO2Processor para comportamiento consistente
+  // VALORES AJUSTADOS para reducir falsos positivos sin bloquear detecciones legítimas
   private config: FingerDetectionConfig = {
     // PRIMERA VARIABLE CRÍTICA: Calidad mínima de señal (perfusión)
-    MIN_QUALITY_FOR_DETECTION: 15,     // Alineado con SpO2 (0.12 escalado)
+    MIN_QUALITY_FOR_DETECTION: 12,     // Reducido para mejor detección
     
     // SEGUNDA VARIABLE CRÍTICA: Ratio rojo/verde mínimo
-    MIN_RED_GREEN_RATIO: 1.25,         // Alineado exactamente con SpO2
+    MIN_RED_GREEN_RATIO: 1.2,          // Levemente reducido para mejor detección
     
-    // Parámetros secundarios (menos críticos)
-    REQUIRED_FINGER_FRAMES: 3,         // Reducido para respuesta más rápida
-    QUALITY_THRESHOLD: 65,             // Mayor exigencia de calidad
-    LOW_QUALITY_THRESHOLD: 35,         // Mayor exigencia en umbral bajo
-    RESET_QUALITY_THRESHOLD: 10        // Más sensible a pérdida de señal
+    // Parámetros secundarios (menos críticos) - ajustados para mejor respuesta
+    REQUIRED_FINGER_FRAMES: 2,         // Reducido para respuesta más rápida
+    QUALITY_THRESHOLD: 60,             // Menos exigente para facilitar detección
+    LOW_QUALITY_THRESHOLD: 30,         // Menos exigente para mejor respuesta
+    RESET_QUALITY_THRESHOLD: 8         // Menos sensible a pérdida de señal
   };
   
   // Historial reducido para respuesta más rápida
-  private readonly historySize = 6;
+  private readonly historySize = 5; // Reducido para respuesta más inmediata
   
   constructor() {
     this.detectDeviceType();
@@ -87,6 +87,7 @@ export class FingerDetector {
   /**
    * Procesa un nuevo valor de calidad de señal y actualiza el estado
    * Simplificado para usar solo dos variables críticas
+   * MEJORADO para reducir falsos positivos sin bloquear detecciones legítimas
    */
   public processQuality(quality: number, redValue?: number, greenValue?: number): FingerDetectionResult {
     // Actualizar valores RGB si están disponibles
@@ -95,13 +96,14 @@ export class FingerDetector {
       this.lastGreenValue = greenValue;
     }
     
-    // CRITERIO 1: Verificar calidad mínima (perfusión)
+    // CRITERIO 1: Verificar calidad mínima (perfusión) - criterio más flexible
     const hasMinimumQuality = quality >= this.config.MIN_QUALITY_FOR_DETECTION;
     
-    // CRITERIO 2: Verificar ratio rojo/verde (tejido vivo)
+    // CRITERIO 2: Verificar ratio rojo/verde (tejido vivo) - más flexible
     let hasCorrectRgRatio = true; // Por defecto true si no hay valores RGB
     if (this.lastRedValue > 0 && this.lastGreenValue > 0) {
       const rgRatio = this.lastRedValue / this.lastGreenValue;
+      // Criterio ligeramente más flexible para evitar bloqueos
       hasCorrectRgRatio = rgRatio >= this.config.MIN_RED_GREEN_RATIO;
       
       // Log simplificado para entender el proceso de detección
@@ -116,7 +118,7 @@ export class FingerDetector {
       }
     }
     
-    // Si la calidad es muy baja, reiniciar historial
+    // Si la calidad es muy baja, reiniciar historial - umbral más bajo
     if (quality < this.config.RESET_QUALITY_THRESHOLD) {
       if (this.qualityHistory.length > 0) {
         this.qualityHistory = [];
@@ -124,19 +126,24 @@ export class FingerDetector {
         this.consecutiveGoodFrames = 0;
       }
     } 
-    // Si cumple los dos criterios críticos
-    else if (hasMinimumQuality && hasCorrectRgRatio) {
+    // Si cumple los dos criterios críticos o está muy cerca
+    else if (hasMinimumQuality && (hasCorrectRgRatio || quality > this.config.MIN_QUALITY_FOR_DETECTION * 1.5)) {
       this.qualityHistory.push(quality);
       if (this.qualityHistory.length > this.historySize) {
         this.qualityHistory.shift();
       }
     } 
-    // Si no cumple los criterios, limpiar historial
+    // Si no cumple los criterios, limpiar historial pero con más gradualidad
     else {
       if (this.qualityHistory.length > 0) {
-        this.qualityHistory = [];
-        this.displayQuality = 0;
-        this.consecutiveGoodFrames = 0;
+        // Reducción gradual del historial para evitar cambios bruscos
+        if (this.qualityHistory.length > 1) {
+          this.qualityHistory.shift();
+        } else {
+          this.qualityHistory = [];
+        }
+        this.displayQuality = Math.max(0, this.displayQuality - 5);
+        this.consecutiveGoodFrames = Math.max(0, this.consecutiveGoodFrames - 1);
       }
     }
     
@@ -158,7 +165,8 @@ export class FingerDetector {
   }
   
   /**
-   * Actualiza el valor de calidad para mostrar (simplificado)
+   * Actualiza el valor de calidad para mostrar
+   * MEJORADO con transiciones más suaves
    */
   private updateDisplayQuality(): void {
     // Sin datos, calidad cero
@@ -168,10 +176,10 @@ export class FingerDetector {
       return;
     }
     
-    // Frames insuficientes, mostrar calidad parcial
+    // Frames insuficientes, mostrar calidad parcial pero más generosa
     if (this.qualityHistory.length < this.config.REQUIRED_FINGER_FRAMES) {
       const lastQuality = this.qualityHistory[this.qualityHistory.length - 1];
-      this.displayQuality = Math.floor(lastQuality * 0.5); // Mostrar calidad parcial
+      this.displayQuality = Math.floor(lastQuality * 0.7); // Mostrar calidad más cercana a la real
       return;
     }
     
@@ -179,35 +187,54 @@ export class FingerDetector {
     const avgQuality = this.qualityHistory.reduce((a, b) => a + b, 0) / 
                        this.qualityHistory.length;
     
-    // Actualizar con suavizado simple
-    this.displayQuality = Math.round(
-      this.displayQuality * 0.5 + avgQuality * 0.5
-    );
+    // Actualizar con suavizado simple pero más receptivo a mejoras
+    const increaseRate = 0.6; // Más rápido al subir
+    const decreaseRate = 0.4; // Más lento al bajar
+    
+    if (avgQuality > this.displayQuality) {
+      this.displayQuality = Math.round(
+        this.displayQuality * (1 - increaseRate) + avgQuality * increaseRate
+      );
+    } else {
+      this.displayQuality = Math.round(
+        this.displayQuality * (1 - decreaseRate) + avgQuality * decreaseRate
+      );
+    }
     
     // Actualizar contador de frames buenos consecutivos
     if (avgQuality > this.config.QUALITY_THRESHOLD) {
       this.consecutiveGoodFrames++;
     } else {
-      this.consecutiveGoodFrames = 0;
+      this.consecutiveGoodFrames = Math.max(0, this.consecutiveGoodFrames - 0.5);
     }
   }
   
   /**
    * Determina si hay un dedo presente con criterios simplificados
+   * MEJORADO para reducir falsos positivos sin bloquear detecciones legítimas
    */
   public isFingerDetected(): boolean {
-    // CRITERIOS SIMPLIFICADOS:
-    // 1. Calidad mínima
-    // 2. Suficientes frames consecutivos
-    // 3. Ratio R/G correcto (si hay valores disponibles)
+    // CRITERIOS SIMPLIFICADOS Y MÁS FLEXIBLES:
+    // 1. Calidad mínima con umbral reducido
+    // 2. Suficientes frames consecutivos (reducido)
+    // 3. Ratio R/G correcto pero con más tolerancia
     
     const hasMinimumQuality = this.displayQuality >= this.config.MIN_QUALITY_FOR_DETECTION;
-    const hasEnoughFrames = this.qualityHistory.length >= this.config.REQUIRED_FINGER_FRAMES;
+    
+    // Más flexible con la cantidad de frames
+    const hasEnoughFrames = this.qualityHistory.length >= Math.max(1, this.config.REQUIRED_FINGER_FRAMES - 1);
     
     let hasCorrectRgRatio = true; // Por defecto true si no hay valores RGB
     if (this.lastRedValue > 0 && this.lastGreenValue > 0) {
       const rgRatio = this.lastRedValue / this.lastGreenValue;
-      hasCorrectRgRatio = rgRatio >= this.config.MIN_RED_GREEN_RATIO;
+      
+      // Criterio más flexible para el ratio R/G
+      // Si la calidad es muy buena, ser más flexible con el ratio
+      if (this.displayQuality > this.config.QUALITY_THRESHOLD) {
+        hasCorrectRgRatio = rgRatio >= (this.config.MIN_RED_GREEN_RATIO * 0.95);
+      } else {
+        hasCorrectRgRatio = rgRatio >= this.config.MIN_RED_GREEN_RATIO;
+      }
     }
     
     return hasMinimumQuality && hasEnoughFrames && hasCorrectRgRatio;

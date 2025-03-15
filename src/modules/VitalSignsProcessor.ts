@@ -39,6 +39,7 @@ export class VitalSignsProcessor {
     const fingerDetectionResult = this.fingerDetector.processQuality(ppgValue);
     
     // Solo procesar señales cuando el dedo está realmente detectado
+    // Reducimos el umbral para evitar bloquear la detección del dedo
     if (fingerDetectionResult.isFingerDetected) {
       return this.processor.processSignal(ppgValue, rrData);
     }
