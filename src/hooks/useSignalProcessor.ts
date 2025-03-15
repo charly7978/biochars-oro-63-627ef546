@@ -32,35 +32,50 @@ export const useSignalProcessor = () => {
   // Referencias para historial de calidad
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
+  const detectionHistory = useRef<boolean[]>([]);
+  const rawValueHistory = useRef<number[]>([]);
   const HISTORY_SIZE = 5; // Ventana de historial para promedio
   
   /**
    * Procesa la detección de dedo de manera robusta usando promedio móvil
    */
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
+    // Actualizar historial de detecciones con el último resultado
+    detectionHistory.current.push(signal.fingerDetected);
+    if (detectionHistory.current.length > 4) {
+      detectionHistory.current.shift();
+    }
+
     // Actualizar historial de calidad
     qualityHistoryRef.current.push(signal.quality);
-    if (qualityHistoryRef.current.length > HISTORY_SIZE) {
+    if (qualityHistoryRef.current.length > 4) {
       qualityHistoryRef.current.shift();
     }
-    
-    // Actualizar historial de detección
-    fingerDetectedHistoryRef.current.push(signal.fingerDetected);
-    if (fingerDetectedHistoryRef.current.length > HISTORY_SIZE) {
-      fingerDetectedHistoryRef.current.shift();
+
+    // Actualizar historial de valores brutos
+    rawValueHistory.current.push(signal.rawValue);
+    if (rawValueHistory.current.length > 4) {
+      rawValueHistory.current.shift();
     }
+
+    // Calcular calidad promedio sin imponer requisitos estrictos
+    const avgQuality = calculateAvgQuality(qualityHistoryRef.current);
     
-    // IMPORTANTE: No alteramos la detección original, confiamos en el procesador
-    // Sólo calculamos la calidad promedio para ofrecer feedback más estable al usuario
-    const avgQuality = signal.fingerDetected 
-      ? calculateAvgQuality(qualityHistoryRef.current)
-      : signal.quality;
+    // Contamos cuántas detecciones positivas tenemos en la historia reciente
+    const positiveDetections = detectionHistory.current.filter(Boolean).length;
     
-    // Devolver señal con calidad estabilizada pero sin alterar la detección
+    // Determinar si hay detección con criterios más permisivos
+    const isFingerDetected = positiveDetections >= 2 && 
+                          avgQuality >= 30 && 
+                          rawValueHistory.current.every(val => val >= 75 && val <= 235);
+    
+    // Devolver señal modificada con detección más permisiva
     return {
       ...signal,
-      fingerDetected: signal.fingerDetected, // Mantenemos el valor original
-      quality: signal.fingerDetected ? avgQuality : signal.quality
+      // Usamos la detección mejorada o la original, prefiriendo la que sea positiva
+      fingerDetected: isFingerDetected || signal.fingerDetected,
+      // Si hay detección, ajustamos la calidad para feedback más estable
+      quality: (isFingerDetected || signal.fingerDetected) ? avgQuality : signal.quality
     };
   }, []);
   
@@ -159,6 +174,8 @@ export const useSignalProcessor = () => {
     
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
+    detectionHistory.current = [];
+    rawValueHistory.current = [];
     
     processor.start();
   }, [processor, isProcessing]);

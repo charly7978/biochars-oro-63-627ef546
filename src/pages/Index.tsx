@@ -282,6 +282,9 @@ const Index = () => {
       // Actualizar siempre la calidad de la señal para feedback visual
       setSignalQuality(lastSignal.quality || 0);
       
+      // Mensaje de depuración para ver estado de detección
+      console.log(`Detección de dedo: ${lastSignal.fingerDetected ? 'SÍ' : 'NO'}, Calidad: ${lastSignal.quality}, Valor: ${lastSignal.rawValue}`);
+      
       // Procesar la señal sólo cuando el procesador detecta un dedo
       if (lastSignal.fingerDetected) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
@@ -297,6 +300,9 @@ const Index = () => {
             setArrhythmiaCount(count || "0");
           }
         }
+      } else {
+        // Feedback visual cuando no hay dedo detectado
+        console.log("Esperando detección de dedo...");
       }
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
