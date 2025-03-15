@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -33,19 +32,82 @@ export const useSignalProcessor = () => {
   // Referencias para historial y estabilización
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 5; // Ventana de historial para promedio
+  const HISTORY_SIZE = 8; // Aumentado de 5 a 8 para más estabilidad en la detección
   
   // Nuevas variables para manejo adaptativo
   const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.6); // Umbral inicial para detección
+  const detectionThresholdRef = useRef<number>(0.65); // Aumentado de 0.6 a 0.65 para reducir falsos positivos
   const adaptiveCounterRef = useRef<number>(0);
   const ADAPTIVE_ADJUSTMENT_INTERVAL = 50; // Frames entre ajustes adaptativos
-  const MIN_DETECTION_THRESHOLD = 0.4; // Umbral mínimo para detección
+  const MIN_DETECTION_THRESHOLD = 0.55; // Aumentado de 0.4 a 0.55 para reducir falsos positivos
   
   // Contador y umbral para evitar pérdidas rápidas de señal
   const signalLockCounterRef = useRef<number>(0);
-  const MAX_SIGNAL_LOCK = 5; // Número de frames para "asegurar" detección
-  const RELEASE_GRACE_PERIOD = 3; // Frames de gracia antes de perder señal
+  const MAX_SIGNAL_LOCK = 6; // Número de frames para "asegurar" detección (aumentado para estabilidad)
+  const RELEASE_GRACE_PERIOD = 2; // Reducido de 3 a 2 para soltar señal más rápido ante falsos positivos
+  
+  // Nuevo: análisis de patrón fisiológico
+  const physiologicalPatternRef = useRef<number[]>([]);
+  const PATTERN_BUFFER_SIZE = 15; // Tamaño para análisis de patrón
+  const lastValidPatternTimeRef = useRef<number>(0);
+  
+  /**
+   * Nuevo: Analiza si el patrón de señal parece fisiológico (cardíaco)
+   * Busca variaciones periódicas y coherentes típicas del pulso
+   */
+  const analyzePhysiologicalPattern = useCallback((filteredValue: number): boolean => {
+    const now = Date.now();
+    
+    // Actualizar buffer de patrón
+    physiologicalPatternRef.current.push(filteredValue);
+    if (physiologicalPatternRef.current.length > PATTERN_BUFFER_SIZE) {
+      physiologicalPatternRef.current.shift();
+    }
+    
+    // Requiere suficientes muestras para análisis
+    if (physiologicalPatternRef.current.length < PATTERN_BUFFER_SIZE) {
+      return false;
+    }
+    
+    // Análisis de patrón cardíaco:
+    // 1. Verificar si hay picos y valles (característico de señal PPG)
+    const values = physiologicalPatternRef.current;
+    const diffs = values.slice(1).map((val, i) => val - values[i]);
+    
+    let signChanges = 0;
+    for (let i = 1; i < diffs.length; i++) {
+      if ((diffs[i] >= 0 && diffs[i-1] < 0) || (diffs[i] < 0 && diffs[i-1] >= 0)) {
+        signChanges++;
+      }
+    }
+    
+    // 2. Mínimo de cambios de dirección en la señal (picos/valles)
+    const hasEnoughChanges = signChanges >= 3;
+    
+    // 3. Analizar varianza: debe ser moderada (ni muy baja ni extrema)
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    const coeffVar = stdDev / Math.abs(mean || 1);
+    
+    // La señal PPG típica tiene variación moderada
+    const hasReasonableVariance = coeffVar > 0.015 && coeffVar < 0.5;
+    
+    // 4. Verificar consistencia con características fisiológicas (60-180 BPM)
+    // Una buena señal PPG tiene estos cambios en frecuencia compatible con ritmo cardíaco
+    const isPhysiological = hasEnoughChanges && hasReasonableVariance;
+    
+    // Registrar timestamp de último patrón válido
+    if (isPhysiological) {
+      lastValidPatternTimeRef.current = now;
+    }
+    
+    // En caso de duda, mantener la detección por un corto tiempo si hubo un patrón válido reciente
+    const patternTimeout = 2000; // 2 segundos
+    const hasRecentValidPattern = (now - lastValidPatternTimeRef.current) < patternTimeout;
+    
+    return isPhysiological || hasRecentValidPattern;
+  }, []);
   
   /**
    * Procesa la detección de dedo de manera robusta y adaptativa
@@ -96,15 +158,18 @@ export const useSignalProcessor = () => {
       } else if (consistentDetection && avgQuality < 40) {
         // Si detectamos consistentemente pero la calidad es mala, ser más estrictos
         detectionThresholdRef.current = Math.min(
-          0.7,
+          0.75,
           detectionThresholdRef.current + 0.03
         );
         console.log("Ajustando umbral de detección hacia arriba:", detectionThresholdRef.current);
       }
     }
     
+    // Nuevo: Verificar si el patrón parece fisiológico (reduce falsos positivos)
+    const hasPhysiologicalPattern = analyzePhysiologicalPattern(signal.filteredValue);
+    
     // Lógica de "lock-in" para evitar pérdidas rápidas de señal
-    if (signal.fingerDetected) {
+    if (signal.fingerDetected && hasPhysiologicalPattern) {
       consecutiveNonDetectionRef.current = 0;
       
       // Incrementar contador de bloqueo hasta el máximo
@@ -129,7 +194,10 @@ export const useSignalProcessor = () => {
     // Determinación final de detección
     const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
     const currentThreshold = detectionThresholdRef.current;
-    const robustFingerDetected = isLockedIn || rawDetectionRatio >= currentThreshold;
+    
+    // Nueva condición más estricta: combinar detección básica con validación de patrón fisiológico
+    const robustFingerDetected = (isLockedIn || rawDetectionRatio >= currentThreshold) && 
+                               (hasPhysiologicalPattern || isLockedIn);
     
     // Ligera mejora de calidad (máximo 10%) para experiencia de usuario más suave
     const enhancementFactor = robustFingerDetected ? 1.1 : 1.0;
@@ -144,7 +212,7 @@ export const useSignalProcessor = () => {
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
-  }, []);
+  }, [analyzePhysiologicalPattern]);
 
   // Configurar callbacks y limpieza
   useEffect(() => {
@@ -225,8 +293,10 @@ export const useSignalProcessor = () => {
     fingerDetectedHistoryRef.current = [];
     consecutiveNonDetectionRef.current = 0;
     signalLockCounterRef.current = 0;
-    detectionThresholdRef.current = 0.6; // Resetear umbral adaptativo
+    detectionThresholdRef.current = 0.65; // Umbral inicial más estricto
     adaptiveCounterRef.current = 0;
+    physiologicalPatternRef.current = []; // Inicializar buffer de patrón
+    lastValidPatternTimeRef.current = 0;
     
     processor.start();
   }, [processor, isProcessing]);
