@@ -30,15 +30,19 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
   
-  // Referencias para historial de calidad - MODIFICACIÓN CRUCIAL
+  // Referencias para historial de calidad
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 8; // MODIFICACIÓN CRÍTICA 1: Aumentado de 7 a 8 para tener más muestras y mayor estabilidad
+  const HISTORY_SIZE = 8;
   
-  // MODIFICACIÓN CRÍTICA 2: Nuevas referencias para seguimiento de estabilidad
+  // Referencias para seguimiento de estabilidad
   const stableDetectionTimeRef = useRef<number | null>(null);
   const unstableDetectionTimeRef = useRef<number | null>(null);
-  const MIN_STABLE_DETECTION_MS = 300; // Mínimo tiempo para considerar detección estable
+  const MIN_STABLE_DETECTION_MS = 300;
+  
+  // NUEVA REFERENCIA: Para seguimiento de características físicas de la señal
+  const physicalSignatureScoreRef = useRef<number[]>([]);
+  const PHYSICAL_SCORE_HISTORY = 6;
   
   /**
    * Procesa la detección de dedo de manera robusta usando promedio móvil
@@ -56,27 +60,38 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // MODIFICACIÓN CRÍTICA 3: Cálculo ponderado de calidad - mucho más peso a muestras recientes
+    // Actualizar historial de características físicas (NUEVO)
+    physicalSignatureScoreRef.current.push(signal.physicalSignatureScore || 0);
+    if (physicalSignatureScoreRef.current.length > PHYSICAL_SCORE_HISTORY) {
+      physicalSignatureScoreRef.current.shift();
+    }
+    
+    // Cálculo ponderado de calidad - mucho más peso a muestras recientes
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.5, index); // MODIFICACIÓN: Aumentado de 1.3 a 1.5 para dar mucho más peso a muestras recientes
+      const weight = Math.pow(1.5, index);
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // MODIFICACIÓN CRÍTICA 4: Calcular ratio de detección con mayor exigencia
+    // Calcular ratio de detección
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // MODIFICACIÓN CRÍTICA 5: Introducir histéresis temporal para evitar oscilaciones rápidas
+    // NUEVO: Calcular puntuación de firma física
+    const avgPhysicalScore = physicalSignatureScoreRef.current.length > 0 ?
+      physicalSignatureScoreRef.current.reduce((sum, score) => sum + score, 0) / 
+      physicalSignatureScoreRef.current.length : 0;
+    
+    // Aplicar histéresis temporal para evitar oscilaciones rápidas
     const now = Date.now();
     let robustFingerDetected = false;
     
-    if (detectionRatio >= 0.5) { // MODIFICACIÓN: Aumentado de 0.45 a 0.5 para ser más exigente
+    if (detectionRatio >= 0.5) {
       if (stableDetectionTimeRef.current === null) {
         stableDetectionTimeRef.current = now;
       }
@@ -95,31 +110,35 @@ export const useSignalProcessor = () => {
         stableDetectionTimeRef.current = null;
         robustFingerDetected = false;
       } else {
-        // Mantener estado anterior para evitar oscilaciones
         robustFingerDetected = stableDetectionTimeRef.current !== null;
       }
     }
     
-    // MODIFICACIÓN CRÍTICA 6: Política mucho más estricta para calidad alta
-    // Solo aumentar calidad si es realmente un dedo con buena señal
-    // Un objeto estático NUNCA debería tener calidad alta
+    // MEJORA CRÍTICA: La calidad ahora está directamente vinculada al score físico
+    // para objetos estáticos (pared, etc.) esto dará muy baja calidad
     let enhancedQuality;
-    if (robustFingerDetected && signal.quality > 40) {
-      // Si es buena detección, permitir calidad alta progresivamente
-      enhancedQuality = Math.min(100, Math.max(signal.quality, avgQuality * 1.05));
+    
+    if (robustFingerDetected && avgPhysicalScore > 0.65) {
+      // Dedo real con buena señal pulsátil -> calidad proporcional a la detección física
+      enhancedQuality = Math.min(100, Math.max(avgQuality, avgPhysicalScore * 100));
+    } else if (robustFingerDetected && avgPhysicalScore > 0.3) {
+      // Dedo real pero señal débil -> calidad moderada
+      enhancedQuality = Math.min(75, Math.max(30, avgPhysicalScore * 100));
     } else if (robustFingerDetected) {
-      // Si es detección débil, mantener calidad moderada
-      enhancedQuality = Math.min(60, Math.max(30, avgQuality));
+      // Algo detectado pero características físicas pobres -> calidad baja
+      enhancedQuality = Math.min(40, avgPhysicalScore * 100);
     } else {
-      // Si no hay detección, calidad baja forzada
-      enhancedQuality = Math.min(20, avgQuality * 0.7);
+      // Nada detectado -> calidad muy baja
+      enhancedQuality = 0;
     }
     
     // Devolver señal modificada
     return {
       ...signal,
       fingerDetected: robustFingerDetected,
-      quality: enhancedQuality
+      quality: enhancedQuality,
+      // Mantener el score físico para retroalimentación
+      physicalSignatureScore: signal.physicalSignatureScore
     };
   }, []);
 
@@ -132,7 +151,23 @@ export const useSignalProcessor = () => {
     
     // Callback cuando hay señal lista
     processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Registrar datos brutos para depuración
+      console.log("useSignalProcessor: Datos brutos recibidos", {
+        fingerDetected: signal.fingerDetected,
+        qualityOriginal: signal.quality,
+        physicalScore: signal.physicalSignatureScore,
+        timestamp: new Date().toISOString()
+      });
+      
       const modifiedSignal = processRobustFingerDetection(signal);
+      
+      // Registrar datos procesados para depuración
+      console.log("useSignalProcessor: Datos procesados", {
+        fingerDetected: modifiedSignal.fingerDetected,
+        qualidadFinal: modifiedSignal.quality,
+        physicalScore: modifiedSignal.physicalSignatureScore,
+        timestamp: new Date().toISOString()
+      });
       
       setLastSignal(modifiedSignal);
       setError(null);
@@ -200,6 +235,7 @@ export const useSignalProcessor = () => {
     
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
+    physicalSignatureScoreRef.current = [];
     stableDetectionTimeRef.current = null;
     unstableDetectionTimeRef.current = null;
     

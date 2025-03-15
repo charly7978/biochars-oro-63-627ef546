@@ -20,8 +20,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   
   // Constantes de configuración
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
-  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
+  const REQUIRED_FINGER_FRAMES = 8;
+  const QUALITY_THRESHOLD = 50;
 
   // Detectar plataforma
   useEffect(() => {
@@ -71,26 +71,38 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       const delta = (averageQuality - prev) * 0.3;
       return Math.round(prev + delta);
     });
+    
+    // Registrar cambios de calidad para depuración
+    console.log("SignalQualityIndicator: Calidad actualizada", {
+      nuevaCalidad: averageQuality,
+      calidadMostrada: Math.round(displayQuality + (averageQuality - displayQuality) * 0.3),
+      historicoCalidad: [...qualityHistory],
+      timestamp: new Date().toISOString()
+    });
   }, [qualityHistory]);
 
   /**
-   * Obtiene el color basado en la calidad
+   * Obtiene el color basado en la calidad real (ahora más preciso)
    */
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 65) return '#00ff00';
-    if (q > 40) return '#ffff00';
-    return '#ff0000';
+    if (q > 70) return '#10b981'; // Verde más saturado
+    if (q > 50) return '#22c55e'; // Verde normal 
+    if (q > 30) return '#eab308'; // Amarillo
+    if (q > 10) return '#f97316'; // Naranja
+    return '#ef4444';             // Rojo
   };
 
   /**
-   * Obtiene el texto descriptivo de calidad
+   * Obtiene el texto descriptivo de calidad con umbral más preciso
    */
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
-    if (q > 65) return 'Excelente';
-    if (q > 40) return 'Buena';
-    return 'Baja';
+    if (q > 70) return 'Excelente';
+    if (q > 50) return 'Buena';
+    if (q > 30) return 'Aceptable';
+    if (q > 10) return 'Baja';
+    return 'Muy Baja';
   };
 
   // Efecto de pulso adaptado a la plataforma
