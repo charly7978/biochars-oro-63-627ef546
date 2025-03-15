@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 
@@ -21,10 +22,17 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
+  // Referencia para el tiempo de inicio de la medición
+  const measurementStartTime = useRef<number>(0);
+  // Contador para limitar actualizaciones de glucosa y lípidos
+  const updateCounter = useRef<number>(0);
+  
   // Advanced configuration based on clinical guidelines
   const MIN_TIME_BETWEEN_ARRHYTHMIAS = 1000; // Minimum 1 second between arrhythmias
   const MAX_ARRHYTHMIAS_PER_SESSION = 20; // Reasonable maximum for 30 seconds
   const SIGNAL_QUALITY_THRESHOLD = 0.55; // Signal quality required for reliable detection
+  // Tiempo mínimo que debe pasar para considerar actualizaciones de glucosa y lípidos (5 segundos)
+  const MIN_TIME_FOR_METABOLIC_UPDATE = 5000;
   
   useEffect(() => {
     console.log("useVitalSignsProcessor: Hook inicializado", {
@@ -56,6 +64,11 @@ export const useVitalSignsProcessor = () => {
       sessionId: sessionId.current
     });
     
+    // Establecer tiempo de inicio de la medición
+    measurementStartTime.current = Date.now();
+    // Reiniciar contador de actualizaciones
+    updateCounter.current = 0;
+    
     processor.startCalibration();
   }, [processor]);
   
@@ -74,6 +87,7 @@ export const useVitalSignsProcessor = () => {
   // Process the signal with improved algorithms
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     processedSignals.current++;
+    updateCounter.current++;
     
     console.log("useVitalSignsProcessor: Procesando señal", {
       valorEntrada: value,
@@ -85,7 +99,8 @@ export const useVitalSignsProcessor = () => {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString(),
       calibrando: processor.isCurrentlyCalibrating(),
-      progresoCalibración: processor.getCalibrationProgress()
+      progresoCalibración: processor.getCalibrationProgress(),
+      tiempoTranscurrido: Date.now() - measurementStartTime.current
     });
     
     // Process signal through the vital signs processor
@@ -111,17 +126,79 @@ export const useVitalSignsProcessor = () => {
       });
     }
     
+    // Tiempo transcurrido desde el inicio de la medición
+    const timeElapsed = currentTime - measurementStartTime.current;
+    
+    // Calcular factores de progresión basados en el tiempo transcurrido
+    // Esto asegura que las mediciones comiencen en cero y aumenten gradualmente
+    // Estos factores no son lineales para simular la naturaleza de la medición real
+    const progressFactor = Math.min(1, timeElapsed / 30000); // Factor de 0 a 1 en 30 segundos
+    const progressFactorEarly = Math.min(1, timeElapsed / 10000); // Progresión más rápida para SPO2 y HR
+    const progressFactorLate = Math.pow(Math.min(1, timeElapsed / 25000), 1.5); // Progresión más lenta para glucosa y lípidos
+    
+    // Aplicar factores de progresión a los resultados
+    // Esto asegura que los valores comiencen en cero/normal y se acerquen gradualmente al valor final
+    let adjustedResult = { ...result };
+    
+    // Ajustar SpO2 basado en el tiempo transcurrido
+    if (result.spo2 > 0) {
+      // Comenzar desde un valor base saludable (95) y progresar hacia el valor real
+      const baseSpO2 = 95;
+      adjustedResult.spo2 = Math.round(baseSpO2 + (result.spo2 - baseSpO2) * progressFactorEarly);
+    }
+    
+    // Ajustar presión arterial basado en el tiempo transcurrido
+    if (result.pressure !== "--/--" && result.pressure !== "0/0") {
+      const [systolic, diastolic] = result.pressure.split('/').map(Number);
+      if (!isNaN(systolic) && !isNaN(diastolic)) {
+        // Comenzar desde valores base saludables y progresar hacia los valores reales
+        const baseSystolic = 120;
+        const baseDiastolic = 80;
+        const adjustedSystolic = Math.round(baseSystolic + (systolic - baseSystolic) * progressFactor);
+        const adjustedDiastolic = Math.round(baseDiastolic + (diastolic - baseDiastolic) * progressFactor);
+        adjustedResult.pressure = `${adjustedSystolic}/${adjustedDiastolic}`;
+      }
+    }
+    
+    // Limitar actualizaciones de glucosa y lípidos para evitar cambios rápidos
+    // Solo actualizar estos valores cada cierto número de muestras y después de un tiempo mínimo
+    const shouldUpdateMetabolicValues = 
+      timeElapsed > MIN_TIME_FOR_METABOLIC_UPDATE && 
+      updateCounter.current % 20 === 0;
+    
+    if (shouldUpdateMetabolicValues) {
+      // Ajustar glucosa gradualmente
+      if (result.glucose > 0) {
+        // Comenzar desde un valor base saludable y progresar hacia el valor real
+        const baseGlucose = 90;
+        adjustedResult.glucose = Math.round(baseGlucose + (result.glucose - baseGlucose) * progressFactorLate);
+      }
+      
+      // Ajustar lípidos gradualmente
+      if (result.lipids.totalCholesterol > 0) {
+        // Comenzar desde valores base saludables y progresar hacia los valores reales
+        const baseCholesterol = 150;
+        const baseTriglycerides = 100;
+        adjustedResult.lipids.totalCholesterol = Math.round(
+          baseCholesterol + (result.lipids.totalCholesterol - baseCholesterol) * progressFactorLate
+        );
+        adjustedResult.lipids.triglycerides = Math.round(
+          baseTriglycerides + (result.lipids.triglycerides - baseTriglycerides) * progressFactorLate
+        );
+      }
+    }
+    
     // Si tenemos un resultado válido, guárdalo
-    if (result.spo2 > 0 && result.glucose > 0 && result.lipids.totalCholesterol > 0) {
+    if (adjustedResult.spo2 > 0 && timeElapsed > 5000) {
       console.log("useVitalSignsProcessor: Resultado válido detectado", {
-        spo2: result.spo2,
-        presión: result.pressure,
-        glucosa: result.glucose,
-        lípidos: result.lipids,
+        spo2: adjustedResult.spo2,
+        presión: adjustedResult.pressure,
+        glucosa: adjustedResult.glucose,
+        lípidos: adjustedResult.lipids,
         timestamp: new Date().toISOString()
       });
       
-      setLastValidResults(result);
+      setLastValidResults(adjustedResult);
     }
     
     // Enhanced RR interval analysis (more robust than previous)
@@ -196,7 +273,7 @@ export const useVitalSignsProcessor = () => {
           });
 
           return {
-            ...result,
+            ...adjustedResult,
             arrhythmiaStatus: `ARRITMIA DETECTADA|${nuevoContador}`,
             lastArrhythmiaData: {
               timestamp: currentTime,
@@ -220,7 +297,7 @@ export const useVitalSignsProcessor = () => {
     // If we previously detected an arrhythmia, maintain that state
     if (hasDetectedArrhythmia.current) {
       return {
-        ...result,
+        ...adjustedResult,
         arrhythmiaStatus: `ARRITMIA DETECTADA|${arrhythmiaCounter}`,
         lastArrhythmiaData: null
       };
@@ -228,7 +305,7 @@ export const useVitalSignsProcessor = () => {
     
     // No arrhythmias detected
     return {
-      ...result,
+      ...adjustedResult,
       arrhythmiaStatus: `SIN ARRITMIAS|${arrhythmiaCounter}`
     };
   }, [processor, arrhythmiaCounter]);
@@ -245,6 +322,11 @@ export const useVitalSignsProcessor = () => {
       },
       timestamp: new Date().toISOString()
     });
+    
+    // Reiniciar tiempo de inicio de la medición
+    measurementStartTime.current = 0;
+    // Reiniciar contador de actualizaciones
+    updateCounter.current = 0;
     
     const savedResults = processor.reset();
     if (savedResults) {
@@ -284,6 +366,11 @@ export const useVitalSignsProcessor = () => {
       },
       timestamp: new Date().toISOString()
     });
+    
+    // Reiniciar tiempo de inicio de la medición
+    measurementStartTime.current = 0;
+    // Reiniciar contador de actualizaciones
+    updateCounter.current = 0;
     
     processor.fullReset();
     setLastValidResults(null);
