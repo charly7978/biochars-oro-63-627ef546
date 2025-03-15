@@ -49,15 +49,9 @@ export class VitalSignsProcessor {
   private lastValidResults: VitalSignsResult | null = null;
   
   // Umbrales de señal mínima para considerar mediciones válidas
-  // Reducidos significativamente para máxima sensibilidad
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.005; // Reducido al mínimo para máxima sensibilidad
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Reducido para máxima sensibilidad
-  
-  // Valores para detección avanzada
-  private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE = 10;
-  private consecutiveSignals = 0;
-  private readonly MIN_CONSECUTIVE_SIGNALS = 3;
+  // Reducidos para mayor sensibilidad en la detección
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Reducido de 0.05 para mayor sensibilidad
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25; // Reducido de 0.4 para mayor sensibilidad
 
   constructor() {
     this.spo2Processor = new SpO2Processor();
@@ -67,41 +61,23 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    console.log("VitalSignsProcessor: Inicializado con configuración ultra-sensible para mejor detección");
+    console.log("VitalSignsProcessor: Inicializado con configuración optimizada para mejor detección");
   }
   
   /**
    * Procesa la señal PPG y calcula todos los signos vitales
-   * Usando estrategia de máxima sensibilidad para detección temprana
+   * Implementando estrategias mejoradas de validación y estabilidad
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Actualizar historial de señal
-    this.signalHistory.push(ppgValue);
-    if (this.signalHistory.length > this.HISTORY_SIZE) {
-      this.signalHistory.shift();
-    }
-    
-    // Detección de señal con umbral adaptativo
-    const signalVariation = this.calculateSignalVariation();
-    const hasMinimalVariation = signalVariation > 0.002; // Umbral ultra-sensible
-    
-    // Verificar señal mínima con lógica adaptativa
-    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE || !hasMinimalVariation) {
-      this.consecutiveSignals = 0;
-      return this.getLastValidResults() || this.createEmptyResults();
-    } else {
-      this.consecutiveSignals = Math.min(this.consecutiveSignals + 1, 10);
-    }
-    
-    // Iniciar procesamiento sólo si hay señal constante
-    if (this.consecutiveSignals < this.MIN_CONSECUTIVE_SIGNALS) {
+    // Verificar calidad mínima de señal (umbral reducido para mejor detección)
+    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
       return this.getLastValidResults() || this.createEmptyResults();
     }
 
-    // Aplicar filtrado a la señal PPG - más suave para preservar señales débiles
+    // Aplicar filtrado a la señal PPG
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
     // Procesar datos de arritmia si están disponibles
@@ -110,16 +86,16 @@ export class VitalSignsProcessor {
     // Obtener los valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
     
-    // Procesar incluso con pocos datos (máxima sensibilidad)
-    if (ppgValues.length < 20) {
+    // Solo procesar si hay suficientes datos de PPG (reducido para procesamiento más temprano)
+    if (ppgValues.length < 50) { // Reducido de 100 para procesar más rápido
       return this.getLastValidResults() || this.createEmptyResults();
     }
     
     // Calcular SpO2
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-40));
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-60));
     
     // Calcular presión arterial
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-60));
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
@@ -150,7 +126,7 @@ export class VitalSignsProcessor {
       }
     };
     
-    // Actualizar resultados con umbral de confianza muy bajo para máxima sensibilidad
+    // Solo actualizar resultados válidos si hay suficiente confianza
     if (this.isValidMeasurement(result)) {
       this.lastValidResults = { ...result };
     }
@@ -158,35 +134,21 @@ export class VitalSignsProcessor {
     return result;
   }
   
-  // Calcular variación de señal para detección adaptativa
-  private calculateSignalVariation(): number {
-    if (this.signalHistory.length < 3) return 0;
-    
-    // Calcular diferencias entre mediciones consecutivas
-    const differences: number[] = [];
-    for (let i = 1; i < this.signalHistory.length; i++) {
-      differences.push(Math.abs(this.signalHistory[i] - this.signalHistory[i-1]));
-    }
-    
-    // Obtener variación media
-    return differences.reduce((sum, val) => sum + val, 0) / differences.length;
-  }
-  
   /**
    * Verifica si una medición tiene suficiente calidad para considerarse válida
-   * Criterios con máxima sensibilidad
+   * Criterios ajustados para mayor sensibilidad
    */
   private isValidMeasurement(result: VitalSignsResult): boolean {
     const { spo2, pressure, glucose, lipids, confidence } = result;
     const [systolic, diastolic] = pressure.split('/').map(v => parseInt(v));
     
-    // Criterios con umbral mínimo para máxima sensibilidad
     return (
-      (confidence?.overall === undefined || confidence.overall >= this.MIN_CONFIDENCE_THRESHOLD) &&
-      (spo2 >= 0) && 
-      (!isNaN(systolic) || !isNaN(diastolic)) && 
-      (glucose >= 0) && 
-      (lipids.totalCholesterol >= 0)
+      confidence?.overall && confidence.overall >= this.MIN_CONFIDENCE_THRESHOLD &&
+      spo2 > 0 && 
+      !isNaN(systolic) && systolic > 0 && 
+      !isNaN(diastolic) && diastolic > 0 && 
+      glucose > 0 && 
+      lipids.totalCholesterol > 0
     );
   }
   
@@ -216,8 +178,6 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
-    this.signalHistory = [];
-    this.consecutiveSignals = 0;
     
     return this.lastValidResults;
   }
