@@ -163,22 +163,34 @@ export class PPGSignalProcessor implements SignalProcessor {
    * Reemplaza análisis complejos con una detección directa
    */
   private isFingerPresent(redValue: number): boolean {
-    // 1. Verificación básica de rango
-    const isInRange = redValue >= this.MIN_RED_THRESHOLD && redValue <= this.MAX_RED_THRESHOLD;
-    if (!isInRange) return false;
+    // 1. Verificación de rango más estricta
+    const isInGoodRange = redValue >= this.MIN_RED_THRESHOLD + 20 && redValue <= this.MAX_RED_THRESHOLD - 20;
+    if (!isInGoodRange) return false;
     
     // 2. Si tenemos suficientes valores para análisis
-    if (this.lastValues.length >= 3) {
+    if (this.lastValues.length >= 4) {
       // Calculamos diferencia entre valores consecutivos
-      const last = this.lastValues.slice(-3);
+      const last = this.lastValues.slice(-4);
       const diffs = [
         Math.abs(last[1] - last[0]),
-        Math.abs(last[2] - last[1])
+        Math.abs(last[2] - last[1]),
+        Math.abs(last[3] - last[2])
       ];
       
-      // Un dedo quieto no produce grandes cambios entre frames
+      // Exigimos una señal muy estable - un dedo quieto no produce grandes cambios entre frames
       const maxDiff = Math.max(...diffs);
-      if (maxDiff > 50) return false;
+      if (maxDiff > 25) return false;
+      
+      // Verificar rango dinámico mínimo (la señal no debe ser plana)
+      const min = Math.min(...last);
+      const max = Math.max(...last);
+      const range = max - min;
+      
+      // Si el rango es muy pequeño, podría ser ruido o nada
+      if (range < 3) return false;
+    } else {
+      // Con pocos valores, somos conservadores
+      return false;
     }
     
     return true;
@@ -196,7 +208,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
       
-      // CAMBIO: Verificación rápida de presencia de dedo
+      // Verificación rápida de presencia de dedo
       const fingerPresent = this.isFingerPresent(redValue);
       
       // Aplicar denoising
@@ -217,7 +229,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // CAMBIO: Análisis simplificado si no hay dedo
+      // Análisis simplificado si no hay dedo
       let quality = 0;
       let isFingerDetected = false;
       
@@ -226,6 +238,20 @@ export class PPGSignalProcessor implements SignalProcessor {
         const result = this.analyzeSignal(filtered, redValue);
         quality = result.quality;
         isFingerDetected = result.isFingerDetected;
+        
+        // Verificación adicional: necesitamos variabilidad fisiológica realista
+        // Las pulsaciones cardíacas generan una señal con cierta variación
+        if (isFingerDetected && this.periodicityBuffer.length >= 15) {
+          const recentSignal = this.periodicityBuffer.slice(-15);
+          const signalVariance = this.calculateVariance(recentSignal);
+          
+          // Un dedo real muestra pequeñas variaciones naturales
+          // Un valor muy bajo indica una señal estática o ruido
+          if (signalVariance < 0.5) {
+            isFingerDetected = false;
+            quality = Math.max(0, quality - 20);
+          }
+        }
       }
 
       // Crear señal procesada
@@ -301,9 +327,8 @@ export class PPGSignalProcessor implements SignalProcessor {
    * Analiza la señal para determinar calidad y presencia de dedo
    */
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Verificación simple de rango: un dedo sobre la cámara bloquea la luz
-    // por lo que esperamos valores rojos en cierto rango
-    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
+    // Verificación estricta de rango para el dedo
+    const isInRange = rawValue >= this.MIN_RED_THRESHOLD + 15 && rawValue <= this.MAX_RED_THRESHOLD - 15;
     
     if (!isInRange) {
       this.stableFrameCount = 0;
@@ -311,8 +336,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Necesitamos un mínimo de frames para evaluar estabilidad
-    if (this.lastValues.length < this.STABILITY_WINDOW) {
+    // Necesitamos varios frames para evaluar estabilidad
+    if (this.lastValues.length < this.STABILITY_WINDOW + 1) {
       return { isFingerDetected: false, quality: 0 };
     }
 
@@ -328,31 +353,29 @@ export class PPGSignalProcessor implements SignalProcessor {
 
     // Medimos la variación máxima y mínima
     const maxVariation = Math.max(...variations.map(Math.abs));
-    const minVariation = Math.min(...variations);
     
-    // CAMBIO: Simplificamos el umbral adaptativo para mejor detección
-    const adaptiveThreshold = Math.max(2.0, avgValue * 0.025);
+    // Umbral adaptativo más estricto
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
     
-    // CAMBIO: Criterio simplificado de estabilidad
-    // Un dedo quieto produce una señal más estable que sin dedo
-    const isStable = maxVariation < adaptiveThreshold * 3;
+    // Criterio de estabilidad
+    const isStable = maxVariation < adaptiveThreshold * 2;
 
-    // CAMBIO: Reforzar la detección con contador más agresivo
+    // Manejo del contador de estabilidad más conservador
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1.5, this.MIN_STABILITY_COUNT * 3);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+      // Penalización más agresiva a la inestabilidad
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1.5);
     }
-
-    // CAMBIO: Simplificamos el análisis de periodicidad
-    // Nos enfocamos más en la presencia/ausencia que en la calidad perfecta
-    const periodicityScore = 0.5; // Valor base razonable
     
-    // CAMBIO: Cálculo de calidad simplificado pero efectivo
+    // Verificar variación mínima (eliminar señales planas)
+    const range = Math.max(...recentValues) - Math.min(...recentValues);
+    const hasVariation = range > 3;
+    
+    // Cálculo de calidad 
     let quality = 0;
-    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT) {
-      // Calculamos la calidad basada en estabilidad e intensidad
+    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT && hasVariation) {
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                     (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
@@ -360,10 +383,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       quality = Math.round((stabilityScore * 0.6 + intensityScore * 0.4) * 100);
     }
     
-    // CAMBIO: Criterio simplificado de detección de dedo
-    // Priorizamos estabilidad sobre otros factores
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT &&
-                            quality >= 40; // Umbral de calidad más permisivo
+    // Criterio de detección más estricto
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT + 1 &&
+                            quality >= 50 && 
+                            hasVariation;
 
     return { isFingerDetected, quality };
   }
@@ -435,6 +458,20 @@ export class PPGSignalProcessor implements SignalProcessor {
       width: 100,
       height: 100
     };
+  }
+
+  /**
+   * Calcula la varianza de una señal
+   * Usada para verificar variabilidad fisiológica real
+   */
+  private calculateVariance(signal: number[]): number {
+    if (signal.length === 0) return 0;
+    
+    const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+    const squaredDiffs = signal.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / signal.length;
+    
+    return variance;
   }
 
   /**

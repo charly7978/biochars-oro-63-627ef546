@@ -50,29 +50,33 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // CAMBIO: Simplificamos la lógica de detección
-    // Damos más peso a las detecciones positivas recientes
+    // Ahora requerimos al menos 2 detecciones positivas en las últimas 3
     const recentDetections = fingerDetectedHistoryRef.current.slice(-3);
     const recentPositives = recentDetections.filter(d => d).length;
     
-    // Si hay al menos una detección positiva reciente, consideramos que hay dedo
-    const robustFingerDetected = recentPositives >= 1;
+    // Criterio más estricto: al menos 2 de 3 para considerar que hay dedo
+    const robustFingerDetected = recentPositives >= 2 && signal.quality > 45;
     
-    // CAMBIO: Calculamos una calidad más reactiva
+    // Calculamos una calidad más reactiva pero conservadora
     const recentQualities = qualityHistoryRef.current.slice(-3);
     const avgQuality = recentQualities.length > 0 
       ? recentQualities.reduce((sum, q) => sum + q, 0) / recentQualities.length 
       : signal.quality;
     
-    // CAMBIO: Si estamos detectando dedo, mejoramos ligeramente la calidad
-    const enhancedQuality = robustFingerDetected 
-      ? Math.min(100, avgQuality * 1.15) 
+    // Si estamos detectando dedo, mejoramos ligeramente la calidad
+    const enhancedQuality = (robustFingerDetected && avgQuality > 40)
+      ? Math.min(100, avgQuality * 1.1) 
       : avgQuality;
+    
+    // Verificación final: el valor crudo debe estar dentro del rango esperado
+    // para una medición PPG real
+    const isInExpectedRange = signal.rawValue > 70 && signal.rawValue < 230;
+    const finalDetection = robustFingerDetected && isInExpectedRange;
     
     // Devolver señal modificada
     return {
       ...signal,
-      fingerDetected: robustFingerDetected,
+      fingerDetected: finalDetection,
       quality: enhancedQuality
     };
   }, []);
