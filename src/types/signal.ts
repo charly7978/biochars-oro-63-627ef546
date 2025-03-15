@@ -2,6 +2,7 @@
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
 export interface ProcessedSignal {
@@ -17,22 +18,15 @@ export interface ProcessedSignal {
     height: number;
   };
   physicalSignatureScore: number;
-  rgbValues?: {
+  rgbValues: {
     red: number;
     green: number;
     blue: number;
   };
-}
-
-export interface ProcessingError {
-  code: string;
-  message: string;
-  timestamp: number;
-}
-
-export interface SignalProcessor {
-  processFrame(imageData: ImageData): void;
-  start(): void;
-  stop(): void;
-  reset(): void;
+  panTompkinsMetrics?: {
+    isPeak: boolean;
+    threshold: number;
+    accuracy: number;
+    signalStrength: number;
+  };
 }

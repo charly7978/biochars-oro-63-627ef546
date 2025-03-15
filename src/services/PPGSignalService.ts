@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -7,22 +6,24 @@
 
 import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 import { SignalProcessor } from '../modules/vital-signs/signal-processor';
+import { PanTompkinsProcessor } from '../modules/vital-signs/pan-tompkins-processor';
 import type { ProcessedSignal } from '../types/signal';
 
 /**
  * Servicio centralizado para procesamiento de señal PPG
  * Coordina el detector de dedo y el procesador de señal
- * Implementa técnicas avanzadas de extracción multiespectral
+ * Implementa técnicas avanzadas de extracción multiespectral y algoritmo Pan-Tompkins modificado
  */
 export class PPGSignalService {
   private fingerDetector: FingerDetector;
   private signalProcessor: SignalProcessor;
+  private panTompkinsProcessor: PanTompkinsProcessor;
   private isProcessing: boolean = false;
   private lastProcessedSignal: ProcessedSignal | null = null;
   private rgbSummary: {red: number, green: number, blue: number} = {red: 0, green: 0, blue: 0};
   private frameCount: number = 0;
   
-  // Nuevos parámetros para extracción multiespectral
+  // Variables para extraccón multiespectral
   private channelQualityHistory: {red: number[], green: number[], blue: number[]} = {
     red: [],
     green: [],
@@ -30,10 +31,15 @@ export class PPGSignalService {
   };
   private readonly CHANNEL_HISTORY_SIZE = 10;
   
+  // Variables para almacenar los últimos valores PPG para Pan-Tompkins
+  private ppgBuffer: number[] = [];
+  private readonly PPG_BUFFER_SIZE = 128; // Ajustado para Pan-Tompkins
+  
   constructor() {
     this.fingerDetector = new FingerDetector();
     this.signalProcessor = new SignalProcessor();
-    console.log("PPGSignalService: Servicio inicializado con extracción multiespectral adaptativa");
+    this.panTompkinsProcessor = new PanTompkinsProcessor();
+    console.log("PPGSignalService: Servicio inicializado con extracción multiespectral adaptativa y Pan-Tompkins modificado");
   }
   
   /**
@@ -42,9 +48,11 @@ export class PPGSignalService {
   public startProcessing(): void {
     this.isProcessing = true;
     this.frameCount = 0;
+    this.ppgBuffer = [];
     // Reiniciar historial de calidad de canales
     this.channelQualityHistory = { red: [], green: [], blue: [] };
-    console.log("PPGSignalService: Procesamiento iniciado con extracción multiespectral");
+    this.panTompkinsProcessor.reset();
+    console.log("PPGSignalService: Procesamiento iniciado con extracción multiespectral y Pan-Tompkins");
   }
   
   /**
@@ -55,11 +63,13 @@ export class PPGSignalService {
     this.lastProcessedSignal = null;
     this.fingerDetector.reset();
     this.signalProcessor.reset();
+    this.panTompkinsProcessor.reset();
     console.log("PPGSignalService: Procesamiento detenido");
   }
   
   /**
    * Procesa un frame de imagen y extrae la señal PPG con técnicas multiespectrales
+   * y algoritmo Pan-Tompkins modificado
    * @param imageData Datos de imagen del frame de la cámara
    * @returns Señal procesada o null si no se está procesando
    */
@@ -92,6 +102,12 @@ export class PPGSignalService {
       // Aplicar filtro para obtener señal limpia usando el valor multiespectral
       const filteredValue = this.signalProcessor.applySMAFilter(multispectralValue);
       
+      // Actualizar buffer PPG para procesamiento Pan-Tompkins
+      this.updatePPGBuffer(filteredValue);
+      
+      // Aplicar algoritmo Pan-Tompkins modificado si tenemos suficientes datos
+      const panTompkinsResult = this.panTompkinsProcessor.process(filteredValue, this.ppgBuffer);
+      
       // Obtener calidad de señal del procesador
       const signalQuality = this.signalProcessor.getSignalQuality();
       
@@ -105,24 +121,35 @@ export class PPGSignalService {
       // Construir objeto de señal procesada
       const signal: ProcessedSignal = {
         timestamp: Date.now(),
-        rawValue: multispectralValue, // Ahora usamos el valor multiespectral
+        rawValue: multispectralValue,
         filteredValue: filteredValue,
         quality: signalQuality,
         fingerDetected: fingerDetectionResult.isFingerDetected,
         roi: this.calculateROI(imageData.width, imageData.height),
         physicalSignatureScore: fingerDetectionResult.quality,
-        rgbValues: this.rgbSummary
+        rgbValues: this.rgbSummary,
+        panTompkinsMetrics: {
+          isPeak: panTompkinsResult.isPeak,
+          threshold: panTompkinsResult.threshold,
+          accuracy: panTompkinsResult.accuracy,
+          signalStrength: panTompkinsResult.signalStrength
+        }
       };
       
       // Log detallado cada 30 frames para análisis
       if (this.frameCount % 30 === 0) {
-        console.log("PPGSignalService: Análisis multiespectral", {
+        console.log("PPGSignalService: Análisis multiespectral con Pan-Tompkins", {
           calidad: signalQuality,
           dedoDetectado: fingerDetectionResult.isFingerDetected,
           valorMultiespectral: multispectralValue.toFixed(2),
           pesoRojo: channelQualities.redWeight.toFixed(2),
           pesoVerde: channelQualities.greenWeight.toFixed(2),
           pesoAzul: channelQualities.blueWeight.toFixed(2),
+          panTompkins: {
+            esPico: panTompkinsResult.isPeak,
+            umbral: panTompkinsResult.threshold.toFixed(3),
+            precisión: panTompkinsResult.accuracy.toFixed(2)
+          },
           frame: this.frameCount
         });
       }
@@ -132,6 +159,16 @@ export class PPGSignalService {
     } catch (error) {
       console.error("PPGSignalService: Error procesando frame", error);
       return null;
+    }
+  }
+  
+  /**
+   * Actualiza el buffer PPG para el algoritmo Pan-Tompkins
+   */
+  private updatePPGBuffer(value: number): void {
+    this.ppgBuffer.push(value);
+    if (this.ppgBuffer.length > this.PPG_BUFFER_SIZE) {
+      this.ppgBuffer.shift();
     }
   }
   
@@ -375,6 +412,7 @@ export class PPGSignalService {
     this.lastProcessedSignal = null;
     this.frameCount = 0;
     this.channelQualityHistory = { red: [], green: [], blue: [] };
+    this.ppgBuffer = [];
     console.log("PPGSignalService: Servicio reiniciado completamente");
   }
 }
