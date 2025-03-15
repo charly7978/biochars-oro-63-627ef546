@@ -4,18 +4,14 @@
  * Based on ESC Guidelines for arrhythmia detection
  */
 
+import { NonLinearMetrics } from '../types/arrhythmia-types';
+import { calculateShannonEntropy, estimateSampleEntropy } from './entropy-utils';
+
 /**
  * Calculate advanced non-linear HRV metrics
  * Based on cutting-edge HRV research from MIT and Stanford labs
  */
-export function calculateNonLinearMetrics(rrIntervals: number[]): {
-  pnnX: number;
-  shannonEntropy: number;
-  sampleEntropy: number;
-} {
-  // Import entropy calculation functions
-  const { calculateShannonEntropy, estimateSampleEntropy } = require('./entropy-utils');
-  
+export function calculateNonLinearMetrics(rrIntervals: number[]): NonLinearMetrics {
   // Calculate pNNx (percentage of successive RR intervals differing by more than x ms)
   // Used by Mayo Clinic for arrhythmia analysis
   let countAboveThreshold = 0;
