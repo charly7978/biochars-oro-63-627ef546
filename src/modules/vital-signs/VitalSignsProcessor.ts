@@ -1,4 +1,3 @@
-
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { HemoglobinProcessor } from './hemoglobin-processor';
 import { SignalProcessor } from './signal-processor';
@@ -690,7 +689,7 @@ export class VitalSignsProcessor {
       this.lastValidSpo2 > 0 || this.lastValidPressure !== "0/0" ? {
         spo2: this.lastValidSpo2,
         pressure: this.lastValidPressure,
-        arrhythmiaStatus: this.arrhythmiaProcessor.getStatus(),
+        arrhythmiaStatus: this.arrhythmiaProcessor.processRRData().arrhythmiaStatus,
         glucose: this.lastGlucose > 0 ? this.lastGlucose : 85,
         lipids: {
           totalCholesterol: this.lastCholesterol > 0 ? this.lastCholesterol : 180,
