@@ -2,7 +2,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
-import { optimizeForScreenResolution, preventDefaultTouchBehavior } from './utils/displayOptimizer.ts'
+import { enterImmersiveMode, optimizeForScreenResolution } from './utils/displayOptimizer.ts'
 
 // Apply high-resolution interface class to the root element
 const applyHighResolution = () => {
@@ -35,40 +35,17 @@ const applyHighResolution = () => {
 
 // Execute all optimizations immediately
 applyHighResolution();
-preventDefaultTouchBehavior();
-
-// Try to enter fullscreen on user interaction
-const tryEnterFullscreen = () => {
-  try {
-    const elem = document.documentElement;
-    if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch(e => console.warn("Fullscreen request failed:", e));
-    } else if ((elem as any).webkitRequestFullscreen) {
-      (elem as any).webkitRequestFullscreen().catch(e => console.warn("Fullscreen request failed:", e));
-    } else if ((elem as any).mozRequestFullScreen) {
-      (elem as any).mozRequestFullScreen().catch(e => console.warn("Fullscreen request failed:", e));
-    } else if ((elem as any).msRequestFullscreen) {
-      (elem as any).msRequestFullscreen().catch(e => console.warn("Fullscreen request failed:", e));
-    }
-    
-    console.log("Attempting to enter fullscreen mode");
-  } catch (error) {
-    console.warn("Error attempting to enable fullscreen:", error);
-  }
-};
+enterImmersiveMode().catch(err => console.error('Initial immersive mode error:', err));
 
 // Handle resolution scaling on resize and orientation change
 window.addEventListener('resize', () => {
   applyHighResolution();
+  enterImmersiveMode().catch(err => console.error('Resize immersive mode error:', err));
 });
-
 window.addEventListener('orientationchange', () => {
   applyHighResolution();
+  enterImmersiveMode().catch(err => console.error('Orientation immersive mode error:', err));
 });
-
-// Ensure we try to enter fullscreen mode on user interaction
-document.addEventListener('click', tryEnterFullscreen, { once: true });
-document.addEventListener('touchstart', tryEnterFullscreen, { once: true });
 
 // Let's improve graph performance with a MutationObserver
 // This will add performance classes to any PPG graph elements that are added to the DOM
@@ -107,14 +84,35 @@ const setupPerformanceObserver = () => {
   return observer;
 };
 
-// Start the performance observer after render
+// Ensure we re-enter immersive mode on user interaction
+const ensureImmersiveMode = () => {
+  const handleUserInteraction = () => {
+    enterImmersiveMode().catch(err => console.error('User interaction immersive mode error:', err));
+  };
+  
+  // Add listeners for common interaction events
+  document.addEventListener('click', handleUserInteraction, { once: false });
+  document.addEventListener('touchstart', handleUserInteraction, { once: false });
+  document.addEventListener('pointerdown', handleUserInteraction, { once: false });
+  
+  // Also periodically check fullscreen state
+  setInterval(() => {
+    if (!document.fullscreenElement) {
+      enterImmersiveMode().catch(err => console.error('Periodic immersive mode error:', err));
+    }
+  }, 3000);
+};
+
+// Start the performance observer and immersive mode handlers after render
 window.addEventListener('DOMContentLoaded', () => {
   setupPerformanceObserver();
+  ensureImmersiveMode();
 });
 
 // Fix for VitalSignsProcessor.ts compatibility issues
 const patchVitalSignsProcessorTypes = () => {
   // This is a runtime patch to fix interface compatibility issues
+  // Real fix would require updating interface definitions but those files are marked as read-only
   console.log('Applied runtime compatibility patches for VitalSignsProcessor interfaces');
 };
 patchVitalSignsProcessorTypes();
