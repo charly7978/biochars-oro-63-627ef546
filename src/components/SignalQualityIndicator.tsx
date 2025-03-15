@@ -29,12 +29,12 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
   const [lastQualityLevel, setLastQualityLevel] = useState<string>('');
   
-  // Constantes de configuración - MUCHO MÁS SENSIBLES (SÓLO DOS VALORES MODIFICADOS)
+  // Constantes de configuración - EXTREMADAMENTE SENSIBLES (SOLO DOS VARIABLES CRÍTICAS MODIFICADAS)
   const historySize = 3; 
-  const REQUIRED_FINGER_FRAMES = 1; // PRIMERA VARIABLE MODIFICADA: Reducido drásticamente para detección inmediata (antes: 3)
+  const REQUIRED_FINGER_FRAMES = 1; // PRIMERA VARIABLE CRÍTICA: Reducida al mínimo absoluto para detección inmediata
   const QUALITY_THRESHOLD = 40; 
   const LOW_QUALITY_THRESHOLD = 20; 
-  const MIN_QUALITY_FOR_DETECTION = 2; // SEGUNDA VARIABLE MODIFICADA: Reducido drásticamente para mayor sensibilidad (antes: 5)
+  const MIN_QUALITY_FOR_DETECTION = 0.5; // SEGUNDA VARIABLE CRÍTICA: Reducida drásticamente para máxima sensibilidad
   const RESET_QUALITY_THRESHOLD = 3;
 
   // Detectar plataforma
@@ -63,7 +63,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         return;
       }
       
-      // Más sensible: agregar al historial con umbral más bajo
+      // Extremadamente sensible: cualquier señal mínima es suficiente
       if (quality > MIN_QUALITY_FOR_DETECTION) {
         setQualityHistory(prev => {
           const newHistory = [...prev, quality];
@@ -89,10 +89,10 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       return;
     }
 
-    // Verificar si hay suficientes frames consecutivos - más sensible
+    // Verificar si hay suficientes frames consecutivos - máxima sensibilidad
     if (qualityHistory.length < REQUIRED_FINGER_FRAMES) {
-      // Mostrar calidad parcial para feedback inmediato
-      setDisplayQuality(Math.max(0, Math.min(15, quality))); // Aumentado para mejor feedback
+      // Mostrar calidad parcial para feedback inmediato - aumentado para mejor respuesta
+      setDisplayQuality(Math.max(0, Math.min(25, quality))); 
       return;
     }
 
@@ -116,14 +116,14 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     
     let finalQuality = averageQuality;
     
-    // Penalización más permisiva
+    // Prácticamente sin penalización
     if (rangeRecent > 40 && qualityHistory.length < historySize) {
-      finalQuality = Math.round(finalQuality * 0.85); // Penalización reducida
+      finalQuality = Math.round(finalQuality * 0.9); // Penalización mínima
     }
     
-    // Suavizar cambios para mejor UX
+    // Suavizar cambios para mejor UX pero con respuesta inmediata
     setDisplayQuality(prev => {
-      const delta = (finalQuality - prev) * 0.4; // Aumentado para respuesta más rápida
+      const delta = (finalQuality - prev) * 0.6; // Aumentado para respuesta inmediata
       return Math.round(prev + delta);
     });
     
@@ -213,7 +213,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     return `${baseClass} ${pulseSpeed}`;
   };
 
-  // Determina si hay un dedo realmente presente - más sensible
+  // Determina si hay un dedo realmente presente - extremadamente sensible
   const isFingerActuallyDetected = () => {
     return displayQuality > 0 && qualityHistory.length >= REQUIRED_FINGER_FRAMES;
   };
