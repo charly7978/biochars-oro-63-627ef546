@@ -22,10 +22,9 @@ export class VitalSignsProcessor {
   private consecutiveValidFrames: number = 0;
   private lastProcessedTime: number = 0;
   private processingEnabled: boolean = true;
+  private signalAccumulator: number = 0;
+  private frameCount: number = 0;
   
-  /**
-   * Constructor que inicializa el procesador interno refactorizado y el detector de dedo
-   */
   constructor() {
     this.processor = new CoreVitalSignsProcessor();
     this.fingerDetector = new FingerDetector();
@@ -35,7 +34,6 @@ export class VitalSignsProcessor {
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
    * Utiliza FingerDetector con TRIPLE VERIFICACIÓN como única fuente para detección de dedos
-   * COMPLETAMENTE REDISEÑADO para eliminar TODOS los falsos positivos
    */
   public processSignal(
     ppgValue: number,
@@ -59,21 +57,25 @@ export class VitalSignsProcessor {
     }
     this.lastProcessedTime = currentTime;
     
+    // Acumular señal para promedios
+    this.signalAccumulator += Math.abs(ppgValue);
+    this.frameCount++;
+    
     // Almacenar valores RGB si están disponibles
     if (rgbValues) {
       this.lastRgbValues = rgbValues;
     }
     
-    // TRIPLE VERIFICACIÓN de calidad con el detector de dedo centralizado y valores RGB
+    // TRIPLE VERIFICACIÓN de calidad con el detector de dedo centralizado
     const fingerDetectionResult = this.fingerDetector.processQuality(
       ppgValue, 
       this.lastRgbValues.red, 
       this.lastRgbValues.green
     );
     
-    // Log más detallado periódicamente
-    if (Math.random() < 0.01) {
-      console.log("VitalSignsProcessor: Estado de procesamiento (TRIPLE VERIFICACIÓN)", {
+    // Log detallado cada 30 frames
+    if (this.frameCount % 30 === 0) {
+      console.log("VitalSignsProcessor: Estado de procesamiento", {
         ppgValue,
         calidadDetectada: fingerDetectionResult.quality,
         dedoDetectado: fingerDetectionResult.isFingerDetected,
@@ -82,8 +84,13 @@ export class VitalSignsProcessor {
         valorVerde: this.lastRgbValues.green,
         ratioRG: this.lastRgbValues.red / Math.max(1, this.lastRgbValues.green),
         framesValidosConsecutivos: this.consecutiveValidFrames,
-        framesVacíosConsecutivos: this.consecutiveEmptyFrames
+        framesVacíosConsecutivos: this.consecutiveEmptyFrames,
+        señalPromedio: this.signalAccumulator / Math.max(1, this.frameCount)
       });
+      
+      // Reiniciar acumuladores
+      this.signalAccumulator = 0;
+      this.frameCount = 0;
     }
     
     // Actualizar contadores de consistencia
@@ -130,6 +137,8 @@ export class VitalSignsProcessor {
     this.lastRgbValues = {red: 0, green: 0};
     this.consecutiveEmptyFrames = 0;
     this.consecutiveValidFrames = 0;
+    this.signalAccumulator = 0;
+    this.frameCount = 0;
     return this.processor.reset();
   }
   
@@ -142,6 +151,8 @@ export class VitalSignsProcessor {
     this.consecutiveEmptyFrames = 0;
     this.consecutiveValidFrames = 0;
     this.processingEnabled = true;
+    this.signalAccumulator = 0;
+    this.frameCount = 0;
     this.processor.fullReset();
     console.log("VitalSignsProcessor: Reset completo realizado");
   }
