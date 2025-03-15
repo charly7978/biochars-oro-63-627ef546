@@ -1,3 +1,4 @@
+
 /**
  * Utilidades reutilizables para todos los procesadores de signos vitales
  * NOTA IMPORTANTE: Este módulo contiene funciones de utilidad compartidas.
@@ -132,26 +133,10 @@ export function normalizeValue(value: number, min: number, max: number): number 
 
 /**
  * Calcula el índice de perfusión basado en componentes AC y DC
- * @param min Valor mínimo (componente DC)
- * @param max Valor máximo (componente AC + DC)
  */
-export function calculatePerfusionIndex(min: number, max: number): number {
-  if (min === 0) return 0;
-  // El índice de perfusión es la relación entre la amplitud (AC) y el nivel DC
-  const ac = max - min;
-  const dc = min;
+export function calculatePerfusionIndex(ac: number, dc: number): number {
+  if (dc === 0) return 0;
   return ac / dc;
-}
-
-/**
- * Calcula el índice de perfusión basado en valores de PPG
- * @param values Array de valores PPG 
- */
-export function calculatePerfusionIndexFromValues(values: number[]): number {
-  if (values.length === 0) return 0;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  return calculatePerfusionIndex(min, max);
 }
 
 /**

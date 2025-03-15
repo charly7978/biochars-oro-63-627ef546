@@ -3,16 +3,10 @@ import type { CalibrationProgress } from '../types/AdvancedProcessorTypes';
 
 /**
  * Servicio para gestionar la calibración del procesador avanzado
- * Versión simplificada con validación mínima
  */
 export class CalibrationService {
   private calibrating: boolean = false;
-  private fingerDetected: boolean = true; // Siempre asume que hay un dedo
-  private consecutiveFingerDetections: number = 10; // Siempre por encima del umbral
-  private readonly MIN_CONSECUTIVE_DETECTIONS = 2; // Reducido drásticamente
-  private lastDetectionTime: number = Date.now();
-  private readonly DETECTION_TIMEOUT_MS = 5000; // Aumentado para mayor tolerancia
-  
+  private fingerDetected: boolean = false;
   private calibrationProgress: CalibrationProgress = {
     heartRate: 0,
     spo2: 0,
@@ -26,13 +20,11 @@ export class CalibrationService {
 
   /**
    * Actualiza el progreso de calibración
-   * Sin restricciones de detección de dedo
    */
   public updateCalibration(): boolean {
-    if (!this.calibrating) return false;
+    if (!this.calibrating || !this.fingerDetected) return false;
     
-    // Sin validación estricta
-    const increment = 0.05; // Más rápido
+    const increment = 0.02;
     this.calibrationProgress.heartRate += increment;
     this.calibrationProgress.spo2 += increment;
     this.calibrationProgress.pressure += increment;
@@ -58,13 +50,19 @@ export class CalibrationService {
   }
   
   /**
-   * Siempre considera que hay un dedo detectado
+   * Actualiza el estado de detección de dedo
    */
   public updateFingerDetection(isFingerDetected: boolean): void {
-    // Ignoramos el parámetro y siempre asumimos dedo detectado
-    this.lastDetectionTime = Date.now();
-    this.consecutiveFingerDetections = 10; // Siempre por encima del umbral
-    this.fingerDetected = true;
+    // Si cambia el estado de detección de dedo, registrar en consola
+    if (this.fingerDetected !== isFingerDetected) {
+      console.log(`Calibración: ${isFingerDetected ? 'Dedo detectado' : 'Dedo removido'}`);
+    }
+    this.fingerDetected = isFingerDetected;
+    
+    // Si se quita el dedo durante la calibración, pausarla
+    if (!isFingerDetected && this.calibrating) {
+      console.log('Calibración pausada - No hay dedo detectado');
+    }
   }
   
   /**
@@ -75,7 +73,7 @@ export class CalibrationService {
     Object.keys(this.calibrationProgress).forEach(key => {
       this.calibrationProgress[key as keyof CalibrationProgress] = 0;
     });
-    console.log('Iniciando calibración sin restricciones');
+    console.log('Iniciando calibración avanzada');
   }
   
   /**
@@ -99,15 +97,15 @@ export class CalibrationService {
     return {
       isCalibrating: this.calibrating,
       progress: this.calibrationProgress,
-      fingerDetected: true // Siempre retorna true
+      fingerDetected: this.fingerDetected
     };
   }
   
   /**
-   * Siempre devuelve que hay un dedo detectado
+   * Verifica si hay un dedo detectado
    */
   public isFingerDetected(): boolean {
-    return true;
+    return this.fingerDetected;
   }
   
   /**
@@ -115,9 +113,7 @@ export class CalibrationService {
    */
   public reset(): void {
     this.calibrating = false;
-    this.fingerDetected = true;
-    this.consecutiveFingerDetections = 10;
-    this.lastDetectionTime = Date.now();
+    this.fingerDetected = false;
     Object.keys(this.calibrationProgress).forEach(key => {
       this.calibrationProgress[key as keyof CalibrationProgress] = 0;
     });
