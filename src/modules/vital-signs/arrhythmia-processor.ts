@@ -9,19 +9,19 @@ import { detectArrhythmia } from './utils/arrhythmia-decision-engine';
 
 export class ArrhythmiaProcessor {
   // Configuration based on Harvard Medical School research on HRV
-  private readonly RR_WINDOW_SIZE = 10; // Increased window for better statistical power
-  private readonly RMSSD_THRESHOLD = 45; // More conservative threshold
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 6000; // Extended learning period
-  private readonly SD1_THRESHOLD = 35; // More conservative Poincaré plot SD1 threshold
-  private readonly PERFUSION_INDEX_MIN = 0.3; // Higher minimum PI for reliable detection
+  private readonly RR_WINDOW_SIZE = 5; // Reducido para detección más rápida
+  private readonly RMSSD_THRESHOLD = 20; // Reducido dramáticamente
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 3000; // Reducido a la mitad
+  private readonly SD1_THRESHOLD = 15; // Reducido para mayor sensibilidad
+  private readonly PERFUSION_INDEX_MIN = 0.1; // Reducido para trabajar con señales de menor calidad
   
   // Advanced detection parameters from Mayo Clinic research
-  private readonly PNNX_THRESHOLD = 0.25; // More conservative pNN50 threshold
-  private readonly SHANNON_ENTROPY_THRESHOLD = 1.8; // Higher entropy threshold
-  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.4; // Higher sample entropy threshold
+  private readonly PNNX_THRESHOLD = 0.15; // Umbral reducido
+  private readonly SHANNON_ENTROPY_THRESHOLD = 1.2; // Umbral reducido
+  private readonly SAMPLE_ENTROPY_THRESHOLD = 0.8; // Umbral reducido
   
   // Minimum time between arrhythmias to reduce false positives
-  private readonly MIN_ARRHYTHMIA_INTERVAL = 2000; // 2 seconds minimum between detections
+  private readonly MIN_ARRHYTHMIA_INTERVAL = 500; // 0.5 segundos mínimo entre detecciones
 
   // State variables
   private rrIntervals: number[] = [];
@@ -63,7 +63,7 @@ export class ArrhythmiaProcessor {
         }
       }
       
-      if (!this.isLearningPhase && this.rrIntervals.length >= this.RR_WINDOW_SIZE) {
+      if (!this.isLearningPhase && this.rrIntervals.length >= 3) { // Reducido a solo 3 intervalos necesarios
         this.detectArrhythmia();
       }
     }
@@ -102,22 +102,22 @@ export class ArrhythmiaProcessor {
    * Based on ESC Guidelines for arrhythmia detection
    */
   private detectArrhythmia(): void {
-    if (this.rrIntervals.length < this.RR_WINDOW_SIZE) return;
+    if (this.rrIntervals.length < 3) return; // Reducido a solo 3 intervalos mínimos
 
     const currentTime = Date.now();
     const recentRR = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
     
-    // Calculate RMSSD with more stringent validation
+    // Calculate RMSSD with more relaxed validation
     const { rmssd, validIntervals } = calculateRMSSD(recentRR);
     
-    // Require at least 70% valid intervals
-    if (validIntervals < this.RR_WINDOW_SIZE * 0.7) {
+    // Require at least 50% valid intervals (reducido)
+    if (validIntervals < this.RR_WINDOW_SIZE * 0.5) {
       return;
     }
     
-    // Calculate mean RR and standard deviation with outlier rejection
-    const validRRs = recentRR.filter(rr => rr >= 500 && rr <= 1500);
-    if (validRRs.length < this.RR_WINDOW_SIZE * 0.7) return;
+    // Calculate mean RR and standard deviation with relaxed outlier rejection
+    const validRRs = recentRR.filter(rr => rr >= 400 && rr <= 2000); // Rangos ampliados
+    if (validRRs.length < this.RR_WINDOW_SIZE * 0.5) return; // Umbral reducido
     
     // Calculate RR variation metrics
     const { 
@@ -147,7 +147,7 @@ export class ArrhythmiaProcessor {
 
     // If it's a new arrhythmia and enough time has passed since the last one
     if (newArrhythmiaState && 
-        currentTime - this.lastArrhythmiaTime > 1000) { // Minimum 1 second between arrhythmias
+        currentTime - this.lastArrhythmiaTime > this.MIN_ARRHYTHMIA_INTERVAL) {
       this.arrhythmiaCount++;
       this.lastArrhythmiaTime = currentTime;
       

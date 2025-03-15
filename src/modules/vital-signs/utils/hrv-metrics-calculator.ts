@@ -1,8 +1,7 @@
 
 /**
- * Calculator for heart rate variability metrics used in arrhythmia detection
- * Based on ESC Guidelines for arrhythmia detection
- * Recalibrated to reduce false positives
+ * Calculator for heart rate variability metrics con máxima sensibilidad
+ * Con umbrales muy bajos para mostrar más variabilidad
  */
 
 import { NonLinearMetrics } from '../types/arrhythmia-types';
@@ -10,12 +9,11 @@ import { calculateShannonEntropy, estimateSampleEntropy } from './entropy-utils'
 
 /**
  * Calculate advanced non-linear HRV metrics
- * Based on cutting-edge HRV research from MIT and Stanford labs
+ * Con validación mínima de intervalos
  */
 export function calculateNonLinearMetrics(rrIntervals: number[]): NonLinearMetrics {
-  // Si hay menos de 5 intervalos, retornar valores por defecto
-  // Aumentado el umbral mínimo para análisis fiable
-  if (rrIntervals.length < 5) {
+  // Requiere muy pocos intervalos
+  if (rrIntervals.length < 2) {
     return {
       pnnX: 0,
       shannonEntropy: 0,
@@ -23,11 +21,11 @@ export function calculateNonLinearMetrics(rrIntervals: number[]): NonLinearMetri
     };
   }
   
-  // Filtrar outliers para análisis más robusto
+  // Filtrado más permisivo de outliers
   const filteredIntervals = filterOutliers(rrIntervals);
   
-  // Si después del filtrado quedan muy pocos intervalos, retornar valores por defecto
-  if (filteredIntervals.length < 4) {
+  // Requiere muy pocos intervalos
+  if (filteredIntervals.length < 2) {
     return {
       pnnX: 0,
       shannonEntropy: 0,
@@ -35,21 +33,19 @@ export function calculateNonLinearMetrics(rrIntervals: number[]): NonLinearMetri
     };
   }
   
-  // Calculate pNNx (percentage of successive RR intervals differing by more than x ms)
-  // Used by Mayo Clinic for arrhythmia analysis
-  // Umbral aumentado a 60ms para mayor especificidad
+  // Calculate pNNx con umbral más bajo
   let countAboveThreshold = 0;
   for (let i = 1; i < filteredIntervals.length; i++) {
-    if (Math.abs(filteredIntervals[i] - filteredIntervals[i-1]) > 60) { // Aumentado de 50 a 60
+    if (Math.abs(filteredIntervals[i] - filteredIntervals[i-1]) > 20) { // Umbral muy bajo (20ms)
       countAboveThreshold++;
     }
   }
   const pnnX = countAboveThreshold / (filteredIntervals.length - 1);
   
-  // Calculate Shannon Entropy (information theory approach)
+  // Calculate Shannon Entropy
   const shannonEntropy = calculateShannonEntropy(filteredIntervals);
   
-  // Sample Entropy calculation (simplified)
+  // Sample Entropy calculation
   const sampleEntropy = estimateSampleEntropy(filteredIntervals);
   
   return {
@@ -60,13 +56,12 @@ export function calculateNonLinearMetrics(rrIntervals: number[]): NonLinearMetri
 }
 
 /**
- * Filtering outliers for more robust analysis
- * New function to improve reliability
+ * Filtering outliers con criterio muy amplio
  */
 function filterOutliers(intervals: number[]): number[] {
-  if (intervals.length < 3) return intervals;
+  if (intervals.length < 2) return intervals;
   
-  // Calculate median and median absolute deviation (more robust than mean/std)
+  // Calculate median and median absolute deviation
   const sorted = [...intervals].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
   
@@ -74,22 +69,21 @@ function filterOutliers(intervals: number[]): number[] {
   const sortedDevs = [...deviations].sort((a, b) => a - b);
   const mad = sortedDevs[Math.floor(sortedDevs.length / 2)];
   
-  // Filter values within reasonable range (3 MADs)
-  return intervals.filter(val => Math.abs(val - median) <= 3 * mad);
+  // Filtro con 8 MADs - extremadamente permisivo
+  return intervals.filter(val => Math.abs(val - median) <= 8 * mad);
 }
 
 /**
- * Calculate RMSSD with validation
- * Improved to reduce sensitivity to outliers
+ * Calcula RMSSD con validación mínima
  */
 export function calculateRMSSD(recentRR: number[]): {
   rmssd: number;
   validIntervals: number;
 } {
-  // Filtrar outliers para mayor robustez
+  // Filtrado permisivo
   const filteredRR = filterOutliers(recentRR);
   
-  if (filteredRR.length < 3) {
+  if (filteredRR.length < 2) {
     return { rmssd: 0, validIntervals: 0 };
   }
   
@@ -98,8 +92,8 @@ export function calculateRMSSD(recentRR: number[]): {
   
   for (let i = 1; i < filteredRR.length; i++) {
     const diff = filteredRR[i] - filteredRR[i-1];
-    // Criterios más estrictos para intervalos válidos
-    if (filteredRR[i] >= 600 && filteredRR[i] <= 1300) { // Rango más restrictivo (antes 500-1500)
+    // Criterios extremadamente permisivos
+    if (filteredRR[i] >= 300 && filteredRR[i] <= 2000) { // Rango muy ampliado
       sumSquaredDiff += diff * diff;
       validIntervals++;
     }
@@ -112,8 +106,7 @@ export function calculateRMSSD(recentRR: number[]): {
 }
 
 /**
- * Calculate RR variation and related metrics
- * Improved stability and outlier rejection
+ * Calcula variación RR con criterios mínimos
  */
 export function calculateRRVariation(validRRs: number[]): {
   avgRR: number;
@@ -122,8 +115,7 @@ export function calculateRRVariation(validRRs: number[]): {
   coefficientOfVariation: number;
   rrVariation: number;
 } {
-  // Si hay menos de 3 intervalos, retornar valores por defecto
-  if (validRRs.length < 3) {
+  if (validRRs.length < 2) {
     return {
       avgRR: 0,
       lastRR: 0,
@@ -133,11 +125,10 @@ export function calculateRRVariation(validRRs: number[]): {
     };
   }
   
-  // Filtrar outliers para mayor robustez
+  // Filtrado permisivo
   const filteredRRs = filterOutliers(validRRs);
   
-  // Si después del filtrado quedan muy pocos intervalos, retornar valores por defecto
-  if (filteredRRs.length < 3) {
+  if (filteredRRs.length < 2) {
     return {
       avgRR: 0,
       lastRR: 0,
@@ -157,17 +148,8 @@ export function calculateRRVariation(validRRs: number[]): {
   
   const coefficientOfVariation = rrStandardDeviation / avgRR;
   
-  // Calcular variación utilizando media ponderada de los últimos 3 intervalos
-  // en lugar de solo el último, para mayor estabilidad
-  let weightedRR = 0;
-  if (filteredRRs.length >= 3) {
-    const n = filteredRRs.length;
-    weightedRR = (filteredRRs[n-1] * 3 + filteredRRs[n-2] * 2 + filteredRRs[n-3]) / 6;
-  } else {
-    weightedRR = lastRR;
-  }
-  
-  const rrVariation = Math.abs(weightedRR - avgRR) / avgRR;
+  // Cálculo simplificado de variación
+  const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
   
   return {
     avgRR,
