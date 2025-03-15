@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -384,7 +383,9 @@ const Index = () => {
                   <div className="bg-gray-800/50 p-3 rounded-lg">
                     <p className="text-gray-400 text-xs">Frecuencia cardíaca</p>
                     <p className="text-white text-lg font-bold">
-                      {lastValidResults.heartRate || "--"} <span className="text-xs">BPM</span>
+                      {lastValidResults.arrhythmiaStatus?.split('|')[0] !== "SIN ARRITMIAS" 
+                        ? lastValidResults.arrhythmiaStatus?.split('|')[0] 
+                        : "--"} <span className="text-xs">BPM</span>
                     </p>
                   </div>
                   

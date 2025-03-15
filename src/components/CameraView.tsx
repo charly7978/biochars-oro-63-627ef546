@@ -89,7 +89,6 @@ const CameraView: React.FC<CameraViewProps> = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
-      // Configuración simplificada para mayor compatibilidad
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
         width: { ideal: 640 }, // Reducida para mejor compatibilidad
@@ -125,8 +124,7 @@ const CameraView: React.FC<CameraViewProps> = ({
 
       console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
       
-      // Agregando un timeout para la solicitud de getUserMedia
-      const timeoutPromise = new Promise((_, reject) => {
+      const timeoutPromise = new Promise<MediaStream>((_, reject) => {
         setTimeout(() => reject(new Error("Timeout al acceder a la cámara")), 10000);
       });
       
@@ -144,13 +142,10 @@ const CameraView: React.FC<CameraViewProps> = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          // Pequeña pausa para estabilización
           await new Promise(resolve => setTimeout(resolve, 300));
           
-          // Configuraciones específicas para plataformas
           if (isAndroid) {
             try {
-              // Activar linterna inmediatamente
               if (capabilities.torch) {
                 console.log("Activando linterna en Android");
                 await videoTrack.applyConstraints({
@@ -162,7 +157,6 @@ const CameraView: React.FC<CameraViewProps> = ({
               console.error("Error al activar linterna en Android:", err);
             }
           } else {
-            // Optimizaciones para otros sistemas
             const advancedConstraints: MediaTrackConstraintSet[] = [];
             
             if (capabilities.exposureMode) {
@@ -180,7 +174,6 @@ const CameraView: React.FC<CameraViewProps> = ({
               });
             }
 
-            // Activar linterna también en otras plataformas
             if (capabilities.torch) {
               console.log("Activando linterna para mejorar la señal PPG");
               await videoTrack.applyConstraints({
@@ -205,7 +198,6 @@ const CameraView: React.FC<CameraViewProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Optimizaciones de rendimiento
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
@@ -259,7 +251,6 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   }, [stream, isFocusing, isAndroid]);
 
-  // Reiniciar la cámara si se detecta un error de track inválido
   useEffect(() => {
     if (streamErrorRef.current && isActive) {
       console.log("Detectado error de stream, reiniciando cámara...");
@@ -298,7 +289,6 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
     }
     
-    // Refrescar auto-focus con más frecuencia cuando el dedo está detectado
     if (isFingerDetected && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 3000);
       return () => clearInterval(focusInterval);
