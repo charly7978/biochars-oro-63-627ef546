@@ -1,10 +1,18 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
  * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
-import { amplifyHeartbeatRealtime } from '../../utils/signalProcessingUtils';
+import { 
+  calculateAC, 
+  calculateDC, 
+  findPeaksAndValleys, 
+  calculateAmplitude,
+  amplifyHeartbeatRealtime,
+  calculateRMSSD
+} from '../../utils/signalProcessingUtils';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -64,6 +72,7 @@ export class VitalSignsProcessor {
 
   private ppgBuffer: number[] = [];
   private readonly PPG_BUFFER_SIZE = 90;
+  private smaBuffer: number[] = [];
 
   constructor() {
     console.log("VitalSignsProcessor: Inicializado con nueva interfaz mejorada y amplificación de latidos");
@@ -164,20 +173,12 @@ export class VitalSignsProcessor {
   }
 
   private detectArrhythmia() {
-    
     if (this.rrIntervals.length < this.RR_WINDOW_SIZE) {
       return;
     }
 
     const recentRR = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
-    
-    let sumSquaredDiff = 0;
-    for (let i = 1; i < recentRR.length; i++) {
-      const diff = recentRR[i] - recentRR[i-1];
-      sumSquaredDiff += diff * diff;
-    }
-    
-    const rmssd = Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
+    const rmssd = calculateRMSSD(recentRR);
     
     const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
     const lastRR = recentRR[recentRR.length - 1];
@@ -191,7 +192,6 @@ export class VitalSignsProcessor {
   }
 
   private calculateSpO2(values: number[]): number {
-    
     if (values.length < 30) {
       if (this.spo2Buffer.length > 0) {
         const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
@@ -200,7 +200,7 @@ export class VitalSignsProcessor {
       return 0;
     }
 
-    const dc = this.calculateDC(values);
+    const dc = calculateDC(values);
     if (dc === 0) {
       if (this.spo2Buffer.length > 0) {
         const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
@@ -209,7 +209,7 @@ export class VitalSignsProcessor {
       return 0;
     }
 
-    const ac = this.calculateAC(values);
+    const ac = calculateAC(values);
     
     const perfusionIndex = ac / dc;
     
@@ -250,12 +250,11 @@ export class VitalSignsProcessor {
     systolic: number;
     diastolic: number;
   } {
-    
     if (values.length < 30) {
       return { systolic: 0, diastolic: 0 };
     }
 
-    const { peakIndices, valleyIndices } = this.localFindPeaksAndValleys(values);
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
     if (peakIndices.length < 2) {
       return { systolic: 120, diastolic: 80 };
     }
@@ -275,7 +274,7 @@ export class VitalSignsProcessor {
     }, 0) / pttValues.reduce((acc, _, idx) => acc + (idx + 1) / pttValues.length, 0);
 
     const normalizedPTT = Math.max(300, Math.min(1200, weightedPTT));
-    const amplitude = this.calculateAmplitude(values, peakIndices, valleyIndices);
+    const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
     const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
 
     const pttFactor = (600 - normalizedPTT) * 0.08;
@@ -322,74 +321,14 @@ export class VitalSignsProcessor {
     };
   }
 
-  private localFindPeaksAndValleys(values: number[]) {
-    
-    const peakIndices: number[] = [];
-    const valleyIndices: number[] = [];
-
-    for (let i = 2; i < values.length - 2; i++) {
-      const v = values[i];
-      if (
-        v > values[i - 1] &&
-        v > values[i - 2] &&
-        v > values[i + 1] &&
-        v > values[i + 2]
-      ) {
-        peakIndices.push(i);
-      }
-      if (
-        v < values[i - 1] &&
-        v < values[i - 2] &&
-        v < values[i + 1] &&
-        v < values[i + 2]
-      ) {
-        valleyIndices.push(i);
-      }
-    }
-    return { peakIndices, valleyIndices };
-  }
-
-  private calculateAmplitude(
-    values: number[],
-    peaks: number[],
-    valleys: number[]
-  ): number {
-    
-    if (peaks.length === 0 || valleys.length === 0) return 0;
-
-    const amps: number[] = [];
-    const len = Math.min(peaks.length, valleys.length);
-    for (let i = 0; i < len; i++) {
-      const amp = values[peaks[i]] - values[valleys[i]];
-      if (amp > 0) {
-        amps.push(amp);
-      }
-    }
-    if (amps.length === 0) return 0;
-
-    const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
-    return mean;
-  }
-
   private calculateRMSSD(): number {
-    
     if (this.rrIntervals.length < this.RR_WINDOW_SIZE) {
       return 0;
     }
-
-    const recentRR = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
-    
-    let sumSquaredDiff = 0;
-    for (let i = 1; i < recentRR.length; i++) {
-      const diff = recentRR[i] - recentRR[i-1];
-      sumSquaredDiff += diff * diff;
-    }
-    
-    return Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
+    return calculateRMSSD(this.rrIntervals.slice(-this.RR_WINDOW_SIZE));
   }
 
   private calculateRRVariation(): number {
-    
     if (this.rrIntervals.length < 3) {
       return 0;
     }
@@ -399,18 +338,6 @@ export class VitalSignsProcessor {
     const lastRR = recentRR[recentRR.length - 1];
     
     return Math.abs(lastRR - avgRR) / avgRR;
-  }
-
-  private calculateAC(values: number[]): number {
-    
-    if (values.length === 0) return 0;
-    return Math.max(...values) - Math.min(...values);
-  }
-
-  private calculateDC(values: number[]): number {
-    
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
   }
 
   private simulateGlucoseReading(): number {
@@ -433,9 +360,7 @@ export class VitalSignsProcessor {
     };
   }
 
-  private smaBuffer: number[] = [];
   private applySMAFilter(value: number): number {
-    
     this.smaBuffer.push(value);
     if (this.smaBuffer.length > this.SMA_WINDOW) {
       this.smaBuffer.shift();

@@ -127,6 +127,65 @@ export const detectPeaks = (
 };
 
 /**
+ * Localiza picos y valles en una señal PPG con un método de ventana deslizante
+ * @param values Valores de la señal
+ * @returns Objecto con índices de picos y valles
+ */
+export const findPeaksAndValleys = (values: number[]) => {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+
+  for (let i = 2; i < values.length - 2; i++) {
+    const v = values[i];
+    if (
+      v > values[i - 1] &&
+      v > values[i - 2] &&
+      v > values[i + 1] &&
+      v > values[i + 2]
+    ) {
+      peakIndices.push(i);
+    }
+    if (
+      v < values[i - 1] &&
+      v < values[i - 2] &&
+      v < values[i + 1] &&
+      v < values[i + 2]
+    ) {
+      valleyIndices.push(i);
+    }
+  }
+  return { peakIndices, valleyIndices };
+};
+
+/**
+ * Calcula la amplitud promedio entre picos y valles en una señal PPG
+ * @param values Valores de la señal
+ * @param peaks Índices de los picos
+ * @param valleys Índices de los valles
+ * @returns Amplitud promedio
+ */
+export const calculateAmplitude = (
+  values: number[],
+  peaks: number[],
+  valleys: number[]
+): number => {
+  if (peaks.length === 0 || valleys.length === 0) return 0;
+
+  const amps: number[] = [];
+  const len = Math.min(peaks.length, valleys.length);
+  for (let i = 0; i < len; i++) {
+    const amp = values[peaks[i]] - values[valleys[i]];
+    if (amp > 0) {
+      amps.push(amp);
+    }
+  }
+  if (amps.length === 0) return 0;
+
+  const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
+  return mean;
+};
+
+/**
  * Normaliza un valor a un rango específico
  * @param value Valor a normalizar
  * @param min Valor mínimo del rango
@@ -135,6 +194,55 @@ export const detectPeaks = (
  */
 export const normalizeValue = (value: number, min: number, max: number): number => {
   return Math.max(0, Math.min(1, (value - min) / (max - min)));
+};
+
+/**
+ * Calcula la componente AC (variación) de una señal PPG
+ * @param values Valores de la señal
+ * @returns Componente AC
+ */
+export const calculateAC = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+};
+
+/**
+ * Calcula la componente DC (nivel base) de una señal PPG
+ * @param values Valores de la señal
+ * @returns Componente DC
+ */
+export const calculateDC = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+};
+
+/**
+ * Calcula el índice de perfusión (relación AC/DC) de una señal PPG
+ * @param values Valores de la señal
+ * @returns Índice de perfusión
+ */
+export const calculatePerfusionIndex = (values: number[]): number => {
+  const ac = calculateAC(values);
+  const dc = calculateDC(values);
+  return dc !== 0 ? ac / dc : 0;
+};
+
+/**
+ * Calcula el RMSSD (Root Mean Square of Successive Differences) para intervalos RR
+ * Indicador clave para detección de arritmias
+ * @param intervals Intervalos RR en milisegundos
+ * @returns Valor RMSSD
+ */
+export const calculateRMSSD = (intervals: number[]): number => {
+  if (intervals.length < 2) return 0;
+  
+  let sumSquaredDiff = 0;
+  for (let i = 1; i < intervals.length; i++) {
+    const diff = intervals[i] - intervals[i-1];
+    sumSquaredDiff += diff * diff;
+  }
+  
+  return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
 };
 
 /**
@@ -152,8 +260,7 @@ export const amplifyHeartbeats = (
   amplificationFactor: number = 2.5,
   targetFrequencyRange: [number, number] = [0.8, 2.0]
 ): number[] => {
-  if (values.length <
- 10) return [...values];
+  if (values.length < 10) return [...values];
   
   // Limitar factor de amplificación a un rango razonable
   const safeAmplificationFactor = Math.max(1.0, Math.min(5.0, amplificationFactor));
