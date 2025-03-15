@@ -1,3 +1,4 @@
+
 /**
  * Procesador avanzado de detección de arritmias cardíacas
  * Basado en técnicas de análisis de variabilidad de la frecuencia cardíaca (HRV)
@@ -91,7 +92,7 @@ export class ArrhythmiaProcessor {
     const recentIntervals = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
     
     // Detección de arritmias usando múltiples criterios clínicos con mayor umbral
-    const arrhythmiaResult = detectArrhythmia(recentIntervals); // Fixed: Removed second argument
+    const arrhythmiaResult = detectArrhythmia(recentIntervals);
     
     // Calcular métricas específicas para informes
     const rmssd = calculateRMSSD(recentIntervals);
