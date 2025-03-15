@@ -1,4 +1,3 @@
-
 /**
  * Enhanced Signal Processor based on advanced biomedical signal processing techniques
  * Implements wavelet denoising and adaptive filter techniques from IEEE publications
@@ -34,12 +33,12 @@ export class SignalProcessor {
   private lastSpikeTimestamps: number[] = [];
   private readonly MIN_BPM = 45;
   private readonly MAX_BPM = 200;
-  private readonly MIN_FRAMES_BEFORE_DETECTION = 30; // Reduced from 40
+  private readonly MIN_FRAMES_BEFORE_DETECTION = 0; // VARIABLE MODIFICADA #3: Removed the initial frames requirement (was 30)
   private totalFramesProcessed: number = 0;
   
   // Reduced requirements for faster detection
   private consecutiveStableFrames: number = 0;
-  private readonly REQUIRED_STABLE_FRAMES = 9; // Reduced from 12
+  private readonly REQUIRED_STABLE_FRAMES = 3; // VARIABLE MODIFICADA #4: Further reduced from 9 to 3 for even faster detection
   private lastPeakValues: number[] = [];
   private readonly CONSISTENCY_WINDOW = 10;
   private readonly MIN_PEAK_CONSISTENCY = 0.55; // Reduced from 0.6
@@ -484,7 +483,7 @@ export class SignalProcessor {
     }
     
     // Se requiere un mínimo de datos para determinar presencia
-    if (this.ppgValues.length < 25) return false; // Reduced from 30
+    if (this.ppgValues.length < 15) return false; // Reduced from 25 to 15
     
     // Criterio 1: Calidad mínima de señal (más sensible)
     if (this.signalQuality < 60) { // Reduced from 65 to 60 for greater sensitivity
