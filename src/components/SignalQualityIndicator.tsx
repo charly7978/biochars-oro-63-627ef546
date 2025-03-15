@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Vibration } from '../utils/Vibration';
+import { vibrate, VIBRATION_PATTERNS } from '../utils/Vibration';
 
 // Import only the necessary config from FingerDetector
 import { FingerDetector } from '../modules/finger-detection/FingerDetector';
@@ -85,9 +85,9 @@ const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
     // Only vibrate if status changed and enough time has passed
     if (newStatus !== lastStatus && timeSinceLastVibration > MIN_VIBRATION_INTERVAL) {
       if (newStatus === 'no-finger') {
-        Vibration.vibrate(200);
+        vibrate(200);
       } else if (newStatus === 'good-quality') {
-        Vibration.vibrate([100, 100, 100]);
+        vibrate([100, 100, 100]);
       }
       
       setLastVibrationTime(currentTime);
