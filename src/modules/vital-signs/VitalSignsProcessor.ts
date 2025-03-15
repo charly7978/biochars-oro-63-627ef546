@@ -165,7 +165,8 @@ export class VitalSignsProcessor {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      signalQuality: 0
     };
   }
 

@@ -17,7 +17,7 @@ export interface ProcessedSignal {
     width: number;
     height: number;
   };
-  physicalSignatureScore: number;
+  physicalSignatureScore?: number;
   rgbValues: {
     red: number;
     green: number;
