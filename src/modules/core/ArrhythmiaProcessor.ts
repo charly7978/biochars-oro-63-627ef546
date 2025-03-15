@@ -19,11 +19,11 @@ export interface ArrhythmiaResult {
 }
 
 export class ArrhythmiaProcessor {
-  private readonly RMSSD_THRESHOLD = 5; // Extremadamente reducido para máxima sensibilidad
-  private readonly RR_VARIATION_THRESHOLD = 0.03; // Extremadamente reducido para máxima sensibilidad
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 500; // Reducido a 0.5 segundos para detectar más arritmias
-  private readonly MAX_ARRHYTHMIAS_PER_SESSION = 50; // Aumentado para permitir muchas más detecciones
-  private readonly REQUIRED_RR_INTERVALS = 2; // Reducido al mínimo para detectar más rápido
+  private readonly RMSSD_THRESHOLD = 20; // Ajustado a un valor más realista
+  private readonly RR_VARIATION_THRESHOLD = 0.12; // Ajustado a un valor más realista
+  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 1000; // 1 segundo entre detecciones
+  private readonly MAX_ARRHYTHMIAS_PER_SESSION = 20; // Límite razonable
+  private readonly REQUIRED_RR_INTERVALS = 3; // Mínimo 3 intervalos para detección fiable
   
   private lastArrhythmiaTime: number = 0;
   private arrhythmiaCounter: number = 0;
@@ -32,6 +32,13 @@ export class ArrhythmiaProcessor {
     rmssd: number;
     rrVariation: number;
   } | null = null;
+
+  constructor() {
+    console.log("ArrhythmiaProcessor: Inicializado con umbrales ajustados", {
+      rmssdThreshold: this.RMSSD_THRESHOLD, 
+      rrVariationThreshold: this.RR_VARIATION_THRESHOLD
+    });
+  }
 
   /**
    * Procesa datos de intervalos RR para detectar arritmias
@@ -47,18 +54,39 @@ export class ArrhythmiaProcessor {
     const currentTime = Date.now();
     const recentRR = rrData.intervals.slice(-this.REQUIRED_RR_INTERVALS);
     
+    // Verificar que los intervalos estén en un rango fisiológico plausible
+    const validIntervals = recentRR.filter(interval => interval >= 300 && interval <= 1500);
+    
+    if (validIntervals.length < this.REQUIRED_RR_INTERVALS) {
+      console.log("ArrhythmiaProcessor: Intervalos insuficientes en rango válido", {
+        total: recentRR.length,
+        válidos: validIntervals.length
+      });
+      return {
+        arrhythmiaStatus: `SIN ARRITMIAS|${this.arrhythmiaCounter}`,
+        lastArrhythmiaData: this.lastArrhythmiaData
+      };
+    }
+    
     // Calcular RMSSD (Root Mean Square of Successive Differences)
     let sumSquaredDiff = 0;
-    for (let i = 1; i < recentRR.length; i++) {
-      const diff = recentRR[i] - recentRR[i-1];
+    for (let i = 1; i < validIntervals.length; i++) {
+      const diff = validIntervals[i] - validIntervals[i-1];
       sumSquaredDiff += diff * diff;
     }
-    const rmssd = Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
+    const rmssd = Math.sqrt(sumSquaredDiff / (validIntervals.length - 1));
     
     // Calcular variación RR
-    const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
-    const lastRR = recentRR[recentRR.length - 1];
+    const avgRR = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+    const lastRR = validIntervals[validIntervals.length - 1];
     const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
+    
+    console.log("ArrhythmiaProcessor: Análisis completo", {
+      rmssd,
+      rrVariation,
+      umbralRMSSD: this.RMSSD_THRESHOLD,
+      umbralVariación: this.RR_VARIATION_THRESHOLD
+    });
     
     // Detectar arritmia si RMSSD excede umbral y hay variación significativa
     const hasArrhythmia = rmssd > this.RMSSD_THRESHOLD && rrVariation > this.RR_VARIATION_THRESHOLD;
@@ -82,6 +110,12 @@ export class ArrhythmiaProcessor {
       
       // Log adicional para diagnóstico
       console.log(`ARRITMIA DETECTADA [${this.arrhythmiaCounter}]: RMSSD=${rmssd.toFixed(2)}, RR_VAR=${rrVariation.toFixed(2)}`);
+    } else if (hasArrhythmia) {
+      console.log("Arritmia detectada pero no contabilizada:", {
+        tiempoDesdeÚltima: timeSinceLastArrhythmia,
+        contadorActual: this.arrhythmiaCounter,
+        máximoPermitido: this.MAX_ARRHYTHMIAS_PER_SESSION
+      });
     }
     
     // Preparar estado de arritmia
@@ -103,6 +137,7 @@ export class ArrhythmiaProcessor {
     this.arrhythmiaCounter = 0;
     this.lastArrhythmiaTime = 0;
     this.lastArrhythmiaData = null;
+    console.log("ArrhythmiaProcessor: reseteo completo");
   }
   
   /**
