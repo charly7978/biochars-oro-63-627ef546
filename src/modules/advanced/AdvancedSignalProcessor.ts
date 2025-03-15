@@ -9,28 +9,23 @@
 
 import type { VitalSignsResult } from '../core/VitalSignsProcessor';
 import type { RRData } from '../core/ArrhythmiaProcessor';
-import { WaveletDenoiser } from './signal/WaveletDenoiser';
-import { HilbertHuangTransform } from './signal/HilbertHuangTransform';
-import { PeakDetector } from './signal/PeakDetector';
-import { SpectralAnalyzer } from './signal/SpectralAnalyzer';
 import { AFibDetector } from './analysis/AFibDetector';
 import { PPGMorphologyAnalyzer } from './analysis/PPGMorphologyAnalyzer';
 import { HRVAnalyzer } from './analysis/HRVAnalyzer';
 import { BPEstimator } from './analysis/BPEstimator';
-import { applyPressureCompensation, adaptPeakData } from './utils/SignalProcessingUtils';
+import { adaptPeakData } from './utils/SignalProcessingUtils';
 import { CalibrationService } from './services/CalibrationService';
 import { ResultGenerator } from './services/ResultGenerator';
+import { ProcessorManager } from './ProcessorManager';
+import { ProcessorConfig } from './config/ProcessorConfig';
 
 /**
  * Procesador avanzado que implementa algoritmos de vanguardia para
  * el análisis de señales PPG y la extracción de biomarcadores.
  */
 export class AdvancedSignalProcessor {
-  // Procesadores de señal avanzados
-  private waveletDenoiser: WaveletDenoiser;
-  private hilbertTransform: HilbertHuangTransform;
-  private peakDetector: PeakDetector;
-  private spectralAnalyzer: SpectralAnalyzer;
+  // Gestor central de procesamiento
+  private processorManager: ProcessorManager;
   
   // Analizadores biomédicos avanzados
   private afibDetector: AFibDetector;
@@ -42,25 +37,12 @@ export class AdvancedSignalProcessor {
   private calibrationService: CalibrationService;
   private resultGenerator: ResultGenerator;
   
-  // Buffer de señales y estado
-  private ppgValues: number[] = [];
-  private readonly BUFFER_SIZE = 300;
-  private isLowPowerMode: boolean = false;
-  
-  // Métricas avanzadas
-  private perfusionIndex: number = 0;
-  private signalQuality: number = 0;
-  private pressureArtifactLevel: number = 0;
-  
   // Resultados de último procesamiento
   private lastResult: VitalSignsResult | null = null;
   
   constructor() {
-    // Inicializar componentes de procesamiento avanzado
-    this.waveletDenoiser = new WaveletDenoiser();
-    this.hilbertTransform = new HilbertHuangTransform();
-    this.peakDetector = new PeakDetector();
-    this.spectralAnalyzer = new SpectralAnalyzer();
+    // Inicializar gestor de procesamiento
+    this.processorManager = new ProcessorManager();
     
     // Inicializar analizadores biomédicos
     this.afibDetector = new AFibDetector();
@@ -79,13 +61,7 @@ export class AdvancedSignalProcessor {
    * Activa el modo de bajo consumo para dispositivos con recursos limitados
    */
   public setLowPowerMode(enabled: boolean): void {
-    this.isLowPowerMode = enabled;
-    
-    // Configurar componentes para modo de bajo consumo
-    this.waveletDenoiser.setLowComplexity(enabled);
-    this.hilbertTransform.setEnabled(!enabled);
-    this.spectralAnalyzer.setLowResolution(enabled);
-    
+    this.processorManager.setLowPowerMode(enabled);
     console.log(`Modo de bajo consumo: ${enabled ? 'activado' : 'desactivado'}`);
   }
   
@@ -93,47 +69,31 @@ export class AdvancedSignalProcessor {
    * Procesa una señal PPG utilizando técnicas avanzadas
    */
   public processSignal(ppgValue: number, rrData?: RRData): VitalSignsResult {
-    // Aplicar filtrado Wavelet adaptativo (superior a Kalman)
-    const denoisedValue = this.waveletDenoiser.denoise(ppgValue);
-    
-    // Almacenar valor filtrado
-    this.ppgValues.push(denoisedValue);
-    if (this.ppgValues.length > this.BUFFER_SIZE) {
-      this.ppgValues.shift();
-    }
-    
-    // Análisis espectral adaptativo para calidad de señal
-    this.signalQuality = this.spectralAnalyzer.analyzeQuality(this.ppgValues);
-    
-    // Detección de artefactos por presión
-    this.pressureArtifactLevel = this.spectralAnalyzer.detectPressureArtifacts(this.ppgValues);
-    
-    // Aplicar compensación de artefactos si es necesario
-    const compensatedValues = this.pressureArtifactLevel > 0.3 
-      ? applyPressureCompensation(this.ppgValues, this.pressureArtifactLevel)
-      : this.ppgValues;
+    // Procesar el valor a través del gestor principal
+    const { denoisedValue, hasEnoughData, signalQuality } = this.processorManager.processValue(ppgValue);
     
     // Análisis multivariante si hay suficientes muestras
-    if (compensatedValues.length >= 60) {
+    if (hasEnoughData) {
+      // Obtener datos analizados (picos, valores compensados)
+      const { peakInfo, compensatedValues } = this.processorManager.analyzeSignal();
+      
       // Análisis morfológico avanzado de la onda PPG
       const morphologyFeatures = this.morphologyAnalyzer.analyzeWaveform(compensatedValues);
       
+      // Actualizar métricas de calidad basadas en análisis morfológico
+      this.processorManager.updateQualityFromMorphology(morphologyFeatures);
+      
       // Calcular SpO2 mejorado basado en análisis morfológico
       const spo2 = Math.min(98, 
-        Math.max(90, 95 + morphologyFeatures.perfusion * 3 - this.pressureArtifactLevel * 2)
+        Math.max(90, 95 + morphologyFeatures.perfusion * 3 - 
+        this.processorManager.getQualityMetrics().pressureArtifactLevel * 2)
       );
-      
-      // Calcular perfusión
-      this.perfusionIndex = morphologyFeatures.perfusion;
-      
-      // Detección avanzada de picos utilizando derivadas de segundo orden
-      const peakInfo = this.peakDetector.detectPeaks(compensatedValues);
       
       // Estimación mejorada de presión arterial usando tiempo de tránsito
       const bloodPressure = this.bpEstimator.estimate(
         compensatedValues, 
         peakInfo, 
-        this.signalQuality
+        signalQuality
       );
       
       // Análisis avanzado de fibrilación auricular
@@ -143,18 +103,16 @@ export class AdvancedSignalProcessor {
       // Análisis avanzado de HRV
       const hrvMetrics = this.hrvAnalyzer.calculateMetrics(peakInfo.intervals);
       
-      // Análisis de transformada Hilbert-Huang para componentes no lineales
-      const hhResults = !this.isLowPowerMode 
-        ? this.hilbertTransform.analyze(compensatedValues) 
-        : null;
-      
       // Si estamos calibrando, actualizar progreso
       const calibrationComplete = this.calibrationService.updateCalibration();
       if (calibrationComplete) {
         // Configurar parámetros calibrados
-        this.waveletDenoiser.updateParameters(this.signalQuality);
-        this.bpEstimator.calibrate(this.ppgValues);
+        this.processorManager.updateDenoiserParameters(signalQuality);
+        this.bpEstimator.calibrate(compensatedValues);
       }
+      
+      // Obtener métricas de calidad actualizadas
+      const qualityMetrics = this.processorManager.getQualityMetrics();
       
       // Construir resultado avanzado manteniendo compatibilidad con VitalSignsResult
       const result = this.resultGenerator.generateResult({
@@ -162,8 +120,8 @@ export class AdvancedSignalProcessor {
         bloodPressure,
         afibResults,
         calibration: this.calibrationService.getCalibrationState(),
-        perfusionIndex: this.perfusionIndex,
-        pressureArtifactLevel: this.pressureArtifactLevel,
+        perfusionIndex: qualityMetrics.perfusionIndex,
+        pressureArtifactLevel: qualityMetrics.pressureArtifactLevel,
         hrvMetrics
       });
       
@@ -193,7 +151,7 @@ export class AdvancedSignalProcessor {
     this.calibrationService.forceCalibrationCompletion();
     
     // Aplicar valores predeterminados de calibración
-    this.waveletDenoiser.resetToDefaults();
+    this.processorManager.updateDenoiserParameters(100); // Forzar calibración óptima
     this.bpEstimator.resetToDefaults();
   }
   
@@ -204,13 +162,10 @@ export class AdvancedSignalProcessor {
     // Guardar resultado actual
     const currentResult = this.lastResult;
     
-    // Reiniciar buffers de señal
-    this.ppgValues = [];
-    
-    // Reiniciar procesadores pero mantener calibración
-    this.peakDetector.reset();
-    this.afibDetector.reset(false); // No reiniciar completamente
-    this.hrvAnalyzer.reset(false);  // No reiniciar completamente
+    // Reinicio parcial (mantiene calibración)
+    this.processorManager.reset(false);
+    this.afibDetector.reset(false);
+    this.hrvAnalyzer.reset(false);
     
     console.log('Procesador avanzado reiniciado (parcial)');
     
@@ -222,20 +177,13 @@ export class AdvancedSignalProcessor {
    */
   public fullReset(): void {
     // Reiniciar todos los procesadores completamente
-    this.ppgValues = [];
     this.lastResult = null;
-    this.perfusionIndex = 0;
-    this.signalQuality = 0;
-    this.pressureArtifactLevel = 0;
     
-    // Reiniciar todos los componentes
-    this.waveletDenoiser.resetToDefaults();
-    this.hilbertTransform.reset();
-    this.peakDetector.reset();
-    this.spectralAnalyzer.reset();
-    this.afibDetector.reset(true);  // Reinicio completo
+    // Reinicio completo de todos los componentes
+    this.processorManager.reset(true);
+    this.afibDetector.reset(true);
     this.morphologyAnalyzer.reset();
-    this.hrvAnalyzer.reset(true);   // Reinicio completo
+    this.hrvAnalyzer.reset(true);
     this.bpEstimator.resetToDefaults();
     this.calibrationService.reset();
     

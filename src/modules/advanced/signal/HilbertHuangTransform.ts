@@ -12,7 +12,7 @@ import { normalizeSignal } from './utils/SignalUtils';
 import { EmpiricalModeDecomposition } from './EmpiricalModeDecomposition';
 import { HilbertTransformer } from './HilbertTransformer';
 
-// Fix the re-export by using 'export type'
+// Using export type for TS1205 error fix
 export type { IMF };
 
 export class HilbertHuangTransform {
