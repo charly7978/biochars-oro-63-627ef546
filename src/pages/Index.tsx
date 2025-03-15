@@ -407,25 +407,27 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
+      const minQualityThreshold = 0.1;
+      
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
-      if (heartBeatResult.bpm > 0 && heartBeatResult.confidence > 0.1) {
+      console.log("Index: Heartbeat processed", {
+        bpm: heartBeatResult.bpm,
+        confidence: heartBeatResult.confidence.toFixed(2),
+        isPeak: heartBeatResult.isPeak,
+        quality: lastSignal.quality.toFixed(2),
+        fingerDetected: lastSignal.fingerDetected
+      });
+      
+      if (heartBeatResult.bpm > 0) {
         setHeartRate(heartBeatResult.bpm);
-        
-        console.log("Index: Heartbeat processed", {
-          bpm: heartBeatResult.bpm,
-          confidence: heartBeatResult.confidence.toFixed(2),
-          isPeak: heartBeatResult.isPeak,
-          quality: lastSignal.quality.toFixed(2),
-          fingerDetected: lastSignal.fingerDetected
-        });
       }
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         console.log("Index: Vitals processed:", vitals);
         
-        if (lastSignal.quality > 5 || vitalSigns.spo2 > 0) {
+        if (lastSignal.quality > minQualityThreshold || vitalSigns.spo2 > 0) {
           setVitalSigns(prevSigns => ({
             ...prevSigns,
             spo2: vitals.spo2 > 0 ? vitals.spo2 : prevSigns.spo2,

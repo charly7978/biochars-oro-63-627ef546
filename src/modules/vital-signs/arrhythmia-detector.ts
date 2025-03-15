@@ -4,9 +4,10 @@
  * Implements multiple algorithms for improved detection accuracy
  */
 export class ArrhythmiaDetector {
-  private readonly RMSSD_THRESHOLD = 8; // Reduced from 12 for better sensitivity
-  private readonly RR_VARIATION_THRESHOLD = 0.08; // Reduced from 0.12 for better sensitivity
-  private readonly MIN_TIME_BETWEEN_DETECTIONS = 800; // Reduced from 1500 to detect more frequently
+  // Increase thresholds to reduce false positives
+  private readonly RMSSD_THRESHOLD = 20; // Increased from 8 for less sensitivity
+  private readonly RR_VARIATION_THRESHOLD = 0.18; // Increased from 0.08 for less sensitivity
+  private readonly MIN_TIME_BETWEEN_DETECTIONS = 2000; // Increased from 800 to detect less frequently
   
   private lastArrhythmiaTime: number = 0;
   private lastArrhythmiaData: {
@@ -16,7 +17,7 @@ export class ArrhythmiaDetector {
   } | null = null;
   
   constructor() {
-    console.log("ArrhythmiaDetector: Initialized with enhanced sensitivity");
+    console.log("ArrhythmiaDetector: Initialized with balanced sensitivity");
   }
   
   /**
@@ -27,8 +28,8 @@ export class ArrhythmiaDetector {
     rmssd: number;
     rrVariation: number;
   } {
-    // Need at least 3 intervals for analysis
-    if (intervals.length < 3) {
+    // Need at least 4 intervals for more reliable analysis
+    if (intervals.length < 4) {
       return { isArrhythmia: false, rmssd: 0, rrVariation: 0 };
     }
     
@@ -39,14 +40,26 @@ export class ArrhythmiaDetector {
     let rmssd = this.calculateRMSSD(recentIntervals);
     
     // Calculate average RR interval with more weight to recent intervals
+    // but limit influence of outliers
     let avgRR = 0;
     let weightSum = 0;
-    for (let i = 0; i < recentIntervals.length; i++) {
+    
+    // Sort intervals to identify and exclude outliers
+    const sortedIntervals = [...recentIntervals].sort((a, b) => a - b);
+    const validIntervals = sortedIntervals.slice(1, -1); // Remove highest and lowest
+    
+    for (let i = 0; i < validIntervals.length; i++) {
       const weight = i + 1; // Higher weight to more recent values
-      avgRR += recentIntervals[i] * weight;
+      avgRR += validIntervals[i] * weight;
       weightSum += weight;
     }
-    avgRR = avgRR / weightSum;
+    
+    // Fallback if we don't have enough intervals after filtering
+    if (weightSum === 0) {
+      avgRR = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
+    } else {
+      avgRR = avgRR / weightSum;
+    }
     
     // Calculate variation from the last interval to the average
     const lastRR = recentIntervals[recentIntervals.length - 1];
@@ -56,19 +69,20 @@ export class ArrhythmiaDetector {
     const currentTime = Date.now();
     const timeSinceLastDetection = currentTime - this.lastArrhythmiaTime;
     
-    // Multi-criteria detection algorithm with higher sensitivity
+    // Multi-criteria detection algorithm with balanced sensitivity
     const isArrhythmiaRMSSD = rmssd > this.RMSSD_THRESHOLD;
     const isArrhythmiaVariation = rrVariation > this.RR_VARIATION_THRESHOLD;
     
-    // Detection of severe tachycardia and bradycardia (more permissive thresholds)
-    const isExtremeTachycardia = lastRR < 0.8 * avgRR; // 20% faster than average (was 30%)
-    const isExtremeBradycardia = lastRR > 1.2 * avgRR; // 20% slower than average (was 30%)
+    // Detection of severe tachycardia and bradycardia (less sensitive)
+    const isExtremeTachycardia = lastRR < 0.65 * avgRR; // 35% faster (more extreme)
+    const isExtremeBradycardia = lastRR > 1.45 * avgRR; // 45% slower (more extreme)
     
-    // Combined detection logic - More sensitive combined logic
+    // Combined detection logic - Less sensitive to reduce false positives
+    // Require at least two conditions to be met for arrhythmia detection
     const isArrhythmia = 
-      (isArrhythmiaRMSSD || isArrhythmiaVariation) || 
-      isExtremeTachycardia || 
-      isExtremeBradycardia;
+      (isArrhythmiaRMSSD && isArrhythmiaVariation) || 
+      (isExtremeTachycardia && (isArrhythmiaRMSSD || isArrhythmiaVariation)) || 
+      (isExtremeBradycardia && (isArrhythmiaRMSSD || isArrhythmiaVariation));
     
     // Only record if enough time has passed since the last detection
     if (isArrhythmia && timeSinceLastDetection >= this.MIN_TIME_BETWEEN_DETECTIONS) {
@@ -100,13 +114,18 @@ export class ArrhythmiaDetector {
   private calculateRMSSD(intervals: number[]): number {
     if (intervals.length < 2) return 0;
     
+    // Filter out physiologically impossible intervals
+    const validIntervals = intervals.filter(interval => interval >= 300 && interval <= 2000);
+    
+    if (validIntervals.length < 2) return 0;
+    
     let sumSquaredDiffs = 0;
-    for (let i = 1; i < intervals.length; i++) {
-      const diff = intervals[i] - intervals[i-1];
+    for (let i = 1; i < validIntervals.length; i++) {
+      const diff = validIntervals[i] - validIntervals[i-1];
       sumSquaredDiffs += diff * diff;
     }
     
-    return Math.sqrt(sumSquaredDiffs / (intervals.length - 1));
+    return Math.sqrt(sumSquaredDiffs / (validIntervals.length - 1));
   }
   
   /**
@@ -126,5 +145,6 @@ export class ArrhythmiaDetector {
   public reset(): void {
     this.lastArrhythmiaTime = 0;
     this.lastArrhythmiaData = null;
+    console.log("ArrhythmiaDetector: Reset complete");
   }
 }

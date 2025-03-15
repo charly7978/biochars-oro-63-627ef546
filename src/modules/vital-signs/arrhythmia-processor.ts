@@ -9,8 +9,8 @@ import { calculateRMSSD, detectArrhythmia } from './utils';
 
 export class ArrhythmiaProcessor {
   private readonly RR_WINDOW_SIZE = 10;
-  private readonly RMSSD_THRESHOLD = 30;
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 1000;
+  private readonly RMSSD_THRESHOLD = 50; // Increased from 30 to reduce sensitivity
+  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 2000; // Increased from 1000 to detect less frequently
   private readonly MAX_LEARNING_PERIOD = 5000;
   private readonly SEVERITY_LEVELS = ['LEVE', 'MODERADA', 'SEVERA'];
   
@@ -67,9 +67,9 @@ export class ArrhythmiaProcessor {
     
     // Actualizar intervalos RR
     if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-      // Filtrar intervalos no fisiológicos (fuera del rango normal)
+      // Filtrar intervalos no fisiológicos (fuera del rango normal humano)
       const validIntervals = rrData.intervals.filter(
-        interval => interval >= 300 && interval <= 1500
+        interval => interval >= 400 && interval <= 1500 // Rango más estricto
       );
       
       // Actualizar buffer interno
@@ -77,7 +77,7 @@ export class ArrhythmiaProcessor {
     }
     
     // Si no hay suficientes datos, mantener estado actual
-    if (this.rrIntervals.length < 5) {
+    if (this.rrIntervals.length < 6) { // Aumentado para mayor robustez
       return {
         arrhythmiaStatus: this.isLearningPhase ? 
           'CALIBRANDO' : 
@@ -91,8 +91,8 @@ export class ArrhythmiaProcessor {
     // Análisis avanzado de HRV con ventana móvil
     const recentIntervals = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
     
-    // Detección de arritmias usando múltiples criterios clínicos
-    const arrhythmiaResult = detectArrhythmia(recentIntervals);
+    // Detección de arritmias usando múltiples criterios clínicos con mayor umbral
+    const arrhythmiaResult = detectArrhythmia(recentIntervals, 0.25); // Aumentado umbral
     
     // Calcular métricas específicas para informes
     const rmssd = calculateRMSSD(recentIntervals);
@@ -100,19 +100,21 @@ export class ArrhythmiaProcessor {
     const lastRR = recentIntervals[recentIntervals.length - 1];
     const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
     
-    // Determinar si hay una nueva arritmia
+    // Determinar si hay una nueva arritmia con criterios más estrictos
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const isNewArrhythmia = arrhythmiaResult.detected && 
                            !this.isLearningPhase && 
-                           timeSinceLastArrhythmia > this.MIN_TIME_BETWEEN_ARRHYTHMIAS;
+                           timeSinceLastArrhythmia > this.MIN_TIME_BETWEEN_ARRHYTHMIAS &&
+                           rmssd > this.RMSSD_THRESHOLD && // Añadido umbral de RMSSD más alto
+                           rrVariation > 0.30; // Añadido umbral de variación más alto
     
-    // Determinar nivel de severidad basado en múltiples factores
+    // Determinar nivel de severidad basado en múltiples factores con umbrales más altos
     let severity = this.SEVERITY_LEVELS[0]; // Predeterminado: LEVE
     
     if (arrhythmiaResult.detected) {
-      if (rmssd > 80 || rrVariation > 0.5) {
+      if (rmssd > 100 || rrVariation > 0.65) { // Umbral más alto
         severity = this.SEVERITY_LEVELS[2]; // SEVERA
-      } else if (rmssd > 50 || rrVariation > 0.35) {
+      } else if (rmssd > 75 || rrVariation > 0.45) { // Umbral más alto
         severity = this.SEVERITY_LEVELS[1]; // MODERADA
       }
     }
@@ -147,8 +149,11 @@ export class ArrhythmiaProcessor {
       };
     }
     
-    // Actualizar estado actual
-    this.arrhythmiaDetected = arrhythmiaResult.detected;
+    // Actualizar estado actual - Añadir decaimiento gradual de la detección
+    // Si ha pasado mucho tiempo desde la última arritmia, volver a estado normal
+    if (this.arrhythmiaDetected && currentTime - this.lastArrhythmiaTime > 10000) { // 10 segundos
+      this.arrhythmiaDetected = false;
+    }
     
     // Construir mensaje de estado
     let statusMessage;
