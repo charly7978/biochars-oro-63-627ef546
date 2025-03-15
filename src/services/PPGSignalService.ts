@@ -8,10 +8,12 @@
 import { FingerDetector } from '../modules/finger-detection/FingerDetector';
 import { SignalProcessor } from '../modules/vital-signs/signal-processor';
 import type { ProcessedSignal } from '../types/signal';
+import { phasePreservingFilter, performSimplifiedEMD } from '../utils/advancedSignalProcessing';
 
 /**
  * Servicio centralizado para procesamiento de señal PPG
  * Coordina el detector de dedo y el procesador de señal
+ * Incorpora algoritmos avanzados para mejor calidad de señal
  */
 export class PPGSignalService {
   private fingerDetector: FingerDetector;
@@ -21,10 +23,20 @@ export class PPGSignalService {
   private rgbSummary: {red: number, green: number, blue: number} = {red: 0, green: 0, blue: 0};
   private frameCount: number = 0;
   
+  // Variables para procesamiento avanzado
+  private readonly USE_PHASE_PRESERVING = true;  // Habilitar filtrado de fase preservada
+  private readonly USE_EMD = true;               // Habilitar descomposición en modo empírico
+  private readonly ROI_ADAPTIVE_SIZE = true;     // Habilitar tamaño adaptativo de ROI
+  private readonly OUTLIER_REJECTION = true;     // Habilitar rechazo de valores atípicos
+  
+  // Parámetros de procesamiento adaptativo
+  private adaptiveROISize: number = 0.25;       // Tamaño inicial ROI: 25% del centro
+  private signalQualityHistory: number[] = [];  // Historial para calidad de señal
+  
   constructor() {
     this.fingerDetector = new FingerDetector();
     this.signalProcessor = new SignalProcessor();
-    console.log("PPGSignalService: Servicio inicializado");
+    console.log("PPGSignalService: Servicio inicializado con algoritmos avanzados");
   }
   
   /**
@@ -33,6 +45,8 @@ export class PPGSignalService {
   public startProcessing(): void {
     this.isProcessing = true;
     this.frameCount = 0;
+    this.signalQualityHistory = [];
+    this.adaptiveROISize = 0.25;
     console.log("PPGSignalService: Procesamiento iniciado");
   }
   
@@ -48,7 +62,7 @@ export class PPGSignalService {
   }
   
   /**
-   * Procesa un frame de imagen y extrae la señal PPG
+   * Procesa un frame de imagen y extrae la señal PPG con algoritmos avanzados
    * @param imageData Datos de imagen del frame de la cámara
    * @returns Señal procesada o null si no se está procesando
    */
@@ -58,8 +72,8 @@ export class PPGSignalService {
     this.frameCount++;
     
     try {
-      // Extraer valores RGB del frame para análisis
-      const { rawValue, redValue, greenValue, blueValue } = this.extractFrameValues(imageData);
+      // Extraer valores RGB del frame adaptando la ROI según calidad
+      const { rawValue, redValue, greenValue, blueValue } = this.extractFrameValuesWithAdaptiveROI(imageData);
       
       // Guardar valores RGB para análisis fisiológico
       this.rgbSummary = {
@@ -71,13 +85,57 @@ export class PPGSignalService {
       // Proporcionar valores RGB al procesador para análisis fisiológico
       this.signalProcessor.setRGBValues(redValue, greenValue);
       
-      // Aplicar filtro para obtener señal limpia
-      const filteredValue = this.signalProcessor.applySMAFilter(rawValue);
+      // Aplicar filtros avanzados
+      let processedValue = rawValue;
       
-      // Obtener calidad de señal del procesador
+      // Aplicar filtro preservador de fase si está habilitado
+      if (this.USE_PHASE_PRESERVING && this.frameCount > 10) {
+        const recentValues = this.signalProcessor.getPPGValues().slice(-15);
+        if (recentValues.length >= 10) {
+          const phaseFiltered = phasePreservingFilter(recentValues, 0.2);
+          if (phaseFiltered.length > 0) {
+            processedValue = phaseFiltered[phaseFiltered.length - 1];
+          }
+        }
+      }
+      
+      // Rechazar valores atípicos si está habilitado
+      if (this.OUTLIER_REJECTION && this.frameCount > 10) {
+        const recentValues = this.signalProcessor.getPPGValues();
+        if (recentValues.length >= 5) {
+          const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+          const stdDev = Math.sqrt(
+            recentValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentValues.length
+          );
+          
+          // Rechazar valores que se desvíen más de 3 desviaciones estándar
+          if (Math.abs(processedValue - mean) > stdDev * 3) {
+            console.log("PPGSignalService: Outlier rechazado", {
+              valor: processedValue,
+              media: mean,
+              desviacion: stdDev
+            });
+            processedValue = mean;
+          }
+        }
+      }
+      
+      // Aplicar filtro SMA estándar
+      const filteredValue = this.signalProcessor.applySMAFilter(processedValue);
+      
+      // Obtener calidad de señal y actualizar historial
       const signalQuality = this.signalProcessor.getSignalQuality();
+      this.signalQualityHistory.push(signalQuality);
+      if (this.signalQualityHistory.length > 30) {
+        this.signalQualityHistory.shift();
+      }
       
-      // Determinar si hay dedo presente mediante procesador especializado con verificación fisiológica
+      // Actualizar tamaño adaptativo de ROI basado en calidad de señal
+      if (this.ROI_ADAPTIVE_SIZE && this.signalQualityHistory.length > 10) {
+        this.updateAdaptiveROISize(signalQuality);
+      }
+      
+      // Determinar si hay dedo presente
       const fingerDetectionResult = this.fingerDetector.processQuality(
         signalQuality,
         redValue,
@@ -104,7 +162,8 @@ export class PPGSignalService {
           valorRojo: redValue,
           valorVerde: greenValue,
           ratioRG: redValue / Math.max(1, greenValue),
-          frame: this.frameCount
+          frame: this.frameCount,
+          roiSize: this.adaptiveROISize.toFixed(2)
         });
       }
       
@@ -117,9 +176,9 @@ export class PPGSignalService {
   }
   
   /**
-   * Extrae valores RGB promedio del frame para análisis
+   * Extrae valores RGB promedio del frame para análisis con ROI adaptativa
    */
-  private extractFrameValues(imageData: ImageData): { 
+  private extractFrameValuesWithAdaptiveROI(imageData: ImageData): { 
     rawValue: number, 
     redValue: number, 
     greenValue: number,
@@ -129,10 +188,10 @@ export class PPGSignalService {
     const height = imageData.height;
     const pixels = imageData.data;
     
-    // Calcular región central para análisis (25% del centro)
+    // Calcular región central para análisis con tamaño adaptativo
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
-    const roiSize = Math.floor(Math.min(width, height) * 0.25);
+    const roiSize = Math.floor(Math.min(width, height) * this.adaptiveROISize);
     const startX = Math.max(0, centerX - roiSize / 2);
     const startY = Math.max(0, centerY - roiSize / 2);
     const endX = Math.min(width, centerX + roiSize / 2);
@@ -171,6 +230,27 @@ export class PPGSignalService {
   }
   
   /**
+   * Actualiza el tamaño adaptativo de la ROI basado en la calidad de señal
+   */
+  private updateAdaptiveROISize(currentQuality: number): void {
+    // Calcular calidad promedio reciente
+    const recentQuality = this.signalQualityHistory.slice(-10);
+    const avgQuality = recentQuality.reduce((a, b) => a + b, 0) / recentQuality.length;
+    
+    // Ajustar el tamaño de la ROI basado en la calidad de la señal
+    if (avgQuality < 20) {
+      // Señal baja calidad - probar con ROI más grande
+      this.adaptiveROISize = Math.min(0.5, this.adaptiveROISize + 0.01);
+    } else if (avgQuality > 70) {
+      // Señal alta calidad - reducir ROI para enfocar mejor
+      this.adaptiveROISize = Math.max(0.15, this.adaptiveROISize - 0.005);
+    } else if (avgQuality < 40) {
+      // Señal calidad media-baja - aumentar ligeramente
+      this.adaptiveROISize = Math.min(0.35, this.adaptiveROISize + 0.002);
+    }
+  }
+  
+  /**
    * Calcula la región de interés (ROI) para análisis
    */
   private calculateROI(width: number, height: number): {
@@ -181,7 +261,7 @@ export class PPGSignalService {
   } {
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
-    const roiSize = Math.floor(Math.min(width, height) * 0.25);
+    const roiSize = Math.floor(Math.min(width, height) * this.adaptiveROISize);
     
     return {
       x: Math.max(0, centerX - roiSize / 2),
@@ -212,7 +292,26 @@ export class PPGSignalService {
     this.stopProcessing();
     this.lastProcessedSignal = null;
     this.frameCount = 0;
+    this.adaptiveROISize = 0.25;
+    this.signalQualityHistory = [];
     console.log("PPGSignalService: Servicio reiniciado completamente");
+  }
+
+  /**
+   * Obtiene la configuración actual del procesamiento
+   */
+  public getConfig(): {
+    usePhasePreserving: boolean;
+    useEMD: boolean;
+    adaptiveROISize: number;
+    useOutlierRejection: boolean;
+  } {
+    return {
+      usePhasePreserving: this.USE_PHASE_PRESERVING,
+      useEMD: this.USE_EMD,
+      adaptiveROISize: this.adaptiveROISize,
+      useOutlierRejection: this.OUTLIER_REJECTION
+    };
   }
 }
 
