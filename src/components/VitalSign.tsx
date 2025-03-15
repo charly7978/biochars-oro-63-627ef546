@@ -274,6 +274,11 @@ const VitalSign = ({
     if (label === 'HEMOGLOBINA' && typeof value === 'number') {
       return Math.round(value);
     }
+    
+    if (label === 'COLESTEROL/TRIGL.' && typeof value === 'string') {
+      return value;
+    }
+    
     return value;
   };
 

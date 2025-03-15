@@ -10,6 +10,7 @@ export class GlucoseProcessor {
   private recentMeasurements: number[] = [];
   private readonly MEASUREMENT_WINDOW = 200;
   private readonly MIN_SAMPLE_SIZE = 180;
+  private confidenceScore: number = 0;
   
   constructor() {
     this.lastMeasurement = 0;
@@ -22,6 +23,7 @@ export class GlucoseProcessor {
   public calculateGlucose(ppgValues: number[]): number {
     // Sin suficientes datos, no calcular
     if (ppgValues.length < this.MIN_SAMPLE_SIZE) {
+      this.confidenceScore = 0;
       return 0;
     }
     
@@ -33,11 +35,24 @@ export class GlucoseProcessor {
     
     // Solo procesar si hay datos suficientes
     if (!features) {
+      this.confidenceScore = 0;
       return 0;
     }
 
-    // Procesamiento pendiente de implementación con datos reales
-    return 0;
+    // Procesamiento pendiente de implementación real
+    // Actualmente retorna 0, se implementará algoritmo real cuando esté disponible
+    const glucoseValue = 0;
+    
+    // Almacenar medición si es válida
+    if (glucoseValue > 0) {
+      this.lastMeasurement = glucoseValue;
+      this.recentMeasurements.push(glucoseValue);
+      if (this.recentMeasurements.length > 5) {
+        this.recentMeasurements.shift();
+      }
+    }
+    
+    return Math.round(this.lastMeasurement);
   }
   
   /**
@@ -55,10 +70,23 @@ export class GlucoseProcessor {
       return null;
     }
     
+    // Calcular parámetros de forma de onda
+    const signalRange = Math.max(...ppgValues) - Math.min(...ppgValues);
+    if (signalRange <= 0) {
+      return null;
+    }
+    
+    // Calcular confianza basada en calidad de señal
+    const mean = ppgValues.reduce((a, b) => a + b, 0) / ppgValues.length;
+    const variance = ppgValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / ppgValues.length;
+    this.confidenceScore = variance > 0 ? Math.min(0.9, mean / Math.sqrt(variance) / 10) : 0;
+    
     // Retorna características basadas en datos reales
     return {
       peakCount: peaks.length,
-      signalStrength: Math.max(...ppgValues) - Math.min(...ppgValues)
+      signalStrength: signalRange,
+      peakTopeakIntervals: this.calculatePeakIntervals(peaks),
+      confidence: this.confidenceScore
     };
   }
   
@@ -82,10 +110,29 @@ export class GlucoseProcessor {
   }
   
   /**
+   * Calcula intervalos entre picos consecutivos
+   */
+  private calculatePeakIntervals(peaks: number[]): number[] {
+    const intervals: number[] = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    return intervals;
+  }
+  
+  /**
+   * Obtener nivel de confianza de la medición
+   */
+  public getConfidence(): number {
+    return this.confidenceScore;
+  }
+  
+  /**
    * Reinicia el procesador
    */
   public reset(): void {
     this.lastMeasurement = 0;
     this.recentMeasurements = [];
+    this.confidenceScore = 0;
   }
 }

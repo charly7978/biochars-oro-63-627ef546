@@ -17,7 +17,12 @@ const Index = () => {
     spo2: 0,
     pressure: "--/--",
     arrhythmiaStatus: "--",
-    signalQuality: 0
+    signalQuality: 0,
+    glucose: 0,
+    lipids: {
+      totalCholesterol: 0,
+      triglycerides: 0
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState<string | number>("--");
@@ -142,7 +147,12 @@ const Index = () => {
       spo2: 0, 
       pressure: "--/--",
       arrhythmiaStatus: "--",
-      signalQuality: 0
+      signalQuality: 0,
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -270,6 +280,13 @@ const Index = () => {
     }
   };
 
+  const formatLipids = (lipids?: {totalCholesterol: number, triglycerides: number}) => {
+    if (!lipids) return "--/--";
+    const chol = lipids.totalCholesterol || 0;
+    const trig = lipids.triglycerides || 0;
+    return `${chol}/${trig}`;
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
@@ -315,29 +332,43 @@ const Index = () => {
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 top-[55%] bottom-[60px] bg-black/10 px-4 py-6">
-            <div className="grid grid-cols-3 gap-4 place-items-center">
+          <div className="absolute inset-x-0 top-[45%] bottom-[70px] bg-black/10 px-4 py-6">
+            <div className="grid grid-cols-5 gap-2 place-items-center">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}
                 unit="BPM"
                 highlighted={showResults}
+                calibrationProgress={vitalSigns.calibration?.progress.heartRate}
               />
               <VitalSign 
                 label="SPO2"
                 value={vitalSigns.spo2 || "--"}
                 unit="%"
                 highlighted={showResults}
+                calibrationProgress={vitalSigns.calibration?.progress.spo2}
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
                 value={vitalSigns.pressure}
                 unit="mmHg"
                 highlighted={showResults}
+                calibrationProgress={vitalSigns.calibration?.progress.pressure}
               />
-              <div></div>
-              <div></div>
-              <div></div>
+              <VitalSign 
+                label="GLUCOSA"
+                value={vitalSigns.glucose || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+                calibrationProgress={vitalSigns.calibration?.progress.glucose}
+              />
+              <VitalSign 
+                label="COLESTEROL/TRIGL."
+                value={formatLipids(vitalSigns.lipids)}
+                unit="mg/dL"
+                highlighted={showResults}
+                calibrationProgress={vitalSigns.calibration?.progress.lipids}
+              />
             </div>
           </div>
 
