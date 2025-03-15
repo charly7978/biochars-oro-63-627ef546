@@ -28,4 +28,5 @@ export interface SignalProcessor {
   stop(): void;
   calibrate(): Promise<boolean>;
   processFrame(imageData: ImageData): void;
+  reset(): void;
 }
