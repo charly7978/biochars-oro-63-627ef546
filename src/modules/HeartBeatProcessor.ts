@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -11,11 +10,11 @@ export class HeartBeatProcessor {
   private readonly WINDOW_SIZE = 60;
   private readonly MIN_BPM = 40;
   private readonly MAX_BPM = 200; // Se mantiene amplio para no perder picos fuera de rango
-  private readonly SIGNAL_THRESHOLD = 0.40; 
-  private readonly MIN_CONFIDENCE = 0.60;
-  private readonly DERIVATIVE_THRESHOLD = -0.03; 
+  private readonly SIGNAL_THRESHOLD = 0.25; // Reducido para mejor detección de señales débiles
+  private readonly MIN_CONFIDENCE = 0.45; // Reducido para mejor respuesta
+  private readonly DERIVATIVE_THRESHOLD = -0.025; // Ajustado para mejor detección
   private readonly MIN_PEAK_TIME_MS = 400; 
-  private readonly WARMUP_TIME_MS = 3000; 
+  private readonly WARMUP_TIME_MS = 1500; // Reducido para respuesta más rápida
 
   // Parámetros de filtrado
   private readonly MEDIAN_FILTER_WINDOW = 3; 
@@ -31,8 +30,8 @@ export class HeartBeatProcessor {
   private readonly MIN_BEEP_INTERVAL_MS = 300;
 
   // ────────── AUTO-RESET SI LA SEÑAL ES MUY BAJA ──────────
-  private readonly LOW_SIGNAL_THRESHOLD = 0.03;
-  private readonly LOW_SIGNAL_FRAMES = 10;
+  private readonly LOW_SIGNAL_THRESHOLD = 0.02; // Más sensible para detección de señal
+  private readonly LOW_SIGNAL_FRAMES = 5; // Reducido para respuesta más rápida
   private lowSignalCount = 0;
 
   // Variables internas
@@ -181,7 +180,7 @@ export class HeartBeatProcessor {
       this.signalBuffer.shift();
     }
 
-    if (this.signalBuffer.length < 30) {
+    if (this.signalBuffer.length < 15) { // Reducido para respuesta más rápida
       return {
         bpm: 0,
         confidence: 0,
@@ -220,7 +219,7 @@ export class HeartBeatProcessor {
       if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
         this.previousPeakTime = this.lastPeakTime;
         this.lastPeakTime = now;
-        this.playBeep(0.12); // Suena beep cuando se confirma pico
+        this.playBeep(0.12);
         this.updateBPM();
       }
     }

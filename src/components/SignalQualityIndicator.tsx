@@ -1,4 +1,10 @@
 
+/**
+ * IMPORTANTE: Esta aplicación es solo para referencia médica.
+ * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, ThumbsUp, AlertTriangle, Fingerprint } from 'lucide-react';
 
@@ -24,13 +30,13 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
   const [lastQualityLevel, setLastQualityLevel] = useState<string>('');
   
-  // Constantes de configuración - VALORES MÁS ESTRICTOS
-  const historySize = 6; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 12; // EXTREMADAMENTE ESTRICTO (era 10)
-  const QUALITY_THRESHOLD = 65; // ELEVADO (era 60)
-  const LOW_QUALITY_THRESHOLD = 45; // ELEVADO (era 40)
-  const MIN_QUALITY_FOR_DETECTION = 18; // ELEVADO: mínimo absoluto para considerar detección
-  const RESET_QUALITY_THRESHOLD = 10; // Nuevo: umbral por debajo del cual se reinicia todo
+  // Constantes de configuración - MÁS SENSIBLES
+  const historySize = 5; // Reducido para respuesta más rápida
+  const REQUIRED_FINGER_FRAMES = 5; // Reducido para detección más rápida
+  const QUALITY_THRESHOLD = 50; // Reducido para detectar señales más débiles
+  const LOW_QUALITY_THRESHOLD = 30; // Reducido para mayor sensibilidad
+  const MIN_QUALITY_FOR_DETECTION = 10; // Reducido para mayor sensibilidad
+  const RESET_QUALITY_THRESHOLD = 5; // Reducido para mayor sensibilidad
 
   // Detectar plataforma
   useEffect(() => {
@@ -39,9 +45,9 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     setIsAndroid(androidDetected);
     setIsIOS(iosDetected);
     
-    // Mostrar tip de ayuda después de un delay
+    // Mostrar tip de ayuda después de un delay corto para respuesta rápida
     if (isMonitoring) {
-      const timer = setTimeout(() => setShowHelpTip(true), 2500);
+      const timer = setTimeout(() => setShowHelpTip(true), 1000);
       return () => clearTimeout(timer);
     }
   }, [isMonitoring]);
@@ -49,35 +55,26 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   // Mantener historial de calidad para promedio ponderado
   useEffect(() => {
     if (isMonitoring) {
-      // NUEVO: Si la calidad es muy baja (menor al umbral de reset), reiniciar historial
+      // Si la calidad es muy baja, reiniciar historial
       if (quality < RESET_QUALITY_THRESHOLD) {
         if (qualityHistory.length > 0) {
           setQualityHistory([]);
           setDisplayQuality(0);
-          console.log("SignalQualityIndicator: Reinicio completo por calidad crítica", {
-            calidadRecibida: quality,
-            umbralReset: RESET_QUALITY_THRESHOLD
-          });
         }
         return;
       }
       
-      // NUEVO: Solo agregar al historial si la calidad supera cierto umbral mínimo
-      // Esto evita falsas detecciones
+      // Más sensible: agregar al historial con umbral más bajo
       if (quality > MIN_QUALITY_FOR_DETECTION) {
         setQualityHistory(prev => {
           const newHistory = [...prev, quality];
           return newHistory.slice(-historySize);
         });
       } else {
-        // Si la calidad es muy baja, reiniciar el historial
-        if (qualityHistory.length > 0) {
+        // Si la calidad es muy baja pero no llega al umbral de reset
+        if (qualityHistory.length > 0 && quality < MIN_QUALITY_FOR_DETECTION * 0.5) {
           setQualityHistory([]);
           setDisplayQuality(0);
-          console.log("SignalQualityIndicator: Reinicio de historial por calidad insuficiente", {
-            calidadRecibida: quality,
-            umbralMínimo: MIN_QUALITY_FOR_DETECTION
-          });
         }
       }
     } else {
@@ -86,17 +83,17 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     }
   }, [quality, isMonitoring, qualityHistory.length]);
 
-  // Calcular calidad ponderada con más peso a valores recientes y más estricta
+  // Calcular calidad ponderada con más peso a valores recientes y más sensible
   useEffect(() => {
     if (qualityHistory.length === 0) {
       setDisplayQuality(0);
       return;
     }
 
-    // NUEVO: Verificar si hay suficientes frames consecutivos de buena calidad
+    // Verificar si hay suficientes frames consecutivos - más sensible
     if (qualityHistory.length < REQUIRED_FINGER_FRAMES) {
-      // Reducimos aún más la calidad mostrada si no hay suficientes frames
-      setDisplayQuality(Math.max(0, Math.min(8, quality))); // Limitado a 8% máximo
+      // Mostrar calidad parcial para feedback inmediato
+      setDisplayQuality(Math.max(0, Math.min(15, quality))); // Aumentado para mejor feedback
       return;
     }
 
@@ -105,35 +102,29 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     let totalWeight = 0;
 
     qualityHistory.forEach((q, index) => {
-      const weight = Math.pow(1.5, index); // Exponencial para dar mucho más peso a valores recientes
+      const weight = Math.pow(1.3, index); // Reducido para menor sesgo
       weightedSum += q * weight;
       totalWeight += weight;
     });
 
     const averageQuality = Math.round(weightedSum / totalWeight);
     
-    // NUEVO: Verificación adicional para evitar falsas lecturas altas
-    // Comprobar que no haya demasiada variación en los últimos valores
-    const recentValues = qualityHistory.slice(-4);
+    // Verificación menos estricta para falsas lecturas
+    const recentValues = qualityHistory.slice(-3); // Reducido para respuesta más rápida
     const minRecent = Math.min(...recentValues);
     const maxRecent = Math.max(...recentValues);
     const rangeRecent = maxRecent - minRecent;
     
     let finalQuality = averageQuality;
     
-    // Si hay demasiada variación, penalizar la calidad
-    if (rangeRecent > 30 && qualityHistory.length < historySize) {
-      finalQuality = Math.round(finalQuality * 0.7);
-      console.log("SignalQualityIndicator: Penalización por alta variación", {
-        variación: rangeRecent,
-        calidadOriginal: averageQuality,
-        calidadAjustada: finalQuality
-      });
+    // Penalización más permisiva
+    if (rangeRecent > 40 && qualityHistory.length < historySize) {
+      finalQuality = Math.round(finalQuality * 0.85); // Penalización reducida
     }
     
     // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
-      const delta = (finalQuality - prev) * 0.3;
+      const delta = (finalQuality - prev) * 0.4; // Aumentado para respuesta más rápida
       return Math.round(prev + delta);
     });
     
@@ -150,41 +141,36 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     const newQualityLevel = getQualityText(finalQuality);
     if (newQualityLevel !== lastQualityLevel) {
       setLastQualityLevel(newQualityLevel);
-      console.log("SignalQualityIndicator: Cambio de nivel de calidad", {
-        anterior: lastQualityLevel,
-        nuevo: newQualityLevel,
-        calidadPonderada: finalQuality
-      });
     }
     
   }, [qualityHistory, lastQualityLevel, quality]);
 
   /**
-   * Obtiene el color basado en la calidad (más granular y más estricto)
+   * Obtiene el color basado en la calidad (más granular y más sensible)
    */
   const getQualityColor = (q: number) => {
     if (q === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) return '#666666';
-    if (q > 85) return '#059669'; // Verde más saturado
-    if (q > 75) return '#10b981'; // Verde medio
-    if (q > 60) return '#22c55e'; // Verde normal
-    if (q > 45) return '#a3e635'; // Verde-amarillo
-    if (q > 35) return '#eab308'; // Amarillo
-    if (q > 25) return '#f97316'; // Naranja
-    if (q > 15) return '#ef4444'; // Rojo
+    if (q > 80) return '#059669'; // Verde más saturado
+    if (q > 65) return '#10b981'; // Verde medio
+    if (q > 50) return '#22c55e'; // Verde normal
+    if (q > 35) return '#a3e635'; // Verde-amarillo
+    if (q > 20) return '#eab308'; // Amarillo
+    if (q > 10) return '#f97316'; // Naranja
+    if (q > 5) return '#ef4444'; // Rojo
     return '#b91c1c';            // Rojo oscuro
   };
 
   /**
-   * Obtiene el texto descriptivo de calidad con umbrales más estrictos
+   * Obtiene el texto descriptivo de calidad con umbrales más sensibles
    */
   const getQualityText = (q: number) => {
     if (q === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) return 'Sin Dedo';
-    if (q > 85) return 'Excelente';
-    if (q > 70) return 'Muy Buena';
-    if (q > 55) return 'Buena';
-    if (q > 40) return 'Aceptable';
-    if (q > 25) return 'Baja';
-    if (q > 15) return 'Muy Baja';
+    if (q > 80) return 'Excelente';
+    if (q > 65) return 'Muy Buena';
+    if (q > 50) return 'Buena';
+    if (q > 35) return 'Aceptable';
+    if (q > 20) return 'Baja';
+    if (q > 10) return 'Muy Baja';
     return 'Crítica';
   };
 
@@ -194,27 +180,27 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const getHelpMessage = () => {
     // Sin dedo detectado
     if (displayQuality === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) {
-      return "Cubra completamente la cámara y flash con su dedo índice. Presione firmemente.";
+      return "Cubra la cámara trasera y el flash con su dedo índice. Presione firmemente pero no muy fuerte.";
     }
     
     // Con dedo pero baja calidad
     if (displayQuality < LOW_QUALITY_THRESHOLD) {
       if (isAndroid) {
-        return "Presione más firmemente. Evite movimientos. El dedo debe cubrir totalmente la cámara y el flash.";
+        return "Presione más firmemente pero sin exceso. Mantenga el dedo estable sobre la cámara trasera.";
       } else if (isIOS) {
-        return "Cubra completamente la cámara. Presione con firmeza pero sin bloquear totalmente la luz.";
+        return "Cubra completamente la cámara trasera. Presione con firmeza moderada y mantenga el dedo quieto.";
       } else {
-        return "Asegúrese que su dedo cubra completamente la cámara y manténgalo estable.";
+        return "Asegúrese que su dedo cubra la cámara trasera y manténgalo quieto. Evite presionar demasiado fuerte.";
       }
     }
     
     // Calidad media
     if (displayQuality < QUALITY_THRESHOLD) {
-      return "Buen avance. Mantenga la presión estable y evite movimientos.";
+      return "Buen avance. Mantenga esta posición y evite movimientos.";
     }
     
     // Buena calidad
-    return "¡Buena señal! Mantenga esta posición para mejores resultados.";
+    return "¡Buena señal! Mantenga esta misma presión para óptimos resultados.";
   };
 
   // Estilo de pulso adaptado a la plataforma y calidad
@@ -223,12 +209,12 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       return "transition-all duration-300";
     
     const baseClass = "transition-all duration-300";
-    const pulseSpeed = isAndroid ? "animate-pulse" : "animate-pulse";
+    const pulseSpeed = "animate-pulse";
     
     return `${baseClass} ${pulseSpeed}`;
   };
 
-  // NUEVA FUNCIÓN: Determina si hay un dedo realmente presente
+  // Determina si hay un dedo realmente presente - más sensible
   const isFingerActuallyDetected = () => {
     return displayQuality > 0 && qualityHistory.length >= REQUIRED_FINGER_FRAMES;
   };
