@@ -17,14 +17,14 @@ export class SignalProcessor {
   private readonly SMA_WINDOW_SIZE = 5;
   
   // Umbrales realistas basados en investigación
-  private readonly QUALITY_THRESHOLD = 30; // Umbral de calidad mínima aceptable
-  private readonly FINGER_DETECTION_THRESHOLD = 50; // Umbral para detección de dedo
+  private readonly QUALITY_THRESHOLD = 25; // Reducido para mejor sensibilidad
+  private readonly FINGER_DETECTION_THRESHOLD = 40; // Reducido para mejor detección
   
   private ppgValues: number[] = [];
   private smaBuffer: number[] = [];
   private lastProcessedTime: number = 0;
   private consecutiveFingerFrames: number = 0;
-  private readonly MIN_FINGER_FRAMES = 5; // Mínimo de frames para confirmar detección
+  private readonly MIN_FINGER_FRAMES = 3; // Reducido para detección más rápida
   
   /**
    * Procesa la señal PPG aplicando filtrado y análisis de calidad
@@ -32,7 +32,7 @@ export class SignalProcessor {
   public processSignal(value: number): ProcessedSignal {
     // VERIFICACIÓN CRÍTICA: Comprobar si el valor indica ausencia de dedo
     // Valores muy bajos o cero indican que no hay dedo
-    const isPossiblyValidValue = value > 10 && value < 250;
+    const isPossiblyValidValue = value > 15 && value < 250;
     
     // Aplicar filtro SMA para reducción de ruido
     const { filteredValue, updatedBuffer } = applySMAFilter(value, this.smaBuffer, this.SMA_WINDOW_SIZE);
@@ -49,6 +49,16 @@ export class SignalProcessor {
     
     // Actualizar tiempo de procesamiento
     this.lastProcessedTime = Date.now();
+    
+    // Registro explícito para depuración
+    if (!isPossiblyValidValue || !fingerDetected) {
+      console.log("SignalProcessor: Sin dedo detectado", {
+        valor: value, 
+        esValorPosible: isPossiblyValidValue,
+        dedoDetectado: fingerDetected,
+        calidad: quality
+      });
+    }
     
     return {
       filteredValue,
@@ -94,7 +104,7 @@ export class SignalProcessor {
       ));
       
       // VERIFICACIÓN CRÍTICA: Asegurar que hay suficiente variación para ser una señal PPG real
-      const hasEnoughVariation = range > 10 && stdDev > 2;
+      const hasEnoughVariation = range > 8 && stdDev > 1.5;
       
       // Actualizar conteo de frames consecutivos con dedo
       if (quality >= this.QUALITY_THRESHOLD && hasEnoughVariation) {
@@ -103,13 +113,15 @@ export class SignalProcessor {
         this.consecutiveFingerFrames = Math.max(0, this.consecutiveFingerFrames - 1);
       }
       
-      console.log("SignalProcessor: Análisis de señal", {
-        calidad: quality,
-        rango: range,
-        desviación: stdDev,
-        framesConsecutivos: this.consecutiveFingerFrames,
-        hayDedo: this.consecutiveFingerFrames >= this.MIN_FINGER_FRAMES
-      });
+      // Registro detallado para mejor diagnóstico
+      if (this.consecutiveFingerFrames >= this.MIN_FINGER_FRAMES) {
+        console.log("SignalProcessor: Dedo detectado", {
+          calidad: quality,
+          rango: range,
+          desviación: stdDev,
+          framesConsecutivos: this.consecutiveFingerFrames
+        });
+      }
     }
     
     // Determinar si hay un dedo presente basado en calidad y consistencia
@@ -132,5 +144,6 @@ export class SignalProcessor {
     this.ppgValues = [];
     this.smaBuffer = [];
     this.consecutiveFingerFrames = 0;
+    console.log("SignalProcessor: Reiniciado completamente");
   }
 }
