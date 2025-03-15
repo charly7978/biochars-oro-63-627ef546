@@ -2,7 +2,7 @@
 /**
  * Decision engine for arrhythmia detection based on multiple parameters
  * Based on cutting-edge research from leading cardiac centers
- * Recalibrated to reduce false positives
+ * Recalibrated for better detection sensitivity
  */
 
 import { NonLinearMetrics } from '../types/arrhythmia-types';
@@ -18,8 +18,8 @@ interface ArrhythmiaDecisionParams {
 
 /**
  * Multi-parametric decision algorithm for arrhythmia detection
- * with conservative thresholds for clinical reliability
- * Recalibrated to reduce falsos positivos
+ * with balanced thresholds for clinical reliability
+ * Recalibrated to improve detection sensitivity
  */
 export function detectArrhythmia(params: ArrhythmiaDecisionParams): boolean {
   const {
@@ -33,28 +33,28 @@ export function detectArrhythmia(params: ArrhythmiaDecisionParams): boolean {
   
   const { shannonEntropy, sampleEntropy, pnnX } = nonLinearMetrics;
   
-  // Ensure minimum time between arrhythmia detections - aumentado para reducir falsos positivos
-  if (timeSinceLastArrhythmia < minArrhythmiaInterval * 1.5) {
+  // Ensure minimum time between arrhythmia detections - reducido para mejorar detección
+  if (timeSinceLastArrhythmia < minArrhythmiaInterval * 1.2) {
     return false;
   }
   
-  // Multi-parametric decision algorithm with more conservative thresholds
+  // Multi-parametric decision algorithm with more sensitive thresholds
   return (
-    // Primary condition: requires multiple criteria to be met with stricter thresholds
-    (rmssd > 50 && // Aumentado de 45 a 50
-     rrVariation > 0.3 && // Aumentado de 0.25 a 0.3 
-     coefficientOfVariation > 0.18) || // Aumentado de 0.15 a 0.18
+    // Primary condition: requires multiple criteria to be met with balanced thresholds
+    (rmssd > 45 && // Reducido de 50 a 45
+     rrVariation > 0.25 && // Reducido de 0.3 a 0.25 
+     coefficientOfVariation > 0.15) || // Reducido de 0.18 a 0.15
     
-    // Secondary condition: requires very strong signal quality and more definitive indicators
-    (shannonEntropy > 2.0 && // Aumentado de 1.8 a 2.0
-     pnnX > 0.3 && // Aumentado de 0.25 a 0.3
-     coefficientOfVariation > 0.25 && // Aumentado de 0.2 a 0.25
-     sampleEntropy > 1.2) || // Nuevo criterio adicional
+    // Secondary condition: requires good signal quality but more sensitive indicators
+    (shannonEntropy > 1.8 && // Reducido de 2.0 a 1.8
+     pnnX > 0.25 && // Reducido de 0.3 a 0.25
+     coefficientOfVariation > 0.2 && // Reducido de 0.25 a 0.2
+     sampleEntropy > 1.1) || // Reducido de 1.2 a 1.1
     
-    // Extreme variation condition: requires multiple confirmations - más restrictivo
-    (rrVariation > 0.4 && // Aumentado de 0.35 a 0.4
-     coefficientOfVariation > 0.3 && // Aumentado de 0.25 a 0.3
-     sampleEntropy > 1.5 && // Aumentado de 1.4 a 1.5
-     shannonEntropy > 1.7) // Nuevo criterio adicional
+    // Extreme variation condition: more sensitive detection
+    (rrVariation > 0.35 && // Reducido de 0.4 a 0.35
+     coefficientOfVariation > 0.25 && // Reducido de 0.3 a 0.25
+     sampleEntropy > 1.4 && // Reducido de 1.5 a 1.4
+     shannonEntropy > 1.6) // Reducido de 1.7 a 1.6
   );
 }
