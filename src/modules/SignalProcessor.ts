@@ -41,17 +41,17 @@ export class PPGSignalProcessor implements SignalProcessor {
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06;
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.065;
   
   private baselineValue: number = 0;
-  private readonly WAVELET_THRESHOLD = 0.025; // Umbral moderado para wavelets
-  private readonly BASELINE_FACTOR = 0.95; // Factor de adaptación de línea base
+  private readonly WAVELET_THRESHOLD = 0.025;
+  private readonly BASELINE_FACTOR = 0.95;
   private periodicityBuffer: number[] = [];
-  private readonly PERIODICITY_BUFFER_SIZE = 40; // Tamaño buffer para análisis de periodicidad
+  private readonly PERIODICITY_BUFFER_SIZE = 40;
   
-  private readonly MIN_PERIODICITY_SCORE = 0.4; // Puntuación mínima de periodicidad (más exigente)
+  private readonly MIN_PERIODICITY_SCORE = 0.45;
   
-  private readonly SIGNAL_QUALITY_THRESHOLD = 60; // Umbral moderado para calidad de la señal
+  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,

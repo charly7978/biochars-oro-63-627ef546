@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -76,7 +75,6 @@ const CameraView = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
-      // Increased resolution for better clarity
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
         width: { ideal: 1920 },
@@ -207,12 +205,10 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Apply high performance rendering settings
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
         
-        // Force hardware acceleration
         videoRef.current.style.backfaceVisibility = 'hidden';
         videoRef.current.style.perspective = '1000px';
       }
