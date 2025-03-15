@@ -40,12 +40,12 @@ const PPGSignalMeter = ({
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const WINDOW_WIDTH_MS = 3500;
-  const CANVAS_WIDTH = 1024;
-  const CANVAS_HEIGHT = 768;
+  const CANVAS_WIDTH = 900;
+  const CANVAS_HEIGHT = 600;
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
   const verticalScale = 30.0;
-  const SMOOTHING_FACTOR = 1.6;
+  const SMOOTHING_FACTOR = 1.2;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
@@ -407,12 +407,12 @@ const PPGSignalMeter = ({
   }, [onReset]);
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col">
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px]">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-full absolute inset-0 z-0 object-cover"
+        className="w-full h-[100vh] absolute inset-0 z-0"
       />
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
