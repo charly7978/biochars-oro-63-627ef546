@@ -43,13 +43,16 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastStableValue: number = 0;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.045;
   
-  // Nuevas variables para el análisis de wavelet y periodicidad
+  // Variables para el análisis de wavelet y periodicidad
   private baselineValue: number = 0;
   private readonly WAVELET_THRESHOLD = 0.025; // Umbral moderado para wavelets
   private readonly BASELINE_FACTOR = 0.95; // Factor de adaptación de línea base
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40; // Tamaño buffer para análisis de periodicidad
   private readonly MIN_PERIODICITY_SCORE = 0.3; // Puntuación mínima de periodicidad (moderada)
+  
+  // Nueva variable para el umbral de calidad de la señal (60%)
+  private readonly SIGNAL_QUALITY_THRESHOLD = 60; // Umbral moderado para calidad de la señal
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -269,12 +272,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     // Integrar análisis de periodicidad en la detección
     const periodicityScore = this.analyzeSignalPeriodicity();
     
-    // Ajuste en la lógica de detección del dedo considerando periodicidad
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
-                            periodicityScore > this.MIN_PERIODICITY_SCORE;
-    
+    // Calcular calidad de la señal
     let quality = 0;
-    if (isFingerDetected) {
+    if (this.stableFrameCount >= this.MIN_STABILITY_COUNT) {
       // Cálculo de calidad mejorado con periodicidad
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
@@ -287,6 +287,12 @@ export class PPGSignalProcessor implements SignalProcessor {
                           variationScore * 0.2 + 
                           periodicityScore * 0.2) * 100);
     }
+    
+    // Modificación: Ahora tomamos en cuenta el umbral de calidad de señal
+    // para detectar el dedo. Se requiere una calidad mínima del 60%
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT && 
+                            periodicityScore > this.MIN_PERIODICITY_SCORE &&
+                            quality >= this.SIGNAL_QUALITY_THRESHOLD;
 
     return { isFingerDetected, quality };
   }
