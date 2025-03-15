@@ -133,6 +133,7 @@ export const useVitalSignsProcessor = () => {
       });
       
       setLastValidResults(savedResults);
+      return savedResults;
     } else {
       console.log("useVitalSignsProcessor: No hay resultados para guardar tras reset", {
         timestamp: new Date().toISOString()
@@ -140,7 +141,7 @@ export const useVitalSignsProcessor = () => {
     }
     
     console.log("Reseteo suave completado - manteniendo resultados");
-    return savedResults;
+    return null;
   }, [lastValidResults]);
   
   /**
