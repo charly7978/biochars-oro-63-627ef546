@@ -16,12 +16,7 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
-  hemoglobin?: number; // Optional to maintain compatibility
-  atrialFibrillation?: {  // Add atrial fibrillation data
-    detected: boolean;
-    confidence: number;
-    rmssd?: number;
-  };
+  hemoglobin: number;
   calibration?: {
     isCalibrating: boolean;
     progress: {
@@ -31,8 +26,7 @@ export interface VitalSignsResult {
       arrhythmia: number;
       glucose: number;
       lipids: number;
-      hemoglobin?: number;
-      atrialFibrillation: number;
+      hemoglobin: number;
     };
   };
   lastArrhythmiaData?: {

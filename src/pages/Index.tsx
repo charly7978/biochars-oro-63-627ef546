@@ -69,15 +69,7 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      setVitalSigns({
-        ...lastValidResults,
-        calibration: lastValidResults.calibration ? {
-          isCalibrating: lastValidResults.calibration.isCalibrating,
-          progress: {
-            ...lastValidResults.calibration.progress
-          }
-        } : undefined
-      });
+      setVitalSigns(lastValidResults);
       setShowResults(true);
     }
   }, [lastValidResults, isMonitoring]);
@@ -145,8 +137,7 @@ const Index = () => {
         arrhythmia: 0,
         glucose: 0,
         lipids: 0,
-        hemoglobin: 0,
-        atrialFibrillation: 0
+        hemoglobin: 0
       }
     });
     
@@ -175,8 +166,7 @@ const Index = () => {
             arrhythmia: Math.max(0, progressPercent - 15),
             glucose: Math.max(0, progressPercent - 5),
             lipids: Math.max(0, progressPercent - 25),
-            hemoglobin: Math.max(0, progressPercent - 30),
-            atrialFibrillation: Math.max(0, progressPercent - 10)
+            hemoglobin: Math.max(0, progressPercent - 30)
           }
         });
       } else {
@@ -201,8 +191,7 @@ const Index = () => {
               arrhythmia: 100,
               glucose: 100,
               lipids: 100,
-              hemoglobin: 100,
-              atrialFibrillation: 100
+              hemoglobin: 100
             }
           });
           
@@ -232,8 +221,7 @@ const Index = () => {
             arrhythmia: 100,
             glucose: 100,
             lipids: 100,
-            hemoglobin: 100,
-            atrialFibrillation: 100
+            hemoglobin: 100
           }
         });
       }
@@ -260,19 +248,7 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      // Asegurar que el tipo de resultado es compatible con el estado
-      const compatibleResults: VitalSignsResult = {
-        ...savedResults,
-        calibration: savedResults.calibration ? {
-          isCalibrating: savedResults.calibration.isCalibrating,
-          progress: {
-            ...savedResults.calibration.progress,
-            atrialFibrillation: savedResults.calibration.progress.atrialFibrillation || 0
-          }
-        } : undefined
-      };
-      
-      setVitalSigns(compatibleResults);
+      setVitalSigns(savedResults);
       setShowResults(true);
     }
     
@@ -434,19 +410,7 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        // Asegurar que el tipo del resultado es compatible con el estado
-        const compatibleVitals: VitalSignsResult = {
-          ...vitals,
-          calibration: vitals.calibration ? {
-            isCalibrating: vitals.calibration.isCalibrating,
-            progress: {
-              ...vitals.calibration.progress,
-              atrialFibrillation: vitals.calibration.progress.atrialFibrillation || 0
-            }
-          } : undefined
-        };
-        
-        setVitalSigns(compatibleVitals);
+        setVitalSigns(vitals);
         
         if (vitals.lastArrhythmiaData) {
           setLastArrhythmiaData(vitals.lastArrhythmiaData);
