@@ -49,24 +49,26 @@ export class VitalSignsProcessor {
 
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
+   * Procesamiento 100% real sin simulaciones
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Procesar la señal PPG
+    // Procesar la señal PPG sin simulación
     const filteredValue = this.signalProcessor.processSignal(ppgValue);
     
     // Actualizar datos de arritmia
     this.arrhythmiaDetector.updateRRIntervals(rrData);
 
-    // Calcular SpO2
+    // Calcular SpO2 con datos reales
     const recentValues = this.signalProcessor.getRecentValues(60);
     const spo2 = this.spo2Calculator.calculateSpO2(recentValues);
     
-    // Calcular presión arterial
+    // Calcular presión arterial con datos reales
     const bp = this.bpCalculator.calculateBloodPressure(recentValues);
-    const pressureString = `${bp.systolic}/${bp.diastolic}`;
+    const pressureString = bp.systolic > 0 && bp.diastolic > 0 ? 
+      `${bp.systolic}/${bp.diastolic}` : "--/--";
 
     // Obtener estado de arritmia
     const arrhythmiaStatus = this.arrhythmiaDetector.getArrhythmiaStatus();
@@ -76,20 +78,20 @@ export class VitalSignsProcessor {
     }
 
     // Calcular métricas de arritmia
-    const rmssd = this.arrhythmiaDetector.calculateRMSSD();
-    const rrVariation = this.arrhythmiaDetector.calculateRRVariation();
+    const rmssd = this.arrhythmiaDetector.calculateRMSSD() || 0;
+    const rrVariation = this.arrhythmiaDetector.calculateRRVariation() || 0;
     
     // Datos de última arritmia
     const lastArrhythmiaData = {
       timestamp: Date.now(),
-      rmssd: rmssd || 0,
-      rrVariation: rrVariation || 0
+      rmssd,
+      rrVariation
     };
 
-    // Calcular calidad de señal
+    // Calcular calidad de señal basada en datos reales
     const signalQuality = Math.min(100, Math.max(0, recentValues.length / 3));
 
-    // Calcular progreso de calibración
+    // Calcular progreso de calibración sin simulación
     const calibrationProgress = {
       heartRate: Math.min(1, recentValues.length / 60),
       spo2: Math.min(1, recentValues.length / 90),
@@ -97,9 +99,9 @@ export class VitalSignsProcessor {
       arrhythmia: Math.min(1, this.arrhythmiaDetector.isInLearningPhase() ? 0.5 : 1)
     };
 
-    // Crear resultado
+    // Crear resultado basado únicamente en datos procesados reales
     const result: VitalSignsResult = {
-      spo2,
+      spo2: spo2,
       pressure: pressureString,
       arrhythmiaStatus: `${arrhythmiaStatus}|${arrhythmiaCount}`,
       signalQuality,
@@ -111,7 +113,7 @@ export class VitalSignsProcessor {
     };
 
     // Guardar último resultado válido
-    if (spo2 > 90 && bp.systolic > 0 && bp.diastolic > 0) {
+    if (spo2 > 0 && bp.systolic > 0 && bp.diastolic > 0) {
       this.lastValidResult = { ...result };
     }
 

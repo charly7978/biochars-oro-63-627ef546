@@ -12,7 +12,7 @@ import { FingerDetector } from './finger-detection/FingerDetector';
  * Wrapper de compatibilidad que mantiene la interfaz original 
  * mientras usa la implementación refactorizada e integra el detector de dedo.
  * 
- * Este archivo centraliza la detección de dedo en FingerDetector
+ * Procesamiento 100% real
  */
 export class VitalSignsProcessor {
   private processor: CoreVitalSignsProcessor;
@@ -29,13 +29,12 @@ export class VitalSignsProcessor {
   constructor() {
     this.processor = new CoreVitalSignsProcessor();
     this.fingerDetector = new FingerDetector();
-    console.log("VitalSignsProcessor: Inicializado con detector de dedo TRIPLE VERIFICACIÓN anti-falsos-positivos");
+    console.log("VitalSignsProcessor: Inicializado con detector de dedo");
   }
   
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
-   * Utiliza FingerDetector con TRIPLE VERIFICACIÓN como única fuente para detección de dedos
-   * COMPLETAMENTE REDISEÑADO para eliminar TODOS los falsos positivos
+   * Procesamiento 100% real, sin simulaciones
    */
   public processSignal(
     ppgValue: number,
@@ -44,7 +43,7 @@ export class VitalSignsProcessor {
   ): VitalSignsResult {
     // Limitar velocidad de procesamiento si es necesario
     const currentTime = Date.now();
-    if (currentTime - this.lastProcessedTime < 33 && !this.processingEnabled) { // ~30fps
+    if (currentTime - this.lastProcessedTime < 33 && !this.processingEnabled) {
       return {
         spo2: 0,
         pressure: "--/--",
@@ -59,27 +58,12 @@ export class VitalSignsProcessor {
       this.lastRgbValues = rgbValues;
     }
     
-    // TRIPLE VERIFICACIÓN de calidad con el detector de dedo centralizado y valores RGB
+    // Verificar calidad con el detector de dedo
     const fingerDetectionResult = this.fingerDetector.processQuality(
       ppgValue, 
       this.lastRgbValues.red, 
       this.lastRgbValues.green
     );
-    
-    // Log más detallado periódicamente
-    if (Math.random() < 0.01) {
-      console.log("VitalSignsProcessor: Estado de procesamiento (TRIPLE VERIFICACIÓN)", {
-        ppgValue,
-        calidadDetectada: fingerDetectionResult.quality,
-        dedoDetectado: fingerDetectionResult.isFingerDetected,
-        nivelCalidad: fingerDetectionResult.qualityLevel,
-        valorRojo: this.lastRgbValues.red,
-        valorVerde: this.lastRgbValues.green,
-        ratioRG: this.lastRgbValues.red / Math.max(1, this.lastRgbValues.green),
-        framesValidosConsecutivos: this.consecutiveValidFrames,
-        framesVacíosConsecutivos: this.consecutiveEmptyFrames
-      });
-    }
     
     // Actualizar contadores de consistencia
     if (fingerDetectionResult.isFingerDetected) {
@@ -87,13 +71,10 @@ export class VitalSignsProcessor {
       this.consecutiveEmptyFrames = Math.max(0, this.consecutiveEmptyFrames - 1);
     } else {
       this.consecutiveEmptyFrames += 1;
-      this.consecutiveValidFrames = Math.max(0, this.consecutiveValidFrames - 2); // Más agresivo
+      this.consecutiveValidFrames = Math.max(0, this.consecutiveValidFrames - 2);
     }
     
-    // Solo procesar señales cuando:
-    // 1. El dedo está realmente detectado con TRIPLE VERIFICACIÓN
-    // 2. Hemos tenido suficientes frames válidos consecutivos 
-    // 3. La calidad es suficiente
+    // Solo procesar señales cuando hay dedo detectado
     if (fingerDetectionResult.isFingerDetected && 
         this.consecutiveValidFrames >= 5 && 
         fingerDetectionResult.quality >= this.fingerDetector.getConfig().MIN_QUALITY_FOR_DETECTION) {
@@ -103,7 +84,7 @@ export class VitalSignsProcessor {
       return vitalSignsResult;
     }
     
-    // Retornar valores por defecto si no hay dedo presente o no cumple criterios
+    // Retornar valores por defecto si no hay dedo presente
     return {
       spo2: 0,
       pressure: "--/--",
