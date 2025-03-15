@@ -25,18 +25,11 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
-  // Actualización: configuración por defecto optimizada para detección de dedo sin falsos positivos
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 15,
-<<<<<<< HEAD
-    MIN_RED_THRESHOLD: 80,      // antes: 85
-    MAX_RED_THRESHOLD: 230,     // antes: 255
-    STABILITY_WINDOW: 4,        // antes: 5
-=======
     MIN_RED_THRESHOLD: 80,
     MAX_RED_THRESHOLD: 230,
     STABILITY_WINDOW: 4,
->>>>>>> a9050434b348e8b21e6f0df56217d53aab420de9
     MIN_STABILITY_COUNT: 3
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -48,8 +41,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
-  // Reduced PERFUSION_INDEX_THRESHOLD to increase sensitivity
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.055;
   
   private baselineValue: number = 0;
   private readonly WAVELET_THRESHOLD = 0.025;
@@ -57,19 +49,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   private periodicityBuffer: number[] = [];
   private readonly PERIODICITY_BUFFER_SIZE = 40;
   
-  // Reduced MIN_PERIODICITY_SCORE to allow more signals to be detected
-  private readonly MIN_PERIODICITY_SCORE = 0.38;
+  private readonly MIN_PERIODICITY_SCORE = 0.42;
   
-  private readonly SIGNAL_QUALITY_THRESHOLD = 65;
-
-  // Nueva calibración: constantes adicionales para optimizar la detección
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
-  private baselineValue: number = 0;
-  private readonly WAVELET_THRESHOLD = 0.025;
-  private readonly BASELINE_FACTOR = 0.95;
-  private periodicityBuffer: number[] = [];
-  private readonly PERIODICITY_BUFFER_SIZE = 40;
-  private readonly MIN_PERIODICITY_SCORE = 0.38;
   private readonly SIGNAL_QUALITY_THRESHOLD = 65;
 
   constructor(

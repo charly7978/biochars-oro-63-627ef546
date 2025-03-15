@@ -1,4 +1,3 @@
-
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 export interface ProcessedSignal {
@@ -14,9 +13,6 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex?: number;
-  // Nuevas propiedades para características fisiológicas
-  redGreenRatio?: number;  // Ratio entre componentes rojo y verde
-  pulsatility?: number;    // Variación pulsátil de la señal
 }
 
 export interface ProcessingError {

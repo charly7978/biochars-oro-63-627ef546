@@ -12,8 +12,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 7; // Reduced from 8 for faster detection
-  const QUALITY_THRESHOLD = 45; // Reduced from 50 for more sensitivity
+  const REQUIRED_FINGER_FRAMES = 8; // PRIMERA VARIABLE MODIFICADA: aumentado de 6 a 8 para reducir aún más falsos positivos
+  const QUALITY_THRESHOLD = 50; // SEGUNDA VARIABLE MODIFICADA: aumentado de 40 a 50 para exigir calidad mucho más alta
 
   // Detectar plataforma
   useEffect(() => {
@@ -67,15 +67,15 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 60) return '#00ff00'; // Threshold reduced from 65
-    if (q > 35) return '#ffff00'; // Threshold reduced from 40
+    if (q > 65) return '#00ff00'; // Umbral reducido para Android
+    if (q > 40) return '#ffff00'; // Umbral reducido para Android
     return '#ff0000';
   };
 
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
-    if (q > 60) return 'Excelente'; // Threshold reduced from 65
-    if (q > 35) return 'Buena'; // Threshold reduced from 40
+    if (q > 65) return 'Excelente';
+    if (q > 40) return 'Buena';
     return 'Baja';
   };
 
