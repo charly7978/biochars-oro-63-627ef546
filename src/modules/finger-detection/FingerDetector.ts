@@ -68,7 +68,7 @@ export class FingerDetector {
     quality: number,
     redValue: number,
     greenValue: number
-  ): { isFingerDetected: boolean; quality: number } {
+  ): { isFingerDetected: boolean; quality: number; qualityLevel: string; qualityColor: string; helpMessage: string } {
     // Calcular relación rojo/verde (indicador fisiológico clave)
     const redGreenRatio = greenValue > 0 ? redValue / greenValue : 0;
     
@@ -160,9 +160,37 @@ export class FingerDetector {
       }
     }
     
+    // Determinar nivel de calidad, color y mensaje de ayuda
+    let qualityLevel = "baja";
+    let qualityColor = "from-red-500 to-rose-500";
+    let helpMessage = "Coloque el dedo completamente sobre la cámara";
+    
+    if (filteredQuality >= 70) {
+      qualityLevel = "óptima";
+      qualityColor = "from-green-500 to-emerald-500";
+      helpMessage = "Señal óptima, mantenga el dedo quieto";
+    } else if (filteredQuality >= 45) {
+      qualityLevel = "buena";
+      qualityColor = "from-green-400 to-green-500";
+      helpMessage = "Buena señal, mantenga el dedo quieto";
+    } else if (filteredQuality >= 25) {
+      qualityLevel = "aceptable";
+      qualityColor = "from-yellow-500 to-orange-500";
+      helpMessage = "Ajuste el dedo para mejorar la señal";
+    }
+    
+    if (!this.fingerDetected) {
+      qualityLevel = "sin dedo";
+      qualityColor = "from-gray-400 to-gray-500";
+      helpMessage = "Coloque su dedo sobre la cámara";
+    }
+    
     return {
       isFingerDetected: this.fingerDetected,
-      quality: filteredQuality
+      quality: filteredQuality,
+      qualityLevel,
+      qualityColor,
+      helpMessage
     };
   }
   
@@ -271,5 +299,30 @@ export class FingerDetector {
     this.recentQualityReadings = [];
     this.qualityStability = 0;
     this.previousQuality = 0;
+  }
+  
+  /**
+   * Devuelve la configuración actual del detector
+   * Útil para debugging y visualización
+   */
+  public getConfig(): any {
+    return {
+      device: this.DEVICE_TYPE,
+      thresholds: {
+        perfusion: this.PERFUSION_THRESHOLD,
+        redGreenRatio: this.R_G_RATIO_MIN,
+        redMin: this.RED_MIN_VALUE,
+        greenMin: this.GREEN_MIN_VALUE,
+        stability: this.STABILITY_THRESHOLD,
+        stabilityChange: this.STABILITY_CHANGE_THRESHOLD,
+        maxPercentChange: this.MAX_PERCENT_CHANGE
+      },
+      state: {
+        fingerDetected: this.fingerDetected,
+        consecutiveDetections: this.consecutiveDetections,
+        qualityStability: this.qualityStability,
+        recentReadingsCount: this.recentQualityReadings.length
+      }
+    };
   }
 }
