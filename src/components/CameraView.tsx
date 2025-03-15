@@ -139,7 +139,7 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise<void>(resolve => setTimeout(resolve, 300));
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
@@ -259,7 +259,7 @@ const CameraView = ({
           await videoTrack.applyConstraints({
             advanced: [{ focusMode: 'manual' }]
           });
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise<void>(resolve => setTimeout(resolve, 100));
           await videoTrack.applyConstraints({
             advanced: [{ focusMode: 'continuous' }]
           });
