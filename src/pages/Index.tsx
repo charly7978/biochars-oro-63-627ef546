@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -352,7 +351,7 @@ const Index = () => {
           <CameraView 
             videoRef={videoRef} 
             canvasRef={canvasRef} 
-            isActive={isMonitoring}
+            isMonitoring={isMonitoring}
             isFingerDetected={fingerDetected}
             signalQuality={signalQuality}
           />
