@@ -5,7 +5,7 @@
  * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
-import { amplifyHeartbeatRealtime } from '../../utils/signalProcessingUtils';
+import { amplifyHeartbeatRealtime, calculateSignalQuality } from '../../utils/signalProcessingUtils';
 
 export class SignalProcessor {
   private readonly PPG_BUFFER_SIZE = 90;
@@ -15,6 +15,8 @@ export class SignalProcessor {
   private ppgBuffer: number[] = [];
   private smaBuffer: number[] = [];
   private ppgValues: number[] = [];
+  private redValue: number = 0;
+  private greenValue: number = 0;
 
   /**
    * Procesa una señal PPG aplicando amplificación y filtrado
@@ -48,6 +50,24 @@ export class SignalProcessor {
   }
 
   /**
+   * Establece los valores RGB para análisis fisiológico
+   * @param redValue Valor del canal rojo
+   * @param greenValue Valor del canal verde
+   */
+  public setRGBValues(redValue: number, greenValue: number): void {
+    this.redValue = redValue;
+    this.greenValue = greenValue;
+  }
+
+  /**
+   * Obtiene la calidad de señal actual
+   * @returns Calidad de señal (0-100)
+   */
+  public getSignalQuality(): number {
+    return calculateSignalQuality(this.ppgValues);
+  }
+
+  /**
    * Obtiene los valores PPG procesados recientes
    * @param count Número de valores a obtener
    * @returns Array con los valores PPG recientes
@@ -61,7 +81,7 @@ export class SignalProcessor {
    * @param value Valor a filtrar
    * @returns Valor filtrado
    */
-  private applySMAFilter(value: number): number {
+  public applySMAFilter(value: number): number {
     this.smaBuffer.push(value);
     if (this.smaBuffer.length > this.SMA_WINDOW) {
       this.smaBuffer.shift();
@@ -77,5 +97,7 @@ export class SignalProcessor {
     this.ppgBuffer = [];
     this.smaBuffer = [];
     this.ppgValues = [];
+    this.redValue = 0;
+    this.greenValue = 0;
   }
 }
