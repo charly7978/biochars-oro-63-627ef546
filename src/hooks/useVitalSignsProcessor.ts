@@ -33,11 +33,12 @@ export function useVitalSignsProcessor() {
     // Actualizar estado de detección de dedo
     fingerDetectedRef.current = isFingerDetected;
     
-    // Si no hay dedo detectado, retornar valores vacíos
+    // Si no hay dedo detectado, retornar valores vacíos claramente indicados como "sin señal"
     if (!isFingerDetected) {
+      console.log("useVitalSignsProcessor: Sin dedo detectado, retornando valores vacíos");
       return {
         spo2: 0,
-        pressure: "--/--",
+        pressure: "SIN SEÑAL",
         arrhythmiaStatus: "SIN SEÑAL",
         glucose: 0,
         lipids: {
@@ -84,7 +85,8 @@ export function useVitalSignsProcessor() {
       if (
         result.spo2 > 0 && 
         result.pressure !== "--/--" && 
-        result.pressure !== "0/0"
+        result.pressure !== "0/0" &&
+        result.pressure !== "SIN SEÑAL"
       ) {
         setLastValidResults(result);
       }
