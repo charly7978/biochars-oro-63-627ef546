@@ -28,9 +28,9 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 0.35; // PRIMERA VARIABLE MODIFICADA: Aumentado drásticamente de 0.18 a 0.35 para exigir una señal con amplitud mucho mayor
+  private readonly MIN_SIGNAL_DIFF = 0.7; // PRIMERA VARIABLE MODIFICADA: Aumentado drásticamente de 0.35 a 0.7 para exigir una señal con amplitud extremadamente mayor
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 15; // SEGUNDA VARIABLE MODIFICADA: Aumentado de 8 a 15 para exigir consistencia mucho más prolongada
+  private readonly REQUIRED_GOOD_FRAMES = 30; // SEGUNDA VARIABLE MODIFICADA: Aumentado de 15 a 30 para exigir consistencia mucho más prolongada
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
@@ -215,16 +215,47 @@ export class SignalProcessor {
     // Obtener valores recientes para análisis
     const recentValues = this.ppgValues.slice(-20);
     
-    // Criterio 1: Calidad mínima de señal (más exigente)
-    if (this.signalQuality < 45) return false; 
+    // Criterio 1: Calidad mínima de señal (mucho más exigente)
+    if (this.signalQuality < 70) return false; 
     
     // Criterio 2: Variabilidad significativa (señal viva vs estática)
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const range = max - min;
     
-    // Criterio 3: Ratio de frames consecutivos buenos (más exigente)
-    return range > this.MIN_SIGNAL_DIFF && this.consecutiveGoodFrames >= this.REQUIRED_GOOD_FRAMES / 2;
+    // Criterio 3: Ratio de frames consecutivos buenos (extremadamente exigente)
+    // Exigimos que haya muchos frames buenos consecutivos antes de considerar detección
+    if (this.consecutiveGoodFrames < this.REQUIRED_GOOD_FRAMES * 0.8) return false;
+    
+    // Criterio 4: Verificación de periodicidad (solo señales con patrón cardíaco)
+    const periodicityCheck = this.checkSignalPeriodicity(recentValues);
+    if (!periodicityCheck) return false;
+    
+    // Solo si pasa todos los criterios estrictos, consideramos que hay un dedo
+    return range > this.MIN_SIGNAL_DIFF;
+  }
+
+  /**
+   * Verifica que la señal tenga una periodicidad compatible con un ritmo cardíaco real
+   * Esto ayuda a rechazar señales que tienen variación pero no son fisiológicas
+   */
+  private checkSignalPeriodicity(values: number[]): boolean {
+    if (values.length < 10) return false;
+    
+    // Calcular media para normalizar
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    
+    // Buscar cruces por cero como indicador simple de periodicidad
+    let zeroCrossings = 0;
+    for (let i = 1; i < values.length; i++) {
+      if ((values[i] - mean) * (values[i-1] - mean) < 0) {
+        zeroCrossings++;
+      }
+    }
+    
+    // Un ritmo cardíaco normal debería tener entre 2-6 cruces por cero en una ventana de 20 muestras
+    // dependiendo de la frecuencia de muestreo y la frecuencia cardíaca
+    return zeroCrossings >= 2 && zeroCrossings <= 6;
   }
 
   /**
