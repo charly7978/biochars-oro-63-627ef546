@@ -37,18 +37,18 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   
-  // Parámetros de detección de dedo
-  private readonly MIN_RED_VALUE = 60;    // Valor mínimo del canal rojo para considerar presencia de dedo
-  private readonly MAX_RED_VALUE = 250;   // Valor máximo del canal rojo (evitar saturación)
-  private readonly MIN_RED_RATIO = 1.2;   // Ratio mínimo entre rojo y otros canales
+  // Parámetros de detección de dedo - MUCHO MÁS SENSIBLES
+  private readonly MIN_RED_VALUE = 30;     // Bajado de 60 a 30
+  private readonly MAX_RED_VALUE = 255;    // Subido a máximo absoluto
+  private readonly MIN_RED_RATIO = 1.1;    // Bajado de 1.2 a 1.1
   
   // Tamaño de buffer para análisis de señal
-  private readonly BUFFER_SIZE = 30;
+  private readonly BUFFER_SIZE = 15;       // Reducido para respuesta más rápida
   
-  // Parámetros de análisis de señal PPG
-  private readonly MIN_PEAK_AMPLITUDE = 3;      // Amplitud mínima entre pico y valle (más sensible)
-  private readonly MAX_BPM = 180;              // Máximo ritmo cardíaco fisiológico
-  private readonly MIN_BPM = 40;               // Mínimo ritmo cardíaco fisiológico
+  // Parámetros de análisis de señal PPG - MÁS PERMISIVOS
+  private readonly MIN_PEAK_AMPLITUDE = 2;      // Bajado de 3 a 2
+  private readonly MAX_BPM = 200;              // Subido de 180 a 200
+  private readonly MIN_BPM = 30;               // Bajado de 40 a 30
   private readonly MIN_PEAK_DISTANCE = Math.round(60 / this.MAX_BPM * 30); // En frames a 30fps
   private readonly MAX_PEAK_DISTANCE = Math.round(60 / this.MIN_BPM * 30); // En frames a 30fps
   
@@ -75,16 +75,25 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (!this.isProcessing) return;
 
     try {
-      // 1. Detectar dedo
-      const { redValue, isFingerPresent } = this.detectFinger(imageData);
+      // 1. Detectar dedo - Ahora más sensible
+      const { redValue, isFingerPresent, redToGreenRatio, redToBlueRatio } = this.detectFinger(imageData);
       
-      // Si no hay dedo, retornar señal con calidad 0
+      // Calcular calidad basada en ratios de color
+      let baseQuality = 0;
+      if (isFingerPresent) {
+        // Calidad base entre 30-100 según qué tan fuerte es la señal roja
+        const redStrength = (redValue - this.MIN_RED_VALUE) / (this.MAX_RED_VALUE - this.MIN_RED_VALUE);
+        const ratioStrength = Math.min(redToGreenRatio, redToBlueRatio) - this.MIN_RED_RATIO;
+        baseQuality = Math.round(Math.min(100, 30 + redStrength * 40 + ratioStrength * 30));
+      }
+      
+      // Si no hay dedo, retornar con calidad base
       if (!isFingerPresent) {
         const processedSignal: ProcessedSignal = {
           timestamp: Date.now(),
           rawValue: redValue,
           filteredValue: redValue,
-          quality: 0,
+          quality: baseQuality,
           fingerDetected: false,
           roi: this.detectROI(redValue)
         };
@@ -104,12 +113,15 @@ export class PPGSignalProcessor implements SignalProcessor {
       // 3. Analizar calidad de la señal PPG
       const { quality, isPPGSignal } = this.analyzeSignalQuality(filtered);
 
+      // Usar la mejor calidad entre la base y la del análisis PPG
+      const finalQuality = Math.max(baseQuality, quality);
+
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
         rawValue: redValue,
         filteredValue: filtered,
-        quality: quality,
-        fingerDetected: isFingerPresent && isPPGSignal,
+        quality: finalQuality,
+        fingerDetected: isFingerPresent, // Solo requerimos presencia de dedo
         roi: this.detectROI(redValue)
       };
 
@@ -121,16 +133,21 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
-  private detectFinger(imageData: ImageData): { redValue: number, isFingerPresent: boolean } {
+  private detectFinger(imageData: ImageData): { 
+    redValue: number, 
+    isFingerPresent: boolean,
+    redToGreenRatio: number,
+    redToBlueRatio: number 
+  } {
     const data = imageData.data;
     let redSum = 0, greenSum = 0, blueSum = 0;
     let count = 0;
     
-    // Analizar solo el centro de la imagen (25% central)
-    const startX = Math.floor(imageData.width * 0.375);
-    const endX = Math.floor(imageData.width * 0.625);
-    const startY = Math.floor(imageData.height * 0.375);
-    const endY = Math.floor(imageData.height * 0.625);
+    // Analizar una región más grande (50% central)
+    const startX = Math.floor(imageData.width * 0.25);
+    const endX = Math.floor(imageData.width * 0.75);
+    const startY = Math.floor(imageData.height * 0.25);
+    const endY = Math.floor(imageData.height * 0.75);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -146,18 +163,19 @@ export class PPGSignalProcessor implements SignalProcessor {
     const greenValue = greenSum / count;
     const blueValue = blueSum / count;
     
-    // Verificar presencia de dedo:
-    // 1. El valor del canal rojo debe estar en un rango válido
-    // 2. El canal rojo debe ser significativamente mayor que los otros canales
+    // Verificar presencia de dedo con umbrales más permisivos
     const isInRange = redValue >= this.MIN_RED_VALUE && redValue <= this.MAX_RED_VALUE;
-    const redToGreenRatio = redValue / (greenValue + 1);  // +1 para evitar división por cero
+    const redToGreenRatio = redValue / (greenValue + 1);
     const redToBlueRatio = redValue / (blueValue + 1);
     
+    // Requerir solo que el rojo sea ligeramente mayor que los otros canales
     const hasValidRatios = redToGreenRatio >= this.MIN_RED_RATIO && 
                           redToBlueRatio >= this.MIN_RED_RATIO;
     
     return {
       redValue,
+      redToGreenRatio,
+      redToBlueRatio,
       isFingerPresent: isInRange && hasValidRatios
     };
   }
