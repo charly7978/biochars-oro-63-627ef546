@@ -2,7 +2,7 @@
 /**
  * Decision engine for arrhythmia detection based on multiple parameters
  * Based on cutting-edge research from leading cardiac centers
- * Recalibrated for better detection sensitivity
+ * Extremely sensitive detection parameters for enhanced clinical utility
  */
 
 import { NonLinearMetrics } from '../types/arrhythmia-types';
@@ -18,8 +18,7 @@ interface ArrhythmiaDecisionParams {
 
 /**
  * Multi-parametric decision algorithm for arrhythmia detection
- * with balanced thresholds for clinical reliability
- * Recalibrated to improve detection sensitivity
+ * with extremely sensitive thresholds to maximize detection rate
  */
 export function detectArrhythmia(params: ArrhythmiaDecisionParams): boolean {
   const {
