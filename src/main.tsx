@@ -27,7 +27,27 @@ const applyHighResolution = () => {
     if (window.devicePixelRatio >= 3) {
       document.documentElement.classList.add('ultra-hd');
     }
+    if (window.devicePixelRatio >= 4) {
+      document.documentElement.classList.add('super-retina');
+    }
   }
+  
+  // Apply display optimizations based on screen resolution
+  const screenWidth = window.screen.width;
+  const screenHeight = window.screen.height;
+  
+  // Set resolution class based on screen dimensions
+  if (screenWidth >= 7680) { // 8K
+    document.documentElement.classList.add('resolution-8k');
+  } else if (screenWidth >= 5120) { // 5K
+    document.documentElement.classList.add('resolution-5k');
+  } else if (screenWidth >= 3840) { // 4K
+    document.documentElement.classList.add('resolution-4k');
+  } else if (screenWidth >= 2560) { // 1440p
+    document.documentElement.classList.add('resolution-1440p');
+  }
+  
+  console.log(`Screen resolution detected: ${screenWidth}x${screenHeight} with pixel ratio ${window.devicePixelRatio}`);
   
   // Apply full optimizations based on screen resolution
   optimizeForScreenResolution();
