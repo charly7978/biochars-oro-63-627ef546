@@ -1,37 +1,43 @@
+
 export class HeartBeatProcessor {
   // ────────── CONFIGURACIONES PRINCIPALES ──────────
-  private readonly SAMPLE_RATE = 30;
+  private readonly SAMPLE_RATE = 40; // Increased from 30 for better sampling
   private readonly WINDOW_SIZE = 60;
-  private readonly MIN_BPM = 40; // Adjusted lower limit for better detection
-  private readonly MAX_BPM = 190; // Reduced from 200 to avoid unrealistic values
-  private readonly SIGNAL_THRESHOLD = 0.28; // Reducido de 0.35 para mejor sensibilidad
-  private readonly MIN_CONFIDENCE = 0.60; // Reduced from 0.65 for better detection
-  private readonly DERIVATIVE_THRESHOLD = -0.020; // Menos restrictivo (antes: -0.025)
-  private readonly MIN_PEAK_TIME_MS = 330; // Reducido de 350 para mejor detección de taquicardia
-  private readonly WARMUP_TIME_MS = 2500; // Reducido de 3000 para iniciar antes la detección
+  private readonly MIN_BPM = 40; 
+  private readonly MAX_BPM = 190;
+  private readonly SIGNAL_THRESHOLD = 0.22; // Reduced from 0.28 for better sensitivity
+  private readonly MIN_CONFIDENCE = 0.55; // Reduced from 0.60 for better detection
+  private readonly DERIVATIVE_THRESHOLD = -0.018; // Less restrictive (was -0.020)
+  private readonly MIN_PEAK_TIME_MS = 300; // Reduced from 330 for better detection
+  private readonly WARMUP_TIME_MS = 1500; // Reduced from 2500 for faster detection
 
   // Parámetros de filtrado - ajustados para mejor detección
   private readonly MEDIAN_FILTER_WINDOW = 5;
   private readonly MOVING_AVERAGE_WINDOW = 5;
-  private readonly EMA_ALPHA = 0.40; // Increased from 0.35 for faster response
-  private readonly BASELINE_FACTOR = 0.96; // Changed from 0.98 for better baseline tracking
+  private readonly EMA_ALPHA = 0.45; // Increased from 0.40 for faster response
+  private readonly BASELINE_FACTOR = 0.94; // Changed from 0.96 for faster baseline adaptation
 
   // Parámetros de beep - aumentados para mejor retroalimentación auditiva
-  private readonly BEEP_PRIMARY_FREQUENCY = 1200; // Aumentado de 880 para mejor audibilidad
-  private readonly BEEP_SECONDARY_FREQUENCY = 600; // Aumentado de 440 para mejor audibilidad
-  private readonly BEEP_DURATION = 100; // Aumentado de 80 para beep más largo
-  private readonly BEEP_VOLUME = 1.0; // Aumentado al máximo desde 0.9
-  private readonly MIN_BEEP_INTERVAL_MS = 280; // Reducido ligeramente de 300
+  private readonly BEEP_PRIMARY_FREQUENCY = 1320; // Increased from 1200 for better audibility
+  private readonly BEEP_SECONDARY_FREQUENCY = 660; // Increased from 600 for better audibility
+  private readonly BEEP_DURATION = 120; // Increased from 100 for longer beep
+  private readonly BEEP_VOLUME = 1.0; // Maximum volume
+  private readonly MIN_BEEP_INTERVAL_MS = 250; // Reduced from 280
 
   // ────────── AUTO-RESET SI LA SEÑAL ES MUY BAJA ──────────
-  private readonly LOW_SIGNAL_THRESHOLD = 0.022; // Reduced from 0.025 for earlier reset
-  private readonly LOW_SIGNAL_FRAMES = 12;
+  private readonly LOW_SIGNAL_THRESHOLD = 0.018; // Reduced from 0.022 for earlier reset
+  private readonly LOW_SIGNAL_FRAMES = 10; // Reduced from 12 for faster response
   private lowSignalCount = 0;
 
   // Parameters for improved BPM calculation
-  private readonly BPM_HISTORY_SIZE = 12; // Reduced from 15 for faster adaptability
-  private readonly BPM_OUTLIER_THRESHOLD = 18; // Reduced from 20 for stricter filtering
-  private readonly BPM_ALPHA = 0.20; // Increased from 0.15 for faster adaptation
+  private readonly BPM_HISTORY_SIZE = 12;
+  private readonly BPM_OUTLIER_THRESHOLD = 15; // Reduced from 18 for stricter filtering
+  private readonly BPM_ALPHA = 0.25; // Increased from 0.20 for faster adaptation
+  private readonly REQUIRED_STABLE_READINGS = 3; // Number of stable readings required
+
+  // ─────────── PEAK AMPLIFICATION SETTINGS ───────────
+  private readonly PEAK_AMPLIFICATION_FACTOR = 1.8; // Increased from 1.4
+  private readonly PEAK_AMPLIFICATION_THRESHOLD = 0.01; // New threshold for when to apply amplification
 
   // Variables internas
   private signalBuffer: number[] = [];
@@ -53,13 +59,16 @@ export class HeartBeatProcessor {
   private peakCandidateIndex: number | null = null;
   private peakCandidateValue: number = 0;
   
-  // New variables for improved BPM stability
+  // Variables for improved BPM stability
   private consecutiveValidIntervals: number = 0;
   private lastValidBPM: number = 0;
   private consistentBpmCounter: number = 0;
+  private stableReadingsCount: number = 0;
   
-  // Nueva variable para amplificación dinámica
-  private readonly PEAK_AMPLIFICATION_FACTOR = 1.4; // Factor para amplificar picos
+  // New variables for peak tracking
+  private peakCount: number = 0;
+  private validPeakCount: number = 0;
+  private lastAmplifiedPeakTime: number = 0;
 
   constructor() {
     this.initAudio();
@@ -70,7 +79,7 @@ export class HeartBeatProcessor {
     try {
       this.audioContext = new AudioContext();
       await this.audioContext.resume();
-      // Inicializar con un beep de prueba muy bajo para cargar el contexto de audio
+      // Initialize with a test beep at very low volume to load audio context
       await this.playBeep(0.01);
       console.log("HeartBeatProcessor: Audio Context Initialized");
     } catch (error) {
@@ -81,19 +90,31 @@ export class HeartBeatProcessor {
   private async playBeep(volume: number = this.BEEP_VOLUME) {
     if (!this.audioContext || this.isInWarmup()) return;
 
+    // Only play beep if we have at least 3 valid peaks detected
+    if (this.validPeakCount < 3) {
+      console.log("HeartBeatProcessor: Skipping beep - not enough valid peaks yet", {
+        validPeakCount: this.validPeakCount
+      });
+      return;
+    }
+
     const now = Date.now();
     if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) return;
 
     try {
+      // Create a more complex and audible beep sound
       const primaryOscillator = this.audioContext.createOscillator();
       const primaryGain = this.audioContext.createGain();
 
       const secondaryOscillator = this.audioContext.createOscillator();
       const secondaryGain = this.audioContext.createGain();
       
-      // Tercer oscilador para añadir cuerpo al sonido
       const tertiaryOscillator = this.audioContext.createOscillator();
       const tertiaryGain = this.audioContext.createGain();
+      
+      // Add a fourth oscillator for more clarity
+      const quaternaryOscillator = this.audioContext.createOscillator();
+      const quaternaryGain = this.audioContext.createGain();
 
       primaryOscillator.type = "sine";
       primaryOscillator.frequency.setValueAtTime(
@@ -107,72 +128,124 @@ export class HeartBeatProcessor {
         this.audioContext.currentTime
       );
       
-      tertiaryOscillator.type = "triangle"; // Tono más rico con forma de onda triangular
+      tertiaryOscillator.type = "triangle";
       tertiaryOscillator.frequency.setValueAtTime(
         this.BEEP_PRIMARY_FREQUENCY / 2,
         this.audioContext.currentTime
       );
+      
+      quaternaryOscillator.type = "square";
+      quaternaryOscillator.frequency.setValueAtTime(
+        this.BEEP_PRIMARY_FREQUENCY * 1.5,
+        this.audioContext.currentTime
+      );
 
-      // Envelope del sonido principal - ataque más rápido
+      // Faster attack for primary sound
       primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       primaryGain.gain.linearRampToValueAtTime(
-        volume * 1.0, // Máximo volumen
-        this.audioContext.currentTime + 0.005 // Ataque más rápido (antes: 0.01)
+        volume * 1.0,
+        this.audioContext.currentTime + 0.003 // Faster attack (was 0.005)
       );
       primaryGain.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.BEEP_DURATION / 1000
       );
 
-      // Envelope del sonido secundario - ligeramente más suave
+      // Secondary sound with slightly slower attack
       secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.5, // Aumentado de 0.3 para mayor volumen
-        this.audioContext.currentTime + 0.008
+        volume * 0.6, // Increased from 0.5 for more volume
+        this.audioContext.currentTime + 0.005
       );
       secondaryGain.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.BEEP_DURATION / 1000
       );
       
-      // Envelope del sonido terciario - da cuerpo al beep
+      // Tertiary sound for body
       tertiaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       tertiaryGain.gain.linearRampToValueAtTime(
-        volume * 0.4,
-        this.audioContext.currentTime + 0.01
+        volume * 0.5, // Increased from 0.4
+        this.audioContext.currentTime + 0.008
       );
       tertiaryGain.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.02
       );
+      
+      // Quaternary sound for clarity/accent (very subtle!)
+      quaternaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+      quaternaryGain.gain.linearRampToValueAtTime(
+        volume * 0.15, // Very low volume since it's a square wave
+        this.audioContext.currentTime + 0.002 // Fast attack
+      );
+      quaternaryGain.gain.exponentialRampToValueAtTime(
+        0.005, // Lower end value for faster decay
+        this.audioContext.currentTime + this.BEEP_DURATION / 800 // Shorter duration
+      );
 
-      // Compressor para evitar distorsión y aumentar volumen percibido
+      // Improved compressor settings for better sound
       const compressor = this.audioContext.createDynamicsCompressor();
-      compressor.threshold.setValueAtTime(-24, this.audioContext.currentTime);
-      compressor.knee.setValueAtTime(30, this.audioContext.currentTime);
-      compressor.ratio.setValueAtTime(12, this.audioContext.currentTime);
-      compressor.attack.setValueAtTime(0.003, this.audioContext.currentTime);
-      compressor.release.setValueAtTime(0.25, this.audioContext.currentTime);
+      compressor.threshold.setValueAtTime(-20, this.audioContext.currentTime); // Less compression (was -24)
+      compressor.knee.setValueAtTime(25, this.audioContext.currentTime); // Softer knee (was 30)
+      compressor.ratio.setValueAtTime(10, this.audioContext.currentTime); // Lower ratio (was 12)
+      compressor.attack.setValueAtTime(0.002, this.audioContext.currentTime); // Faster attack (was 0.003)
+      compressor.release.setValueAtTime(0.2, this.audioContext.currentTime); // Faster release (was 0.25)
 
+      // Add a slight reverb effect for richer sound
+      const convolver = this.audioContext.createConvolver();
+      const reverbTime = 0.1; // Very short reverb
+      const sampleRate = this.audioContext.sampleRate;
+      const reverbBuffer = this.audioContext.createBuffer(
+        2, // Stereo
+        sampleRate * reverbTime,
+        sampleRate
+      );
+      
+      // Create simple impulse response
+      for (let channel = 0; channel < 2; channel++) {
+        const channelData = reverbBuffer.getChannelData(channel);
+        for (let i = 0; i < channelData.length; i++) {
+          channelData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * 0.05));
+        }
+      }
+      convolver.buffer = reverbBuffer;
+
+      // Connect all oscillators to their respective gain nodes
       primaryOscillator.connect(primaryGain);
       secondaryOscillator.connect(secondaryGain);
       tertiaryOscillator.connect(tertiaryGain);
+      quaternaryOscillator.connect(quaternaryGain);
       
+      // Connect gain nodes to effects chain
       primaryGain.connect(compressor);
       secondaryGain.connect(compressor);
       tertiaryGain.connect(compressor);
+      quaternaryGain.connect(compressor);
       
-      compressor.connect(this.audioContext.destination);
+      // Connect compressor to reverb and then to output
+      compressor.connect(convolver);
+      convolver.connect(this.audioContext.destination);
+      compressor.connect(this.audioContext.destination); // Direct connection for clarity
 
+      // Start and stop all oscillators
       primaryOscillator.start();
       secondaryOscillator.start();
       tertiaryOscillator.start();
+      quaternaryOscillator.start();
 
       primaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.05);
       secondaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.05);
       tertiaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.07);
+      quaternaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.03);
 
       this.lastBeepTime = now;
+      
+      console.log("HeartBeatProcessor: Beep played successfully", {
+        volume,
+        peakCount: this.peakCount,
+        validPeakCount: this.validPeakCount
+      });
     } catch (error) {
       console.error("HeartBeatProcessor: Error playing beep", error);
     }
@@ -213,21 +286,22 @@ export class HeartBeatProcessor {
     filteredValue: number;
     arrhythmiaCount: number;
   } {
-    // Enhanced multi-stage filtering for better noise reduction
+    // Apply enhanced multi-stage filtering for better noise reduction
     const medVal = this.medianFilter(value);
     const movAvgVal = this.calculateMovingAverage(medVal);
     const smoothed = this.calculateEMA(movAvgVal);
 
-    // Aplicamos amplificación para resaltar picos
+    // Apply dynamic signal amplification to enhance peaks
     const amplifiedValue = this.amplifyPeaks(smoothed);
     
+    // Store signal in buffer for analysis
     this.signalBuffer.push(amplifiedValue);
     if (this.signalBuffer.length > this.WINDOW_SIZE) {
       this.signalBuffer.shift();
     }
 
     // Not enough data for analysis yet
-    if (this.signalBuffer.length < 25) { // Reducido de 30 para comenzar antes
+    if (this.signalBuffer.length < 20) { // Reduced from 25 to start analyzing sooner
       return {
         bpm: 0,
         confidence: 0,
@@ -242,8 +316,8 @@ export class HeartBeatProcessor {
       this.baseline = amplifiedValue;
     } else {
       // Use faster adaptation during initial phase
-      const adaptationFactor = this.signalBuffer.length < 40 ? 
-                               0.96 : this.BASELINE_FACTOR; // Ligeramente más rápido
+      const adaptationFactor = this.signalBuffer.length < 30 ? 
+                               0.93 : this.BASELINE_FACTOR; // Faster adaptation (was 0.94/0.96)
       this.baseline = this.baseline * adaptationFactor + amplifiedValue * (1 - adaptationFactor);
     }
 
@@ -258,7 +332,7 @@ export class HeartBeatProcessor {
 
     let smoothDerivative = amplifiedValue - this.lastValue;
     if (this.values.length === 3) {
-      // Center difference formula for better derivative approximation
+      // Enhanced center difference formula for better derivative approximation
       smoothDerivative = (this.values[2] - this.values[0]) / 2;
     }
     this.lastValue = amplifiedValue;
@@ -267,23 +341,34 @@ export class HeartBeatProcessor {
     const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
     const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-    // Solo sonamos el beep si es un pico confirmado y tenemos suficiente confianza
-    if (isConfirmedPeak && !this.isInWarmup() && confidence >= 0.5) {
-      const now = Date.now();
-      const timeSinceLastPeak = this.lastPeakTime
-        ? now - this.lastPeakTime
-        : Number.MAX_VALUE;
-
-      if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
-        this.previousPeakTime = this.lastPeakTime;
-        this.lastPeakTime = now;
-        
-        // Volumen proporcional a la confianza para dar feedback
-        const beepVolume = Math.min(1.0, Math.max(0.5, confidence));
-        this.playBeep(beepVolume);
-        
-        this.updateBPM();
+    if (isConfirmedPeak) {
+      this.peakCount++;
+      
+      // Consider it a valid peak if confidence is good
+      if (confidence >= 0.6) {
+        this.validPeakCount = Math.min(10, this.validPeakCount + 1);
       }
+      
+      if (!this.isInWarmup() && confidence >= 0.5) {
+        const now = Date.now();
+        const timeSinceLastPeak = this.lastPeakTime
+          ? now - this.lastPeakTime
+          : Number.MAX_VALUE;
+
+        if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
+          this.previousPeakTime = this.lastPeakTime;
+          this.lastPeakTime = now;
+          
+          // Volume proportional to confidence (and higher overall)
+          const beepVolume = Math.min(1.0, Math.max(0.7, confidence * 1.1));
+          this.playBeep(beepVolume);
+          
+          this.updateBPM();
+        }
+      }
+    } else if (confidence < 0.3) {
+      // Gradually decrease valid peak count when confidence is low
+      this.validPeakCount = Math.max(0, this.validPeakCount - 0.1);
     }
 
     // Get smoothed BPM with confidence-based weighting
@@ -298,20 +383,40 @@ export class HeartBeatProcessor {
     };
   }
   
-  // Nuevo método para amplificar picos
+  // Enhanced peak amplification with dynamic factors
   private amplifyPeaks(value: number): number {
-    // Si no tenemos suficientes datos para calcular baseline, no amplificamos
+    // If we don't have enough data for baseline, don't amplify
     if (this.baseline === 0) return value;
     
-    // Calculamos la diferencia desde el baseline
+    // Calculate difference from baseline
     const diff = value - this.baseline;
     
-    // Solo amplificamos cuando el valor está por encima del baseline (posibles picos)
-    if (diff > 0) {
-      // Amplificación no lineal: más amplificación para diferencias mayores
-      const amplification = Math.min(this.PEAK_AMPLIFICATION_FACTOR, 
-                                    1.0 + (Math.abs(diff) * 2));
-      return this.baseline + (diff * amplification);
+    // Only amplify when value is above baseline (potential peaks)
+    if (diff > this.PEAK_AMPLIFICATION_THRESHOLD) {
+      // Non-linear amplification: more amplification for larger differences
+      const now = Date.now();
+      const timeSinceLastAmplifiedPeak = now - this.lastAmplifiedPeakTime;
+      
+      // Dynamic amplification factor based on time since last peak
+      let dynamicFactor = this.PEAK_AMPLIFICATION_FACTOR;
+      
+      // Increase amplification if it's been a while since last peak
+      if (this.lastPeakTime && timeSinceLastAmplifiedPeak > 500) {
+        dynamicFactor = Math.min(2.5, this.PEAK_AMPLIFICATION_FACTOR * 
+                       (1 + (timeSinceLastAmplifiedPeak - 500) / 2000));
+      }
+      
+      // Progressive amplification based on signal magnitude
+      const amplification = Math.min(dynamicFactor, 
+                                   1.0 + (Math.abs(diff) * 4));
+                                   
+      // Apply amplification
+      const amplifiedValue = this.baseline + (diff * amplification);
+      
+      // Record time of amplification
+      this.lastAmplifiedPeakTime = now;
+      
+      return amplifiedValue;
     }
     
     return value;
@@ -339,6 +444,9 @@ export class HeartBeatProcessor {
     this.values = [];
     this.consecutiveValidIntervals = 0;
     this.consistentBpmCounter = 0;
+    this.validPeakCount = 0;
+    this.peakCount = 0;
+    this.stableReadingsCount = 0;
     console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
   }
 
@@ -356,41 +464,52 @@ export class HeartBeatProcessor {
       return { isPeak: false, confidence: 0 };
     }
 
-    // Improved peak detection criteria with adaptation basada en historial
+    // Dynamic threshold based on signal history and stability
     const dynamicThreshold = this.bpmHistory.length > 0 ? 
-                            this.SIGNAL_THRESHOLD * (1.0 - Math.min(0.3, this.consistentBpmCounter / 20)) :
+                            this.SIGNAL_THRESHOLD * (1.0 - Math.min(0.4, this.consistentBpmCounter / 15)) :
                             this.SIGNAL_THRESHOLD;
     
+    // More adaptive derivative threshold based on signal quality
+    const adaptiveDerivativeThreshold = this.validPeakCount > 5 ? 
+                                      this.DERIVATIVE_THRESHOLD * 1.1 : 
+                                      this.DERIVATIVE_THRESHOLD;
+    
     const isOverThreshold =
-      derivative < this.DERIVATIVE_THRESHOLD &&
+      derivative < adaptiveDerivativeThreshold &&
       normalizedValue > dynamicThreshold &&
-      this.lastValue > this.baseline * 0.95; // Menos restrictivo (antes: 0.98)
+      this.lastValue > this.baseline * 0.92; // Less restrictive (was 0.95)
 
-    // More nuanced confidence calculation based on amplitude and derivative
+    // Enhanced confidence calculation
     const amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (dynamicThreshold * 1.3), 0),
+      Math.max(Math.abs(normalizedValue) / (dynamicThreshold * 1.2), 0),
       1
     );
     const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.7), 0),
+      Math.max(Math.abs(derivative) / Math.abs(adaptiveDerivativeThreshold * 0.6), 0),
       1
     );
     
-    // Add timing factor - penalize peaks that come too soon or too late
+    // Improved timing factor with expected heart rate adjustment
     let timingConfidence = 1.0;
     if (this.lastPeakTime && this.previousPeakTime) {
       const expectedInterval = (this.lastPeakTime - this.previousPeakTime);
       const expectedNextPeak = this.lastPeakTime + expectedInterval;
       const deviation = Math.abs(now - expectedNextPeak);
       
-      // Menos penalización por desviaciones temporales (toleramos más variabilidad)
-      if (deviation > expectedInterval * 0.5) { // Antes: 0.4
-        timingConfidence = Math.max(0.6, 1 - deviation / (expectedInterval * 1.4)); // Menos penalización
+      // Use a variable tolerance based on signal stability
+      const toleranceFactor = this.validPeakCount > 5 ? 0.5 : 0.6;
+      if (deviation > expectedInterval * toleranceFactor) {
+        timingConfidence = Math.max(0.5, 1 - deviation / (expectedInterval * 1.5));
       }
     }
 
-    // Calculate weighted confidence - mayor peso para la amplitud
-    const confidence = (amplitudeConfidence * 0.55 + derivativeConfidence * 0.35 + timingConfidence * 0.1);
+    // Apply historical confidence boost if we have valid peaks
+    const historyBoost = this.validPeakCount > 3 ? Math.min(0.15, this.validPeakCount * 0.02) : 0;
+
+    // Calculate weighted confidence with emphasis on amplitude
+    const confidence = (amplitudeConfidence * 0.6 + 
+                      derivativeConfidence * 0.3 + 
+                      timingConfidence * 0.1) + historyBoost;
 
     return { isPeak: isOverThreshold, confidence };
   }
@@ -410,20 +529,26 @@ export class HeartBeatProcessor {
     const avgBuffer = this.peakConfirmationBuffer.reduce((a, b) => a + b, 0) / 
                       this.peakConfirmationBuffer.length;
     
-    // Enhanced peak confirmation logic with multiple criteria
-    const minConfidence = this.bpmHistory.length >= 5 ? this.MIN_CONFIDENCE * 0.9 : this.MIN_CONFIDENCE;
+    // Enhanced peak confirmation with adaptive confidence threshold
+    const dynamicConfidence = this.validPeakCount >= 4 ? 
+                             this.MIN_CONFIDENCE * 0.8 : // Easier threshold once we have established peaks
+                             this.MIN_CONFIDENCE;
     
-    if (isPeak && !this.lastConfirmedPeak && confidence >= minConfidence && 
-        avgBuffer > this.SIGNAL_THRESHOLD * 0.85) { // Menos restrictivo (antes: 0.9)
+    if (isPeak && !this.lastConfirmedPeak && confidence >= dynamicConfidence && 
+        avgBuffer > this.SIGNAL_THRESHOLD * 0.8) { // Less restrictive threshold (was 0.85)
       
       if (this.peakConfirmationBuffer.length >= 3) {
         const len = this.peakConfirmationBuffer.length;
         
         // Check if we're past the peak (values going down)
         const goingDown1 = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
-        const goingDown2 = len >= 3 && this.peakConfirmationBuffer[len - 2] < this.peakConfirmationBuffer[len - 3];
         
-        if (goingDown1 && (goingDown2 || this.bpmHistory.length < 3)) {
+        // More relaxed second condition for early peaks
+        const goingDown2 = len >= 3 && 
+                         (this.peakConfirmationBuffer[len - 2] < this.peakConfirmationBuffer[len - 3] || 
+                          this.bpmHistory.length < 2);
+        
+        if (goingDown1 && (goingDown2 || this.validPeakCount > 3)) {
           this.lastConfirmedPeak = true;
           return true;
         }
@@ -445,7 +570,7 @@ export class HeartBeatProcessor {
     
     // Improved BPM validation with stricter physiological limits
     if (instantBPM >= this.MIN_BPM && instantBPM <= this.MAX_BPM) {
-      // Check for outliers compared to previous values
+      // Enhanced outlier detection
       let isOutlier = false;
       
       if (this.bpmHistory.length > 3) {
@@ -474,6 +599,19 @@ export class HeartBeatProcessor {
         // Track consecutive valid intervals for stability assessment
         this.consecutiveValidIntervals++;
         this.lastValidBPM = instantBPM;
+        
+        // Update stable readings count if the BPM is consistent
+        if (this.bpmHistory.length >= 2) {
+          const lastTwo = this.bpmHistory.slice(-2);
+          if (Math.abs(lastTwo[0] - lastTwo[1]) < 8) {
+            this.stableReadingsCount = Math.min(
+              this.REQUIRED_STABLE_READINGS, 
+              this.stableReadingsCount + 1
+            );
+          } else {
+            this.stableReadingsCount = Math.max(0, this.stableReadingsCount - 1);
+          }
+        }
       }
     } else {
       // Reset consecutive counter on invalid values
@@ -499,10 +637,15 @@ export class HeartBeatProcessor {
     // Check for significant jumps that might indicate errors
     const bpmDifference = Math.abs(rawBPM - this.smoothBPM);
     
-    if (bpmDifference > 15 && this.smoothBPM > 0) {
-      // For large changes, adapt more slowly to prevent jumps
+    // Return 0 if we don't have stable readings yet
+    if (this.stableReadingsCount < Math.min(2, this.bpmHistory.length / 3)) {
+      return 0;
+    }
+    
+    if (bpmDifference > 12 && this.smoothBPM > 0) {
+      // For large changes, adapt more gradually to prevent jumps
       this.smoothBPM = this.smoothBPM + (Math.sign(rawBPM - this.smoothBPM) * 
-                       Math.min(bpmDifference * 0.1, 2));
+                       Math.min(bpmDifference * 0.15, 3));
       
       // Log significant changes for debugging
       console.log("HeartBeatProcessor: Large BPM change detected", {
@@ -516,7 +659,7 @@ export class HeartBeatProcessor {
         this.BPM_ALPHA * rawBPM + (1 - this.BPM_ALPHA) * this.smoothBPM;
       
       // Increment consistency counter if values are close
-      if (bpmDifference < 5) {
+      if (bpmDifference < 4) { // Tighter threshold (was 5)
         this.consistentBpmCounter = Math.min(10, this.consistentBpmCounter + 1);
       } else {
         this.consistentBpmCounter = Math.max(0, this.consistentBpmCounter - 1);
@@ -531,34 +674,62 @@ export class HeartBeatProcessor {
       return 0;
     }
     
-    // Copy and sort BPM history for robust statistical analysis
+    // Improved statistical analysis with weighted recent values
     const sorted = [...this.bpmHistory].sort((a, b) => a - b);
     
-    // Improved outlier rejection - remove more extreme values in larger datasets
-    let trimAmount = Math.floor(sorted.length * 0.15); // 15% trim
-    trimAmount = Math.min(Math.max(trimAmount, 1), 3); // At least 1, at most 3
+    // Dynamic trimming based on history size
+    let trimAmount = Math.floor(sorted.length * 0.1); // 10% trim (was 15%)
+    trimAmount = Math.min(Math.max(trimAmount, 1), 2); // At least 1, at most 2 (was 3)
     
     // Trim both ends to remove outliers
     const trimmed = sorted.slice(trimAmount, sorted.length - trimAmount);
     
     if (!trimmed.length) return 0;
     
-    // Calculate mean of trimmed array
-    const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+    // Use weighted average giving more weight to recent values
+    let weightedSum = 0;
+    let weightTotal = 0;
     
-    return avg;
+    for (let i = 0; i < trimmed.length; i++) {
+      const weight = i + 1; // More recent values get higher weight
+      weightedSum += trimmed[i] * weight;
+      weightTotal += weight;
+    }
+    
+    return weightTotal > 0 ? weightedSum / weightTotal : 0;
   }
 
   public getFinalBPM(): number {
-    if (this.bpmHistory.length < 5) {
+    if (this.bpmHistory.length < 4) { // Reduced from 5 for earlier results
       return 0;
     }
+    
+    // More robust final BPM calculation
     const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    const cut = Math.round(sorted.length * 0.1);
+    const cut = Math.floor(sorted.length * 0.1); // Reduced trim (was 0.1)
     const finalSet = sorted.slice(cut, sorted.length - cut);
+    
     if (!finalSet.length) return 0;
-    const sum = finalSet.reduce((acc, val) => acc + val, 0);
-    return Math.round(sum / finalSet.length);
+    
+    // Weighted average favoring recent values
+    let weightedSum = 0;
+    let totalWeight = 0;
+    
+    for (let i = 0; i < finalSet.length; i++) {
+      // Give more weight to recent values (which are later in the array)
+      const weight = Math.pow(i + 1, 1.2); // Exponential weighting
+      weightedSum += finalSet[i] * weight;
+      totalWeight += weight;
+    }
+    
+    const avgBPM = totalWeight > 0 ? weightedSum / totalWeight : 0;
+    
+    // Only return a value if we have sufficient stable readings
+    if (this.stableReadingsCount < 2 && this.bpmHistory.length < 8) {
+      return 0;
+    }
+    
+    return Math.round(avgBPM);
   }
 
   public reset() {
@@ -580,6 +751,12 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
+    this.consecutiveValidIntervals = 0;
+    this.consistentBpmCounter = 0;
+    this.peakCount = 0;
+    this.validPeakCount = 0;
+    this.stableReadingsCount = 0;
+    this.lastAmplifiedPeakTime = 0;
   }
 
   public getRRIntervals(): { intervals: number[]; lastPeakTime: number | null } {

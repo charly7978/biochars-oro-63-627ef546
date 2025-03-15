@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -18,6 +19,8 @@ export const useHeartBeatProcessor = () => {
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const lastProcessedTimeRef = useRef<number>(0);
+  const processingIntervalRef = useRef<number>(25); // Process at 40Hz by default
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -74,8 +77,26 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
+    // Implement rate limiting to avoid processing too many signals too quickly
+    const now = Date.now();
+    if (now - lastProcessedTimeRef.current < processingIntervalRef.current) {
+      return {
+        bpm: currentBPM,
+        confidence,
+        isPeak: false,
+        filteredValue: value,
+        arrhythmiaCount: 0,
+        rrData: processorRef.current.getRRIntervals()
+      };
+    }
+    lastProcessedTimeRef.current = now;
+
+    // Apply signal amplification for better peak detection
+    const amplifiedValue = value * 1.35; // Amplify the signal for better detection
+
     console.log('useHeartBeatProcessor - processSignal detallado:', {
       inputValue: value,
+      amplifiedValue: amplifiedValue.toFixed(2),
       normalizadoValue: value.toFixed(2),
       currentProcessor: !!processorRef.current,
       processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
@@ -83,7 +104,7 @@ export const useHeartBeatProcessor = () => {
       timestamp: new Date().toISOString()
     });
 
-    const result = processorRef.current.processSignal(value);
+    const result = processorRef.current.processSignal(amplifiedValue);
     const rrData = processorRef.current.getRRIntervals();
 
     console.log('useHeartBeatProcessor - resultado detallado:', {
@@ -99,13 +120,15 @@ export const useHeartBeatProcessor = () => {
       timestamp: new Date().toISOString()
     });
     
-    if (result.confidence < 0.7) {
+    // Use a more strict confidence threshold of 0.8 (instead of 0.7)
+    if (result.confidence < 0.8) {
       console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
         bpm: currentBPM,
         confidence: result.confidence,
         isPeak: false,
         arrhythmiaCount: 0,
+        filteredValue: amplifiedValue,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -114,21 +137,36 @@ export const useHeartBeatProcessor = () => {
     }
 
     if (result.bpm > 0) {
-      console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
-        prevBPM: currentBPM,
-        newBPM: result.bpm,
-        prevConfidence: confidence,
-        newConfidence: result.confidence,
-        sessionId: sessionId.current,
-        timestamp: new Date().toISOString()
-      });
-      
-      setCurrentBPM(result.bpm);
-      setConfidence(result.confidence);
+      // Only update BPM if it's within a reasonable physiological range
+      if (result.bpm >= 45 && result.bpm <= 180) {
+        console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
+          prevBPM: currentBPM,
+          newBPM: result.bpm,
+          prevConfidence: confidence,
+          newConfidence: result.confidence,
+          sessionId: sessionId.current,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Use weighted average to smooth BPM updates
+        const newBPM = currentBPM === 0 ? 
+          result.bpm : 
+          Math.round(result.bpm * 0.3 + currentBPM * 0.7);
+        
+        setCurrentBPM(newBPM);
+        setConfidence(result.confidence);
+      } else {
+        console.log('useHeartBeatProcessor - BPM fuera de rango fisiológico', {
+          invalidBPM: result.bpm,
+          sessionId: sessionId.current,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     return {
       ...result,
+      filteredValue: amplifiedValue,
       rrData
     };
   }, [currentBPM, confidence]);
@@ -154,6 +192,7 @@ export const useHeartBeatProcessor = () => {
     
     setCurrentBPM(0);
     setConfidence(0);
+    lastProcessedTimeRef.current = 0;
   }, [currentBPM, confidence]);
 
   return {
