@@ -1,144 +1,38 @@
 
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
-import { VitalSignsProcessor as CoreVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
-import { FingerDetector } from './finger-detection/FingerDetector';
+import { VitalSignsProcessor as NewVitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 
 /**
  * Wrapper de compatibilidad que mantiene la interfaz original 
- * mientras usa la implementación refactorizada e integra el detector de dedo.
+ * mientras usa la implementación refactorizada.
  * 
- * Este archivo centraliza la detección de dedo en FingerDetector
+ * Este archivo es crucial para mantener la compatibilidad con el código existente
+ * mientras mejoramos la estructura interna.
  */
 export class VitalSignsProcessor {
-  private processor: CoreVitalSignsProcessor;
-  private fingerDetector: FingerDetector;
-  private lastRgbValues: {red: number, green: number} = {red: 0, green: 0};
-  private consecutiveEmptyFrames: number = 0;
-  private consecutiveValidFrames: number = 0;
-  private lastProcessedTime: number = 0;
-  private processingEnabled: boolean = true;
-  private signalAccumulator: number = 0;
-  private frameCount: number = 0;
+  private processor: NewVitalSignsProcessor;
   
+  /**
+   * Constructor que inicializa el procesador interno refactorizado
+   */
   constructor() {
-    this.processor = new CoreVitalSignsProcessor();
-    this.fingerDetector = new FingerDetector();
-    console.log("VitalSignsProcessor: Inicializado con detector de dedo TRIPLE VERIFICACIÓN anti-falsos-positivos");
+    this.processor = new NewVitalSignsProcessor();
   }
   
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
-   * Utiliza FingerDetector con TRIPLE VERIFICACIÓN como única fuente para detección de dedos
+   * Mantiene exactamente la misma firma de método para compatibilidad
    */
   public processSignal(
     ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null },
-    rgbValues?: {red: number, green: number}
-  ): VitalSignsResult {
-    // Limitar velocidad de procesamiento si es necesario
-    const currentTime = Date.now();
-    if (currentTime - this.lastProcessedTime < 33 && !this.processingEnabled) { // ~30fps
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        signalQuality: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
-    }
-    this.lastProcessedTime = currentTime;
-    
-    // Acumular señal para promedios
-    this.signalAccumulator += Math.abs(ppgValue);
-    this.frameCount++;
-    
-    // Almacenar valores RGB si están disponibles
-    if (rgbValues) {
-      this.lastRgbValues = rgbValues;
-    }
-    
-    // TRIPLE VERIFICACIÓN de calidad con el detector de dedo centralizado
-    const fingerDetectionResult = this.fingerDetector.processQuality(
-      ppgValue, 
-      this.lastRgbValues.red, 
-      this.lastRgbValues.green
-    );
-    
-    // Log detallado cada 30 frames
-    if (this.frameCount % 30 === 0) {
-      console.log("VitalSignsProcessor: Estado de procesamiento", {
-        ppgValue,
-        calidadDetectada: fingerDetectionResult.quality,
-        dedoDetectado: fingerDetectionResult.isFingerDetected,
-        nivelCalidad: fingerDetectionResult.qualityLevel,
-        valorRojo: this.lastRgbValues.red,
-        valorVerde: this.lastRgbValues.green,
-        ratioRG: this.lastRgbValues.red / Math.max(1, this.lastRgbValues.green),
-        framesValidosConsecutivos: this.consecutiveValidFrames,
-        framesVacíosConsecutivos: this.consecutiveEmptyFrames,
-        señalPromedio: this.signalAccumulator / Math.max(1, this.frameCount)
-      });
-      
-      // Reiniciar acumuladores
-      this.signalAccumulator = 0;
-      this.frameCount = 0;
-    }
-    
-    // Actualizar contadores de consistencia
-    if (fingerDetectionResult.isFingerDetected) {
-      this.consecutiveValidFrames += 1;
-      this.consecutiveEmptyFrames = Math.max(0, this.consecutiveEmptyFrames - 1);
-    } else {
-      this.consecutiveEmptyFrames += 1;
-      this.consecutiveValidFrames = Math.max(0, this.consecutiveValidFrames - 2); // Más agresivo
-    }
-    
-    // Solo procesar señales cuando:
-    // 1. El dedo está realmente detectado con TRIPLE VERIFICACIÓN
-    // 2. Hemos tenido suficientes frames válidos consecutivos 
-    // 3. La calidad es suficiente
-    if (fingerDetectionResult.isFingerDetected && 
-        this.consecutiveValidFrames >= 5 && 
-        fingerDetectionResult.quality >= this.fingerDetector.getConfig().MIN_QUALITY_FOR_DETECTION) {
-      
-      const vitalSignsResult = this.processor.processSignal(ppgValue, rrData);
-      vitalSignsResult.signalQuality = fingerDetectionResult.quality;
-      return vitalSignsResult;
-    }
-    
-    // Retornar valores por defecto si no hay dedo presente o no cumple criterios
-    return {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      signalQuality: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
-    };
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
+  ) {
+    return this.processor.processSignal(ppgValue, rrData);
   }
   
   /**
    * Reinicia el procesador
    */
   public reset() {
-    this.fingerDetector.reset();
-    this.lastRgbValues = {red: 0, green: 0};
-    this.consecutiveEmptyFrames = 0;
-    this.consecutiveValidFrames = 0;
-    this.signalAccumulator = 0;
-    this.frameCount = 0;
     return this.processor.reset();
   }
   
@@ -146,15 +40,7 @@ export class VitalSignsProcessor {
    * Reinicia completamente el procesador y todos sus datos
    */
   public fullReset(): void {
-    this.fingerDetector.reset();
-    this.lastRgbValues = {red: 0, green: 0};
-    this.consecutiveEmptyFrames = 0;
-    this.consecutiveValidFrames = 0;
-    this.processingEnabled = true;
-    this.signalAccumulator = 0;
-    this.frameCount = 0;
     this.processor.fullReset();
-    console.log("VitalSignsProcessor: Reset completo realizado");
   }
 }
 

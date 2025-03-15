@@ -1,170 +1,201 @@
 
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
+import { SpO2Processor } from './spo2-processor';
+import { BloodPressureProcessor } from './blood-pressure-processor';
+import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
-import { SpO2Calculator } from './spo2-calculator';
-import { BloodPressureCalculator } from './blood-pressure-calculator';
-import { ArrhythmiaDetector } from './arrhythmia-detector';
-import { BiomarkerSimulator } from './biomarker-simulator';
+import { GlucoseProcessor } from './glucose-processor';
+import { LipidProcessor } from './lipid-processor';
+import { HemoglobinProcessor } from './hemoglobin-processor';
 
 export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
+  lastArrhythmiaData?: { 
+    timestamp: number; 
+    rmssd: number; 
+    rrVariation: number; 
+  } | null;
   glucose: number;
   lipids: {
     totalCholesterol: number;
     triglycerides: number;
   };
-  signalQuality: number;
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
+  hemoglobin: number;
+  confidence?: {
+    glucose: number;
+    lipids: number;
+    overall: number;
   };
-  calibration?: {
-    progress: {
-      heartRate: number;
-      spo2: number;
-      pressure: number;
-      arrhythmia: number;
-    }
-  };
-  rawPPG?: number;
 }
 
+/**
+ * Procesador principal de signos vitales
+ * Integra los diferentes procesadores especializados para calcular métricas de salud
+ * con enfoque en precisión y honestidad de los resultados
+ */
 export class VitalSignsProcessor {
+  private spo2Processor: SpO2Processor;
+  private bpProcessor: BloodPressureProcessor;
+  private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
-  private spo2Calculator: SpO2Calculator;
-  private bpCalculator: BloodPressureCalculator;
-  private arrhythmiaDetector: ArrhythmiaDetector;
-  private biomarkerSimulator: BiomarkerSimulator;
-  private lastValidResult: VitalSignsResult | null = null;
+  private glucoseProcessor: GlucoseProcessor;
+  private lipidProcessor: LipidProcessor;
+  private hemoglobinProcessor: HemoglobinProcessor;
+  
+  private lastValidResults: VitalSignsResult | null = null;
+  
+  // Umbrales de señal mínima para considerar mediciones válidas
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
 
   constructor() {
+    this.spo2Processor = new SpO2Processor();
+    this.bpProcessor = new BloodPressureProcessor();
+    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
-    this.spo2Calculator = new SpO2Calculator();
-    this.bpCalculator = new BloodPressureCalculator();
-    this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.biomarkerSimulator = new BiomarkerSimulator();
+    this.glucoseProcessor = new GlucoseProcessor();
+    this.lipidProcessor = new LipidProcessor();
+    this.hemoglobinProcessor = new HemoglobinProcessor();
     
-    console.log("VitalSignsProcessor: Inicializado con nueva arquitectura modular");
+    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
   }
-
+  
   /**
-   * Procesa una señal PPG y datos RR para obtener signos vitales
+   * Procesa la señal PPG y calcula todos los signos vitales
+   * Implementando estrategias mejoradas de validación y estabilidad
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Procesar la señal PPG
-    const filteredValue = this.signalProcessor.processSignal(ppgValue);
-    
-    // Actualizar datos de arritmia
-    this.arrhythmiaDetector.updateRRIntervals(rrData);
-
-    // Calcular SpO2
-    const recentValues = this.signalProcessor.getRecentValues(60);
-    const spo2 = this.spo2Calculator.calculateSpO2(recentValues);
-    
-    // Calcular presión arterial
-    const bp = this.bpCalculator.calculateBloodPressure(recentValues);
-    const pressureString = `${bp.systolic}/${bp.diastolic}`;
-
-    // Obtener estado de arritmia
-    const arrhythmiaStatus = this.arrhythmiaDetector.getArrhythmiaStatus();
-    let arrhythmiaCount = 0;
-    if (this.arrhythmiaDetector.hasArrhythmia()) {
-      arrhythmiaCount = 1;
+    // Verificar calidad mínima de señal
+    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
+      return this.getLastValidResults() || this.createEmptyResults();
     }
 
-    // Calcular métricas de arritmia
-    const rmssd = this.arrhythmiaDetector.calculateRMSSD();
-    const rrVariation = this.arrhythmiaDetector.calculateRRVariation();
+    // Aplicar filtrado a la señal PPG
+    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // Datos de última arritmia
-    const lastArrhythmiaData = {
-      timestamp: Date.now(),
-      rmssd: rmssd || 0,
-      rrVariation: rrVariation || 0
-    };
+    // Procesar datos de arritmia si están disponibles
+    const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
+    
+    // Obtener los valores PPG para procesamiento
+    const ppgValues = this.signalProcessor.getPPGValues();
+    
+    // Solo procesar si hay suficientes datos de PPG
+    if (ppgValues.length < 100) {
+      return this.getLastValidResults() || this.createEmptyResults();
+    }
+    
+    // Calcular SpO2
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-60));
+    
+    // Calcular presión arterial
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
+    const pressure = bp.systolic > 0 && bp.diastolic > 0 
+      ? `${bp.systolic}/${bp.diastolic}` 
+      : "--/--";
+    
+    // Calcular glucosa con validación de confianza
+    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
+    const glucoseConfidence = this.glucoseProcessor.getConfidence();
+    
+    // Calcular lípidos con validación de confianza
+    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    const lipidsConfidence = this.lipidProcessor.getConfidence();
+    
+    // Calcular hemoglobina
+    const hemoglobin = this.hemoglobinProcessor.calculateHemoglobin(ppgValues);
+    
+    // Calcular confianza general basada en promedios ponderados
+    const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Simular biomarcadores
-    const glucose = this.biomarkerSimulator.simulateGlucoseReading();
-    const lipids = this.biomarkerSimulator.simulateLipidProfiles();
-
-    // Calcular calidad de señal
-    const signalQuality = Math.min(100, Math.max(0, recentValues.length / 3));
-
-    // Calcular progreso de calibración
-    const calibrationProgress = {
-      heartRate: Math.min(1, recentValues.length / 60),
-      spo2: Math.min(1, recentValues.length / 90),
-      pressure: Math.min(1, recentValues.length / 150),
-      arrhythmia: Math.min(1, this.arrhythmiaDetector.isInLearningPhase() ? 0.5 : 1)
-    };
-
-    // Crear resultado
+    // Preparar resultado con todas las métricas calculadas
     const result: VitalSignsResult = {
       spo2,
-      pressure: pressureString,
-      arrhythmiaStatus: `${arrhythmiaStatus}|${arrhythmiaCount}`,
+      pressure,
+      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
       glucose,
       lipids,
-      signalQuality,
-      lastArrhythmiaData,
-      calibration: {
-        progress: calibrationProgress
-      },
-      rawPPG: ppgValue
+      hemoglobin,
+      confidence: {
+        glucose: glucoseConfidence,
+        lipids: lipidsConfidence,
+        overall: overallConfidence
+      }
     };
-
-    // Guardar último resultado válido
-    if (spo2 > 90 && bp.systolic > 0 && bp.diastolic > 0) {
-      this.lastValidResult = { ...result };
+    
+    // Solo actualizar resultados válidos si hay suficiente confianza
+    if (this.isValidMeasurement(result)) {
+      this.lastValidResults = { ...result };
     }
 
     return result;
   }
+  
+  /**
+   * Verifica si una medición tiene suficiente calidad para considerarse válida
+   */
+  private isValidMeasurement(result: VitalSignsResult): boolean {
+    const { spo2, pressure, glucose, lipids, confidence } = result;
+    const [systolic, diastolic] = pressure.split('/').map(v => parseInt(v));
+    
+    return (
+      confidence?.overall && confidence.overall >= this.MIN_CONFIDENCE_THRESHOLD &&
+      spo2 > 0 && 
+      !isNaN(systolic) && systolic > 0 && 
+      !isNaN(diastolic) && diastolic > 0 && 
+      glucose > 0 && 
+      lipids.totalCholesterol > 0
+    );
+  }
+  
+  /**
+   * Crea un resultado vacío para cuando no hay datos válidos
+   */
+  private createEmptyResults(): VitalSignsResult {
+    return {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      },
+      hemoglobin: 0
+    };
+  }
 
   /**
-   * Reinicia el procesador pero conserva el último resultado válido
+   * Reinicia el procesador manteniendo los últimos resultados válidos
    */
   public reset(): VitalSignsResult | null {
-    const savedResult = this.lastValidResult;
-    
+    this.spo2Processor.reset();
+    this.bpProcessor.reset();
+    this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
-    this.spo2Calculator.reset();
-    this.bpCalculator.reset();
-    this.arrhythmiaDetector.reset();
+    this.glucoseProcessor.reset();
+    this.lipidProcessor.reset();
+    this.hemoglobinProcessor.reset();
     
-    console.log("VitalSignsProcessor: Reset con conservación de último resultado válido");
-    
-    return savedResult;
+    return this.lastValidResults;
   }
-
+  
   /**
-   * Reinicia completamente el procesador y todos sus datos
+   * Obtiene los últimos resultados válidos
+   */
+  public getLastValidResults(): VitalSignsResult | null {
+    return this.lastValidResults;
+  }
+  
+  /**
+   * Reinicia completamente el procesador, eliminando datos y resultados previos
    */
   public fullReset(): void {
-    this.signalProcessor.reset();
-    this.spo2Calculator.reset();
-    this.bpCalculator.reset();
-    this.arrhythmiaDetector.reset();
-    this.lastValidResult = null;
-    
-    console.log("VitalSignsProcessor: Reset completo sin conservación de resultados");
-  }
-
-  /**
-   * Devuelve el último resultado válido
-   */
-  public get lastValidResults(): VitalSignsResult | null {
-    return this.lastValidResult;
+    this.reset();
+    this.lastValidResults = null;
   }
 }

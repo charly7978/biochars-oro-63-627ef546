@@ -1,211 +1,116 @@
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
-import { 
-  applyMovingAverageFilter, 
-  applyWeightedFilter, 
-  calculateSignalQuality,
-  detectPeaks 
-} from './signalProcessingUtils';
 
 /**
- * Estima SpO2 basado en señal PPG
- * @param ppgValue Valor filtrado de la señal PPG
- * @param redRatio Proporción de componente rojo en la señal
- * @returns Estimación de SpO2 (%)
+ * Utility functions for vital signs processing
  */
-export const estimateSpO2 = (ppgValue: number, redRatio: number): number => {
-  // Implementación simplificada basada en proporción de componentes espectrales
-  const baseSpO2 = 95 + (redRatio - 0.8) * 5;
-  return Math.max(85, Math.min(100, baseSpO2));
-};
 
 /**
- * Estima presión arterial basado en características de la señal PPG
- * @param ppgValues Historial de valores PPG
- * @param heartRate Frecuencia cardíaca actual
- * @returns Presión arterial estimada (sistólica/diastólica)
+ * Applies a simple moving average filter to smooth the signal
+ * @param values The array of values to smooth
+ * @param alpha The smoothing factor (0-1, higher means less smoothing)
+ * @returns The smoothed array
  */
-export const estimateBloodPressure = (
-  ppgValues: number[], 
-  heartRate: number
-): { systolic: number; diastolic: number } => {
-  if (ppgValues.length < 10 || heartRate < 40) {
-    return { systolic: 120, diastolic: 80 };
+export function smoothSignal(values: number[], alpha: number = 0.8): number[] {
+  if (values.length <= 1) return [...values];
+  
+  const result: number[] = [values[0]];
+  
+  for (let i = 1; i < values.length; i++) {
+    const smoothed = alpha * values[i] + (1 - alpha) * result[i - 1];
+    result.push(smoothed);
   }
   
-  // Características de la señal para estimación
-  const mean = ppgValues.reduce((a, b) => a + b, 0) / ppgValues.length;
-  const max = Math.max(...ppgValues);
-  const min = Math.min(...ppgValues);
-  const range = max - min;
-  
-  // Modelo básico basado en frecuencia cardíaca y características de señal
-  const baselineSystolic = 115 + (heartRate - 70) * 0.5;
-  const baselineDiastolic = 75 + (heartRate - 70) * 0.2;
-  
-  // Ajustes basados en características de la señal
-  const systolicAdjustment = range > 0 ? (range / mean) * 5 : 0;
-  const diastolicAdjustment = range > 0 ? (range / mean) * 2 : 0;
-  
-  // Valores estimados
-  const systolic = Math.round(baselineSystolic + systolicAdjustment);
-  const diastolic = Math.round(baselineDiastolic + diastolicAdjustment);
-  
-  return {
-    systolic: Math.max(90, Math.min(180, systolic)),
-    diastolic: Math.max(50, Math.min(110, diastolic))
-  };
-};
+  return result;
+}
 
 /**
- * Analiza intervalos RR para detectar posibles arritmias
- * @param rrIntervals Intervalos RR (milisegundos)
- * @returns Análisis de intervalos RR
+ * Calculates the mean value of an array of numbers
+ * @param values The array of values
+ * @returns The mean value
  */
-export const analyzeRRIntervals = (rrIntervals: number[]): {
-  meanRR: number;
-  sdnn: number;
-  rmssd: number;
-  pnn50: number;
-  hasArrhythmia: boolean;
-} => {
-  if (rrIntervals.length < 3) {
-    return {
-      meanRR: 0,
-      sdnn: 0,
-      rmssd: 0,
-      pnn50: 0,
-      hasArrhythmia: false
-    };
-  }
-  
-  // Calcular estadísticas HRV
-  const meanRR = rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length;
-  
-  // Desviación estándar de intervalos NN (SDNN)
-  const sdnn = Math.sqrt(
-    rrIntervals.reduce((a, b) => a + Math.pow(b - meanRR, 2), 0) / rrIntervals.length
-  );
-  
-  // Raíz cuadrada de la media de los cuadrados de las diferencias (RMSSD)
-  let rmssd = 0;
-  if (rrIntervals.length > 1) {
-    let sumSquaredDiff = 0;
-    for (let i = 0; i < rrIntervals.length - 1; i++) {
-      sumSquaredDiff += Math.pow(rrIntervals[i + 1] - rrIntervals[i], 2);
-    }
-    rmssd = Math.sqrt(sumSquaredDiff / (rrIntervals.length - 1));
-  }
-  
-  // Porcentaje de intervalos NN que varían más de 50ms (pNN50)
-  let nn50Count = 0;
-  for (let i = 0; i < rrIntervals.length - 1; i++) {
-    if (Math.abs(rrIntervals[i + 1] - rrIntervals[i]) > 50) {
-      nn50Count++;
-    }
-  }
-  const pnn50 = (nn50Count / (rrIntervals.length - 1)) * 100;
-  
-  // Detección de arritmia basada en criterios simplificados
-  const rrVariationThreshold = 150; // ms
-  const rmssdThreshold = 60; // ms
-  
-  // Verificar variaciones extremas
-  let hasExtremeVariation = false;
-  for (let i = 0; i < rrIntervals.length - 1; i++) {
-    if (Math.abs(rrIntervals[i + 1] - rrIntervals[i]) > rrVariationThreshold) {
-      hasExtremeVariation = true;
-      break;
-    }
-  }
-  
-  const hasArrhythmia = hasExtremeVariation || rmssd > rmssdThreshold;
-  
-  return {
-    meanRR,
-    sdnn,
-    rmssd,
-    pnn50,
-    hasArrhythmia
-  };
-};
-
-/**
- * Formatea un valor de presión arterial para mostrar
- * @param systolic Presión sistólica
- * @param diastolic Presión diastólica
- * @returns Cadena formateada (sistólica/diastólica)
- */
-export const formatBloodPressure = (systolic: number, diastolic: number): string => {
-  return `${systolic}/${diastolic}`;
-};
-
-/**
- * Evalúa el estado general de un conjunto de signos vitales
- * @param heartRate Frecuencia cardíaca
- * @param spo2 Saturación de oxígeno
- * @param systolic Presión sistólica
- * @param diastolic Presión diastólica
- * @returns Estado general ('normal', 'caution', 'alert')
- */
-export const evaluateVitalSigns = (
-  heartRate: number,
-  spo2: number,
-  systolic: number,
-  diastolic: number
-): 'normal' | 'caution' | 'alert' => {
-  const heartRateNormal = heartRate >= 60 && heartRate <= 100;
-  const spo2Normal = spo2 >= 95;
-  const bpNormal = systolic <= 140 && diastolic <= 90 && systolic >= 90 && diastolic >= 60;
-  
-  if (heartRateNormal && spo2Normal && bpNormal) {
-    return 'normal';
-  }
-  
-  const heartRateAlert = heartRate < 50 || heartRate > 120;
-  const spo2Alert = spo2 < 90;
-  const bpAlert = systolic > 160 || diastolic > 100 || systolic < 85 || diastolic < 55;
-  
-  if (heartRateAlert || spo2Alert || bpAlert) {
-    return 'alert';
-  }
-  
-  return 'caution';
-};
-
-/**
- * Calcula la componente AC de una señal PPG
- * @param values Valores de la señal
- * @returns Componente AC
- */
-export const calculateAC = (values: number[]): number => {
+export function calculateMeanValue(values: number[]): number {
   if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-};
+  return values.reduce((sum, val) => sum + val, 0) / values.length;
+}
 
 /**
- * Calcula la componente DC de una señal PPG
- * @param values Valores de la señal
- * @returns Componente DC
+ * Calculates the median value of an array of numbers
+ * @param values The array of values
+ * @returns The median value
  */
-export const calculateDC = (values: number[]): number => {
+export function calculateMedianValue(values: number[]): number {
   if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
-};
+
+  const sortedValues = [...values].sort((a, b) => a - b);
+  const middleIndex = Math.floor(sortedValues.length / 2);
+
+  if (sortedValues.length % 2 === 0) {
+    // If the array has an even number of elements, return the average of the two middle elements
+    return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
+  } else {
+    // If the array has an odd number of elements, return the middle element
+    return sortedValues[middleIndex];
+  }
+}
 
 /**
- * Encuentra picos y valles en una señal PPG
- * @param values Valores de la señal
- * @returns Índices de picos y valles
+ * Normalizes an array of numbers to a range between 0 and 1
+ * @param values The array of values
+ * @returns The normalized array
  */
-export const findPeaksAndValleys = (values: number[]): {
-  peakIndices: number[];
-  valleyIndices: number[];
-} => {
+export function normalizeValues(values: number[]): number[] {
+  if (values.length === 0) return [];
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  if (min === max) {
+    return values.map(() => 0); // Avoid division by zero
+  }
+
+  return values.map(val => (val - min) / (max - min));
+}
+
+/**
+ * Calculates the standard deviation of an array of numbers
+ * @param values The array of values
+ * @returns The standard deviation
+ */
+export function calculateStandardDeviation(values: number[]): number {
+  if (values.length === 0) return 0;
+
+  const mean = calculateMeanValue(values);
+  const squaredDifferences = values.map(value => Math.pow(value - mean, 2));
+  const averageSquaredDifference = calculateMeanValue(squaredDifferences);
+
+  return Math.sqrt(averageSquaredDifference);
+}
+
+/**
+ * Applies a rolling average to an array of numbers
+ * @param values The array of values
+ * @param windowSize The number of values to average
+ * @returns The array of rolling averages
+ */
+export function rollingAverage(values: number[], windowSize: number): number[] {
+  if (values.length < windowSize) {
+    return values; // Not enough values to calculate a rolling average
+  }
+
+  const result: number[] = [];
+  for (let i = windowSize - 1; i < values.length; i++) {
+    const window = values.slice(i - windowSize + 1, i + 1);
+    result.push(calculateMeanValue(window));
+  }
+
+  return result;
+}
+
+/**
+ * Finds peaks and valleys in a signal
+ * @param values The array of values to analyze
+ * @returns Object containing indices of peaks and valleys
+ */
+export function findPeaksAndValleys(values: number[]) {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
@@ -229,20 +134,40 @@ export const findPeaksAndValleys = (values: number[]): {
     }
   }
   return { peakIndices, valleyIndices };
-};
+}
 
 /**
- * Calcula la amplitud de una señal PPG usando picos y valles
- * @param values Valores de la señal
- * @param peaks Índices de picos
- * @param valleys Índices de valles
- * @returns Amplitud media
+ * Calculates the AC component (amplitude) of a PPG signal
+ * @param values The array of PPG values
+ * @returns The AC component value
  */
-export const calculateAmplitude = (
+export function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/**
+ * Calculates the DC component (baseline) of a PPG signal
+ * @param values The array of PPG values
+ * @returns The DC component value
+ */
+export function calculateDC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/**
+ * Calculates the amplitude of a PPG signal using peaks and valleys
+ * @param values The PPG signal values
+ * @param peaks Indices of peaks in the signal
+ * @param valleys Indices of valleys in the signal
+ * @returns The mean amplitude
+ */
+export function calculateAmplitude(
   values: number[],
   peaks: number[],
   valleys: number[]
-): number => {
+): number {
   if (peaks.length === 0 || valleys.length === 0) return 0;
 
   const amps: number[] = [];
@@ -257,4 +182,4 @@ export const calculateAmplitude = (
 
   const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
   return mean;
-};
+}

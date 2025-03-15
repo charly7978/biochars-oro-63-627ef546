@@ -1,13 +1,3 @@
-
-import { 
-  calculateAC, 
-  calculateDC, 
-  findPeaksAndValleys, 
-  calculateAmplitude,
-  calculateRMSSD,
-  amplifyHeartbeatRealtime
-} from './src/utils/signalProcessingUtils';
-
 export class VitalSignsProcessor {
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.02;
@@ -29,17 +19,6 @@ export class VitalSignsProcessor {
   private arrhythmiaDetected = false;
   private measurementStartTime: number = Date.now();
 
-  // Buffers para amplificación y filtrado
-  private ppgBuffer: number[] = [];
-  private readonly PPG_BUFFER_SIZE = 90;
-  private smaBuffer: number[] = [];
-  private spo2Buffer: number[] = [];
-  private readonly SPO2_BUFFER_SIZE = 10;
-  private systolicBuffer: number[] = [];
-  private diastolicBuffer: number[] = [];
-  private readonly BP_BUFFER_SIZE = 10;
-  private readonly BP_ALPHA = 0.7;
-
   private detectArrhythmia() {
     if (this.rrIntervals.length < this.RR_WINDOW_SIZE) {
       console.log("VitalSignsProcessor: Insuficientes intervalos RR para RMSSD", {
@@ -50,7 +29,14 @@ export class VitalSignsProcessor {
     }
 
     const recentRR = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
-    const rmssd = calculateRMSSD(recentRR);
+    
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < recentRR.length; i++) {
+      const diff = recentRR[i] - recentRR[i-1];
+      sumSquaredDiff += diff * diff;
+    }
+    
+    const rmssd = Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
     
     const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
     const lastRR = recentRR[recentRR.length - 1];
@@ -97,21 +83,7 @@ export class VitalSignsProcessor {
       receivedRRData: rrData
     });
 
-    // Almacenar valor PPG en el buffer para amplificación
-    this.ppgBuffer.push(ppgValue);
-    if (this.ppgBuffer.length > this.PPG_BUFFER_SIZE) {
-      this.ppgBuffer.shift();
-    }
-    
-    // Aplicar amplificación de latido en tiempo real
-    const amplifiedValue = amplifyHeartbeatRealtime(
-      ppgValue, 
-      this.ppgBuffer.slice(0, -1), // Excluir el valor actual que acabamos de agregar
-      this.PPG_BUFFER_SIZE
-    );
-    
-    // Aplicar filtro SMA al valor amplificado
-    const filteredValue = this.applySMAFilter(amplifiedValue);
+    const filteredValue = this.applySMAFilter(ppgValue);
     
     this.ppgValues.push(filteredValue);
     if (this.ppgValues.length > this.WINDOW_SIZE) {
@@ -184,6 +156,14 @@ export class VitalSignsProcessor {
     this.lastPeakTime = currentTime;
   }
 
+  private spo2Buffer: number[] = [];
+  private readonly SPO2_BUFFER_SIZE = 10;
+
+  private systolicBuffer: number[] = [];
+  private diastolicBuffer: number[] = [];
+  private readonly BP_BUFFER_SIZE = 10;
+  private readonly BP_ALPHA = 0.7;
+
   private calculateSpO2(values: number[]): number {
     if (values.length < 30) {
       if (this.spo2Buffer.length > 0) {
@@ -193,7 +173,7 @@ export class VitalSignsProcessor {
       return 0;
     }
 
-    const dc = calculateDC(values);
+    const dc = this.calculateDC(values);
     if (dc === 0) {
       if (this.spo2Buffer.length > 0) {
         const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
@@ -202,7 +182,7 @@ export class VitalSignsProcessor {
       return 0;
     }
 
-    const ac = calculateAC(values);
+    const ac = this.calculateAC(values);
     
     const perfusionIndex = ac / dc;
     
@@ -257,7 +237,7 @@ export class VitalSignsProcessor {
       return { systolic: 0, diastolic: 0 };
     }
 
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+    const { peakIndices, valleyIndices } = this.localFindPeaksAndValleys(values);
     if (peakIndices.length < 2) {
       return { systolic: 120, diastolic: 80 };
     }
@@ -277,7 +257,7 @@ export class VitalSignsProcessor {
     }, 0) / pttValues.reduce((acc, _, idx) => acc + (idx + 1) / pttValues.length, 0);
 
     const normalizedPTT = Math.max(300, Math.min(1200, weightedPTT));
-    const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
+    const amplitude = this.calculateAmplitude(values, peakIndices, valleyIndices);
     const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
 
     const pttFactor = (600 - normalizedPTT) * 0.08;
@@ -338,6 +318,53 @@ export class VitalSignsProcessor {
     };
   }
 
+  private localFindPeaksAndValleys(values: number[]) {
+    const peakIndices: number[] = [];
+    const valleyIndices: number[] = [];
+
+    for (let i = 2; i < values.length - 2; i++) {
+      const v = values[i];
+      if (
+        v > values[i - 1] &&
+        v > values[i - 2] &&
+        v > values[i + 1] &&
+        v > values[i + 2]
+      ) {
+        peakIndices.push(i);
+      }
+      if (
+        v < values[i - 1] &&
+        v < values[i - 2] &&
+        v < values[i + 1] &&
+        v < values[i + 2]
+      ) {
+        valleyIndices.push(i);
+      }
+    }
+    return { peakIndices, valleyIndices };
+  }
+
+  private calculateAmplitude(
+    values: number[],
+    peaks: number[],
+    valleys: number[]
+  ): number {
+    if (peaks.length === 0 || valleys.length === 0) return 0;
+
+    const amps: number[] = [];
+    const len = Math.min(peaks.length, valleys.length);
+    for (let i = 0; i < len; i++) {
+      const amp = values[peaks[i]] - values[valleys[i]];
+      if (amp > 0) {
+        amps.push(amp);
+      }
+    }
+    if (amps.length === 0) return 0;
+
+    const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
+    return mean;
+  }
+
   private detectPeak(value: number): boolean {
     const currentTime = Date.now();
     if (this.lastPeakTime === null) {
@@ -365,6 +392,17 @@ export class VitalSignsProcessor {
     return Math.sqrt(avgSqDiff);
   }
 
+  private calculateAC(values: number[]): number {
+    if (values.length === 0) return 0;
+    return Math.max(...values) - Math.min(...values);
+  }
+
+  private calculateDC(values: number[]): number {
+    if (values.length === 0) return 0;
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  }
+
+  private smaBuffer: number[] = [];
   private applySMAFilter(value: number): number {
     this.smaBuffer.push(value);
     if (this.smaBuffer.length > this.SMA_WINDOW) {
@@ -378,7 +416,6 @@ export class VitalSignsProcessor {
     this.ppgValues = [];
     this.smaBuffer = [];
     this.spo2Buffer = [];
-    this.ppgBuffer = [];
     this.lastValue = 0;
     this.lastPeakTime = null;
     this.rrIntervals = [];

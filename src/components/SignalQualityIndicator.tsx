@@ -1,139 +1,149 @@
 
 import React, { useState, useEffect } from 'react';
-import { vibrate, VIBRATION_PATTERNS } from '../utils/Vibration';
-
-// Import only the necessary config from FingerDetector
-import { FingerDetector } from '../modules/finger-detection/FingerDetector';
+import { AlertCircle } from 'lucide-react';
 
 interface SignalQualityIndicatorProps {
   quality: number;
-  isFingerPresent: boolean;
-  qualityLevel?: string;
+  isMonitoring?: boolean;
 }
 
 /**
- * Constants for quality thresholds
+ * Componente que muestra la calidad de la señal PPG
+ * Incluye detección específica para Android y consejos de ayuda
  */
-const QUALITY_CONSTANTS = {
-  LOW_QUALITY_THRESHOLD: 25,
-  MEDIUM_QUALITY_THRESHOLD: 50,
-  HIGH_QUALITY_THRESHOLD: 75,
-  QUALITY_THRESHOLD: 70
-};
+const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
+  // Estado local
+  const [displayQuality, setDisplayQuality] = useState(0);
+  const [qualityHistory, setQualityHistory] = useState<number[]>([]);
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [showHelpTip, setShowHelpTip] = useState(false);
+  
+  // Constantes de configuración
+  const historySize = 5; // Ventana de historial para promedio
+  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
+  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
 
-const SignalQualityIndicator: React.FC<SignalQualityIndicatorProps> = ({
-  quality,
-  isFingerPresent,
-  qualityLevel = 'BAJO'
-}) => {
-  const [lastVibrationTime, setLastVibrationTime] = useState(0);
-  const [lastStatus, setLastStatus] = useState('');
+  // Detectar plataforma
+  useEffect(() => {
+    const androidDetected = /android/i.test(navigator.userAgent);
+    setIsAndroid(androidDetected);
+    
+    // Mostrar tip de ayuda en Android después de un delay
+    if (androidDetected) {
+      const timer = setTimeout(() => setShowHelpTip(true), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
-  // Create a detector instance just to get the configuration
-  const fingerDetector = new FingerDetector();
-  const config = fingerDetector.getConfig();
+  // Mantener historial de calidad para promedio
+  useEffect(() => {
+    if (isMonitoring) {
+      setQualityHistory(prev => {
+        const newHistory = [...prev, quality];
+        return newHistory.slice(-historySize);
+      });
+    } else {
+      setQualityHistory([]);
+      setDisplayQuality(0);
+    }
+  }, [quality, isMonitoring]);
+
+  // Calcular calidad ponderada con más peso a valores recientes
+  useEffect(() => {
+    if (qualityHistory.length === 0) {
+      setDisplayQuality(0);
+      return;
+    }
+
+    let weightedSum = 0;
+    let totalWeight = 0;
+
+    qualityHistory.forEach((q, index) => {
+      const weight = index + 1; // Valores más recientes tienen más peso
+      weightedSum += q * weight;
+      totalWeight += weight;
+    });
+
+    const averageQuality = Math.round(weightedSum / totalWeight);
+    
+    // Suavizar cambios para mejor UX
+    setDisplayQuality(prev => {
+      const delta = (averageQuality - prev) * 0.3;
+      return Math.round(prev + delta);
+    });
+  }, [qualityHistory]);
 
   /**
-   * Determinar color y mensajes basados en la calidad
+   * Obtiene el color basado en la calidad
    */
-  const getQualityInfo = (quality: number, isFingerPresent: boolean) => {
-    let qualityColor = 'text-red-500';
-    let helpMessage = 'Coloca tu dedo en la cámara';
-
-    if (!isFingerPresent) {
-      return {
-        qualityColor: 'text-gray-400',
-        helpMessage: 'Coloca tu dedo en la cámara'
-      };
-    }
-
-    if (quality >= QUALITY_CONSTANTS.HIGH_QUALITY_THRESHOLD) {
-      qualityColor = 'text-emerald-500';
-      helpMessage = 'Excelente señal! Mantenga esta posición';
-    } else if (quality >= QUALITY_CONSTANTS.MEDIUM_QUALITY_THRESHOLD) {
-      qualityColor = 'text-amber-500';
-      helpMessage = 'Buena señal, mantén el dedo quieto';
-    } else if (quality >= config.MIN_QUALITY_FOR_DETECTION) {
-      qualityColor = 'text-orange-500';
-      helpMessage = 'Señal aceptable, ajusta la posición';
-    } else {
-      qualityColor = 'text-red-500';
-      helpMessage = 'Señal débil, cubre toda la cámara con tu dedo';
-    }
-
-    return { qualityColor, helpMessage };
+  const getQualityColor = (q: number) => {
+    if (q === 0) return '#666666';
+    if (q > 65) return '#00ff00';
+    if (q > 40) return '#ffff00';
+    return '#ff0000';
   };
 
-  const { qualityColor, helpMessage } = getQualityInfo(quality, isFingerPresent);
+  /**
+   * Obtiene el texto descriptivo de calidad
+   */
+  const getQualityText = (q: number) => {
+    if (q === 0) return 'Sin Dedo';
+    if (q > 65) return 'Excelente';
+    if (q > 40) return 'Buena';
+    return 'Baja';
+  };
 
-  // Vibrate and update status when needed
-  useEffect(() => {
-    const currentTime = Date.now();
-    const timeSinceLastVibration = currentTime - lastVibrationTime;
-    const MIN_VIBRATION_INTERVAL = 2000; // 2 seconds between vibrations
-
-    let newStatus = '';
-    
-    if (!isFingerPresent) {
-      newStatus = 'no-finger';
-    } else if (quality >= QUALITY_CONSTANTS.QUALITY_THRESHOLD) {
-      newStatus = 'good-quality';
-    } else {
-      newStatus = 'low-quality';
-    }
-
-    // Only vibrate if status changed and enough time has passed
-    if (newStatus !== lastStatus && timeSinceLastVibration > MIN_VIBRATION_INTERVAL) {
-      if (newStatus === 'no-finger') {
-        vibrate(200);
-      } else if (newStatus === 'good-quality') {
-        vibrate([100, 100, 100]);
-      }
-      
-      setLastVibrationTime(currentTime);
-    }
-    
-    setLastStatus(newStatus);
-  }, [isFingerPresent, quality, lastVibrationTime, lastStatus]);
+  // Efecto de pulso adaptado a la plataforma
+  const pulseStyle = displayQuality > 0 
+    ? isAndroid ? "animate-pulse transition-all duration-500" : "animate-pulse transition-all duration-300" 
+    : "transition-all duration-300";
 
   return (
-    <div className="flex flex-col items-center mt-2 overflow-hidden">
-      <div className="flex items-center mb-1">
-        <div className={`text-lg font-semibold ${qualityColor}`}>
-          {isFingerPresent ? `${qualityLevel || 'BAJO'} (${quality}%)` : 'NO DETECTADO'}
+    <div className="bg-black/30 backdrop-blur-md rounded p-1 w-full relative" style={{ marginTop: "-9mm" }}>
+      <div className="flex items-center gap-1">
+        <div 
+          className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 ${pulseStyle}`}
+          style={{
+            borderColor: getQualityColor(displayQuality),
+            backgroundColor: `${getQualityColor(displayQuality)}33`
+          }}
+        >
+          <span className="text-[9px] font-bold text-white">{displayQuality}%</span>
         </div>
-        
-        <div className="ml-2 flex space-x-1">
-          {[...Array(5)].map((_, i) => {
-            let dotColor = 'bg-gray-300';
-            
-            if (isFingerPresent) {
-              if (i < Math.ceil(quality / 20)) {
-                if (quality >= QUALITY_CONSTANTS.HIGH_QUALITY_THRESHOLD) {
-                  dotColor = 'bg-emerald-500';
-                } else if (quality >= QUALITY_CONSTANTS.MEDIUM_QUALITY_THRESHOLD) {
-                  dotColor = 'bg-amber-500';
-                } else if (quality >= config.MIN_QUALITY_FOR_DETECTION) {
-                  dotColor = 'bg-orange-500';
-                } else {
-                  dotColor = 'bg-red-500';
-                }
-              }
-            }
-            
-            return (
-              <div 
-                key={i} 
-                className={`h-2 w-2 rounded-full ${dotColor} transition-colors duration-300`}
-              />
-            );
-          })}
+
+        <div className="flex-1">
+          <div className="flex justify-between items-center mb-0.5">
+            <span className="text-[9px] font-semibold text-white/90">Calidad de Señal</span>
+            <span 
+              className="text-[9px] font-medium"
+              style={{ color: getQualityColor(displayQuality) }}
+            >
+              {getQualityText(displayQuality)}
+            </span>
+          </div>
+
+          <div className="w-full h-0.5 bg-gray-700/50 rounded-full overflow-hidden">
+            <div 
+              className="h-full transition-all duration-300"
+              style={{
+                width: `${displayQuality}%`,
+                backgroundColor: getQualityColor(displayQuality)
+              }}
+            />
+          </div>
         </div>
       </div>
       
-      <p className="text-sm text-gray-600 text-center max-w-[250px]">
-        {helpMessage}
-      </p>
+      {/* Consejos de ayuda específicos para Android */}
+      {isAndroid && showHelpTip && displayQuality < QUALITY_THRESHOLD && (
+        <div className="absolute -bottom-20 left-0 right-0 bg-black/70 p-2 rounded text-white text-xs flex items-center gap-1">
+          <AlertCircle className="h-4 w-4 text-yellow-400 flex-shrink-0" />
+          <span>
+            Asegure que su dedo cubra completamente la cámara y la luz de flash. 
+            Presione firmemente.
+          </span>
+        </div>
+      )}
     </div>
   );
 };
