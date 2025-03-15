@@ -76,7 +76,7 @@ export class SignalProcessor {
       
       // Calcular indicadores de calidad
       const snr = range / (stdDev > 0 ? stdDev : 1); // Relación señal-ruido
-      const perfusion = calculatePerfusionIndex(min, max); // Fixed: Passing min and max as arguments
+      const perfusion = calculatePerfusionIndex(recentValues);
       
       // Calcular puntuación de calidad (0-100)
       quality = Math.min(100, Math.max(0, 
