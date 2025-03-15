@@ -26,7 +26,7 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 3) {
+  if (!rrData?.intervals || rrData.intervals.length < 2) { // Reducido a solo 2 intervalos necesarios
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
@@ -52,10 +52,10 @@ export function analyzeRRIntervals(
   
   // Multi-parametric arrhythmia detection conditions - SENSIBILIDAD EXTREMADAMENTE AUMENTADA
   const hasArrhythmia = 
-    (rmssd > 20 && rrVariation > 0.10) || // Valores reducidos dramáticamente
-    (rrSD > 15 && rrVariation > 0.08) ||  // Valores reducidos dramáticamente
-    (lastRR > 1.1 * avgRR) ||             // Valor reducido dramáticamente
-    (lastRR < 0.9 * avgRR);               // Valor reducido dramáticamente
+    (rmssd > 10 && rrVariation > 0.05) || // Valores reducidos extremadamente
+    (rrSD > 8 && rrVariation > 0.04) ||  // Valores reducidos extremadamente
+    (lastRR > 1.05 * avgRR) ||             // Valor reducido extremadamente
+    (lastRR < 0.95 * avgRR);               // Valor reducido extremadamente
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 
