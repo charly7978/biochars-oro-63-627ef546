@@ -1,19 +1,14 @@
-
-/**
- * NOTA IMPORTANTE: Este es un módulo de procesamiento para SpO2.
- * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
- */
-
-import { calculateAC, calculateDC } from '../../utils/vitalSignsUtils';
+import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
   private readonly SPO2_CALIBRATION_FACTOR = 1.02;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06;
+  // Ajuste: elevar el umbral de perfusión para descartar mediciones débiles
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // antes: 0.05
   private readonly SPO2_BUFFER_SIZE = 10;
   private spo2Buffer: number[] = [];
 
   /**
-   * Calcula la saturación de oxígeno (SpO2) a partir de valores PPG
+   * Calculates the oxygen saturation (SpO2) from PPG values
    */
   public calculateSpO2(values: number[]): number {
     if (values.length < 30) {
@@ -71,7 +66,7 @@ export class SpO2Processor {
   }
 
   /**
-   * Reinicia el procesador
+   * Reset the SpO2 processor state
    */
   public reset(): void {
     this.spo2Buffer = [];

@@ -2,7 +2,6 @@
 /**
  * Utilidades para análisis de intervalos RR y detección de arritmias
  * Extraídas para mantener el código más limpio y modular
- * SENSIBILIDAD AUMENTADA DRAMÁTICAMENTE
  */
 
 /**
@@ -26,7 +25,7 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 2) { // Reducido a solo 2 intervalos necesarios
+  if (!rrData?.intervals || rrData.intervals.length < 3) {
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
@@ -50,12 +49,12 @@ export function analyzeRRIntervals(
     lastThreeIntervals.length
   );
   
-  // Multi-parametric arrhythmia detection conditions - SENSIBILIDAD EXTREMADAMENTE AUMENTADA
+  // Multi-parametric arrhythmia detection conditions
   const hasArrhythmia = 
-    (rmssd > 10 && rrVariation > 0.05) || // Valores reducidos extremadamente
-    (rrSD > 8 && rrVariation > 0.04) ||  // Valores reducidos extremadamente
-    (lastRR > 1.05 * avgRR) ||             // Valor reducido extremadamente
-    (lastRR < 0.95 * avgRR);               // Valor reducido extremadamente
+    (rmssd > 50 && rrVariation > 0.20) || // Primary condition
+    (rrSD > 35 && rrVariation > 0.18) ||  // Secondary condition
+    (lastRR > 1.4 * avgRR) ||             // Extreme outlier condition
+    (lastRR < 0.6 * avgRR);               // Extreme outlier condition
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 

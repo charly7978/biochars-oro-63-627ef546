@@ -1,7 +1,7 @@
+
 /**
  * Utilidades reutilizables para todos los procesadores de signos vitales
- * NOTA IMPORTANTE: Este módulo contiene funciones de utilidad compartidas.
- * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
+ * Evita duplicación de código entre diferentes módulos
  */
 
 /**
@@ -111,47 +111,6 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
   }
   const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
   return { filteredValue, updatedBuffer };
-}
-
-/**
- * Calcula la media móvil exponencial (EMA) para suavizar señales
- * @param prevEMA EMA anterior
- * @param currentValue Valor actual
- * @param alpha Factor de suavizado (0-1)
- */
-export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
-  return alpha * currentValue + (1 - alpha) * prevEMA;
-}
-
-/**
- * Normaliza un valor en un rango específico
- */
-export function normalizeValue(value: number, min: number, max: number): number {
-  return (value - min) / (max - min);
-}
-
-/**
- * Calcula el índice de perfusión basado en componentes AC y DC
- * @param min Valor mínimo (componente DC)
- * @param max Valor máximo (componente AC + DC)
- */
-export function calculatePerfusionIndex(min: number, max: number): number {
-  if (min === 0) return 0;
-  // El índice de perfusión es la relación entre la amplitud (AC) y el nivel DC
-  const ac = max - min;
-  const dc = min;
-  return ac / dc;
-}
-
-/**
- * Calcula el índice de perfusión basado en valores de PPG
- * @param values Array de valores PPG 
- */
-export function calculatePerfusionIndexFromValues(values: number[]): number {
-  if (values.length === 0) return 0;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  return calculatePerfusionIndex(min, max);
 }
 
 /**
