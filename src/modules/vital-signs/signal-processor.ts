@@ -1,4 +1,3 @@
-
 /**
  * Enhanced Signal Processor based on advanced biomedical signal processing techniques
  * Implements wavelet denoising and adaptive filter techniques from IEEE publications
@@ -28,22 +27,22 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 1.2; // Modificación previa: Aumentado de 0.7 a 1.2
+  private readonly MIN_SIGNAL_DIFF = 0.9; // Reduced from 1.2
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 45; // Modificación previa: Aumentado de 30 a 45
+  private readonly REQUIRED_GOOD_FRAMES = 30; // Reduced from 45
   private lastSpikeTimestamps: number[] = []; // Registro de los últimos picos para análisis de ritmo
   private readonly MIN_BPM = 45; // Mínima frecuencia cardíaca esperada (latidos por minuto)
   private readonly MAX_BPM = 200; // Máxima frecuencia cardíaca esperada
-  private readonly MIN_FRAMES_BEFORE_DETECTION = 60; // Exigir un mínimo de frames antes de permitir detección
+  private readonly MIN_FRAMES_BEFORE_DETECTION = 40; // Reduced from 60 for faster detection
   private totalFramesProcessed: number = 0; // Contador de frames totales procesados
   
-  // NUEVAS VARIABLES para reducir falsos positivos
+  // Reduced requirements for faster detection
   private consecutiveStableFrames: number = 0;
-  private readonly REQUIRED_STABLE_FRAMES = 20; // NUEVO: Requerir estabilidad sostenida
+  private readonly REQUIRED_STABLE_FRAMES = 12; // Reduced from 20
   private lastPeakValues: number[] = []; // Para análisis de consistencia de picos
   private readonly CONSISTENCY_WINDOW = 10; // Ventana para análisis de consistencia
-  private readonly MIN_PEAK_CONSISTENCY = 0.7; // Consistencia mínima entre picos para detección válida
-  private readonly AMPLITUDE_CONSISTENCY_THRESHOLD = 0.35; // Umbral para consistencia de amplitud
+  private readonly MIN_PEAK_CONSISTENCY = 0.6; // Reduced from 0.7
+  private readonly AMPLITUDE_CONSISTENCY_THRESHOLD = 0.4; // Increased from 0.35
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
@@ -390,23 +389,21 @@ export class SignalProcessor {
     // Se requiere un mínimo de datos para determinar presencia
     if (this.ppgValues.length < 30) return false;
     
-    // Obtener valores recientes para análisis
-    const recentValues = this.ppgValues.slice(-30);
-    
-    // Criterio 1: Calidad mínima de señal (extremadamente exigente)
-    // MODIFICADO: Umbral aumentado para reducir falsos positivos
-    if (this.signalQuality < 90) { // MODIFICADO: Aumentado de 85 a 90
+    // Criterio 1: Calidad mínima de señal (más sensible)
+    // Modified for better sensitivity
+    if (this.signalQuality < 75) { // Reduced from 90
       console.log("Calidad de señal insuficiente:", this.signalQuality.toFixed(1));
       return false;
     }
     
     // Criterio 2: Variabilidad significativa con patrón claro (señal viva vs estática)
+    const recentValues = this.ppgValues.slice(-30);
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const range = max - min;
     
-    // NUEVO Criterio 3: Periodo adicional de estabilidad extrema
-    // Requerimos una ventana adicional de frames ultra-estables
+    // Criterio 3: Periodo adicional de estabilidad extrema
+    // Less restrictive for easier detection
     if (this.consecutiveStableFrames < this.REQUIRED_STABLE_FRAMES) {
       console.log("No suficientes frames estables:", 
                  this.consecutiveStableFrames, 
@@ -415,8 +412,7 @@ export class SignalProcessor {
       return false;
     }
     
-    // Criterio 4: Ratio de frames consecutivos buenos (extremadamente exigente)
-    // Exigimos que haya muchos frames buenos consecutivos antes de considerar detección
+    // Criterio 4: Ratio de frames consecutivos buenos (menos exigente)
     if (this.consecutiveGoodFrames < this.REQUIRED_GOOD_FRAMES) {
       console.log("No suficientes frames buenos consecutivos:", 
                  this.consecutiveGoodFrames, 
@@ -441,13 +437,13 @@ export class SignalProcessor {
     
     // Criterio 7: Verificar estabilidad de señal a través del tiempo
     const signalStability = this.checkSignalStability(recentValues);
-    // MODIFICADO: Requerir mayor estabilidad
-    if (signalStability < 0.75) {  // Aumentado de 0.65 a 0.75
+    // Less restrictive for easier detection
+    if (signalStability < 0.65) {  // Reduced from 0.75
       console.log("Estabilidad de señal insuficiente:", signalStability.toFixed(2));
       return false;
     }
     
-    // NUEVO Criterio 8: Consistencia en la amplitud de picos
+    // Criterio 8: Consistencia en la amplitud de picos
     if (this.lastPeakValues.length >= 4) {
       const peakConsistency = this.analyzePeakConsistency() / 100; // Convertir a escala 0-1
       if (peakConsistency < this.MIN_PEAK_CONSISTENCY) {

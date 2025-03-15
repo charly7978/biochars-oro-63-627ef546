@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -41,6 +42,8 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastDetectionTime: number = 0;
   private readonly DETECTION_TIMEOUT = 1000;
   private isAndroid: boolean = false;
+  // Adding the missing property
+  private consecutiveDetections: number = 0;
   
   private redHistory: number[] = [];
   private greenHistory: number[] = [];
@@ -51,9 +54,11 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastRedGreenRatio: number = 0;
   private lastPulsatility: number = 0;
   
-  private readonly MIN_PULSE_AMPLITUDE = 0.5;
+  // Increased sensitivity - Lower minimum pulse amplitude for better detection
+  private readonly MIN_PULSE_AMPLITUDE = 0.35; // Reduced from 0.5
   private readonly MAX_PULSE_AMPLITUDE = 4.0;
-  private readonly MIN_RED_GREEN_RATIO = 1.08;
+  // Reduced minimum red/green ratio for better sensitivity
+  private readonly MIN_RED_GREEN_RATIO = 1.05; // Reduced from 1.08
   private readonly MIN_PULSE_INTERVAL_MS = 250;
   private readonly MAX_PULSE_INTERVAL_MS = 1500;
   
@@ -366,7 +371,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     let physiologicalScore = this.evaluatePhysiologicalFeatures();
     
     const stability = this.calculateStability();
-    const isStable = stability > (this.isAndroid ? 0.6 : 0.7);
+    // Increased sensitivity - reduced stability requirement
+    const isStable = stability > (this.isAndroid ? 0.5 : 0.6); // Reduced from 0.6/0.7
     
     if (isStable) {
       this.stableFrameCount = Math.min(
@@ -381,7 +387,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     let newDetection = false;
     
-    if (physiologicalScore > 60 && isStableNow) {
+    // Increased sensitivity - lower physiological score threshold
+    if (physiologicalScore > 50 && isStableNow) { // Reduced from 60
       newDetection = true;
       this.lastDetectionTime = currentTime;
     } else if (this.isCurrentlyDetected && 
