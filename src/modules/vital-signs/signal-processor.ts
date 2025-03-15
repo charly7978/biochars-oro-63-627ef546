@@ -28,9 +28,9 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8; // Máxima diferencia esperada en señal normal
-  private readonly MIN_SIGNAL_DIFF = 0.02; // Mínima diferencia para considerar señal válida
+  private readonly MIN_SIGNAL_DIFF = 0.18; // PRIMERA VARIABLE MODIFICADA: Aumentado drásticamente de 0.02 a 0.18 para exigir señal con amplitud mínima real
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 3; // Frames buenos requeridos para confirmar señal
+  private readonly REQUIRED_GOOD_FRAMES = 8; // SEGUNDA VARIABLE MODIFICADA: Aumentado de 3 a 8 para exigir consistencia prolongada
   
   /**
    * Applies a wavelet-based noise reduction followed by Savitzky-Golay filtering
