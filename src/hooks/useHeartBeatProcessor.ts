@@ -20,12 +20,14 @@ export const useHeartBeatProcessor = () => {
   const [confidence, setConfidence] = useState<number>(0);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const lastProcessedTimeRef = useRef<number>(0);
-  const processingIntervalRef = useRef<number>(25); // Process at 40Hz by default
+  const processingIntervalRef = useRef<number>(33); // Process at 30Hz for better stability
   const signalBufferRef = useRef<number[]>([]);
-  const BUFFER_SIZE = 30; // Mayor buffer para análisis de señal
+  const BUFFER_SIZE = 60; // Larger buffer for better signal analysis
+  const stableReadingsCountRef = useRef<number>(0);
+  const lastValidBpmRef = useRef<number>(0);
 
   useEffect(() => {
-    console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
+    console.log('useHeartBeatProcessor: Creating new HeartBeatProcessor instance', {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
@@ -34,14 +36,10 @@ export const useHeartBeatProcessor = () => {
     
     if (typeof window !== 'undefined') {
       (window as any).heartBeatProcessor = processorRef.current;
-      console.log('useHeartBeatProcessor: Processor registrado en window', {
-        processorRegistrado: !!(window as any).heartBeatProcessor,
-        timestamp: new Date().toISOString()
-      });
     }
 
     return () => {
-      console.log('useHeartBeatProcessor: Limpiando processor', {
+      console.log('useHeartBeatProcessor: Cleaning up processor', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
@@ -52,17 +50,13 @@ export const useHeartBeatProcessor = () => {
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
-        console.log('useHeartBeatProcessor: Processor eliminado de window', {
-          processorExiste: !!(window as any).heartBeatProcessor,
-          timestamp: new Date().toISOString()
-        });
       }
     };
   }, []);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
-      console.warn('useHeartBeatProcessor: Processor no inicializado', {
+      console.warn('useHeartBeatProcessor: Processor not initialized', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
@@ -79,7 +73,7 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    // Implement rate limiting to avoid processing too many signals too quickly
+    // Implement rate limiting for processing stability
     const now = Date.now();
     if (now - lastProcessedTimeRef.current < processingIntervalRef.current) {
       return {
@@ -93,176 +87,174 @@ export const useHeartBeatProcessor = () => {
     }
     lastProcessedTimeRef.current = now;
 
-    // Almacenar la señal en un buffer para análisis de calidad
+    // Store signal in buffer for quality analysis
     signalBufferRef.current.push(value);
     if (signalBufferRef.current.length > BUFFER_SIZE) {
       signalBufferRef.current.shift();
     }
 
-    // Realizar pre-análisis de calidad de la señal
+    // Robust signal quality analysis
     const signalQuality = analyzeSignalQuality(signalBufferRef.current);
 
-    // Aplicar amplificación adaptativa basada en la calidad de la señal
-    // Cuando la calidad es menor, amplificamos más para detectar mejor
+    // Apply more aggressive adaptive amplification based on signal quality
     const amplificationFactor = calculateAmplificationFactor(signalQuality);
     const amplifiedValue = value * amplificationFactor;
 
-    console.log('useHeartBeatProcessor - processSignal detallado:', {
-      inputValue: value,
-      amplifiedValue: amplifiedValue.toFixed(2),
-      amplificationFactor: amplificationFactor.toFixed(2),
-      signalQuality: signalQuality.toFixed(2),
-      currentProcessor: !!processorRef.current,
-      processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-
+    // Process signal through heart beat processor
     const result = processorRef.current.processSignal(amplifiedValue);
     const rrData = processorRef.current.getRRIntervals();
 
-    console.log('useHeartBeatProcessor - resultado detallado:', {
-      bpm: result.bpm,
-      confidence: result.confidence,
-      isPeak: result.isPeak,
-      arrhythmiaCount: result.arrhythmiaCount,
-      rrIntervals: JSON.stringify(rrData.intervals),
-      ultimosIntervalos: rrData.intervals.slice(-5),
-      ultimoPico: rrData.lastPeakTime,
-      tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Usar un umbral de confianza más apropiado para diferentes etapas de detección
-    const dynamicConfidenceThreshold = result.bpm > 0 ? 0.65 : 0.75;
-    
-    if (result.confidence < dynamicConfidenceThreshold) {
-      console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
-      return {
-        bpm: currentBPM,
-        confidence: result.confidence,
-        isPeak: false,
-        arrhythmiaCount: 0,
-        filteredValue: amplifiedValue,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
-      };
-    }
-
-    if (result.bpm > 0) {
-      // Only update BPM if it's within a reasonable physiological range
-      if (result.bpm >= 45 && result.bpm <= 180) {
-        console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
-          prevBPM: currentBPM,
-          newBPM: result.bpm,
-          prevConfidence: confidence,
-          newConfidence: result.confidence,
-          sessionId: sessionId.current,
-          timestamp: new Date().toISOString()
-        });
-        
-        // Use weighted average to smooth BPM updates, con mayor peso al nuevo valor
-        // para una respuesta más rápida y precisa
+    // Only update BPM if we have reasonable confidence and physiological range
+    if (result.bpm > 0 && result.confidence >= 0.6 && result.bpm >= 45 && result.bpm <= 180) {
+      // Check if current reading is similar to last valid reading
+      const bpmDifference = lastValidBpmRef.current > 0 ? 
+                          Math.abs(result.bpm - lastValidBpmRef.current) : 0;
+      
+      // Require several stable readings before reporting BPM
+      if (bpmDifference <= 8 || lastValidBpmRef.current === 0) {
+        stableReadingsCountRef.current++;
+        lastValidBpmRef.current = result.bpm;
+      } else {
+        // Reset stability counter if reading is too different
+        stableReadingsCountRef.current = Math.max(0, stableReadingsCountRef.current - 1);
+      }
+      
+      // Only update displayed BPM when we have enough stable readings
+      if (stableReadingsCountRef.current >= 3) {
+        // Use weighted average to smooth BPM updates
+        // Give more weight to new value for faster response
         const newBPM = currentBPM === 0 ? 
-          result.bpm : 
-          Math.round(result.bpm * 0.4 + currentBPM * 0.6);
+                     result.bpm : 
+                     Math.round(result.bpm * 0.7 + currentBPM * 0.3);
         
         setCurrentBPM(newBPM);
         setConfidence(result.confidence);
-      } else {
-        console.log('useHeartBeatProcessor - BPM fuera de rango fisiológico', {
-          invalidBPM: result.bpm,
-          sessionId: sessionId.current,
-          timestamp: new Date().toISOString()
-        });
       }
+    } else if (result.confidence < 0.4) {
+      // Gradually reduce stable count for low confidence readings
+      stableReadingsCountRef.current = Math.max(0, stableReadingsCountRef.current - 0.5);
     }
 
     return {
       ...result,
+      bpm: stableReadingsCountRef.current >= 3 ? Math.round(result.bpm) : currentBPM,
       filteredValue: amplifiedValue,
       rrData
     };
   }, [currentBPM, confidence]);
 
-  // Analiza la calidad de la señal basándose en características como variabilidad y rango
+  // Enhanced signal quality analysis
   const analyzeSignalQuality = (buffer: number[]): number => {
-    if (buffer.length < 10) return 0.5; // Valor por defecto si no hay suficientes datos
+    if (buffer.length < 15) return 0.5; // Default value if insufficient data
     
-    // Calcular estadísticas básicas
+    // Calculate basic statistics
     const min = Math.min(...buffer);
     const max = Math.max(...buffer);
     const range = max - min;
     const mean = buffer.reduce((sum, val) => sum + val, 0) / buffer.length;
     
-    // Cálculo de varianza y desviación estándar
+    // Calculate variance and standard deviation
     const variance = buffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / buffer.length;
     const stdDev = Math.sqrt(variance);
     
-    // Coeficiente de variación - una medida de la dispersión relativa
+    // Calculate coefficient of variation
     const cv = stdDev / (Math.abs(mean) || 1);
     
-    // Análisis de diferencias entre muestras consecutivas (para detectar ruido)
-    const diffSum = buffer.slice(1).reduce((sum, val, i) => sum + Math.abs(val - buffer[i]), 0);
+    // Analyze differences between consecutive samples (for noise detection)
+    let diffSum = 0;
+    for (let i = 1; i < buffer.length; i++) {
+      diffSum += Math.abs(buffer[i] - buffer[i-1]);
+    }
     const avgDiff = diffSum / (buffer.length - 1);
     
-    // Calcular una puntuación de 0-1 donde 1 es la mejor calidad
-    // La calidad óptima tiene: variabilidad moderada (no muy alta ni muy baja)
-    let quality = 0;
+    // Check for sharp spikes that might indicate signal issues
+    let spikeCount = 0;
+    for (let i = 2; i < buffer.length; i++) {
+      if (Math.abs(buffer[i] - buffer[i-1]) > 3 * avgDiff) {
+        spikeCount++;
+      }
+    }
+    const spikeRatio = spikeCount / (buffer.length - 2);
     
-    // 1. Penalizar si el rango es muy pequeño (señal muy débil)
-    if (range < 0.1) {
-      quality = 0.2;
-    } 
-    // 2. Penalizar si el CV es muy alto (mucho ruido)
-    else if (cv > 0.5) {
-      quality = 0.3;
+    // Calculate periodicity (looking for regular patterns)
+    const autocorrelation = calculateAutocorrelation(buffer);
+    const periodicity = Math.max(...autocorrelation.slice(10, 30)) / autocorrelation[0];
+    
+    // Initial quality score based on signal properties
+    let qualityScore = 0;
+    
+    // 1. Signal too weak
+    if (range < 0.08) {
+      qualityScore = 0.1;
     }
-    // 3. Penalizar si las diferencias entre muestras son muy bruscas (ruido de alta frecuencia)
-    else if (avgDiff > 0.3) {
-      quality = 0.4;
+    // 2. Too much noise
+    else if (cv > 0.8 || spikeRatio > 0.2) {
+      qualityScore = 0.2;
     }
-    // 4. Calidad media-alta cuando los parámetros son razonables
+    // 3. Rapid changes between samples (high frequency noise)
+    else if (avgDiff > 0.4) {
+      qualityScore = 0.3;
+    }
+    // 4. Pretty good signal with some periodicity
+    else if (periodicity > 0.3) {
+      qualityScore = 0.7 + (periodicity * 0.3);
+    }
+    // 5. Decent signal with moderate variability
     else {
-      // Mapear el CV a una escala de calidad (menor CV = mejor calidad, hasta cierto punto)
-      const cvScore = cv < 0.05 ? 0.7 : (cv > 0.3 ? 0.5 : map(cv, 0.05, 0.3, 0.7, 0.5));
+      // Combine CV and range into a balanced score
+      const cvScore = cv < 0.2 ? 0.8 : (cv > 0.6 ? 0.4 : map(cv, 0.2, 0.6, 0.8, 0.4));
+      const rangeScore = (range < 0.15) ? map(range, 0.08, 0.15, 0.3, 0.7) : 
+                        (range > 0.8 ? map(range, 0.8, 1.5, 0.7, 0.4) : 0.7);
       
-      // Mapear el rango a una escala de calidad (rango moderado = mejor calidad)
-      const rangeScore = (range < 0.2) ? map(range, 0.1, 0.2, 0.5, 0.8) : 
-                         (range > 1.0 ? map(range, 1.0, 2.0, 0.8, 0.5) : 0.8);
-      
-      // Combinar puntuaciones
-      quality = (cvScore * 0.5 + rangeScore * 0.5);
+      qualityScore = (cvScore * 0.6 + rangeScore * 0.4);
     }
     
-    return quality;
+    return Math.min(1.0, Math.max(0.1, qualityScore));
   };
   
-  // Función auxiliar para mapear un valor de un rango a otro
+  // Helper function to calculate autocorrelation for periodicity detection
+  const calculateAutocorrelation = (buffer: number[]): number[] => {
+    const n = buffer.length;
+    const result: number[] = [];
+    const mean = buffer.reduce((sum, val) => sum + val, 0) / n;
+    
+    // Normalize values around mean
+    const normalized = buffer.map(v => v - mean);
+    
+    // Calculate autocorrelation for different lags
+    for (let lag = 0; lag < Math.min(40, Math.floor(n/2)); lag++) {
+      let sum = 0;
+      for (let i = 0; i < n - lag; i++) {
+        sum += normalized[i] * normalized[i + lag];
+      }
+      result.push(sum);
+    }
+    
+    return result;
+  };
+  
+  // Helper function to map values between ranges
   const map = (value: number, inMin: number, inMax: number, outMin: number, outMax: number): number => {
     return ((value - inMin) * (outMax - outMin) / (inMax - inMin)) + outMin;
   };
   
-  // Calcular factor de amplificación basado en calidad de señal y otras heurísticas
+  // Calculate amplification factor based on signal quality and other heuristics
   const calculateAmplificationFactor = (quality: number): number => {
-    // Amplificación base
-    const baseFactor = 1.8;
+    // Base amplification factor
+    const baseFactor = 2.5;
     
-    // Ajustar amplificación inversamente proporcional a la calidad
-    // Señales de menor calidad necesitan más amplificación
-    const qualityAdjustment = map(quality, 0, 1, 0.8, -0.3);
+    // Adjust amplification inversely proportional to quality
+    // Lower quality signals need more amplification
+    const qualityAdjustment = map(quality, 0, 1, 1.2, -0.5);
     
-    // Calcular factor final con límites
-    const factor = Math.max(1.2, Math.min(2.5, baseFactor + qualityAdjustment));
+    // Calculate final factor with limits
+    const factor = Math.max(1.5, Math.min(3.8, baseFactor + qualityAdjustment));
     
     return factor;
   };
 
   const reset = useCallback(() => {
-    console.log('useHeartBeatProcessor: Reseteando processor', {
+    console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
       prevBPM: currentBPM,
       prevConfidence: confidence,
@@ -271,11 +263,8 @@ export const useHeartBeatProcessor = () => {
     
     if (processorRef.current) {
       processorRef.current.reset();
-      console.log('useHeartBeatProcessor: Processor reseteado correctamente', {
-        timestamp: new Date().toISOString()
-      });
     } else {
-      console.warn('useHeartBeatProcessor: No se pudo resetear - processor no existe', {
+      console.warn('useHeartBeatProcessor: Cannot reset - processor does not exist', {
         timestamp: new Date().toISOString()
       });
     }
@@ -284,6 +273,8 @@ export const useHeartBeatProcessor = () => {
     setConfidence(0);
     lastProcessedTimeRef.current = 0;
     signalBufferRef.current = [];
+    stableReadingsCountRef.current = 0;
+    lastValidBpmRef.current = 0;
   }, [currentBPM, confidence]);
 
   return {
