@@ -24,6 +24,8 @@ export class PPGSignalService {
   private frameCount: number = 0;
   private lastFrameTime: number = 0;
   private noSignalFrames: number = 0;
+  private frameProcessingErrors: number = 0;
+  private lastErrorTime: number = 0;
   
   // Variables para procesamiento avanzado
   private readonly USE_PHASE_PRESERVING = true;  // Habilitar filtrado de fase preservada
@@ -35,6 +37,7 @@ export class PPGSignalService {
   private adaptiveROISize: number = 0.3;         // Tamaño inicial ROI: 30% del centro (aumentado)
   private signalQualityHistory: number[] = [];   // Historial para calidad de señal
   private readonly MAX_NO_SIGNAL_FRAMES = 30;    // Número máximo de frames sin señal válida
+  private readonly MAX_PROCESSING_ERRORS = 10;   // Umbral de errores para reiniciar
   
   constructor() {
     this.fingerDetector = new FingerDetector();
@@ -46,10 +49,16 @@ export class PPGSignalService {
    * Inicia el procesamiento de señal
    */
   public startProcessing(): void {
+    if (this.isProcessing) {
+      console.log("PPGSignalService: Ya estaba procesando, reiniciando");
+      this.stopProcessing();
+    }
+    
     this.isProcessing = true;
     this.frameCount = 0;
     this.lastFrameTime = 0;
     this.noSignalFrames = 0;
+    this.frameProcessingErrors = 0;
     this.signalQualityHistory = [];
     this.adaptiveROISize = 0.3;
     console.log("PPGSignalService: Procesamiento iniciado");
@@ -198,10 +207,29 @@ export class PPGSignalService {
         });
       }
       
+      // Resetear contador de errores cuando procesamos correctamente
+      this.frameProcessingErrors = 0;
+      
       this.lastProcessedSignal = signal;
       return signal;
     } catch (error) {
-      console.error("PPGSignalService: Error procesando frame", error);
+      // Incrementar contador de errores y registrar
+      this.frameProcessingErrors++;
+      
+      // Limitar la frecuencia de logging de errores
+      const timeSinceLastError = now - this.lastErrorTime;
+      if (timeSinceLastError > 1000) {
+        console.error("PPGSignalService: Error procesando frame", error);
+        this.lastErrorTime = now;
+      }
+      
+      // Reiniciar el servicio si hay demasiados errores consecutivos
+      if (this.frameProcessingErrors > this.MAX_PROCESSING_ERRORS) {
+        console.warn("PPGSignalService: Demasiados errores consecutivos, reiniciando servicio");
+        this.reset();
+        return null;
+      }
+      
       return this.lastProcessedSignal; // Devolver último válido en caso de error
     }
   }
@@ -331,6 +359,7 @@ export class PPGSignalService {
     this.frameCount = 0;
     this.lastFrameTime = 0;
     this.noSignalFrames = 0;
+    this.frameProcessingErrors = 0;
     this.adaptiveROISize = 0.3;
     this.signalQualityHistory = [];
     console.log("PPGSignalService: Servicio reiniciado completamente");

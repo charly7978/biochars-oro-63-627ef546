@@ -28,6 +28,7 @@ export const useAdvancedHeartBeatProcessor = () => {
   const consecutiveValidSignalsRef = useRef<number>(0);
   const signalQualityHistoryRef = useRef<number[]>([]);
   const throttleCountRef = useRef<number>(0);
+  const processorActiveRef = useRef<boolean>(true);
   
   // Configurar opciones avanzadas
   useEffect(() => {
@@ -35,6 +36,7 @@ export const useAdvancedHeartBeatProcessor = () => {
     processor.setAdaptiveThresholdEnabled(true);
     
     return () => {
+      processorActiveRef.current = false;
       processor.reset();
     };
   }, [processor]);
@@ -43,6 +45,11 @@ export const useAdvancedHeartBeatProcessor = () => {
    * Procesa una nueva muestra de señal PPG con mejoras de rendimiento y estabilidad
    */
   const processSignal = useCallback((signal: number) => {
+    if (!processorActiveRef.current) {
+      console.log("useAdvancedHeartBeatProcessor: procesador inactivo, ignorando señal");
+      return null;
+    }
+    
     const now = Date.now();
     
     // Control de frecuencia de procesamiento para optimizar rendimiento
@@ -77,37 +84,42 @@ export const useAdvancedHeartBeatProcessor = () => {
       signalBufferRef.current.shift();
     }
     
-    // Procesar señal
-    const result = processor.processSignal(signal);
-    
-    // Mantener historial de calidad de señal
-    signalQualityHistoryRef.current.push(result.confidence * 100);
-    if (signalQualityHistoryRef.current.length > 20) {
-      signalQualityHistoryRef.current.shift();
+    try {
+      // Procesar señal
+      const result = processor.processSignal(signal);
+      
+      // Mantener historial de calidad de señal
+      signalQualityHistoryRef.current.push(result.confidence * 100);
+      if (signalQualityHistoryRef.current.length > 20) {
+        signalQualityHistoryRef.current.shift();
+      }
+      
+      // Calcular calidad media ponderando más los valores recientes
+      let weightedConfidenceSum = 0;
+      let weightSum = 0;
+      for (let i = 0; i < signalQualityHistoryRef.current.length; i++) {
+        const weight = i + 1; // Más peso a valores más recientes
+        weightedConfidenceSum += signalQualityHistoryRef.current[i] * weight;
+        weightSum += weight;
+      }
+      const averageConfidence = weightedConfidenceSum / weightSum;
+      
+      // Solo actualizar estado si tenemos suficientes señales válidas consecutivas
+      // y la calidad es suficiente
+      if (consecutiveValidSignalsRef.current > 5 && averageConfidence > 50) {
+        // Actualizar estado
+        setHeartRate(result.bpm);
+        setConfidence(result.confidence);
+        setPeakIndices(result.peakIndices);
+        setHrvData(result.hrvData);
+        setProcessorState(processor.getProcessorState());
+      }
+      
+      return result;
+    } catch (error) {
+      console.error("useAdvancedHeartBeatProcessor: Error procesando señal", error);
+      return null;
     }
-    
-    // Calcular calidad media ponderando más los valores recientes
-    let weightedConfidenceSum = 0;
-    let weightSum = 0;
-    for (let i = 0; i < signalQualityHistoryRef.current.length; i++) {
-      const weight = i + 1; // Más peso a valores más recientes
-      weightedConfidenceSum += signalQualityHistoryRef.current[i] * weight;
-      weightSum += weight;
-    }
-    const averageConfidence = weightedConfidenceSum / weightSum;
-    
-    // Solo actualizar estado si tenemos suficientes señales válidas consecutivas
-    // y la calidad es suficiente
-    if (consecutiveValidSignalsRef.current > 5 && averageConfidence > 50) {
-      // Actualizar estado
-      setHeartRate(result.bpm);
-      setConfidence(result.confidence);
-      setPeakIndices(result.peakIndices);
-      setHrvData(result.hrvData);
-      setProcessorState(processor.getProcessorState());
-    }
-    
-    return result;
   }, [processor]);
   
   /**
@@ -124,6 +136,7 @@ export const useAdvancedHeartBeatProcessor = () => {
     consecutiveValidSignalsRef.current = 0;
     signalQualityHistoryRef.current = [];
     throttleCountRef.current = 0;
+    processorActiveRef.current = true;
   }, [processor]);
   
   /**

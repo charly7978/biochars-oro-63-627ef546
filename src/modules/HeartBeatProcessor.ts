@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -61,6 +60,7 @@ export class HeartBeatProcessor {
   private readonly BPM_ALPHA = 0.2;
   private peakCandidateIndex: number | null = null;
   private peakCandidateValue: number = 0;
+  private audioInitialized: boolean = false;
 
   // Nuevas variables para algoritmos avanzados
   private detectedPeakIndices: number[] = [];
@@ -76,18 +76,29 @@ export class HeartBeatProcessor {
   }
 
   private async initAudio() {
+    if (this.audioInitialized) return;
+    
     try {
       this.audioContext = new AudioContext();
       await this.audioContext.resume();
+      // Reducir el volumen para el beep de prueba para no molestar al usuario
       await this.playBeep(0.01);
+      this.audioInitialized = true;
       console.log("HeartBeatProcessor: Audio Context Initialized");
     } catch (error) {
       console.error("HeartBeatProcessor: Error initializing audio", error);
+      // No marcar como inicializado para que lo intente de nuevo más tarde
     }
   }
 
   private async playBeep(volume: number = this.BEEP_VOLUME) {
     if (!this.audioContext || this.isInWarmup()) return;
+    
+    // Volver a intentar inicializar audio si no se pudo antes
+    if (!this.audioInitialized) {
+      await this.initAudio();
+      if (!this.audioInitialized) return; // Salir si todavía falla
+    }
 
     const now = Date.now();
     if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) return;
@@ -147,6 +158,17 @@ export class HeartBeatProcessor {
       this.lastBeepTime = now;
     } catch (error) {
       console.error("HeartBeatProcessor: Error playing beep", error);
+      
+      // Intentar reiniciar el contexto de audio si hay error
+      this.audioInitialized = false;
+      if (this.audioContext) {
+        try {
+          await this.audioContext.close();
+        } catch (e) {
+          // Ignorar errores al cerrar
+        }
+        this.audioContext = null;
+      }
     }
   }
 
@@ -178,7 +200,7 @@ export class HeartBeatProcessor {
     return this.smoothedValue;
   }
 
-  public processSignal(value: number): {
+  public processSignal(signal: number): {
     bpm: number;
     confidence: number;
     isPeak: boolean;
@@ -188,117 +210,150 @@ export class HeartBeatProcessor {
     hrvData: { sdnn: number, rmssd: number, pnn50: number };
     rrData?: { intervals: number[]; lastPeakTime: number | null };
   } {
-    // Filtros sucesivos para mejorar la señal
-    const medVal = this.medianFilter(value);
-    const movAvgVal = this.calculateMovingAverage(medVal);
-    const smoothed = this.calculateEMA(movAvgVal);
-
-    this.signalBuffer.push(smoothed);
-    if (this.signalBuffer.length > this.WINDOW_SIZE) {
-      this.signalBuffer.shift();
-    }
-
-    if (this.signalBuffer.length < 15) {
-      return {
-        bpm: 0,
-        confidence: 0,
-        isPeak: false,
-        filteredValue: smoothed,
-        arrhythmiaCount: 0,
-        peakIndices: [],
-        hrvData: { sdnn: 0, rmssd: 0, pnn50: 0 }
-      };
-    }
-
-    // Aplicar filtro preservador de fase a los datos acumulados
-    const phasePreservedSignal = this.phaseDetectionEnabled 
-      ? phasePreservingFilter(this.signalBuffer.slice(-30), 0.15)
-      : this.signalBuffer.slice(-30);
-
-    // Actualizar umbral adaptativo
-    if (this.adaptiveThresholdEnabled && phasePreservedSignal.length > 0) {
-      const maxValue = Math.max(...phasePreservedSignal);
-      this.adaptiveThreshold = this.adaptiveThreshold * (1 - this.ADAPTIVE_THRESHOLD_ALPHA) +
-                               maxValue * 0.4 * this.ADAPTIVE_THRESHOLD_ALPHA;
-    }
-
-    this.baseline =
-      this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
-
-    const normalizedValue = smoothed - this.baseline;
-    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
-
-    this.values.push(smoothed);
-    if (this.values.length > 3) {
-      this.values.shift();
-    }
-
-    let smoothDerivative = smoothed - this.lastValue;
-    if (this.values.length === 3) {
-      smoothDerivative = (this.values[2] - this.values[0]) / 2;
-    }
-    this.lastValue = smoothed;
-
-    // Método tradicional de detección de picos
-    const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
-    let isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
-
-    // Método avanzado de detección de picos si tenemos suficientes datos
-    if (this.signalBuffer.length >= 30 && !this.isInWarmup()) {
-      const recentSignal = this.signalBuffer.slice(-30);
-      const peakIndices = detectPeaksAdvanced(recentSignal, this.SAMPLE_RATE);
-      
-      // Si se detectó un nuevo pico en la última posición, confirmarlo
-      if (peakIndices.length > 0 && peakIndices[peakIndices.length - 1] >= recentSignal.length - 3) {
-        isConfirmedPeak = true;
-      }
-      
-      // Guardar índices de picos para visualización
-      this.detectedPeakIndices = peakIndices;
-      
-      // Calcular métricas HRV si tenemos suficientes picos
-      if (peakIndices.length >= 4) {
-        const hrvMetrics = analyzeHRV(peakIndices, this.SAMPLE_RATE);
-        this.hrvMetrics = {
-          sdnn: hrvMetrics.sdnn,
-          rmssd: hrvMetrics.rmssd,
-          pnn50: hrvMetrics.pnn50
+    try {
+      // Validación básica para evitar problemas
+      if (isNaN(signal) || !isFinite(signal)) {
+        console.warn("HeartBeatProcessor: Señal inválida recibida", signal);
+        return {
+          bpm: this.getSmoothBPM(), // Devolver el último BPM válido
+          confidence: 0,
+          isPeak: false,
+          filteredValue: 0,
+          arrhythmiaCount: 0,
+          peakIndices: [],
+          hrvData: { sdnn: 0, rmssd: 0, pnn50: 0 }
         };
-        
-        // Si se detectó un ritmo diferente al calculado previamente, usar el más confiable
-        if (hrvMetrics.meanHR > 0 && Math.abs(hrvMetrics.meanHR - this.getSmoothBPM()) > 15) {
-          // Si el análisis HRV tiene varios picos, confiar más en él
-          if (peakIndices.length >= 6 && this.bpmHistory.length < 3) {
-            this.bpmHistory.push(hrvMetrics.meanHR);
+      }
+    
+      // Filtros sucesivos para mejorar la señal
+      const medVal = this.medianFilter(signal);
+      const movAvgVal = this.calculateMovingAverage(medVal);
+      const smoothed = this.calculateEMA(movAvgVal);
+
+      this.signalBuffer.push(smoothed);
+      if (this.signalBuffer.length > this.WINDOW_SIZE) {
+        this.signalBuffer.shift();
+      }
+
+      if (this.signalBuffer.length < 15) {
+        return {
+          bpm: 0,
+          confidence: 0,
+          isPeak: false,
+          filteredValue: smoothed,
+          arrhythmiaCount: 0,
+          peakIndices: [],
+          hrvData: { sdnn: 0, rmssd: 0, pnn50: 0 }
+        };
+      }
+
+      // Aplicar filtro preservador de fase a los datos acumulados
+      const phasePreservedSignal = this.phaseDetectionEnabled 
+        ? phasePreservingFilter(this.signalBuffer.slice(-30), 0.15)
+        : this.signalBuffer.slice(-30);
+
+      // Actualizar umbral adaptativo
+      if (this.adaptiveThresholdEnabled && phasePreservedSignal.length > 0) {
+        const maxValue = Math.max(...phasePreservedSignal);
+        this.adaptiveThreshold = this.adaptiveThreshold * (1 - this.ADAPTIVE_THRESHOLD_ALPHA) +
+                                maxValue * 0.4 * this.ADAPTIVE_THRESHOLD_ALPHA;
+      }
+
+      this.baseline =
+        this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
+
+      const normalizedValue = smoothed - this.baseline;
+      this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
+
+      this.values.push(smoothed);
+      if (this.values.length > 3) {
+        this.values.shift();
+      }
+
+      let smoothDerivative = smoothed - this.lastValue;
+      if (this.values.length === 3) {
+        smoothDerivative = (this.values[2] - this.values[0]) / 2;
+      }
+      this.lastValue = smoothed;
+
+      // Método tradicional de detección de picos
+      const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
+      let isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
+
+      // Método avanzado de detección de picos si tenemos suficientes datos
+      if (this.signalBuffer.length >= 30 && !this.isInWarmup()) {
+        const recentSignal = this.signalBuffer.slice(-30);
+        try {
+          const peakIndices = detectPeaksAdvanced(recentSignal, this.SAMPLE_RATE);
+          
+          // Si se detectó un nuevo pico en la última posición, confirmarlo
+          if (peakIndices.length > 0 && peakIndices[peakIndices.length - 1] >= recentSignal.length - 3) {
+            isConfirmedPeak = true;
           }
+          
+          // Guardar índices de picos para visualización
+          this.detectedPeakIndices = peakIndices;
+          
+          // Calcular métricas HRV si tenemos suficientes picos
+          if (peakIndices.length >= 4) {
+            const hrvMetrics = analyzeHRV(peakIndices, this.SAMPLE_RATE);
+            this.hrvMetrics = {
+              sdnn: hrvMetrics.sdnn,
+              rmssd: hrvMetrics.rmssd,
+              pnn50: hrvMetrics.pnn50
+            };
+            
+            // Si se detectó un ritmo diferente al calculado previamente, usar el más confiable
+            if (hrvMetrics.meanHR > 0 && Math.abs(hrvMetrics.meanHR - this.getSmoothBPM()) > 15) {
+              // Si el análisis HRV tiene varios picos, confiar más en él
+              if (peakIndices.length >= 6 && this.bpmHistory.length < 3) {
+                this.bpmHistory.push(hrvMetrics.meanHR);
+              }
+            }
+          }
+        } catch (error) {
+          console.warn("HeartBeatProcessor: Error en detección avanzada de picos", error);
+          // Si falla el método avanzado, confiamos en el método tradicional
         }
       }
-    }
 
-    if (isConfirmedPeak && !this.isInWarmup()) {
-      const now = Date.now();
-      const timeSinceLastPeak = this.lastPeakTime
-        ? now - this.lastPeakTime
-        : Number.MAX_VALUE;
+      if (isConfirmedPeak && !this.isInWarmup()) {
+        const now = Date.now();
+        const timeSinceLastPeak = this.lastPeakTime
+          ? now - this.lastPeakTime
+          : Number.MAX_VALUE;
 
-      if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
-        this.previousPeakTime = this.lastPeakTime;
-        this.lastPeakTime = now;
-        this.playBeep(0.12);
-        this.updateBPM();
+        if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
+          this.previousPeakTime = this.lastPeakTime;
+          this.lastPeakTime = now;
+          this.playBeep(0.12);
+          this.updateBPM();
+        }
       }
-    }
 
-    return {
-      bpm: Math.round(this.getSmoothBPM()),
-      confidence,
-      isPeak: isConfirmedPeak && !this.isInWarmup(),
-      filteredValue: smoothed,
-      arrhythmiaCount: 0,
-      peakIndices: this.detectedPeakIndices,
-      hrvData: this.hrvMetrics,
-      rrData: this.getRRIntervals()
-    };
+      return {
+        bpm: Math.round(this.getSmoothBPM()),
+        confidence,
+        isPeak: isConfirmedPeak && !this.isInWarmup(),
+        filteredValue: smoothed,
+        arrhythmiaCount: 0,
+        peakIndices: this.detectedPeakIndices,
+        hrvData: this.hrvMetrics,
+        rrData: this.getRRIntervals()
+      };
+    } catch (error) {
+      console.error("HeartBeatProcessor: Error general procesando señal", error);
+      return {
+        bpm: Math.round(this.getSmoothBPM()),
+        confidence: 0,
+        isPeak: false,
+        filteredValue: 0,
+        arrhythmiaCount: 0,
+        peakIndices: [],
+        hrvData: { sdnn: 0, rmssd: 0, pnn50: 0 },
+        rrData: { intervals: [], lastPeakTime: null }
+      };
+    }
   }
 
   private autoResetIfSignalIsLow(amplitude: number) {
