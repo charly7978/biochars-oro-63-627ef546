@@ -79,3 +79,109 @@ export function validateSpO2(value: number): number {
 export function isFingerPresent(quality: number, threshold: number = 30): boolean {
   return quality >= threshold;
 }
+
+/**
+ * Encuentra picos y valles en una señal
+ */
+export function findPeaksAndValleys(signal: number[], minPeakDistance: number = 5): {
+  peaks: { index: number, value: number }[];
+  valleys: { index: number, value: number }[];
+} {
+  if (signal.length < 3) {
+    return { peaks: [], valleys: [] };
+  }
+  
+  const peaks: { index: number, value: number }[] = [];
+  const valleys: { index: number, value: number }[] = [];
+  
+  // Encontrar picos y valles locales
+  for (let i = 1; i < signal.length - 1; i++) {
+    // Pico
+    if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1]) {
+      // Verificar distancia mínima con el último pico
+      const lastPeak = peaks[peaks.length - 1];
+      if (!lastPeak || i - lastPeak.index >= minPeakDistance) {
+        peaks.push({ index: i, value: signal[i] });
+      } else if (signal[i] > lastPeak.value) {
+        // Reemplazar el pico anterior si este es mayor
+        peaks[peaks.length - 1] = { index: i, value: signal[i] };
+      }
+    }
+    
+    // Valle
+    if (signal[i] < signal[i - 1] && signal[i] < signal[i + 1]) {
+      // Verificar distancia mínima con el último valle
+      const lastValley = valleys[valleys.length - 1];
+      if (!lastValley || i - lastValley.index >= minPeakDistance) {
+        valleys.push({ index: i, value: signal[i] });
+      } else if (signal[i] < lastValley.value) {
+        // Reemplazar el valle anterior si este es menor
+        valleys[valleys.length - 1] = { index: i, value: signal[i] };
+      }
+    }
+  }
+  
+  return { peaks, valleys };
+}
+
+/**
+ * Calcula la componente AC de la señal PPG (componente pulsátil)
+ */
+export function calculateAC(signal: number[]): number {
+  if (signal.length < 2) return 0;
+  
+  const { peaks, valleys } = findPeaksAndValleys(signal);
+  if (peaks.length === 0 || valleys.length === 0) return 0;
+  
+  // Calcular el promedio de las diferencias entre picos y valles adyacentes
+  let totalAC = 0;
+  let count = 0;
+  
+  for (let i = 0; i < valleys.length; i++) {
+    const valley = valleys[i];
+    
+    // Buscar el pico más cercano que sigue a este valle
+    let nearestPeak = null;
+    let minDistance = Infinity;
+    
+    for (let j = 0; j < peaks.length; j++) {
+      const peak = peaks[j];
+      if (peak.index > valley.index) {
+        const distance = peak.index - valley.index;
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestPeak = peak;
+        }
+      }
+    }
+    
+    if (nearestPeak) {
+      totalAC += nearestPeak.value - valley.value;
+      count++;
+    }
+  }
+  
+  return count > 0 ? totalAC / count : 0;
+}
+
+/**
+ * Calcula la componente DC de la señal PPG (componente continua)
+ */
+export function calculateDC(signal: number[]): number {
+  if (signal.length === 0) return 0;
+  
+  // La componente DC es aproximadamente el valor medio de la señal
+  return signal.reduce((sum, val) => sum + val, 0) / signal.length;
+}
+
+/**
+ * Calcula la amplitud de la señal PPG
+ */
+export function calculateAmplitude(signal: number[]): number {
+  if (signal.length < 2) return 0;
+  
+  const min = Math.min(...signal);
+  const max = Math.max(...signal);
+  
+  return max - min;
+}
