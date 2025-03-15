@@ -8,8 +8,10 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  canvasRef: React.RefObject<HTMLCanvasElement>;
+  isActive: boolean;
   onStreamReady?: (stream: MediaStream) => void;
-  isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
 }
@@ -18,13 +20,14 @@ interface CameraViewProps {
  * CameraView - Componente para gestionar la cámara y detectar señales PPG
  * Todo el procesamiento es real, sin simulaciones o manipulaciones artificiales
  */
-const CameraView = ({ 
+const CameraView: React.FC<CameraViewProps> = ({ 
+  videoRef,
+  canvasRef,
+  isActive,
   onStreamReady, 
-  isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
 }: CameraViewProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
@@ -260,19 +263,19 @@ const CameraView = ({
 
   // Reiniciar la cámara si se detecta un error de track inválido
   useEffect(() => {
-    if (streamErrorRef.current && isMonitoring) {
+    if (streamErrorRef.current && isActive) {
       console.log("Detectado error de stream, reiniciando cámara...");
       stopCamera();
       setTimeout(startCamera, 1000);
     }
-  }, [isMonitoring]);
+  }, [isActive]);
 
   useEffect(() => {
-    if (isMonitoring && !stream) {
-      console.log("Starting camera because isMonitoring=true");
+    if (isActive && !stream) {
+      console.log("Starting camera because isActive=true");
       startCamera();
-    } else if (!isMonitoring && stream) {
-      console.log("Stopping camera because isMonitoring=false");
+    } else if (!isActive && stream) {
+      console.log("Stopping camera because isActive=false");
       stopCamera();
     }
     
@@ -280,7 +283,7 @@ const CameraView = ({
       console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
-  }, [isMonitoring]);
+  }, [isActive]);
 
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {

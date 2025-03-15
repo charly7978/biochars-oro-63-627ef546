@@ -17,7 +17,7 @@ export class CircularBuffer {
   private head: number;
   private tail: number;
   private count: number;
-  private readonly DROPPED_FRAME_TIMEOUT = 500; // Umbral de tiempo para considerar un frame perdido (ms)
+  private readonly DROPPED_FRAME_TIMEOUT = 400; // Umbral de tiempo para considerar un frame perdido (ms) - Reducido para mayor sensibilidad
 
   constructor(size: number) {
     this.buffer = new Array(size);
@@ -131,7 +131,7 @@ export class CircularBuffer {
     
     // Normalizar estabilidad a un valor entre 0-100
     // Menor varianza = mayor estabilidad
-    const maxVariance = 100; // Umbral de máxima varianza esperada
+    const maxVariance = 80; // Umbral de máxima varianza esperada - Reducido para mayor sensibilidad
     const stability = Math.max(0, 100 * (1 - Math.min(variance / maxVariance, 1)));
     
     return stability;
