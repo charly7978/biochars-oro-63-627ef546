@@ -1,5 +1,5 @@
 
-import type { VitalSignsResult } from '../../core/VitalSignsProcessor';
+import type { VitalSignsResult } from '../../vital-signs/VitalSignsProcessor';
 import type { CalibrationProgress } from '../types/AdvancedProcessorTypes';
 
 /**
