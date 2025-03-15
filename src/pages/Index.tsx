@@ -10,7 +10,6 @@ import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 import { toast } from "sonner";
 
-// Define the ArrhythmiaData type to make code more maintainable
 type ArrhythmiaData = {
   timestamp: number;
   rmssd: number;
@@ -408,42 +407,55 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Improved detection - process even with lower quality signals
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      if (heartBeatResult && heartBeatResult.bpm > 0) {
+      
+      if (heartBeatResult.bpm > 0 && heartBeatResult.confidence > 0.2) {
         setHeartRate(heartBeatResult.bpm);
+        
+        console.log("Index: Latido procesado", {
+          bpm: heartBeatResult.bpm,
+          confidence: heartBeatResult.confidence.toFixed(2),
+          isPeak: heartBeatResult.isPeak,
+          quality: lastSignal.quality.toFixed(2),
+          fingerDetected: lastSignal.fingerDetected
+        });
       }
       
-      // Process vital signs even with low quality signal to improve detection
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         console.log("Index: Vitales procesados:", vitals);
         
-        // Always update vital signs to see real-time changes
-        setVitalSigns(prevSigns => ({
-          ...prevSigns,
-          spo2: vitals.spo2 || prevSigns.spo2,
-          pressure: vitals.pressure || prevSigns.pressure,
-          arrhythmiaStatus: vitals.arrhythmiaStatus || prevSigns.arrhythmiaStatus,
-          glucose: vitals.glucose || prevSigns.glucose,
-          lipids: {
-            totalCholesterol: vitals.lipids?.totalCholesterol || prevSigns.lipids?.totalCholesterol || 0,
-            triglycerides: vitals.lipids?.triglycerides || prevSigns.lipids?.triglycerides || 0
-          },
-          hemoglobin: vitals.hemoglobin || prevSigns.hemoglobin
-        }));
+        if (lastSignal.quality > 20 || vitalSigns.spo2 > 0) {
+          setVitalSigns(prevSigns => ({
+            ...prevSigns,
+            spo2: vitals.spo2 > 0 ? vitals.spo2 : prevSigns.spo2,
+            pressure: vitals.pressure !== "--/--" ? vitals.pressure : prevSigns.pressure,
+            arrhythmiaStatus: vitals.arrhythmiaStatus || prevSigns.arrhythmiaStatus,
+            glucose: vitals.glucose > 0 ? vitals.glucose : prevSigns.glucose,
+            lipids: {
+              totalCholesterol: vitals.lipids?.totalCholesterol > 0 ? 
+                vitals.lipids.totalCholesterol : 
+                prevSigns.lipids?.totalCholesterol || 0,
+              triglycerides: vitals.lipids?.triglycerides > 0 ? 
+                vitals.lipids.triglycerides : 
+                prevSigns.lipids?.triglycerides || 0
+            },
+            hemoglobin: vitals.hemoglobin > 0 ? vitals.hemoglobin : prevSigns.hemoglobin
+          }));
+        }
         
         if (vitals.lastArrhythmiaData) {
           setLastArrhythmiaData(vitals.lastArrhythmiaData);
-          const [status, count] = vitals.arrhythmiaStatus.split('|');
-          setArrhythmiaCount(count || "0");
+          if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('|')) {
+            const [status, count] = vitals.arrhythmiaStatus.split('|');
+            setArrhythmiaCount(count || "0");
+          }
         }
       }
       
-      // Always update signal quality
       setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, vitalSigns.spo2]);
 
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
