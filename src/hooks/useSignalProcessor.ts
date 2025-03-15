@@ -50,40 +50,37 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Enfoque de alta sensibilidad:
-    // 1. Solo necesitamos un mínimo de detecciones positivas (1 de 3)
-    const recentDetections = fingerDetectedHistoryRef.current.slice(-3);
-    const recentPositives = recentDetections.filter(d => d).length;
+    // IMPORTANTE: No alteramos la detección original, confiamos en el procesador
+    // Sólo calculamos la calidad promedio para ofrecer feedback más estable al usuario
+    const avgQuality = signal.fingerDetected 
+      ? calculateAvgQuality(qualityHistoryRef.current)
+      : signal.quality;
     
-    // 2. Criterio muy permisivo: solo 1 de 3 detecciones y calidad mínima de 25
-    const robustFingerDetected = recentPositives >= 1 && signal.quality >= 25;
-    
-    // 3. Respetamos la detección original
-    const originalDetection = signal.fingerDetected;
-    
-    // 4. Verificación de valores en un rango muy amplio
-    const isInRange = signal.rawValue >= 60 && signal.rawValue <= 250;
-    
-    // 5. Cualquier método de detección es válido para mayor sensibilidad
-    // Priorizamos detección por encima de evitar falsos positivos
-    const finalDetection = 
-        (robustFingerDetected || originalDetection) && 
-        isInRange;
-    
-    // 6. Mejoramos significativamente la calidad para asegurar activación rápida
-    const enhancedQuality = 
-        finalDetection 
-          ? Math.max(signal.quality, 
-                    Math.min(95, signal.quality * 1.25)) 
-          : signal.quality;
-    
-    // Devolver señal modificada
+    // Devolver señal con calidad estabilizada pero sin alterar la detección
     return {
       ...signal,
-      fingerDetected: finalDetection,
-      quality: enhancedQuality
+      fingerDetected: signal.fingerDetected, // Mantenemos el valor original
+      quality: signal.fingerDetected ? avgQuality : signal.quality
     };
   }, []);
+  
+  /**
+   * Calcula la calidad promedio ponderada (dando más peso a valores recientes)
+   */
+  const calculateAvgQuality = (qualities: number[]): number => {
+    if (qualities.length === 0) return 0;
+    
+    let weightedSum = 0;
+    let weightSum = 0;
+    
+    qualities.forEach((q, index) => {
+      const weight = Math.pow(1.5, index); // Más peso a valores recientes
+      weightedSum += q * weight;
+      weightSum += weight;
+    });
+    
+    return weightSum > 0 ? Math.min(95, weightedSum / weightSum) : 0;
+  };
 
   // Configurar callbacks y limpieza
   useEffect(() => {
