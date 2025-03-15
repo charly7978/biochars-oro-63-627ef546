@@ -12,8 +12,7 @@ import { FingerDetector } from './finger-detection/FingerDetector';
  * Wrapper de compatibilidad que mantiene la interfaz original 
  * mientras usa la implementación refactorizada e integra el detector de dedo.
  * 
- * Este archivo es crucial para mantener la compatibilidad con el código existente
- * mientras mejoramos la estructura interna.
+ * Este archivo centraliza la detección de dedo en FingerDetector
  */
 export class VitalSignsProcessor {
   private processor: NewVitalSignsProcessor;
@@ -25,18 +24,18 @@ export class VitalSignsProcessor {
   constructor() {
     this.processor = new NewVitalSignsProcessor();
     this.fingerDetector = new FingerDetector();
-    console.log("VitalSignsProcessor: Inicializado con detector de dedo integrado");
+    console.log("VitalSignsProcessor: Inicializado con detector de dedo centralizado en FingerDetector");
   }
   
   /**
    * Procesa una señal PPG y datos RR para obtener signos vitales
-   * Mantiene exactamente la misma firma de método para compatibilidad
+   * Utiliza FingerDetector como única fuente para detección de dedos
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ) {
-    // Verificar calidad de señal con el detector de dedo
+    // Verificar calidad de señal con el detector de dedo centralizado
     const fingerDetectionResult = this.fingerDetector.processQuality(ppgValue);
     
     // Solo procesar señales cuando el dedo está realmente detectado

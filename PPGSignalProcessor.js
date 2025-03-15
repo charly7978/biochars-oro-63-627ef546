@@ -1,3 +1,4 @@
+
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -410,7 +411,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const startX = Math.floor(imageData.width * 0.375);
     const endX = Math.floor(imageData.width * 0.625);
     const startY = Math.floor(imageData.height * 0.375);
-    const endY = Math.floor(imageData.height * 0.375);
+    const endY = Math.floor(imageData.height * 0.625); // Corregido: era endY = 0.375 que es igual a startY
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {

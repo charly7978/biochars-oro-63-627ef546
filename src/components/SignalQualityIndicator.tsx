@@ -1,4 +1,3 @@
-
 /**
  * IMPORTANTE: Esta aplicación es solo para referencia médica.
  * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
@@ -16,8 +15,8 @@ interface SignalQualityIndicatorProps {
 }
 
 /**
- * Componente simplificado que muestra la calidad de la señal PPG
- * Con énfasis en las dos variables clave: perfusión y ratio rojo/verde
+ * Componente que muestra la calidad de la señal PPG
+ * Centraliza toda la detección de dedo a través del FingerDetector
  */
 const SignalQualityIndicator = ({ 
   quality, 
@@ -47,7 +46,7 @@ const SignalQualityIndicator = ({
     }
   }, [isMonitoring]);
 
-  // Procesar calidad de señal a través del detector con énfasis en las dos variables clave
+  // Usar FingerDetector como única fuente de detección de dedo
   useEffect(() => {
     if (isMonitoring) {
       // Calcular ratio rojo/verde si tenemos valores RGB
@@ -57,7 +56,7 @@ const SignalQualityIndicator = ({
         setRgRatio(currentRgRatio);
       }
       
-      // Procesar con el detector simplificado
+      // Procesar con el detector centralizado
       const result = rgbValues 
         ? fingerDetector.processQuality(quality, rgbValues.red, rgbValues.green)
         : fingerDetector.processQuality(quality);
