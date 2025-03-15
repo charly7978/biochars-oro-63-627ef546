@@ -1,3 +1,4 @@
+
 import React, { memo, useEffect, useRef } from 'react';
 import { optimizeElement } from '../utils/displayOptimizer';
 
@@ -27,11 +28,13 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform performance-boost ppg-graph"
+      className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform performance-boost ppg-graph ultra-hd-optimized"
       style={{
         transform: 'translate3d(0, 0, 0)',
         backfaceVisibility: 'hidden',
-        contain: 'layout paint style'
+        contain: 'layout paint style',
+        imageRendering: 'high-quality',
+        textRendering: 'geometricPrecision'
       }}
     >
       <h3 className="text-gray-400/90 text-sm mb-1 crisp-text precision-text">Heart Rate</h3>

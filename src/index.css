@@ -166,3 +166,32 @@
     max-height: 400vh;
   }
 }
+
+/* 5K and 6K resolution displays */
+@media screen and (min-width: 5120px) {
+  .high-res-interface {
+    transform: scale(0.2);
+    width: 500%;
+    height: 500%;
+    max-width: 500vw;
+    max-height: 500vh;
+  }
+}
+
+/* 8K ultra high resolution displays */
+@media screen and (min-width: 7680px) {
+  .high-res-interface {
+    transform: scale(0.125);
+    width: 800%;
+    height: 800%;
+    max-width: 800vw;
+    max-height: 800vh;
+  }
+}
+
+/* Ultra HD Class optimizations */
+.ultra-hd-optimized {
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
