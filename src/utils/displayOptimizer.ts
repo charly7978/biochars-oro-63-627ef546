@@ -62,8 +62,8 @@ export const optimizeTextRendering = (element: HTMLElement): void => {
   element.style.textRendering = 'geometricPrecision';
   
   if (isHighDpiDisplay()) {
-    element.style.webkitFontSmoothing = 'antialiased';
-    element.style.mozOsxFontSmoothing = 'grayscale';
+    // Fix for TypeScript error - using setAttribute instead of direct property assignment
+    element.setAttribute('style', element.getAttribute('style') + ' -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;');
   }
   
   // For numeric displays that need to be particularly crisp
@@ -99,89 +99,4 @@ export const optimizeElement = (element: HTMLElement): void => {
 export const optimizeSelector = (selector: string): void => {
   const elements = document.querySelectorAll<HTMLElement>(selector);
   elements.forEach(optimizeElement);
-};
-
-// Force the browser into fullscreen immersive mode
-export const enterImmersiveMode = async (): Promise<void> => {
-  try {
-    // Request fullscreen mode
-    const elem = document.documentElement;
-    if (elem.requestFullscreen) {
-      await elem.requestFullscreen();
-    } else if ((elem as any).webkitRequestFullscreen) {
-      await (elem as any).webkitRequestFullscreen();
-    } else if ((elem as any).mozRequestFullScreen) {
-      await (elem as any).mozRequestFullScreen();
-    } else if ((elem as any).msRequestFullscreen) {
-      await (elem as any).msRequestFullscreen();
-    }
-    
-    // Try to lock orientation to portrait for mobile devices
-    if (screen.orientation?.lock) {
-      try {
-        await screen.orientation.lock('portrait');
-      } catch (err) {
-        console.warn('Could not lock screen orientation:', err);
-      }
-    }
-    
-    // Apply high density display optimizations
-    document.body.classList.add('immersive-mode');
-    if (window.devicePixelRatio > 1) {
-      document.body.classList.add('high-dpi');
-    }
-    if (window.devicePixelRatio >= 2) {
-      document.body.classList.add('retina');
-    }
-    if (window.devicePixelRatio >= 3) {
-      document.body.classList.add('ultra-hd');
-    }
-    
-    // Set CSS variables for device pixel ratio
-    document.documentElement.style.setProperty('--device-pixel-ratio', window.devicePixelRatio.toString());
-    
-    console.log('Entered immersive fullscreen mode with DPR:', window.devicePixelRatio);
-  } catch (err) {
-    console.error('Failed to enter immersive fullscreen mode:', err);
-  }
-};
-
-// Update display settings based on screen resolution
-export const optimizeForScreenResolution = (): void => {
-  const width = window.screen.width;
-  const height = window.screen.height;
-  const dpr = window.devicePixelRatio;
-  
-  // Calculate effective resolution
-  const effectiveWidth = width * dpr;
-  const effectiveHeight = height * dpr;
-  
-  console.log(`Screen resolution: ${width}x${height}, DPR: ${dpr}, Effective: ${effectiveWidth}x${effectiveHeight}`);
-  
-  // Apply appropriate scaling class based on effective resolution
-  const rootElement = document.getElementById('root');
-  if (!rootElement) return;
-  
-  rootElement.classList.add('high-res-interface');
-  
-  // Apply specific optimizations based on resolution tiers
-  if (effectiveWidth >= 3840 || effectiveHeight >= 3840) {
-    rootElement.classList.add('resolution-4k');
-    document.documentElement.classList.add('display-4k');
-  } 
-  else if (effectiveWidth >= 2560 || effectiveHeight >= 2560) {
-    rootElement.classList.add('resolution-2k');
-    document.documentElement.classList.add('display-2k');
-  }
-  else if (effectiveWidth >= 1920 || effectiveHeight >= 1920) {
-    rootElement.classList.add('resolution-fhd');
-    document.documentElement.classList.add('display-fhd');
-  }
-  
-  // Update meta viewport tag for optimal rendering
-  const metaViewport = document.querySelector('meta[name="viewport"]');
-  if (metaViewport) {
-    metaViewport.setAttribute('content', 
-      'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi');
-  }
 };

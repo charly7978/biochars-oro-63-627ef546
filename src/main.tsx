@@ -2,7 +2,6 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
-import { enterImmersiveMode, optimizeForScreenResolution } from './utils/displayOptimizer.ts'
 
 // Apply high-resolution interface class to the root element
 const applyHighResolution = () => {
@@ -29,23 +28,102 @@ const applyHighResolution = () => {
     }
   }
   
-  // Apply full optimizations based on screen resolution
-  optimizeForScreenResolution();
+  // Set optimal rendering settings based on device capabilities
+  const setOptimalRendering = () => {
+    // For 4K displays and higher
+    if (window.screen.width >= 3840 || window.screen.height >= 3840) {
+      document.documentElement.classList.add('display-4k');
+    }
+    // For 2K/Retina displays
+    else if (window.screen.width >= 2048 || window.screen.height >= 2048) {
+      document.documentElement.classList.add('display-2k');
+    }
+  };
+  
+  setOptimalRendering();
 };
 
-// Execute all optimizations immediately
+// Function to request fullscreen on startup
+const requestFullscreenMode = () => {
+  try {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen()
+        .catch(err => console.warn('Error attempting to enable fullscreen:', err));
+    }
+    
+    // Handle screen orientation if available
+    if (window.screen && window.screen.orientation) {
+      // Lock to portrait as the app is designed for it
+      window.screen.orientation.lock('portrait')
+        .catch(err => console.warn('Failed to lock orientation:', err));
+    }
+    
+    // Try to set maximum resolution and prevent scaling
+    const metaViewport = document.querySelector('meta[name="viewport"]');
+    if (metaViewport) {
+      metaViewport.setAttribute('content', 
+        'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi');
+    }
+    
+    // Force immersive fullscreen mode
+    const docElem = document.documentElement;
+    if (docElem.requestFullscreen) {
+      docElem.requestFullscreen();
+    } else if ((docElem as any).webkitRequestFullscreen) {
+      (docElem as any).webkitRequestFullscreen();
+    } else if ((docElem as any).msRequestFullscreen) {
+      (docElem as any).msRequestFullscreen();
+    }
+    
+    // Apply high performance hints
+    if ('devicePixelRatio' in window) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = false;
+      }
+    }
+    
+    // Optimize for high DPI displays
+    if (window.devicePixelRatio > 1) {
+      document.body.classList.add('high-dpi');
+      // Apply specific optimizations for extremely high resolution displays
+      if (window.devicePixelRatio > 2) {
+        document.body.classList.add('ultra-high-dpi');
+      }
+    }
+  } catch (err) {
+    console.error('Fullscreen API not supported:', err);
+  }
+};
+
+// Execute immediately AND on first user interaction
+requestFullscreenMode();
 applyHighResolution();
-enterImmersiveMode().catch(err => console.error('Initial immersive mode error:', err));
+
+// Ensure we request fullscreen on every user interaction until successful
+let isFullscreen = false;
+const checkFullscreen = () => {
+  return document.fullscreenElement !== null;
+};
+
+const handleUserInteraction = () => {
+  isFullscreen = checkFullscreen();
+  if (!isFullscreen) {
+    requestFullscreenMode();
+  } else {
+    // Remove listeners if we're already in fullscreen
+    document.removeEventListener('click', handleUserInteraction);
+    document.removeEventListener('touchstart', handleUserInteraction);
+  }
+};
+
+document.addEventListener('click', handleUserInteraction);
+document.addEventListener('touchstart', handleUserInteraction);
 
 // Handle resolution scaling on resize and orientation change
-window.addEventListener('resize', () => {
-  applyHighResolution();
-  enterImmersiveMode().catch(err => console.error('Resize immersive mode error:', err));
-});
-window.addEventListener('orientationchange', () => {
-  applyHighResolution();
-  enterImmersiveMode().catch(err => console.error('Orientation immersive mode error:', err));
-});
+window.addEventListener('resize', applyHighResolution);
+window.addEventListener('orientationchange', applyHighResolution);
 
 // Let's improve graph performance with a MutationObserver
 // This will add performance classes to any PPG graph elements that are added to the DOM
@@ -84,38 +162,8 @@ const setupPerformanceObserver = () => {
   return observer;
 };
 
-// Ensure we re-enter immersive mode on user interaction
-const ensureImmersiveMode = () => {
-  const handleUserInteraction = () => {
-    enterImmersiveMode().catch(err => console.error('User interaction immersive mode error:', err));
-  };
-  
-  // Add listeners for common interaction events
-  document.addEventListener('click', handleUserInteraction, { once: false });
-  document.addEventListener('touchstart', handleUserInteraction, { once: false });
-  document.addEventListener('pointerdown', handleUserInteraction, { once: false });
-  
-  // Also periodically check fullscreen state
-  setInterval(() => {
-    if (!document.fullscreenElement) {
-      enterImmersiveMode().catch(err => console.error('Periodic immersive mode error:', err));
-    }
-  }, 3000);
-};
-
-// Start the performance observer and immersive mode handlers after render
-window.addEventListener('DOMContentLoaded', () => {
-  setupPerformanceObserver();
-  ensureImmersiveMode();
-});
-
-// Fix for VitalSignsProcessor.ts compatibility issues
-const patchVitalSignsProcessorTypes = () => {
-  // This is a runtime patch to fix interface compatibility issues
-  // Real fix would require updating interface definitions but those files are marked as read-only
-  console.log('Applied runtime compatibility patches for VitalSignsProcessor interfaces');
-};
-patchVitalSignsProcessorTypes();
+// Start the performance observer after render
+window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
 // Render the app
 createRoot(document.getElementById("root")!).render(<App />);
