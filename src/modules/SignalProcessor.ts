@@ -34,9 +34,9 @@ export class PPGSignalProcessor implements SignalProcessor {
     MIN_STABILITY_COUNT: 3
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
-  private readonly BUFFER_SIZE = 10;
+  private readonly BUFFER_SIZE = 15;
   private readonly MIN_RED_THRESHOLD = 85;
-  private readonly MAX_RED_THRESHOLD = 245;
+  private readonly MAX_RED_THRESHOLD = 290;
   private readonly STABILITY_WINDOW = 5;
   private readonly MIN_STABILITY_COUNT = 3;
   private stableFrameCount: number = 0;
