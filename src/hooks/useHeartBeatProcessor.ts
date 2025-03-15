@@ -1,10 +1,3 @@
-
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 

@@ -8,6 +8,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { Fingerprint } from "lucide-react";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -21,7 +22,8 @@ const Index = () => {
     lipids: {
       totalCholesterol: 0,
       triglycerides: 0
-    }
+    },
+    hemoglobin: 0
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState<string | number>("--");
@@ -154,7 +156,8 @@ const Index = () => {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      hemoglobin: 0
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -324,11 +327,14 @@ const Index = () => {
 
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-white text-lg">
+            <div className="text-white text-lg flex items-center">
+              <div className={`w-3 h-3 rounded-full mr-2 ${signalQuality > 70 ? 'bg-green-500' : signalQuality > 40 ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
               Calidad: {signalQuality}
             </div>
-            <div className="text-white text-lg">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+            <div className={`text-white text-lg flex items-center ${lastSignal?.fingerDetected ? 'text-green-500' : 'text-red-400'}`}>
+              {lastSignal?.fingerDetected 
+                ? <span className="flex items-center"><Fingerprint className="w-5 h-5 mr-1" /> Dedo detectado</span> 
+                : <span className="flex items-center animate-pulse"><Fingerprint className="w-5 h-5 mr-1" /> Coloque su dedo</span>}
             </div>
           </div>
 
@@ -368,6 +374,12 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
+                label="HEMOGLOBINA"
+                value={vitalSigns.hemoglobin || "--"}
+                unit="g/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
                 label="GLUCOSA"
                 value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
@@ -379,7 +391,6 @@ const Index = () => {
                 unit="mg/dL"
                 highlighted={showResults}
               />
-              <div></div> {/* Empty div to maintain grid layout */}
             </div>
           </div>
 

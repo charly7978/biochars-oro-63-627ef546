@@ -1,9 +1,3 @@
-/**
- * IMPORTANTE: Esta aplicación es solo para referencia médica.
- * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
- * Todo el procesamiento es real, sin simulaciones o manipulaciones.
- */
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -13,10 +7,6 @@ interface CameraViewProps {
   signalQuality?: number;
 }
 
-/**
- * CameraView - Componente para gestionar la cámara y detectar señales PPG
- * Todo el procesamiento es real, sin simulaciones o manipulaciones artificiales
- */
 const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 
@@ -85,40 +75,39 @@ const CameraView = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
-      // Configuraciones ajustadas para mejor rendimiento y detección
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 }, // Reducida para mejor rendimiento
-        height: { ideal: 720 }  // Reducida para mejor rendimiento
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       };
 
       if (isAndroid) {
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }, // Estabilizado
+          frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         });
       } else if (isIOS) {
         console.log("Configurando para iOS");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 }, // Estabilizado
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         });
       } else if (isWindows) {
-        console.log("Configurando para Windows");
+        console.log("Configurando para Windows con resolución reducida (720p)");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 },
+          frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         });
       } else {
-        console.log("Configurando para escritorio");
+        console.log("Configurando para escritorio con máxima resolución");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 30 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         });
       }
 
@@ -138,14 +127,12 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          await new Promise<void>(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 500));
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
-          // Configuraciones específicas para plataformas
           if (isAndroid) {
             try {
-              // Activar linterna inmediatamente en Android
               if (capabilities.torch) {
                 console.log("Activando linterna en Android");
                 await videoTrack.applyConstraints({
@@ -157,14 +144,13 @@ const CameraView = ({
               console.error("Error al activar linterna en Android:", err);
             }
           } else {
-            // Optimizaciones para iOS y otros
             if (capabilities.exposureMode) {
               const exposureConstraint: MediaTrackConstraintSet = { 
                 exposureMode: 'continuous' 
               };
               
               if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max * 0.8;
+                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
               }
               
               advancedConstraints.push(exposureConstraint);
@@ -180,12 +166,12 @@ const CameraView = ({
             
             if (capabilities.brightness && capabilities.brightness.max) {
               const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.6 });
+              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
             }
             
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.5 });
+              advancedConstraints.push({ contrast: maxContrast * 0.6 });
             }
 
             if (advancedConstraints.length > 0) {
@@ -195,7 +181,6 @@ const CameraView = ({
               });
             }
 
-            // Activar linterna también en otras plataformas
             if (capabilities.torch) {
               console.log("Activando linterna para mejorar la señal PPG");
               await videoTrack.applyConstraints({
@@ -220,10 +205,10 @@ const CameraView = ({
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
-        // Optimizaciones de rendimiento
         videoRef.current.style.willChange = 'transform';
         videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
+        
         videoRef.current.style.backfaceVisibility = 'hidden';
         videoRef.current.style.perspective = '1000px';
       }
@@ -258,7 +243,7 @@ const CameraView = ({
           await videoTrack.applyConstraints({
             advanced: [{ focusMode: 'manual' }]
           });
-          await new Promise<void>(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 100));
           await videoTrack.applyConstraints({
             advanced: [{ focusMode: 'continuous' }]
           });
@@ -300,16 +285,28 @@ const CameraView = ({
           console.error("Error activando linterna:", err);
         });
       }
+    } else if (stream && !isFingerDetected && torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Desactivando linterna al no detectar dedo");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: false }]
+        }).then(() => {
+          setTorchEnabled(false);
+        }).catch(err => {
+          console.error("Error desactivando linterna:", err);
+        });
+      }
     }
     
-    // Refrescar auto-focus con más frecuencia cuando el dedo está detectado
     if (isFingerDetected && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, 1000); // Reducido para respuesta más rápida
+      const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
-  const targetFrameInterval = isAndroid ? 1000/15 : 1000/25;
+  const targetFrameInterval = isAndroid ? 1000/10 : 
+                             signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
     <video
