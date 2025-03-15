@@ -1,3 +1,4 @@
+
 /**
  * Enhanced Signal Processor based on advanced biomedical signal processing techniques
  * Implements wavelet denoising and adaptive filter techniques from IEEE publications
@@ -27,9 +28,9 @@ export class SignalProcessor {
   // Indicadores de calidad de la señal
   private signalQuality: number = 0;
   private readonly MAX_SIGNAL_DIFF = 1.8;
-  private readonly MIN_SIGNAL_DIFF = 0.7; // Reduced from 0.9 for easier detection
+  private readonly MIN_SIGNAL_DIFF = 0.2; // VARIABLE MODIFICADA #1: Drastically reduced from 0.7 to 0.2 to allow weaker signals
   private consecutiveGoodFrames: number = 0;
-  private readonly REQUIRED_GOOD_FRAMES = 25; // Reduced from 30
+  private readonly REQUIRED_GOOD_FRAMES = 5; // VARIABLE MODIFICADA #2: Significantly reduced from 25 to 5 for much easier detection
   private lastSpikeTimestamps: number[] = [];
   private readonly MIN_BPM = 45;
   private readonly MAX_BPM = 200;
@@ -486,7 +487,7 @@ export class SignalProcessor {
     if (this.ppgValues.length < 25) return false; // Reduced from 30
     
     // Criterio 1: Calidad mínima de señal (más sensible)
-    if (this.signalQuality < 60) { // VARIABLE MODIFICADA #1: Reduced from 65 to 60 for greater sensitivity
+    if (this.signalQuality < 60) { // Reduced from 65 to 60 for greater sensitivity
       console.log("Calidad de señal insuficiente:", this.signalQuality.toFixed(1));
       return false;
     }
@@ -517,7 +518,7 @@ export class SignalProcessor {
     
     // Criterio 5: Verificación de periodicidad (solo para señales con patrón cardíaco)
     // Hacemos este check menos estricto
-    if (this.lastSpikeTimestamps.length < 4) { // FIXED: changed from boolean comparison to proper number comparison
+    if (this.lastSpikeTimestamps.length < 4) { // Fixed: changed from boolean comparison to proper number comparison
       console.log("No se detectaron suficientes picos cardíacos");
       const periodicityCheck = this.checkSignalPeriodicity(recentValues);
       if (!periodicityCheck) {
@@ -531,7 +532,7 @@ export class SignalProcessor {
     
     // Criterio 7: Verificar estabilidad de señal a través del tiempo
     const signalStability = this.checkSignalStability(recentValues);
-    if (signalStability < 0.55) {  // VARIABLE MODIFICADA #2: Reduced from 0.60 to 0.55 for greater sensitivity
+    if (signalStability < 0.55) {  // Reduced from 0.60 to 0.55 for greater sensitivity
       console.log("Estabilidad de señal insuficiente:", signalStability.toFixed(2));
       return false;
     }
@@ -659,4 +660,3 @@ export class SignalProcessor {
     return [...this.ppgValues];
   }
 }
-
