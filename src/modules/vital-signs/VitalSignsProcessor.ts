@@ -4,6 +4,8 @@
  * Todo el procesamiento es real, sin simulaciones o manipulaciones.
  */
 
+import { amplifyHeartbeatRealtime } from '../../utils/signalProcessingUtils';
+
 export interface VitalSignsResult {
   spo2: number;
   pressure: string;
@@ -60,8 +62,11 @@ export class VitalSignsProcessor {
   private readonly BP_BUFFER_SIZE = 10;
   private readonly BP_ALPHA = 0.7;
 
+  private ppgBuffer: number[] = [];
+  private readonly PPG_BUFFER_SIZE = 90;
+
   constructor() {
-    console.log("VitalSignsProcessor: Inicializado con nueva interfaz mejorada");
+    console.log("VitalSignsProcessor: Inicializado con nueva interfaz mejorada y amplificación de latidos");
   }
 
   /**
@@ -72,7 +77,21 @@ export class VitalSignsProcessor {
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     
-    const filteredValue = this.applySMAFilter(ppgValue);
+    // Almacenar valor PPG en el buffer para amplificación
+    this.ppgBuffer.push(ppgValue);
+    if (this.ppgBuffer.length > this.PPG_BUFFER_SIZE) {
+      this.ppgBuffer.shift();
+    }
+    
+    // Aplicar amplificación de latido en tiempo real
+    const amplifiedValue = amplifyHeartbeatRealtime(
+      ppgValue, 
+      this.ppgBuffer.slice(0, -1), // Excluir el valor actual que acabamos de agregar
+      this.PPG_BUFFER_SIZE
+    );
+    
+    // Usar el valor amplificado para el filtro SMA
+    const filteredValue = this.applySMAFilter(amplifiedValue);
     
     this.ppgValues.push(filteredValue);
     if (this.ppgValues.length > this.WINDOW_SIZE) {
@@ -434,6 +453,7 @@ export class VitalSignsProcessor {
     this.ppgValues = [];
     this.smaBuffer = [];
     this.spo2Buffer = [];
+    this.ppgBuffer = [];
     this.lastValue = 0;
     this.lastPeakTime = null;
     this.rrIntervals = [];
@@ -455,6 +475,7 @@ export class VitalSignsProcessor {
     this.ppgValues = [];
     this.smaBuffer = [];
     this.spo2Buffer = [];
+    this.ppgBuffer = [];
     this.lastValue = 0;
     this.lastPeakTime = null;
     this.rrIntervals = [];
