@@ -285,18 +285,6 @@ const CameraView = ({
           console.error("Error activando linterna:", err);
         });
       }
-    } else if (stream && !isFingerDetected && torchEnabled) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Desactivando linterna al no detectar dedo");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: false }]
-        }).then(() => {
-          setTorchEnabled(false);
-        }).catch(err => {
-          console.error("Error desactivando linterna:", err);
-        });
-      }
     }
     
     if (isFingerDetected && !isAndroid) {
