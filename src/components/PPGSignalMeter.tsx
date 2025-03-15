@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -40,22 +39,21 @@ const PPGSignalMeter = ({
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 6500;
-  const CANVAS_WIDTH = 3840;
-  const CANVAS_HEIGHT = 2160;
-  const GRID_SIZE_X = 2400;
-  const GRID_SIZE_Y = 1080
-  const verticalScale = 20.0;  // Sensibilidad aumentada para mejor visualización
-  const SMOOTHING_FACTOR = 1.8; // Mayor suavizado para reducir ruido
+  const WINDOW_WIDTH_MS = 3500;
+  const CANVAS_WIDTH = 1024;
+  const CANVAS_HEIGHT = 768;
+  const GRID_SIZE_X = 25;
+  const GRID_SIZE_Y = 5;
+  const verticalScale = 30.0;
+  const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 2.5;  // Umbral reducido para mejor detección
+  const PEAK_THRESHOLD = 3;
   const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  const BASELINE_ADAPTATION_RATE = 0.05; // Adaptación más rápida a cambios de señal
 
   useEffect(() => {
     if (!dataBufferRef.current) {

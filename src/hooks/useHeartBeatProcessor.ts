@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeartBeatProcessor, HeartBeatResult } from '../modules/HeartBeatProcessor';
+import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
-interface ProcessedHeartBeatResult {
+interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
@@ -19,12 +18,9 @@ export const useHeartBeatProcessor = () => {
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  const lastUpdateTime = useRef<number>(Date.now());
-  const stableReadingsCount = useRef<number>(0);
-  const lastValidBPM = useRef<number>(0);
 
   useEffect(() => {
-    console.log('useHeartBeatProcessor: Creating new processor instance', {
+    console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
@@ -33,29 +29,35 @@ export const useHeartBeatProcessor = () => {
     
     if (typeof window !== 'undefined') {
       (window as any).heartBeatProcessor = processorRef.current;
-      console.log('useHeartBeatProcessor: Processor registered globally', {
-        processorRegistered: !!(window as any).heartBeatProcessor,
+      console.log('useHeartBeatProcessor: Processor registrado en window', {
+        processorRegistrado: !!(window as any).heartBeatProcessor,
         timestamp: new Date().toISOString()
       });
     }
 
     return () => {
-      console.log('useHeartBeatProcessor: Cleanup', {
+      console.log('useHeartBeatProcessor: Limpiando processor', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
       
-      processorRef.current = null;
+      if (processorRef.current) {
+        processorRef.current = null;
+      }
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
+        console.log('useHeartBeatProcessor: Processor eliminado de window', {
+          processorExiste: !!(window as any).heartBeatProcessor,
+          timestamp: new Date().toISOString()
+        });
       }
     };
   }, []);
 
-  const processSignal = useCallback((value: number): ProcessedHeartBeatResult => {
+  const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
-      console.warn('useHeartBeatProcessor: Processor not initialized', {
+      console.warn('useHeartBeatProcessor: Processor no inicializado', {
         sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
@@ -72,98 +74,36 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    // Avoid too frequent logging to reduce console clutter
-    const now = Date.now();
-    const shouldLog = now - lastUpdateTime.current > 1000; // Log only once per second
+    console.log('useHeartBeatProcessor - processSignal detallado:', {
+      inputValue: value,
+      normalizadoValue: value.toFixed(2),
+      currentProcessor: !!processorRef.current,
+      processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
+    });
+
+    const result = processorRef.current.processSignal(value);
+    const rrData = processorRef.current.getRRIntervals();
+
+    console.log('useHeartBeatProcessor - resultado detallado:', {
+      bpm: result.bpm,
+      confidence: result.confidence,
+      isPeak: result.isPeak,
+      arrhythmiaCount: result.arrhythmiaCount,
+      rrIntervals: JSON.stringify(rrData.intervals),
+      ultimosIntervalos: rrData.intervals.slice(-5),
+      ultimoPico: rrData.lastPeakTime,
+      tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
+    });
     
-    if (shouldLog) {
-      console.log('useHeartBeatProcessor - processing signal:', {
-        inputValue: value.toFixed(2),
-        timestamp: new Date().toISOString()
-      });
-      lastUpdateTime.current = now;
-    }
-
-    try {
-      // Apply quality threshold check
-      let qualityEstimate = 50; // Default moderate quality
-      
-      // Require reasonable signal quality
-      const result = processorRef.current.processSignal(value, qualityEstimate);
-      const rrData = processorRef.current.getRRIntervals();
-      
-      if (shouldLog) {
-        console.log('useHeartBeatProcessor - result:', {
-          bpm: result.bpm,
-          confidence: result.confidence,
-          isPeak: result.isBeat,
-          arrhythmiaCount: 0,
-          intervals: rrData.intervals.length
-        });
-      }
-      
-      // Stricter confidence threshold - 0.4
-      if (result.confidence < 0.4) {
-        stableReadingsCount.current = 0;
-        // Continue using current BPM instead of returning 0
-        return {
-          bpm: currentBPM > 0 ? currentBPM : 0, 
-          confidence: result.confidence,
-          isPeak: result.isBeat,
-          arrhythmiaCount: 0,
-          rrData
-        };
-      }
-
-      // Stricter BPM validation
-      let validatedBPM = result.bpm;
-      const isValidBPM = result.bpm >= 45 && result.bpm <= 180;
-      
-      if (!isValidBPM) {
-        stableReadingsCount.current = 0;
-        validatedBPM = lastValidBPM.current || 0; // Don't use fallback
-      } else {
-        // Stricter stability check
-        if (lastValidBPM.current > 0) {
-          const bpmDiff = Math.abs(result.bpm - lastValidBPM.current);
-          
-          // Stricter dramatic change threshold
-          if (bpmDiff > 15) {
-            stableReadingsCount.current = 0;
-            
-            // Approach the new value gradually
-            validatedBPM = lastValidBPM.current + (result.bpm > lastValidBPM.current ? 2 : -2);
-          } else {
-            stableReadingsCount.current++;
-            
-            // Smoother transition with more weight on historical readings
-            validatedBPM = lastValidBPM.current * 0.7 + result.bpm * 0.3;
-          }
-        }
-        
-        // Always update the last valid BPM
-        lastValidBPM.current = validatedBPM;
-      }
-      
-      // Stricter display update - need 3 stable readings
-      if (stableReadingsCount.current >= 3 && validatedBPM > 0) {
-        setCurrentBPM(Math.round(validatedBPM));
-        setConfidence(result.confidence);
-      }
-
-      // Return 0 for very low confidence
+    if (result.confidence < 0.7) {
+      console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
-        bpm: validatedBPM > 0 ? Math.round(validatedBPM) : 0,
+        bpm: currentBPM,
         confidence: result.confidence,
-        isPeak: result.isBeat,
-        arrhythmiaCount: 0,
-        rrData
-      };
-    } catch (error) {
-      console.error('useHeartBeatProcessor - Error processing signal:', error);
-      return {
-        bpm: currentBPM || 0,
-        confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
         rrData: {
@@ -172,10 +112,29 @@ export const useHeartBeatProcessor = () => {
         }
       };
     }
+
+    if (result.bpm > 0) {
+      console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
+        prevBPM: currentBPM,
+        newBPM: result.bpm,
+        prevConfidence: confidence,
+        newConfidence: result.confidence,
+        sessionId: sessionId.current,
+        timestamp: new Date().toISOString()
+      });
+      
+      setCurrentBPM(result.bpm);
+      setConfidence(result.confidence);
+    }
+
+    return {
+      ...result,
+      rrData
+    };
   }, [currentBPM, confidence]);
 
   const reset = useCallback(() => {
-    console.log('useHeartBeatProcessor: Resetting processor', {
+    console.log('useHeartBeatProcessor: Reseteando processor', {
       sessionId: sessionId.current,
       prevBPM: currentBPM,
       prevConfidence: confidence,
@@ -184,12 +143,17 @@ export const useHeartBeatProcessor = () => {
     
     if (processorRef.current) {
       processorRef.current.reset();
+      console.log('useHeartBeatProcessor: Processor reseteado correctamente', {
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.warn('useHeartBeatProcessor: No se pudo resetear - processor no existe', {
+        timestamp: new Date().toISOString()
+      });
     }
     
     setCurrentBPM(0);
     setConfidence(0);
-    stableReadingsCount.current = 0;
-    lastValidBPM.current = 0;
   }, [currentBPM, confidence]);
 
   return {

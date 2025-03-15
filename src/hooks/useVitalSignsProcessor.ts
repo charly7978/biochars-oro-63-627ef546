@@ -160,8 +160,8 @@ export const useVitalSignsProcessor = () => {
       });
       
       // Multi-parametric arrhythmia detection algorithm
-      if ((rmssd > 60 && rrVariation > 0.25) || // Condición primaria ajustada
-          (rrSD > 40 && rrVariation > 0.22) ||  // Condición secundaria ajustada
+      if ((rmssd > 50 && rrVariation > 0.20) || // Primary condition
+          (rrSD > 35 && rrVariation > 0.18) ||  // Secondary condition
           (lastRR > 1.4 * avgRR) ||             // Extreme outlier condition
           (lastRR < 0.6 * avgRR)) {             // Extreme outlier condition
           
@@ -169,8 +169,8 @@ export const useVitalSignsProcessor = () => {
           rmssd,
           rrVariation,
           rrSD,
-          condición1: rmssd > 60 && rrVariation > 0.25,
-          condición2: rrSD > 40 && rrVariation > 0.22,
+          condición1: rmssd > 50 && rrVariation > 0.20,
+          condición2: rrSD > 35 && rrVariation > 0.18,
           condición3: lastRR > 1.4 * avgRR,
           condición4: lastRR < 0.6 * avgRR,
           timestamp: new Date().toISOString()

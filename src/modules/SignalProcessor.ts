@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 class KalmanFilter {
@@ -32,8 +33,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     STABILITY_WINDOW: 6,
     MIN_STABILITY_COUNT: 6,    // Aumentado de 4 a 6 para requerir más muestras estables
     HYSTERESIS: 5,
-    MIN_CONSECUTIVE_DETECTIONS: 3,
-    MIN_CONFIDENCE: 0.6        // Definimos MIN_CONFIDENCE que estaba faltando
+    MIN_CONSECUTIVE_DETECTIONS: 3
   };
 
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -43,8 +43,6 @@ export class PPGSignalProcessor implements SignalProcessor {
   private isCurrentlyDetected: boolean = false;
   private lastDetectionTime: number = 0;
   private readonly DETECTION_TIMEOUT = 500; // 500ms timeout
-  private signalBuffer: number[] = [];
-  private smoothedValue: number = 0;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -102,7 +100,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
-  public processFrame(imageData: ImageData): void {
+  processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
       return;
     }
@@ -177,19 +175,20 @@ export class PPGSignalProcessor implements SignalProcessor {
     let maxRed = 0;
     let minRed = 255;
     
-    // Optimización 1: Enfocarse en el centro de la imagen donde normalmente está el dedo
+    // ROI (Region of Interest) central
+    // Usar un área más pequeña y centrada para mejor precisión
     const centerX = Math.floor(imageData.width / 2);
     const centerY = Math.floor(imageData.height / 2);
-    // Fijar ROI en 45% de la dimensión menor sin recalcular según brillo
-    const roiSize = Math.min(imageData.width, imageData.height) * 0.45; 
+    const roiSize = Math.min(imageData.width, imageData.height) * 0.3; // 30% del tamaño más pequeño
+    
     const startX = Math.max(0, Math.floor(centerX - roiSize / 2));
     const endX = Math.min(imageData.width, Math.floor(centerX + roiSize / 2));
     const startY = Math.max(0, Math.floor(centerY - roiSize / 2));
     const endY = Math.min(imageData.height, Math.floor(centerY + roiSize / 2));
     
-    // Optimización 2: Usar una matriz para encontrar la región con mejor señal
-    const regionSize = 8; // Reducido de 10 a 8 para más regiones
-    const regions: Record<string, {redSum: number, count: number, x: number, y: number, ratio: number}> = {};
+    // Matriz para acumular valores por regiones y detectar la mejor área
+    const regionSize = 10; // Dividir el ROI en regiones de 10x10 píxeles
+    const regions = [];
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -198,12 +197,9 @@ export class PPGSignalProcessor implements SignalProcessor {
         const g = data[i+1];   // Canal verde
         const b = data[i+2];   // Canal azul
         
-        // Optimización 3: Mejora en criterio de detección de dominancia roja (PPG)
-        // Menos restrictivo en el factor (1.1 → 1.05) pero aún exigiendo dominancia roja
-        const redToGreen = r / Math.max(1, g);
-        const redToBlue = r / Math.max(1, b);
-        
-        if (redToGreen > 1.05 && redToBlue > 1.05) {
+        // Solo incluir píxeles que tengan una predominancia clara del rojo
+        // Esto ayuda a filtrar áreas que no son del dedo o están mal iluminadas
+        if (r > g * 1.1 && r > b * 1.1) {
           redSum += r;
           greenSum += g;
           blueSum += b;
@@ -223,63 +219,53 @@ export class PPGSignalProcessor implements SignalProcessor {
               redSum: 0,
               count: 0,
               x: regionX,
-              y: regionY,
-              ratio: 0
+              y: regionY
             };
           }
           
           regions[regionKey].redSum += r;
           regions[regionKey].count++;
-          // Calcular ratio R/(G+B) como indicador de calidad de PPG
-          regions[regionKey].ratio = (regions[regionKey].ratio * (regions[regionKey].count - 1) + (r / Math.max(1, g + b))) / regions[regionKey].count;
         }
       }
     }
     
-    // Optimización 4: Reducir umbral mínimo de píxeles para permitir detección con dedos más pequeños o parcialmente colocados
-    if (pixelCount < 30) { // Reducido de 50 a 30
+    // Si no hay suficientes píxeles con dominancia roja, no hay dedo
+    if (pixelCount < 50) {
       return 0;
     }
     
-    // Optimización 5: Mejorar la búsqueda de la mejor región incluyendo ratio PPG
+    // Encontrar la región con la mayor intensidad de rojo
     let bestRegion = null;
-    let bestScore = 0;
+    let bestAvgRed = 0;
     
     for (const key in regions) {
       const region = regions[key];
-      if (region.count > 8) {  // Reducido de 10 a 8
+      if (region.count > 10) {  // Ignorar regiones con muy pocos píxeles
         const avgRed = region.redSum / region.count;
-        // Puntaje que combina intensidad y calidad PPG
-        const score = avgRed * 0.7 + (region.ratio * 100) * 0.3;
-        if (score > bestScore) {
-          bestScore = score;
+        if (avgRed > bestAvgRed) {
+          bestAvgRed = avgRed;
           bestRegion = region;
         }
       }
     }
     
-    // Optimización 6: Si encontramos una buena región, dar más peso a su valor
-    if (bestRegion && bestScore > 90) { // Reducido de 100 a 90
-      return bestScore;
+    // Si encontramos una buena región, usar ese valor
+    if (bestRegion && bestAvgRed > 100) {
+      return bestAvgRed;
     }
     
-    // Cálculo estándar mejorado para casos sin región óptima
-    const avgRed = redSum / Math.max(1, pixelCount);
-    const avgGreen = greenSum / Math.max(1, pixelCount);
-    const avgBlue = blueSum / Math.max(1, pixelCount);
+    // Cálculo estándar si no podemos encontrar una región óptima
+    const avgRed = redSum / pixelCount;
+    const avgGreen = greenSum / pixelCount;
+    const avgBlue = blueSum / pixelCount;
     
-    // Optimización 7: Criterios mejorados para detección general
-    const isRedDominant = avgRed > (avgGreen * 1.1) && avgRed > (avgBlue * 1.1);
-    const hasGoodContrast = pixelCount > 50 && (maxRed - minRed) > 10; // Reducido de 15 a 10
-    const isInRange = avgRed > 40 && avgRed < 250; // Rango ampliado (de 50-250 a 40-250)
+    // Métricas mejoradas de detección del dedo
+    const isRedDominant = avgRed > (avgGreen * 1.2) && avgRed > (avgBlue * 1.2);
+    const hasGoodContrast = pixelCount > 100 && (maxRed - minRed) > 15;
+    const isInRange = avgRed > 50 && avgRed < 250; // Evitar valores extremos
     
-    // Optimización 8: Combinar criterios con ponderación para mejorar sensibilidad
-    const detectionScore = 
-      (isRedDominant ? 1 : 0) * 0.5 + 
-      (hasGoodContrast ? 1 : 0) * 0.3 + 
-      (isInRange ? 1 : 0) * 0.2;
-    
-    return (detectionScore >= 0.7) ? avgRed : 0; // Umbral reducido para mayor sensibilidad
+    // Devolver el valor procesado o 0 si no se detecta un dedo
+    return (isRedDominant && hasGoodContrast && isInRange) ? avgRed : 0;
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
@@ -428,11 +414,5 @@ export class PPGSignalProcessor implements SignalProcessor {
       timestamp: Date.now()
     };
     this.onError?.(error);
-  }
-
-  private calculateEMA(value: number): number {
-    const alpha = 0.25; // Ajustado de 0.35 a 0.25 para respuesta más rápida
-    this.smoothedValue = alpha * value + (1 - alpha) * this.smoothedValue;
-    return this.smoothedValue;
   }
 }
