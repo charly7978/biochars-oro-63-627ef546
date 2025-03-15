@@ -21,11 +21,12 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
   const [lastQualityLevel, setLastQualityLevel] = useState<string>('');
   
-  // Constantes de configuración
+  // Constantes de configuración - VALORES MÁS ESTRICTOS
   const historySize = 6; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 5; // Más estricto
-  const QUALITY_THRESHOLD = 50;
-  const LOW_QUALITY_THRESHOLD = 30;
+  const REQUIRED_FINGER_FRAMES = 10; // MUCHO MÁS ESTRICTO (era 5)
+  const QUALITY_THRESHOLD = 60; // ELEVADO (era 50)
+  const LOW_QUALITY_THRESHOLD = 40; // ELEVADO (era 30)
+  const MIN_QUALITY_FOR_DETECTION = 15; // NUEVO: mínimo absoluto para considerar detección
 
   // Detectar plataforma
   useEffect(() => {
@@ -44,20 +45,37 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   // Mantener historial de calidad para promedio ponderado
   useEffect(() => {
     if (isMonitoring) {
-      setQualityHistory(prev => {
-        const newHistory = [...prev, quality];
-        return newHistory.slice(-historySize);
-      });
+      // NUEVO: Solo agregar al historial si la calidad supera cierto umbral mínimo
+      // Esto evita falsas detecciones
+      if (quality > MIN_QUALITY_FOR_DETECTION) {
+        setQualityHistory(prev => {
+          const newHistory = [...prev, quality];
+          return newHistory.slice(-historySize);
+        });
+      } else {
+        // Si la calidad es muy baja, reiniciar el historial
+        if (qualityHistory.length > 0) {
+          setQualityHistory([]);
+          setDisplayQuality(0);
+          console.log("SignalQualityIndicator: Reinicio de historial por calidad insuficiente");
+        }
+      }
     } else {
       setQualityHistory([]);
       setDisplayQuality(0);
     }
-  }, [quality, isMonitoring]);
+  }, [quality, isMonitoring, qualityHistory.length]);
 
-  // Calcular calidad ponderada con más peso a valores recientes
+  // Calcular calidad ponderada con más peso a valores recientes y más estricta
   useEffect(() => {
     if (qualityHistory.length === 0) {
       setDisplayQuality(0);
+      return;
+    }
+
+    // NUEVO: Verificar si hay suficientes frames consecutivos de buena calidad
+    if (qualityHistory.length < REQUIRED_FINGER_FRAMES) {
+      setDisplayQuality(Math.max(0, Math.min(10, quality))); // Limitar a máximo 10% si no hay suficientes frames
       return;
     }
 
@@ -73,60 +91,79 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     const averageQuality = Math.round(weightedSum / totalWeight);
     
+    // NUEVO: Verificación adicional para evitar falsas lecturas altas
+    // Comprobar que no haya demasiada variación en los últimos valores
+    const recentValues = qualityHistory.slice(-4);
+    const minRecent = Math.min(...recentValues);
+    const maxRecent = Math.max(...recentValues);
+    const rangeRecent = maxRecent - minRecent;
+    
+    let finalQuality = averageQuality;
+    
+    // Si hay demasiada variación, penalizar la calidad
+    if (rangeRecent > 30 && qualityHistory.length < historySize) {
+      finalQuality = Math.round(finalQuality * 0.7);
+      console.log("SignalQualityIndicator: Penalización por alta variación", {
+        variación: rangeRecent,
+        calidadOriginal: averageQuality,
+        calidadAjustada: finalQuality
+      });
+    }
+    
     // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
-      const delta = (averageQuality - prev) * 0.3;
+      const delta = (finalQuality - prev) * 0.3;
       return Math.round(prev + delta);
     });
     
     // Determinar nivel de tip basado en calidad
-    if (averageQuality < LOW_QUALITY_THRESHOLD) {
+    if (finalQuality < LOW_QUALITY_THRESHOLD) {
       setTipLevel('error');
-    } else if (averageQuality < QUALITY_THRESHOLD) {
+    } else if (finalQuality < QUALITY_THRESHOLD) {
       setTipLevel('warning');
     } else {
       setTipLevel('info');
     }
     
     // Actualizar último nivel de calidad para mensajes
-    const newQualityLevel = getQualityText(averageQuality);
+    const newQualityLevel = getQualityText(finalQuality);
     if (newQualityLevel !== lastQualityLevel) {
       setLastQualityLevel(newQualityLevel);
       console.log("SignalQualityIndicator: Cambio de nivel de calidad", {
         anterior: lastQualityLevel,
         nuevo: newQualityLevel,
-        calidadPonderada: averageQuality
+        calidadPonderada: finalQuality
       });
     }
     
   }, [qualityHistory, lastQualityLevel]);
 
   /**
-   * Obtiene el color basado en la calidad (más granular)
+   * Obtiene el color basado en la calidad (más granular y más estricto)
    */
   const getQualityColor = (q: number) => {
-    if (q === 0) return '#666666';
-    if (q > 80) return '#059669'; // Verde más saturado
-    if (q > 70) return '#10b981'; // Verde medio
-    if (q > 50) return '#22c55e'; // Verde normal
-    if (q > 40) return '#a3e635'; // Verde-amarillo
-    if (q > 30) return '#eab308'; // Amarillo
-    if (q > 20) return '#f97316'; // Naranja
-    if (q > 10) return '#ef4444'; // Rojo
+    if (q === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) return '#666666';
+    if (q > 85) return '#059669'; // Verde más saturado
+    if (q > 75) return '#10b981'; // Verde medio
+    if (q > 60) return '#22c55e'; // Verde normal
+    if (q > 45) return '#a3e635'; // Verde-amarillo
+    if (q > 35) return '#eab308'; // Amarillo
+    if (q > 25) return '#f97316'; // Naranja
+    if (q > 15) return '#ef4444'; // Rojo
     return '#b91c1c';            // Rojo oscuro
   };
 
   /**
-   * Obtiene el texto descriptivo de calidad con umbrales más precisos
+   * Obtiene el texto descriptivo de calidad con umbrales más estrictos
    */
   const getQualityText = (q: number) => {
-    if (q === 0) return 'Sin Dedo';
-    if (q > 80) return 'Excelente';
-    if (q > 65) return 'Muy Buena';
-    if (q > 50) return 'Buena';
-    if (q > 35) return 'Aceptable';
-    if (q > 20) return 'Baja';
-    if (q > 10) return 'Muy Baja';
+    if (q === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) return 'Sin Dedo';
+    if (q > 85) return 'Excelente';
+    if (q > 70) return 'Muy Buena';
+    if (q > 55) return 'Buena';
+    if (q > 40) return 'Aceptable';
+    if (q > 25) return 'Baja';
+    if (q > 15) return 'Muy Baja';
     return 'Crítica';
   };
 
@@ -135,8 +172,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getHelpMessage = () => {
     // Sin dedo detectado
-    if (displayQuality === 0) {
-      return "Cubra completamente la cámara y flash con su dedo índice.";
+    if (displayQuality === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) {
+      return "Cubra completamente la cámara y flash con su dedo índice. Presione firmemente.";
     }
     
     // Con dedo pero baja calidad
@@ -161,12 +198,18 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
   // Estilo de pulso adaptado a la plataforma y calidad
   const getPulseClass = () => {
-    if (displayQuality === 0) return "transition-all duration-300";
+    if (displayQuality === 0 || qualityHistory.length < REQUIRED_FINGER_FRAMES) 
+      return "transition-all duration-300";
     
     const baseClass = "transition-all duration-300";
     const pulseSpeed = isAndroid ? "animate-pulse" : "animate-pulse";
     
     return `${baseClass} ${pulseSpeed}`;
+  };
+
+  // NUEVA FUNCIÓN: Determina si hay un dedo realmente presente
+  const isFingerActuallyDetected = () => {
+    return displayQuality > 0 && qualityHistory.length >= REQUIRED_FINGER_FRAMES;
   };
 
   return (
@@ -209,20 +252,18 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       <div className="absolute top-0 right-0 transform translate-x-1 -translate-y-3">
         <Fingerprint 
           size={16} 
-          className={`${displayQuality > 0 ? 'text-green-500' : 'text-gray-400'} transition-colors duration-300`}
+          className={`${isFingerActuallyDetected() ? 'text-green-500' : 'text-gray-400'} transition-colors duration-300`}
         />
       </div>
       
       {/* Consejos de ayuda mejorados */}
-      {showHelpTip && displayQuality < QUALITY_THRESHOLD && (
+      {showHelpTip && (displayQuality < QUALITY_THRESHOLD || !isFingerActuallyDetected()) && (
         <div className="absolute -bottom-[4.5rem] left-0 right-0 bg-black/75 p-2 rounded text-white text-xs flex items-start gap-1.5 border border-white/10">
-          {tipLevel === 'error' && (
+          {tipLevel === 'error' || !isFingerActuallyDetected() ? (
             <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
-          )}
-          {tipLevel === 'warning' && (
+          ) : tipLevel === 'warning' ? (
             <AlertTriangle className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-          )}
-          {tipLevel === 'info' && (
+          ) : (
             <ThumbsUp className="h-4 w-4 text-green-400 flex-shrink-0 mt-0.5" />
           )}
           <span>
