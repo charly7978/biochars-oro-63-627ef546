@@ -1,5 +1,4 @@
-
-// Extensión de la definición existente para añadir métricas avanzadas
+import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 export interface ProcessedSignal {
   timestamp: number;
@@ -14,16 +13,13 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex?: number;
-  // Métricas avanzadas
-  spectralPower?: number;    // Potencia espectral total (análisis de espectro)
-  pulseAmplitude?: number;   // Amplitud de pulso 
-  signalSnr?: number;        // Relación señal-ruido (calidad)
-  metabolicEstimates?: {     // Estimaciones metabólicas
-    glucose?: number;        // Nivel de glucosa estimado (mg/dL)
-    cholesterol?: number;    // Colesterol total estimado (mg/dL)
-    triglycerides?: number;  // Triglicéridos estimados (mg/dL)
-    hemoglobin?: number;     // Hemoglobina estimada (g/dL)
-  }
+  waveformFeatures?: {
+    systolicPeak: number;
+    diastolicPeak: number;
+    dicroticNotch: number;
+    pulseWidth: number;
+    areaUnderCurve: number;
+  };
 }
 
 export interface ProcessingError {
@@ -33,11 +29,16 @@ export interface ProcessingError {
 }
 
 export interface SignalProcessor {
+  initialize: () => Promise<void>;
+  start: () => void;
+  stop: () => void;
+  calibrate: () => Promise<boolean>;
   onSignalReady?: (signal: ProcessedSignal) => void;
   onError?: (error: ProcessingError) => void;
-  initialize(): Promise<void>;
-  start(): void;
-  stop(): void;
-  calibrate(): Promise<boolean>;
-  processFrame(imageData: ImageData): void;
+}
+
+declare global {
+  interface Window {
+    heartBeatProcessor: HeartBeatProcessor;
+  }
 }

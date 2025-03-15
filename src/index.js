@@ -21,7 +21,10 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [isProcessingFrame, setIsProcessingFrame] = useState(false);
   const measurementTimerRef = useRef(null);
+  const frameProcessorRef = useRef(null);
+  const cameraStabilizationTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -94,16 +97,11 @@ const Index = () => {
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
-      document.body.removeEventListener('touchstart', preventScroll);
-      document.body.removeEventListener('gesturestart', preventScroll);
-      document.body.removeEventListener('gesturechange', preventScroll);
-      document.body.removeEventListener('gestureend', preventScroll);
-      window.removeEventListener('orientationchange', enterFullScreen);
-      document.removeEventListener('fullscreenchange', enterFullScreen);
     };
   }, []);
 
   const startMonitoring = () => {
+    console.log("Index: Iniciando monitoreo");
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
@@ -114,10 +112,19 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
     }
     
+    if (cameraStabilizationTimerRef.current) {
+      clearTimeout(cameraStabilizationTimerRef.current);
+    }
+    
+    toast.info("Sitúa tu dedo sobre la cámara", {
+      description: "Cubre completamente la lente para una mejor señal",
+      duration: 5000
+    });
+    
     measurementTimerRef.current = window.setInterval(() => {
       setElapsedTime(prev => {
         if (prev >= 30) {
-          stopMonitoring();
+          showMeasurementConfirmation();
           return 30;
         }
         return prev + 1;
@@ -126,20 +133,37 @@ const Index = () => {
   };
 
   const showMeasurementConfirmation = () => {
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
     setShowConfirmDialog(true);
   };
 
   const confirmMeasurement = () => {
+    toast.success("Medición guardada correctamente", {
+      description: "Los resultados han sido registrados con éxito",
+      duration: 3000,
+    });
     setShowConfirmDialog(false);
     completeMonitoring();
   };
 
   const cancelMeasurement = () => {
     setShowConfirmDialog(false);
-    stopMonitoring();
+    startMonitoring();
   };
 
   const completeMonitoring = () => {
+    cleanupMonitoring();
+  };
+
+  const stopMonitoring = () => {
+    cleanupMonitoring();
+  };
+  
+  const cleanupMonitoring = () => {
+    console.log("Index: Limpiando monitoreo");
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -153,57 +177,79 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    setIsProcessingFrame(false);
+    
+    if (frameProcessorRef.current) {
+      cancelAnimationFrame(frameProcessorRef.current);
+      frameProcessorRef.current = null;
+    }
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-  };
-
-  const stopMonitoring = () => {
-    setIsMonitoring(false);
-    setIsCameraOn(false);
-    stopProcessing();
-    resetVitalSigns();
-    setElapsedTime(0);
-    setHeartRate(0);
-    setVitalSigns({ 
-      spo2: 0, 
-      pressure: "--/--",
-      arrhythmiaStatus: "--" 
-    });
-    setArrhythmiaCount("--");
-    setSignalQuality(0);
     
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
-      measurementTimerRef.current = null;
+    if (cameraStabilizationTimerRef.current) {
+      clearTimeout(cameraStabilizationTimerRef.current);
+      cameraStabilizationTimerRef.current = null;
     }
   };
 
   const handleStreamReady = (stream) => {
-    if (!isMonitoring) return;
+    console.log("Index: Stream lista recibida");
+    if (!isMonitoring) {
+      console.log("Index: No estamos monitoreando, ignorando stream");
+      return;
+    }
     
     const videoTrack = stream.getVideoTracks()[0];
     if (!videoTrack) {
       console.error("No video track available");
+      toast.error("Error de cámara", {
+        description: "No se pudo acceder a la cámara correctamente",
+        duration: 3000
+      });
       return;
     }
 
-    setTimeout(async () => {
+    if (cameraStabilizationTimerRef.current) {
+      clearTimeout(cameraStabilizationTimerRef.current);
+    }
+    
+    cameraStabilizationTimerRef.current = setTimeout(async () => {
       try {
+        console.log("Index: Iniciando procesamiento después de estabilización");
+        
+        if (!isMonitoring) {
+          console.log("Index: Ya no estamos monitoreando después de estabilización");
+          return;
+        }
+        
         const imageCapture = new ImageCapture(videoTrack);
         
-        const capabilities = videoTrack.getCapabilities();
-        if (capabilities.width && capabilities.height) {
-          const maxWidth = capabilities.width.max;
-          const maxHeight = capabilities.height.max;
+        try {
+          if (videoTrack.getCapabilities()?.torch) {
+            await videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            }).catch(err => console.error("Error activando linterna:", err));
+            console.log("Linterna activada");
+          } else {
+            console.log("La linterna no está disponible en este dispositivo");
+          }
           
-          await videoTrack.applyConstraints({
-            width: { ideal: maxWidth },
-            height: { ideal: maxHeight },
-            torch: true
-          }).catch(err => console.error("Error applying high resolution config:", err));
+          const capabilities = videoTrack.getCapabilities();
+          if (capabilities?.width && capabilities?.height) {
+            const maxWidth = capabilities.width.max;
+            const maxHeight = capabilities.height.max;
+            
+            await videoTrack.applyConstraints({
+              width: { ideal: maxWidth },
+              height: { ideal: maxHeight }
+            }).catch(err => console.error("Error applying high resolution config:", err));
+            console.log(`Resolución configurada a ${maxWidth}x${maxHeight}`);
+          }
+        } catch (constraintError) {
+          console.error("Error al aplicar configuraciones avanzadas:", constraintError);
         }
         
         const tempCanvas = document.createElement('canvas');
@@ -213,50 +259,125 @@ const Index = () => {
           return;
         }
         
-        let isProcessing = false;
+        const DETECTION_THRESHOLD = 50;
+        const MIN_RED_DIFF = 15;
         
         const processImage = async () => {
-          if (!isMonitoring || isProcessing) return;
+          if (!isMonitoring) {
+            console.log("Index: Deteniendo procesamiento de frames");
+            return;
+          }
+          
+          if (isProcessingFrame) {
+            frameProcessorRef.current = requestAnimationFrame(processImage);
+            return;
+          }
           
           try {
-            isProcessing = true;
+            setIsProcessingFrame(true);
+            
+            if (videoTrack.readyState !== 'live') {
+              console.error("Video track no está activo durante processImage");
+              setIsProcessingFrame(false);
+              return;
+            }
+            
             const frame = await imageCapture.grabFrame();
             tempCanvas.width = frame.width;
             tempCanvas.height = frame.height;
             tempCtx.drawImage(frame, 0, 0);
+            
+            const centerX = Math.floor(frame.width / 2);
+            const centerY = Math.floor(frame.height / 2);
+            const regionSize = Math.min(100, Math.floor(frame.width / 4));
+            
+            const centerRegion = tempCtx.getImageData(
+              centerX - regionSize/2, 
+              centerY - regionSize/2,
+              regionSize, 
+              regionSize
+            );
+            
             const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-            processFrame(imageData);
+            
+            const totalRed = 0;
+            const totalGreen = 0;
+            const totalBlue = 0;
+            
+            for (let i = 0; i < centerRegion.data.length; i += 4) {
+              totalRed += centerRegion.data[i];
+              totalGreen += centerRegion.data[i+1];
+              totalBlue += centerRegion.data[i+2];
+            }
+            
+            const pixelCount = centerRegion.data.length / 4;
+            const avgRed = totalRed / pixelCount;
+            const avgGreen = totalGreen / pixelCount;
+            const avgBlue = totalBlue / pixelCount;
+            
+            const brightness = (avgRed + avgGreen + avgBlue) / 3;
+            const redDiff = avgRed - ((avgGreen + avgBlue) / 2);
+            
+            const fingerDetected = 
+              brightness > DETECTION_THRESHOLD &&
+              redDiff > MIN_RED_DIFF &&
+              avgRed > Math.max(avgGreen, avgBlue);
+            
+            if (fingerDetected) {
+              console.log("Dedo detectado en frame, procesando señal", { 
+                brightness, 
+                redDiff,
+                avgRed,
+                avgGreen, 
+                avgBlue
+              });
+            }
+            
+            processFrame(imageData, fingerDetected);
           } catch (error) {
-            console.error("Error capturing frame:", error);
+            console.error("Error capturando frame:", error);
           } finally {
-            isProcessing = false;
+            setIsProcessingFrame(false);
             if (isMonitoring) {
-              requestAnimationFrame(processImage);
+              frameProcessorRef.current = requestAnimationFrame(processImage);
             }
           }
         };
-
+        
         processImage();
       } catch (error) {
-        console.error("Error in stream setup:", error);
+        console.error("Error en configuración de stream:", error);
+        toast.error("Error de procesamiento", {
+          description: "No se pudo iniciar el procesamiento de imagen",
+          duration: 3000
+        });
       }
-    }, 1000);
+    }, 3000);
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
+    if (lastSignal) {
+      console.log("Processing signal for BPM update, fingerDetected:", lastSignal.fingerDetected, 
+                 "quality:", lastSignal.quality, "value:", lastSignal.filteredValue);
       
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      
+      if (heartBeatResult.bpm > 0) {
+        console.log("Valid BPM detected:", heartBeatResult.bpm);
+        setHeartRate(heartBeatResult.bpm);
+        
+        const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+        if (vitals) {
+          setVitalSigns(vitals);
+          setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        }
+      } else {
+        console.log("No valid BPM in current signal");
       }
       
       setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -292,6 +413,7 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              preserveResults={true}
             />
           </div>
 
@@ -363,4 +485,3 @@ const Index = () => {
 };
 
 export default Index;
-

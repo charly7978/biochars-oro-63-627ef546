@@ -1,222 +1,127 @@
 
-/**
- * Procesador de SpO2 (saturación de oxígeno) basado en técnicas avanzadas
- * de fotopletismografía y principios de absorción espectral.
- */
-
-import { 
-  calculateAC, 
-  calculateDC, 
-  applySMAFilter, 
-  applyMedianFilter,
-  calculatePerfusionIndex,
-  calculateSignalQuality
-} from './utils';
+import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
-  private readonly SPO2_BUFFER_SIZE = 10;
-  private readonly MIN_PERFUSION_INDEX = 0.03; // Reducido para detectar señales más débiles
-  private readonly MIN_SIGNAL_QUALITY = 40; // Reducido para aceptar más señales
-  private readonly CALIBRATION_FACTOR = 1.03; // Aumentado para mayor sensibilidad
-  private readonly RED_TO_IR_COMPENSATED_RATIO = 1.00;
-  
+  private readonly SPO2_CALIBRATION_FACTOR = 1.05; 
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // Reduced for fingertip signals
+  private readonly SPO2_BUFFER_SIZE = 15; 
   private spo2Buffer: number[] = [];
-  private lastValidReading: number = 0;
-  private confidenceScore: number = 0;
-  private calibrationOffset: number = 0;
-  private lastCalculationTime: number = 0;
+  private perfusionBuffer: number[] = []; 
+  private readonly PERFUSION_BUFFER_SIZE = 10;
+  
+  // Normalized factors for fingertip measurements
+  private readonly FINGER_AC_NORMALIZATION = 1.25; // Increased for fingertips
+  private readonly FINGER_DC_NORMALIZATION = 0.90; // Adjusted for fingertips
+  private readonly MIN_VALID_PERFUSION_INDEX = 0.03; // Lower minimum for fingertips
 
   /**
-   * Calcula la saturación de oxígeno (SpO2) utilizando señales PPG
-   * El algoritmo implementa técnicas profesionales de fotopletismografía
-   * 
-   * @param values Valores de señal PPG
-   * @returns Valor SpO2 (0-100)
+   * Calculates the oxygen saturation (SpO2) from PPG values
+   * with enhanced false detection prevention and fingertip optimization
    */
-  public calculateSpO2(values: number[]): {
-    value: number;
-    confidence: number;
-  } {
-    const currentTime = Date.now();
-    
-    // 1. Validación de datos y preprocesamiento
-    if (!values || values.length < 25) { // Reducido de 30 a 25
-      return {
-        value: this.lastValidReading,
-        confidence: Math.max(0, this.confidenceScore - 0.1)
-      };
-    }
-    
-    // 2. Filtrado avanzado para reducir ruido
-    const filteredValues = applyMedianFilter(applySMAFilter(values, 5), 3);
-    
-    // 3. Evaluación de calidad de señal
-    const signalQuality = calculateSignalQuality(filteredValues);
-    const perfusionIndex = calculatePerfusionIndex(filteredValues);
-    
-    // Reducir umbrales de calidad para permitir más mediciones
-    if (signalQuality < this.MIN_SIGNAL_QUALITY && 
-        perfusionIndex < this.MIN_PERFUSION_INDEX) {
-      
-      // Señal de baja calidad - usar último valor válido con confianza reducida
-      this.confidenceScore = Math.max(0.1, this.confidenceScore - 0.15);
-      
-      return {
-        value: this.lastValidReading,
-        confidence: this.confidenceScore
-      };
-    }
-    
-    // 4. Cálculo de componentes PPG fundamentales
-    const dc = calculateDC(filteredValues);
-    if (dc === 0 || Math.abs(dc) < 0.003) { // Reducido de 0.005 a 0.003
-      return {
-        value: this.lastValidReading,
-        confidence: Math.max(0, this.confidenceScore - 0.2)
-      };
-    }
-    
-    const ac = calculateAC(filteredValues);
-    if (ac < 0.008) { // Reducido de 0.01 a 0.008
-      return {
-        value: this.lastValidReading,
-        confidence: Math.max(0, this.confidenceScore - 0.2)
-      };
-    }
-    
-    // 5. Cálculo basado en modelo de absorción (Ley de Beer-Lambert)
-    // R = (AC_red/DC_red)/(AC_ir/DC_ir)
-    // En una señal PPG simple, esto se aproxima con el factor de calibración
-    const R = (ac / dc) / this.CALIBRATION_FACTOR * this.RED_TO_IR_COMPENSATED_RATIO;
-    
-    // 6. Aplicación de ecuación empírica basada en calibración experimental
-    // Esta relación se deriva de curvas de calibración estándar
-    let rawSpO2 = 110 - (25 * R);
-    
-    // 7. Aplicar offset de calibración personalizado
-    rawSpO2 += this.calibrationOffset;
-    
-    // 8. Ajustes basados en calidad de perfusión
-    // Los pacientes con mejor perfusión tendrán lecturas más cercanas al 98-99%
-    if (perfusionIndex > 0.12) { // Reducido de 0.15 a 0.12
-      rawSpO2 = Math.min(100, rawSpO2 + 1);
-    } else if (perfusionIndex < 0.06) { // Reducido de 0.08 a 0.06
-      rawSpO2 = Math.max(80, rawSpO2 - 1);
-    }
-    
-    // 9. Validación del rango fisiológico
-    rawSpO2 = Math.max(80, Math.min(100, rawSpO2));
-    
-    // 10. Almacenamiento en buffer para estabilidad
-    if (rawSpO2 >= 80 && rawSpO2 <= 100) {
-      this.spo2Buffer.push(rawSpO2);
-      
-      if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
-        this.spo2Buffer.shift();
+  public calculateSpO2(values: number[]): number {
+    // Require fewer values for fingertip analysis
+    if (values.length < 35) { // Reduced requirement
+      if (this.spo2Buffer.length > 0) {
+        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+        return Math.max(0, lastValid - 1);
       }
+      return 0;
+    }
+
+    const dc = calculateDC(values) * this.FINGER_DC_NORMALIZATION;
+    if (dc === 0) {
+      if (this.spo2Buffer.length > 0) {
+        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+        return Math.max(0, lastValid - 1);
+      }
+      return 0;
+    }
+
+    const ac = calculateAC(values) * this.FINGER_AC_NORMALIZATION;
+    
+    const perfusionIndex = ac / dc;
+    
+    // Añadir al buffer de perfusión
+    this.perfusionBuffer.push(perfusionIndex);
+    if (this.perfusionBuffer.length > this.PERFUSION_BUFFER_SIZE) {
+      this.perfusionBuffer.shift();
     }
     
-    // 11. Cálculo de SpO2 final con filtro de mediana para mayor robustez
-    let finalSpO2;
-    if (this.spo2Buffer.length >= 3) {
-      const sorted = [...this.spo2Buffer].sort((a, b) => a - b);
-      finalSpO2 = sorted[Math.floor(sorted.length / 2)];
-    } else {
-      finalSpO2 = rawSpO2;
-    }
+    // Calcular promedio de perfusión para estabilidad
+    const avgPerfusion = this.perfusionBuffer.reduce((sum, val) => sum + val, 0) / 
+                         this.perfusionBuffer.length;
     
-    // 12. Actualización de nivel de confianza
-    // La confianza aumenta con mejor calidad de señal y más muestras
-    // pero se reduce con cambios bruscos inesperados
-    const timeSinceLastCalc = currentTime - this.lastCalculationTime;
-    this.lastCalculationTime = currentTime;
-    
-    this.confidenceScore = Math.min(0.95, 
-      0.45 + // Aumentado para base de confianza más alta
-      (signalQuality / 200) + 
-      Math.min(0.25, perfusionIndex * 2) +
-      (this.spo2Buffer.length / this.SPO2_BUFFER_SIZE) * 0.15
+    // More permissive adaptive threshold for fingertips
+    const adaptiveThreshold = Math.max(
+      this.MIN_VALID_PERFUSION_INDEX,
+      this.PERFUSION_INDEX_THRESHOLD * (avgPerfusion > 0.1 ? 0.7 : 0.9) // More permissive
     );
     
-    // Reducir penalidad por cambios para permitir más fluctuaciones
-    if (this.lastValidReading > 0 && timeSinceLastCalc < 2000) {
-      const change = Math.abs(finalSpO2 - this.lastValidReading);
+    // Verificar si la perfusión es suficiente para una medición válida
+    if (avgPerfusion < adaptiveThreshold) {
+      // Señal insuficiente o posible falso positivo
+      if (this.spo2Buffer.length > 0) {
+        // Degradación gradual de la última medición válida
+        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+        return Math.max(0, lastValid - 2);
+      }
+      return 0;
+    }
+
+    // Calcular SpO2 usando ratio R
+    const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
+    
+    // Algoritmo de cálculo de SpO2 para fingertips
+    let spO2 = 0;
+    
+    if (R <= 0.4) {
+      spO2 = 100;
+    } else if (R < 1.0) {
+      // Ecuación de calibración no lineal para rango normal
+      spO2 = Math.round(110 - (25 * R));
+    } else {
+      // Rango de hipoxemia (menos común)
+      spO2 = Math.round(100 - (20 * R));
+    }
+    
+    // Ajustes basados en perfusión más permisivos
+    if (perfusionIndex > 0.12) { // Reduced threshold
+      spO2 = Math.min(99, spO2 + 1);
+    } else if (perfusionIndex < 0.05) { // Reduced threshold
+      spO2 = Math.max(0, spO2 - 1);
+    }
+
+    // Límites fisiológicos
+    spO2 = Math.min(99, Math.max(70, spO2));
+
+    // Añadir al buffer para estabilidad
+    this.spo2Buffer.push(spO2);
+    if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
+      this.spo2Buffer.shift();
+    }
+
+    // Calcular valor final con ponderación (valores recientes tienen más peso)
+    if (this.spo2Buffer.length > 0) {
+      let weightedSum = 0;
+      let weightSum = 0;
       
-      if (change > 6) { // Aumentado umbral de 4 a 6
-        this.confidenceScore = Math.max(0.3, this.confidenceScore - 0.2); // Reducido de 0.25 a 0.2
-      } else if (change > 3) { // Aumentado umbral de 2 a 3
-        this.confidenceScore = Math.max(0.4, this.confidenceScore - 0.08); // Reducido de 0.1 a 0.08
+      for (let i = 0; i < this.spo2Buffer.length; i++) {
+        const weight = 1 + (i * 0.1); // Valores más recientes tienen más peso
+        weightedSum += this.spo2Buffer[i] * weight;
+        weightSum += weight;
       }
+      
+      spO2 = Math.round(weightedSum / weightSum);
     }
-    
-    // Actualizar última lectura válida
-    this.lastValidReading = Math.round(finalSpO2);
-    
-    return {
-      value: this.lastValidReading,
-      confidence: this.confidenceScore
-    };
-  }
-  
-  /**
-   * Obtener detalles adicionales de la señal para diagnóstico
-   */
-  public getSignalDetails(values: number[]): {
-    perfusionIndex: number;
-    quality: number;
-    pulsatileComponents: { ac: number; dc: number; ratio: number };
-  } | null {
-    if (!values || values.length < 30) return null;
-    
-    const filteredValues = applyMedianFilter(applySMAFilter(values, 5), 3);
-    const ac = calculateAC(filteredValues);
-    const dc = calculateDC(filteredValues);
-    const perfusionIndex = dc !== 0 ? ac / dc : 0;
-    const quality = calculateSignalQuality(filteredValues);
-    
-    return {
-      perfusionIndex,
-      quality,
-      pulsatileComponents: {
-        ac,
-        dc,
-        ratio: perfusionIndex
-      }
-    };
-  }
-  
-  /**
-   * Aplicar calibración personalizada
-   */
-  public calibrate(referenceSpO2: number): void {
-    if (referenceSpO2 >= 90 && referenceSpO2 <= 100 && this.lastValidReading > 0) {
-      const diff = referenceSpO2 - this.lastValidReading;
-      // Limitar el offset a un rango razonable
-      this.calibrationOffset = Math.max(-3, Math.min(3, diff));
-    }
+
+    return spO2;
   }
 
   /**
-   * Reinicia el estado del procesador
+   * Reset the SpO2 processor state
    */
   public reset(): void {
     this.spo2Buffer = [];
-    this.lastValidReading = 0;
-    this.confidenceScore = 0;
-    this.lastCalculationTime = 0;
-    // No se resetea el calibrationOffset a propósito para mantener la calibración
-  }
-  
-  /**
-   * Obtener última lectura válida
-   */
-  public getLastReading(): { 
-    value: number; 
-    confidence: number;
-  } {
-    return {
-      value: this.lastValidReading,
-      confidence: this.confidenceScore
-    };
+    this.perfusionBuffer = [];
   }
 }

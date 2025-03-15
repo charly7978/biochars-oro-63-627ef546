@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
+
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
-import AppTitle from './AppTitle';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -18,7 +18,7 @@ interface PPGSignalMeterProps {
   preserveResults?: boolean;
 }
 
-const PPGSignalMeter = memo(({ 
+const PPGSignalMeter = ({ 
   value, 
   quality, 
   isFingerDetected,
@@ -39,28 +39,23 @@ const PPGSignalMeter = memo(({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const qualityHistoryRef = useRef<number[]>([]);
-  const consecutiveFingerFramesRef = useRef<number>(0);
-  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 4500;
-  const CANVAS_WIDTH = 1024;
-  const CANVAS_HEIGHT = 768;
-  const GRID_SIZE_X = 10;
-  const GRID_SIZE_Y = 5;
-  const verticalScale = 40.0;
-  const SMOOTHING_FACTOR = 1.6;
+  const WINDOW_WIDTH_MS = 6500;
+  const CANVAS_WIDTH = 2400;
+  const CANVAS_HEIGHT = 1080;
+  const GRID_SIZE_X = 2400;
+  const GRID_SIZE_Y = 1080
+  const verticalScale = 20.0;  // Sensibilidad aumentada para mejor visualización
+  const SMOOTHING_FACTOR = 1.8; // Mayor suavizado para reducir ruido
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 2.5;
-  const MIN_PEAK_DISTANCE_MS = 220;
+  const PEAK_THRESHOLD = 2.5;  // Umbral reducido para mejor detección
+  const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  const REQUIRED_FINGER_FRAMES = 3;
-  const QUALITY_HISTORY_SIZE = 5;
-  const USE_OFFSCREEN_CANVAS = true;
+  const BASELINE_ADAPTATION_RATE = 0.05; // Adaptación más rápida a cambios de señal
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -76,68 +71,19 @@ const PPGSignalMeter = memo(({
     }
   }, [preserveResults, isFingerDetected]);
 
-  useEffect(() => {
-    qualityHistoryRef.current.push(quality);
-    if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
-      qualityHistoryRef.current.shift();
-    }
-    
-    if (isFingerDetected) {
-      consecutiveFingerFramesRef.current++;
-    } else {
-      consecutiveFingerFramesRef.current = 0;
-    }
-  }, [quality, isFingerDetected]);
-
-  useEffect(() => {
-    const offscreen = document.createElement('canvas');
-    offscreen.width = CANVAS_WIDTH;
-    offscreen.height = CANVAS_HEIGHT;
-    offscreenCanvasRef.current = offscreen;
-    
-    const gridCanvas = document.createElement('canvas');
-    gridCanvas.width = CANVAS_WIDTH;
-    gridCanvas.height = CANVAS_HEIGHT;
-    const gridCtx = gridCanvas.getContext('2d', { alpha: false });
-    
-    if(gridCtx) {
-      drawGrid(gridCtx);
-      gridCanvasRef.current = gridCanvas;
-    }
-  }, []);
-
-  const getAverageQuality = useCallback(() => {
-    if (qualityHistoryRef.current.length === 0) return 0;
-    
-    let weightedSum = 0;
-    let weightSum = 0;
-    
-    qualityHistoryRef.current.forEach((q, index) => {
-      const weight = index + 1;
-      weightedSum += q * weight;
-      weightSum += weight;
-    });
-    
-    return weightSum > 0 ? weightedSum / weightSum : 0;
-  }, []);
-
   const getQualityColor = useCallback((q: number) => {
-    const avgQuality = getAverageQuality();
-    
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
-    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
+    if (!isFingerDetected) return 'from-gray-400 to-gray-500';
+    if (q > 75) return 'from-green-500 to-emerald-500';
+    if (q > 50) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality]);
+  }, [isFingerDetected]);
 
   const getQualityText = useCallback((q: number) => {
-    const avgQuality = getAverageQuality();
-    
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
-    if (avgQuality > 65) return 'Señal óptima';
-    if (avgQuality > 40) return 'Señal aceptable';
+    if (!isFingerDetected) return 'Sin detección';
+    if (q > 75) return 'Señal óptima';
+    if (q > 50) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality]);
+  }, [isFingerDetected]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -146,32 +92,25 @@ const PPGSignalMeter = memo(({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E2DCFF');
-    gradient.addColorStop(0.25, '#FFDECF');
-    gradient.addColorStop(0.45, '#F1FBDF');
-    gradient.addColorStop(0.55, '#F1EEE8');
-    gradient.addColorStop(0.75, '#F5EED8');
-    gradient.addColorStop(1, '#F5EED0');
+    gradient.addColorStop(0, '#E5DEFF');
+    gradient.addColorStop(0.3, '#FDE1D3');
+    gradient.addColorStop(0.7, '#F2FCE2');
+    gradient.addColorStop(1, '#D3E4FD');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    ctx.globalAlpha = 0.04;
+    ctx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        const heightRatio = j / CANVAS_HEIGHT;
-        const alphaModifier = 0.01 + (heightRatio * 0.03);
-        
-        ctx.fillStyle = j % 40 === 0 ? 
-          `rgba(0,0,0,${0.2 + alphaModifier})` : 
-          `rgba(255,255,255,${0.2 + alphaModifier})`;
+        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
         ctx.fillRect(i, j, 10, 10);
       }
     }
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.22)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
@@ -199,7 +138,7 @@ const PPGSignalMeter = memo(({
     
     const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
     ctx.moveTo(0, centerLineY);
@@ -316,31 +255,18 @@ const PPGSignalMeter = memo(({
     }
     
     const canvas = canvasRef.current;
-    const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
-      offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
-      canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', { alpha: false });
     
-    if (!renderCtx) {
+    if (!ctx) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
     
     const now = Date.now();
     
-    if (gridCanvasRef.current) {
-      renderCtx.drawImage(gridCanvasRef.current, 0, 0);
-    } else {
-      drawGrid(renderCtx);
-    }
+    drawGrid(ctx);
     
     if (preserveResults && !isFingerDetected) {
-      if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-        const visibleCtx = canvas.getContext('2d', { alpha: false });
-        if (visibleCtx) {
-          visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-        }
-      }
-      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -349,8 +275,7 @@ const PPGSignalMeter = memo(({
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      const adaptationRate = isFingerDetected ? 0.97 : 0.95;
-      baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
+      baselineRef.current = baselineRef.current * 0.95 + value * 0.05;
     }
     
     const smoothedValue = smoothValue(value, lastValueRef.current);
@@ -379,16 +304,13 @@ const PPGSignalMeter = memo(({
     detectPeaks(points, now);
     
     if (points.length > 1) {
-      renderCtx.beginPath();
-      renderCtx.strokeStyle = '#0EA5E9';
-      renderCtx.lineWidth = 2;
-      renderCtx.lineJoin = 'round';
-      renderCtx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.strokeStyle = '#0EA5E9';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       
       let firstPoint = true;
-      
-      const pathCoordinates: [number, number][] = [];
-      const arrhythmiaSegments: {start: [number, number], end: [number, number]}[] = [];
       
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
@@ -401,106 +323,57 @@ const PPGSignalMeter = memo(({
         const y2 = (canvas.height / 2) - 40 - point.value;
         
         if (firstPoint) {
-          pathCoordinates.push([x1, y1]);
+          ctx.moveTo(x1, y1);
           firstPoint = false;
         }
         
-        pathCoordinates.push([x2, y2]);
+        ctx.lineTo(x2, y2);
         
         if (point.isArrhythmia) {
-          arrhythmiaSegments.push({
-            start: [x1, y1],
-            end: [x2, y2]
-          });
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.strokeStyle = '#DC2626';
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.strokeStyle = '#0EA5E9';
+          ctx.moveTo(x2, y2);
+          firstPoint = true;
         }
       }
       
-      if (pathCoordinates.length > 0) {
-        renderCtx.beginPath();
-        renderCtx.moveTo(pathCoordinates[0][0], pathCoordinates[0][1]);
-        for (let i = 1; i < pathCoordinates.length; i++) {
-          renderCtx.lineTo(pathCoordinates[i][0], pathCoordinates[i][1]);
-        }
-        renderCtx.stroke();
-      }
+      ctx.stroke();
       
-      if (arrhythmiaSegments.length > 0) {
-        renderCtx.beginPath();
-        renderCtx.strokeStyle = '#DC2626';
+      peaksRef.current.forEach(peak => {
+        const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = (canvas.height / 2) - 40 - peak.value;
         
-        for (const segment of arrhythmiaSegments) {
-          renderCtx.moveTo(segment.start[0], segment.start[1]);
-          renderCtx.lineTo(segment.end[0], segment.end[1]);
-        }
-        
-        renderCtx.stroke();
-      }
-      
-      if (peaksRef.current.length > 0) {
-        const normalPeaks: [number, number, number][] = [];
-        const arrhythmiaPeaks: [number, number, number][] = [];
-        
-        peaksRef.current.forEach(peak => {
-          const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - 40 - peak.value;
+        if (x >= 0 && x <= canvas.width) {
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          ctx.fill();
           
-          if (x >= 0 && x <= canvas.width) {
-            if (peak.isArrhythmia) {
-              arrhythmiaPeaks.push([x, y, peak.value]);
-            } else {
-              normalPeaks.push([x, y, peak.value]);
-            }
+          if (peak.isArrhythmia) {
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.strokeStyle = '#FEF7CD';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            ctx.font = 'bold 18px Inter';
+            ctx.fillStyle = '#F97316';
+            ctx.textAlign = 'center';
+            ctx.fillText('ARRITMIA', x, y - 25);
           }
-        });
-        
-        if (normalPeaks.length > 0) {
-          renderCtx.fillStyle = '#0EA5E9';
           
-          normalPeaks.forEach(([x, y, value]) => {
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-            renderCtx.fill();
-            
-            renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = '#000000';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
-          });
+          ctx.font = 'bold 16px Inter';
+          ctx.fillStyle = '#000000';
+          ctx.textAlign = 'center';
+          ctx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
         }
-        
-        if (arrhythmiaPeaks.length > 0) {
-          renderCtx.fillStyle = '#DC2626';
-          
-          arrhythmiaPeaks.forEach(([x, y, value]) => {
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-            renderCtx.fill();
-            
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEF7CD';
-            renderCtx.lineWidth = 3;
-            renderCtx.stroke();
-            
-            renderCtx.font = 'bold 18px Inter';
-            renderCtx.fillStyle = '#F97316';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText('ARRITMIA', x, y - 25);
-            
-            renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = '#000000';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText(Math.abs(value / verticalScale).toFixed(2), x, y - 15);
-          });
-        }
-      }
-    }
-    
-    if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-      const visibleCtx = canvas.getContext('2d', { alpha: false });
-      if (visibleCtx) {
-        visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-      }
+      });
     }
     
     lastRenderTimeRef.current = currentTime;
@@ -517,60 +390,62 @@ const PPGSignalMeter = memo(({
     };
   }, [renderSignal]);
 
+  useEffect(() => {
+    const offscreen = document.createElement('canvas');
+    offscreen.width = CANVAS_WIDTH;
+    offscreen.height = CANVAS_HEIGHT;
+    const offCtx = offscreen.getContext('2d');
+    
+    if(offCtx){
+      drawGrid(offCtx);
+      gridCanvasRef.current = offscreen;
+    }
+  }, [drawGrid]);
+
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
     onReset();
   }, [onReset]);
 
-  const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
-
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full h-full absolute inset-0 z-0 object-cover performance-boost"
-        style={{
-          transform: 'translate3d(0,0,0)',
-          backfaceVisibility: 'hidden',
-          contain: 'paint layout size'
-        }}
+        className="w-full h-full absolute inset-0 z-0 object-cover"
       />
 
-      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-1">
-        <div className="flex items-center gap-1 ml-2 mt-0" style={{transform: 'translateY(-2mm)'}}>
-          <div className="w-[120px]">
+      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold text-black/80">PPG</span>
+          <div className="w-[180px]">
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
+                style={{ width: `${isFingerDetected ? quality : 0}%` }}
               />
             </div>
-            <span className="text-[7px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+                  style={{ color: quality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
-          </div>
-          <div style={{ marginLeft: '2mm' }}>
-            <AppTitle />
           </div>
         </div>
 
         <div className="flex flex-col items-center">
           <Fingerprint
-            className={`h-7 w-7 transition-colors duration-300 ${
-              !displayFingerDetected ? 'text-gray-400' :
-              displayQuality > 65 ? 'text-green-500' :
-              displayQuality > 40 ? 'text-yellow-500' :
+            className={`h-8 w-8 transition-colors duration-300 ${
+              !isFingerDetected ? 'text-gray-400' :
+              quality > 75 ? 'text-green-500' :
+              quality > 50 ? 'text-yellow-500' :
               'text-red-500'
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[7px] text-center font-medium text-black/80">
-            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+          <span className="text-[8px] text-center font-medium text-black/80">
+            {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
       </div>
@@ -591,8 +466,6 @@ const PPGSignalMeter = memo(({
       </div>
     </div>
   );
-});
-
-PPGSignalMeter.displayName = 'PPGSignalMeter';
+};
 
 export default PPGSignalMeter;

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -6,15 +7,7 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
-import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { toast } from "sonner";
-
-type ArrhythmiaData = {
-  timestamp: number;
-  rmssd: number;
-  rrVariation: number;
-} | null;
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -37,9 +30,16 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
-  const [lastProcessTime, setLastProcessTime] = useState(Date.now());
   const measurementTimerRef = useRef<number | null>(null);
-  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<ArrhythmiaData>(null);
+  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null>(null);
+  
+  // Refs for camera/video handling
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const frameRequestIdRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -51,6 +51,33 @@ const Index = () => {
     startCalibration,
     forceCalibrationCompletion
   } = useVitalSignsProcessor();
+
+  // Clean up function to properly release camera resources
+  const cleanupCameraResources = () => {
+    console.log("Cleaning up camera resources");
+    
+    if (frameRequestIdRef.current) {
+      cancelAnimationFrame(frameRequestIdRef.current);
+      frameRequestIdRef.current = null;
+    }
+    
+    if (videoTrackRef.current && videoTrackRef.current.readyState === 'live') {
+      try {
+        // Turn off torch if available
+        if (videoTrackRef.current.getCapabilities()?.torch) {
+          videoTrackRef.current.applyConstraints({
+            advanced: [{ torch: false }]
+          }).catch(err => console.error("Error turning off torch:", err));
+        }
+        
+        // Stop the track
+        videoTrackRef.current.stop();
+      } catch (err) {
+        console.error("Error stopping video track:", err);
+      }
+      videoTrackRef.current = null;
+    }
+  };
 
   const enterFullScreen = async () => {
     try {
@@ -70,11 +97,20 @@ const Index = () => {
       document.body.removeEventListener('scroll', preventScroll);
     };
   }, []);
+  
+  // Clean up camera resources when component unmounts or monitoring stops
+  useEffect(() => {
+    if (!isMonitoring) {
+      cleanupCameraResources();
+    }
+    
+    return () => {
+      cleanupCameraResources();
+    };
+  }, [isMonitoring]);
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      console.log("Index: Actualizando resultados finales:", lastValidResults);
-      
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -89,26 +125,21 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       
-      setHeartRate(0);
-      setVitalSigns({
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0
-      });
-      
+      // Iniciar procesamiento de señal
       startProcessing();
       
+      // Resetear valores
       setElapsedTime(0);
+      setVitalSigns(prev => ({
+        ...prev,
+        arrhythmiaStatus: "SIN ARRITMIAS|0"
+      }));
       
+      // Iniciar calibración automática
       console.log("Iniciando fase de calibración automática");
       startAutoCalibration();
       
+      // Iniciar temporizador para medición
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
       }
@@ -118,6 +149,7 @@ const Index = () => {
           const newTime = prev + 1;
           console.log(`Tiempo transcurrido: ${newTime}s`);
           
+          // Finalizar medición después de 30 segundos
           if (newTime >= 30) {
             finalizeMeasurement();
             return 30;
@@ -132,8 +164,12 @@ const Index = () => {
     console.log("Iniciando auto-calibración real con indicadores visuales");
     setIsCalibrating(true);
     
+    // Iniciar la calibración en el procesador
     startCalibration();
     
+    // Establecer explícitamente valores iniciales de calibración para CADA vital sign
+    // Esto garantiza que el estado comience correctamente
+    console.log("Estableciendo valores iniciales de calibración");
     setCalibrationProgress({
       isCalibrating: true,
       progress: {
@@ -147,18 +183,22 @@ const Index = () => {
       }
     });
     
+    // Logear para verificar que el estado se estableció
     setTimeout(() => {
       console.log("Estado de calibración establecido:", calibrationProgress);
     }, 100);
     
+    // Actualizar el progreso visualmente en intervalos regulares
     let step = 0;
     const calibrationInterval = setInterval(() => {
       step += 1;
       
+      // Actualizar progreso visual (10 pasos en total)
       if (step <= 10) {
-        const progressPercent = step * 10;
+        const progressPercent = step * 10; // 0-100%
         console.log(`Actualizando progreso de calibración: ${progressPercent}%`);
         
+        // Actualizar cada valor individualmente para asegurar que se renderice
         setCalibrationProgress({
           isCalibrating: true,
           progress: {
@@ -172,14 +212,18 @@ const Index = () => {
           }
         });
       } else {
+        // Al finalizar, detener el intervalo
         console.log("Finalizando animación de calibración");
         clearInterval(calibrationInterval);
         
+        // Completar calibración
         if (isCalibrating) {
           console.log("Completando calibración");
           forceCalibrationCompletion();
           setIsCalibrating(false);
           
+          // Importante: Establecer calibrationProgress a undefined o con valores 100
+          // para que la UI refleje que ya no está calibrando
           setCalibrationProgress({
             isCalibrating: false,
             progress: {
@@ -193,13 +237,15 @@ const Index = () => {
             }
           });
           
+          // Opcional: vibración si está disponible
           if (navigator.vibrate) {
             navigator.vibrate([100, 50, 100]);
           }
         }
       }
-    }, 800);
+    }, 800); // Cada paso dura 800ms (8 segundos en total)
     
+    // Temporizador de seguridad
     setTimeout(() => {
       if (isCalibrating) {
         console.log("Forzando finalización de calibración por tiempo límite");
@@ -207,6 +253,7 @@ const Index = () => {
         forceCalibrationCompletion();
         setIsCalibrating(false);
         
+        // Asegurar que se limpie el estado de calibración
         setCalibrationProgress({
           isCalibrating: false,
           progress: {
@@ -220,11 +267,11 @@ const Index = () => {
           }
         });
       }
-    }, 10000);
+    }, 10000); // 10 segundos como máximo
   };
 
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición: manteniendo resultados reales");
+    console.log("Finalizando medición: manteniendo resultados");
     
     if (isCalibrating) {
       console.log("Calibración en progreso al finalizar, forzando finalización");
@@ -243,19 +290,16 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      console.log("Resultados guardados después de finalizar:", savedResults);
-      
       setVitalSigns(savedResults);
       setShowResults(true);
-      
-      toast.success("Medición completada", {
-        description: "Los resultados han sido guardados"
-      });
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
     setCalibrationProgress(undefined);
+    
+    // Clean up camera resources
+    cleanupCameraResources();
   };
 
   const handleReset = () => {
@@ -289,19 +333,24 @@ const Index = () => {
     setSignalQuality(0);
     setLastArrhythmiaData(null);
     setCalibrationProgress(undefined);
+    
+    // Clean up camera resources
+    cleanupCameraResources();
   };
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    let videoTrack: MediaStreamTrack | null = null;
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) {
+      console.error("No video track available");
+      return;
+    }
+
+    // Store the video track in a ref for later cleanup
+    videoTrackRef.current = videoTrack;
+    
     try {
-      videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack) {
-        console.error("No se encontró pista de video en el stream");
-        return;
-      }
-      
       const imageCapture = new ImageCapture(videoTrack);
       
       if (videoTrack.getCapabilities()?.torch) {
@@ -309,156 +358,90 @@ const Index = () => {
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
         }).catch(err => console.error("Error activando linterna:", err));
-      } else {
-        console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
       }
       
       const tempCanvas = document.createElement('canvas');
       const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
       if (!tempCtx) {
-        console.error("No se pudo obtener el contexto 2D");
+        console.error("Could not get 2D context");
         return;
       }
       
-      const enhanceCanvas = document.createElement('canvas');
-      const enhanceCtx = enhanceCanvas.getContext('2d', {willReadFrequently: true});
-      enhanceCanvas.width = 320;
-      enhanceCanvas.height = 240;
-      
-      const targetFrameInterval = 1000/30;
-      let frameCount = 0;
-      let lastFpsUpdateTime = Date.now();
-      let processingFps = 0;
-      
-      let lastProcessTimeRef = Date.now();
+      let isProcessing = false;
       
       const processImage = async () => {
-        if (!isMonitoring) return;
-        
-        const now = Date.now();
-        const timeSinceLastProcess = now - lastProcessTimeRef;
-        
-        if (timeSinceLastProcess >= targetFrameInterval) {
-          try {
-            if (!videoTrack || videoTrack.readyState === "ended") {
-              console.error("VideoTrack no está activo");
-              return;
-            }
-            
-            const frame = await imageCapture.grabFrame();
-            
-            const targetWidth = Math.min(320, frame.width);
-            const targetHeight = Math.min(240, frame.height);
-            
-            tempCanvas.width = targetWidth;
-            tempCanvas.height = targetHeight;
-            
-            tempCtx.drawImage(
-              frame, 
-              0, 0, frame.width, frame.height, 
-              0, 0, targetWidth, targetHeight
-            );
-            
-            if (enhanceCtx) {
-              enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-              enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
-              
-              enhanceCtx.globalCompositeOperation = 'source-over';
-              enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';
-              enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-              enhanceCtx.globalCompositeOperation = 'source-over';
-              
-              const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-              processFrame(imageData);
-            } else {
-              const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-              processFrame(imageData);
-            }
-            
-            frameCount++;
-            lastProcessTimeRef = now;
-            setLastProcessTime(now);
-            
-            if (now - lastFpsUpdateTime > 1000) {
-              processingFps = frameCount;
-              frameCount = 0;
-              lastFpsUpdateTime = now;
-              console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-            }
-          } catch (error) {
-            console.error("Error capturando frame:", error);
-            
-            if (isMonitoring) {
-              requestAnimationFrame(processImage);
-            }
+        // Skip if we're not monitoring or another frame is already being processed
+        if (!isMonitoring || isProcessing) {
+          if (frameRequestIdRef.current) {
+            cancelAnimationFrame(frameRequestIdRef.current);
+            frameRequestIdRef.current = null;
           }
+          return;
         }
         
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+        try {
+          isProcessing = true;
+          
+          // Check track state before capturing
+          if (!videoTrack || videoTrack.readyState !== 'live') {
+            console.warn('Video track is not live, skipping frame');
+            isProcessing = false;
+            return;
+          }
+
+          const frame = await imageCapture.grabFrame();
+          tempCanvas.width = frame.width;
+          tempCanvas.height = frame.height;
+          tempCtx.drawImage(frame, 0, 0);
+          const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+          processFrame(imageData);
+          
+          frame.close(); // Properly release the frame
+        } catch (error) {
+          console.error("Error capturing frame:", error);
+          if (error instanceof Error && error.name === 'InvalidStateError') {
+            // If we get an invalid state error, stop trying to process frames
+            console.error("Invalid state error - track may have been stopped");
+            return;
+          }
+        } finally {
+          isProcessing = false;
+          // Only request another frame if we're still monitoring and track is live
+          if (isMonitoring && videoTrack && videoTrack.readyState === 'live') {
+            frameRequestIdRef.current = requestAnimationFrame(processImage);
+          }
         }
       };
 
+      // Start processing frames
       processImage();
     } catch (error) {
-      console.error("Error al configurar la cámara:", error);
+      console.error("Error in stream setup:", error);
+      cleanupCameraResources();
     }
   };
 
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 0.1;
-      
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      
-      console.log("Index: Heartbeat processed", {
-        bpm: heartBeatResult.bpm,
-        confidence: heartBeatResult.confidence.toFixed(2),
-        isPeak: heartBeatResult.isPeak,
-        quality: lastSignal.quality.toFixed(2),
-        fingerDetected: lastSignal.fingerDetected
-      });
-      
-      if (heartBeatResult.bpm > 0) {
-        setHeartRate(heartBeatResult.bpm);
-      }
+      setHeartRate(heartBeatResult.bpm);
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        console.log("Index: Vitals processed:", vitals);
-        
-        if (lastSignal.quality > minQualityThreshold || vitalSigns.spo2 > 0) {
-          setVitalSigns(prevSigns => ({
-            ...prevSigns,
-            spo2: vitals.spo2 > 0 ? vitals.spo2 : prevSigns.spo2,
-            pressure: vitals.pressure !== "--/--" ? vitals.pressure : prevSigns.pressure,
-            arrhythmiaStatus: vitals.arrhythmiaStatus || prevSigns.arrhythmiaStatus,
-            glucose: vitals.glucose > 0 ? vitals.glucose : prevSigns.glucose,
-            lipids: {
-              totalCholesterol: vitals.lipids?.totalCholesterol > 0 ? 
-                vitals.lipids.totalCholesterol : 
-                prevSigns.lipids?.totalCholesterol || 0,
-              triglycerides: vitals.lipids?.triglycerides > 0 ? 
-                vitals.lipids.triglycerides : 
-                prevSigns.lipids?.triglycerides || 0
-            },
-            hemoglobin: vitals.hemoglobin > 0 ? vitals.hemoglobin : prevSigns.hemoglobin
-          }));
-        }
+        setVitalSigns(vitals);
         
         if (vitals.lastArrhythmiaData) {
           setLastArrhythmiaData(vitals.lastArrhythmiaData);
-          if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('|')) {
-            const [status, count] = vitals.arrhythmiaStatus.split('|');
-            setArrhythmiaCount(count || "0");
-          }
+          const [status, count] = vitals.arrhythmiaStatus.split('|');
+          setArrhythmiaCount(count || "0");
         }
       }
       
       setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, vitalSigns.spo2]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
+  // Nueva función para alternar medición
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -488,9 +471,10 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
+          {/* Se agrega header para sensor de calidad y estado de huella digital */}
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-lg">
-              Calidad: {signalQuality.toFixed(1)}
+              Calidad: {signalQuality}
             </div>
             <div className="text-white text-lg">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
@@ -510,8 +494,7 @@ const Index = () => {
             />
           </div>
 
-          <AppTitle />
-
+          {/* Contenedor de los displays ampliado y con mayor espaciamiento */}
           <div className="absolute inset-x-0 top-[55%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-3 gap-4 place-items-center">
               <VitalSign 
@@ -553,6 +536,7 @@ const Index = () => {
             </div>
           </div>
 
+          {/* Botonera inferior: botón de iniciar/detener y de reset en fila */}
           <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
             <div className="w-1/2">
               <MonitorButton 

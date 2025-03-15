@@ -22,9 +22,6 @@ interface MeasurementConfirmationDialogProps {
   heartRate: number | string;
   spo2: number | string;
   pressure: string;
-  glucose?: number | string;
-  cholesterol?: number | string;
-  triglycerides?: number | string;
 }
 
 const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps> = ({
@@ -35,40 +32,8 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
   measurementTime,
   heartRate,
   spo2,
-  pressure,
-  glucose = '--',
-  cholesterol = '--',
-  triglycerides = '--'
+  pressure
 }) => {
-  // Función para formatear valores, mostrando '--' para valores 0, null, undefined o vacíos
-  const formatValue = (value: number | string | undefined | null): string => {
-    if (value === 0 || value === null || value === undefined || value === '') {
-      return '--';
-    }
-    return String(value);
-  };
-
-  // Valores formateados para mostrar
-  const formattedHeartRate = formatValue(heartRate);
-  const formattedSpo2 = formatValue(spo2);
-  const formattedPressure = pressure === '0/0' || pressure === '--/--' ? '--/--' : pressure;
-  const formattedGlucose = formatValue(glucose);
-  const formattedCholesterol = formatValue(cholesterol);
-  const formattedTriglycerides = formatValue(triglycerides);
-
-  // Consolelog para depuración
-  console.log("MeasurementConfirmationDialog - Valores recibidos:", {
-    heartRate,
-    spo2,
-    pressure,
-    glucose,
-    cholesterol,
-    triglycerides,
-    formattedGlucose,
-    formattedCholesterol,
-    formattedTriglycerides
-  });
-
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-md">
@@ -83,33 +48,18 @@ const MeasurementConfirmationDialog: React.FC<MeasurementConfirmationDialogProps
         </AlertDialogHeader>
         
         <div className="py-4 space-y-3">
-          <div className="grid grid-cols-3 gap-2 text-center mb-2">
+          <div className="grid grid-cols-3 gap-2 text-center">
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Frecuencia Cardíaca</div>
-              <div className="font-bold text-lg">{formattedHeartRate} {formattedHeartRate !== '--' ? 'BPM' : ''}</div>
+              <div className="font-bold text-lg">{heartRate} BPM</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">SPO2</div>
-              <div className="font-bold text-lg">{formattedSpo2}{formattedSpo2 !== '--' ? '%' : ''}</div>
+              <div className="font-bold text-lg">{spo2}%</div>
             </div>
             <div className="p-2 bg-gray-100 rounded-lg">
               <div className="text-sm text-gray-500">Presión</div>
-              <div className="font-bold text-lg">{formattedPressure}</div>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <div className="text-sm text-gray-500">Glucosa</div>
-              <div className="font-bold text-lg">{formattedGlucose}{formattedGlucose !== '--' ? ' mg/dL' : ''}</div>
-            </div>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <div className="text-sm text-gray-500">Colesterol</div>
-              <div className="font-bold text-lg">{formattedCholesterol}{formattedCholesterol !== '--' ? ' mg/dL' : ''}</div>
-            </div>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <div className="text-sm text-gray-500">Triglicéridos</div>
-              <div className="font-bold text-lg">{formattedTriglycerides}{formattedTriglycerides !== '--' ? ' mg/dL' : ''}</div>
+              <div className="font-bold text-lg">{pressure}</div>
             </div>
           </div>
         </div>
