@@ -53,34 +53,6 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.processor.fullReset();
   }
-  
-  /**
-   * Verifica si está en proceso de calibración
-   */
-  public isCurrentlyCalibrating(): boolean {
-    return this.processor.isCurrentlyCalibrating();
-  }
-
-  /**
-   * Obtiene el progreso actual de calibración
-   */
-  public getCalibrationProgress() {
-    return this.processor.getCalibrationProgress();
-  }
-  
-  /**
-   * Inicia el proceso de calibración
-   */
-  public startCalibration(): void {
-    this.processor.startCalibration();
-  }
-  
-  /**
-   * Fuerza la finalización del proceso de calibración
-   */
-  public forceCalibrationCompletion(): void {
-    this.processor.forceCalibrationCompletion();
-  }
 }
 
 // Re-exportamos los tipos para compatibilidad

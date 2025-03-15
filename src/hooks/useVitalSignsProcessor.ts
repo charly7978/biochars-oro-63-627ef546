@@ -8,12 +8,6 @@ import {
   logConfirmedArrhythmia, 
   logIgnoredArrhythmia 
 } from '../utils/rrAnalysisUtils';
-import { 
-  startCalibration as startCalibrationUtil, 
-  forceCalibrationCompletion as forceCalibrationCompletionUtil, 
-  logSignalProcessing, 
-  logValidResults 
-} from '../utils/calibrationUtils';
 import { updateSignalLog } from '../utils/signalLogUtils';
 
 /**
@@ -167,27 +161,22 @@ export const useVitalSignsProcessor = () => {
   }, [arrhythmiaCounter]);
   
   /**
-   * Iniciar calibración para todos los signos vitales
-   */
-  const startCalibration = useCallback(() => {
-    startCalibrationUtil(processor);
-  }, [processor]);
-  
-  /**
-   * Forzar finalización inmediata de la calibración
-   */
-  const forceCalibrationCompletion = useCallback(() => {
-    forceCalibrationCompletionUtil(processor);
-  }, [processor]);
-  
-  /**
    * Procesa la señal con algoritmos mejorados
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     processedSignals.current++;
     
     // Registrar procesamiento de señal
-    logSignalProcessing(value, rrData, arrhythmiaCounter, processedSignals.current, sessionId.current, processor);
+    console.log("useVitalSignsProcessor: Procesando señal", {
+      valorEntrada: value,
+      rrDataPresente: !!rrData,
+      intervalosRR: rrData?.intervals.length || 0,
+      ultimosIntervalos: rrData?.intervals.slice(-3) || [],
+      contadorArritmias: arrhythmiaCounter,
+      señalNúmero: processedSignals.current,
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
+    });
     
     // Procesar señal a través del procesador de signos vitales
     let result = processor.processSignal(value, rrData);
@@ -201,7 +190,13 @@ export const useVitalSignsProcessor = () => {
     
     // Si tenemos un resultado válido, guardarlo
     if (result.spo2 > 0 && result.glucose > 0 && result.lipids.totalCholesterol > 0) {
-      logValidResults(result);
+      console.log("useVitalSignsProcessor: Resultado válido detectado", {
+        spo2: result.spo2,
+        presión: result.pressure,
+        glucosa: result.glucose,
+        lípidos: result.lipids,
+        timestamp: new Date().toISOString()
+      });
       setLastValidResults(result);
     }
     
@@ -278,8 +273,6 @@ export const useVitalSignsProcessor = () => {
     processSignal,
     reset,
     fullReset,
-    startCalibration,
-    forceCalibrationCompletion,
     arrhythmiaCounter,
     lastValidResults,
     debugInfo: {

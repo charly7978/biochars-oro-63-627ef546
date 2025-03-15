@@ -6,7 +6,6 @@ import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { HemoglobinProcessor } from './hemoglobin-processor';
-import { CalibrationManager } from './calibration-manager';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -23,18 +22,6 @@ export interface VitalSignsResult {
     triglycerides: number;
   };
   hemoglobin: number;
-  calibration?: {
-    isCalibrating: boolean;
-    progress: {
-      heartRate: number;
-      spo2: number;
-      pressure: number;
-      arrhythmia: number;
-      glucose: number;
-      lipids: number;
-      hemoglobin: number;
-    };
-  };
   confidence?: {
     glucose: number;
     lipids: number;
@@ -55,7 +42,6 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   private hemoglobinProcessor: HemoglobinProcessor;
-  private calibrationManager: CalibrationManager;
   
   private lastValidResults: VitalSignsResult | null = null;
   
@@ -71,16 +57,8 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     this.hemoglobinProcessor = new HemoglobinProcessor();
-    this.calibrationManager = new CalibrationManager();
     
     console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
-  }
-
-  /**
-   * Inicia el proceso de calibración para mejorar la precisión de las mediciones
-   */
-  public startCalibration(): void {
-    this.calibrationManager.startCalibration();
   }
   
   /**
@@ -130,17 +108,6 @@ export class VitalSignsProcessor {
     // Calcular hemoglobina
     const hemoglobin = this.hemoglobinProcessor.calculateHemoglobin(ppgValues);
     
-    // Durante calibración, almacenar mediciones para análisis estadístico
-    if (this.calibrationManager.isCurrentlyCalibrating()) {
-      this.calibrationManager.addCalibrationSample(
-        spo2, 
-        bp.systolic, 
-        bp.diastolic, 
-        glucose, 
-        lipids.totalCholesterol
-      );
-    }
-    
     // Calcular confianza general basada en promedios ponderados
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
@@ -159,12 +126,6 @@ export class VitalSignsProcessor {
         overall: overallConfidence
       }
     };
-    
-    // Incluir información de calibración si está en proceso
-    const calibrationInfo = this.calibrationManager.getCalibrationProgress();
-    if (calibrationInfo) {
-      result.calibration = calibrationInfo;
-    }
     
     // Solo actualizar resultados válidos si hay suficiente confianza
     if (this.isValidMeasurement(result)) {
@@ -209,27 +170,6 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Verifica si está en proceso de calibración
-   */
-  public isCurrentlyCalibrating(): boolean {
-    return this.calibrationManager.isCurrentlyCalibrating();
-  }
-
-  /**
-   * Obtiene el progreso actual de calibración
-   */
-  public getCalibrationProgress(): VitalSignsResult['calibration'] {
-    return this.calibrationManager.getCalibrationProgress();
-  }
-
-  /**
-   * Fuerza la finalización del proceso de calibración
-   */
-  public forceCalibrationCompletion(): void {
-    this.calibrationManager.forceCalibrationCompletion();
-  }
-
-  /**
    * Reinicia el procesador manteniendo los últimos resultados válidos
    */
   public reset(): VitalSignsResult | null {
@@ -240,7 +180,6 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hemoglobinProcessor.reset();
-    this.calibrationManager.reset();
     
     return this.lastValidResults;
   }
@@ -253,7 +192,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Reinicia completamente el procesador, eliminando datos de calibración y resultados previos
+   * Reinicia completamente el procesador, eliminando datos y resultados previos
    */
   public fullReset(): void {
     this.reset();
