@@ -4,8 +4,9 @@
  * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
  */
 
-import { VitalSignsProcessor as CoreVitalSignsProcessor, VitalSignsResult } from '../core/VitalSignsProcessor';
-import { RRData } from '../core/ArrhythmiaProcessor';
+import { VitalSignsProcessor as CoreVitalSignsProcessor } from '../core/VitalSignsProcessor';
+import type { VitalSignsResult } from '../core/VitalSignsProcessor';
+import type { RRData } from '../core/ArrhythmiaProcessor';
 
 /**
  * Wrapper de compatibilidad que mantiene la interfaz original 

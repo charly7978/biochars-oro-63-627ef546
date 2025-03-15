@@ -14,11 +14,12 @@ export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
-  lastArrhythmiaData?: { 
-    timestamp: number; 
-    rmssd: number; 
-    rrVariation: number; 
-  } | null;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  hemoglobin: number;
   calibration?: {
     isCalibrating: boolean;
     progress: {
@@ -26,8 +27,16 @@ export interface VitalSignsResult {
       spo2: number;
       pressure: number;
       arrhythmia: number;
+      glucose: number;
+      lipids: number;
+      hemoglobin: number;
     };
   };
+  lastArrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null;
 }
 
 /**
@@ -51,7 +60,10 @@ export class VitalSignsProcessor {
     heartRate: 0,
     spo2: 0,
     pressure: 0,
-    arrhythmia: 0
+    arrhythmia: 0,
+    glucose: 0,
+    lipids: 0,
+    hemoglobin: 0
   };
   
   private forceCompleteCalibration: boolean = false;
@@ -85,7 +97,10 @@ export class VitalSignsProcessor {
       heartRate: 0,
       spo2: 0,
       pressure: 0,
-      arrhythmia: 0
+      arrhythmia: 0,
+      glucose: 0,
+      lipids: 0,
+      hemoglobin: 0
     };
 
     // Configurar temporizador para completar la calibración después del tiempo máximo
@@ -119,10 +134,13 @@ export class VitalSignsProcessor {
       // Actualizar progreso proporcional
       const progressRate = Math.min(1, this.calibrationSamples / this.CALIBRATION_REQUIRED_SAMPLES);
       this.calibrationProgress = {
-        heartRate: progressRate,
-        spo2: progressRate,
-        pressure: progressRate,
-        arrhythmia: progressRate
+        heartRate: progressRate * 100,
+        spo2: progressRate * 100,
+        pressure: progressRate * 100,
+        arrhythmia: progressRate * 100,
+        glucose: progressRate * 100,
+        lipids: progressRate * 100,
+        hemoglobin: progressRate * 100
       };
       
       return;
@@ -131,10 +149,13 @@ export class VitalSignsProcessor {
     try {
       // Actualizar progreso a 100%
       this.calibrationProgress = {
-        heartRate: 1,
-        spo2: 1,
-        pressure: 1,
-        arrhythmia: 1
+        heartRate: 100,
+        spo2: 100,
+        pressure: 100,
+        arrhythmia: 100,
+        glucose: 100,
+        lipids: 100,
+        hemoglobin: 100
       };
       
       console.log("VitalSignsProcessor: Calibración completada exitosamente", {
@@ -177,10 +198,13 @@ export class VitalSignsProcessor {
       // Actualizar progreso de calibración proporcional
       const progressRate = Math.min(1, this.calibrationSamples / this.CALIBRATION_REQUIRED_SAMPLES);
       this.calibrationProgress = {
-        heartRate: progressRate,
-        spo2: progressRate,
-        pressure: progressRate,
-        arrhythmia: progressRate
+        heartRate: progressRate * 100,
+        spo2: progressRate * 100,
+        pressure: progressRate * 100,
+        arrhythmia: progressRate * 100,
+        glucose: progressRate * 100,
+        lipids: progressRate * 100,
+        hemoglobin: progressRate * 100
       };
     }
     
@@ -195,7 +219,13 @@ export class VitalSignsProcessor {
       return this.getLastValidResults() || {
         spo2: 0,
         pressure: "--/--",
-        arrhythmiaStatus: "--"
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        },
+        hemoglobin: 0
       };
     }
     
@@ -206,11 +236,24 @@ export class VitalSignsProcessor {
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
     const pressure = formatBloodPressure(bp);
     
+    // Simulación básica para valores adicionales
+    // En implementaciones reales, estos valores vendrían de procesadores específicos
+    const glucose = Math.round(70 + Math.random() * 30);
+    const totalCholesterol = Math.round(150 + Math.random() * 50);
+    const triglycerides = Math.round(100 + Math.random() * 50);
+    const hemoglobin = Math.round(13 + Math.random() * 3);
+    
     // Preparar resultado con todas las métricas calculadas
     const result: VitalSignsResult = {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      glucose,
+      lipids: {
+        totalCholesterol,
+        triglycerides
+      },
+      hemoglobin,
       lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
     };
     
