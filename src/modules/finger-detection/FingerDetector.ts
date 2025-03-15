@@ -40,15 +40,15 @@ export class FingerDetector {
   
   // Configuración con umbrales más estrictos
   private config: FingerDetectionConfig = {
-    REQUIRED_FINGER_FRAMES: 5,         // Más exigente
-    MIN_QUALITY_FOR_DETECTION: 15,     // Umbral mínimo más alto
-    QUALITY_THRESHOLD: 60,             // Mayor exigencia de calidad
-    LOW_QUALITY_THRESHOLD: 30,         // Mayor exigencia en umbral bajo
+    REQUIRED_FINGER_FRAMES: 6,         // Más exigente
+    MIN_QUALITY_FOR_DETECTION: 20,     // Umbral mínimo más alto
+    QUALITY_THRESHOLD: 65,             // Mayor exigencia de calidad
+    LOW_QUALITY_THRESHOLD: 35,         // Mayor exigencia en umbral bajo
     RESET_QUALITY_THRESHOLD: 10        // Más sensible a pérdida de señal
   };
   
   // Mayor historial para tomar decisiones más robustas
-  private readonly historySize = 10;
+  private readonly historySize = 12;
   
   constructor() {
     this.detectDeviceType();
@@ -104,6 +104,18 @@ export class FingerDetector {
     
     // Criterios más estrictos de detección fisiológica
     const isPhysiologicallyValid = this.checkPhysiologicalValidity();
+    
+    // Log de depuración cada 30 frames
+    if (this.redValues.length % 30 === 0 && this.redValues.length > 0) {
+      console.log("FingerDetector: Análisis fisiológico", {
+        valorRojo: redValue,
+        valorVerde: greenValue,
+        ratioRG: this.rgRatioHistory.length > 0 ? 
+                this.rgRatioHistory[this.rgRatioHistory.length-1] : 0,
+        calidadSeñal: quality,
+        validaciónFisiológica: isPhysiologicallyValid
+      });
+    }
     
     // Si la calidad es muy baja, reiniciar historial
     if (quality < this.config.RESET_QUALITY_THRESHOLD) {
@@ -166,7 +178,7 @@ export class FingerDetector {
       ? this.rgRatioHistory.reduce((a, b) => a + b, 0) / this.rgRatioHistory.length
       : 0;
     
-    if (avgRgRatio < 1.1 || avgRgRatio > 3.0) {
+    if (avgRgRatio < 1.2 || avgRgRatio > 2.5) {
       return false;
     }
     
@@ -176,13 +188,33 @@ export class FingerDetector {
     const greenStdDev = this.calculateStdDev(this.greenValues);
     
     // En tejido vivo, el canal rojo muestra mayor variabilidad
-    if (redStdDev < 0.5 || redStdDev < greenStdDev) {
+    if (redStdDev < 0.8 || redStdDev < greenStdDev) {
       return false;
     }
     
     // 3. Verificar nivel absoluto (no demasiado oscuro o brillante)
     const avgRed = this.redValues.reduce((a, b) => a + b, 0) / this.redValues.length;
-    if (avgRed < 50 || avgRed > 240) {
+    if (avgRed < 60 || avgRed > 230) {
+      return false;
+    }
+    
+    // 4. NUEVO: Verificar periodicidad en señal roja (característica de pulso)
+    const redDiffs = [];
+    for (let i = 1; i < this.redValues.length; i++) {
+      redDiffs.push(this.redValues[i] - this.redValues[i-1]);
+    }
+    
+    // Contar cambios de signo (indicadores de oscilación)
+    let signChanges = 0;
+    for (let i = 1; i < redDiffs.length; i++) {
+      if ((redDiffs[i] > 0 && redDiffs[i-1] < 0) || 
+          (redDiffs[i] < 0 && redDiffs[i-1] > 0)) {
+        signChanges++;
+      }
+    }
+    
+    // Debe haber al menos un cambio de dirección para ser señal de pulso
+    if (signChanges < 1 && this.redValues.length > 8) {
       return false;
     }
     
@@ -214,7 +246,7 @@ export class FingerDetector {
     // Frames insuficientes, mostrar calidad parcial (más conservador)
     if (this.qualityHistory.length < this.config.REQUIRED_FINGER_FRAMES) {
       const lastQuality = this.qualityHistory[this.qualityHistory.length - 1];
-      this.displayQuality = Math.max(0, Math.min(10, lastQuality));
+      this.displayQuality = Math.max(0, Math.min(15, lastQuality));
       return;
     }
     
@@ -235,12 +267,12 @@ export class FingerDetector {
     // Penalizar inconsistencia fuertemente
     let finalQuality = avgQuality;
     if (range > 40) {
-      finalQuality = finalQuality * 0.7;
+      finalQuality = finalQuality * 0.6; // Penalización más severa
     }
     
     // Actualizar con suavizado más conservador
     this.displayQuality = Math.round(
-      this.displayQuality * 0.7 + finalQuality * 0.3
+      this.displayQuality * 0.65 + finalQuality * 0.35
     );
     
     // Actualizar contador de frames buenos consecutivos

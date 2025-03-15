@@ -34,33 +34,33 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 10,
-    MIN_RED_THRESHOLD: 80,  // Reducido para mayor sensibilidad
+    MIN_RED_THRESHOLD: 90,  // Aumentado para mayor especificidad en detección
     MAX_RED_THRESHOLD: 245,
-    STABILITY_WINDOW: 4,    // Reducido para respuesta más rápida
-    MIN_STABILITY_COUNT: 3  // Reducido para respuesta más rápida
+    STABILITY_WINDOW: 5,    // Aumentado para mayor estabilidad
+    MIN_STABILITY_COUNT: 4  // Aumentado para evitar falsos positivos
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private readonly BUFFER_SIZE = 10;
-  private readonly MIN_RED_THRESHOLD = 75; // Reducido para mayor sensibilidad
+  private readonly MIN_RED_THRESHOLD = 85; // Aumentado para evitar detección con objetos no-vivos
   private readonly MAX_RED_THRESHOLD = 245;
-  private readonly STABILITY_WINDOW = 4; // Reducido
-  private readonly MIN_STABILITY_COUNT = 3; // Reducido
+  private readonly STABILITY_WINDOW = 5; // Aumentado
+  private readonly MIN_STABILITY_COUNT = 4; // Aumentado
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.04; // Reducido para mayor sensibilidad
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.07; // Aumentado para mayor especificidad
   
   // Variables para detección
   private fingerDetectionHistory: boolean[] = [];
-  private readonly DETECTION_HISTORY_SIZE = 10; // Reducido para respuesta más rápida
-  private readonly MIN_DETECTION_RATIO = 0.5; // Reducido para mayor sensibilidad
+  private readonly DETECTION_HISTORY_SIZE = 15; // Aumentado para mayor robustez
+  private readonly MIN_DETECTION_RATIO = 0.7; // Aumentado para evitar falsos positivos
   private baselineValues: number[] = [];
-  private readonly BASELINE_SIZE = 6; // Reducido para respuesta más rápida
+  private readonly BASELINE_SIZE = 10; // Aumentado para mejor línea base
   private lastAmbientLight: number = 0;
   private redValuesHistory: number[] = [];
-  private readonly RED_HISTORY_SIZE = 15; // Reducido
+  private readonly RED_HISTORY_SIZE = 20; // Aumentado
   private physicalSignatureScore: number = 0;
   private lastRawFrames: number[][] = []; // Para almacenar frames crudos para análisis
-  private readonly RAW_FRAMES_BUFFER = 4; // Buffer pequeño para análisis rápido
+  private readonly RAW_FRAMES_BUFFER = 8; // Aumentado para mejor análisis fisiológico
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -117,6 +117,13 @@ export class PPGSignalProcessor implements SignalProcessor {
     console.log("PPGSignalProcessor: Detenido");
   }
 
+  // Método reset implementado para cumplir con la interfaz SignalProcessor
+  reset(): void {
+    this.stop();
+    this.initialize();
+    console.log("PPGSignalProcessor: Reset completo");
+  }
+
   async calibrate(): Promise<boolean> {
     try {
       console.log("PPGSignalProcessor: Iniciando calibración REAL");
@@ -133,7 +140,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Ajustar parámetros basado en valores reales medidos
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(60, baselineAvg + 15), // Más sensible
+        MIN_RED_THRESHOLD: Math.max(80, baselineAvg + 20), // Más exigente
         MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD),
         STABILITY_WINDOW: this.STABILITY_WINDOW,
         MIN_STABILITY_COUNT: this.MIN_STABILITY_COUNT
@@ -197,7 +204,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // Análisis físico real basado en datos capturados
+      // Análisis físico real basado en datos capturados - REFORZADO
       const physicalAnalysis = this.analyzePhysicalSignature();
       this.physicalSignatureScore = physicalAnalysis.score;
       
@@ -210,12 +217,26 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.fingerDetectionHistory.shift();
       }
       
-      // Decisión robusta basada en historial
+      // Decisión robusta basada en historial - CRITERIOS ESTRICTOS
       const robustDetection = this.getRobustDetection();
       
-      // Calidad ajustada a realidad física
+      // Log de depuración para verificar detección
+      if (this.redValuesHistory.length % 30 === 0) {
+        console.log("Análisis de detección de dedo:", {
+          redValue,
+          filteredValue: filtered,
+          physicalScore: this.physicalSignatureScore,
+          detecciónPrimaria: isFingerDetected,
+          detecciónRobusta: robustDetection,
+          calidad: quality,
+          historialPasesPositivos: this.fingerDetectionHistory.filter(x => x).length,
+          historialTotal: this.fingerDetectionHistory.length
+        });
+      }
+      
+      // Calidad ajustada a realidad física - MÁS ESTRICTA
       const finalQuality = robustDetection ? 
-        Math.round(quality * (0.5 + this.physicalSignatureScore * 0.5)) : 0;
+        Math.round(quality * (0.4 + this.physicalSignatureScore * 0.6)) : 0;
 
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
@@ -224,7 +245,12 @@ export class PPGSignalProcessor implements SignalProcessor {
         quality: finalQuality,
         fingerDetected: robustDetection,
         roi: this.detectROI(redValue),
-        physicalSignatureScore: this.physicalSignatureScore
+        physicalSignatureScore: this.physicalSignatureScore,
+        rgbValues: frameSummary.length >= 3 ? {
+          red: frameSummary[0],
+          green: frameSummary[1],
+          blue: frameSummary[2]
+        } : undefined
       };
 
       this.onSignalReady?.(processedSignal);
@@ -262,37 +288,60 @@ export class PPGSignalProcessor implements SignalProcessor {
     return summary.map(val => val / count);
   }
 
-  // Análisis físico basado en datos REALES capturados
+  // Análisis físico basado en datos REALES capturados - MEJORADO
   private analyzePhysicalSignature(): { score: number, isPulsatile: boolean } {
     // Si no hay suficientes frames, no podemos analizar
-    if (this.lastRawFrames.length < 2) {
+    if (this.lastRawFrames.length < 3) {
       return { score: 0, isPulsatile: false };
     }
     
     // Análisis de cambio temporal en colores
     const rVariation = this.calculateVariation(this.lastRawFrames.map(f => f[0]));
     const gVariation = this.calculateVariation(this.lastRawFrames.map(f => f[1]));
+    const bVariation = this.calculateVariation(this.lastRawFrames.map(f => f[2]));
     
-    // Relación R/G (importante en tejido vivo)
+    // Relación R/G (importante en tejido vivo) - CRITERIO ESTRICTO
     const rgRatios = this.lastRawFrames.map(f => f[0] / Math.max(0.1, f[1]));
     const avgRgRatio = rgRatios.reduce((a, b) => a + b, 0) / rgRatios.length;
     
-    // Criterios físicos reales
-    const validRgRange = avgRgRatio > 1.0 && avgRgRatio < 2.5;
-    const naturalVariation = rVariation > 0.001 && rVariation < 0.05;
-    const rVariationGreater = rVariation > gVariation * 0.9; // El rojo varía más en tejido vivo
+    // Promedio de canal R (debe estar en rango biológico)
+    const avgR = this.lastRawFrames.map(f => f[0]).reduce((a, b) => a + b, 0) / this.lastRawFrames.length;
     
-    // Análisis de pulsatilidad en señal roja
+    // NUEVOS Criterios físicos más estrictos
+    const validRgRange = avgRgRatio > 1.2 && avgRgRatio < 2.2; // Rango más estricto
+    const validRedRange = avgR > 100 && avgR < 230; // Rango válido para color de piel humana
+    
+    // El canal rojo debe tener mayor variación que el verde/azul en un dedo real
+    const naturalVariation = rVariation > 0.002 && rVariation < 0.05;
+    const rVariationGreater = rVariation > gVariation * 1.2 && rVariation > bVariation * 1.2;
+    
+    // Verificar si hay diferencias significativas entre canales (característica de tejido vivo)
+    const channelDiff = Math.abs(avgR - this.lastRawFrames[0][1]) > 15;
+    
+    // Análisis de pulsatilidad en señal roja - MEJORADO
     const isPulsatile = this.detectPulsatilePattern(this.lastRawFrames.map(f => f[0]));
     
-    // Score basado en características físicas reales
+    // Score basado en características físicas reales - CRITERIOS MÁS ESTRICTOS
     let score = 0;
     
-    if (validRgRange && naturalVariation) {
-      score = 0.6;
+    if (validRgRange && naturalVariation && validRedRange) {
+      score = 0.5; // Base score si pasa validaciones básicas
       
       if (rVariationGreater) score += 0.2;
       if (isPulsatile) score += 0.2;
+      if (channelDiff) score += 0.1;
+      
+      // Log detallado cada 60 frames
+      if (this.lastRawFrames.length % 60 === 0) {
+        console.log("Análisis físico de dedo:", {
+          score,
+          ratioRG: avgRgRatio,
+          variaciónR: rVariation,
+          variaciónG: gVariation,
+          pulsátil: isPulsatile,
+          difCanales: channelDiff
+        });
+      }
     }
     
     return { 
@@ -311,34 +360,45 @@ export class PPGSignalProcessor implements SignalProcessor {
     return Math.sqrt(variance) / mean; // Coeficiente de variación
   }
   
+  // Mejorado: Detecta patrones pulsátiles más estrictamente
   private detectPulsatilePattern(values: number[]): boolean {
-    if (values.length < 3) return false;
+    if (values.length < 5) return false;
     
-    // Buscar patrones de subida y bajada (característico del pulso)
-    let changes = 0;
+    // Calcular diferencias entre valores consecutivos
+    const diffs = [];
     for (let i = 1; i < values.length; i++) {
-      const diff = values[i] - values[i-1];
-      const prevDiff = i > 1 ? values[i-1] - values[i-2] : 0;
-      
-      if ((diff > 0 && prevDiff < 0) || (diff < 0 && prevDiff > 0)) {
-        changes++;
+      diffs.push(values[i] - values[i-1]);
+    }
+    
+    // Buscar cambios de signo (cruces por cero) - indicativos de oscilación
+    let signChanges = 0;
+    for (let i = 1; i < diffs.length; i++) {
+      if ((diffs[i] > 0 && diffs[i-1] < 0) || (diffs[i] < 0 && diffs[i-1] > 0)) {
+        signChanges++;
       }
     }
     
-    // Frecuencia de cambios dentro de rango fisiológico
-    return changes > 0 && changes < values.length - 1;
+    // Verificar amplitud de oscilaciones (no demasiado pequeñas)
+    const maxDiff = Math.max(...diffs.map(Math.abs));
+    const minNonZeroDiff = Math.min(...diffs.filter(d => Math.abs(d) > 0).map(Math.abs));
+    
+    // Criterios fisiológicos: debe haber cambios de dirección y amplitud adecuada
+    return signChanges >= 2 && // Al menos 2 cambios de dirección
+           maxDiff > 1.0 &&    // Amplitud significativa
+           minNonZeroDiff > 0.2; // Cambios mínimos perceptibles
   }
 
-  // Obtener decisión robusta basada en historial REAL
+  // Obtener decisión robusta basada en historial REAL - CRITERIOS MÁS ESTRICTOS
   private getRobustDetection(): boolean {
-    if (this.fingerDetectionHistory.length < 3) return false;
+    if (this.fingerDetectionHistory.length < 5) return false;
     
     const trueCount = this.fingerDetectionHistory.filter(x => x).length;
     const detectionRatio = trueCount / this.fingerDetectionHistory.length;
     
-    // También verificar firma física para asegurar que es un dedo real
-    const isPhysicallyValid = this.physicalSignatureScore > 0.3; // Más sensible
+    // Verificar firma física para asegurar que es un dedo real - MÁS ESTRICTO
+    const isPhysicallyValid = this.physicalSignatureScore > 0.5; // Aumentado
     
+    // Requiere más consistencia en la detección
     return detectionRatio >= this.MIN_DETECTION_RATIO && isPhysicallyValid;
   }
 
@@ -366,19 +426,19 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Verificar base line - más sensible
+    // Verificar base line - más estricto
     const baselineAvg = this.baselineValues.length > 0 
       ? this.baselineValues.reduce((a, b) => a + b, 0) / this.baselineValues.length 
       : 0;
     
-    // Si está muy cerca del valor base, NO hay dedo
-    if (rawValue < baselineAvg + 10) {
+    // Si está muy cerca del valor base, NO hay dedo - CRITERIO MÁS ESTRICTO
+    if (rawValue < baselineAvg + 15) {
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
       return { isFingerDetected: false, quality: 0 };
     }
     
-    // Verificar contra umbrales configurados - más sensibles
+    // Verificar contra umbrales configurados - MÁS ESTRICTOS
     const isInRange = rawValue >= this.currentConfig.MIN_RED_THRESHOLD && 
                       rawValue <= this.currentConfig.MAX_RED_THRESHOLD;
     
@@ -397,41 +457,64 @@ export class PPGSignalProcessor implements SignalProcessor {
     const recentValues = this.lastValues.slice(-this.currentConfig.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    // Análisis de variación
+    // Análisis de variación - MEJORADO
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
-    // Detección más sensible
+    // Detección más precisa - CRITERIOS FISIOLÓGICOS
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Umbrales adaptativos más sensibles
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
-    const isStable = maxVariation < adaptiveThreshold * 2 && 
-                    minVariation > -adaptiveThreshold * 2;
+    // Umbrales adaptativos MÁS ESTRICTOS
+    const adaptiveThreshold = Math.max(1.8, avgValue * 0.025); // Aumentado para mayor precisión
+    const isStable = maxVariation < adaptiveThreshold * 1.8 && 
+                    minVariation > -adaptiveThreshold * 1.8;
 
     if (isStable) {
       this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.currentConfig.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      // Reducción más lenta para estabilidad
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+      // Reducción más rápida para eliminar falsos positivos
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 2);
     }
 
-    // Más sensible en detección inicial
+    // MÁS ESTRICTO en detección para evitar falsos positivos
     const isFingerDetected = this.stableFrameCount >= this.currentConfig.MIN_STABILITY_COUNT;
     
     let quality = 0;
     if (isFingerDetected) {
-      // Cálculo de calidad mejorado
+      // Cálculo de calidad mejorado - MÁS PRECISO
       const stabilityScore = Math.min(this.stableFrameCount / (this.currentConfig.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - this.currentConfig.MIN_RED_THRESHOLD) / 
                                     (this.currentConfig.MAX_RED_THRESHOLD - this.currentConfig.MIN_RED_THRESHOLD), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       
-      quality = Math.round((stabilityScore * 0.4 + intensityScore * 0.3 + variationScore * 0.3) * 100);
+      // Penalización adicional por variaciones aperiódicas (no fisiológicas)
+      let physiologicalPenalty = 0;
+      if (this.lastValues.length > 10) {
+        const diffs = [];
+        for (let i = 1; i < this.lastValues.length; i++) {
+          diffs.push(this.lastValues[i] - this.lastValues[i-1]);
+        }
+        
+        // Contar cruces por cero (cambios de dirección)
+        let zeroCrossings = 0;
+        for (let i = 1; i < diffs.length; i++) {
+          if ((diffs[i] > 0 && diffs[i-1] < 0) || (diffs[i] < 0 && diffs[i-1] > 0)) {
+            zeroCrossings++;
+          }
+        }
+        
+        // Si hay demasiados o muy pocos cambios, no es una señal PPG válida
+        if (zeroCrossings < 1 || zeroCrossings > 7) {
+          physiologicalPenalty = 0.3;
+        }
+      }
+      
+      quality = Math.round((stabilityScore * 0.35 + intensityScore * 0.25 + variationScore * 0.4) * 
+                         (1 - physiologicalPenalty) * 100);
     }
 
     return { isFingerDetected, quality };
