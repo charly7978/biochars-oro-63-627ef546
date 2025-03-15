@@ -6,6 +6,7 @@ import type { CalibrationProgress } from '../types/AdvancedProcessorTypes';
  */
 export class CalibrationService {
   private calibrating: boolean = false;
+  private fingerDetected: boolean = false;
   private calibrationProgress: CalibrationProgress = {
     heartRate: 0,
     spo2: 0,
@@ -21,7 +22,7 @@ export class CalibrationService {
    * Actualiza el progreso de calibración
    */
   public updateCalibration(): boolean {
-    if (!this.calibrating) return false;
+    if (!this.calibrating || !this.fingerDetected) return false;
     
     const increment = 0.02;
     this.calibrationProgress.heartRate += increment;
@@ -46,6 +47,22 @@ export class CalibrationService {
     }
     
     return false;
+  }
+  
+  /**
+   * Actualiza el estado de detección de dedo
+   */
+  public updateFingerDetection(isFingerDetected: boolean): void {
+    // Si cambia el estado de detección de dedo, registrar en consola
+    if (this.fingerDetected !== isFingerDetected) {
+      console.log(`Calibración: ${isFingerDetected ? 'Dedo detectado' : 'Dedo removido'}`);
+    }
+    this.fingerDetected = isFingerDetected;
+    
+    // Si se quita el dedo durante la calibración, pausarla
+    if (!isFingerDetected && this.calibrating) {
+      console.log('Calibración pausada - No hay dedo detectado');
+    }
   }
   
   /**
@@ -76,11 +93,19 @@ export class CalibrationService {
   /**
    * Obtiene el estado actual de calibración
    */
-  public getCalibrationState(): { isCalibrating: boolean; progress: CalibrationProgress } {
+  public getCalibrationState(): { isCalibrating: boolean; progress: CalibrationProgress; fingerDetected: boolean } {
     return {
       isCalibrating: this.calibrating,
-      progress: this.calibrationProgress
+      progress: this.calibrationProgress,
+      fingerDetected: this.fingerDetected
     };
+  }
+  
+  /**
+   * Verifica si hay un dedo detectado
+   */
+  public isFingerDetected(): boolean {
+    return this.fingerDetected;
   }
   
   /**
@@ -88,6 +113,7 @@ export class CalibrationService {
    */
   public reset(): void {
     this.calibrating = false;
+    this.fingerDetected = false;
     Object.keys(this.calibrationProgress).forEach(key => {
       this.calibrationProgress[key as keyof CalibrationProgress] = 0;
     });
