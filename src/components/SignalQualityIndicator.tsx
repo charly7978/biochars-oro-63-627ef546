@@ -29,13 +29,13 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [tipLevel, setTipLevel] = useState<'error' | 'warning' | 'info'>('info');
   const [lastQualityLevel, setLastQualityLevel] = useState<string>('');
   
-  // Constantes de configuración - MÁS SENSIBLES
-  const historySize = 3; // Reducido para respuesta más rápida (antes: 5)
-  const REQUIRED_FINGER_FRAMES = 3; // Reducido para detección más rápida (antes: 5)
-  const QUALITY_THRESHOLD = 40; // Reducido para detectar señales más débiles (antes: 50)
-  const LOW_QUALITY_THRESHOLD = 20; // Reducido para mayor sensibilidad (antes: 30)
-  const MIN_QUALITY_FOR_DETECTION = 5; // Reducido para mayor sensibilidad (antes: 10)
-  const RESET_QUALITY_THRESHOLD = 3; // Reducido para mayor sensibilidad (antes: 5)
+  // Constantes de configuración - MUCHO MÁS SENSIBLES (SÓLO DOS VALORES MODIFICADOS)
+  const historySize = 3; 
+  const REQUIRED_FINGER_FRAMES = 1; // PRIMERA VARIABLE MODIFICADA: Reducido drásticamente para detección inmediata (antes: 3)
+  const QUALITY_THRESHOLD = 40; 
+  const LOW_QUALITY_THRESHOLD = 20; 
+  const MIN_QUALITY_FOR_DETECTION = 2; // SEGUNDA VARIABLE MODIFICADA: Reducido drásticamente para mayor sensibilidad (antes: 5)
+  const RESET_QUALITY_THRESHOLD = 3;
 
   // Detectar plataforma
   useEffect(() => {
