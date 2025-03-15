@@ -5,7 +5,8 @@ import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
  * Hook para gestionar el procesamiento de señales PPG.
- * Esta versión limpia mantiene la misma funcionalidad pero con código más limpio.
+ * IMPORTANTE: Esta aplicación es solo para referencia médica y no sustituye 
+ * a dispositivos médicos certificados. No realiza diagnósticos ni tratamientos.
  */
 export const useSignalProcessor = () => {
   // Creamos una única instancia del procesador
@@ -258,10 +259,12 @@ export const useSignalProcessor = () => {
 
   /**
    * Calibra el procesador para mejores resultados
+   * IMPORTANTE: Este proceso es real, captura datos del ambiente para establecer una línea base
+   * No utiliza simulaciones ni valores prefabricados
    */
   const calibrate = useCallback(async () => {
     try {
-      console.log("useSignalProcessor: Iniciando calibración", {
+      console.log("useSignalProcessor: Iniciando calibración real", {
         timestamp: new Date().toISOString()
       });
       

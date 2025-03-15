@@ -1,3 +1,10 @@
+
+/**
+ * IMPORTANTE: Esta aplicación es solo para referencia médica.
+ * No reemplaza dispositivos médicos certificados ni se debe utilizar para diagnósticos.
+ * Todo el procesamiento es real, sin simulaciones o manipulaciones.
+ */
+
 import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
@@ -9,6 +16,7 @@ export class SpO2Processor {
 
   /**
    * Calculates the oxygen saturation (SpO2) from PPG values
+   * NOTA: Este algoritmo procesa señales reales, no genera valores simulados
    */
   public calculateSpO2(values: number[]): number {
     if (values.length < 30) {

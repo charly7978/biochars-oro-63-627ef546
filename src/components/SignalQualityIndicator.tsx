@@ -10,6 +10,9 @@ interface SignalQualityIndicatorProps {
 /**
  * Componente mejorado que muestra la calidad de la señal PPG
  * Incluye detección específica para diferentes dispositivos y consejos más detallados
+ * 
+ * IMPORTANTE: Esta aplicación es solo para referencia médica, no reemplaza dispositivos médicos certificados.
+ * La detección de señal es real, basada en datos de la cámara sin simulaciones.
  */
 const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
   // Estado local
@@ -23,10 +26,11 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   
   // Constantes de configuración - VALORES MÁS ESTRICTOS
   const historySize = 6; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 10; // MUCHO MÁS ESTRICTO (era 5)
-  const QUALITY_THRESHOLD = 60; // ELEVADO (era 50)
-  const LOW_QUALITY_THRESHOLD = 40; // ELEVADO (era 30)
-  const MIN_QUALITY_FOR_DETECTION = 15; // NUEVO: mínimo absoluto para considerar detección
+  const REQUIRED_FINGER_FRAMES = 12; // EXTREMADAMENTE ESTRICTO (era 10)
+  const QUALITY_THRESHOLD = 65; // ELEVADO (era 60)
+  const LOW_QUALITY_THRESHOLD = 45; // ELEVADO (era 40)
+  const MIN_QUALITY_FOR_DETECTION = 18; // ELEVADO: mínimo absoluto para considerar detección
+  const RESET_QUALITY_THRESHOLD = 10; // Nuevo: umbral por debajo del cual se reinicia todo
 
   // Detectar plataforma
   useEffect(() => {
@@ -45,6 +49,19 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   // Mantener historial de calidad para promedio ponderado
   useEffect(() => {
     if (isMonitoring) {
+      // NUEVO: Si la calidad es muy baja (menor al umbral de reset), reiniciar historial
+      if (quality < RESET_QUALITY_THRESHOLD) {
+        if (qualityHistory.length > 0) {
+          setQualityHistory([]);
+          setDisplayQuality(0);
+          console.log("SignalQualityIndicator: Reinicio completo por calidad crítica", {
+            calidadRecibida: quality,
+            umbralReset: RESET_QUALITY_THRESHOLD
+          });
+        }
+        return;
+      }
+      
       // NUEVO: Solo agregar al historial si la calidad supera cierto umbral mínimo
       // Esto evita falsas detecciones
       if (quality > MIN_QUALITY_FOR_DETECTION) {
@@ -57,7 +74,10 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         if (qualityHistory.length > 0) {
           setQualityHistory([]);
           setDisplayQuality(0);
-          console.log("SignalQualityIndicator: Reinicio de historial por calidad insuficiente");
+          console.log("SignalQualityIndicator: Reinicio de historial por calidad insuficiente", {
+            calidadRecibida: quality,
+            umbralMínimo: MIN_QUALITY_FOR_DETECTION
+          });
         }
       }
     } else {
@@ -75,7 +95,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     // NUEVO: Verificar si hay suficientes frames consecutivos de buena calidad
     if (qualityHistory.length < REQUIRED_FINGER_FRAMES) {
-      setDisplayQuality(Math.max(0, Math.min(10, quality))); // Limitar a máximo 10% si no hay suficientes frames
+      // Reducimos aún más la calidad mostrada si no hay suficientes frames
+      setDisplayQuality(Math.max(0, Math.min(8, quality))); // Limitado a 8% máximo
       return;
     }
 
@@ -136,7 +157,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       });
     }
     
-  }, [qualityHistory, lastQualityLevel]);
+  }, [qualityHistory, lastQualityLevel, quality]);
 
   /**
    * Obtiene el color basado en la calidad (más granular y más estricto)

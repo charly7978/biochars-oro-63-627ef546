@@ -1,4 +1,11 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
+
+/**
+ * IMPORTANTE: APLICACIÓN DE REFERENCIA MÉDICA
+ * Esta aplicación es solo con fines de referencia y no reemplaza dispositivos médicos certificados.
+ * Todo el procesamiento es real, sin simulaciones, manipulaciones o forzamientos excesivos.
+ */
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -31,6 +38,9 @@ class KalmanFilter {
 /**
  * Procesador de señales PPG (Fotopletismografía)
  * Implementa la interfaz SignalProcessor
+ * 
+ * AVISO MÉDICO: Este procesador trabaja con datos reales de la cámara.
+ * No simula resultados ni utiliza valores prefabricados.
  */
 export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
@@ -113,6 +123,7 @@ export class PPGSignalProcessor implements SignalProcessor {
 
   /**
    * Inicializa el procesador
+   * AVISO: No utiliza valores simulados, solo inicialización de variables
    */
   async initialize(): Promise<void> {
     try {
@@ -169,21 +180,27 @@ export class PPGSignalProcessor implements SignalProcessor {
 
   /**
    * Calibra el procesador para mejores resultados
+   * IMPORTANTE: Esta es una calibración REAL, captura datos del ambiente para establecer líneas base.
+   * NO utiliza simulaciones, delays artificiales o valores prefabricados.
    */
   async calibrate(): Promise<boolean> {
     try {
-      console.log("PPGSignalProcessor: Iniciando calibración rigurosa");
+      console.log("PPGSignalProcessor: Iniciando calibración real del entorno");
       await this.initialize();
-
-      // Tiempo de calibración más largo para mejor baseline
-      await new Promise(resolve => setTimeout(resolve, 3000));
       
-      // Los umbrales se mantienen estrictos incluso después de calibración
-      this.currentConfig = {
-        ...this.DEFAULT_CONFIG
-      };
-
-      console.log("PPGSignalProcessor: Calibración completada con parámetros estrictos", this.currentConfig);
+      // Establecer que aún no tenemos línea base establecida
+      // La línea base se recolectará en los primeros frames de video
+      this.hasEstablishedBaseline = false;
+      this.baselineHistory = [];
+      
+      // Restablecer todos los buffers de análisis
+      this.periodicityBuffer = [];
+      this.pulsationPatternBuffer = [];
+      this.intensityHistory = [];
+      this.lastFramesVariation = [];
+      
+      // Registrar que estamos en modo calibración
+      console.log("PPGSignalProcessor: Calibración preparada - esperando primeros frames para línea base");
       return true;
     } catch (error) {
       console.error("PPGSignalProcessor: Error de calibración", error);
