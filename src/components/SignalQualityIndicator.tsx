@@ -13,6 +13,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
   const historySize = 5; // Ventana de historial para promedio
+  const REQUIRED_FINGER_FRAMES = 4; // PRIMERA VARIABLE MODIFICADA: aumentado de 3 a 4 para reducir falsos positivos
+  const QUALITY_THRESHOLD = 30; // SEGUNDA VARIABLE MODIFICADA: aumentado de 25 a 30 para exigir mejor calidad
 
   // Detectar plataforma
   useEffect(() => {
@@ -119,7 +121,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         </div>
       </div>
       
-      {isAndroid && showHelpTip && displayQuality < 30 && (
+      {isAndroid && showHelpTip && displayQuality < QUALITY_THRESHOLD && (
         <div className="absolute -bottom-20 left-0 right-0 bg-black/70 p-2 rounded text-white text-xs flex items-center gap-1">
           <AlertCircle className="h-4 w-4 text-yellow-400 flex-shrink-0" />
           <span>
