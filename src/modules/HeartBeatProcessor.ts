@@ -21,7 +21,7 @@ export class HeartBeatProcessor {
   BEEP_PRIMARY_FREQUENCY = 880;
   BEEP_SECONDARY_FREQUENCY = 440;
   BEEP_DURATION = 80;      // Reducido ligeramente para respuesta más rápida
-  BEEP_VOLUME = 0.9;       // Aumentado para mayor audibilidad
+  BEEP_VOLUME = 1.0;       // Aumentado al máximo para asegurar audibilidad
   MIN_BEEP_INTERVAL_MS = 200; // Reducido para beeps más frecuentes
 
   // Parámetros de detección de señal baja
@@ -127,7 +127,7 @@ export class HeartBeatProcessor {
       // Configurar la envolvente del volumen para el tono secundario
       secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.4, // Ligeramente más alto que antes
+        volume * 0.5, // Aumentado para asegurar que se escuche el sonido secundario
         this.audioContext.currentTime + 0.01
       );
       secondaryGain.gain.exponentialRampToValueAtTime(
@@ -252,12 +252,15 @@ export class HeartBeatProcessor {
       }
     }
 
+    const rrData = isConfirmedPeak ? this.getRRIntervals() : null;
+
     return {
       bpm: Math.round(this.getSmoothBPM()),
       confidence,
       isPeak: isConfirmedPeak,
       filteredValue: smoothed,
-      arrhythmiaCount: 0
+      arrhythmiaCount: 0,
+      rrData
     };
   }
 
