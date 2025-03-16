@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,6 +9,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -245,7 +247,24 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
+        // Log complete vitals object to verify glucose is properly processed
+        console.log("Index: Processed vital signs with weighted median glucose:", {
+          ...vitals,
+          glucose: {
+            value: vitals.glucose,
+            type: typeof vitals.glucose
+          },
+          timestamp: new Date().toISOString()
+        });
+        
+        // Update vital signs state with the processed values (includes weighted median glucose)
         setVitalSigns(vitals);
+        
+        // Verify glucose value being displayed
+        toast.info(`Glucose: ${vitals.glucose} mg/dL (median calculated)`, {
+          duration: 2000,
+          position: 'bottom-center',
+        });
       }
       
       setSignalQuality(lastSignal.quality);
