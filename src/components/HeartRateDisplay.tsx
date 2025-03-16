@@ -14,7 +14,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Apply high-DPI optimizations after component mounts
+  // Apply optimizations after component mounts
   useEffect(() => {
     if (containerRef.current) {
       optimizeElement(containerRef.current);
@@ -44,9 +44,9 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
-    if (bpm > 100) return "value-warning";
-    if (bpm < 60) return "value-warning";
-    return "value-normal";
+    if (bpm > 100) return "medical-warning";
+    if (bpm < 60) return "medical-warning";
+    return "medical-normal";
   };
 
   const getHeartColor = () => {
@@ -65,15 +65,10 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="bg-black/40 backdrop-blur-sm rounded-lg p-3 text-center will-change-transform performance-boost ppg-graph"
-      style={{
-        transform: 'translate3d(0, 0, 0)',
-        backfaceVisibility: 'hidden',
-        contain: 'layout paint style'
-      }}
+      className="glass-card-dark p-3 text-center gpu-accelerated rounded-lg"
     >
       <div className="flex items-center justify-center gap-1 mb-1">
-        <h3 className="text-gray-400/90 text-sm crisp-text precision-text">Heart Rate</h3>
+        <h3 className="text-gray-400/90 text-sm typography-clinical">Heart Rate</h3>
         
         {getReliabilityIndicator() === "low" && (
           <div className="relative" title="Signal quality is low">
@@ -90,7 +85,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
           fill={isReliable ? "currentColor" : "none"}
           strokeWidth={1.5}
         />
-        <span className={`text-2xl font-bold vital-display precision-number ${getValueClass()}`}>
+        <span className={`text-2xl font-bold typography-medical-data ${getValueClass()}`}>
           {bpm > 0 ? bpm : '--'}
         </span>
         <span className="text-gray-400/90 text-xs unit-text">BPM</span>

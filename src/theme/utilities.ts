@@ -170,6 +170,71 @@ export const utilities = function({ addUtilities }) {
     },
     '.dark .medical-info': {
       'color': '#5a9bff' // Brighter in dark mode for contrast
+    },
+    // Nuevas utilidades tipográficas
+    '.typography-tabular': {
+      'font-feature-settings': '"tnum", "salt", "ss01"',
+      'font-variant-numeric': 'tabular-nums',
+      'letter-spacing': '-0.01em',
+      'text-rendering': 'optimizeLegibility'
+    },
+    '.typography-medical-data': {
+      'font-feature-settings': '"tnum", "salt", "ss01", "cv01", "cv03"',
+      'font-variant-numeric': 'tabular-nums',
+      'letter-spacing': '-0.02em',
+      'text-rendering': 'geometricPrecision',
+      'font-weight': '500'
+    },
+    '.typography-clinical': {
+      'font-feature-settings': '"kern", "liga", "calt", "pnum", "tnum"',
+      'font-variant-numeric': 'tabular-nums',
+      'letter-spacing': '-0.01em',
+      'text-rendering': 'optimizeLegibility',
+      '-webkit-font-smoothing': 'antialiased'
+    },
+    '.dark .typography-clinical': {
+      'font-weight': '400',
+      'letter-spacing': '0.01em'
+    },
+    // Nuevas utilidades de diseño Grid
+    '.grid-auto-fit': {
+      'display': 'grid',
+      'grid-template-columns': 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+      'gap': '1rem'
+    },
+    '.grid-auto-fill': {
+      'display': 'grid',
+      'grid-template-columns': 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))',
+      'gap': '1rem'
+    },
+    '.grid-dashboard': {
+      'display': 'grid',
+      'grid-template-columns': 'repeat(auto-fit, minmax(min(100%, 350px), 1fr))',
+      'grid-auto-rows': 'minmax(180px, auto)',
+      'gap': '1.25rem',
+      'contain': 'layout style'
+    },
+    '.grid-vital-signs': {
+      'display': 'grid',
+      'grid-template-columns': '1fr 1fr',
+      'grid-template-rows': 'auto',
+      'gap': '1rem',
+      '@screen md': {
+        'grid-template-columns': 'repeat(4, 1fr)'
+      }
+    },
+    // Mejoras visuales para pantallas de alta resolución
+    '.ultra-crisp-rendering': {
+      'image-rendering': 'high-quality',
+      'text-rendering': 'geometricPrecision',
+      '-webkit-font-smoothing': 'antialiased',
+      'will-change': 'transform, opacity',
+      'backface-visibility': 'hidden',
+      'transform': 'translate3d(0, 0, 0)',
+      'contain': 'paint layout style'
+    },
+    '.dark .ultra-crisp-rendering': {
+      'text-shadow': '0 0.5px 1px rgba(0, 0, 0, 0.3)'
     }
   };
   addUtilities(newUtilities);

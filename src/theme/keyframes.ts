@@ -34,4 +34,23 @@ export const keyframes = {
     "0%, 100%": { textShadow: "0 0 1px rgba(180,200,255,0.2)" },
     "50%": { textShadow: "0 0 20px rgba(140,180,255,0.9), 0 0 10px rgba(120,160,255,0.6)" }
   },
+  // Nuevas animaciones
+  "vital-sign-update": {
+    "0%": { transform: "scale(0.97)", opacity: "0.8" },
+    "50%": { transform: "scale(1.03)", opacity: "1" },
+    "100%": { transform: "scale(1)", opacity: "1" }
+  },
+  "data-pulse": {
+    "0%": { opacity: "0.8", transform: "scale(0.99)" },
+    "50%": { opacity: "1", transform: "scale(1.01)" },
+    "100%": { opacity: "0.8", transform: "scale(0.99)" }
+  },
+  "fade-in-up": {
+    "0%": { opacity: "0", transform: "translateY(10px)" },
+    "100%": { opacity: "1", transform: "translateY(0)" }
+  },
+  "subtle-pulse": {
+    "0%, 100%": { opacity: "0.95", transform: "scale(1)" },
+    "50%": { opacity: "1", transform: "scale(1.02)" }
+  }
 };
