@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -20,8 +21,9 @@ const CameraView = ({
   const [isAndroid, setIsAndroid] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
-  const maxRetryAttempts = 3;
-
+  const maxRetryAttempts = 5; // Aumentado a 5 para más intentos
+  const torchCheckIntervalRef = useRef<number | null>(null);
+  
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
     const androidDetected = /android/i.test(userAgent);
@@ -37,6 +39,23 @@ const CameraView = ({
     setIsAndroid(androidDetected);
     setIsWindows(windowsDetected);
   }, []);
+
+  const ensureTorchEnabled = useCallback(() => {
+    if (stream && !torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Intentando re-activar linterna");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => {
+          setTorchEnabled(true);
+          console.log("Linterna re-activada con éxito");
+        }).catch(err => {
+          console.error("Error al re-activar linterna:", err);
+        });
+      }
+    }
+  }, [stream, torchEnabled]);
 
   const stopCamera = async () => {
     if (stream) {
@@ -62,6 +81,11 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
+      
+      if (torchCheckIntervalRef.current) {
+        clearInterval(torchCheckIntervalRef.current);
+        torchCheckIntervalRef.current = null;
+      }
     }
   };
 
@@ -131,65 +155,59 @@ const CameraView = ({
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
-          if (isAndroid) {
+          // Agresivamente intentamos activar la linterna en todos los dispositivos
+          if (capabilities.torch) {
+            console.log("Activando linterna inmediatamente");
             try {
-              if (capabilities.torch) {
-                console.log("Activando linterna en Android");
-                await videoTrack.applyConstraints({
-                  advanced: [{ torch: true }]
-                });
-                setTorchEnabled(true);
-              }
-            } catch (err) {
-              console.error("Error al activar linterna en Android:", err);
-            }
-          } else {
-            if (capabilities.exposureMode) {
-              const exposureConstraint: MediaTrackConstraintSet = { 
-                exposureMode: 'continuous' 
-              };
-              
-              if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
-              }
-              
-              advancedConstraints.push(exposureConstraint);
-            }
-            
-            if (capabilities.focusMode) {
-              advancedConstraints.push({ focusMode: 'continuous' });
-            }
-            
-            if (capabilities.whiteBalanceMode) {
-              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-            }
-            
-            if (capabilities.brightness && capabilities.brightness.max) {
-              const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.2 });
-            }
-            
-            if (capabilities.contrast && capabilities.contrast.max) {
-              const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
-            }
-
-            if (advancedConstraints.length > 0) {
-              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              await videoTrack.applyConstraints({
-                advanced: advancedConstraints
-              });
-            }
-
-            if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
               await videoTrack.applyConstraints({
                 advanced: [{ torch: true }]
               });
               setTorchEnabled(true);
-            } else {
-              console.log("La linterna no está disponible en este dispositivo");
+              console.log("Linterna activada con éxito");
+            } catch (err) {
+              console.error("Error al activar linterna:", err);
+              // Intentaremos de nuevo después
             }
+          }
+          
+          if (capabilities.exposureMode) {
+            const exposureConstraint: MediaTrackConstraintSet = { 
+              exposureMode: 'continuous' 
+            };
+            
+            if (capabilities.exposureCompensation?.max) {
+              // Aumentamos la exposición para captar mejor la señal
+              exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+            }
+            
+            advancedConstraints.push(exposureConstraint);
+          }
+          
+          if (capabilities.focusMode) {
+            advancedConstraints.push({ focusMode: 'continuous' });
+          }
+          
+          if (capabilities.whiteBalanceMode) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          }
+          
+          if (capabilities.brightness && capabilities.brightness.max) {
+            const maxBrightness = capabilities.brightness.max;
+            // Aumentamos el brillo para mejor captación
+            advancedConstraints.push({ brightness: maxBrightness * 0.4 });
+          }
+          
+          if (capabilities.contrast && capabilities.contrast.max) {
+            const maxContrast = capabilities.contrast.max;
+            // Aumentamos el contraste para mejor detección de cambios
+            advancedConstraints.push({ contrast: maxContrast * 0.7 });
+          }
+
+          if (advancedConstraints.length > 0) {
+            console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+            await videoTrack.applyConstraints({
+              advanced: advancedConstraints
+            });
           }
           
           if (videoRef.current) {
@@ -220,6 +238,15 @@ const CameraView = ({
       }
       
       retryAttemptsRef.current = 0;
+      
+      // Configurar un intervalo para verificar periódicamente si la linterna sigue activa
+      if (torchCheckIntervalRef.current) {
+        clearInterval(torchCheckIntervalRef.current);
+      }
+      
+      torchCheckIntervalRef.current = window.setInterval(() => {
+        ensureTorchEnabled();
+      }, 2000);
       
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
@@ -273,28 +300,32 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    if (stream && isFingerDetected && !torchEnabled) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).then(() => {
-          setTorchEnabled(true);
-        }).catch(err => {
-          console.error("Error activando linterna:", err);
-        });
+    if (stream) {
+      if (isFingerDetected && !torchEnabled) {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack && videoTrack.getCapabilities()?.torch) {
+          console.log("Activando linterna después de detectar dedo");
+          videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          }).then(() => {
+            setTorchEnabled(true);
+          }).catch(err => {
+            console.error("Error activando linterna:", err);
+          });
+        }
       }
-    }
-    
-    if (isFingerDetected && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, 5000);
-      return () => clearInterval(focusInterval);
+      
+      // Refrescar enfoque más frecuentemente cuando hay un dedo
+      if (isFingerDetected && !isAndroid) {
+        const focusInterval = setInterval(refreshAutoFocus, 3000); // Cada 3 segundos
+        return () => clearInterval(focusInterval);
+      }
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
-  const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/15;
+  // Usar una tasa de actualización más alta cuando la calidad de señal es buena
+  const targetFrameInterval = isAndroid ? 1000/15 : 
+                             signalQuality > 60 ? 1000/30 : 1000/20;
 
   return (
     <video
