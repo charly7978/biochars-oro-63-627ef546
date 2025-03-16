@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for optimizing display rendering on various screen densities
  */
@@ -101,16 +100,13 @@ export const optimizeSelector = (selector: string): void => {
   elements.forEach(optimizeElement);
 };
 
-// Helper for improved signal graph colors - SIMPLIFICADO
+// Helper for improved signal graph colors
 export const getSignalColor = (isArrhythmia: boolean): string => {
-  // Simple, honesto y directo: 
-  // - Rojo para latido prematuro 
-  // - Azul para latido normal
+  // Correctly return blue for normal beats, red for arrhythmia
   return isArrhythmia ? '#ea384c' : '#0EA5E9';
 };
 
-// Simplificación completa: solo determina si el punto actual es una arritmia
-// basado en el valor RR actual, sin crear ventanas artificiales
+// Simplified logic to determine if a point is an arrhythmia
 export const isPointInArrhythmiaWindow = (
   pointData: any
 ): boolean => {
