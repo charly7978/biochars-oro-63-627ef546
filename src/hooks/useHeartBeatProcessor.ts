@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -25,7 +24,7 @@ export const useHeartBeatProcessor = () => {
   
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 250; // Reduced for better responsiveness
+  const MIN_BEEP_INTERVAL_MS = 200; // Further reduced to ensure beeps are more responsive
   
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
@@ -78,7 +77,6 @@ export const useHeartBeatProcessor = () => {
     };
   }, []);
 
-  const lastBeepRequestRef = useRef<{time: number, value: number, processed: boolean} | null>(null);
   const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
   const beepProcessorTimeoutRef = useRef<number | null>(null);
 
@@ -89,7 +87,7 @@ export const useHeartBeatProcessor = () => {
     const oldestBeep = pendingBeepsQueue.current[0];
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
-      processorRef.current.playBeep(0.95); // Increased volume
+      processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
       lastBeepTimeRef.current = now;
       pendingBeepsQueue.current.shift();
       
@@ -110,7 +108,7 @@ export const useHeartBeatProcessor = () => {
     const now = Date.now();
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
-      processorRef.current.playBeep(0.95); // Increased volume
+      processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
       lastBeepTimeRef.current = now;
       return;
     }
@@ -118,7 +116,7 @@ export const useHeartBeatProcessor = () => {
     pendingBeepsQueue.current.push({ time: now, value });
     
     if (!beepProcessorTimeoutRef.current) {
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.5);
+      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.4); // Faster response
     }
   }, [processBeepQueue]);
 
@@ -137,14 +135,14 @@ export const useHeartBeatProcessor = () => {
       if (!beepProcessorTimeoutRef.current) {
         beepProcessorTimeoutRef.current = window.setTimeout(
           processBeepQueue, 
-          MIN_BEEP_INTERVAL_MS * 0.5
+          MIN_BEEP_INTERVAL_MS * 0.4 // Faster response
         );
       }
       return;
     }
     
     try {
-      const beepSuccess = processorRef.current.playBeep(0.95); // Increased volume
+      const beepSuccess = processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
       if (beepSuccess) {
         lastBeepTimeRef.current = now;
         consistentBeatsCountRef.current++;
@@ -155,7 +153,7 @@ export const useHeartBeatProcessor = () => {
         if (!beepProcessorTimeoutRef.current) {
           beepProcessorTimeoutRef.current = window.setTimeout(
             processBeepQueue, 
-            MIN_BEEP_INTERVAL_MS * 0.5
+            MIN_BEEP_INTERVAL_MS * 0.4 // Faster response
           );
         }
       }
@@ -243,42 +241,20 @@ export const useHeartBeatProcessor = () => {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      let currentBeatIsArrhythmia = false;
-      let analysisResult: RRAnalysisResult = {
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: now,
-        isArrhythmia: false
-      };
-      
-      if (result.isPeak && result.confidence > 0.55 && lastRRIntervalsRef.current.length >= 5) {
-        analysisResult = detectArrhythmia(lastRRIntervalsRef.current);
-        currentBeatIsArrhythmia = analysisResult.isArrhythmia;
-        currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-        lastIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-      }
-
-      if (result.isPeak && result.confidence > 0.5) {
+      if (result.isPeak && result.confidence > 0.3) { // Lowered threshold for more sensitivity
         lastPeakTimeRef.current = now;
         
-        // Always try to beep on peak detection for better feedback
+        // Always play beep on peak detection to ensure synchronization with PPG peaks
         requestImmediateBeep(value);
-        
-        if (result.confidence > 0.65) {
-          playBeepSound();
-        }
         
         if (result.bpm >= 40 && result.bpm <= 200) {
           lastValidBpmRef.current = result.bpm;
-          
-          const expectedInterval = 60000 / result.bpm;
-          expectedNextBeatTimeRef.current = now + expectedInterval;
         }
       }
       
       lastSignalQualityRef.current = result.confidence;
 
-      if (result.confidence < 0.20) {
+      if (result.confidence < 0.15) {
         return {
           bpm: currentBPM,
           confidence: result.confidence,
@@ -314,7 +290,7 @@ export const useHeartBeatProcessor = () => {
         }
       };
     }
-  }, [currentBPM, confidence, detectArrhythmia, playBeepSound, requestImmediateBeep]);
+  }, [currentBPM, confidence, requestImmediateBeep]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {

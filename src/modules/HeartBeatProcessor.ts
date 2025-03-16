@@ -1,31 +1,30 @@
-
 export class HeartBeatProcessor {
   // Core configuration constants
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 45;
   MIN_BPM = 40;
   MAX_BPM = 200;
-  SIGNAL_THRESHOLD = 0.25;
-  MIN_CONFIDENCE = 0.45;
-  DERIVATIVE_THRESHOLD = -0.018;
-  MIN_PEAK_TIME_MS = 325;
-  WARMUP_TIME_MS = 1000;
+  SIGNAL_THRESHOLD = 0.2;
+  MIN_CONFIDENCE = 0.35;
+  DERIVATIVE_THRESHOLD = -0.015;
+  MIN_PEAK_TIME_MS = 250;
+  WARMUP_TIME_MS = 500;
 
   // Signal processing filters
   MEDIAN_FILTER_WINDOW = 5;
   MOVING_AVERAGE_WINDOW = 5;
-  EMA_ALPHA = 0.20;
+  EMA_ALPHA = 0.25;
   BASELINE_FACTOR = 0.997;
 
   // Beep configuration
   BEEP_PRIMARY_FREQUENCY = 800;
-  BEEP_DURATION = 80;
-  BEEP_VOLUME = 0.95; // Increased volume
-  MIN_BEEP_INTERVAL_MS = 350;
+  BEEP_DURATION = 60;
+  BEEP_VOLUME = 1.0;
+  MIN_BEEP_INTERVAL_MS = 250;
 
   // Signal quality detection
-  LOW_SIGNAL_THRESHOLD = 0.03;
-  LOW_SIGNAL_FRAMES = 15;
+  LOW_SIGNAL_THRESHOLD = 0.025;
+  LOW_SIGNAL_FRAMES = 10;
   lowSignalCount = 0;
 
   // Force immediate beeps
@@ -52,9 +51,9 @@ export class HeartBeatProcessor {
   BPM_ALPHA = 0.2;
   peakCandidateIndex = null;
   peakCandidateValue = 0;
-  
+
   constructor() {
-    console.log("HeartBeatProcessor: Initializing new instance with improved timing");
+    console.log("HeartBeatProcessor: Initializing new instance with real-time beep synchronization");
     this.initAudio();
     this.startTime = Date.now();
   }
@@ -82,14 +81,21 @@ export class HeartBeatProcessor {
       console.error("HeartBeatProcessor: Error initializing audio", err);
       // Try recreating the audio context
       this.audioContext = null;
+      
+      // Second attempt
+      if (typeof window !== 'undefined' && typeof AudioContext !== 'undefined') {
+        try {
+          this.audioContext = new AudioContext();
+          this.audioContext.resume();
+        } catch (innerErr) {
+          console.error("HeartBeatProcessor: Second attempt audio init failed", innerErr);
+        }
+      }
     }
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
-    if (this.isInWarmup()) {
-      return false;
-    }
-    
+    // Skip warmup check for more predictable beep behavior
     const now = Date.now();
     if (!this.SKIP_TIMING_VALIDATION && now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
       return false;
@@ -105,7 +111,7 @@ export class HeartBeatProcessor {
         }
       }
 
-      // Create oscillator and gain node for the beep
+      // Create oscillator for a cleaner, more noticeable beep
       const oscillator = this.audioContext.createOscillator();
       const gainNode = this.audioContext.createGain();
       
@@ -116,11 +122,11 @@ export class HeartBeatProcessor {
         this.audioContext.currentTime
       );
 
-      // Create envelope for a smoother sound
+      // Create sharper envelope for immediate audibility
       gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
       gainNode.gain.linearRampToValueAtTime(
         volume,
-        this.audioContext.currentTime + 0.01
+        this.audioContext.currentTime + 0.005
       );
       gainNode.gain.exponentialRampToValueAtTime(
         0.01,
@@ -137,7 +143,7 @@ export class HeartBeatProcessor {
       // Record successful beep
       this.lastBeepTime = now;
       
-      console.log("HeartBeatProcessor: Beep played successfully");
+      console.log("HeartBeatProcessor: Beep played successfully at", now);
       return true;
     } catch (err) {
       console.error("HeartBeatProcessor: Error playing beep", err);
@@ -187,7 +193,7 @@ export class HeartBeatProcessor {
       }
 
       // Wait for minimum buffer size
-      if (this.signalBuffer.length < 10) {
+      if (this.signalBuffer.length < 8) {
         return {
           bpm: 0,
           confidence: 0,
@@ -216,14 +222,14 @@ export class HeartBeatProcessor {
       }
       this.lastValue = smoothed;
 
-      // Detect peak with adjusted thresholds
+      // Detect peak with adjusted thresholds for more reliable detection
       const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
       
       // Confirm peak to avoid false positives
       const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-      // Process confirmed peak and play beep
-      if (isConfirmedPeak && !this.isInWarmup()) {
+      // Process confirmed peak and ALWAYS play beep immediately 
+      if (isConfirmedPeak) {
         const now = Date.now();
         
         // Update timing for BPM calculation
@@ -233,17 +239,15 @@ export class HeartBeatProcessor {
         // Update BPM
         this.updateBPM();
         
-        // Play beep immediately on peak
-        if (this.FORCE_IMMEDIATE_BEEP) {
-          this.playBeep(this.BEEP_VOLUME);
-        }
+        // Always play beep immediately on peak detection
+        this.playBeep(this.BEEP_VOLUME);
       }
 
       // Return results
       return {
         bpm: Math.round(this.getSmoothBPM()),
         confidence: confidence,
-        isPeak: isConfirmedPeak && !this.isInWarmup(),
+        isPeak: isConfirmedPeak,
         filteredValue: smoothed,
         arrhythmiaCount: 0
       };
@@ -282,29 +286,18 @@ export class HeartBeatProcessor {
   }
 
   detectPeak(normalizedValue, derivative) {
-    const now = Date.now();
-    let timeSinceLastPeak = Number.MAX_VALUE;
-    
-    if (!this.SKIP_TIMING_VALIDATION && this.lastPeakTime) {
-      timeSinceLastPeak = now - this.lastPeakTime;
-      if (timeSinceLastPeak < this.MIN_PEAK_TIME_MS) {
-        return { isPeak: false, confidence: 0 };
-      }
-    }
-
-    // Core peak detection logic
+    // Core peak detection logic - simplified for more reliable peak detection
     const isPeak =
       derivative < this.DERIVATIVE_THRESHOLD &&
-      normalizedValue > this.SIGNAL_THRESHOLD &&
-      this.lastValue > this.baseline * 0.98;
+      normalizedValue > this.SIGNAL_THRESHOLD;
 
     // Calculate confidence
     const amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5), 0),
+      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.2), 0),
       1
     );
     const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 1.2), 0),
+      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD), 0),
       1
     );
 
@@ -327,7 +320,7 @@ export class HeartBeatProcessor {
       if (this.peakConfirmationBuffer.length >= 3) {
         const len = this.peakConfirmationBuffer.length;
         
-        // Confirm only if it's the peak (decrease after peak)
+        // Confirm peak immediately when values start decreasing (peak found)
         const goingDown = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
         
         if (goingDown) {
@@ -431,3 +424,4 @@ export class HeartBeatProcessor {
     };
   }
 }
+
