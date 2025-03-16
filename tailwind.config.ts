@@ -28,6 +28,10 @@ export default {
         medical: {
           red: "#FF2E2E",
           blue: "#2E5BFF",
+          lilac: "#9B87F5",       // Added lilac color
+          softLilac: "#E5DEFF",   // Added soft lilac
+          deepLilac: "#D6BCFA",   // Added deep lilac
+          brightBlue: "#0EA5E9",  // Added bright blue
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",
@@ -116,6 +120,12 @@ export default {
           'background-clip': 'text',
           'color': 'transparent',
           'text-shadow': '0 0 5px rgba(255,255,255,0.3)'
+        },
+        '.bg-gradient-medical': {
+          background: 'linear-gradient(to bottom, #E2DCFF, #9B87F5)',
+        },
+        '.bg-gradient-lilac': {
+          background: 'linear-gradient(to bottom, #E5DEFF, #D6BCFA, #9B87F5)',
         },
       }
       addUtilities(newUtilities)
