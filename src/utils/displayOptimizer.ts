@@ -1,3 +1,4 @@
+
 /**
  * Display optimizer utilities for better rendering performance
  * across different devices and environments.
@@ -77,15 +78,23 @@ export const optimizeHeartbeatVisualization = (element: HTMLElement): void => {
   element.style.perspective = '1000px';
   element.style.transformStyle = 'preserve-3d';
   
-  // Add animation optimizations
-  element.style.transition = 'transform 0.1s ease-out';
+  // Add animation optimizations with lower latency
+  element.style.transition = 'transform 0.08s ease-out';
 };
 
 export const setupLowLatencyAudio = (): AudioContext | null => {
   if (typeof window === 'undefined' || !window.AudioContext) return null;
   
   try {
-    const audioContext = new AudioContext();
+    // Create audio context with low latency hint
+    const audioContext = new AudioContext({
+      latencyHint: 'interactive'
+    });
+    
+    // Immediately resume to prevent auto-suspension issues
+    audioContext.resume().catch(err => {
+      console.warn('Error resuming AudioContext:', err);
+    });
     
     // Set optimal buffer size for low latency
     if (audioContext && (audioContext as any).createScriptProcessor) {
