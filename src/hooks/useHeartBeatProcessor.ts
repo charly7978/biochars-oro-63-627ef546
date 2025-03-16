@@ -1,6 +1,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
+import { toast } from 'sonner';
+import { RRAnalysisResult } from './arrhythmia/types';
 
 interface HeartBeatResult {
   bpm: number;
@@ -37,6 +39,11 @@ export const useHeartBeatProcessor = () => {
   const heartRateVariabilityRef = useRef<number[]>([]);
   const beepPendingRef = useRef<boolean>(false);
   const stabilityCounterRef = useRef<number>(0);
+  
+  // Referencias para beep mejorado
+  const beepQueueRef = useRef<number[]>([]);
+  const lastValidBpmRef = useRef<number>(0);
+  const consecutiveBeatsRef = useRef<number>(0);
 
   // Inicializar el procesador de latidos
   useEffect(() => {
@@ -45,12 +52,17 @@ export const useHeartBeatProcessor = () => {
       timestamp: new Date().toISOString()
     });
     
-    // Crear nueva instancia
-    processorRef.current = new HeartBeatProcessor();
-    
-    // Exponer para debugging si es necesario
-    if (typeof window !== 'undefined') {
-      (window as any).heartBeatProcessor = processorRef.current;
+    try {
+      // Crear nueva instancia
+      processorRef.current = new HeartBeatProcessor();
+      
+      // Exponer para debugging si es necesario
+      if (typeof window !== 'undefined') {
+        (window as any).heartBeatProcessor = processorRef.current;
+      }
+    } catch (error) {
+      console.error('Error al inicializar HeartBeatProcessor:', error);
+      toast.error('Error al inicializar el procesador de latidos');
     }
 
     return () => {
@@ -71,47 +83,51 @@ export const useHeartBeatProcessor = () => {
 
   // Función para reproducir el sonido de latido con sincronización natural
   const playBeepSound = useCallback(() => {
-    if (!processorRef.current) return;
+    if (!processorRef.current) {
+      console.warn('useHeartBeatProcessor: Procesador no disponible para reproducir beep');
+      return;
+    }
     
     const now = Date.now();
     
     // Verificar intervalo mínimo para evitar beeps muy cercanos
     if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+      console.log('useHeartBeatProcessor: Beep rechazado por intervalo mínimo');
       return;
     }
     
-    // Verificar si estamos en una ventana de tiempo válida para el beep
-    if (currentBPM > 40) {
-      const expectedInterval = 60000 / currentBPM;
-      
-      // Si hay un tiempo de beep esperado, verificar que estemos dentro de la ventana
-      if (expectedNextBeatTimeRef.current > 0) {
-        const timeDiff = Math.abs(now - expectedNextBeatTimeRef.current);
-        
-        // Si estamos fuera de la ventana temporal esperada, no reproducir
-        if (timeDiff > expectedInterval * 0.2) {
-          expectedNextBeatTimeRef.current = now + expectedInterval;
-          return;
-        }
-      }
-      
-      // Actualizar próximo tiempo esperado
-      expectedNextBeatTimeRef.current = now + expectedInterval;
+    // Verificar que tengamos un BPM válido antes de intentar sincronizar
+    if (currentBPM < 40 || currentBPM > 200) {
+      console.log('useHeartBeatProcessor: BPM fuera de rango fisiológico, no se reproduce beep');
+      return;
     }
     
     try {
-      // Reproducir el beep con el volumen adecuado
-      processorRef.current.playBeep();
-      lastBeepTimeRef.current = now;
-      beepPendingRef.current = false;
+      // Reproducir el beep con volumen adecuado
+      const beepSuccess = processorRef.current.playBeep(0.7);
+      if (beepSuccess) {
+        console.log(`useHeartBeatProcessor: Beep reproducido - BPM: ${currentBPM}`);
+        lastBeepTimeRef.current = now;
+        beepPendingRef.current = false;
+        consecutiveBeatsRef.current++;
+      } else {
+        console.warn('useHeartBeatProcessor: Fallo al reproducir beep');
+      }
     } catch (err) {
       console.error('useHeartBeatProcessor: Error reproduciendo beep', err);
     }
   }, [currentBPM]);
 
   // Algoritmo mejorado de detección de arritmias con análisis de contexto
-  const detectArrhythmia = useCallback((rrIntervals: number[]): boolean => {
-    if (rrIntervals.length < 5) return false;
+  const detectArrhythmia = useCallback((rrIntervals: number[]): RRAnalysisResult => {
+    if (rrIntervals.length < 5) {
+      return {
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: Date.now(),
+        isArrhythmia: false
+      };
+    }
     
     // Usar los últimos intervalos para análisis
     const lastIntervals = rrIntervals.slice(-5);
@@ -120,6 +136,14 @@ export const useHeartBeatProcessor = () => {
     // Cálculo estadístico robusto
     const sum = lastIntervals.reduce((a, b) => a + b, 0);
     const mean = sum / lastIntervals.length;
+    
+    // Cálculo de RMSSD (medida estándar de variabilidad cardíaca)
+    let rmssdSum = 0;
+    for (let i = 1; i < lastIntervals.length; i++) {
+      const diff = lastIntervals[i] - lastIntervals[i-1];
+      rmssdSum += diff * diff;
+    }
+    const rmssd = Math.sqrt(rmssdSum / (lastIntervals.length - 1));
     
     // Umbral adaptativo basado en estabilidad previa
     let thresholdFactor = 0.30; // 30% por defecto
@@ -151,7 +175,12 @@ export const useHeartBeatProcessor = () => {
       heartRateVariabilityRef.current.shift();
     }
     
-    return isArrhythmia;
+    return {
+      rmssd,
+      rrVariation: variationRatio,
+      timestamp: Date.now(),
+      isArrhythmia
+    };
   }, []);
 
   // Procesar señal de entrada
@@ -169,62 +198,87 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    // Procesar señal
-    const result = processorRef.current.processSignal(value);
-    const rrData = processorRef.current.getRRIntervals();
-    const now = Date.now();
-    
-    // Actualizar intervalos RR
-    if (rrData && rrData.intervals.length > 0) {
-      lastRRIntervalsRef.current = [...rrData.intervals];
-    }
-    
-    let currentBeatIsArrhythmia = false;
-    
-    // Verificar arritmia solo con suficiente confianza
-    if (result.isPeak && result.confidence > 0.65 && lastRRIntervalsRef.current.length >= 5) {
-      currentBeatIsArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
-      currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-      lastIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-    }
-
-    // Reproducir beep solo en picos con alta confianza
-    if (result.isPeak && result.confidence > 0.65) {
-      lastPeakTimeRef.current = now;
+    try {
+      // Procesar señal
+      const result = processorRef.current.processSignal(value);
+      const rrData = processorRef.current.getRRIntervals();
+      const now = Date.now();
       
-      // Marcar beep como pendiente para mejor sincronización
-      beepPendingRef.current = true;
+      // Actualizar intervalos RR
+      if (rrData && rrData.intervals.length > 0) {
+        lastRRIntervalsRef.current = [...rrData.intervals];
+      }
       
-      // Reproducir inmediatamente, mejor sincronización natural
-      playBeepSound();
-    }
+      let currentBeatIsArrhythmia = false;
+      let analysisResult: RRAnalysisResult = {
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: now,
+        isArrhythmia: false
+      };
+      
+      // Verificar arritmia solo con suficiente confianza
+      if (result.isPeak && result.confidence > 0.65 && lastRRIntervalsRef.current.length >= 5) {
+        analysisResult = detectArrhythmia(lastRRIntervalsRef.current);
+        currentBeatIsArrhythmia = analysisResult.isArrhythmia;
+        currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
+        lastIsArrhythmiaRef.current = currentBeatIsArrhythmia;
+      }
 
-    // Con baja confianza, mantener valores previos
-    if (result.confidence < 0.4) {
+      // Reproducir beep solo en picos con alta confianza
+      if (result.isPeak && result.confidence > 0.65) {
+        console.log('useHeartBeatProcessor: Pico detectado con confianza', result.confidence);
+        lastPeakTimeRef.current = now;
+        
+        // Actualizar BPM válido
+        if (result.bpm >= 40 && result.bpm <= 200) {
+          lastValidBpmRef.current = result.bpm;
+        }
+        
+        // Programar beep para reproducción inmediata
+        beepPendingRef.current = true;
+        playBeepSound();
+      }
+
+      // Con baja confianza, mantener valores previos
+      if (result.confidence < 0.3) {
+        return {
+          bpm: currentBPM,
+          confidence: result.confidence,
+          isPeak: false,
+          arrhythmiaCount: 0,
+          isArrhythmia: currentBeatIsArrhythmiaRef.current,
+          rrData: {
+            intervals: [],
+            lastPeakTime: null
+          }
+        };
+      }
+
+      // Actualizar BPM con valores válidos
+      if (result.bpm > 0) {
+        setCurrentBPM(result.bpm);
+        setConfidence(result.confidence);
+      }
+
+      return {
+        ...result,
+        isArrhythmia: currentBeatIsArrhythmiaRef.current,
+        rrData
+      };
+    } catch (error) {
+      console.error('useHeartBeatProcessor: Error procesando señal', error);
       return {
         bpm: currentBPM,
-        confidence: result.confidence,
+        confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
-        isArrhythmia: currentBeatIsArrhythmiaRef.current,
         rrData: {
           intervals: [],
           lastPeakTime: null
         }
       };
     }
-
-    // Actualizar BPM con valores válidos
-    if (result.bpm > 0) {
-      setCurrentBPM(result.bpm);
-      setConfidence(result.confidence);
-    }
-
-    return {
-      ...result,
-      isArrhythmia: currentBeatIsArrhythmiaRef.current,
-      rrData
-    };
   }, [currentBPM, confidence, playBeepSound, detectArrhythmia]);
 
   // Reiniciar el procesador
@@ -250,6 +304,9 @@ export const useHeartBeatProcessor = () => {
     heartRateVariabilityRef.current = [];
     beepPendingRef.current = false;
     stabilityCounterRef.current = 0;
+    beepQueueRef.current = [];
+    lastValidBpmRef.current = 0;
+    consecutiveBeatsRef.current = 0;
   }, []);
 
   return {

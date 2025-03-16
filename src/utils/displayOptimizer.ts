@@ -1,123 +1,114 @@
 
 /**
- * Utility functions for optimizing display rendering on various screen densities
- * and providing precise visual feedback for cardiovascular measurements
+ * Display optimizer utilities for better rendering performance
+ * across different devices and environments.
  */
 
-// Check if the device has a high-DPI display
-export const isHighDpiDisplay = (): boolean => {
-  return window.devicePixelRatio > 1;
+export const optimizeDisplayRendering = (): void => {
+  // Enable hardware acceleration if available
+  document.body.style.transform = 'translateZ(0)';
+  
+  // Optimize animations
+  document.body.style.willChange = 'transform';
+  
+  // Set animation preferences for reduced motion if user prefers it
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.documentElement.style.setProperty('--animation-duration', '0ms');
+  }
+  
+  // Force GPU rendering on mobile devices
+  if (isMobileDevice()) {
+    document.documentElement.classList.add('force-gpu');
+    const meta = document.createElement('meta');
+    meta.name = 'viewport';
+    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no';
+    document.head.appendChild(meta);
+  }
+  
+  console.log('Display optimizations applied');
 };
 
-// Get the current device pixel ratio
-export const getDevicePixelRatio = (): number => {
-  return window.devicePixelRatio || 1;
+export const isMobileDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  
+  const userAgent = navigator.userAgent.toLowerCase();
+  return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
 };
 
-// Optimize a canvas for the device's pixel ratio
-export const optimizeCanvas = (canvas: HTMLCanvasElement): void => {
+export const setOptimalFrameRate = (canvas: HTMLCanvasElement): void => {
+  if (!canvas) return;
+  
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   
-  const dpr = getDevicePixelRatio();
+  // Optimize canvas for high DPI displays
+  const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   
-  // Set the canvas dimensions accounting for the device pixel ratio
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  
-  // Scale the context to ensure correct drawing operations
-  ctx.scale(dpr, dpr);
-  
-  // Disable smoothing for sharper rendering of signal data
-  ctx.imageSmoothingEnabled = false;
-  
-  // Set the CSS width and height to the original dimensions
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
   canvas.style.width = `${rect.width}px`;
   canvas.style.height = `${rect.height}px`;
+  
+  ctx.scale(ratio, ratio);
+  
+  // Use optimized rendering settings
+  (ctx as any).imageSmoothingEnabled = true;
+  (ctx as any).imageSmoothingQuality = 'high';
 };
 
-// Apply performance optimizations to DOM elements
-export const applyPerformanceOptimizations = (element: HTMLElement): void => {
-  // Apply hardware acceleration
-  element.style.transform = 'translate3d(0, 0, 0)';
+export const applyTextOptimizations = (): void => {
+  const style = document.createElement('style');
+  style.textContent = `
+    * {
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+  `;
+  
+  document.head.appendChild(style);
+};
+
+export const optimizeHeartbeatVisualization = (element: HTMLElement): void => {
+  if (!element) return;
+  
+  // Set CSS properties for smooth animations
   element.style.backfaceVisibility = 'hidden';
-  element.style.willChange = 'transform';
+  element.style.perspective = '1000px';
+  element.style.transformStyle = 'preserve-3d';
   
-  // Apply performance classes
-  element.classList.add('performance-boost');
-  
-  // If this is a graph or visualization, apply additional optimizations
-  if (
-    element.classList.contains('ppg-signal-meter') || 
-    element.classList.contains('graph-container') ||
-    element.tagName.toLowerCase() === 'canvas'
-  ) {
-    element.classList.add('ppg-graph');
-    element.style.contain = 'strict';
-  }
+  // Add animation optimizations
+  element.style.transition = 'transform 0.1s ease-out';
 };
 
-// Apply text rendering optimizations
-export const optimizeTextRendering = (element: HTMLElement): void => {
-  element.style.textRendering = 'geometricPrecision';
+export const setupLowLatencyAudio = (): AudioContext | null => {
+  if (typeof window === 'undefined' || !window.AudioContext) return null;
   
-  if (isHighDpiDisplay()) {
-    element.style.textRendering = 'geometricPrecision';
-    element.style.webkitFontSmoothing = 'antialiased';
-    element.style.fontSmoothing = 'antialiased';
-    element.style.mozOsxFontSmoothing = 'grayscale';
-  }
-  
-  // For numeric displays that need to be particularly crisp
-  if (
-    element.classList.contains('vital-display') || 
-    element.classList.contains('precision-number')
-  ) {
-    element.style.fontFeatureSettings = '"tnum", "zero"';
-    element.style.fontVariantNumeric = 'tabular-nums';
-    element.style.letterSpacing = '-0.02em';
-  }
-};
-
-// Apply all optimizations to an element and its children
-export const optimizeElement = (element: HTMLElement): void => {
-  applyPerformanceOptimizations(element);
-  optimizeTextRendering(element);
-  
-  // Recursively optimize all child elements
-  Array.from(element.children).forEach(child => {
-    if (child instanceof HTMLElement) {
-      optimizeElement(child);
+  try {
+    const audioContext = new AudioContext();
+    
+    // Set optimal buffer size for low latency
+    if (audioContext && (audioContext as any).createScriptProcessor) {
+      const bufferSize = 256; // Lower values reduce latency but increase CPU usage
+      const processor = (audioContext as any).createScriptProcessor(bufferSize, 1, 1);
+      processor.connect(audioContext.destination);
     }
     
-    // Special handling for canvases
-    if (child instanceof HTMLCanvasElement) {
-      optimizeCanvas(child);
-    }
-  });
-};
-
-// Helper to apply all optimizations to a specific selector
-export const optimizeSelector = (selector: string): void => {
-  const elements = document.querySelectorAll<HTMLElement>(selector);
-  elements.forEach(optimizeElement);
-};
-
-// Signal color optimization for maximum visual clarity
-export const getSignalColor = (isArrhythmia: boolean): string => {
-  if (isArrhythmia) {
-    // Red optimized for arrhythmia visualization
-    return '#ff3b4e';
-  } else {
-    // Blue optimized for normal rhythm
-    return '#1e90ff';
+    return audioContext;
+  } catch (error) {
+    console.error('Error setting up low latency audio:', error);
+    return null;
   }
 };
 
-// Algorithm to determine if a point is in arrhythmia window
-export const isPointInArrhythmiaWindow = (
-  pointData: any
-): boolean => {
-  return pointData?.isArrhythmia === true;
+export const optimizeForTouchDevices = (): void => {
+  if (!isMobileDevice()) return;
+  
+  // Disable default touch actions to prevent delays
+  document.body.style.touchAction = 'none';
+  
+  // Add touch-specific event listeners with passive option for better scrolling
+  document.addEventListener('touchstart', () => {}, { passive: true });
+  document.addEventListener('touchmove', () => {}, { passive: true });
 };

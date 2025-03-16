@@ -8,12 +8,14 @@ export interface ArrhythmiaConfig {
   SIGNAL_QUALITY_THRESHOLD: number;
   SEQUENTIAL_DETECTION_THRESHOLD?: number;
   SPECTRAL_FREQUENCY_THRESHOLD?: number;
+  SENSITIVITY_LEVEL?: 'low' | 'medium' | 'high';
 }
 
 export interface ArrhythmiaPattern {
   score: number;
   confidence: number;
   timestamp: number;
+  type?: string;
 }
 
 export interface RRAnalysisResult {
@@ -21,4 +23,6 @@ export interface RRAnalysisResult {
   rrVariation: number;
   timestamp: number;
   isArrhythmia: boolean;
+  heartRate?: number;
+  signalQuality?: number;
 }
