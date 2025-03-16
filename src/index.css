@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -101,111 +100,115 @@
   }
 }
 
-/* High-density screen optimizations */
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-  html, body {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: geometricPrecision;
-  }
-  
+/* Base high-density display optimizations */
+@layer utilities {
   .precision-text {
     letter-spacing: -0.01em;
     text-rendering: optimizeLegibility;
   }
-}
-
-/* Ultra HD display optimizations - 4K and higher */
-@media (min-resolution: 300dpi), (-webkit-min-device-pixel-ratio: 3) {
-  html, body {
-    -webkit-font-smoothing: subpixel-antialiased;
+  
+  .high-res-optimized {
+    -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: geometricPrecision;
+  }
+  
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    will-change: transform;
+  }
+  
+  .rendering-optimized {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    shape-rendering: crispEdges;
+  }
+}
+
+/* Consolidated media queries for resolution-based optimizations */
+@media (min-resolution: 192dpi), (-webkit-min-device-pixel-ratio: 2) {
+  /* 2x pixel density (Retina) */
+  html, body {
+    @apply high-res-optimized;
+  }
+  
+  svg, img, canvas {
+    @apply rendering-optimized;
+  }
+  
+  .graph-container, .ppg-graph {
+    @apply gpu-accelerated;
+    contain: layout paint style;
+  }
+  
+  .precision-text {
+    letter-spacing: -0.01em;
+    font-feature-settings: "kern", "liga", "calt";
+  }
+}
+
+@media (min-resolution: 300dpi), (-webkit-min-device-pixel-ratio: 3) {
+  /* 3x pixel density (Ultra HD) */
+  html, body {
+    -webkit-font-smoothing: subpixel-antialiased;
     letter-spacing: -0.02em;
   }
   
   .precision-text {
-    font-feature-settings: "kern", "liga", "calt";
     letter-spacing: -0.02em;
-    text-rendering: optimizeLegibility;
   }
 }
 
-/* Screen size specific scaling */
-@media screen and (min-width: 2048px) {
-  .high-res-interface {
-    transform-origin: top left;
-    transform: scale(0.5);
-    width: 200%;
-    height: 200%;
-    max-width: 200vw;
-    max-height: 200vh;
+/* Screen size specific scaling - consolidated */
+@media screen {
+  /* Base responsive scaling */
+  @media (min-width: 2048px) {
+    /* 2K/High resolution displays */
+    .high-res-interface {
+      transform-origin: top left;
+      transform: scale(0.5);
+      width: 200%;
+      height: 200%;
+      max-width: 200vw;
+      max-height: 200vh;
+    }
   }
   
-  .crisp-graphics {
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-  }
-}
-
-/* Retina/high-DPI specific optimizations */
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-  svg, img, canvas {
-    image-rendering: -webkit-optimize-contrast;
-    shape-rendering: crispEdges;
+  @media (min-width: 3840px) {
+    /* 4K displays */
+    .high-res-interface {
+      transform: scale(0.25);
+      width: 400%;
+      height: 400%;
+      max-width: 400vw;
+      max-height: 400vh;
+    }
   }
   
-  .graph-container {
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    will-change: transform;
-    contain: layout paint style;
+  @media (min-width: 5120px) {
+    /* 5K displays */
+    .high-res-interface {
+      transform: scale(0.2);
+      width: 500%;
+      height: 500%;
+      max-width: 500vw;
+      max-height: 500vh;
+    }
+    
+    body {
+      image-rendering: high-quality;
+    }
   }
   
-  .ppg-graph {
-    transform: translate3d(0, 0, 0);
-    backface-visibility: hidden;
-    contain: strict;
-    will-change: transform;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-}
-
-/* 4K and higher resolution displays */
-@media screen and (min-width: 3840px) {
-  .high-res-interface {
-    transform: scale(0.25);
-    width: 400%;
-    height: 400%;
-    max-width: 400vw;
-    max-height: 400vh;
-  }
-}
-
-/* 5K and higher resolution displays - added for maximum resolution */
-@media screen and (min-width: 5120px) {
-  .high-res-interface {
-    transform: scale(0.2);
-    width: 500%;
-    height: 500%;
-    max-width: 500vw;
-    max-height: 500vh;
-  }
-  
-  body {
-    image-rendering: high-quality;
-    text-rendering: geometricPrecision;
-  }
-}
-
-/* 8K support for ultra high end displays */
-@media screen and (min-width: 7680px) {
-  .high-res-interface {
-    transform: scale(0.125);
-    width: 800%;
-    height: 800%;
-    max-width: 800vw;
-    max-height: 800vh;
+  @media (min-width: 7680px) {
+    /* 8K displays */
+    .high-res-interface {
+      transform: scale(0.125);
+      width: 800%;
+      height: 800%;
+      max-width: 800vw;
+      max-height: 800vh;
+    }
   }
 }

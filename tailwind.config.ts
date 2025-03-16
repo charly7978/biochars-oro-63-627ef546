@@ -105,7 +105,13 @@ export default {
         "flip": "card-flip 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
         "value-glow": "value-glow 3s ease-in-out infinite",
         "arrhythmia-pulse": "arrhythmia-pulse 1.5s ease-in-out infinite"
-      }
+      },
+      screens: {
+        '2k': '2048px',
+        '4k': '3840px',
+        '5k': '5120px',
+        '8k': '7680px',
+      },
     },
   },
   plugins: [
@@ -140,6 +146,18 @@ export default {
           'shape-rendering': 'crispEdges',
           'transform': 'translate3d(0, 0, 0)',
           'backface-visibility': 'hidden'
+        },
+        '.gpu-accelerated': {
+          'transform': 'translateZ(0)',
+          'backface-visibility': 'hidden',
+          'will-change': 'transform',
+          'contain': 'paint layout style'
+        },
+        '.high-res-text': {
+          'text-rendering': 'geometricPrecision',
+          '-webkit-font-smoothing': 'antialiased',
+          'font-feature-settings': '"kern", "liga", "calt"',
+          'letter-spacing': '-0.01em'
         }
       }
       addUtilities(newUtilities)

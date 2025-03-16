@@ -87,9 +87,8 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				width: '100%', 
 				height: 'auto', 
 				display: 'block',
-				imageRendering: 'crisp-edges'
 			}} 
-			className="ppg-graph performance-boost ultra-high-resolution"
+			className="ppg-graph gpu-accelerated rendering-optimized"
 		/>
 	);
 };
