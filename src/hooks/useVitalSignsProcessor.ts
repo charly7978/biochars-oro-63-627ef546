@@ -30,19 +30,19 @@ export const useVitalSignsProcessor = () => {
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
     MIN_TIME_BETWEEN_ARRHYTHMIAS: 3500, // 3.5 seconds between arrhythmias
     MAX_ARRHYTHMIAS_PER_SESSION: 40,    // Maximum arrhythmias per session
-    SIGNAL_QUALITY_THRESHOLD: 0.30,     // Increased for better quality requirement
-    SEQUENTIAL_DETECTION_THRESHOLD: 0.20,
-    SPECTRAL_FREQUENCY_THRESHOLD: 0.10
+    SIGNAL_QUALITY_THRESHOLD: 0.45,     // Increased for more strict quality requirement
+    SEQUENTIAL_DETECTION_THRESHOLD: 0.25, // Increased
+    SPECTRAL_FREQUENCY_THRESHOLD: 0.15  // Increased
   });
   
   // Track when blood pressure values were last updated
   const lastBPUpdateRef = useRef<number>(Date.now());
-  const forceBPUpdateInterval = useRef<number>(3000); // Force update every 3 seconds
+  const forceBPUpdateInterval = useRef<number>(4000); // Force update every 4 seconds
   
   // Weak signal counter to detect finger removal
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = 0.08;
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 5;
+  const WEAK_SIGNAL_THRESHOLD = 0.10; // Increased threshold
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 3; // Decreased tolerance for weak signals
   
   // Initialize processor components - always direct measurement
   useEffect(() => {
@@ -97,12 +97,17 @@ export const useVitalSignsProcessor = () => {
     
     processedSignals.current++;
     
-    // Check for weak signal to detect finger removal
+    // Check for weak signal to detect finger removal - stricter check
     if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
       consecutiveWeakSignalsRef.current++;
       
       // If too many weak signals, return zeros
       if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
+        console.log("useVitalSignsProcessor: Too many weak signals, returning zeros", {
+          weakSignals: consecutiveWeakSignalsRef.current,
+          threshold: MAX_CONSECUTIVE_WEAK_SIGNALS,
+          value
+        });
         return {
           spo2: 0,
           pressure: "--/--",
@@ -137,26 +142,37 @@ export const useVitalSignsProcessor = () => {
     const currentTime = Date.now();
     
     // Process arrhythmias if there is enough data and signal is good
-    if (rrData && rrData.intervals.length >= 3 && consecutiveWeakSignalsRef.current === 0) {
-      // Analyze data directly - no simulation
-      const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
-      result = arrhythmiaResult;
+    // More strict requirements for valid signal
+    if (rrData && 
+        rrData.intervals.length >= 4 && // Increased requirement 
+        consecutiveWeakSignalsRef.current === 0) {
       
-      // If arrhythmia is detected, register visualization window
-      if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
-        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+      // Only process with good RR data quality
+      const validRRIntervals = rrData.intervals.filter(interval => 
+        interval > 400 && interval < 1500 // More strict range: 40-150 BPM
+      );
+      
+      if (validRRIntervals.length >= 3) { // Require at least 3 valid intervals
+        // Analyze data directly - no simulation
+        const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
+        result = arrhythmiaResult;
         
-        // Window based on heart rate
-        let windowWidth = 400; // 400ms default
-        
-        // Adjust based on RR intervals
-        if (rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+        // If arrhythmia is detected, register visualization window
+        if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+          const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+          
+          // Window based on heart rate
+          let windowWidth = 400; // 400ms default
+          
+          // Adjust based on RR intervals
+          if (rrData.intervals.length > 0) {
+            const lastIntervals = rrData.intervals.slice(-4);
+            const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+            windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+          }
+          
+          addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
         }
-        
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
     }
     

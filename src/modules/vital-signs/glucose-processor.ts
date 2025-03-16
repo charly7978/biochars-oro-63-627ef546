@@ -5,21 +5,24 @@
  */
 export class GlucoseProcessor {
   private confidence: number = 0;
-  private readonly MIN_SAMPLES = 15; // Reduced from 20 for faster initialization
-  private readonly GLUCOSE_BASELINE = 83; // Changed from 70 to a more accurate baseline
+  private readonly MIN_SAMPLES = 20; // Increased required samples
+  private readonly GLUCOSE_BASELINE = 90; // Standard fasting reference
   
-  // Adjusted weight factors for better sensitivity to individual variations
-  private readonly PERFUSION_FACTOR = 0.75; // Increased from 0.65
-  private readonly AMPLITUDE_FACTOR = 0.22; // Increased from 0.18
-  private readonly FREQUENCY_FACTOR = 0.30; // Increased from 0.25
-  private readonly PHASE_FACTOR = 0.15; // Increased from 0.12
-  private readonly AREA_UNDER_CURVE_FACTOR = 0.18; // New factor for AUC analysis
+  // Conservative weight factors to prevent over-estimation
+  private readonly PERFUSION_FACTOR = 0.5; // Reduced from 0.75
+  private readonly AMPLITUDE_FACTOR = 0.15; // Reduced from 0.22
+  private readonly FREQUENCY_FACTOR = 0.20; // Reduced from 0.30
+  private readonly PHASE_FACTOR = 0.10; // Reduced from 0.15
+  private readonly AREA_UNDER_CURVE_FACTOR = 0.12; // Reduced from 0.18
   private readonly SIGNAL_WINDOW_SIZE = 5;
   
   // Tracking of calibration samples and previous values for stability
-  private readonly STABILITY_WINDOW = 3;
+  private readonly STABILITY_WINDOW = 5; // Increased stability window
   private previousValues: number[] = [];
   private lastCalculatedGlucose: number = 0;
+  
+  // Flag to track if data quality is sufficient
+  private hasQualityData: boolean = false;
   
   /**
    * Initialize the processor
@@ -35,8 +38,30 @@ export class GlucoseProcessor {
   public calculateGlucose(ppgValues: number[]): number {
     if (ppgValues.length < this.MIN_SAMPLES) {
       this.confidence = 0;
+      this.hasQualityData = false;
+      console.log("GlucoseProcessor: Insufficient data points", { 
+        provided: ppgValues.length, 
+        required: this.MIN_SAMPLES 
+      });
       return 0; // Not enough data
     }
+    
+    // Validate signal quality
+    const signalVariability = this.calculateVariability(ppgValues);
+    const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
+    
+    // If signal quality is too poor, return 0
+    if (signalAmplitude < 0.05 || signalVariability > 0.8) {
+      this.confidence = 0;
+      this.hasQualityData = false;
+      console.log("GlucoseProcessor: Signal quality too poor", { 
+        amplitude: signalAmplitude, 
+        variability: signalVariability 
+      });
+      return 0;
+    }
+    
+    this.hasQualityData = true;
     
     // Use most recent PPG samples for glucose estimation
     const recentValues = ppgValues.slice(-Math.min(150, ppgValues.length));
@@ -48,59 +73,61 @@ export class GlucoseProcessor {
       phase, 
       perfusionIndex,
       areaUnderCurve,
-      signalVariability
+      signalVariability: variability
     } = this.analyzeSignal(recentValues);
     
-    // Directly calculate glucose from signal characteristics with individual factors
+    // Directly calculate glucose from signal characteristics with reduced factors
     let glucoseEstimate = this.GLUCOSE_BASELINE;
     
-    // Amplitude contribution (higher amplitude → higher glucose)
-    // Adjusted to be more sensitive to individual differences
-    glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 120;
+    // Apply smaller adjustments to prevent extreme values
+    glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 100;
+    glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 150;
+    glucoseEstimate += phase * this.PHASE_FACTOR * 50;
+    glucoseEstimate += areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 35;
     
-    // Frequency contribution (faster frequency → higher glucose)
-    // Adjusted for better correlation with actual glucose levels
-    glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 180;
-    
-    // Phase contribution (phase shift → glucose variation)
-    // Refined for better physiological relevance
-    glucoseEstimate += phase * this.PHASE_FACTOR * 60;
-    
-    // New: Area under curve contribution
-    // This helps distinguish between different blood glucose profiles
-    glucoseEstimate += areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 45;
-    
-    // Perfusion index contribution (better perfusion → more reliable reading)
-    // Adjusted based on clinical correlations
-    const perfusionAdjustment = (perfusionIndex - 0.5) * this.PERFUSION_FACTOR * 50;
+    // Perfusion index contribution
+    const perfusionAdjustment = (perfusionIndex - 0.5) * this.PERFUSION_FACTOR * 40;
     glucoseEstimate += perfusionAdjustment;
     
-    // Add variability component to reflect glycemic changes
-    glucoseEstimate += (signalVariability - 0.5) * 12;
+    // Add small variability component
+    glucoseEstimate += (variability - 0.5) * 8;
     
     // Apply individual variation factor based on signal characteristics
     const individualFactor = this.calculateIndividualFactor(recentValues);
-    glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.2);
+    glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.15);
     
-    // Apply physiological constraints with wider range for better accuracy
-    // Normal fasting range: 70-99 mg/dL, but we allow a wider measurement range
-    glucoseEstimate = Math.max(70, Math.min(180, glucoseEstimate));
+    // Apply physiological constraints with narrower range
+    // Normal fasting range: 70-99 mg/dL
+    glucoseEstimate = Math.max(80, Math.min(140, glucoseEstimate));
     
     // Stabilize readings with temporal smoothing
     const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
     
     // Calculate confidence based on signal quality and stability
-    this.confidence = this.calculateConfidence(recentValues, perfusionIndex, signalVariability);
+    this.confidence = this.calculateConfidence(recentValues, perfusionIndex, variability);
     
     // Store this value for future stability calculations
     this.lastCalculatedGlucose = stabilizedGlucose;
+    
+    console.log("GlucoseProcessor: Calculation details", {
+      baseValue: this.GLUCOSE_BASELINE,
+      amplitudeContribution: amplitude * this.AMPLITUDE_FACTOR * 100,
+      frequencyContribution: frequency * this.FREQUENCY_FACTOR * 150,
+      phaseContribution: phase * this.PHASE_FACTOR * 50,
+      aucContribution: areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 35,
+      perfusionContribution: perfusionAdjustment,
+      variabilityContribution: (variability - 0.5) * 8,
+      individualFactor,
+      rawEstimate: glucoseEstimate,
+      stabilized: stabilizedGlucose,
+      confidence: this.confidence
+    });
     
     return Math.round(stabilizedGlucose);
   }
   
   /**
    * Calculate individual variation factor based on unique signal characteristics
-   * This helps personalize glucose estimates for different users
    */
   private calculateIndividualFactor(values: number[]): number {
     if (values.length < 30) return 0.5;
@@ -123,16 +150,14 @@ export class GlucoseProcessor {
     const normalizedCrossings = crossings / values.length;
     
     // Create individualization factor from combined metrics
-    // This factor makes each person's readings more distinct
     const factor = (meanDeviation * 3 + normalizedCrossings * 2) / 5;
     
-    // Normalize to 0-1 range with reasonable bounds
-    return Math.min(0.9, Math.max(0.1, factor));
+    // Normalize to 0.4-0.6 range (more conservative)
+    return Math.min(0.6, Math.max(0.4, 0.4 + factor * 0.2));
   }
   
   /**
    * Stabilize readings over time to prevent fluctuations
-   * but still allow for real changes in glucose levels
    */
   private stabilizeReading(currentReading: number): number {
     // Add the current reading to our history
@@ -171,7 +196,7 @@ export class GlucoseProcessor {
     }
     
     // Otherwise, provide more stable reading
-    return stableValue * 0.7 + currentReading * 0.3;
+    return stableValue * 0.8 + currentReading * 0.2; // More stability (0.8 weight)
   }
   
   /**
@@ -275,7 +300,6 @@ export class GlucoseProcessor {
   
   /**
    * Calculate area under the curve relative to the baseline
-   * This correlates with glucose absorption patterns
    */
   private calculateAreaUnderCurve(values: number[], baseline: number): number {
     let area = 0;
@@ -288,7 +312,6 @@ export class GlucoseProcessor {
   
   /**
    * Calculate signal variability
-   * Higher variability indicates less stable glucose
    */
   private calculateVariability(values: number[]): number {
     if (values.length < 2) return 0;
@@ -311,7 +334,7 @@ export class GlucoseProcessor {
    */
   private calculateConfidence(values: number[], perfusionIndex: number, variability: number): number {
     // If not enough data, low confidence
-    if (values.length < this.MIN_SAMPLES) {
+    if (values.length < this.MIN_SAMPLES || !this.hasQualityData) {
       return 0;
     }
     
@@ -350,7 +373,7 @@ export class GlucoseProcessor {
                        0.15 * dataComponent +
                        0.15 * variabilityComponent;
     
-    return Math.min(1, Math.max(0, confidence));
+    return Math.min(0.95, Math.max(0, confidence)); // Cap at 0.95 for honesty
   }
   
   /**
@@ -367,5 +390,7 @@ export class GlucoseProcessor {
     this.confidence = 0;
     this.previousValues = [];
     this.lastCalculatedGlucose = 0;
+    this.hasQualityData = false;
+    console.log("GlucoseProcessor: Reset complete");
   }
 }
