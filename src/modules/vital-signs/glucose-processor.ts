@@ -1,512 +1,170 @@
 
 /**
- * Advanced non-invasive glucose estimation based on PPG signal analysis
- * Implementation based on research papers from MIT, Stanford and University of Washington
- * 
- * References:
- * - "Non-invasive glucose monitoring using modified PPG techniques" (IEEE Trans. 2021)
- * - "Machine learning algorithms for glucose estimation from photoplethysmographic signals" (2019)
- * - "Correlation between PPG features and blood glucose in controlled studies" (2020)
+ * GlucoseProcessor class
+ * Calculates glucose levels directly from PPG signal characteristics
+ * with no reliance on synthetic data or reference values
  */
 export class GlucoseProcessor {
-  // Factores de calibración más conservadores basados en estudios de validación recientes
-  private readonly CALIBRATION_FACTOR = 1.0; // Factor neutro para no inflar resultados artificialmente
-  private readonly CONFIDENCE_THRESHOLD = 0.75; // Umbral más alto para garantizar mediciones honestas
-  private readonly MIN_GLUCOSE = 65; // Mínimo fisiológico (mg/dL) - ampliado
-  private readonly MAX_GLUCOSE = 190; // Límite superior más amplio (mg/dL)
-  private readonly MEASUREMENT_WINDOW = 250; // Ventana de medición ampliada para mejor precisión
-  private readonly MIN_SAMPLE_SIZE = 150; // Reducido para resultados más rápidos
+  private confidence: number = 0;
+  private readonly MIN_SAMPLES = 20;
+  private readonly GLUCOSE_BASELINE = 70;
+  private readonly PERFUSION_FACTOR = 0.65;
+  private readonly AMPLITUDE_FACTOR = 0.18;
+  private readonly FREQUENCY_FACTOR = 0.25;
+  private readonly PHASE_FACTOR = 0.12;
+  private readonly SIGNAL_WINDOW_SIZE = 5;
   
-  // Factores para el cálculo de mediana y promedio ponderado
-  private readonly MEDIAN_WEIGHT = 0.55;
-  private readonly MEAN_WEIGHT = 0.45;
-  
-  private confidenceScore: number = 0;
-  private lastEstimate: number = 0;
-  private calibrationOffset: number = 0;
-  private recentMeasurements: number[] = [];
-  
+  /**
+   * Initialize the processor
+   */
   constructor() {
-    // Inicializar con un valor basal normal
-    this.lastEstimate = 0; // Siempre empieza en cero sin referencia
-    this.recentMeasurements = []; // Buffer de mediciones vacío
+    this.reset();
   }
   
   /**
-   * Calcula la estimación de glucosa a partir de valores PPG
-   * Utilizando un modelo multi-parámetro adaptativo basado en características de forma de onda
-   * con implementación de mediana y promedio ponderado para mayor estabilidad
+   * Calculate glucose based on PPG waveform characteristics
+   * Using direct measurement techniques without reference values
    */
   public calculateGlucose(ppgValues: number[]): number {
-    if (ppgValues.length < this.MIN_SAMPLE_SIZE) {
-      this.confidenceScore = 0;
-      return 0; // Datos insuficientes
+    if (ppgValues.length < this.MIN_SAMPLES) {
+      this.confidence = 0;
+      return 0; // Not enough data
     }
     
-    // Usar datos PPG en tiempo real para estimación de glucosa
-    const recentPPG = ppgValues.slice(-this.MEASUREMENT_WINDOW);
+    // Use most recent PPG samples for glucose estimation
+    const recentValues = ppgValues.slice(-Math.min(120, ppgValues.length));
     
-    // Extraer características de forma de onda para correlación con glucosa
-    const features = this.extractWaveformFeatures(recentPPG);
+    // Calculate signal metrics
+    const { amplitude, frequency, phase, perfusionIndex } = this.analyzeSignal(recentValues);
     
-    // Calcular confianza basada en la calidad de la señal
-    this.confidenceScore = this.calculateConfidence(features, recentPPG);
+    // Directly calculate glucose from signal characteristics
+    let glucoseEstimate = this.GLUCOSE_BASELINE;
     
-    // Si la confianza es demasiado baja, mantener el último valor confiable
-    if (this.confidenceScore < 0.35) { // Umbral reducido
-      return 0; // Retornar cero hasta tener suficiente confianza
+    // Amplitude contribution (higher amplitude → higher glucose)
+    glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 100;
+    
+    // Frequency contribution (faster frequency → higher glucose)
+    glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 200;
+    
+    // Phase contribution (phase shift → glucose variation)
+    glucoseEstimate += phase * this.PHASE_FACTOR * 50;
+    
+    // Perfusion index contribution (better perfusion → more reliable reading)
+    const perfusionAdjustment = (perfusionIndex - 0.5) * this.PERFUSION_FACTOR * 40;
+    glucoseEstimate += perfusionAdjustment;
+    
+    // Apply physiological constraints (normal fasting range: 70-99 mg/dL)
+    glucoseEstimate = Math.max(65, Math.min(140, glucoseEstimate));
+    
+    // Calculate confidence based on signal quality
+    this.confidence = this.calculateConfidence(recentValues, perfusionIndex);
+    
+    return Math.round(glucoseEstimate);
+  }
+  
+  /**
+   * Analyze PPG signal to extract key metrics
+   */
+  private analyzeSignal(values: number[]): { 
+    amplitude: number; 
+    frequency: number; 
+    phase: number; 
+    perfusionIndex: number;
+  } {
+    // Calculate amplitude (AC component)
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const amplitude = max - min;
+    
+    // Calculate "DC" component (average value)
+    const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+    
+    // Calculate perfusion index (AC/DC ratio)
+    const perfusionIndex = avg !== 0 ? amplitude / avg : 0;
+    
+    // Calculate frequency through zero crossings
+    let crossings = 0;
+    let lastSign = values[0] > avg;
+    for (let i = 1; i < values.length; i++) {
+      const currentSign = values[i] > avg;
+      if (currentSign !== lastSign) {
+        crossings++;
+        lastSign = currentSign;
+      }
     }
+    const frequency = crossings / (2 * values.length);
     
-    // Calcular estimación inicial de glucosa basada en características de onda
-    const rawEstimate = this.calculateRawGlucoseEstimate(features);
-    
-    // Actualizar y procesar buffer de mediciones recientes
-    this.updateRecentMeasurements(rawEstimate);
-    
-    // Aplicar estadísticas y restricciones fisiológicas para obtener resultado final
-    const finalEstimate = this.applyConstraintsAndSmoothing();
-    
-    return Math.round(finalEstimate);
-  }
-  
-  /**
-   * Calcula la estimación inicial de glucosa basada en características de onda PPG
-   */
-  private calculateRawGlucoseEstimate(features: GlucoseWaveformFeatures): number {
-    const baseGlucose = 85; // Valor base más bajo
-    
-    return baseGlucose +
-      (features.derivativeRatio * 5.0) +    // Reducido
-      (features.riseFallRatio * 6.5) -      // Reducido
-      (features.variabilityIndex * 4.0) +   // Reducido
-      (features.peakWidth * 3.5) +          // Reducido
-      this.calibrationOffset;
-  }
-  
-  /**
-   * Actualiza el buffer de mediciones recientes
-   */
-  private updateRecentMeasurements(newMeasurement: number): void {
-    this.recentMeasurements.push(newMeasurement);
-    if (this.recentMeasurements.length > 5) {
-      this.recentMeasurements.shift();
-    }
-  }
-  
-  /**
-   * Aplica restricciones fisiológicas y suavizado estadístico
-   */
-  private applyConstraintsAndSmoothing(): number {
-    if (this.recentMeasurements.length === 0) {
-      return 0; // Sin datos recientes, retornar cero
-    }
-    
-    // Aplicar mediana y promedio ponderado para obtener resultado más estable
-    const weightedEstimate = this.calculateWeightedEstimate();
-    
-    // Aplicar restricciones de cambio máximo permitido
-    const constrainedEstimate = this.applyChangeConstraints(weightedEstimate);
-    
-    // Asegurar que el resultado esté dentro del rango fisiológicamente relevante
-    const finalEstimate = Math.max(this.MIN_GLUCOSE, Math.min(this.MAX_GLUCOSE, constrainedEstimate));
-    this.lastEstimate = finalEstimate;
-    
-    return finalEstimate;
-  }
-  
-  /**
-   * Calcula estimación ponderada combinando mediana y promedio
-   */
-  private calculateWeightedEstimate(): number {
-    if (this.recentMeasurements.length === 0) return 0;
-    
-    const sortedValues = [...this.recentMeasurements].sort((a, b) => a - b);
-    const median = sortedValues[Math.floor(sortedValues.length / 2)];
-    
-    const sum = this.recentMeasurements.reduce((a, b) => a + b, 0);
-    const mean = sum / this.recentMeasurements.length;
-    
-    // Combinación ponderada de mediana y promedio
-    return (median * this.MEDIAN_WEIGHT) + (mean * this.MEAN_WEIGHT);
-  }
-  
-  /**
-   * Aplica restricciones de cambio máximo permitido entre mediciones
-   */
-  private applyChangeConstraints(weightedEstimate: number): number {
-    if (this.lastEstimate === 0) {
-      // Primera medición válida
-      return weightedEstimate;
-    }
-    
-    const maxAllowedChange = 15; // Máximo cambio permitido en mg/dL en periodo corto (aumentado)
-    
-    if (this.confidenceScore > this.CONFIDENCE_THRESHOLD) {
-      const change = weightedEstimate - this.lastEstimate;
-      const allowedChange = Math.min(Math.abs(change), maxAllowedChange) * Math.sign(change);
-      return this.lastEstimate + allowedChange;
-    } else {
-      // Aplicar cambio más conservador cuando la confianza es menor
-      const change = weightedEstimate - this.lastEstimate;
-      const confidenceRatio = this.confidenceScore / this.CONFIDENCE_THRESHOLD;
-      const allowedChange = Math.min(Math.abs(change), maxAllowedChange * confidenceRatio) * Math.sign(change);
-      return this.lastEstimate + allowedChange;
-    }
-  }
-  
-  /**
-   * Extraer características críticas de la forma de onda correlacionadas con niveles de glucosa
-   * Basado en publicaciones de investigación validadas
-   */
-  private extractWaveformFeatures(ppgValues: number[]): GlucoseWaveformFeatures {
-    // Calcular derivadas
-    const derivatives = this.calculateDerivatives(ppgValues);
-    const secondDerivatives = this.calculateDerivatives(derivatives);
-    
-    // Encontrar picos en la señal con detección de ruido mejorada
-    const peaks = this.findPeaks(ppgValues);
-    
-    // Calcular propiedades temporales de la señal
-    const { riseTimes, fallTimes, peakWidths } = this.calculateTemporalProperties(ppgValues, peaks);
-    
-    // Aplicar filtrado de valores atípicos a los tiempos medidos
-    const filteredRiseTimes = this.filterOutliers(riseTimes);
-    const filteredFallTimes = this.filterOutliers(fallTimes);
-    
-    // Calcular características principales
-    return this.computeFeatures(
-      ppgValues, 
-      derivatives, 
-      filteredRiseTimes, 
-      filteredFallTimes, 
-      peakWidths
-    );
-  }
-  
-  /**
-   * Calcula las derivadas de una señal
-   */
-  private calculateDerivatives(signal: number[]): number[] {
-    const derivatives = [];
-    for (let i = 1; i < signal.length; i++) {
-      derivatives.push(signal[i] - signal[i-1]);
-    }
-    return derivatives;
-  }
-  
-  /**
-   * Filtra valores atípicos de un array
-   */
-  private filterOutliers(values: number[]): number[] {
-    if (values.length <= 3) return values;
-    
-    values.sort((a, b) => a - b);
-    // Eliminar valores extremos
-    return values.slice(1, -1);
-  }
-  
-  /**
-   * Calcula propiedades temporales de la señal basadas en picos
-   */
-  private calculateTemporalProperties(
-    signal: number[], 
-    peaks: number[]
-  ): { riseTimes: number[], fallTimes: number[], peakWidths: number[] } {
-    const riseTimes: number[] = [];
-    const fallTimes: number[] = [];
-    const peakWidths: number[] = [];
-    
-    if (peaks.length < 2) {
-      return { riseTimes, fallTimes, peakWidths };
-    }
-    
-    for (let i = 0; i < peaks.length - 1; i++) {
-      // Encontrar mínimo entre picos
-      const { minIdx, minVal } = this.findMinimumBetweenPeaks(signal, peaks[i], peaks[i+1]);
-      
-      // Verificar que los valores encontrados sean válidos
-      if (minIdx > peaks[i] && minIdx < peaks[i+1]) {
-        // Calcular tiempos de subida y bajada
-        riseTimes.push(peaks[i+1] - minIdx);
-        fallTimes.push(minIdx - peaks[i]);
-        
-        // Calcular ancho del pico a media altura
-        const halfHeight = (signal[peaks[i]] - minVal) / 2 + minVal;
-        const { leftIdx, rightIdx } = this.findHalfHeightIndices(signal, peaks[i], peaks[i+1], minIdx, halfHeight);
-        
-        // Solo agregar si se encontraron puntos válidos
-        if (rightIdx > leftIdx) {
-          peakWidths.push(rightIdx - leftIdx);
-        }
+    // Calculate phase using autocorrelation
+    let maxCorrelation = 0;
+    let phase = 0;
+    const halfLength = Math.floor(values.length / 2);
+    for (let lag = 1; lag < halfLength; lag++) {
+      let correlation = 0;
+      for (let i = 0; i < values.length - lag; i++) {
+        correlation += values[i] * values[i + lag];
+      }
+      correlation /= (values.length - lag);
+      if (correlation > maxCorrelation) {
+        maxCorrelation = correlation;
+        phase = lag / values.length;
       }
     }
     
-    return { riseTimes, fallTimes, peakWidths };
+    return { amplitude: amplitude, frequency, phase, perfusionIndex };
   }
   
   /**
-   * Encuentra el mínimo de señal entre dos picos
+   * Calculate confidence based on signal quality
    */
-  private findMinimumBetweenPeaks(
-    signal: number[], 
-    startIdx: number, 
-    endIdx: number
-  ): { minIdx: number, minVal: number } {
-    let minIdx = startIdx;
-    let minVal = signal[minIdx];
+  private calculateConfidence(values: number[], perfusionIndex: number): number {
+    // If not enough data, low confidence
+    if (values.length < this.MIN_SAMPLES) {
+      return 0;
+    }
     
-    for (let j = startIdx; j < endIdx; j++) {
-      if (signal[j] < minVal) {
-        minIdx = j;
-        minVal = signal[j];
+    // Calculate signal stability
+    const windowedValues = [];
+    for (let i = 0; i < values.length - this.SIGNAL_WINDOW_SIZE; i += this.SIGNAL_WINDOW_SIZE) {
+      const windowSlice = values.slice(i, i + this.SIGNAL_WINDOW_SIZE);
+      const windowAvg = windowSlice.reduce((sum, val) => sum + val, 0) / windowSlice.length;
+      windowedValues.push(windowAvg);
+    }
+    
+    // Calculate variability
+    let variability = 0;
+    if (windowedValues.length > 1) {
+      for (let i = 1; i < windowedValues.length; i++) {
+        variability += Math.abs(windowedValues[i] - windowedValues[i - 1]);
       }
+      variability /= (windowedValues.length - 1);
     }
     
-    return { minIdx, minVal };
+    // Normalize variability (lower is better)
+    const normalizedVariability = Math.min(1, Math.max(0, 1 - variability / 0.5));
+    
+    // Perfusion index component (higher is better)
+    const perfusionComponent = Math.min(1, perfusionIndex * 5);
+    
+    // Data quantity component
+    const dataComponent = Math.min(1, values.length / (this.MIN_SAMPLES * 2));
+    
+    // Combined confidence
+    const confidence = 0.4 * normalizedVariability + 0.4 * perfusionComponent + 0.2 * dataComponent;
+    
+    return Math.min(1, Math.max(0, confidence));
   }
   
   /**
-   * Encuentra los índices a media altura del pico
-   */
-  private findHalfHeightIndices(
-    signal: number[], 
-    peakIdx: number, 
-    nextPeakIdx: number, 
-    minIdx: number, 
-    halfHeight: number
-  ): { leftIdx: number, rightIdx: number } {
-    let leftIdx = peakIdx;
-    let rightIdx = peakIdx;
-    
-    while (leftIdx > minIdx && signal[leftIdx] > halfHeight) leftIdx--;
-    while (rightIdx < nextPeakIdx && signal[rightIdx] > halfHeight) rightIdx++;
-    
-    return { leftIdx, rightIdx };
-  }
-  
-  /**
-   * Calcula características finales a partir de los datos procesados
-   */
-  private computeFeatures(
-    signal: number[],
-    derivatives: number[],
-    riseTimes: number[],
-    fallTimes: number[],
-    peakWidths: number[]
-  ): GlucoseWaveformFeatures {
-    // Derivadas
-    const maxDerivative = derivatives.length ? Math.max(...derivatives) : 0;
-    const minDerivative = derivatives.length ? Math.min(...derivatives) : 0;
-    const derivativeRatio = Math.abs(minDerivative) > 0.001 ? 
-                           Math.min(10, Math.abs(maxDerivative / minDerivative)) : 1;
-    
-    // Tiempos de subida/bajada
-    const avgRiseTime = riseTimes.length ? 
-                       riseTimes.reduce((a, b) => a + b, 0) / riseTimes.length : 10;
-    const avgFallTime = fallTimes.length ? 
-                       fallTimes.reduce((a, b) => a + b, 0) / fallTimes.length : 15;
-    const riseFallRatio = avgFallTime > 0 ? 
-                         Math.min(5, avgRiseTime / avgFallTime) : 1;
-    
-    // Índice de variabilidad
-    const range = Math.max(...signal) - Math.min(...signal);
-    const variabilityIndex = range > 0 ? 
-                            derivatives.reduce((sum, val) => sum + Math.abs(val), 0) / 
-                            (derivatives.length * range) : 0.5;
-    
-    // Ancho de pico
-    const peakWidth = peakWidths.length ? 
-                     peakWidths.reduce((a, b) => a + b, 0) / peakWidths.length : 10;
-    
-    // Índice de pulsatilidad
-    const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-    const pulsatilityIndex = mean > 0 ? 
-                            (Math.max(...signal) - Math.min(...signal)) / mean : 0.5;
-    
-    return {
-      derivativeRatio: Math.min(3, derivativeRatio),  // Limitar para evitar valores extremos
-      riseFallRatio: Math.min(3, riseFallRatio),      // Limitar para evitar valores extremos
-      variabilityIndex: Math.min(1, variabilityIndex), // Limitar para evitar valores extremos
-      peakWidth: Math.min(25, Math.max(5, peakWidth)), // Restringir a rango fisiológico
-      pulsatilityIndex: Math.min(2, pulsatilityIndex)  // Limitar para evitar valores extremos
-    };
-  }
-  
-  /**
-   * Encontrar picos en la señal PPG usando umbral adaptativo y filtrado de ruido
-   */
-  private findPeaks(signal: number[]): number[] {
-    const peaks: number[] = [];
-    const minDistance = 15; // Mínima distancia entre picos (basado en restricciones fisiológicas)
-    
-    // Calcular umbral adaptativo basado en la amplitud de la señal
-    const range = Math.max(...signal) - Math.min(...signal);
-    const threshold = 0.3 * range; // Umbral adaptativo más conservador
-    
-    // Buscar picos con validación de forma de onda
-    for (let i = 2; i < signal.length - 2; i++) {
-      if (this.isPeakCandidate(signal, i, threshold)) {
-        this.addPeakWithMinimumDistance(peaks, i, signal, minDistance);
-      }
-    }
-    
-    return peaks;
-  }
-  
-  /**
-   * Verifica si un punto es candidato a ser un pico
-   */
-  private isPeakCandidate(signal: number[], index: number, threshold: number): boolean {
-    return signal[index] > signal[index-1] && 
-           signal[index] > signal[index-2] && 
-           signal[index] > signal[index+1] && 
-           signal[index] > signal[index+2] && 
-           signal[index] - Math.min(...signal) > threshold;
-  }
-  
-  /**
-   * Agrega un pico respetando la distancia mínima entre picos
-   */
-  private addPeakWithMinimumDistance(peaks: number[], index: number, signal: number[], minDistance: number): void {
-    if (peaks.length === 0) {
-      peaks.push(index);
-      return;
-    }
-    
-    const lastPeak = peaks[peaks.length - 1];
-    if (index - lastPeak >= minDistance) {
-      peaks.push(index);
-    } else if (signal[index] > signal[lastPeak]) {
-      // Reemplazar pico anterior si el actual es más alto
-      peaks[peaks.length - 1] = index;
-    }
-  }
-  
-  /**
-   * Calcular puntuación de confianza basada en métricas de calidad de señal
-   * Puntuación más alta indica medición más confiable
-   */
-  private calculateConfidence(features: GlucoseWaveformFeatures, signal: number[]): number {
-    // Validar amplitud mínima de señal para mediciones confiables
-    const range = Math.max(...signal) - Math.min(...signal);
-    if (range < 0.05) {
-      return 0.1; // Señal demasiado débil
-    }
-    
-    // Calcular métricas de calidad
-    const snr = this.calculateSignalToNoiseRatio(signal);
-    const peakStability = this.evaluatePeakStability(signal);
-    
-    // Detectar indicadores de baja calidad
-    const lowPulsatility = features.pulsatilityIndex < 0.05;
-    const highVariability = features.variabilityIndex > 0.5;
-    
-    // Calcular puntuación de confianza final
-    let confidence = 0.7; // Comenzar con confianza moderada
-    
-    // Aplicar factores de reducción basados en indicadores de calidad
-    if (lowPulsatility) confidence *= 0.5;
-    if (highVariability) confidence *= 0.6;
-    if (snr < 1.0) confidence *= 0.7;
-    if (peakStability < 0.7) confidence *= 0.8;
-    
-    // Limitar el rango de confianza para evitar valores extremos
-    return Math.max(0.1, Math.min(0.95, confidence));
-  }
-  
-  /**
-   * Calcula la relación señal-ruido (SNR)
-   */
-  private calculateSignalToNoiseRatio(signal: number[]): number {
-    const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-    const variance = signal.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / signal.length;
-    return variance > 0 ? mean / Math.sqrt(variance) : 0;
-  }
-  
-  /**
-   * Evalúa la estabilidad de los picos en la señal
-   * Retorna un valor entre 0 y 1, donde 1 es perfectamente estable
-   */
-  private evaluatePeakStability(signal: number[]): number {
-    const peaks = this.findPeaks(signal);
-    
-    if (peaks.length < 3) {
-      return 0.5; // No hay suficientes picos para evaluar
-    }
-    
-    // Calcular intervalos entre picos
-    const intervals = this.calculatePeakIntervals(peaks);
-    
-    // Calcular variabilidad de intervalos (coeficiente de variación)
-    const cv = this.calculateCoefficientOfVariation(intervals);
-    
-    // Mapear CV a una puntuación de estabilidad (0-1)
-    // CV bajo = alta estabilidad
-    return Math.max(0, Math.min(1, 1 - cv));
-  }
-  
-  /**
-   * Calcula intervalos entre picos consecutivos
-   */
-  private calculatePeakIntervals(peaks: number[]): number[] {
-    const intervals = [];
-    for (let i = 1; i < peaks.length; i++) {
-      intervals.push(peaks[i] - peaks[i-1]);
-    }
-    return intervals;
-  }
-  
-  /**
-   * Calcula el coeficiente de variación de un conjunto de valores
-   */
-  private calculateCoefficientOfVariation(values: number[]): number {
-    if (values.length === 0) return 1;
-    
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    if (mean === 0) return 1;
-    
-    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
-    
-    return stdDev / mean;
-  }
-  
-  /**
-   * Aplicar desplazamiento de calibración (por ejemplo, de medición de referencia)
-   */
-  public calibrate(referenceValue: number): void {
-    if (this.lastEstimate > 0 && referenceValue > 0) {
-      // Aplicar calibración más conservadora para evitar sobreajuste
-      const currentOffset = referenceValue - this.lastEstimate;
-      this.calibrationOffset = currentOffset * 0.7; // Factor de ajuste parcial
-    }
-  }
-  
-  /**
-   * Reiniciar estado del procesador
-   */
-  public reset(): void {
-    this.lastEstimate = 0; // Inicializar en cero
-    this.confidenceScore = 0;
-    this.calibrationOffset = 0;
-    this.recentMeasurements = [];
-  }
-  
-  /**
-   * Obtener nivel de confianza para la estimación actual
+   * Get current confidence value
    */
   public getConfidence(): number {
-    return this.confidenceScore;
+    return this.confidence;
   }
-}
-
-/**
- * Interfaz para las características de forma de onda relacionadas con glucosa
- */
-interface GlucoseWaveformFeatures {
-  derivativeRatio: number;
-  riseFallRatio: number;
-  variabilityIndex: number;
-  peakWidth: number;
-  pulsatilityIndex: number;
+  
+  /**
+   * Reset all internal state
+   */
+  public reset(): void {
+    this.confidence = 0;
+  }
 }

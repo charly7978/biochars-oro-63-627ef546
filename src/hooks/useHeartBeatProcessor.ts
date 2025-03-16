@@ -25,7 +25,7 @@ export const useHeartBeatProcessor = () => {
   
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 300;
+  const MIN_BEEP_INTERVAL_MS = 250; // Reduced for better responsiveness
   
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
@@ -89,11 +89,11 @@ export const useHeartBeatProcessor = () => {
     const oldestBeep = pendingBeepsQueue.current[0];
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
-      processorRef.current.playBeep(0.8);
+      processorRef.current.playBeep(0.95); // Increased volume
       lastBeepTimeRef.current = now;
       pendingBeepsQueue.current.shift();
       
-      console.log(`useHeartBeatProcessor: Beep reproducido por cola, había ${pendingBeepsQueue.current.length} pendientes`);
+      console.log(`useHeartBeatProcessor: Beep played from queue, ${pendingBeepsQueue.current.length} pending`);
     }
     
     if (pendingBeepsQueue.current.length > 0) {
@@ -110,7 +110,7 @@ export const useHeartBeatProcessor = () => {
     const now = Date.now();
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
-      processorRef.current.playBeep(0.8);
+      processorRef.current.playBeep(0.95); // Increased volume
       lastBeepTimeRef.current = now;
       return;
     }
@@ -131,7 +131,7 @@ export const useHeartBeatProcessor = () => {
     const now = Date.now();
     
     if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS * 0.6) {
-      console.log('useHeartBeatProcessor: Beep encolado - muy pronto después del último beep');
+      console.log('useHeartBeatProcessor: Beep queued - too soon after last beep');
       pendingBeepsQueue.current.push({ time: now, value: currentBPM });
       
       if (!beepProcessorTimeoutRef.current) {
@@ -144,7 +144,7 @@ export const useHeartBeatProcessor = () => {
     }
     
     try {
-      const beepSuccess = processorRef.current.playBeep(0.8);
+      const beepSuccess = processorRef.current.playBeep(0.95); // Increased volume
       if (beepSuccess) {
         lastBeepTimeRef.current = now;
         consistentBeatsCountRef.current++;
@@ -191,7 +191,7 @@ export const useHeartBeatProcessor = () => {
     if (stabilityCounterRef.current > 15) {
       thresholdFactor = 0.25;
     } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.45;
+      thresholdFactor = 0.40;
     }
     
     const variationRatio = Math.abs(lastInterval - mean) / mean;
@@ -203,7 +203,7 @@ export const useHeartBeatProcessor = () => {
       stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
     }
     
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
+    const isArrhythmia = isIrregular && stabilityCounterRef.current > 8;
     
     heartRateVariabilityRef.current.push(variationRatio);
     if (heartRateVariabilityRef.current.length > 20) {
@@ -251,7 +251,7 @@ export const useHeartBeatProcessor = () => {
         isArrhythmia: false
       };
       
-      if (result.isPeak && result.confidence > 0.60 && lastRRIntervalsRef.current.length >= 5) {
+      if (result.isPeak && result.confidence > 0.55 && lastRRIntervalsRef.current.length >= 5) {
         analysisResult = detectArrhythmia(lastRRIntervalsRef.current);
         currentBeatIsArrhythmia = analysisResult.isArrhythmia;
         currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
@@ -261,9 +261,10 @@ export const useHeartBeatProcessor = () => {
       if (result.isPeak && result.confidence > 0.5) {
         lastPeakTimeRef.current = now;
         
+        // Always try to beep on peak detection for better feedback
         requestImmediateBeep(value);
         
-        if (result.confidence > 0.70) {
+        if (result.confidence > 0.65) {
           playBeepSound();
         }
         
@@ -277,7 +278,7 @@ export const useHeartBeatProcessor = () => {
       
       lastSignalQualityRef.current = result.confidence;
 
-      if (result.confidence < 0.25) {
+      if (result.confidence < 0.20) {
         return {
           bpm: currentBPM,
           confidence: result.confidence,

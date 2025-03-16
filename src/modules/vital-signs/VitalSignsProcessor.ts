@@ -30,6 +30,7 @@ export interface VitalSignsResult {
 /**
  * Main vital signs processor
  * Integrates different specialized processors to calculate health metrics
+ * Operates in direct measurement mode without references or simulation
  */
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
@@ -42,14 +43,14 @@ export class VitalSignsProcessor {
   // No storage of previous results
   
   // Wider thresholds for more inclusive physiological range
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.005; // Further reduced
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.1; // Further reduced
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.003; // Further reduced
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.05; // Further reduced
 
   /**
    * Constructor that initializes all specialized processors
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing new instance");
+    console.log("VitalSignsProcessor: Initializing new instance with direct measurement");
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
@@ -60,7 +61,7 @@ export class VitalSignsProcessor {
   
   /**
    * Processes the PPG signal and calculates all vital signs
-   * Using direct measurements without reference values
+   * Using direct measurements with no reference values
    */
   public processSignal(
     ppgValue: number,
@@ -82,15 +83,15 @@ export class VitalSignsProcessor {
     }
     
     // Only process with enough data
-    if (ppgValues.length < 15) { // Further reduced for faster response
+    if (ppgValues.length < 10) { // Further reduced for faster response
       return this.createEmptyResults();
     }
     
-    // Calculate SpO2
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-60));
+    // Calculate SpO2 using direct approach
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
-    // Calculate blood pressure
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
+    // Calculate blood pressure using only signal characteristics
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
@@ -124,6 +125,7 @@ export class VitalSignsProcessor {
   
   /**
    * Creates an empty result for when there is no valid data
+   * Always returns zeros, not reference values
    */
   private createEmptyResults(): VitalSignsResult {
     return {
@@ -139,7 +141,8 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Reset the processor - no persistent values
+   * Reset the processor
+   * Ensures a clean state with no carried over values
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -149,11 +152,12 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     
-    return null;
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
-   * Get the last valid results
+   * Get the last valid results - always returns null
+   * Forces fresh measurements
    */
   public getLastValidResults(): VitalSignsResult | null {
     return null; // Always return null to ensure measurements start from zero
@@ -164,5 +168,6 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
+    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }
