@@ -12,7 +12,7 @@ interface ArrhythmiaWindow {
 
 /**
  * Hook for processing vital signs with direct algorithms
- * Measurements always start from zero
+ * Measurements ALWAYS start from zero with NO simulation
  */
 export const useVitalSignsProcessor = () => {
   // State management
@@ -26,18 +26,18 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Configuration with wider physiological ranges
+  // Configuration with wider physiological ranges for direct measurement
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 5000, // 5 seconds between arrhythmias (reduced from 8000)
-    MAX_ARRHYTHMIAS_PER_SESSION: 30,    // Increased from 20 for more sensitivity
-    SIGNAL_QUALITY_THRESHOLD: 0.30,     // Reduced from 0.40 for even lower quality threshold
-    SEQUENTIAL_DETECTION_THRESHOLD: 0.30, // Reduced from 0.40 for more sensitivity
-    SPECTRAL_FREQUENCY_THRESHOLD: 0.20    // Reduced from 0.25 for more sensitivity
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 4000, // 4 seconds between arrhythmias (reduced from 5000)
+    MAX_ARRHYTHMIAS_PER_SESSION: 35,    // Increased from 30 for more sensitivity
+    SIGNAL_QUALITY_THRESHOLD: 0.25,     // Reduced from 0.30 for lower quality threshold
+    SEQUENTIAL_DETECTION_THRESHOLD: 0.25, // Reduced from 0.30 for more sensitivity
+    SPECTRAL_FREQUENCY_THRESHOLD: 0.15    // Reduced from 0.20 for more sensitivity
   });
   
-  // Initialize processor components
+  // Initialize processor components - always direct measurement
   useEffect(() => {
-    console.log("useVitalSignsProcessor: Initializing processor with zero reference", {
+    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT", {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
@@ -69,6 +69,7 @@ export const useVitalSignsProcessor = () => {
   
   /**
    * Process PPG signal directly without simulation or reference values
+   * ALWAYS uses direct measurement from signal
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) {
@@ -87,8 +88,8 @@ export const useVitalSignsProcessor = () => {
     processedSignals.current++;
     
     // Logging for diagnostics (less frequent)
-    if (processedSignals.current % 50 === 0) {
-      console.log("useVitalSignsProcessor: Processing signal", {
+    if (processedSignals.current % 45 === 0) {
+      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
@@ -98,13 +99,13 @@ export const useVitalSignsProcessor = () => {
       });
     }
     
-    // Process signal directly through processor
+    // Process signal directly through processor - no simulation
     let result = processorRef.current.processSignal(value, rrData);
     const currentTime = Date.now();
     
     // Process arrhythmias if there is enough data
-    if (rrData && rrData.intervals.length >= 5) { // Reduced from 6 for earlier detection
-      // Analyze data directly
+    if (rrData && rrData.intervals.length >= 4) { // Reduced from 5 for earlier detection
+      // Analyze data directly - no simulation
       const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
       result = arrhythmiaResult;
       
@@ -113,13 +114,13 @@ export const useVitalSignsProcessor = () => {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on heart rate
-        let windowWidth = 500; // 500ms default (reduced from 600)
+        let windowWidth = 450; // 450ms default (reduced from 500)
         
         // Adjust based on RR intervals
         if (rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-5);
+          const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(350, Math.min(900, avgInterval * 1.1)); // Tightened window
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.2)); // Wider window for visibility
         }
         
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
@@ -130,6 +131,7 @@ export const useVitalSignsProcessor = () => {
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
     // Always return current result, never cache old ones
+    // This ensures every measurement is coming directly from the signal
     setLastValidResults(null);
     
     return result;
@@ -137,28 +139,30 @@ export const useVitalSignsProcessor = () => {
 
   /**
    * Perform complete reset - always start measurements from zero
+   * No simulations or reference values
    */
   const reset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return null;
     
-    console.log("useVitalSignsProcessor: Reset initiated - starting from zero");
+    console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode");
     
     processorRef.current.reset();
     arrhythmiaAnalyzerRef.current.reset();
     setArrhythmiaWindows([]);
     setLastValidResults(null); // Always clear previous results
     
-    console.log("Reset completed - all values at zero");
+    console.log("Reset completed - all values at zero for direct measurement");
     return null; // Always return null to ensure measurements start from zero
   }, []);
   
   /**
    * Perform full reset - clear all data and reinitialize processors
+   * No simulations or reference values
    */
   const fullReset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return;
     
-    console.log("useVitalSignsProcessor: Full reset initiated - starting new session");
+    console.log("useVitalSignsProcessor: Full reset initiated - DIRECT MEASUREMENT mode");
     
     processorRef.current.fullReset();
     arrhythmiaAnalyzerRef.current.reset();
@@ -166,7 +170,7 @@ export const useVitalSignsProcessor = () => {
     setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
-    console.log("Full reset complete - all data cleared");
+    console.log("Full reset complete - direct measurement mode active");
   }, []);
 
   return {
