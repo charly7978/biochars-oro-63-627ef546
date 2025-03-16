@@ -78,16 +78,18 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      const bpm = processor.getFinalBPM() || 0;
+      // Use direct method to get BPM with no adjustments
+      const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
+      const bpm = Math.round(rawBPM);
       const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
       
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
         processorType: processor ? typeof processor : 'undefined',
         processorMethods: processor ? Object.getOwnPropertyNames(processor.__proto__) : [],
+        rawBPM,
         bpm,
         arrhythmias,
-        rawBPM: processor.getFinalBPM(),
         timestamp: new Date().toISOString()
       });
 

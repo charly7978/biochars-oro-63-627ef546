@@ -39,11 +39,11 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  private lastValidResults: VitalSignsResult | null = null;
+  // No storage of previous results
   
-  // Widen thresholds for more inclusive physiological range
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Reduced from 0.02
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Reduced from 0.25
+  // Wider thresholds for more inclusive physiological range
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.005; // Further reduced
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.1; // Further reduced
 
   /**
    * Constructor that initializes all specialized processors
@@ -81,13 +81,8 @@ export class VitalSignsProcessor {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // Check minimum signal quality
-    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE && ppgValues.length < 60) {
-      return this.createEmptyResults();
-    }
-    
     // Only process with enough data
-    if (ppgValues.length < 20) { // Reduced from 30 for faster response
+    if (ppgValues.length < 15) { // Further reduced for faster response
       return this.createEmptyResults();
     }
     
@@ -100,7 +95,7 @@ export class VitalSignsProcessor {
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose
+    // Calculate glucose with direct real-time data
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
@@ -111,8 +106,8 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Prepare result with all metrics
-    const result: VitalSignsResult = {
+    // Prepare result with all metrics - no caching or persistence
+    return {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
@@ -125,30 +120,6 @@ export class VitalSignsProcessor {
         overall: overallConfidence
       }
     };
-    
-    // Update valid results if there is enough confidence
-    if (this.isValidMeasurement(result)) {
-      this.lastValidResults = null; // Don't store previous results to avoid reference values
-    }
-
-    return result;
-  }
-  
-  /**
-   * Checks if a measurement has enough quality to be considered valid
-   */
-  private isValidMeasurement(result: VitalSignsResult): boolean {
-    const { spo2, pressure, glucose, lipids, confidence } = result;
-    const [systolic, diastolic] = pressure.split('/').map(v => parseInt(v));
-    
-    return (
-      confidence?.overall && confidence.overall >= this.MIN_CONFIDENCE_THRESHOLD &&
-      spo2 > 0 && 
-      !isNaN(systolic) && systolic > 0 && 
-      !isNaN(diastolic) && diastolic > 0 && 
-      glucose > 0 && 
-      lipids.totalCholesterol > 0
-    );
   }
   
   /**
@@ -168,7 +139,7 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Reset the processor without maintaining the last valid results
+   * Reset the processor - no persistent values
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -178,7 +149,6 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     
-    this.lastValidResults = null; // Don't keep last results
     return null;
   }
   
@@ -194,6 +164,5 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
-    this.lastValidResults = null;
   }
 }

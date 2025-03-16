@@ -28,11 +28,11 @@ export const useVitalSignsProcessor = () => {
   
   // Configuration with wider physiological ranges
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 8000, // 8 seconds between arrhythmias (reduced from 10000)
-    MAX_ARRHYTHMIAS_PER_SESSION: 20,    // Increased from 10
-    SIGNAL_QUALITY_THRESHOLD: 0.40,     // Reduced from 0.60 for lower quality threshold
-    SEQUENTIAL_DETECTION_THRESHOLD: 0.40, // Reduced from 0.50
-    SPECTRAL_FREQUENCY_THRESHOLD: 0.25    // Reduced from 0.35
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 5000, // 5 seconds between arrhythmias (reduced from 8000)
+    MAX_ARRHYTHMIAS_PER_SESSION: 30,    // Increased from 20 for more sensitivity
+    SIGNAL_QUALITY_THRESHOLD: 0.30,     // Reduced from 0.40 for even lower quality threshold
+    SEQUENTIAL_DETECTION_THRESHOLD: 0.30, // Reduced from 0.40 for more sensitivity
+    SPECTRAL_FREQUENCY_THRESHOLD: 0.20    // Reduced from 0.25 for more sensitivity
   });
   
   // Initialize processor components
@@ -103,7 +103,7 @@ export const useVitalSignsProcessor = () => {
     const currentTime = Date.now();
     
     // Process arrhythmias if there is enough data
-    if (rrData && rrData.intervals.length >= 6) {
+    if (rrData && rrData.intervals.length >= 5) { // Reduced from 6 for earlier detection
       // Analyze data directly
       const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
       result = arrhythmiaResult;
@@ -113,13 +113,13 @@ export const useVitalSignsProcessor = () => {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on heart rate
-        let windowWidth = 600; // 600ms default
+        let windowWidth = 500; // 500ms default (reduced from 600)
         
         // Adjust based on RR intervals
         if (rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-5);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(400, Math.min(1000, avgInterval * 1.2));
+          windowWidth = Math.max(350, Math.min(900, avgInterval * 1.1)); // Tightened window
         }
         
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
@@ -129,19 +129,8 @@ export const useVitalSignsProcessor = () => {
     // Update signal log
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
-    // Only store valid results for this session, never reuse past results
-    if (result.spo2 > 0 && result.glucose > 0 && result.lipids.totalCholesterol > 0) {
-      if (processedSignals.current % 50 === 0) {
-        console.log("useVitalSignsProcessor: New measurements", {
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose,
-          lipids: result.lipids,
-          timestamp: new Date().toISOString()
-        });
-      }
-      setLastValidResults(result);
-    }
+    // Always return current result, never cache old ones
+    setLastValidResults(null);
     
     return result;
   }, [addArrhythmiaWindow]);

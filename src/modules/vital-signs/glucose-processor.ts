@@ -12,14 +12,14 @@ export class GlucoseProcessor {
   // Factores de calibración más conservadores basados en estudios de validación recientes
   private readonly CALIBRATION_FACTOR = 1.0; // Factor neutro para no inflar resultados artificialmente
   private readonly CONFIDENCE_THRESHOLD = 0.75; // Umbral más alto para garantizar mediciones honestas
-  private readonly MIN_GLUCOSE = 70; // Mínimo fisiológico (mg/dL)
-  private readonly MAX_GLUCOSE = 170; // Límite superior más conservador (mg/dL)
-  private readonly MEASUREMENT_WINDOW = 200; // Ventana de medición ampliada para mejor precisión
-  private readonly MIN_SAMPLE_SIZE = 180; // Mínimo de muestras necesarias para una medición válida
+  private readonly MIN_GLUCOSE = 65; // Mínimo fisiológico (mg/dL) - ampliado
+  private readonly MAX_GLUCOSE = 190; // Límite superior más amplio (mg/dL)
+  private readonly MEASUREMENT_WINDOW = 250; // Ventana de medición ampliada para mejor precisión
+  private readonly MIN_SAMPLE_SIZE = 150; // Reducido para resultados más rápidos
   
   // Factores para el cálculo de mediana y promedio ponderado
-  private readonly MEDIAN_WEIGHT = 0.6;
-  private readonly MEAN_WEIGHT = 0.4;
+  private readonly MEDIAN_WEIGHT = 0.55;
+  private readonly MEAN_WEIGHT = 0.45;
   
   private confidenceScore: number = 0;
   private lastEstimate: number = 0;
@@ -28,8 +28,8 @@ export class GlucoseProcessor {
   
   constructor() {
     // Inicializar con un valor basal normal
-    this.lastEstimate = 95; // Valor basal conservador (95 mg/dL)
-    this.recentMeasurements = Array(5).fill(95); // Inicializar buffer de mediciones
+    this.lastEstimate = 0; // Siempre empieza en cero sin referencia
+    this.recentMeasurements = []; // Buffer de mediciones vacío
   }
   
   /**
@@ -53,8 +53,8 @@ export class GlucoseProcessor {
     this.confidenceScore = this.calculateConfidence(features, recentPPG);
     
     // Si la confianza es demasiado baja, mantener el último valor confiable
-    if (this.confidenceScore < 0.4) {
-      return Math.round(this.lastEstimate);
+    if (this.confidenceScore < 0.35) { // Umbral reducido
+      return 0; // Retornar cero hasta tener suficiente confianza
     }
     
     // Calcular estimación inicial de glucosa basada en características de onda
@@ -73,13 +73,13 @@ export class GlucoseProcessor {
    * Calcula la estimación inicial de glucosa basada en características de onda PPG
    */
   private calculateRawGlucoseEstimate(features: GlucoseWaveformFeatures): number {
-    const baseGlucose = 95; // Valor basal normal
+    const baseGlucose = 85; // Valor base más bajo
     
     return baseGlucose +
-      (features.derivativeRatio * 6.0) +    // Reducido de 7.5 a 6.0
-      (features.riseFallRatio * 7.0) -      // Reducido de 8.5 a 7.0
-      (features.variabilityIndex * 4.5) +   // Reducido de 5.0 a 4.5
-      (features.peakWidth * 4.0) +          // Reducido de 5.0 a 4.0
+      (features.derivativeRatio * 5.0) +    // Reducido
+      (features.riseFallRatio * 6.5) -      // Reducido
+      (features.variabilityIndex * 4.0) +   // Reducido
+      (features.peakWidth * 3.5) +          // Reducido
       this.calibrationOffset;
   }
   
@@ -97,6 +97,10 @@ export class GlucoseProcessor {
    * Aplica restricciones fisiológicas y suavizado estadístico
    */
   private applyConstraintsAndSmoothing(): number {
+    if (this.recentMeasurements.length === 0) {
+      return 0; // Sin datos recientes, retornar cero
+    }
+    
     // Aplicar mediana y promedio ponderado para obtener resultado más estable
     const weightedEstimate = this.calculateWeightedEstimate();
     
@@ -114,6 +118,8 @@ export class GlucoseProcessor {
    * Calcula estimación ponderada combinando mediana y promedio
    */
   private calculateWeightedEstimate(): number {
+    if (this.recentMeasurements.length === 0) return 0;
+    
     const sortedValues = [...this.recentMeasurements].sort((a, b) => a - b);
     const median = sortedValues[Math.floor(sortedValues.length / 2)];
     
@@ -128,7 +134,12 @@ export class GlucoseProcessor {
    * Aplica restricciones de cambio máximo permitido entre mediciones
    */
   private applyChangeConstraints(weightedEstimate: number): number {
-    const maxAllowedChange = 10; // Máximo cambio permitido en mg/dL en periodo corto
+    if (this.lastEstimate === 0) {
+      // Primera medición válida
+      return weightedEstimate;
+    }
+    
+    const maxAllowedChange = 15; // Máximo cambio permitido en mg/dL en periodo corto (aumentado)
     
     if (this.confidenceScore > this.CONFIDENCE_THRESHOLD) {
       const change = weightedEstimate - this.lastEstimate;
@@ -475,10 +486,10 @@ export class GlucoseProcessor {
    * Reiniciar estado del procesador
    */
   public reset(): void {
-    this.lastEstimate = 95;
+    this.lastEstimate = 0; // Inicializar en cero
     this.confidenceScore = 0;
     this.calibrationOffset = 0;
-    this.recentMeasurements = Array(5).fill(95);
+    this.recentMeasurements = [];
   }
   
   /**
