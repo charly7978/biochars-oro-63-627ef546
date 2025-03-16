@@ -1,11 +1,16 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface VitalMeasurements {
   heartRate: number;
   spo2: number;
   pressure: string;
   arrhythmiaCount: string | number;
+}
+
+interface ArrhythmiaWindow {
+  start: number;
+  end: number;
 }
 
 export const useVitalMeasurement = (isMeasuring: boolean) => {
@@ -16,14 +21,17 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     arrhythmiaCount: 0
   });
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
       isMeasuring,
       currentMeasurements: measurements,
       elapsedTime,
+      arrhythmiaWindows: arrhythmiaWindows.length,
       timestamp: new Date().toISOString(),
-      session: Math.random().toString(36).substring(2, 9) // Identificador único para esta sesión
+      session: sessionId.current
     });
 
     if (!isMeasuring) {
@@ -46,6 +54,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       
       setElapsedTime(0);
+      setArrhythmiaWindows([]);
       return;
     }
 
@@ -68,20 +77,33 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       }
 
       const bpm = processor.getFinalBPM() || 0;
+      const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
+      
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
         processorType: processor ? typeof processor : 'undefined',
         processorMethods: processor ? Object.getOwnPropertyNames(processor.__proto__) : [],
         bpm,
+        arrhythmias,
         rawBPM: processor.getFinalBPM(),
         confidence: processor.getConfidence ? processor.getConfidence() : 'N/A',
+        arritmiaWindows: processor.getArrhythmiaWindows ? processor.getArrhythmiaWindows() : [],
         timestamp: new Date().toISOString()
       });
 
+      // Verificamos si hay ventanas de arritmia disponibles
+      if (processor.getArrhythmiaWindows && typeof processor.getArrhythmiaWindows === 'function') {
+        const windows = processor.getArrhythmiaWindows();
+        if (windows && Array.isArray(windows) && windows.length > 0) {
+          setArrhythmiaWindows(windows);
+        }
+      }
+
       setMeasurements(prev => {
-        if (prev.heartRate === bpm) {
-          console.log('useVitalMeasurement - BPM sin cambios, no se actualiza', {
+        if (prev.heartRate === bpm && prev.arrhythmiaCount === arrhythmias) {
+          console.log('useVitalMeasurement - Valores sin cambios, no se actualiza', {
             currentBPM: prev.heartRate,
+            currentArrhythmias: prev.arrhythmiaCount,
             timestamp: new Date().toISOString()
           });
           return prev;
@@ -89,12 +111,15 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         
         const newValues = {
           ...prev,
-          heartRate: bpm
+          heartRate: bpm,
+          arrhythmiaCount: arrhythmias
         };
         
-        console.log('useVitalMeasurement - Actualizando BPM', {
+        console.log('useVitalMeasurement - Actualizando valores', {
           prevBPM: prev.heartRate,
           newBPM: bpm,
+          prevArrhythmias: prev.arrhythmiaCount,
+          newArrhythmias: arrhythmias,
           timestamp: new Date().toISOString()
         });
         
@@ -122,6 +147,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         console.log('useVitalMeasurement - Medición completada', {
           duracionTotal: MEASUREMENT_DURATION / 1000,
           resultadosFinal: {...measurements},
+          arrhythmiaWindows: arrhythmiaWindows.length,
           timestamp: new Date().toISOString()
         });
         
@@ -138,11 +164,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements]);
+  }, [isMeasuring, measurements, arrhythmiaWindows.length]);
 
   return {
     ...measurements,
     elapsedTime: Math.min(elapsedTime, 30),
-    isComplete: elapsedTime >= 30
+    isComplete: elapsedTime >= 30,
+    arrhythmiaWindows
   };
 };

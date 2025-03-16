@@ -100,3 +100,24 @@ export const optimizeSelector = (selector: string): void => {
   const elements = document.querySelectorAll<HTMLElement>(selector);
   elements.forEach(optimizeElement);
 };
+
+// Helper for improved signal graph colors
+export const getSignalColor = (isArrhythmia: boolean, amplitude?: number): string => {
+  if (isArrhythmia) {
+    // Arritmia: Rojo para segmentos de arritmia
+    return '#ea384c'; // Rojo médico
+  } else {
+    // Ritmo normal: Azul
+    return '#2E5BFF'; // Azul médico
+  }
+};
+
+// Determinar si un punto está en una ventana de arritmia
+export const isPointInArrhythmiaWindow = (
+  pointTime: number, 
+  arrhythmiaWindows: Array<{start: number, end: number}>
+): boolean => {
+  return arrhythmiaWindows.some(window => 
+    pointTime >= window.start && pointTime <= window.end
+  );
+};

@@ -4,6 +4,11 @@ import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/Vi
 import { updateSignalLog } from '../utils/signalLogUtils';
 import { ArrhythmiaAnalyzer, ArrhythmiaConfig } from './arrhythmia/arrhythmiaAnalysis';
 
+interface ArrhythmiaWindow {
+  start: number;
+  end: number;
+}
+
 /**
  * Custom hook para procesar signos vitales con algoritmos avanzados
  * Usa procesamiento de señal mejorado y detección de arritmias basada en investigación médica
@@ -11,6 +16,7 @@ import { ArrhythmiaAnalyzer, ArrhythmiaConfig } from './arrhythmia/arrhythmiaAna
 export const useVitalSignsProcessor = () => {
   // State
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
+  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
   // Referencias para estado interno
   const processorRef = useRef<VitalSignsProcessor | null>(null);
@@ -45,6 +51,13 @@ export const useVitalSignsProcessor = () => {
         timestamp: new Date().toISOString()
       });
     };
+  }, []);
+  
+  /**
+   * Registra una nueva ventana de arritmia
+   */
+  const addArrhythmiaWindow = useCallback((start: number, end: number) => {
+    setArrhythmiaWindows(prev => [...prev, { start, end }]);
   }, []);
   
   /**
@@ -83,6 +96,13 @@ export const useVitalSignsProcessor = () => {
     // Procesar datos de arritmia si están disponibles
     result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
     
+    // Si se detectó arritmia y tenemos datos, registrar la ventana de arritmia
+    if (result.arrhythmiaStatus === "Arritmia Detectada" && result.lastArrhythmiaData) {
+      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+      // Crear una ventana de 3 segundos alrededor del evento (1.5s antes y 1.5s después)
+      addArrhythmiaWindow(arrhythmiaTime - 1500, arrhythmiaTime + 1500);
+    }
+    
     // Actualizar log de señales
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
@@ -99,7 +119,7 @@ export const useVitalSignsProcessor = () => {
     }
     
     return result;
-  }, []);
+  }, [addArrhythmiaWindow]);
 
   /**
    * Soft reset: mantener los resultados pero reiniciar los procesadores
@@ -120,6 +140,7 @@ export const useVitalSignsProcessor = () => {
     
     const savedResults = processorRef.current.reset();
     arrhythmiaAnalyzerRef.current.reset();
+    setArrhythmiaWindows([]);
     
     if (savedResults) {
       console.log("useVitalSignsProcessor: Guardando resultados tras reset", {
@@ -163,6 +184,7 @@ export const useVitalSignsProcessor = () => {
     processorRef.current.fullReset();
     arrhythmiaAnalyzerRef.current.reset();
     setLastValidResults(null);
+    setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
     console.log("Reseteo completo finalizado - borrando todos los resultados");
@@ -174,6 +196,7 @@ export const useVitalSignsProcessor = () => {
     fullReset,
     arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCounter() || 0,
     lastValidResults,
+    arrhythmiaWindows,
     debugInfo: {
       processedSignals: processedSignals.current,
       signalLog: signalLog.current.slice(-10)
