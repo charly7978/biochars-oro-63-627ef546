@@ -2,36 +2,36 @@
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 
 /**
- * Wrapper de compatibilidad que mantiene la interfaz original 
- * mientras usa la implementación refactorizada.
+ * Compatibility wrapper that maintains the original interface
+ * while using the refactored implementation.
  * 
- * Este archivo es crucial para mantener la compatibilidad con el código existente
- * mientras mejoramos la estructura interna.
+ * This file is crucial for maintaining compatibility with existing code
+ * while we improve the internal structure.
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
-  // Exponemos las constantes originales para compatibilidad
+  // Expose original constants for compatibility
   private readonly WINDOW_SIZE = 300;
-  private readonly SPO2_CALIBRATION_FACTOR = 1.05; // Aumentado de 1.02 a 1.05 para mejor calibración
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Reducido de 0.05 a 0.045 para mayor sensibilidad
-  private readonly SPO2_WINDOW = 8; // Reducido de 10 a 8 para respuesta más rápida
+  private readonly SPO2_CALIBRATION_FACTOR = 1.05; // Increased from 1.02 to 1.05 for better calibration
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Reduced from 0.05 to 0.045 for greater sensitivity
+  private readonly SPO2_WINDOW = 8; // Reduced from 10 to 8 for faster response
   private readonly SMA_WINDOW = 3;
   private readonly RR_WINDOW_SIZE = 5;
-  private readonly RMSSD_THRESHOLD = 22; // Reducido de 25 a 22 para mejor detección de arritmias
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2500; // Reducido de 3000 a 2500 ms
-  private readonly PEAK_THRESHOLD = 0.28; // Reducido de 0.3 a 0.28 para mayor sensibilidad
+  private readonly RMSSD_THRESHOLD = 22; // Reduced from 25 to 22 for better arrhythmia detection
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2500; // Reduced from 3000 to 2500 ms
+  private readonly PEAK_THRESHOLD = 0.28; // Reduced from 0.3 to 0.28 for greater sensitivity
   
   /**
-   * Constructor que inicializa el procesador interno refactorizado
+   * Constructor that initializes the internal refactored processor
    */
   constructor() {
     this.processor = new CoreProcessor();
   }
   
   /**
-   * Procesa una señal PPG y datos RR para obtener signos vitales
-   * Mantiene exactamente la misma firma de método para compatibilidad
+   * Process a PPG signal and RR data to get vital signs
+   * Maintains exactly the same method signature for compatibility
    */
   public processSignal(
     ppgValue: number,
@@ -41,19 +41,19 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Reinicia el procesador
+   * Reset the processor
    */
   public reset() {
     return this.processor.reset();
   }
   
   /**
-   * Reinicia completamente el procesador y todos sus datos
+   * Completely reset the processor and all its data
    */
   public fullReset(): void {
     this.processor.fullReset();
   }
 }
 
-// Re-exportamos los tipos para compatibilidad
+// Re-export types for compatibility
 export type { VitalSignsResult } from './vital-signs/VitalSignsProcessor';

@@ -1,32 +1,32 @@
 
 /**
- * Algoritmo ultra-simple para detección de arritmias
- * Diseñado para minimizar falsos positivos
+ * Ultra-simple algorithm for arrhythmia detection
+ * Designed to minimize false positives
  */
 export class ArrhythmiaProcessor {
-  // Umbrales extremadamente conservadores
-  private readonly MIN_RR_INTERVALS = 20; // Necesitamos muchos datos para detectar
-  private readonly MIN_INTERVAL_MS = 600; // 100 BPM máximo 
-  private readonly MAX_INTERVAL_MS = 1200; // 50 BPM mínimo
-  private readonly MIN_VARIATION_PERCENT = 70; // Variación extrema (70%)
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000; // 20 segundos entre arritmias
+  // Extremely conservative thresholds
+  private readonly MIN_RR_INTERVALS = 20; // Need lots of data to detect
+  private readonly MIN_INTERVAL_MS = 600; // 100 BPM maximum 
+  private readonly MAX_INTERVAL_MS = 1200; // 50 BPM minimum
+  private readonly MIN_VARIATION_PERCENT = 70; // Extreme variation (70%)
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000; // 20 seconds between arrhythmias
   
-  // Estado
+  // State
   private rrIntervals: number[] = [];
   private lastPeakTime: number | null = null;
-  private calibrationTime: number = 20000; // 20 segundos de calibración
+  private calibrationTime: number = 20000; // 20 seconds of calibration
   private isCalibrating = true;
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
   private lastArrhythmiaTime: number = 0;
   private startTime: number = Date.now();
   
-  // Secuencia de confirmación de arritmias
+  // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 15; // Muy alto para evitar falsos positivos
+  private readonly CONSECUTIVE_THRESHOLD = 15; // Very high to avoid false positives
 
   /**
-   * Procesa datos RR para detección ultra-conservadora de arritmias
+   * Process RR data for ultra-conservative arrhythmia detection
    */
   public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
     arrhythmiaStatus: string;
@@ -34,46 +34,46 @@ export class ArrhythmiaProcessor {
   } {
     const currentTime = Date.now();
     
-    // Establecer período de calibración
+    // Set calibration period
     if (this.isCalibrating && currentTime - this.startTime >= this.calibrationTime) {
       this.isCalibrating = false;
-      console.log("ArrhythmiaProcessor: Calibración completada", {
-        tiempoTranscurrido: currentTime - this.startTime,
+      console.log("ArrhythmiaProcessor: Calibration completed", {
+        elapsedTime: currentTime - this.startTime,
         threshold: this.calibrationTime
       });
     }
     
-    // Durante calibración, solo reportamos estado
+    // During calibration, just report status
     if (this.isCalibrating) {
       return {
-        arrhythmiaStatus: "CALIBRANDO...",
+        arrhythmiaStatus: "CALIBRATING...",
         lastArrhythmiaData: null
       };
     }
     
-    // Actualizar intervalos RR si hay datos
+    // Update RR intervals if there's data
     if (rrData?.intervals && rrData.intervals.length > 0) {
       this.rrIntervals = rrData.intervals;
       this.lastPeakTime = rrData.lastPeakTime;
       
-      // Solo proceder si tenemos suficientes intervalos
+      // Only proceed if we have enough intervals
       if (this.rrIntervals.length >= this.MIN_RR_INTERVALS) {
         this.detectArrhythmia(currentTime);
       }
     }
 
-    // Construir mensaje de estado
+    // Build status message
     const arrhythmiaStatusMessage = 
       this.arrhythmiaCount > 0 
-        ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
-        : `SIN ARRITMIAS|${this.arrhythmiaCount}`;
+        ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
+        : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
-    // Información adicional solo si hay arritmia activa
+    // Additional information only if there's active arrhythmia
     const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
-          rmssd: 0, // Simplificado
-          rrVariation: 0 // Simplificado
+          rmssd: 0, // Simplified
+          rrVariation: 0 // Simplified
         } 
       : null;
     
@@ -84,47 +84,47 @@ export class ArrhythmiaProcessor {
   }
 
   /**
-   * Algoritmo ultra-conservador para detección de arritmias
-   * Diseñado para minimizar falsos positivos
+   * Ultra-conservative algorithm for arrhythmia detection
+   * Designed to minimize false positives
    */
   private detectArrhythmia(currentTime: number): void {
     if (this.rrIntervals.length < this.MIN_RR_INTERVALS) return;
     
-    // Tomar últimos intervalos para análisis
+    // Take latest intervals for analysis
     const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
     
-    // Filtrar solo intervalos válidos (dentro de límites fisiológicos conservadores)
+    // Filter only valid intervals (within conservative physiological limits)
     const validIntervals = recentRR.filter(interval => 
       interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
     );
     
-    // Si no hay suficientes intervalos válidos, no podemos analizar
+    // If not enough valid intervals, we can't analyze
     if (validIntervals.length < this.MIN_RR_INTERVALS * 0.8) {
       this.consecutiveAbnormalBeats = 0;
       return;
     }
     
-    // Calcular promedio de intervalos válidos
+    // Calculate average of valid intervals
     const avgRR = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
     
-    // Obtener el último intervalo
+    // Get the last interval
     const lastRR = validIntervals[validIntervals.length - 1];
     
-    // Calcular variación porcentual
+    // Calculate percentage variation
     const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
     
-    // Detectar latido prematuro solo si la variación es extrema
+    // Detect premature beat only if variation is extreme
     const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
     
-    // Actualizar contador de anomalías consecutivas
+    // Update consecutive anomalies counter
     if (prematureBeat) {
       this.consecutiveAbnormalBeats++;
       
-      // Registrar detección
-      console.log("ArrhythmiaProcessor: Posible latido prematuro", {
-        variaciónPorcentual: variation,
-        umbral: this.MIN_VARIATION_PERCENT,
-        consecutivos: this.consecutiveAbnormalBeats,
+      // Log detection
+      console.log("ArrhythmiaProcessor: Possible premature beat", {
+        percentageVariation: variation,
+        threshold: this.MIN_VARIATION_PERCENT,
+        consecutive: this.consecutiveAbnormalBeats,
         avgRR,
         lastRR,
         timestamp: currentTime
@@ -133,7 +133,7 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
     }
     
-    // Verificar si se confirma una arritmia
+    // Check if arrhythmia is confirmed
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
     
@@ -143,16 +143,16 @@ export class ArrhythmiaProcessor {
       this.lastArrhythmiaTime = currentTime;
       this.consecutiveAbnormalBeats = 0;
       
-      console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA", {
-        contadorArritmias: this.arrhythmiaCount,
-        tiempoDesdeÚltima: timeSinceLastArrhythmia,
+      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED", {
+        arrhythmiaCount: this.arrhythmiaCount,
+        timeSinceLast: timeSinceLastArrhythmia,
         timestamp: currentTime
       });
     }
   }
 
   /**
-   * Reinicia el procesador
+   * Reset the processor
    */
   public reset(): void {
     this.rrIntervals = [];
@@ -164,7 +164,7 @@ export class ArrhythmiaProcessor {
     this.startTime = Date.now();
     this.consecutiveAbnormalBeats = 0;
     
-    console.log("ArrhythmiaProcessor: Procesador reiniciado", {
+    console.log("ArrhythmiaProcessor: Processor reset", {
       timestamp: new Date().toISOString()
     });
   }

@@ -63,8 +63,10 @@ export const optimizeTextRendering = (element: HTMLElement): void => {
   element.style.textRendering = 'geometricPrecision';
   
   if (isHighDpiDisplay()) {
-    // Fix for TypeScript error - using setAttribute instead of direct property assignment
-    element.setAttribute('style', element.getAttribute('style') + ' -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;');
+    element.style.textRendering = 'geometricPrecision';
+    element.style.webkitFontSmoothing = 'antialiased';
+    element.style.fontSmoothing = 'antialiased';
+    element.style.mozOsxFontSmoothing = 'grayscale';
   }
   
   // For numeric displays that need to be particularly crisp
@@ -102,18 +104,18 @@ export const optimizeSelector = (selector: string): void => {
   elements.forEach(optimizeElement);
 };
 
-// Color adaptativo para señales cardiovasculares con máxima claridad visual
+// Signal color optimization for maximum visual clarity
 export const getSignalColor = (isArrhythmia: boolean): string => {
   if (isArrhythmia) {
-    // Rojo optimizado para visualización de arritmias
+    // Red optimized for arrhythmia visualization
     return '#ff3b4e';
   } else {
-    // Azul optimizado para ritmo normal
+    // Blue optimized for normal rhythm
     return '#1e90ff';
   }
 };
 
-// Algoritmo para determinar si un punto está en ventana de arritmia
+// Algorithm to determine if a point is in arrhythmia window
 export const isPointInArrhythmiaWindow = (
   pointData: any
 ): boolean => {
