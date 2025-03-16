@@ -29,7 +29,7 @@ export const optimizeCanvas = (canvas: HTMLCanvasElement): void => {
   // Scale the context to ensure correct drawing operations
   ctx.scale(dpr, dpr);
   
-  // Apply high-performance rendering settings
+  // Disable smoothing for sharper rendering of signal data
   ctx.imageSmoothingEnabled = false;
   
   // Set the CSS width and height to the original dimensions
@@ -102,22 +102,20 @@ export const optimizeSelector = (selector: string): void => {
   elements.forEach(optimizeElement);
 };
 
-// Mejorado: Color adaptativo para señales cardiovasculares con detección precisa
+// Color adaptativo para señales cardiovasculares con máxima claridad visual
 export const getSignalColor = (isArrhythmia: boolean): string => {
-  // Algoritmo mejorado para visualización clara
   if (isArrhythmia) {
-    // Rojo más visible para arritmias, optimizado para pantallas de diferentes densidades
-    return '#ed3660'; // Rojo levemente menos saturado para mejor visualización
+    // Rojo optimizado para visualización de arritmias
+    return '#ff3b4e';
   } else {
-    // Azul mejorado para señales normales, con mayor contraste
-    return '#0ea5e9'; // Azul característico para latidos normales
+    // Azul optimizado para ritmo normal
+    return '#1e90ff';
   }
 };
 
-// Algoritmo mejorado para determinar si un punto está en ventana de arritmia
+// Algoritmo para determinar si un punto está en ventana de arritmia
 export const isPointInArrhythmiaWindow = (
   pointData: any
 ): boolean => {
-  // Verificación directa con corrección de valores nulos
   return pointData?.isArrhythmia === true;
 };

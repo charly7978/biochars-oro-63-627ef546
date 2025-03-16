@@ -30,7 +30,6 @@ export interface VitalSignsResult {
 /**
  * Procesador principal de signos vitales
  * Integra los diferentes procesadores especializados para calcular métricas de salud
- * con enfoque en precisión y honestidad de los resultados
  */
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
@@ -42,22 +41,21 @@ export class VitalSignsProcessor {
   
   private lastValidResults: VitalSignsResult | null = null;
   
-  // Umbrales de señal mínima para considerar mediciones válidas
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
+  // Umbrales para mediciones válidas, reajustados para mediciones PPG reales
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.02;  // Reducido para mayor sensibilidad
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25; // Reducido para ser menos restrictivo
 
   /**
-   * Constructor que inicializa el procesador interno refactorizado
+   * Constructor que inicializa todos los procesadores especializados
    */
   constructor() {
+    console.log("VitalSignsProcessor: Inicializando nueva instancia");
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
-    
-    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
   }
   
   /**
@@ -68,11 +66,6 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Verificar calidad mínima de señal
-    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
-      return this.getLastValidResults() || this.createEmptyResults();
-    }
-
     // Aplicar filtrado a la señal PPG
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
@@ -81,9 +74,20 @@ export class VitalSignsProcessor {
     
     // Obtener los valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
+    ppgValues.push(filtered);
     
-    // Solo procesar si hay suficientes datos de PPG
-    if (ppgValues.length < 100) {
+    // Limitar el buffer de valores PPG
+    if (ppgValues.length > 300) {
+      ppgValues.splice(0, ppgValues.length - 300);
+    }
+    
+    // Verificación de calidad mínima de señal
+    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE && ppgValues.length < 60) {
+      return this.getLastValidResults() || this.createEmptyResults();
+    }
+    
+    // Solo procesar con suficientes datos
+    if (ppgValues.length < 30) {
       return this.getLastValidResults() || this.createEmptyResults();
     }
     
@@ -96,18 +100,18 @@ export class VitalSignsProcessor {
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calcular glucosa con validación de confianza
+    // Calcular glucosa
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calcular lípidos con validación de confianza
+    // Calcular lípidos
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calcular confianza general basada en promedios ponderados
+    // Calcular confianza general
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Preparar resultado con todas las métricas calculadas
+    // Preparar resultado con todas las métricas
     const result: VitalSignsResult = {
       spo2,
       pressure,
@@ -122,7 +126,7 @@ export class VitalSignsProcessor {
       }
     };
     
-    // Solo actualizar resultados válidos si hay suficiente confianza
+    // Actualizar resultados válidos si hay suficiente confianza
     if (this.isValidMeasurement(result)) {
       this.lastValidResults = { ...result };
     }
