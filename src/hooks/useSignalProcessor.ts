@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -44,10 +45,10 @@ export const useSignalProcessor = () => {
   
   // Variables para manejo adaptativo
   const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.45); // Umbral inicial menos restrictivo
+  const detectionThresholdRef = useRef<number>(0.40); // Umbral menos restrictivo
   const adaptiveCounterRef = useRef<number>(0);
-  const ADAPTIVE_ADJUSTMENT_INTERVAL = 40;
-  const MIN_DETECTION_THRESHOLD = 0.30; // Umbral mínimo menos restrictivo
+  const ADAPTIVE_ADJUSTMENT_INTERVAL = 30; // Más rápida adaptación
+  const MIN_DETECTION_THRESHOLD = 0.25; // Umbral mínimo menos restrictivo
   
   // Contador para evitar pérdidas rápidas de señal
   const signalLockCounterRef = useRef<number>(0);
@@ -56,7 +57,7 @@ export const useSignalProcessor = () => {
   
   // Contador de frames para calibración
   const calibrationFramesRef = useRef<number>(0);
-  const requiredCalibrationFramesRef = useRef<number>(60);
+  const requiredCalibrationFramesRef = useRef<number>(40); // Reducido para calibración más rápida (8 segundos)
   
   /**
    * Procesa la detección de dedo de manera robusta y adaptativa
@@ -73,7 +74,7 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Calcular ratio de detección
+    // Calcular ratio de detección - LÓGICA MÁS PERMISIVA
     const rawDetectionRatio = fingerDetectedHistoryRef.current.filter(d => d).length / 
                              Math.max(1, fingerDetectedHistoryRef.current.length);
     
@@ -88,36 +89,26 @@ export const useSignalProcessor = () => {
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // Aplicar calibración si está disponible
-    if (calibrationResult) {
-      if (avgQuality < calibrationResult.signalQualityThreshold) {
-        signal.fingerDetected = false;
-      }
+    // Lógica adaptativa mejorada
+    adaptiveCounterRef.current++;
+    if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
+      adaptiveCounterRef.current = 0;
       
-      // Ajustar umbral de detección si hay calibración
-      detectionThresholdRef.current = calibrationResult.detectionSensitivity;
-    } else {
-      // Lógica adaptativa para ajustar el umbral sin calibración
-      adaptiveCounterRef.current++;
-      if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
-        adaptiveCounterRef.current = 0;
-        
-        const consistentDetection = rawDetectionRatio > 0.8;
-        const consistentNonDetection = rawDetectionRatio < 0.2;
-        
-        if (consistentNonDetection) {
-          // Hacer más fácil la detección
-          detectionThresholdRef.current = Math.max(
-            MIN_DETECTION_THRESHOLD,
-            detectionThresholdRef.current - 0.08
-          );
-        } else if (consistentDetection && avgQuality < 35) {
-          // Ser más estrictos con detección pero baja calidad
-          detectionThresholdRef.current = Math.min(
-            0.6,
-            detectionThresholdRef.current + 0.05
-          );
-        }
+      const consistentDetection = rawDetectionRatio > 0.6; // Más permisivo
+      const consistentNonDetection = rawDetectionRatio < 0.3; // Más permisivo
+      
+      if (consistentNonDetection) {
+        // Hacer mucho más fácil la detección
+        detectionThresholdRef.current = Math.max(
+          MIN_DETECTION_THRESHOLD,
+          detectionThresholdRef.current - 0.12 // Mayor ajuste
+        );
+      } else if (consistentDetection && avgQuality < 30) { // Umbral reducido
+        // Ser un poco más estrictos con detección pero baja calidad
+        detectionThresholdRef.current = Math.min(
+          0.5, // Máximo más bajo
+          detectionThresholdRef.current + 0.03 // Ajuste más pequeño
+        );
       }
     }
     
@@ -137,14 +128,18 @@ export const useSignalProcessor = () => {
       }
     }
     
-    // Determinación final con criterios más naturales
+    // Determinación final con criterios más naturales y permisivos
     const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
     const currentThreshold = detectionThresholdRef.current;
-    const robustFingerDetected = isLockedIn || rawDetectionRatio >= currentThreshold;
+    
+    // Lógica más permisiva para detección
+    const robustFingerDetected = isLockedIn || 
+                                rawDetectionRatio >= currentThreshold || 
+                                (signal.fingerDetected && avgQuality > 20);
     
     // Mejora de calidad para experiencia más suave
-    const enhancementFactor = robustFingerDetected ? 1.08 : 1.0;
-    const enhancedQuality = Math.min(100, avgQuality * enhancementFactor);
+    const enhancementFactor = robustFingerDetected ? 1.12 : 1.0; // Mayor mejora
+    const enhancedQuality = Math.min(100, Math.max(25, avgQuality * enhancementFactor));
     
     return {
       ...signal,
@@ -153,10 +148,11 @@ export const useSignalProcessor = () => {
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
-  }, [calibrationResult]);
+  }, []);
   
   /**
    * Inicia una nueva calibración del sistema
+   * Duración reducida a aproximadamente 8 segundos
    */
   const startCalibration = useCallback(async () => {
     if (calibrationSystem.isCalibrationActive()) {
@@ -169,19 +165,20 @@ export const useSignalProcessor = () => {
     setCalibrationProgress(0);
     
     try {
-      toast.info("Iniciando calibración del sistema", {
+      toast.info("Calibrando...", {
         description: "No mueva el dispositivo durante este proceso."
       });
       
-      console.log("useSignalProcessor: Iniciando calibración");
+      console.log("useSignalProcessor: Iniciando calibración de 8 segundos");
       
+      // Aquí se ejecuta la calibración con frames reducidos para aproximadamente 8 segundos
       const result = await calibrationSystem.startCalibration(requiredCalibrationFramesRef.current);
       
       setCalibrationResult(result);
       console.log("useSignalProcessor: Calibración completada con éxito", result);
       
       toast.success("Calibración completada", {
-        description: "El sistema ha sido adaptado a las condiciones actuales."
+        description: "Sistema adaptado a las condiciones actuales."
       });
       
       // Aplicar calibración al procesador de manera segura
@@ -193,7 +190,7 @@ export const useSignalProcessor = () => {
     } catch (err) {
       console.error("useSignalProcessor: Error en calibración:", err);
       toast.error("Error en calibración", {
-        description: "No se pudo completar el proceso. Intente de nuevo en mejores condiciones de luz."
+        description: "Usando parámetros más permisivos por defecto."
       });
     } finally {
       setIsCalibrating(false);
@@ -263,21 +260,25 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Callback cuando hay señal lista
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      const modifiedSignal = processRobustFingerDetection(signal);
-      
-      setLastSignal(modifiedSignal);
-      setError(null);
-      setFramesProcessed(prev => prev + 1);
-      
-      // Actualizar estadísticas
-      setSignalStats(prev => {
-        return {
-          minValue: Math.min(prev.minValue, modifiedSignal.filteredValue),
-          maxValue: Math.max(prev.maxValue, modifiedSignal.filteredValue),
-          avgValue: (prev.avgValue * prev.totalValues + modifiedSignal.filteredValue) / (prev.totalValues + 1),
-          totalValues: prev.totalValues + 1
-        };
-      });
+      try {
+        const modifiedSignal = processRobustFingerDetection(signal);
+        
+        setLastSignal(modifiedSignal);
+        setError(null);
+        setFramesProcessed(prev => prev + 1);
+        
+        // Actualizar estadísticas
+        setSignalStats(prev => {
+          return {
+            minValue: Math.min(prev.minValue, modifiedSignal.filteredValue),
+            maxValue: Math.max(prev.maxValue, modifiedSignal.filteredValue),
+            avgValue: (prev.avgValue * prev.totalValues + modifiedSignal.filteredValue) / (prev.totalValues + 1),
+            totalValues: prev.totalValues + 1
+          };
+        });
+      } catch (err) {
+        console.error("useSignalProcessor: Error procesando señal:", err);
+      }
     };
 
     // Callback de error
