@@ -1,4 +1,3 @@
-
 /**
  * Display optimizer utilities for better rendering performance
  * across different devices and environments.
@@ -111,4 +110,71 @@ export const optimizeForTouchDevices = (): void => {
   // Add touch-specific event listeners with passive option for better scrolling
   document.addEventListener('touchstart', () => {}, { passive: true });
   document.addEventListener('touchmove', () => {}, { passive: true });
+};
+
+/**
+ * Optimizes a canvas element for the current device's display
+ * @param canvas The canvas element to optimize
+ */
+export const optimizeCanvas = (canvas: HTMLCanvasElement): void => {
+  if (!canvas) return;
+  
+  // Optimize canvas for high DPI displays
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  canvas.style.width = `${rect.width}px`;
+  canvas.style.height = `${rect.height}px`;
+  
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.scale(ratio, ratio);
+    
+    // Use optimized rendering settings
+    (ctx as any).imageSmoothingEnabled = true;
+    (ctx as any).imageSmoothingQuality = 'high';
+  }
+};
+
+/**
+ * Optimizes a DOM element for better performance
+ * @param element The element to optimize
+ */
+export const optimizeElement = (element: HTMLElement): void => {
+  if (!element) return;
+  
+  // Set CSS properties for smooth animations and better performance
+  element.style.backfaceVisibility = 'hidden';
+  element.style.perspective = '1000px';
+  element.style.transformStyle = 'preserve-3d';
+  element.style.willChange = 'transform, opacity';
+  
+  // Add animation optimizations
+  element.style.transition = 'transform 0.1s ease-out';
+};
+
+/**
+ * Gets the appropriate signal color based on arrhythmia status
+ * @param isArrhythmia Whether the signal point represents an arrhythmia
+ * @returns The color to use for the signal
+ */
+export const getSignalColor = (isArrhythmia: boolean): string => {
+  return isArrhythmia ? '#FF2E2E' : '#0EA5E9';
+};
+
+/**
+ * Checks if a point falls within an arrhythmia window
+ * @param pointTime The timestamp of the point
+ * @param arrhythmiaWindows Array of arrhythmia time windows
+ * @returns Whether the point is in an arrhythmia window
+ */
+export const isPointInArrhythmiaWindow = (
+  pointTime: number, 
+  arrhythmiaWindows: Array<{start: number, end: number}>
+): boolean => {
+  return arrhythmiaWindows.some(window => 
+    pointTime >= window.start && pointTime <= window.end
+  );
 };
