@@ -30,7 +30,7 @@ export class ArrhythmiaProcessor {
    */
   public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
     arrhythmiaStatus: string;
-    lastArrhythmiaData: { timestamp: number; type: string; confidence: number; } | null;
+    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
     const currentTime = Date.now();
     
@@ -72,8 +72,8 @@ export class ArrhythmiaProcessor {
     const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
-          type: "Irregular Rhythm",  // Using standardized type
-          confidence: 0.85  // Using standardized confidence value
+          rmssd: 0, // Simplified
+          rrVariation: 0 // Simplified
         } 
       : null;
     
