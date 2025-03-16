@@ -204,12 +204,11 @@ const PPGSignalMeter = memo(({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E2DCFF');
-    gradient.addColorStop(0.20, '#e81e1e');
-    gradient.addColorStop(0.40, '#F1FBDF');
-    gradient.addColorStop(0.60, '#F1EEE8');
-    gradient.addColorStop(0.80, '#EBD8F5');
-    gradient.addColorStop(0.95, '#D6BCFA');
-    gradient.addColorStop(1, '#9B87F5');
+    gradient.addColorStop(0.25, '#FFDECF');
+    gradient.addColorStop(0.45, '#F1FBDF');
+    gradient.addColorStop(0.55, '#F1EEE8');
+    gradient.addColorStop(0.75, '#F5EED8');
+    gradient.addColorStop(1, '#F5EED0');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -221,7 +220,7 @@ const PPGSignalMeter = memo(({
         const alphaModifier = 0.01 + (heightRatio * 0.03);
         
         ctx.fillStyle = j % 40 === 0 ? 
-          `rgba(30,30,90,${0.2 + alphaModifier})` : 
+          `rgba(0,0,0,${0.2 + alphaModifier})` : 
           `rgba(255,255,255,${0.2 + alphaModifier})`;
         ctx.fillRect(i, j, 10, 10);
       }
@@ -229,7 +228,7 @@ const PPGSignalMeter = memo(({
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(80, 70, 150, 0.22)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.22)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
@@ -257,7 +256,7 @@ const PPGSignalMeter = memo(({
     
     const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(70, 60, 120, 0.45)';
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
     ctx.moveTo(0, centerLineY);

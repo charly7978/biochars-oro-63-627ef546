@@ -17,7 +17,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 			// Optimize the canvas for device pixel ratio
 			optimizeCanvas(canvas);
 			
-			const ctx = canvas.getContext('2d', { alpha: false });
+			const ctx = canvas.getContext('2d');
 			if (ctx) {
 				// Get the actual drawing size adjusted for device pixel ratio
 				const displayWidth = canvas.width;
@@ -26,20 +26,18 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
 				
-				// Enhanced background with more vibrant gradient and blue-lilac tone transition
+				// Improved background with subtle gradient and golden tone transition from middle to bottom
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
-				gradient.addColorStop(0, '#F0F5FD'); // Light blue at top
-				gradient.addColorStop(0.3, '#E6EEFB'); // Slightly darker blue
-				gradient.addColorStop(0.55, '#E9E5F9'); // Transition to light lilac
-				gradient.addColorStop(0.75, '#E5DEFF'); // Soft lilac
-				gradient.addColorStop(0.9, '#DCD3FA'); // Deeper lilac
-				gradient.addColorStop(1, '#D6BCFA'); // Bottom with vivid lilac accent
+				gradient.addColorStop(0, '#F3F7FC'); // Lighter blue-cream at top
+				gradient.addColorStop(0.45, '#EBF2F9'); // Slightly darker at middle
+				gradient.addColorStop(0.55, '#F1EEE8'); // Start transitioning to subtle gold
+				gradient.addColorStop(1, '#F5EED8'); // Subtle golden tone at bottom
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				
 				// Draw grid with improved quality
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(80,90,150,0.12)'; // More lilac-blue tone, subtle
+				ctx.strokeStyle = 'rgba(60,80,120,0.15)'; // More medical blue tone, subtle
 				ctx.lineWidth = 0.8; // Slightly thicker for better visibility
 				
 				// Draw vertical grid lines with better precision
@@ -61,7 +59,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 				
 				// Add an enhanced grid with major lines
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(60,70,130,0.18)'; // Darker lines for major grid with lilac tint
+				ctx.strokeStyle = 'rgba(40,60,100,0.2)'; // Darker lines for major grid
 				ctx.lineWidth = 1.2;
 				
 				// Major vertical lines every 5 cells
