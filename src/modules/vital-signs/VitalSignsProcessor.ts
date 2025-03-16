@@ -40,14 +40,7 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // Store final processed values
-  private lastValidResults: VitalSignsResult | null = null;
-  
-  // Debug tracking for glucose values
-  private lastRawGlucose: number = 0;
-  private lastMedianGlucose: number = 0;
-  private glucoseValues: number[] = []; // Store recent glucose values for median calculation
-  private readonly MAX_GLUCOSE_HISTORY = 10; // Keep last 10 values for final median
+  // No storage of previous results
   
   // Wider thresholds for more inclusive physiological range
   private readonly MIN_SIGNAL_AMPLITUDE = 0.003; // Further reduced
@@ -64,37 +57,6 @@ export class VitalSignsProcessor {
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
-  }
-  
-  /**
-   * Calculates weighted median from a set of values
-   * Ensures more stable readings by prioritizing recent values while still using median
-   */
-  private calculateWeightedMedian(values: number[]): number {
-    if (values.length === 0) return 0;
-    if (values.length === 1) return values[0];
-    
-    // Create weighted array with more recent values given higher weights
-    const weightedArray: number[] = [];
-    
-    for (let i = 0; i < values.length; i++) {
-      // More recent values (higher index) get higher weight
-      const weight = Math.max(1, Math.floor((i + 1) * 1.5));
-      
-      for (let j = 0; j < weight; j++) {
-        weightedArray.push(values[i]);
-      }
-    }
-    
-    // Sort and find median
-    weightedArray.sort((a, b) => a - b);
-    const middleIndex = Math.floor(weightedArray.length / 2);
-    
-    if (weightedArray.length % 2 === 0) {
-      return (weightedArray[middleIndex - 1] + weightedArray[middleIndex]) / 2;
-    }
-    
-    return weightedArray[middleIndex];
   }
   
   /**
@@ -134,33 +96,8 @@ export class VitalSignsProcessor {
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Get the direct glucose value from processor (already using weighted median internally)
-    const glucoseFromProcessor = this.glucoseProcessor.calculateGlucose(ppgValues);
-    
-    // Store this glucose value in our history
-    this.glucoseValues.push(glucoseFromProcessor);
-    if (this.glucoseValues.length > this.MAX_GLUCOSE_HISTORY) {
-      this.glucoseValues.shift(); // Remove oldest value
-    }
-    
-    // Calculate our own weighted median from recent glucose values
-    // This ensures double stability - the processor uses median AND we use median of those values
-    const finalGlucose = Math.round(this.calculateWeightedMedian(this.glucoseValues));
-    
-    // Track raw vs median values for debugging
-    this.lastRawGlucose = glucoseFromProcessor;
-    this.lastMedianGlucose = finalGlucose;
-    
-    // Critical debug log to confirm we're using the weighted median as the final result
-    console.log("VitalSignsProcessor: Final glucose calculation", {
-      rawFromProcessor: glucoseFromProcessor,
-      storedValues: [...this.glucoseValues], // Copy for logging
-      finalWeightedMedian: finalGlucose,
-      timestamp: new Date().toISOString(),
-      numberOfSamplesUsed: this.glucoseValues.length,
-      isDifferentFromLatestSample: finalGlucose !== this.glucoseValues[this.glucoseValues.length - 1]
-    });
-    
+    // Calculate glucose with direct real-time data
+    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
     // Calculate lipids
@@ -170,13 +107,13 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Create result with all metrics - using final weighted median glucose
-    const result = {
+    // Prepare result with all metrics - no caching or persistence
+    return {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
-      glucose: finalGlucose, // CRITICAL: Use the weighted median value, not the raw value
+      glucose,
       lipids,
       confidence: {
         glucose: glucoseConfidence,
@@ -184,11 +121,6 @@ export class VitalSignsProcessor {
         overall: overallConfidence
       }
     };
-    
-    // Store the result for later retrieval
-    this.lastValidResults = result;
-    
-    return result;
   }
   
   /**
@@ -210,37 +142,32 @@ export class VitalSignsProcessor {
 
   /**
    * Reset the processor
-   * Returns the last valid results before resetting
+   * Ensures a clean state with no carried over values
    */
   public reset(): VitalSignsResult | null {
-    const savedResults = this.lastValidResults;
-    
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
-    this.lastRawGlucose = 0;
-    this.lastMedianGlucose = 0;
     
-    return savedResults;
+    return null; // Always return null to ensure measurements start from zero
+  }
+  
+  /**
+   * Get the last valid results - always returns null
+   * Forces fresh measurements
+   */
+  public getLastValidResults(): VitalSignsResult | null {
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
    * Completely reset the processor, removing previous data and results
    */
   public fullReset(): void {
-    this.lastValidResults = null;
     this.reset();
-    this.glucoseValues = [];
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
-  }
-  
-  /**
-   * Get the last valid results
-   */
-  public getLastValidResults(): VitalSignsResult | null {
-    return this.lastValidResults;
   }
 }

@@ -8,7 +8,6 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -28,8 +27,7 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  const glucoseMedianValuesRef = useRef<number[]>([]);
-
+  
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat, isArrhythmia } = useHeartBeatProcessor();
   const { 
@@ -145,8 +143,6 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
-    
-    glucoseMedianValuesRef.current = [];
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -242,30 +238,6 @@ const Index = () => {
     processImage();
   };
 
-  const calculateWeightedMedian = (values: number[]): number => {
-    if (values.length === 0) return 0;
-    if (values.length === 1) return values[0];
-    
-    const weightedArray: number[] = [];
-    
-    for (let i = 0; i < values.length; i++) {
-      const weight = Math.max(1, Math.floor((i + 1) * 1.5));
-      
-      for (let j = 0; j < weight; j++) {
-        weightedArray.push(values[i]);
-      }
-    }
-    
-    weightedArray.sort((a, b) => a - b);
-    const middleIndex = Math.floor(weightedArray.length / 2);
-    
-    if (weightedArray.length % 2 === 0) {
-      return (weightedArray[middleIndex - 1] + weightedArray[middleIndex]) / 2;
-    }
-    
-    return weightedArray[middleIndex];
-  };
-
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
@@ -273,36 +245,7 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        if (vitals.glucose > 0) {
-          glucoseMedianValuesRef.current.push(vitals.glucose);
-          
-          if (glucoseMedianValuesRef.current.length > 10) {
-            glucoseMedianValuesRef.current.shift();
-          }
-          
-          const medianGlucose = Math.round(calculateWeightedMedian(glucoseMedianValuesRef.current));
-          
-          const vitalsCopy = {
-            ...vitals,
-            glucose: medianGlucose
-          };
-          
-          console.log("Index: GLUCOSE TRACKING", {
-            originalFromProcessor: vitals.glucose,
-            collectedValues: [...glucoseMedianValuesRef.current],
-            calculatedMedian: medianGlucose,
-            timestamp: new Date().toISOString()
-          });
-          
-          setVitalSigns(vitalsCopy);
-          
-          toast.info(`Glucosa (mediana ponderada): ${medianGlucose} mg/dL`, {
-            duration: 3000,
-            position: 'bottom-center',
-          });
-        } else {
-          setVitalSigns(vitals);
-        }
+        setVitalSigns(vitals);
       }
       
       setSignalQuality(lastSignal.quality);
@@ -383,7 +326,7 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
-                label="GLUCOSA (MEDIA PONDERADA)"
+                label="GLUCOSA"
                 value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
                 highlighted={showResults}

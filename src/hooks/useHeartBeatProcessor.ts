@@ -86,7 +86,7 @@ export const useHeartBeatProcessor = () => {
     const now = Date.now();
     const oldestBeep = pendingBeepsQueue.current[0];
     
-    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5) {
+    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
       processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
       lastBeepTimeRef.current = now;
       pendingBeepsQueue.current.shift();
@@ -98,7 +98,7 @@ export const useHeartBeatProcessor = () => {
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
       }
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.3);
+      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.5);
     }
   }, []);
 
@@ -107,8 +107,8 @@ export const useHeartBeatProcessor = () => {
     
     const now = Date.now();
     
-    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5) {
-      processorRef.current.playBeep(1.0); 
+    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
+      processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
       lastBeepTimeRef.current = now;
       return;
     }
@@ -116,7 +116,7 @@ export const useHeartBeatProcessor = () => {
     pendingBeepsQueue.current.push({ time: now, value });
     
     if (!beepProcessorTimeoutRef.current) {
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.2);
+      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.4); // Faster response
     }
   }, [processBeepQueue]);
 
@@ -135,7 +135,7 @@ export const useHeartBeatProcessor = () => {
       if (!beepProcessorTimeoutRef.current) {
         beepProcessorTimeoutRef.current = window.setTimeout(
           processBeepQueue, 
-          MIN_BEEP_INTERVAL_MS * 0.4
+          MIN_BEEP_INTERVAL_MS * 0.4 // Faster response
         );
       }
       return;
@@ -153,7 +153,7 @@ export const useHeartBeatProcessor = () => {
         if (!beepProcessorTimeoutRef.current) {
           beepProcessorTimeoutRef.current = window.setTimeout(
             processBeepQueue, 
-            MIN_BEEP_INTERVAL_MS * 0.4
+            MIN_BEEP_INTERVAL_MS * 0.4 // Faster response
           );
         }
       }
@@ -241,9 +241,10 @@ export const useHeartBeatProcessor = () => {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      if (result.isPeak && result.confidence > 0.2) {
+      if (result.isPeak && result.confidence > 0.3) { // Lowered threshold for more sensitivity
         lastPeakTimeRef.current = now;
         
+        // Always play beep on peak detection to ensure synchronization with PPG peaks
         requestImmediateBeep(value);
         
         if (result.bpm >= 40 && result.bpm <= 200) {
@@ -253,7 +254,7 @@ export const useHeartBeatProcessor = () => {
       
       lastSignalQualityRef.current = result.confidence;
 
-      if (result.confidence < 0.1) {
+      if (result.confidence < 0.15) {
         return {
           bpm: currentBPM,
           confidence: result.confidence,

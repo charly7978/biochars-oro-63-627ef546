@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -258,22 +257,8 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        // Important: Log complete vitals object to verify glucose is properly included
-        console.log("Index: Complete vital signs received:", {
-          ...vitals,
-          timestamp: new Date().toISOString()
-        });
-        
         setVitalSigns(vitals);
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
-        
-        // Enhanced debug logging specifically for glucose display
-        console.log("Index: Glucose value being displayed", {
-          glucoseValue: vitals.glucose,
-          glucoseType: typeof vitals.glucose,
-          vitalSignsState: { ...vitalSigns }, // Current state (before update)
-          timestamp: new Date().toISOString()
-        });
       }
       
       setSignalQuality(lastSignal.quality);
@@ -324,21 +309,24 @@ const Index = () => {
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
                   unit="BPM"
+                  calibrationProgress={vitalSigns.calibration?.progress.heartRate}
                 />
                 <VitalSign 
                   label="SPO2"
                   value={vitalSigns.spo2 || "--"}
                   unit="%"
+                  calibrationProgress={vitalSigns.calibration?.progress.spo2}
                 />
                 <VitalSign 
                   label="PRESIÓN ARTERIAL"
                   value={vitalSigns.pressure}
                   unit="mmHg"
+                  calibrationProgress={vitalSigns.calibration?.progress.pressure}
                 />
                 <VitalSign 
-                  label="GLUCOSA" 
-                  value={vitalSigns.glucose || "--"}
-                  unit="mg/dL"
+                  label="ARRITMIAS"
+                  value={vitalSigns.arrhythmiaStatus}
+                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
                 />
               </div>
             </div>
