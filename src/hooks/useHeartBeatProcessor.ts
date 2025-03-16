@@ -25,7 +25,7 @@ export const useHeartBeatProcessor = () => {
   
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 300;
+  const MIN_BEEP_INTERVAL_MS = 250;
   
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
@@ -42,6 +42,10 @@ export const useHeartBeatProcessor = () => {
   const consistentBeatsCountRef = useRef<number>(0);
   const lastValidBpmRef = useRef<number>(0);
   const initializedRef = useRef<boolean>(false);
+
+  const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
+  const beepProcessorTimeoutRef = useRef<number | null>(null);
+  const beepProcessingActiveRef = useRef<boolean>(false);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -82,6 +86,11 @@ export const useHeartBeatProcessor = () => {
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
       }
+      
+      if (beepProcessorTimeoutRef.current) {
+        clearTimeout(beepProcessorTimeoutRef.current);
+        beepProcessorTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -111,29 +120,35 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  const lastBeepRequestRef = useRef<{time: number, value: number, processed: boolean} | null>(null);
-  const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
-  const beepProcessorTimeoutRef = useRef<number | null>(null);
-
   const processBeepQueue = useCallback(() => {
-    if (!processorRef.current || pendingBeepsQueue.current.length === 0) return;
+    if (!processorRef.current || pendingBeepsQueue.current.length === 0) {
+      beepProcessingActiveRef.current = false;
+      return;
+    }
     
+    beepProcessingActiveRef.current = true;
     const now = Date.now();
-    const oldestBeep = pendingBeepsQueue.current[0];
     
-    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
-      processorRef.current.playBeep(0.8);
-      lastBeepTimeRef.current = now;
-      pendingBeepsQueue.current.shift();
+    while (pendingBeepsQueue.current.length > 0) {
+      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS * 0.6) {
+        break;
+      }
       
-      console.log(`useHeartBeatProcessor: Beep reproducido por cola, había ${pendingBeepsQueue.current.length} pendientes`);
+      const beep = pendingBeepsQueue.current.shift();
+      if (beep) {
+        processorRef.current.playBeep(0.85);
+        lastBeepTimeRef.current = now;
+        console.log(`useHeartBeatProcessor: Beep played from queue, ${pendingBeepsQueue.current.length} remaining`);
+      }
     }
     
     if (pendingBeepsQueue.current.length > 0) {
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
       }
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.5);
+      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.4);
+    } else {
+      beepProcessingActiveRef.current = false;
     }
   }, []);
 
@@ -142,18 +157,31 @@ export const useHeartBeatProcessor = () => {
     
     const now = Date.now();
     
-    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.7) {
-      processorRef.current.playBeep(0.8);
+    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.6) {
+      processorRef.current.playBeep(0.85);
       lastBeepTimeRef.current = now;
       return;
     }
     
     pendingBeepsQueue.current.push({ time: now, value });
     
-    if (!beepProcessorTimeoutRef.current) {
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.5);
+    if (!beepProcessingActiveRef.current) {
+      if (beepProcessorTimeoutRef.current) {
+        clearTimeout(beepProcessorTimeoutRef.current);
+      }
+      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.4);
     }
   }, [processBeepQueue]);
+
+  const handleExternalBeepRequest = useCallback((timestamp: number) => {
+    if (!processorRef.current) return;
+    
+    if (processorRef.current.requestBeepForTime && processorRef.current.requestBeepForTime(timestamp)) {
+      return;
+    }
+    
+    requestImmediateBeep(0);
+  }, [requestImmediateBeep]);
 
   const playBeepSound = useCallback(() => {
     if (!processorRef.current) {
@@ -378,6 +406,13 @@ export const useHeartBeatProcessor = () => {
     lastSignalQualityRef.current = 0;
     calibrationCompleteRef.current = false;
     
+    pendingBeepsQueue.current = [];
+    if (beepProcessorTimeoutRef.current) {
+      clearTimeout(beepProcessorTimeoutRef.current);
+      beepProcessorTimeoutRef.current = null;
+    }
+    beepProcessingActiveRef.current = false;
+    
     setTimeout(performAutoCalibration, 3000);
   }, [performAutoCalibration]);
 
@@ -387,6 +422,6 @@ export const useHeartBeatProcessor = () => {
     processSignal,
     reset,
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
-    requestBeep: requestImmediateBeep
+    requestBeep: handleExternalBeepRequest
   };
 };

@@ -5,10 +5,10 @@ export class HeartBeatProcessor {
   MIN_BPM = 40;
   MAX_BPM = 200;
   SIGNAL_THRESHOLD = 0.2;        // Increased threshold for more reliable detection
-  MIN_CONFIDENCE = 0.50;         // Higher confidence requirement to prevent false positives
+  MIN_CONFIDENCE = 0.45;         // Lowered confidence requirement to catch more peaks
   DERIVATIVE_THRESHOLD = -0.02;  // More conservative derivative threshold
-  MIN_PEAK_TIME_MS = 350;        // Increased minimum time between peaks to prevent rapid beeps
-  WARMUP_TIME_MS = 2000;         // Longer warmup time for better baseline establishment
+  MIN_PEAK_TIME_MS = 250;        // Reduced minimum time between peaks to catch more rapid beats
+  WARMUP_TIME_MS = 1500;         // Shorter warmup time for quicker response
 
   // Filters for signal stability
   MEDIAN_FILTER_WINDOW = 5;
@@ -19,8 +19,8 @@ export class HeartBeatProcessor {
   // Beep sound configuration
   BEEP_PRIMARY_FREQUENCY = 800;
   BEEP_DURATION = 80;            // Longer beep duration
-  BEEP_VOLUME = 0.7;             // Moderate volume
-  MIN_BEEP_INTERVAL_MS = 500;    // Enforced minimum time between beeps to prevent rapid beeping
+  BEEP_VOLUME = 0.85;            // Increased volume
+  MIN_BEEP_INTERVAL_MS = 250;    // Reduced interval between beeps
 
   // Signal quality detection
   LOW_SIGNAL_THRESHOLD = 0.03;
@@ -69,7 +69,10 @@ export class HeartBeatProcessor {
   pendingBeepRequest = false;
   consecutiveBeats = 0;
   consistentBeatsRequired = 2; // Reduced from 4 to ensure beeps happen more quickly
-  FORCE_BEEP_FOR_ALL_PEAKS = true; // New flag to force beeps for all peaks
+  FORCE_BEEP_FOR_ALL_PEAKS = true; // Always force beeps for all peaks
+  SKIP_TIMING_VALIDATION = true; // Skip timing validation to ensure all beeps are played
+  beepQueue = []; // New queue to manage pending beeps
+  lastBeepRequestTime = 0; // Track last beep request time
 
   constructor() {
     console.log("HeartBeatProcessor: Initializing with consistent timing configuration");
@@ -107,17 +110,17 @@ export class HeartBeatProcessor {
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
-    // Skip beeps during warmup only - don't skip for other reasons
+    // Skip beeps during warmup only
     if (this.isInWarmup()) {
-      console.log("HeartBeatProcessor: Skipped beep during warmup");
       return false;
     }
     
     const now = Date.now();
     
-    // Less strict enforcement of minimum interval between beeps to ensure we beep for all peaks
-    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS * 0.8) {
-      console.log(`HeartBeatProcessor: Skipped beep - too soon (${now - this.lastBeepTime}ms < ${this.MIN_BEEP_INTERVAL_MS * 0.8}ms)`);
+    // Less strict enforcement of minimum interval between beeps
+    if (!this.SKIP_TIMING_VALIDATION && now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS * 0.7) {
+      // Queue the beep for later if we can't play it now
+      this.beepQueue.push({time: now, volume});
       return false;
     }
 
@@ -165,12 +168,43 @@ export class HeartBeatProcessor {
       this.beepSuccessCount++;
       this.pendingBeepRequest = false;
       
-      console.log(`HeartBeatProcessor: Beep #${this.beepSuccessCount} played successfully`);
+      // Process queued beeps if possible
+      this.processBeepQueue();
+      
       return true;
     } catch (err) {
       console.error("HeartBeatProcessor: Error playing beep", err);
       return false;
     }
+  }
+
+  // New method to process the beep queue
+  processBeepQueue() {
+    if (this.beepQueue.length > 0 && this.audioContext) {
+      setTimeout(() => {
+        // If enough time has passed, play the next queued beep
+        const now = Date.now();
+        if (now - this.lastBeepTime >= this.MIN_BEEP_INTERVAL_MS * 0.7) {
+          const nextBeep = this.beepQueue.shift();
+          if (nextBeep) {
+            this.playBeep(nextBeep.volume);
+          }
+        } else if (this.beepQueue.length > 0) {
+          // If we can't play now, try again after a short delay
+          this.processBeepQueue();
+        }
+      }, this.MIN_BEEP_INTERVAL_MS * 0.5);
+    }
+  }
+
+  // This method allows external components to request beeps
+  requestBeepForTime(timestamp) {
+    const now = Date.now();
+    if (now - this.lastBeepRequestTime < 150) return false; // Avoid rapid requests
+    
+    this.lastBeepRequestTime = now;
+    this.playBeep();
+    return true;
   }
 
   isInWarmup() {
@@ -250,45 +284,26 @@ export class HeartBeatProcessor {
       }
       this.lastValue = smoothed;
 
-      // Detect peaks with high confidence requirement
+      // Detect peaks with less strict confidence requirement
       const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
       
       // Use multiple confirmations for reliability
       const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-      // Process confirmed peak with timing validation
+      // Process confirmed peak 
       if (isConfirmedPeak && !this.isInWarmup()) {
         const now = Date.now();
         const timeSinceLastPeak = this.lastPeakTime ? now - this.lastPeakTime : Number.MAX_VALUE;
 
-        // Enforce minimum time between peaks - but less strict
-        if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS * 0.8) {
-          // Additional validation for peak timing
+        // Less strict enforcement of minimum time between peaks
+        if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS * 0.7) {
+          // Always treat peaks as valid when FORCE_BEEP_FOR_ALL_PEAKS is true
           let isValidPeak = true;
-          
-          // Less strict validation when forcing beeps for all peaks
-          if (!this.FORCE_BEEP_FOR_ALL_PEAKS) {
-            // If we have established a rhythm, validate against expected timing
-            if (this.smoothBPM > 40 && this.consecutiveBeats >= this.consistentBeatsRequired) {
-              const expectedInterval = 60000 / this.smoothBPM;
-              
-              // Allow a reasonable window for variation (30% of expected interval)
-              const minValidTime = this.lastExpectedHeartbeatTime - (expectedInterval * 0.3);
-              const maxValidTime = this.lastExpectedHeartbeatTime + (expectedInterval * 0.3);
-              
-              // Only consider valid if within expected window
-              if (now < minValidTime || now > maxValidTime) {
-                isValidPeak = false;
-                console.log(`HeartBeatProcessor: Rejected out-of-rhythm peak (expected window: ${minValidTime}-${maxValidTime}, actual: ${now})`);
-              }
-            }
-          }
           
           if (isValidPeak) {
             // Update peak timing history
             this.previousPeakTime = this.lastPeakTime;
             this.lastPeakTime = now;
-            this.lastProcessedPeakTime = now;
             
             // Calculate next expected beat time based on current rhythm
             if (this.smoothBPM >= 40 && this.smoothBPM <= 200) {
@@ -309,19 +324,14 @@ export class HeartBeatProcessor {
             // Always trigger beep for confirmed peaks
             this.pendingBeepRequest = true;
             this.playBeep(); // Immediately play beep for the confirmed peak
-          } else {
-            // Reset consecutive beats counter for rejected peaks
-            this.consecutiveBeats = Math.max(0, this.consecutiveBeats - 1);
           }
         }
-      } else if (!isPeak && !isConfirmedPeak) {
-        // Handle non-peak signal (do nothing, just passing through)
       }
 
       // Process any pending beep
       if (this.pendingBeepRequest) {
         const now = Date.now();
-        if (now - this.lastBeepAttemptTime > 100) { // Reduced from 150ms to 100ms for faster response
+        if (now - this.lastBeepAttemptTime > 50) { // Reduced to 50ms for faster response
           this.playBeep();
           this.pendingBeepRequest = false;
         }
@@ -443,17 +453,16 @@ export class HeartBeatProcessor {
       this.peakConfirmationBuffer.shift();
     }
 
-    // Only proceed if it's a peak, not already confirmed, and meets confidence threshold
+    // Only proceed if it's a peak and not already confirmed
     if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE) {
       // Need sufficient buffer for confirmation
       if (this.peakConfirmationBuffer.length >= 3) {
         const len = this.peakConfirmationBuffer.length;
         
-        // Confirm only if it's the peak (values afterward are decreasing)
+        // Relaxed confirmation logic - only need one indicator of a peak
         const goingDown1 = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
-        const goingDown2 = this.peakConfirmationBuffer[len - 2] < this.peakConfirmationBuffer[len - 3];
         
-        if (goingDown1 && goingDown2) {
+        if (goingDown1) {
           this.lastConfirmedPeak = true;
           return true;
         }
@@ -588,6 +597,10 @@ export class HeartBeatProcessor {
         .then(() => console.log("HeartBeatProcessor: Audio Context reactivated"))
         .catch(err => console.error("HeartBeatProcessor: Error reactivating Audio Context", err));
     }
+    
+    // Clear beep queue when resetting
+    this.beepQueue = [];
+    this.lastBeepRequestTime = 0;
     
     console.log("HeartBeatProcessor: Complete reset performed");
   }
