@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -5,6 +6,8 @@ interface CameraViewProps {
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
+  buttonPosition?: boolean; // Adding the existing prop from the JS version
+  isCalibrating?: boolean;  // Adding the missing prop that's causing the error
 }
 
 const CameraView = ({ 
@@ -12,6 +15,8 @@ const CameraView = ({
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
+  buttonPosition,
+  isCalibrating = false, // Adding default value to match JS version
 }: CameraViewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -287,29 +292,54 @@ const CameraView = ({
       }
     }
     
+    // Update for isCalibrating prop - similar to the JS version's logic
+    if (stream && isCalibrating && !torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna para calibración");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => {
+          setTorchEnabled(true);
+        }).catch(err => {
+          console.error("Error activando linterna para calibración:", err);
+        });
+      }
+    }
+    
     if (isFingerDetected && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid, isCalibrating]);
 
   const targetFrameInterval = isAndroid ? 1000/10 : 
                              signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-      style={{
-        willChange: 'transform',
-        transform: 'translateZ(0)',
-        backfaceVisibility: 'hidden',
-        imageRendering: 'crisp-edges'
-      }}
-    />
+    <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+        style={{
+          willChange: 'transform',
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+          imageRendering: 'crisp-edges'
+        }}
+      />
+      
+      {/* Adding calibration UI similar to the JS version */}
+      {isCalibrating && (
+        <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 z-20 bg-black/70 px-4 py-2 rounded-lg">
+          <div className="text-white text-sm font-semibold mb-1 text-center">Calibrando sistema</div>
+          <div className="text-xs text-white/80 mb-2 text-center">Mantenga el dispositivo estable</div>
+        </div>
+      )}
+    </>
   );
 };
 
