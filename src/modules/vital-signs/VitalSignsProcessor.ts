@@ -1,7 +1,7 @@
 
 // We need to create or update this file to call the finalizeMeasurement method
 // in the glucose processor when the measurement is finished
-import { SPO2Processor } from './spo2-processor';
+import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { LipidProcessor } from './lipid-processor';
 import { GlucoseProcessor } from './glucose-processor';
@@ -27,7 +27,7 @@ export interface VitalSignsResult {
  * Processor for calculating vital signs from PPG signal
  */
 export class VitalSignsProcessor {
-  private spo2Processor: SPO2Processor;
+  private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
   private lipidProcessor: LipidProcessor;
   private glucoseProcessor: GlucoseProcessor;
@@ -37,7 +37,7 @@ export class VitalSignsProcessor {
   private readonly SIGNAL_BUFFER_SIZE = 300;
   
   constructor() {
-    this.spo2Processor = new SPO2Processor();
+    this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.lipidProcessor = new LipidProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
@@ -59,19 +59,19 @@ export class VitalSignsProcessor {
     }
     
     // Process each vital sign
-    const spo2 = this.spo2Processor.calculateSPO2(this.signalBuffer);
-    const pressure = this.bpProcessor.calculateBP(this.signalBuffer, rrData);
-    const { arrhythmiaStatus, lastArrhythmiaData } = this.arrhythmiaProcessor.analyze(rrData);
+    const spo2 = this.spo2Processor.calculateSpO2(this.signalBuffer);
+    const pressure = this.bpProcessor.calculateBloodPressure(this.signalBuffer);
+    const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
     const glucose = this.glucoseProcessor.calculateGlucose(this.signalBuffer);
     const lipids = this.lipidProcessor.calculateLipids(this.signalBuffer);
     
     const result: VitalSignsResult = {
       spo2,
-      pressure,
-      arrhythmiaStatus,
+      pressure: `${pressure.systolic}/${pressure.diastolic}`,
+      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose,
       lipids,
-      lastArrhythmiaData
+      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
     };
     
     // Update last valid results if we have good values

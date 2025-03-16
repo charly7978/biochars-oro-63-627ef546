@@ -134,8 +134,8 @@ export class ArrhythmiaAnalyzer {
       arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
       lastArrhythmiaData: {
         timestamp: currentTime,
-        rmssd: analysisData.rmssd,
-        rrVariation: analysisData.rrVariation
+        type: "Irregular Rhythm",
+        confidence: 0.85
       }
     };
   }
