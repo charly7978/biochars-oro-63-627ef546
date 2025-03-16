@@ -26,18 +26,18 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 5) {
+  if (!rrData?.intervals || rrData.intervals.length < 10) { // Aumentado a 10 para mayor estabilidad
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
-  const lastIntervals = rrData.intervals.slice(-5);
+  const lastIntervals = rrData.intervals.slice(-10); // Aumentado a 10 para mayor estabilidad
   
   // Calculamos información básica sobre los intervalos RR
   const avgRR = lastIntervals.reduce((a, b) => a + b, 0) / lastIntervals.length;
   const lastRR = lastIntervals[lastIntervals.length - 1];
   
-  // Aumentamos el umbral de variación drásticamente para reducir falsos positivos
-  // Un cambio mucho más drástico se requiere para ser considerado arritmia
+  // Aumentamos el umbral de variación a un nivel extremo para eliminar casi todos los falsos positivos
+  // Solo consideramos arritmias con cambios extremadamente drásticos
   const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
   
   // Calculate RMSSD (Root Mean Square of Successive Differences)
@@ -53,10 +53,10 @@ export function analyzeRRIntervals(
     lastIntervals.length
   );
   
-  // Criterios extremadamente estrictos para la detección de latidos prematuros:
-  // 1. El intervalo debe ser significativamente más corto (60% en lugar de 70%)
-  // 2. La variación debe ser muchísimo mayor (35% en lugar de 25%)
-  const isPremature = (lastRR < 0.60 * avgRR) || (rrVariation > 0.35);
+  // Criterios ultra estrictos para la detección de latidos prematuros:
+  // 1. El intervalo debe ser extremadamente corto (45% en lugar de 60%)
+  // 2. La variación debe ser enorme (55% en lugar de 35%)
+  const isPremature = (lastRR < 0.45 * avgRR) || (rrVariation > 0.55);
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 

@@ -27,7 +27,7 @@ export class ArrhythmiaAnalyzer {
   private config: ArrhythmiaConfig;
   // Incrementamos drásticamente el umbral para reducir falsos positivos
   private consecutiveAbnormalIntervals: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 8; // Aumentado a 8 para exigir muchas más anomalías consecutivas
+  private readonly CONSECUTIVE_THRESHOLD = 12; // Aumentado a 12 para exigir anomalías extremas
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
@@ -43,7 +43,7 @@ export class ArrhythmiaAnalyzer {
     const currentTime = Date.now();
     
     // Si no hay datos RR válidos, retornar el resultado sin cambios
-    if (!rrData?.intervals || rrData.intervals.length < 9) { // Aumentado de 7 a 9 para más estabilidad
+    if (!rrData?.intervals || rrData.intervals.length < 12) { // Aumentado a 12 para más estabilidad
       // Si previamente detectamos una arritmia, mantener ese estado
       if (this.hasDetectedArrhythmia) {
         return {
@@ -59,7 +59,7 @@ export class ArrhythmiaAnalyzer {
       };
     }
     
-    const lastIntervals = rrData.intervals.slice(-9); // Aumentado de 7 a 9
+    const lastIntervals = rrData.intervals.slice(-12); // Aumentado a 12
     
     // Analizar intervalos RR para detectar posibles arritmias con umbral extremadamente estricto
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
@@ -80,10 +80,10 @@ export class ArrhythmiaAnalyzer {
       if (hasArrhythmia) {
         logPossibleArrhythmia(analysisData);
         
-        // Análisis de continuidad de anomalías - ahora extremadamente estricto
+        // Análisis de continuidad de anomalías - ahora ultra estricto
         if (hasArrhythmia) {
-          // Solo incrementamos si la variación es EXTREMADAMENTE alta para evitar falsos positivos
-          if (analysisData.rrVariation > 0.5) { // Aumentado de 0.4 a 0.5
+          // Solo incrementamos si la variación es EXTREMA para evitar falsos positivos
+          if (analysisData.rrVariation > 0.65) { // Aumentado de 0.5 a 0.65
             this.consecutiveAbnormalIntervals++;
           }
         } else {
