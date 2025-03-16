@@ -5,7 +5,7 @@
  */
 export class ArrhythmiaProcessor {
   // Extremely conservative thresholds
-  private readonly MIN_RR_INTERVALS = 15; // Reduced from 20 to work with less data
+  private MIN_RR_INTERVALS = 15; // Changed from readonly to private to allow updates
   private readonly MIN_INTERVAL_MS = 500; // 120 BPM maximum (más permisivo)
   private readonly MAX_INTERVAL_MS = 1400; // 42 BPM minimum (más permisivo)
   private readonly MIN_VARIATION_PERCENT = 60; // Reduced from 70% to 60% (más permisivo)
@@ -85,7 +85,7 @@ export class ArrhythmiaProcessor {
 
   /**
    * Método para actualizar configuración
-   * Añadido para resolver errores de tipado
+   * Fixed to properly handle configuration updates without readonly property error
    */
   public updateConfig(config: Partial<{
     minIntervals: number;
