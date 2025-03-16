@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -259,6 +260,12 @@ const Index = () => {
       if (vitals) {
         setVitalSigns(vitals);
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        
+        // Add debug logging to track glucose values
+        console.log("Index: Glucose value from vitalSigns", {
+          glucoseValue: vitals.glucose,
+          timestamp: new Date().toISOString()
+        });
       }
       
       setSignalQuality(lastSignal.quality);

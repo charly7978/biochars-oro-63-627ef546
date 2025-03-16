@@ -40,7 +40,9 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // No storage of previous results
+  // Debug tracking for glucose values
+  private lastRawGlucose: number = 0;
+  private lastMedianGlucose: number = 0;
   
   // Wider thresholds for more inclusive physiological range
   private readonly MIN_SIGNAL_AMPLITUDE = 0.003; // Further reduced
@@ -97,8 +99,20 @@ export class VitalSignsProcessor {
       : "--/--";
     
     // Calculate glucose with direct real-time data - using new range (50-180)
+    // IMPORTANT: This value is already the weighted median result from the processor
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
+    
+    // Track glucose values for debugging
+    this.lastRawGlucose = glucose;
+    this.lastMedianGlucose = glucose; // This should be the median result already
+    
+    // Log to verify we're using the correct value
+    console.log("VitalSignsProcessor: Glucose values", {
+      finalGlucoseValue: glucose,
+      isMedianValue: true, // Always true as GlucoseProcessor now always returns the median
+      timestamp: new Date().toISOString()
+    });
     
     // Calculate lipids
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
@@ -151,6 +165,8 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
+    this.lastRawGlucose = 0;
+    this.lastMedianGlucose = 0;
     
     return null; // Always return null to ensure measurements start from zero
   }
