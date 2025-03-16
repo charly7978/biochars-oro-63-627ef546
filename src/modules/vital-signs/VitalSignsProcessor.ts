@@ -40,6 +40,9 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
+  // Store final processed values
+  private lastValidResults: VitalSignsResult | null = null;
+  
   // Debug tracking for glucose values
   private lastRawGlucose: number = 0;
   private lastMedianGlucose: number = 0;
@@ -148,14 +151,14 @@ export class VitalSignsProcessor {
     this.lastRawGlucose = glucoseFromProcessor;
     this.lastMedianGlucose = finalGlucose;
     
-    // Very important debug log to confirm we're using the median
+    // Critical debug log to confirm we're using the weighted median as the final result
     console.log("VitalSignsProcessor: Final glucose calculation", {
-      valueFromProcessor: glucoseFromProcessor,
+      rawFromProcessor: glucoseFromProcessor,
       storedValues: [...this.glucoseValues], // Copy for logging
       finalWeightedMedian: finalGlucose,
       timestamp: new Date().toISOString(),
       numberOfSamplesUsed: this.glucoseValues.length,
-      isDifferentFromLatestSample: finalGlucose !== glucoseFromProcessor
+      isDifferentFromLatestSample: finalGlucose !== this.glucoseValues[this.glucoseValues.length - 1]
     });
     
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
@@ -167,8 +170,8 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Prepare result with all metrics - using final weighted median glucose
-    return {
+    // Create result with all metrics - using final weighted median glucose
+    const result = {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
@@ -181,6 +184,11 @@ export class VitalSignsProcessor {
         overall: overallConfidence
       }
     };
+    
+    // Store the result for later retrieval
+    this.lastValidResults = result;
+    
+    return result;
   }
   
   /**
@@ -202,9 +210,11 @@ export class VitalSignsProcessor {
 
   /**
    * Reset the processor
-   * Ensures a clean state with no carried over values
+   * Returns the last valid results before resetting
    */
   public reset(): VitalSignsResult | null {
+    const savedResults = this.lastValidResults;
+    
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
@@ -213,24 +223,24 @@ export class VitalSignsProcessor {
     this.lipidProcessor.reset();
     this.lastRawGlucose = 0;
     this.lastMedianGlucose = 0;
-    this.glucoseValues = [];
     
-    return null; // Always return null to ensure measurements start from zero
-  }
-  
-  /**
-   * Get the last valid results - always returns null
-   * Forces fresh measurements
-   */
-  public getLastValidResults(): VitalSignsResult | null {
-    return null; // Always return null to ensure measurements start from zero
+    return savedResults;
   }
   
   /**
    * Completely reset the processor, removing previous data and results
    */
   public fullReset(): void {
+    this.lastValidResults = null;
     this.reset();
+    this.glucoseValues = [];
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
+  }
+  
+  /**
+   * Get the last valid results
+   */
+  public getLastValidResults(): VitalSignsResult | null {
+    return this.lastValidResults;
   }
 }

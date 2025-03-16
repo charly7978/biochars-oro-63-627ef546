@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -29,7 +28,8 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  
+  const glucoseMedianValuesRef = useRef<number[]>([]);
+
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat, isArrhythmia } = useHeartBeatProcessor();
   const { 
@@ -145,6 +145,8 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    
+    glucoseMedianValuesRef.current = [];
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -240,6 +242,30 @@ const Index = () => {
     processImage();
   };
 
+  const calculateWeightedMedian = (values: number[]): number => {
+    if (values.length === 0) return 0;
+    if (values.length === 1) return values[0];
+    
+    const weightedArray: number[] = [];
+    
+    for (let i = 0; i < values.length; i++) {
+      const weight = Math.max(1, Math.floor((i + 1) * 1.5));
+      
+      for (let j = 0; j < weight; j++) {
+        weightedArray.push(values[i]);
+      }
+    }
+    
+    weightedArray.sort((a, b) => a - b);
+    const middleIndex = Math.floor(weightedArray.length / 2);
+    
+    if (weightedArray.length % 2 === 0) {
+      return (weightedArray[middleIndex - 1] + weightedArray[middleIndex]) / 2;
+    }
+    
+    return weightedArray[middleIndex];
+  };
+
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
@@ -247,24 +273,36 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        // Log complete vitals object to verify glucose is properly processed
-        console.log("Index: Processed vital signs with weighted median glucose:", {
-          ...vitals,
-          glucose: {
-            value: vitals.glucose,
-            type: typeof vitals.glucose
-          },
-          timestamp: new Date().toISOString()
-        });
-        
-        // Update vital signs state with the processed values (includes weighted median glucose)
-        setVitalSigns(vitals);
-        
-        // Verify glucose value being displayed
-        toast.info(`Glucose: ${vitals.glucose} mg/dL (median calculated)`, {
-          duration: 2000,
-          position: 'bottom-center',
-        });
+        if (vitals.glucose > 0) {
+          glucoseMedianValuesRef.current.push(vitals.glucose);
+          
+          if (glucoseMedianValuesRef.current.length > 10) {
+            glucoseMedianValuesRef.current.shift();
+          }
+          
+          const medianGlucose = Math.round(calculateWeightedMedian(glucoseMedianValuesRef.current));
+          
+          const vitalsCopy = {
+            ...vitals,
+            glucose: medianGlucose
+          };
+          
+          console.log("Index: GLUCOSE TRACKING", {
+            originalFromProcessor: vitals.glucose,
+            collectedValues: [...glucoseMedianValuesRef.current],
+            calculatedMedian: medianGlucose,
+            timestamp: new Date().toISOString()
+          });
+          
+          setVitalSigns(vitalsCopy);
+          
+          toast.info(`Glucosa (mediana ponderada): ${medianGlucose} mg/dL`, {
+            duration: 3000,
+            position: 'bottom-center',
+          });
+        } else {
+          setVitalSigns(vitals);
+        }
       }
       
       setSignalQuality(lastSignal.quality);
@@ -345,7 +383,7 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
-                label="GLUCOSA"
+                label="GLUCOSA (MEDIA PONDERADA)"
                 value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
