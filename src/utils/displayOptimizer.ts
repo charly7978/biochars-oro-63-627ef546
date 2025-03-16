@@ -101,41 +101,24 @@ export const optimizeSelector = (selector: string): void => {
   elements.forEach(optimizeElement);
 };
 
-// Helper for improved signal graph colors
-export const getSignalColor = (isArrhythmia: boolean, amplitude?: number): string => {
-  if (isArrhythmia) {
-    // Arritmia: Rojo para segmentos de arritmia
-    return '#ea384c'; // Rojo médico
-  } else {
-    // Ritmo normal: Azul
-    return '#2E5BFF'; // Azul médico
-  }
+// Helper for improved signal graph colors - SIMPLIFICADO
+export const getSignalColor = (isArrhythmia: boolean): string => {
+  // Simple, honesto y directo: 
+  // - Rojo para latido prematuro 
+  // - Azul para latido normal
+  return isArrhythmia ? '#ea384c' : '#0EA5E9';
 };
 
-// Determinar si un punto está en una ventana de arritmia
-// FIXED: Reduamos dramáticamente la detección de falsos positivos
+// Simplificación completa: solo determina si el punto actual es una arritmia
+// basado en el valor RR actual, sin crear ventanas artificiales
 export const isPointInArrhythmiaWindow = (
-  pointTime: number, 
-  arrhythmiaWindows: Array<{start: number, end: number}>
+  pointData: any
 ): boolean => {
-  // Si no hay ventanas de arritmia, definitivamente no es una arritmia
-  if (!arrhythmiaWindows || arrhythmiaWindows.length === 0) {
-    return false;
+  // Si pointData tiene una propiedad isArrhythmia explícita, usamos esa
+  if (pointData && typeof pointData.isArrhythmia === 'boolean') {
+    return pointData.isArrhythmia;
   }
   
-  // Reducimos el alcance de las ventanas de arritmia para mostrar menos rojo
-  // Solo consideramos el momento exacto ± 500ms (antes era más amplio)
-  const narrowedWindows = arrhythmiaWindows.map(window => ({
-    start: window.start + 500, // Acortamos el inicio 
-    end: window.end - 500     // Acortamos el final
-  }));
-  
-  // Verificamos solo con las ventanas más recientes (últimas 3 para evitar
-  // que todo el gráfico se ponga rojo con múltiples arritmias antiguas)
-  const recentWindows = narrowedWindows.slice(-3);
-  
-  // Un punto solo es arritmia si está exactamente dentro de una ventana reciente
-  return recentWindows.some(window => 
-    pointTime >= window.start && pointTime <= window.end
-  );
+  // Si no hay datos, no es arritmia
+  return false;
 };

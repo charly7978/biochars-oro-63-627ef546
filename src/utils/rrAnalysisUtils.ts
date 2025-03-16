@@ -1,12 +1,12 @@
 
 /**
  * Utilidades para análisis de intervalos RR y detección de arritmias
- * Extraídas para mantener el código más limpio y modular
+ * Simplificado para detección directa, sin manipulación
  */
 
 /**
- * Analiza intervalos RR para detectar posibles arritmias
- * MODIFICADO: Umbral drásticamente ajustado para reducir falsos positivos
+ * Analiza intervalos RR para detectar latidos prematuros
+ * Se enfoca solo en la variación natural del ritmo cardíaco
  */
 export function analyzeRRIntervals(
   rrData: { intervals: number[] } | undefined,
@@ -26,57 +26,43 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 7) { // Aumentado de 5 a 7
+  if (!rrData?.intervals || rrData.intervals.length < 5) {
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
-  const lastSevenIntervals = rrData.intervals.slice(-7); // Aumentado de 5 a 7
+  const lastIntervals = rrData.intervals.slice(-5);
   
-  // Filtrar intervalos RR para eliminar valores extremos (posibles errores de detección)
-  const filteredIntervals = lastSevenIntervals.filter(interval => 
-    interval >= 600 && interval <= 1200 // Rango más restrictivo (antes 500-1500ms)
-  );
-  
-  // Si después de filtrar no hay suficientes intervalos, no es posible analizar
-  if (filteredIntervals.length < 5) {
-    return { hasArrhythmia: false, shouldIncrementCounter: false };
-  }
-  
-  const avgRR = filteredIntervals.reduce((a, b) => a + b, 0) / filteredIntervals.length;
-  
-  // Calculate RMSSD (Root Mean Square of Successive Differences) - más estricto
-  let rmssd = 0;
-  for (let i = 1; i < filteredIntervals.length; i++) {
-    rmssd += Math.pow(filteredIntervals[i] - filteredIntervals[i-1], 2);
-  }
-  rmssd = Math.sqrt(rmssd / (filteredIntervals.length - 1));
-  
-  // Calculate additional metrics
-  const lastRR = filteredIntervals[filteredIntervals.length - 1];
+  // Calculamos información básica sobre los intervalos RR
+  const avgRR = lastIntervals.reduce((a, b) => a + b, 0) / lastIntervals.length;
+  const lastRR = lastIntervals[lastIntervals.length - 1];
   const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
+  
+  // Calculate RMSSD (Root Mean Square of Successive Differences)
+  let rmssd = 0;
+  for (let i = 1; i < lastIntervals.length; i++) {
+    rmssd += Math.pow(lastIntervals[i] - lastIntervals[i-1], 2);
+  }
+  rmssd = Math.sqrt(rmssd / (lastIntervals.length - 1));
   
   // Calculate standard deviation of intervals
   const rrSD = Math.sqrt(
-    filteredIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
-    filteredIntervals.length
+    lastIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
+    lastIntervals.length
   );
   
-  // MUCHO más restrictivo para evitar falsos positivos
-  // Exigimos umbrales mucho más altos para considerar arritmia
-  const hasArrhythmia = 
-    (rmssd > 70 && rrVariation > 0.35) || // Antes: rmssd > 50, rrVariation > 0.20
-    (rrSD > 50 && rrVariation > 0.30) ||  // Antes: rrSD > 35, rrVariation > 0.18
-    (lastRR > 1.50 * avgRR) ||            // Antes: 1.35
-    (lastRR < 0.6 * avgRR);               // Antes: 0.7
+  // Detección de latido prematuro: 
+  // Un latido es prematuro si es significativamente más corto que el promedio
+  // O si hay una variación abrupta en el ritmo
+  const isPremature = (lastRR < 0.85 * avgRR) || (rrVariation > 0.15);
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 
-    hasArrhythmia && 
+    isPremature && 
     (currentTime - lastArrhythmiaTime >= minTimeBetweenArrhythmias) &&
     (arrhythmiaCounter < maxArrhythmiasPerSession);
   
   return { 
-    hasArrhythmia, 
+    hasArrhythmia: isPremature, 
     shouldIncrementCounter,
     analysisData: { rmssd, rrVariation, lastRR, avgRR, rrSD }
   };
@@ -89,7 +75,7 @@ export function logRRAnalysis(
   analysisData: { rmssd: number; rrVariation: number; rrSD: number; lastRR: number; avgRR: number },
   lastThreeIntervals: number[]
 ): void {
-  console.log("useVitalSignsProcessor: Análisis avanzado RR", {
+  console.log("useVitalSignsProcessor: Análisis directo RR", {
     rmssd: analysisData.rmssd,
     rrVariation: analysisData.rrVariation,
     rrSD: analysisData.rrSD,
@@ -101,17 +87,15 @@ export function logRRAnalysis(
 }
 
 /**
- * Registra mensajes de diagnóstico para posibles arritmias
+ * Registra mensajes de diagnóstico para latidos prematuros
  */
 export function logPossibleArrhythmia(
   analysisData: { rmssd: number; rrVariation: number; rrSD: number },
 ): void {
-  console.log("useVitalSignsProcessor: Posible arritmia detectada", {
+  console.log("useVitalSignsProcessor: Latido prematuro detectado", {
     rmssd: analysisData.rmssd,
     rrVariation: analysisData.rrVariation,
     rrSD: analysisData.rrSD,
-    condición1: analysisData.rmssd > 70 && analysisData.rrVariation > 0.35, // Actualizado
-    condición2: analysisData.rrSD > 50 && analysisData.rrVariation > 0.30,  // Actualizado
     timestamp: new Date().toISOString()
   });
 }
@@ -124,7 +108,7 @@ export function logConfirmedArrhythmia(
   lastThreeIntervals: number[],
   counter: number
 ): void {
-  console.log("Arritmia confirmada:", {
+  console.log("Latido prematuro confirmado:", {
     rmssd: analysisData.rmssd,
     rrVariation: analysisData.rrVariation,
     rrSD: analysisData.rrSD,
@@ -144,9 +128,9 @@ export function logIgnoredArrhythmia(
   maxArrhythmiasPerSession: number,
   currentCounter: number
 ): void {
-  console.log("useVitalSignsProcessor: Arritmia detectada pero ignorada", {
+  console.log("useVitalSignsProcessor: Latido prematuro detectado pero ignorado", {
     motivo: timeSinceLastArrhythmia < 1000 ? 
-      "Demasiado pronto desde la última" : "Máximo número de arritmias alcanzado",
+      "Demasiado pronto desde el último" : "Máximo número de latidos prematuros alcanzado",
     tiempoDesdeÚltima: timeSinceLastArrhythmia,
     máximoPermitido: maxArrhythmiasPerSession,
     contadorActual: currentCounter,
