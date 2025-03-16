@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -26,7 +25,7 @@ export const useHeartBeatProcessor = () => {
   
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 200; // Reduced for more responsive beeps
+  const MIN_BEEP_INTERVAL_MS = 150; // Reduced for more responsive beeps
   
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
@@ -49,6 +48,7 @@ export const useHeartBeatProcessor = () => {
   const beepProcessingActiveRef = useRef<boolean>(false);
   const lastQueuedBeepTimeRef = useRef<number>(0);
   const forceSynchronizedBeepsRef = useRef<boolean>(true);
+  const externalBeepRequestedRef = useRef<boolean>(false);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -65,7 +65,8 @@ export const useHeartBeatProcessor = () => {
         if (processorRef.current) {
           processorRef.current.FORCE_IMMEDIATE_BEEP = true;
           processorRef.current.SKIP_TIMING_VALIDATION = true;
-          processorRef.current.MIN_BEEP_INTERVAL_MS = 180; // Reduced minimum interval
+          processorRef.current.MIN_BEEP_INTERVAL_MS = 150; // Reduced for quicker response
+          processorRef.current.DIRECT_BEEP_PRIORITY = true; // New property for direct beeps
         }
         
         if (typeof window !== 'undefined') {
@@ -121,7 +122,8 @@ export const useHeartBeatProcessor = () => {
         if (processorRef.current) {
           processorRef.current.FORCE_IMMEDIATE_BEEP = true;
           processorRef.current.SKIP_TIMING_VALIDATION = true;
-          processorRef.current.MIN_BEEP_INTERVAL_MS = 180;
+          processorRef.current.MIN_BEEP_INTERVAL_MS = 150;
+          processorRef.current.DIRECT_BEEP_PRIORITY = true;
         }
         
         calibrationCompleteRef.current = true;
@@ -137,91 +139,19 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  const processBeepQueue = useCallback(() => {
-    if (!processorRef.current || pendingBeepsQueue.current.length === 0) {
-      beepProcessingActiveRef.current = false;
-      return;
-    }
-    
-    beepProcessingActiveRef.current = true;
-    const now = Date.now();
-    
-    // Process all beeps that are due
-    while (pendingBeepsQueue.current.length > 0) {
-      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS * 0.5) {
-        break;
-      }
-      
-      const beep = pendingBeepsQueue.current.shift();
-      if (beep) {
-        if (processorRef.current) {
-          try {
-            processorRef.current.playBeep(0.9); // Increased volume
-            lastBeepTimeRef.current = now;
-            console.log(`useHeartBeatProcessor: Beep played from queue at ${now}, ${pendingBeepsQueue.current.length} remaining`);
-          } catch (err) {
-            console.error('Error playing beep from queue:', err);
-          }
-        }
-      }
-    }
-    
-    // Schedule next queue processing if there are still items
-    if (pendingBeepsQueue.current.length > 0) {
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-      }
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.3);
-    } else {
-      beepProcessingActiveRef.current = false;
-    }
-  }, []);
-
-  const requestImmediateBeep = useCallback((value: number) => {
-    if (!processorRef.current) return;
-    
-    const now = Date.now();
-    
-    // Don't queue beeps too close to each other
-    if (now - lastQueuedBeepTimeRef.current < MIN_BEEP_INTERVAL_MS * 0.3) {
-      return;
-    }
-    
-    lastQueuedBeepTimeRef.current = now;
-    
-    // Try direct play first if possible
-    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5) {
-      try {
-        processorRef.current.playBeep(0.9);
-        lastBeepTimeRef.current = now;
-        return;
-      } catch (err) {
-        console.error('Error playing immediate beep:', err);
-      }
-    }
-    
-    // Queue if direct play not possible
-    pendingBeepsQueue.current.push({ time: now, value });
-    
-    if (!beepProcessingActiveRef.current) {
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-      }
-      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL_MS * 0.3);
-    }
-  }, [processBeepQueue]);
-
   const handleExternalBeepRequest = useCallback((timestamp: number) => {
     if (!processorRef.current) return;
     
-    // First try the processor's direct beep method if available
-    if (processorRef.current.requestBeepForTime && processorRef.current.requestBeepForTime(timestamp)) {
-      return;
-    }
+    externalBeepRequestedRef.current = true;
     
-    // Fall back to our queue system
-    requestImmediateBeep(0);
-  }, [requestImmediateBeep]);
+    // Play beep IMMEDIATELY with no delay or checks
+    try {
+      processorRef.current.requestBeepForTime(timestamp);
+      console.log(`useHeartBeatProcessor: External beep requested and played at ${timestamp}`);
+    } catch (err) {
+      console.error('Error playing external beep:', err);
+    }
+  }, []);
 
   const playBeepSound = useCallback(() => {
     if (!processorRef.current) {
@@ -229,47 +159,16 @@ export const useHeartBeatProcessor = () => {
       return;
     }
     
-    const now = Date.now();
-    
-    if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS * 0.5) {
-      console.log('useHeartBeatProcessor: Beep queued - too soon after last beep');
-      pendingBeepsQueue.current.push({ time: now, value: currentBPM });
-      
-      if (!beepProcessingActiveRef.current) {
-        if (beepProcessorTimeoutRef.current) {
-          clearTimeout(beepProcessorTimeoutRef.current);
-        }
-        beepProcessorTimeoutRef.current = window.setTimeout(
-          processBeepQueue, 
-          MIN_BEEP_INTERVAL_MS * 0.3
-        );
-      }
-      return;
-    }
-    
     try {
-      const beepSuccess = processorRef.current.playBeep(0.9);
-      if (beepSuccess) {
-        lastBeepTimeRef.current = now;
-        consistentBeatsCountRef.current++;
-      } else {
-        console.warn('useHeartBeatProcessor: Failed to play beep, adding to queue');
-        pendingBeepsQueue.current.push({ time: now, value: currentBPM });
-        
-        if (!beepProcessingActiveRef.current) {
-          if (beepProcessorTimeoutRef.current) {
-            clearTimeout(beepProcessorTimeoutRef.current);
-          }
-          beepProcessorTimeoutRef.current = window.setTimeout(
-            processBeepQueue, 
-            MIN_BEEP_INTERVAL_MS * 0.3
-          );
-        }
-      }
+      // ALWAYS try to play beep immediately - highest priority
+      processorRef.current.playBeep(1.0);
+      lastBeepTimeRef.current = Date.now();
+      consistentBeatsCountRef.current++;
+      console.log('useHeartBeatProcessor: Beep played successfully');
     } catch (err) {
       console.error('useHeartBeatProcessor: Error playing beep', err);
     }
-  }, [currentBPM, processBeepQueue]);
+  }, []);
 
   const detectArrhythmia = useCallback((rrIntervals: number[]): RRAnalysisResult => {
     if (rrIntervals.length < 5) {
@@ -358,7 +257,7 @@ export const useHeartBeatProcessor = () => {
         isArrhythmia: false
       };
       
-      if (result.isPeak && result.confidence > 0.60 && lastRRIntervalsRef.current.length >= 5) {
+      if (result.isPeak && result.confidence > 0.3) {
         analysisResult = detectArrhythmia(lastRRIntervalsRef.current);
         currentBeatIsArrhythmia = analysisResult.isArrhythmia;
         currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
@@ -368,11 +267,7 @@ export const useHeartBeatProcessor = () => {
       if (result.isPeak && result.confidence > 0.5) {
         lastPeakTimeRef.current = now;
         
-        // Forcibly play beep for detected peak with high priority
-        if (forceSynchronizedBeepsRef.current) {
-          requestImmediateBeep(value);
-        }
-        
+        // Play beep directly from the processor for immediate feedback
         playBeepSound();
         
         if (result.bpm >= 40 && result.bpm <= 200) {
@@ -392,7 +287,8 @@ export const useHeartBeatProcessor = () => {
         if (processorRef.current) {
           processorRef.current.FORCE_IMMEDIATE_BEEP = true;
           processorRef.current.SKIP_TIMING_VALIDATION = true;
-          processorRef.current.MIN_BEEP_INTERVAL_MS = 180;
+          processorRef.current.MIN_BEEP_INTERVAL_MS = 150;
+          processorRef.current.DIRECT_BEEP_PRIORITY = true;
         }
       }
 
@@ -432,7 +328,7 @@ export const useHeartBeatProcessor = () => {
         }
       };
     }
-  }, [currentBPM, confidence, detectArrhythmia, playBeepSound, requestImmediateBeep]);
+  }, [currentBPM, confidence, detectArrhythmia, playBeepSound]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
@@ -446,7 +342,8 @@ export const useHeartBeatProcessor = () => {
       // Reset and ensure our beep settings
       processorRef.current.FORCE_IMMEDIATE_BEEP = true;
       processorRef.current.SKIP_TIMING_VALIDATION = true;
-      processorRef.current.MIN_BEEP_INTERVAL_MS = 180;
+      processorRef.current.MIN_BEEP_INTERVAL_MS = 150;
+      processorRef.current.DIRECT_BEEP_PRIORITY = true;
     }
     
     setCurrentBPM(0);
@@ -472,6 +369,7 @@ export const useHeartBeatProcessor = () => {
       beepProcessorTimeoutRef.current = null;
     }
     beepProcessingActiveRef.current = false;
+    externalBeepRequestedRef.current = false;
     
     setTimeout(performAutoCalibration, 3000);
   }, [performAutoCalibration]);

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -60,51 +59,22 @@ const PPGSignalMeter = memo(({
   const queuedPeaksRef = useRef<{time: number, value: number}[]>([]);
   const lastPeakRequestTimeRef = useRef<number>(0);
   const beepProcessorTimeoutRef = useRef<number | null>(null);
+  const visiblePeaksRef = useRef<{time: number, value: number}[]>([]);
+  const pendingBeepTimeoutsRef = useRef<number[]>([]);
 
-  // Define requestBeepForPeak BEFORE detectPeaks to fix the "used before declaration" error
   const requestBeepForPeak = useCallback((timestamp: number) => {
-    const now = Date.now();
-    if (now - lastBeepRequestTimeRef.current < 150) {
-      // Queue this peak for later beep request
-      queuedPeaksRef.current.push({time: timestamp, value: 0});
-      
-      // Schedule processing of queued peaks if not already scheduled
-      if (!beepProcessorTimeoutRef.current) {
-        beepProcessorTimeoutRef.current = window.setTimeout(() => {
-          processPeakQueue();
-        }, 160);
-      }
+    if (!beepRequesterRef.current) {
+      console.log(`PPGSignalMeter: No beep requester available for peak at ${timestamp}`);
       return;
     }
     
-    if (beepRequesterRef.current) {
+    try {
       beepRequesterRef.current(timestamp);
-      lastBeepRequestTimeRef.current = now;
       console.log(`PPGSignalMeter: Beep requested for peak at ${timestamp}`);
-    } else {
-      console.log(`PPGSignalMeter: No beep requester available for peak at ${timestamp}`);
-    }
-  }, []);
-  
-  // Function to process queued peaks
-  const processPeakQueue = useCallback(() => {
-    beepProcessorTimeoutRef.current = null;
-    
-    if (queuedPeaksRef.current.length === 0) return;
-    
-    const now = Date.now();
-    if (now - lastBeepRequestTimeRef.current >= 150 && beepRequesterRef.current) {
-      const peak = queuedPeaksRef.current.shift();
-      if (peak) {
-        beepRequesterRef.current(peak.time);
-        lastBeepRequestTimeRef.current = now;
-        console.log(`PPGSignalMeter: Delayed beep requested for peak at ${peak.time}`);
-      }
-    }
-    
-    // If more peaks in queue, schedule next processing
-    if (queuedPeaksRef.current.length > 0) {
-      beepProcessorTimeoutRef.current = window.setTimeout(processPeakQueue, 160);
+      
+      visiblePeaksRef.current.push({time: timestamp, value: 0});
+    } catch (err) {
+      console.error(`PPGSignalMeter: Error requesting beep for peak at ${timestamp}`, err);
     }
   }, []);
 
@@ -116,12 +86,12 @@ const PPGSignalMeter = memo(({
   const GRID_SIZE_Y = 5;
   const verticalScale = 65.0;
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 180;
+  const TARGET_FPS = 120;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 6; // Reduced for faster detection
-  const PEAK_THRESHOLD = 2.0; // Lowered for more sensitive detection
-  const MIN_PEAK_DISTANCE_MS = 180; // Reduced for more frequent peaks
+  const PEAK_DETECTION_WINDOW = 4;
+  const PEAK_THRESHOLD = 1.6;
+  const MIN_PEAK_DISTANCE_MS = 150;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
@@ -174,6 +144,52 @@ const PPGSignalMeter = memo(({
       drawGrid(gridCtx);
       gridCanvasRef.current = gridCanvas;
     }
+
+    return () => {
+      pendingBeepTimeoutsRef.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      pendingBeepTimeoutsRef.current = [];
+      
+      if (beepProcessorTimeoutRef.current) {
+        clearTimeout(beepProcessorTimeoutRef.current);
+        beepProcessorTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const heartBeatProcessor = (window as any).heartBeatProcessor;
+    
+    if (heartBeatProcessor) {
+      beepRequesterRef.current = (timestamp: number) => {
+        try {
+          heartBeatProcessor.requestBeepForTime(timestamp);
+        } catch (err) {
+          console.error("Error requesting beep:", err);
+          
+          try {
+            heartBeatProcessor.playBeep(1.0);
+          } catch (innerErr) {
+            console.error("Error playing fallback beep:", innerErr);
+          }
+        }
+      };
+    }
+    
+    return () => {
+      beepRequesterRef.current = null;
+      
+      pendingBeepTimeoutsRef.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      pendingBeepTimeoutsRef.current = [];
+      
+      if (beepProcessorTimeoutRef.current) {
+        clearTimeout(beepProcessorTimeoutRef.current);
+        beepProcessorTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -328,25 +344,23 @@ const PPGSignalMeter = memo(({
       const currentPoint = points[i];
       
       const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS * 0.8 // Reduced for more sensitivity
+        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS * 0.8
       );
       
       if (recentlyProcessed) continue;
       
       let isPeak = true;
       
-      // Check preceding points - more relaxed condition
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value * 0.95) { // 5% tolerance
+        if (points[j].value >= currentPoint.value * 0.95) {
           isPeak = false;
           break;
         }
       }
       
       if (isPeak) {
-        // Check following points - more relaxed condition
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value * 0.95) { // 5% tolerance
+          if (j < points.length && points[j].value > currentPoint.value * 0.95) {
             isPeak = false;
             break;
           }
@@ -368,27 +382,23 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    // Process potential peaks
     for (const peak of potentialPeaks) {
       const tooClose = peaksRef.current.some(
         existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS * 0.8
       );
       
       if (!tooClose) {
-        // Add peak to display list
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
           isArrhythmia: peak.isArrhythmia
         });
         
-        // Request beep for this peak
         requestBeepForPeak(peak.time);
         console.log(`PPGSignalMeter: Peak detected at ${peak.time} with value ${peak.value.toFixed(2)}`);
       }
     }
     
-    // Sort and limit peaks for display
     peaksRef.current.sort((a, b) => a.time - b.time);
     
     peaksRef.current = peaksRef.current
@@ -408,34 +418,6 @@ const PPGSignalMeter = memo(({
       const segmentAge = now - endTime;
       return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
     });
-  }, []);
-
-  useEffect(() => {
-    const heartBeatProcessor = (window as any).heartBeatProcessor;
-    
-    if (heartBeatProcessor) {
-      beepRequesterRef.current = (timestamp: number) => {
-        try {
-          // Try to use the dedicated request method first
-          if (heartBeatProcessor.requestBeepForTime && heartBeatProcessor.requestBeepForTime(timestamp)) {
-            return;
-          }
-          
-          // Fall back to direct beep
-          heartBeatProcessor.playBeep(0.9);
-        } catch (err) {
-          console.error("Error requesting beep:", err);
-        }
-      };
-    }
-    
-    return () => {
-      beepRequesterRef.current = null;
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-        beepProcessorTimeoutRef.current = null;
-      }
-    };
   }, []);
 
   const renderSignal = useCallback(() => {
@@ -592,6 +574,14 @@ const PPGSignalMeter = memo(({
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
             
+            const hasBeepRequested = visiblePeaksRef.current.some(p => 
+              Math.abs(p.time - peak.time) < 50
+            );
+            
+            if (!hasBeepRequested) {
+              requestBeepForPeak(peak.time);
+            }
+            
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
@@ -646,14 +636,26 @@ const PPGSignalMeter = memo(({
         clearTimeout(beepProcessorTimeoutRef.current);
         beepProcessorTimeoutRef.current = null;
       }
+      
+      pendingBeepTimeoutsRef.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      pendingBeepTimeoutsRef.current = [];
     };
   }, [renderSignal]);
 
   const handleReset = useCallback(() => {
     peaksRef.current = [];
     queuedPeaksRef.current = [];
+    visiblePeaksRef.current = [];
     arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     arrhythmiaSegmentsRef.current = [];
+    
+    pendingBeepTimeoutsRef.current.forEach(timeoutId => {
+      clearTimeout(timeoutId);
+    });
+    pendingBeepTimeoutsRef.current = [];
+    
     onReset();
   }, [onReset]);
 

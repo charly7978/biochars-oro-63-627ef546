@@ -4,11 +4,11 @@ export class HeartBeatProcessor {
   WINDOW_SIZE = 45;
   MIN_BPM = 40;
   MAX_BPM = 200;
-  SIGNAL_THRESHOLD = 0.15;        // Lowered for more sensitive detection
-  MIN_CONFIDENCE = 0.40;         // Lowered confidence requirement to catch more peaks
+  SIGNAL_THRESHOLD = 0.15;        // Sensitivity threshold for peaks
+  MIN_CONFIDENCE = 0.30;         // Lowered to detect more peaks
   DERIVATIVE_THRESHOLD = -0.015;  // More sensitive derivative threshold
-  MIN_PEAK_TIME_MS = 200;        // Reduced for more frequent beat detection
-  WARMUP_TIME_MS = 1000;         // Shorter warmup for faster response
+  MIN_PEAK_TIME_MS = 150;        // Reduced for more frequent beat detection
+  WARMUP_TIME_MS = 800;         // Shorter warmup for faster response
 
   // Filters for signal stability
   MEDIAN_FILTER_WINDOW = 5;
@@ -19,17 +19,18 @@ export class HeartBeatProcessor {
   // Beep sound configuration
   BEEP_PRIMARY_FREQUENCY = 800;
   BEEP_DURATION = 70;            // Shorter for more responsive beeps
-  BEEP_VOLUME = 0.95;            // High volume for clear audio
-  MIN_BEEP_INTERVAL_MS = 180;    // Reduced interval between beeps for responsiveness
+  BEEP_VOLUME = 1.0;             // Maximum volume for clear audio
+  MIN_BEEP_INTERVAL_MS = 150;    // Reduced interval between beeps
 
   // Signal quality detection
   LOW_SIGNAL_THRESHOLD = 0.02;
   LOW_SIGNAL_FRAMES = 15;
   lowSignalCount = 0;
 
-  // Flags for synchronized beeps
-  FORCE_IMMEDIATE_BEEP = true;  // Always force immediate beeps
-  SKIP_TIMING_VALIDATION = true; // Skip timing validation to maximize beeps
+  // CRITICAL: Always force immediate beeps
+  FORCE_IMMEDIATE_BEEP = true;  
+  SKIP_TIMING_VALIDATION = true; 
+  DIRECT_BEEP_PRIORITY = true;  // New flag to prioritize direct beeps
 
   // State variables
   signalBuffer = [];
@@ -68,9 +69,12 @@ export class HeartBeatProcessor {
   pendingBeepRequest = false;
   consecutiveBeats = 0;
   beepSuccessCount = 0;
+  
+  // New flag for external beep requests
+  externalBeepRequested = false;
 
   constructor() {
-    console.log("HeartBeatProcessor: Initializing with synchronized beep configuration");
+    console.log("HeartBeatProcessor: Initializing with immediate beep configuration");
     this.initAudio();
     this.startTime = Date.now();
   }
@@ -88,12 +92,13 @@ export class HeartBeatProcessor {
         // Test beep with minimal volume to prepare audio system
         await this.playBeep(0.01);
         
-        // Prepare oscillator in advance to reduce latency
+        // Pre-create oscillator to reduce latency
         this.prepareAudioSystem();
         
         console.log("HeartBeatProcessor: Audio Context initialized successfully", {
           sampleRate: this.audioContext?.sampleRate,
-          state: this.audioContext?.state
+          state: this.audioContext?.state,
+          beepResult: true
         });
       }
     } catch (err) {
@@ -103,7 +108,7 @@ export class HeartBeatProcessor {
     }
   }
   
-  // Prepare the audio system to reduce latency on future beeps
+  // Prepare the audio system to reduce latency
   async prepareAudioSystem() {
     if (!this.audioContext) return;
     
@@ -129,15 +134,6 @@ export class HeartBeatProcessor {
       return false;
     }
     
-    const now = Date.now();
-    
-    // Skip timing validation if configured to do so
-    if (!this.SKIP_TIMING_VALIDATION && now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS * 0.7) {
-      // Queue the beep for later if we can't play it now
-      this.queueBeep(volume);
-      return false;
-    }
-
     try {
       // Ensure audio context is ready
       if (!this.audioContext || this.audioContext.state !== 'running') {
@@ -175,12 +171,9 @@ export class HeartBeatProcessor {
       oscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.01);
       
       // Record successful beep
-      this.lastBeepTime = now;
+      this.lastBeepTime = Date.now();
       this.beepSuccessCount++;
       this.pendingBeepRequest = false;
-      
-      // Process any queued beeps if available
-      this.processBeepQueue();
       
       return true;
     } catch (err) {
@@ -189,44 +182,13 @@ export class HeartBeatProcessor {
     }
   }
 
-  // Queue a beep to play later
-  queueBeep(volume) {
-    this.beepQueue.push({
-      time: Date.now(),
-      volume: volume
-    });
-    
-    // Process queue immediately if possible
-    setTimeout(() => this.processBeepQueue(), 10);
-  }
-
-  // Process queued beeps
-  processBeepQueue() {
-    if (this.beepQueue.length === 0) return;
-    
-    const now = Date.now();
-    
-    // Only process if enough time has passed since last beep
-    if (now - this.lastBeepTime >= this.MIN_BEEP_INTERVAL_MS * 0.7) {
-      const nextBeep = this.beepQueue.shift();
-      if (nextBeep) {
-        this.playBeep(nextBeep.volume);
-      }
-    } else if (this.beepQueue.length > 0) {
-      // Try again soon
-      setTimeout(() => this.processBeepQueue(), 50);
-    }
-  }
-
-  // Method for external components to request beeps
+  // Method for external components to request beeps - ALWAYS PLAY IMMEDIATELY
   requestBeepForTime(timestamp) {
-    const now = Date.now();
-    if (now - this.lastBeepRequestTime < 100) return false;
+    this.externalBeepRequested = true;
     
-    this.lastBeepRequestTime = now;
+    // ALWAYS play beep immediately regardless of timing
+    setTimeout(() => this.playBeep(this.BEEP_VOLUME), 0);
     
-    // Always force immediate beep to synchronize with visual
-    this.playBeep(this.BEEP_VOLUME);
     return true;
   }
 
@@ -272,7 +234,7 @@ export class HeartBeatProcessor {
       }
 
       // Wait for minimum buffer size
-      if (this.signalBuffer.length < 10) { // Reduced from 15 for faster startup
+      if (this.signalBuffer.length < 10) { // Reduced for faster startup
         return {
           bpm: 0,
           confidence: 0,
@@ -324,7 +286,7 @@ export class HeartBeatProcessor {
         // Calculate heart rate
         this.updateBPM();
         
-        // Play beep immediately for each peak if configured to do so
+        // ALWAYS play beep immediately for each peak
         if (this.FORCE_IMMEDIATE_BEEP) {
           this.playBeep(this.BEEP_VOLUME);
         }
@@ -377,16 +339,6 @@ export class HeartBeatProcessor {
   }
 
   detectPeak(normalizedValue, derivative) {
-    const now = Date.now();
-    
-    // Skip timing validation if configured to do so
-    if (!this.SKIP_TIMING_VALIDATION && this.lastPeakTime) {
-      const timeSinceLastPeak = now - this.lastPeakTime;
-      if (timeSinceLastPeak < this.MIN_PEAK_TIME_MS * 0.7) {
-        return { isPeak: false, confidence: 0 };
-      }
-    }
-
     // Core peak detection logic - more sensitive thresholds
     const isPeak =
       derivative < this.DERIVATIVE_THRESHOLD &&
@@ -509,6 +461,7 @@ export class HeartBeatProcessor {
     this.beepSuccessCount = 0;
     this.lastBeepRequestTime = 0;
     this.beepQueue = [];
+    this.externalBeepRequested = false;
     
     // Try to ensure audio context is active
     if (this.audioContext && this.audioContext.state !== 'running') {
