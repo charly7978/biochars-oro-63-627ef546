@@ -20,6 +20,11 @@ export interface VitalSignsResult {
     lipids: number;
     overall: number;
   };
+  lastArrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null;
 }
 
 /**
@@ -107,6 +112,7 @@ export class VitalSignsProcessor {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
       glucose,
       lipids,
       confidence: {

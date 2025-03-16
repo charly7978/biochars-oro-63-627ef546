@@ -1,3 +1,4 @@
+
 /**
  * Advanced Arrhythmia Processor based on peer-reviewed cardiac research
  */
@@ -41,6 +42,7 @@ export class ArrhythmiaProcessor {
    */
   public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
     arrhythmiaStatus: string;
+    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
     const currentTime = Date.now();
 
@@ -78,8 +80,16 @@ export class ArrhythmiaProcessor {
       arrhythmiaStatus = `SIN ARRITMIAS|${this.arrhythmiaCount}`;
     }
 
+    // Prepare arrhythmia data if detected
+    const lastArrhythmiaData = this.arrhythmiaDetected ? {
+      timestamp: currentTime,
+      rmssd: this.lastRMSSD,
+      rrVariation: this.lastRRVariation
+    } : null;
+
     return {
-      arrhythmiaStatus
+      arrhythmiaStatus,
+      lastArrhythmiaData
     };
   }
 
