@@ -166,12 +166,12 @@ const CameraView = ({
             
             if (capabilities.brightness && capabilities.brightness.max) {
               const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
+              advancedConstraints.push({ brightness: maxBrightness * 0.9 });
             }
             
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
+              advancedConstraints.push({ contrast: maxContrast * 1.6 });
             }
 
             if (advancedConstraints.length > 0) {
