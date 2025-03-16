@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -18,6 +19,9 @@ export const useHeartBeatProcessor = () => {
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const lastPeakTimeRef = useRef<number | null>(null);
+  const lastBeepTimeRef = useRef<number>(0);
+  const MIN_BEEP_INTERVAL_MS = 300; // Minimum time between beeps
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -55,6 +59,22 @@ export const useHeartBeatProcessor = () => {
     };
   }, []);
 
+  // Function to manually trigger beep sound when a peak is detected
+  const playBeepSound = useCallback(() => {
+    if (!processorRef.current) return;
+    
+    const now = Date.now();
+    if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) return;
+    
+    try {
+      processorRef.current.playBeep();
+      lastBeepTimeRef.current = now;
+      console.log('useHeartBeatProcessor: Beep manual reproducido en', new Date().toISOString());
+    } catch (err) {
+      console.error('useHeartBeatProcessor: Error al reproducir beep manual', err);
+    }
+  }, []);
+
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       console.warn('useHeartBeatProcessor: Processor no inicializado', {
@@ -85,6 +105,16 @@ export const useHeartBeatProcessor = () => {
 
     const result = processorRef.current.processSignal(value);
     const rrData = processorRef.current.getRRIntervals();
+
+    // Si se detecta un pico y ha pasado suficiente tiempo desde el último pico
+    if (result.isPeak && 
+        (!lastPeakTimeRef.current || 
+         Date.now() - lastPeakTimeRef.current >= MIN_BEEP_INTERVAL_MS)) {
+      
+      lastPeakTimeRef.current = Date.now();
+      // Reproducir beep manualmente para sincronizar con el pico detectado
+      playBeepSound();
+    }
 
     console.log('useHeartBeatProcessor - resultado detallado:', {
       bpm: result.bpm,
@@ -131,7 +161,7 @@ export const useHeartBeatProcessor = () => {
       ...result,
       rrData
     };
-  }, [currentBPM, confidence]);
+  }, [currentBPM, confidence, playBeepSound]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Reseteando processor', {
@@ -154,6 +184,8 @@ export const useHeartBeatProcessor = () => {
     
     setCurrentBPM(0);
     setConfidence(0);
+    lastPeakTimeRef.current = null;
+    lastBeepTimeRef.current = 0;
   }, [currentBPM, confidence]);
 
   return {
