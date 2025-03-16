@@ -44,7 +44,11 @@ const PPGSignalMeter = memo(({
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animatedCirclesRef = useRef<{x: number, y: number, radius: number, opacity: number, startTime: number}[]>([]);
+  const arrhythmiaTransitionRef = useRef<{
+    active: boolean,
+    startTime: number,
+    endTime: number | null
+  }>({ active: false, startTime: 0, endTime: null });
 
   const WINDOW_WIDTH_MS = 6500;
   const CANVAS_WIDTH = 1960;
@@ -66,8 +70,7 @@ const PPGSignalMeter = memo(({
   const USE_OFFSCREEN_CANVAS = true;
   const ARRHYTHMIA_COLOR = '#ea384c';
   const NORMAL_COLOR = '#0EA5E9';
-  const ARRHYTHMIA_INDICATOR_COLOR = '#FEF7CD';
-  const ANIMATION_DURATION_MS = 1500;
+  const ARRHYTHMIA_DURATION_MS = 1000;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -268,22 +271,6 @@ const PPGSignalMeter = memo(({
           value: peak.value,
           isArrhythmia: peak.isArrhythmia
         });
-        
-        if (peak.isArrhythmia) {
-          const canvas = canvasRef.current;
-          if (canvas) {
-            const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-            const y = (canvas.height / 2) - 40 - peak.value;
-            
-            animatedCirclesRef.current.push({
-              x,
-              y,
-              radius: 5,
-              opacity: 1,
-              startTime: now
-            });
-          }
-        }
       }
     }
     
@@ -352,6 +339,7 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
+    // Mark each point individually as arrhythmic or not
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
@@ -364,42 +352,51 @@ const PPGSignalMeter = memo(({
     detectPeaks(points, now);
     
     if (points.length > 1) {
-      let segmentStartIndex = 0;
-      let currentIsArrhythmia = points[0].isArrhythmia;
+      // Render each point with its own color based on arrhythmia status
+      renderCtx.beginPath();
+      renderCtx.lineWidth = 2;
+      renderCtx.lineJoin = 'round';
+      renderCtx.lineCap = 'round';
       
-      for (let i = 1; i < points.length; i++) {
-        if (points[i].isArrhythmia !== currentIsArrhythmia || i === points.length - 1) {
-          renderCtx.beginPath();
-          renderCtx.lineWidth = 2;
-          renderCtx.lineJoin = 'round';
-          renderCtx.lineCap = 'round';
-          renderCtx.strokeStyle = currentIsArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
-          
-          const firstPoint = points[segmentStartIndex];
-          const firstX = canvas.width - ((now - firstPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-          const firstY = (canvas.height / 2) - 40 - firstPoint.value;
-          renderCtx.moveTo(firstX, firstY);
-          
-          for (let j = segmentStartIndex + 1; j <= i; j++) {
-            const point = points[j];
-            const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-            const y = (canvas.height / 2) - 40 - point.value;
-            renderCtx.lineTo(x, y);
-          }
-          
+      // Draw individual segments with their own color
+      let lastPoint: PPGDataPointExtended | null = null;
+      
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = (canvas.height / 2) - 40 - point.value;
+        
+        // If we're at a boundary between normal and arrhythmic points, close the current path and start a new one
+        if (lastPoint && lastPoint.isArrhythmia !== point.isArrhythmia) {
           renderCtx.stroke();
-          
-          segmentStartIndex = i;
-          currentIsArrhythmia = points[i].isArrhythmia;
+          renderCtx.beginPath();
         }
+        
+        // Set the color for the current point
+        renderCtx.strokeStyle = point.isArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
+        
+        if (i === 0 || (lastPoint && lastPoint.isArrhythmia !== point.isArrhythmia)) {
+          renderCtx.moveTo(x, y);
+        } else {
+          renderCtx.lineTo(x, y);
+        }
+        
+        // Complete the segment if we've reached the end
+        if (i === points.length - 1) {
+          renderCtx.stroke();
+        }
+        
+        lastPoint = point;
       }
       
+      // Draw the detected peaks
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
           const y = (canvas.height / 2) - 40 - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
+            // Use the peak's isArrhythmia flag to determine color
             renderCtx.fillStyle = peak.isArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
             renderCtx.beginPath();
             renderCtx.arc(x, y, 5, 0, Math.PI * 2);
@@ -412,43 +409,6 @@ const PPGSignalMeter = memo(({
           }
         });
       }
-      
-      const remainingCircles = [];
-      
-      for (const circle of animatedCirclesRef.current) {
-        const elapsedTime = now - circle.startTime;
-        const progress = Math.min(elapsedTime / ANIMATION_DURATION_MS, 1);
-        
-        const currentRadius = circle.radius + (30 * progress);
-        const currentOpacity = 1 - progress;
-        
-        if (currentOpacity > 0) {
-          const x = canvas.width - ((now - (circle.startTime - elapsedTime)) * canvas.width / WINDOW_WIDTH_MS);
-          
-          if (x >= 0 && x <= canvas.width) {
-            renderCtx.beginPath();
-            renderCtx.arc(x, circle.y, currentRadius, 0, Math.PI * 2);
-            renderCtx.fillStyle = `rgba(254, 247, 205, ${currentOpacity})`;
-            renderCtx.fill();
-            
-            renderCtx.beginPath();
-            renderCtx.arc(x, circle.y, currentRadius, 0, Math.PI * 2);
-            renderCtx.strokeStyle = `rgba(247, 158, 11, ${currentOpacity})`;
-            renderCtx.lineWidth = 2;
-            renderCtx.stroke();
-            
-            if (progress < 1) {
-              remainingCircles.push({
-                ...circle,
-                radius: currentRadius,
-                opacity: currentOpacity
-              });
-            }
-          }
-        }
-      }
-      
-      animatedCirclesRef.current = remainingCircles;
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -474,7 +434,7 @@ const PPGSignalMeter = memo(({
 
   const handleReset = useCallback(() => {
     peaksRef.current = [];
-    animatedCirclesRef.current = [];
+    arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     onReset();
   }, [onReset]);
 
