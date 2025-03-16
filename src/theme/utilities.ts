@@ -39,7 +39,7 @@ export const utilities = function({ addUtilities }) {
     },
     '.ultra-crisp-graphics': {
       'image-rendering': '-webkit-optimize-contrast',
-      'image-rendering': 'crisp-edges',
+      'image-rendering': 'crisp-edges', // This is a duplicate property
       'shape-rendering': 'crispEdges',
       'transform': 'translate3d(0, 0, 0)',
       'backface-visibility': 'hidden'

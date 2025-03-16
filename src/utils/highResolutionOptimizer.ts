@@ -92,9 +92,12 @@ export const applyMedicalGridLayout = (container: HTMLElement): void => {
 
 /**
  * Configura Container Queries para componentes médicos adaptativos
+ * @returns A cleanup function that can be used to disconnect the observer
  */
-export const setupContainerQueries = (): void => {
-  if (typeof window === 'undefined' || !('ResizeObserver' in window)) return;
+export const setupContainerQueries = (): (() => void) => {
+  if (typeof window === 'undefined' || !('ResizeObserver' in window)) {
+    return () => {}; // Return an empty function as fallback
+  }
   
   // Identificamos los contenedores que deben ser adaptables
   const containers = document.querySelectorAll('.container-query');
