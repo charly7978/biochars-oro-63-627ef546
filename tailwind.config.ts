@@ -91,12 +91,18 @@ export default {
         "value-glow": {
           "0%, 100%": { textShadow: "0 0 1px rgba(255,255,255,0.2)" },
           "50%": { textShadow: "0 0 20px rgba(255,255,255,0.9), 0 0 10px rgba(255,255,255,0.6)" }
+        },
+        "arrhythmia-pulse": {
+          "0%": { transform: "scale(1)", opacity: "0.9" },
+          "50%": { transform: "scale(1.15)", opacity: "0.8" },
+          "100%": { transform: "scale(1)", opacity: "0.9" }
         }
       },
       animation: {
         "heart-beat": "heart-beat 1s ease-in-out infinite",
         "flip": "card-flip 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards",
-        "value-glow": "value-glow 3s ease-in-out infinite"
+        "value-glow": "value-glow 3s ease-in-out infinite",
+        "arrhythmia-pulse": "arrhythmia-pulse 1.5s ease-in-out infinite"
       }
     },
   },
