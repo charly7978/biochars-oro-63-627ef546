@@ -158,6 +158,55 @@ export default {
           '-webkit-font-smoothing': 'antialiased',
           'font-feature-settings': '"kern", "liga", "calt"',
           'letter-spacing': '-0.01em'
+        },
+        // New glassmorphism utilities
+        '.glass': {
+          'background': 'rgba(255, 255, 255, 0.08)',
+          'backdrop-filter': 'blur(12px)',
+          '-webkit-backdrop-filter': 'blur(12px)',
+          'border': '1px solid rgba(255, 255, 255, 0.12)',
+          'box-shadow': '0 4px 30px rgba(0, 0, 0, 0.1)'
+        },
+        '.glass-dark': {
+          'background': 'rgba(20, 20, 28, 0.65)',
+          'backdrop-filter': 'blur(12px)',
+          '-webkit-backdrop-filter': 'blur(12px)',
+          'border': '1px solid rgba(255, 255, 255, 0.08)',
+          'box-shadow': '0 4px 30px rgba(0, 0, 0, 0.2)'
+        },
+        '.glass-card': {
+          'background': 'rgba(255, 255, 255, 0.06)',
+          'backdrop-filter': 'blur(10px)',
+          '-webkit-backdrop-filter': 'blur(10px)',
+          'border-radius': '16px', 
+          'border': '1px solid rgba(255, 255, 255, 0.1)',
+          'box-shadow': '0 4px 30px rgba(0, 0, 0, 0.1)'
+        },
+        '.glass-card-dark': {
+          'background': 'rgba(20, 20, 28, 0.55)',
+          'backdrop-filter': 'blur(10px)',
+          '-webkit-backdrop-filter': 'blur(10px)', 
+          'border-radius': '16px',
+          'border': '1px solid rgba(255, 255, 255, 0.05)',
+          'box-shadow': '0 4px 30px rgba(0, 0, 0, 0.25)'
+        },
+        '.glass-medical': {
+          'background': 'rgba(240, 248, 255, 0.1)',
+          'backdrop-filter': 'blur(15px)',
+          '-webkit-backdrop-filter': 'blur(15px)',
+          'border': '1px solid rgba(240, 248, 255, 0.15)',
+          'box-shadow': '0 8px 32px rgba(0, 0, 0, 0.15)'
+        },
+        '.inner-glow': {
+          'box-shadow': 'inset 0 0 15px rgba(255, 255, 255, 0.15)'
+        },
+        '.depth-layer': {
+          'position': 'relative',
+          'z-index': '1'
+        },
+        '.depth-layer-2': {
+          'position': 'relative',
+          'z-index': '2'
         }
       }
       addUtilities(newUtilities)

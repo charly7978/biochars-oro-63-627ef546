@@ -1,0 +1,145 @@
+
+/* Glassmorphism Effects - Can be imported where needed */
+
+.glass-effect {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.glass-dark {
+  background: rgba(20, 20, 28, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.glass-medical {
+  background: rgba(240, 248, 255, 0.1);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(240, 248, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.glass-vital {
+  background: rgba(30, 30, 40, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.glass-frost {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Depth effects */
+.depth-1 {
+  box-shadow: 
+    0 1px 1px rgba(0,0,0,0.06),
+    0 2px 2px rgba(0,0,0,0.06);
+}
+
+.depth-2 {
+  box-shadow: 
+    0 1px 1px rgba(0,0,0,0.06),
+    0 2px 2px rgba(0,0,0,0.06),
+    0 4px 4px rgba(0,0,0,0.05);
+}
+
+.depth-3 {
+  box-shadow: 
+    0 1px 1px rgba(0,0,0,0.08),
+    0 2px 2px rgba(0,0,0,0.08),
+    0 4px 4px rgba(0,0,0,0.07),
+    0 8px 8px rgba(0,0,0,0.06);
+}
+
+.depth-4 {
+  box-shadow: 
+    0 1px 1px rgba(0,0,0,0.08),
+    0 2px 2px rgba(0,0,0,0.08),
+    0 4px 4px rgba(0,0,0,0.07),
+    0 8px 8px rgba(0,0,0,0.06),
+    0 16px 16px rgba(0,0,0,0.05);
+}
+
+.inner-glow {
+  box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.15);
+}
+
+.text-glow {
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+}
+
+/* Light reflections */
+.reflection-top {
+  position: relative;
+}
+
+.reflection-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+}
+
+.reflection-left {
+  position: relative;
+}
+
+.reflection-left::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+}
+
+/* Gradient backgrounds for glassmorphism */
+.gradient-bg-blue {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.1));
+}
+
+.gradient-bg-purple {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(124, 58, 237, 0.1));
+}
+
+.gradient-bg-medical {
+  background: linear-gradient(135deg, rgba(240, 248, 255, 0.05), rgba(209, 213, 219, 0.1));
+}
+
+/* Media queries for different backdrop-filter support */
+@supports not ((-webkit-backdrop-filter: none) or (backdrop-filter: none)) {
+  .glass-effect, .glass-dark, .glass-card, .glass-medical, .glass-vital, .glass-frost {
+    background: rgba(30, 30, 40, 0.85);
+  }
+}
