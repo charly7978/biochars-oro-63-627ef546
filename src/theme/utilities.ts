@@ -1,4 +1,3 @@
-
 export const utilities = function({ addUtilities }) {
   const newUtilities = {
     '.text-gradient-soft': {
@@ -39,7 +38,6 @@ export const utilities = function({ addUtilities }) {
     },
     '.ultra-crisp-graphics': {
       'image-rendering': '-webkit-optimize-contrast',
-      'image-rendering': 'crisp-edges', // This is a duplicate property
       'shape-rendering': 'crispEdges',
       'transform': 'translate3d(0, 0, 0)',
       'backface-visibility': 'hidden'
@@ -148,28 +146,28 @@ export const utilities = function({ addUtilities }) {
     },
     // Medical context-aware contrast classes
     '.medical-critical': {
-      'color': '#ea384c'
+      'color': 'var(--medical-danger)'
     },
     '.dark .medical-critical': {
-      'color': '#ff4c5e' // Brighter in dark mode for contrast
+      'color': 'var(--medical-danger-dark)' 
     },
     '.medical-warning': {
-      'color': '#f97316'
+      'color': 'var(--medical-warning)'
     },
     '.dark .medical-warning': {
-      'color': '#ff9c40' // Brighter in dark mode for contrast
+      'color': 'var(--medical-warning-dark)' 
     },
     '.medical-normal': {
-      'color': '#22c55e'
+      'color': 'var(--medical-success)'
     },
     '.dark .medical-normal': {
-      'color': '#34d872' // Brighter in dark mode for contrast
+      'color': 'var(--medical-success-dark)' 
     },
     '.medical-info': {
-      'color': '#3b82f6'
+      'color': 'var(--medical-info)'
     },
     '.dark .medical-info': {
-      'color': '#5a9bff' // Brighter in dark mode for contrast
+      'color': 'var(--medical-info-dark)' 
     },
     // Nuevas utilidades tipográficas
     '.typography-tabular': {
@@ -235,6 +233,71 @@ export const utilities = function({ addUtilities }) {
     },
     '.dark .ultra-crisp-rendering': {
       'text-shadow': '0 0.5px 1px rgba(0, 0, 0, 0.3)'
+    },
+    // Animation optimizations with reduced motion support
+    '.animate-fade-in': {
+      'animation': 'fade-in-up 0.5s ease-out forwards',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none',
+        'opacity': '1',
+        'transform': 'translateY(0)'
+      }
+    },
+    '.animate-subtle-pulse': {
+      'animation': 'subtle-pulse 3s ease-in-out infinite',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none'
+      }
+    },
+    '.animate-heart-beat': {
+      'animation': 'heart-beat 1s ease-in-out infinite',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none',
+        'transform': 'scale(1.05)'
+      }
+    },
+    '.animate-vital-update': {
+      'animation': 'vital-sign-update 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none',
+        'opacity': '1',
+        'transform': 'scale(1)'
+      }
+    },
+    // Optimized animation utilities
+    '.will-change-opacity': {
+      'will-change': 'opacity'
+    },
+    '.will-change-transform': {
+      'will-change': 'transform'
+    },
+    '.hardware-accelerated': {
+      'transform': 'translateZ(0)',
+      'will-change': 'transform',
+      'backface-visibility': 'hidden',
+      'perspective': '1000px'
+    },
+    
+    // Design system spacing utilities
+    '.space-xs': {
+      'margin': 'var(--space-xs)',
+      'padding': 'var(--space-xs)'
+    },
+    '.space-sm': {
+      'margin': 'var(--space-sm)',
+      'padding': 'var(--space-sm)'
+    },
+    '.space-md': {
+      'margin': 'var(--space-md)',
+      'padding': 'var(--space-md)'
+    },
+    '.space-lg': {
+      'margin': 'var(--space-lg)',
+      'padding': 'var(--space-lg)'
+    },
+    '.space-xl': {
+      'margin': 'var(--space-xl)',
+      'padding': 'var(--space-xl)'
     }
   };
   addUtilities(newUtilities);

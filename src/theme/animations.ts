@@ -8,5 +8,23 @@ export const animations = {
   "vital-update": "vital-sign-update 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards",
   "data-pulse": "data-pulse 3s ease-in-out infinite",
   "fade-in-up": "fade-in-up 0.5s ease-out forwards",
-  "subtle-pulse": "subtle-pulse 3s ease-in-out infinite"
+  "subtle-pulse": "subtle-pulse 3s ease-in-out infinite",
+  
+  /* Optimized animation with reduced motion alternatives */
+  "efficient-pulse": {
+    value: "subtle-pulse 3s ease-in-out infinite",
+    "prefers-reduced-motion": "none"
+  },
+  "efficient-fade": {
+    value: "fade-in-up 0.4s cubic-bezier(0.2, 0, 0, 1) forwards",
+    "prefers-reduced-motion": "none" 
+  },
+  "efficient-beat": {
+    value: "heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite",
+    "prefers-reduced-motion": "none"
+  },
+  "efficient-update": {
+    value: "vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards",
+    "prefers-reduced-motion": "none"
+  }
 };

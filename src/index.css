@@ -1,10 +1,30 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
+    --radius-sm: 0.25rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem; 
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+    --space-2xl: 4rem;
+    
+    --duration-fast: 150ms;
+    --duration-normal: 300ms;
+    --duration-slow: 500ms;
+    
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-bounce: cubic-bezier(0.2, 0.8, 0.2, 1);
+    
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -44,7 +64,6 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    /* Medical-specific light mode colors */
     --medical-bg: 220 33% 98%;
     --medical-card: 220 25% 97%;
     --medical-panel: 215 30% 95%;
@@ -56,6 +75,15 @@
     --medical-danger: 0 70% 55%;
     --medical-info: 210 90% 60%;
     --medical-border: 220 20% 90%;
+    
+    --medical-success-direct: #22c55e;
+    --medical-warning-direct: #f97316;
+    --medical-danger-direct: #ea384c;
+    --medical-info-direct: #3b82f6;
+    --medical-success-dark: #34d872;
+    --medical-warning-dark: #ff9c40;
+    --medical-danger-dark: #ff4c5e;
+    --medical-info-dark: #5a9bff;
   }
 
   .dark {
@@ -96,7 +124,6 @@
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
     
-    /* Medical-specific dark mode colors - enhanced for better contrast */
     --medical-bg: 224 30% 10%;
     --medical-card: 225 25% 12%;
     --medical-panel: 220 20% 14%;
@@ -119,9 +146,23 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    
+    .animate-exception {
+      animation-duration: inherit !important;
+      animation-iteration-count: inherit !important;
+      transition-duration: inherit !important;
+    }
+  }
 }
 
-/* Base high-density display optimizations */
 @layer utilities {
   .precision-text {
     letter-spacing: -0.01em;
@@ -146,7 +187,23 @@
     shape-rendering: crispEdges;
   }
   
-  /* New dark mode specific utilities */
+  .animation-hardware-accelerated {
+    transform: translateZ(0);
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+  }
+  
+  .animation-optimized {
+    transition-timing-function: var(--ease-out);
+    transform: translateZ(0);
+    will-change: transform;
+  }
+  
+  .animation-smooth {
+    transition-duration: var(--duration-normal);
+    transition-timing-function: var(--ease-in-out);
+  }
+  
   .dark-adaptive-text {
     @apply text-foreground dark:text-opacity-90;
     font-weight: 400;
@@ -173,11 +230,41 @@
   .medical-subdued-dark {
     @apply dark:text-[hsl(var(--medical-subdued))];
   }
+  
+  .medical-critical-text {
+    color: var(--medical-danger-direct);
+  }
+  
+  .dark .medical-critical-text {
+    color: var(--medical-danger-dark);
+  }
+  
+  .medical-warning-text {
+    color: var(--medical-warning-direct);
+  }
+  
+  .dark .medical-warning-text {
+    color: var(--medical-warning-dark);
+  }
+  
+  .medical-normal-text {
+    color: var(--medical-success-direct);
+  }
+  
+  .dark .medical-normal-text {
+    color: var(--medical-success-dark);
+  }
+  
+  .medical-info-text {
+    color: var(--medical-info-direct);
+  }
+  
+  .dark .medical-info-text {
+    color: var(--medical-info-dark);
+  }
 }
 
-/* Consolidated media queries for resolution-based optimizations */
 @media (min-resolution: 192dpi), (-webkit-min-device-pixel-ratio: 2) {
-  /* 2x pixel density (Retina) */
   html, body {
     @apply high-res-optimized;
   }
@@ -198,7 +285,6 @@
 }
 
 @media (min-resolution: 300dpi), (-webkit-min-device-pixel-ratio: 3) {
-  /* 3x pixel density (Ultra HD) */
   html, body {
     -webkit-font-smoothing: subpixel-antialiased;
     letter-spacing: -0.02em;
@@ -209,11 +295,8 @@
   }
 }
 
-/* Screen size specific scaling - consolidated */
 @media screen {
-  /* Base responsive scaling */
   @media (min-width: 2048px) {
-    /* 2K/High resolution displays */
     .high-res-interface {
       transform-origin: top left;
       transform: scale(0.5);
@@ -225,7 +308,6 @@
   }
   
   @media (min-width: 3840px) {
-    /* 4K displays */
     .high-res-interface {
       transform: scale(0.25);
       width: 400%;
@@ -236,7 +318,6 @@
   }
   
   @media (min-width: 5120px) {
-    /* 5K displays */
     .high-res-interface {
       transform: scale(0.2);
       width: 500%;
@@ -251,7 +332,6 @@
   }
   
   @media (min-width: 7680px) {
-    /* 8K displays */
     .high-res-interface {
       transform: scale(0.125);
       width: 800%;

@@ -44,9 +44,9 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
-    if (bpm > 100) return "medical-warning";
-    if (bpm < 60) return "medical-warning";
-    return "medical-normal";
+    if (bpm > 100) return "medical-warning-text";
+    if (bpm < 60) return "medical-warning-text";
+    return "medical-normal-text";
   };
 
   const getHeartColor = () => {
@@ -65,7 +65,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="glass-card-dark p-3 text-center gpu-accelerated rounded-lg"
+      className="glass-card-dark p-3 text-center animation-hardware-accelerated rounded-lg"
     >
       <div className="flex items-center justify-center gap-1 mb-1">
         <h3 className="text-gray-400/90 text-sm typography-clinical">Heart Rate</h3>
@@ -79,7 +79,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       
       <div className="flex items-baseline justify-center gap-1">
         <Heart 
-          className={`h-4 w-4 mr-0.5 ${getHeartColor()} transition-all duration-300 ${
+          className={`h-4 w-4 mr-0.5 ${getHeartColor()} animation-smooth will-change-transform ${
             isAnimating ? 'scale-150 opacity-80' : 'scale-100 opacity-100'
           }`}
           fill={isReliable ? "currentColor" : "none"}
@@ -95,7 +95,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       {confidence > 0 && (
         <div className="mt-1.5 w-full bg-gray-700/30 rounded-full h-0.5 overflow-hidden">
           <div 
-            className={`h-full rounded-full transition-all duration-500 ${
+            className={`h-full rounded-full animation-smooth ${
               confidence > 0.8 ? 'bg-green-500' : 
               confidence > 0.5 ? 'bg-yellow-500' : 
               'bg-red-500'
