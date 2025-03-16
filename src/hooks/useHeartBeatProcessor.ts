@@ -8,6 +8,7 @@ interface HeartBeatResult {
   isPeak: boolean;
   filteredValue?: number;
   arrhythmiaCount: number;
+  isArrhythmia?: boolean;
   rrData?: {
     intervals: number[];
     lastPeakTime: number | null;
@@ -22,6 +23,8 @@ export const useHeartBeatProcessor = () => {
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const MIN_BEEP_INTERVAL_MS = 300; // Minimum time between beeps
+  const lastRRIntervalsRef = useRef<number[]>([]);
+  const lastIsArrhythmiaRef = useRef<boolean>(false);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -75,6 +78,44 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
+  // Function to determine if the current beat pattern indicates an arrhythmia
+  const detectArrhythmia = useCallback((rrIntervals: number[]): boolean => {
+    if (rrIntervals.length < 3) return false;
+    
+    // Get the last 3 intervals for analysis
+    const recentIntervals = rrIntervals.slice(-3);
+    const avgInterval = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
+    const lastInterval = recentIntervals[recentIntervals.length - 1];
+    
+    // Calculate RR variation percentage from average
+    const variation = Math.abs(lastInterval - avgInterval) / avgInterval;
+    
+    // Calculate standard deviation for recent intervals
+    const stdDev = Math.sqrt(
+      recentIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / recentIntervals.length
+    );
+    
+    // Detect arrhythmia based on significant variations or extreme values
+    const isArrhythmia = 
+      (variation > 0.20) || // More than 20% variation from average
+      (stdDev > 40) ||      // High variability among recent intervals
+      (lastInterval > 1.3 * avgInterval) || // Significantly longer than average (potential pause)
+      (lastInterval < 0.7 * avgInterval);   // Significantly shorter than average (potential premature beat)
+    
+    if (isArrhythmia) {
+      console.log('useHeartBeatProcessor: Arrhythmia detected', {
+        variation,
+        stdDev,
+        lastInterval,
+        avgInterval,
+        threshold: 0.20,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    return isArrhythmia;
+  }, []);
+
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       console.warn('useHeartBeatProcessor: Processor no inicializado', {
@@ -105,6 +146,15 @@ export const useHeartBeatProcessor = () => {
 
     const result = processorRef.current.processSignal(value);
     const rrData = processorRef.current.getRRIntervals();
+    
+    // Update our RR intervals tracking
+    if (rrData && rrData.intervals.length > 0) {
+      lastRRIntervalsRef.current = [...rrData.intervals];
+    }
+    
+    // Determine if this beat is an arrhythmia
+    const isArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
+    lastIsArrhythmiaRef.current = isArrhythmia;
 
     // Si se detecta un pico y ha pasado suficiente tiempo desde el último pico
     if (result.isPeak && 
@@ -121,6 +171,7 @@ export const useHeartBeatProcessor = () => {
       confidence: result.confidence,
       isPeak: result.isPeak,
       arrhythmiaCount: result.arrhythmiaCount,
+      isArrhythmia: isArrhythmia,
       rrIntervals: JSON.stringify(rrData.intervals),
       ultimosIntervalos: rrData.intervals.slice(-5),
       ultimoPico: rrData.lastPeakTime,
@@ -136,6 +187,7 @@ export const useHeartBeatProcessor = () => {
         confidence: result.confidence,
         isPeak: false,
         arrhythmiaCount: 0,
+        isArrhythmia: false,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -159,9 +211,10 @@ export const useHeartBeatProcessor = () => {
 
     return {
       ...result,
+      isArrhythmia,
       rrData
     };
-  }, [currentBPM, confidence, playBeepSound]);
+  }, [currentBPM, confidence, playBeepSound, detectArrhythmia]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Reseteando processor', {
@@ -186,12 +239,15 @@ export const useHeartBeatProcessor = () => {
     setConfidence(0);
     lastPeakTimeRef.current = null;
     lastBeepTimeRef.current = 0;
+    lastRRIntervalsRef.current = [];
+    lastIsArrhythmiaRef.current = false;
   }, [currentBPM, confidence]);
 
   return {
     currentBPM,
     confidence,
     processSignal,
-    reset
+    reset,
+    isArrhythmia: lastIsArrhythmiaRef.current
   };
 };
