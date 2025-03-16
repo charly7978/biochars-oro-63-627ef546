@@ -171,7 +171,7 @@ const CameraView = ({
             
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 1.2 });
+              advancedConstraints.push({ contrast: maxContrast * 3.2 });
             }
 
             if (advancedConstraints.length > 0) {
