@@ -45,9 +45,10 @@ export class VitalSignsProcessor {
   /**
    * Reset the processor
    * Ensures all measurements start from zero
+   * Calls the glucose finalization logic for accurate final readings
    */
   public reset() {
-    console.log("VitalSignsProcessor wrapper: Reset - all measurements will start from zero");
+    console.log("VitalSignsProcessor wrapper: Reset - finalizing glucose measurement");
     return this.processor.reset();
   }
   

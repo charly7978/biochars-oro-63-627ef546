@@ -39,6 +39,8 @@ export class GlucoseProcessor {
   /**
    * Calculate glucose based on PPG waveform characteristics
    * Using direct measurement techniques without reference values
+   * IMPORTANT: Now this doesn't apply weighted median at the end
+   * It simply returns the current calculated value during measurement
    */
   public calculateGlucose(ppgValues: number[]): number {
     if (ppgValues.length < this.MIN_SAMPLES) {
@@ -110,14 +112,9 @@ export class GlucoseProcessor {
       this.confidenceWeights.shift();
     }
     
-    // During ongoing measurement, return the stabilized value
-    if (!this.isMeasurementFinished) {
-      return Math.round(stabilizedGlucose);
-    }
-    
-    // Only when measurement is finished, apply weighted median and average
-    const finalGlucose = this.calculateWeightedMedianAndAverage();
-    return Math.round(finalGlucose);
+    // IMPORTANT: During measurements, always return the stabilized value WITHOUT applying median/average
+    // This ensures accurate tracking during the measurement phase
+    return Math.round(stabilizedGlucose);
   }
   
   /**
