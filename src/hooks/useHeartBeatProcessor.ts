@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -43,6 +44,7 @@ export const useHeartBeatProcessor = () => {
   
   const missedBeepsCounter = useRef<number>(0);
   const forceBeepInterval = useRef<number>(0);
+  const isMonitoringRef = useRef<boolean>(false);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -62,6 +64,9 @@ export const useHeartBeatProcessor = () => {
       
       if (processorRef.current) {
         processorRef.current.initAudio();
+        // Ensure monitoring is off by default
+        processorRef.current.setMonitoring(false);
+        isMonitoringRef.current = false;
       }
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
@@ -75,11 +80,18 @@ export const useHeartBeatProcessor = () => {
       });
       
       if (processorRef.current) {
+        // Ensure monitoring is turned off when unmounting
+        processorRef.current.setMonitoring(false);
         processorRef.current = null;
       }
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
+      }
+      
+      // Clear force beep interval
+      if (forceBeepInterval.current) {
+        clearInterval(forceBeepInterval.current);
       }
     };
   }, []);
@@ -88,10 +100,15 @@ export const useHeartBeatProcessor = () => {
   const beepProcessorTimeoutRef = useRef<number | null>(null);
 
   const processBeepQueue = useCallback(() => {
+    if (!isMonitoringRef.current) {
+      // Clear the queue if not monitoring
+      pendingBeepsQueue.current = [];
+      return;
+    }
+    
     if (!processorRef.current || pendingBeepsQueue.current.length === 0) return;
     
     const now = Date.now();
-    const oldestBeep = pendingBeepsQueue.current[0];
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5) {
       try {
@@ -116,7 +133,7 @@ export const useHeartBeatProcessor = () => {
   }, []);
 
   const requestImmediateBeep = useCallback((value: number) => {
-    if (!processorRef.current) return;
+    if (!isMonitoringRef.current || !processorRef.current) return;
     
     const now = Date.now();
     
@@ -154,8 +171,8 @@ export const useHeartBeatProcessor = () => {
   }, [processBeepQueue]);
 
   const playBeepSound = useCallback(() => {
-    if (!processorRef.current) {
-      console.warn('useHeartBeatProcessor: Processor not available for beep');
+    if (!isMonitoringRef.current || !processorRef.current) {
+      console.warn('useHeartBeatProcessor: Not monitoring or processor not available for beep');
       return;
     }
     
@@ -199,12 +216,15 @@ export const useHeartBeatProcessor = () => {
   }, [currentBPM, processBeepQueue]);
 
   useEffect(() => {
-    if (currentBPM >= 40 && currentBPM <= 200) {
+    // Clear any existing beep interval
+    if (forceBeepInterval.current) {
+      clearInterval(forceBeepInterval.current);
+      forceBeepInterval.current = 0;
+    }
+    
+    // Only set up automatic beeps if monitoring and have valid BPM
+    if (isMonitoringRef.current && currentBPM >= 40 && currentBPM <= 200) {
       const interval = Math.round(60000 / currentBPM); // Calculate milliseconds between beats
-      
-      if (forceBeepInterval.current) {
-        clearInterval(forceBeepInterval.current);
-      }
       
       forceBeepInterval.current = window.setInterval(() => {
         const now = Date.now();
@@ -217,10 +237,11 @@ export const useHeartBeatProcessor = () => {
       return () => {
         if (forceBeepInterval.current) {
           clearInterval(forceBeepInterval.current);
+          forceBeepInterval.current = 0;
         }
       };
     }
-  }, [currentBPM, requestImmediateBeep]);
+  }, [currentBPM, requestImmediateBeep, isMonitoringRef.current]);
 
   const detectArrhythmia = useCallback((rrIntervals: number[]): RRAnalysisResult => {
     if (rrIntervals.length < 5) {
@@ -304,7 +325,9 @@ export const useHeartBeatProcessor = () => {
       if (result.isPeak && result.confidence > 0.15) {
         lastPeakTimeRef.current = now;
         
-        requestImmediateBeep(value);
+        if (isMonitoringRef.current) {
+          requestImmediateBeep(value);
+        }
         
         if (result.bpm >= 40 && result.bpm <= 200) {
           lastValidBpmRef.current = result.bpm;
@@ -359,6 +382,11 @@ export const useHeartBeatProcessor = () => {
     });
     
     if (processorRef.current) {
+      // Turn off monitoring first
+      processorRef.current.setMonitoring(false);
+      isMonitoringRef.current = false;
+      
+      // Then reset the processor
       processorRef.current.reset();
       processorRef.current.initAudio();
     }
@@ -379,8 +407,48 @@ export const useHeartBeatProcessor = () => {
     lastSignalQualityRef.current = 0;
     missedBeepsCounter.current = 0;
     
+    // Clear any pending beeps
+    pendingBeepsQueue.current = [];
+    
+    if (beepProcessorTimeoutRef.current) {
+      clearTimeout(beepProcessorTimeoutRef.current);
+      beepProcessorTimeoutRef.current = null;
+    }
+    
     if (forceBeepInterval.current) {
       clearInterval(forceBeepInterval.current);
+      forceBeepInterval.current = 0;
+    }
+  }, []);
+
+  // New function to start monitoring
+  const startMonitoring = useCallback(() => {
+    console.log('useHeartBeatProcessor: Starting monitoring');
+    if (processorRef.current) {
+      processorRef.current.setMonitoring(true);
+      isMonitoringRef.current = true;
+    }
+  }, []);
+
+  // New function to stop monitoring
+  const stopMonitoring = useCallback(() => {
+    console.log('useHeartBeatProcessor: Stopping monitoring');
+    if (processorRef.current) {
+      processorRef.current.setMonitoring(false);
+      isMonitoringRef.current = false;
+    }
+    
+    // Clear any pending beeps
+    pendingBeepsQueue.current = [];
+    
+    if (beepProcessorTimeoutRef.current) {
+      clearTimeout(beepProcessorTimeoutRef.current);
+      beepProcessorTimeoutRef.current = null;
+    }
+    
+    if (forceBeepInterval.current) {
+      clearInterval(forceBeepInterval.current);
+      forceBeepInterval.current = 0;
     }
   }, []);
 
@@ -390,6 +458,8 @@ export const useHeartBeatProcessor = () => {
     processSignal,
     reset,
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
-    requestBeep: requestImmediateBeep
+    requestBeep: requestImmediateBeep,
+    startMonitoring,
+    stopMonitoring
   };
 };

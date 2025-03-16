@@ -29,7 +29,14 @@ const Index = () => {
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat, isArrhythmia } = useHeartBeatProcessor();
+  const { 
+    processSignal: processHeartBeat, 
+    isArrhythmia,
+    startMonitoring: startHeartBeatMonitoring,
+    stopMonitoring: stopHeartBeatMonitoring,
+    reset: resetHeartBeatProcessor
+  } = useHeartBeatProcessor();
+  
   const { 
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
@@ -73,6 +80,7 @@ const Index = () => {
       setShowResults(false);
       
       startProcessing();
+      startHeartBeatMonitoring();
       
       setElapsedTime(0);
       
@@ -101,6 +109,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
+    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -123,6 +132,8 @@ const Index = () => {
     setIsCameraOn(false);
     setShowResults(false);
     stopProcessing();
+    stopHeartBeatMonitoring();
+    resetHeartBeatProcessor();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);

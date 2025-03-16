@@ -21,6 +21,7 @@ export class HeartBeatProcessor {
   private arrhythmiaWindows: Array<{start: number, end: number}> = [];
   private heartRateHistory: number[] = [];
   private confidenceHistory: number[] = [];
+  private isMonitoring = false; // Add monitoring state flag
 
   constructor() {
     this.rrAnalyzer = new RRDataAnalyzer();
@@ -42,7 +43,7 @@ export class HeartBeatProcessor {
 
       // Create new audio context
       if (typeof window !== 'undefined' && window.AudioContext) {
-        this.audioContext = new window.AudioContext();
+        this.audioContext = new window.AudioContext({ latencyHint: 'interactive' });
         console.log('HeartBeatProcessor: New audio context initialized, state:', this.audioContext.state);
         
         // Create gain node
@@ -64,7 +65,45 @@ export class HeartBeatProcessor {
     }
   }
 
+  // Add method to set monitoring state
+  public setMonitoring(isActive: boolean): void {
+    this.isMonitoring = isActive;
+    console.log(`HeartBeatProcessor: Monitoring state set to ${isActive}`);
+    
+    // If monitoring is disabled, ensure no sound can be played
+    if (!isActive) {
+      this.disableAudio();
+    }
+  }
+
+  // Method to disable audio completely
+  private disableAudio(): void {
+    try {
+      if (this.audioContext && this.audioContext.state !== 'closed') {
+        // Disconnect all nodes
+        if (this.beepGain) {
+          this.beepGain.disconnect();
+        }
+        if (this.beepOscillator) {
+          this.beepOscillator.disconnect();
+        }
+        // Set gain to 0
+        if (this.beepGain) {
+          this.beepGain.gain.value = 0;
+        }
+      }
+    } catch (err) {
+      console.error('HeartBeatProcessor: Error disabling audio:', err);
+    }
+  }
+
   public playBeep(volume: number = 0.7): boolean {
+    // Check if we're in monitoring mode
+    if (!this.isMonitoring) {
+      console.warn('HeartBeatProcessor: Attempted to play beep while not monitoring');
+      return false;
+    }
+
     if (!this.audioContext || !this.beepGain) {
       console.warn('HeartBeatProcessor: Audio context not available for beep');
       this.initAudio(); // Try to reinitialize
@@ -121,7 +160,18 @@ export class HeartBeatProcessor {
     confidence: number;
     isPeak: boolean;
     filteredValue?: number;
+    arrhythmiaCount: number; // Make sure arrhythmiaCount is included
   } {
+    // Only process if we're in monitoring mode
+    if (!this.isMonitoring) {
+      return {
+        bpm: 0,
+        confidence: 0,
+        isPeak: false,
+        arrhythmiaCount: 0
+      };
+    }
+
     const now = Date.now();
     const timeDelta = now - this.lastProcessedTime;
     this.lastProcessedTime = now;
@@ -205,7 +255,8 @@ export class HeartBeatProcessor {
       bpm,
       confidence,
       isPeak,
-      filteredValue: value
+      filteredValue: value,
+      arrhythmiaCount: this.arrhythmiaCounter
     };
   }
 
