@@ -96,7 +96,7 @@ export class VitalSignsProcessor {
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose with direct real-time data
+    // Calculate glucose with direct real-time data - using new range (50-180)
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     

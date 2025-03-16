@@ -1,3 +1,4 @@
+
 /**
  * GlucoseProcessor class
  * Calculates glucose levels directly from PPG signal characteristics
@@ -6,7 +7,7 @@
 export class GlucoseProcessor {
   private confidence: number = 0;
   private readonly MIN_SAMPLES = 15; // Reduced from 20 for faster initialization
-  private readonly GLUCOSE_BASELINE = 83; // Changed from 70 to a more accurate baseline
+  private readonly GLUCOSE_BASELINE = 73; // Adjusted baseline within new range
   
   // Adjusted weight factors for better sensitivity to individual variations
   private readonly PERFUSION_FACTOR = 0.75; // Increased from 0.65
@@ -15,6 +16,10 @@ export class GlucoseProcessor {
   private readonly PHASE_FACTOR = 0.15; // Increased from 0.12
   private readonly AREA_UNDER_CURVE_FACTOR = 0.18; // New factor for AUC analysis
   private readonly SIGNAL_WINDOW_SIZE = 5;
+  
+  // Define new glucose range limits
+  private readonly MIN_GLUCOSE = 50; // Lower limit for glucose
+  private readonly MAX_GLUCOSE = 180; // Upper limit for glucose
   
   // Tracking of calibration samples and previous values for stability
   private readonly STABILITY_WINDOW = 3;
@@ -82,9 +87,9 @@ export class GlucoseProcessor {
     const individualFactor = this.calculateIndividualFactor(recentValues);
     glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.2);
     
-    // Apply physiological constraints with wider range for better accuracy
-    // Normal fasting range: 70-99 mg/dL, but we allow a wider measurement range
-    glucoseEstimate = Math.max(70, Math.min(180, glucoseEstimate));
+    // Apply physiological constraints with updated range
+    // New range: 50-180 mg/dL
+    glucoseEstimate = Math.max(this.MIN_GLUCOSE, Math.min(this.MAX_GLUCOSE, glucoseEstimate));
     
     // Stabilize readings with temporal smoothing
     const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
