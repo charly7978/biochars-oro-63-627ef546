@@ -55,8 +55,8 @@ const PPGSignalMeter = memo(({
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
   const WINDOW_WIDTH_MS = 7500;
-  const CANVAS_WIDTH = 1960;
-  const CANVAS_HEIGHT = 1080;
+  const CANVAS_WIDTH = 1080;
+  const CANVAS_HEIGHT = 720;
   const GRID_SIZE_X = 30;
   const GRID_SIZE_Y = 5;
   const verticalScale = 65.0;
