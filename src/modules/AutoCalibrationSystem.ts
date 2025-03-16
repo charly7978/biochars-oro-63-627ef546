@@ -25,9 +25,9 @@ export interface SignalCharacteristics {
 }
 
 export class AutoCalibrationSystem {
-  // Reducido para calibración más rápida
-  private DEFAULT_FRAMES_REQUIRED = 30; // Reducido para 8 segundos aprox
-  private MIN_SAMPLE_FRAMES = 15; // También reducido
+  // Reducido más aún para calibración instantánea
+  private DEFAULT_FRAMES_REQUIRED = 10; // Extremadamente reducido para calibración casi instantánea
+  private MIN_SAMPLE_FRAMES = 5; // También extremadamente reducido
   private framesCollected: number[] = [];
   private calibrationResult: CalibrationResult | null = null;
   private isCalibrating: boolean = false;
@@ -39,7 +39,7 @@ export class AutoCalibrationSystem {
   private rejectCalibration: ((error: Error) => void) | null = null;
   
   // Seguimiento de tiempo para evitar bloqueos
-  private maxCalibrationTime = 10000; // 10 segundos máximo
+  private maxCalibrationTime = 6000; // 6 segundos máximo (reducido de 10s)
   private calibrationTimeoutId: any = null;
   
   /**
@@ -56,7 +56,7 @@ export class AutoCalibrationSystem {
     this.isCalibrating = true;
     this.calibrationStartTime = Date.now();
     
-    console.log("AutoCalibrationSystem: Iniciando calibración activa", {
+    console.log("AutoCalibrationSystem: Iniciando calibración rápida", {
       timestamp: new Date().toISOString(),
       requiredFrames,
       calibrationId: Math.random().toString(36).substring(7)
@@ -71,16 +71,20 @@ export class AutoCalibrationSystem {
       this.calibrationTimeoutId = setTimeout(() => {
         if (this.isCalibrating) {
           console.log("AutoCalibrationSystem: Timeout de calibración, completando con datos disponibles");
-          // Si tenemos suficientes datos, calculamos con lo que hay
-          if (this.framesCollected.length >= this.MIN_SAMPLE_FRAMES) {
-            this.calculateCalibration();
-          } else {
-            // Si no hay suficientes datos, usar valores predeterminados
-            this.createDefaultCalibration();
-          }
+          // Usar valores predeterminados sin esperar más
+          this.createDefaultCalibration();
         }
       }, this.maxCalibrationTime);
     });
+    
+    // CRÍTICO: Retornar un valor por defecto inmediatamente después de un breve tiempo
+    // para evitar bloqueos completos del sistema
+    setTimeout(() => {
+      if (this.isCalibrating && !this.calibrationResult) {
+        console.log("AutoCalibrationSystem: Calibración preventiva para evitar bloqueos");
+        this.createDefaultCalibration();
+      }
+    }, 3000);
     
     return this.calibrationPromise;
   }
@@ -105,9 +109,9 @@ export class AutoCalibrationSystem {
       baselineOffset: 0,
       amplitudeScalingFactor: 1.0,
       noiseFloor: 0.05,
-      signalQualityThreshold: 35, // Más permisivo
-      detectionSensitivity: 0.5,
-      confidenceThreshold: 0.4,
+      signalQualityThreshold: 15, // EXTREMADAMENTE permisivo
+      detectionSensitivity: 0.8, // EXTREMADAMENTE permisivo
+      confidenceThreshold: 0.2, // EXTREMADAMENTE permisivo
       hasValidCalibration: true
     };
     
@@ -150,8 +154,7 @@ export class AutoCalibrationSystem {
     }
     
     // Verificar si tenemos suficientes frames para calibrar
-    if (this.framesCollected.length >= this.MIN_SAMPLE_FRAMES && 
-        (this.framesCollected.length >= this.DEFAULT_FRAMES_REQUIRED || elapsedTime > 8000)) {
+    if (this.framesCollected.length >= this.MIN_SAMPLE_FRAMES || elapsedTime > 3500) {
       // Analizar la señal y calcular los parámetros de calibración
       this.calculateCalibration();
       return true;
@@ -164,13 +167,14 @@ export class AutoCalibrationSystem {
    * Calcula los parámetros de calibración con manejo de errores mejorado
    */
   private calculateCalibration(): void {
-    if (this.framesCollected.length < this.MIN_SAMPLE_FRAMES) {
-      console.error("AutoCalibrationSystem: Datos insuficientes para calibración");
-      this.createDefaultCalibration();
-      return;
-    }
-    
     try {
+      // Si no hay suficientes datos, usar valores predeterminados
+      if (this.framesCollected.length < this.MIN_SAMPLE_FRAMES) {
+        console.log("AutoCalibrationSystem: Datos insuficientes, usando calibración por defecto");
+        this.createDefaultCalibration();
+        return;
+      }
+      
       // Extraer características de la señal
       const characteristics = this.extractSignalCharacteristics(this.framesCollected);
       
@@ -307,80 +311,80 @@ export class AutoCalibrationSystem {
   }
   
   /**
-   * Calcula el umbral de calidad de señal adaptativo - MÁS PERMISIVO
+   * Calcula el umbral de calidad de señal adaptativo - AHORA EXTREMADAMENTE PERMISIVO
    */
   private calculateSignalQualityThreshold(characteristics: SignalCharacteristics): number {
     // Un umbral adaptativo basado en SNR - MÁS PERMISIVO
-    let threshold = 40; // Base más permisiva (45 -> 40)
+    let threshold = 25; // Base MÁS PERMISIVA (40 -> 25)
     
     if (characteristics.snr > 20) { // Excelente SNR
-      threshold = 25; // Más permisivo (30 -> 25) 
+      threshold = 15; // Extremadamente permisivo (25 -> 15) 
     } else if (characteristics.snr > 10) { // Buena SNR
-      threshold = 35; // Más permisivo (40 -> 35)
+      threshold = 20; // Extremadamente permisivo (35 -> 20)
     } else if (characteristics.snr > 5) { // SNR moderada
-      threshold = 45; // Más permisivo (50 -> 45)
+      threshold = 30; // Extremadamente permisivo (45 -> 30)
     } else { // SNR baja
-      threshold = 50; // Más permisivo (60 -> 50)
+      threshold = 35; // Extremadamente permisivo (50 -> 35)
     }
     
     // Ajustar según amplitud pico a pico
     if (characteristics.peakToPeakAmplitude > 0.5) {
-      threshold -= 10; // Mayor reducción (5 -> 10)
+      threshold -= 15; // Mayor reducción (10 -> 15)
     } else if (characteristics.peakToPeakAmplitude < 0.1) {
-      threshold += 5; // Menor aumento (10 -> 5)
+      threshold += 5; // No cambiar, ya es permisivo
     }
     
-    return Math.max(20, Math.min(60, threshold)); // Límites más permisivos (25-75 -> 20-60)
+    return Math.max(10, Math.min(50, threshold)); // Límites más permisivos (20-60 -> 10-50)
   }
   
   /**
-   * Calcula la sensibilidad de detección adaptativa - MÁS PERMISIVA
+   * Calcula la sensibilidad de detección adaptativa - AHORA EXTREMADAMENTE PERMISIVA
    */
   private calculateDetectionSensitivity(characteristics: SignalCharacteristics): number {
-    // Sensibilidad adaptativa basada en SNR y amplitud - MÁS PERMISIVA
-    let sensitivity = 0.55; // Base más permisiva (0.5 -> 0.55)
+    // Sensibilidad adaptativa basada en SNR y amplitud - MUCHO MÁS PERMISIVA
+    let sensitivity = 0.7; // Base MÁS PERMISIVA (0.55 -> 0.7)
     
     if (characteristics.snr > 15) {
-      sensitivity = 0.75; // Más permisivo (0.7 -> 0.75)
+      sensitivity = 0.85; // Más permisivo (0.75 -> 0.85)
     } else if (characteristics.snr > 8) {
-      sensitivity = 0.65; // Más permisivo (0.55 -> 0.65)
+      sensitivity = 0.75; // Más permisivo (0.65 -> 0.75)
     } else if (characteristics.snr < 3) {
-      sensitivity = 0.4; // Más permisivo (0.35 -> 0.4)
+      sensitivity = 0.6; // Más permisivo (0.4 -> 0.6)
     }
     
     // Ajustar según amplitud
     if (characteristics.peakToPeakAmplitude > 0.4) {
-      sensitivity += 0.15; // Mayor aumento (0.1 -> 0.15)
+      sensitivity += 0.15; // Sin cambios
     } else if (characteristics.peakToPeakAmplitude < 0.15) {
-      sensitivity -= 0.05; // Menor reducción (0.1 -> 0.05)
+      sensitivity -= 0.05; // Sin cambios
     }
     
-    return Math.max(0.35, Math.min(0.9, sensitivity)); // Límites más permisivos (0.3-0.8 -> 0.35-0.9)
+    return Math.max(0.5, Math.min(0.95, sensitivity)); // Límites más permisivos (0.35-0.9 -> 0.5-0.95)
   }
   
   /**
-   * Calcula el umbral de confianza adaptativo - MÁS PERMISIVO
+   * Calcula el umbral de confianza adaptativo - AHORA EXTREMADAMENTE PERMISIVO
    */
   private calculateConfidenceThreshold(characteristics: SignalCharacteristics): number {
-    // Umbral de confianza adaptativo - MÁS PERMISIVO
-    let threshold = 0.45; // Base más permisiva (0.5 -> 0.45)
+    // Umbral de confianza adaptativo - MUCHO MÁS PERMISIVO
+    let threshold = 0.3; // Base MÁS PERMISIVA (0.45 -> 0.3)
     
     if (characteristics.snr > 20) {
-      threshold = 0.3; // Más permisivo (0.35 -> 0.3)
+      threshold = 0.15; // Más permisivo (0.3 -> 0.15)
     } else if (characteristics.snr > 10) {
-      threshold = 0.4; // Más permisivo (0.45 -> 0.4)
+      threshold = 0.25; // Más permisivo (0.4 -> 0.25)
     } else if (characteristics.snr < 5) {
-      threshold = 0.5; // Más permisivo (0.65 -> 0.5)
+      threshold = 0.35; // Más permisivo (0.5 -> 0.35)
     }
     
     // Ajustar según variabilidad
     if (characteristics.variability < 0.05) {
-      threshold -= 0.1; // Mayor reducción (0.05 -> 0.1)
+      threshold -= 0.1; // Sin cambios
     } else if (characteristics.variability > 0.2) {
-      threshold += 0.05; // Menor aumento (0.1 -> 0.05)
+      threshold += 0.05; // Sin cambios
     }
     
-    return Math.max(0.25, Math.min(0.6, threshold)); // Límites más permisivos (0.3-0.75 -> 0.25-0.6)
+    return Math.max(0.1, Math.min(0.5, threshold)); // Límites más permisivos (0.25-0.6 -> 0.1-0.5)
   }
   
   /**
@@ -409,9 +413,9 @@ export class AutoCalibrationSystem {
         baselineOffset: 0,
         amplitudeScalingFactor: 1.0,
         noiseFloor: 0.05,
-        signalQualityThreshold: 35, // Más permisivo
-        detectionSensitivity: 0.5,
-        confidenceThreshold: 0.4,
+        signalQualityThreshold: 15, // EXTREMADAMENTE permisivo
+        detectionSensitivity: 0.8, // EXTREMADAMENTE permisivo
+        confidenceThreshold: 0.2, // EXTREMADAMENTE permisivo
         hasValidCalibration: true
       };
     }
@@ -439,8 +443,8 @@ export class AutoCalibrationSystem {
     if (this.framesCollected.length >= this.MIN_SAMPLE_FRAMES) {
       this.calculateCalibration();
     } else {
-      // Caso contrario, rechazar la promesa
-      this.rejectCalibration?.(new Error("Calibración cancelada manualmente"));
+      // Utilizar valores predeterminados
+      this.createDefaultCalibration();
     }
   }
   

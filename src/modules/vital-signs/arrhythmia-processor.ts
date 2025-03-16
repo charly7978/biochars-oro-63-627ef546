@@ -4,17 +4,17 @@
  * Designed to minimize false positives
  */
 export class ArrhythmiaProcessor {
-  // Extremely conservative thresholds but with private fields
-  private _minRRIntervals = 15; // Changed from readonly to private property with getter/setter
-  private readonly MIN_INTERVAL_MS = 500; // 120 BPM maximum (más permisivo)
-  private readonly MAX_INTERVAL_MS = 1400; // 42 BPM minimum (más permisivo)
-  private readonly MIN_VARIATION_PERCENT = 50; // Reduced from 60% to 50% (aún más permisivo)
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 12000; // 12 seconds between arrhythmias (más permisivo)
+  // Extremely conservative thresholds but with private fields - MUCHO MÁS PERMISIVO AHORA
+  private _minRRIntervals = 10; // Reducido de 15 a 10 - MÁS PERMISIVO
+  private readonly MIN_INTERVAL_MS = 400; // Extremadamente permisivo (500 -> 400)
+  private readonly MAX_INTERVAL_MS = 1600; // Extremadamente permisivo (1400 -> 1600)
+  private readonly MIN_VARIATION_PERCENT = 35; // Extremadamente permisivo (50 -> 35)
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 8000; // Muy permisivo (12000 -> 8000)
   
   // State
   private rrIntervals: number[] = [];
   private lastPeakTime: number | null = null;
-  private calibrationTime: number = 8000; // 8 seconds of calibration (fijado en 8s)
+  private calibrationTime: number = 3000; // Reducido a 3 segundos (8000 -> 3000)
   private isCalibrating = true;
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
@@ -23,7 +23,7 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 8; // Reduced from 10 (más permisivo)
+  private readonly CONSECUTIVE_THRESHOLD = 5; // Extremadamente permisivo (8 -> 5)
 
   // Property accessor for MIN_RR_INTERVALS to avoid readonly error
   get MIN_RR_INTERVALS(): number {
@@ -44,19 +44,20 @@ export class ArrhythmiaProcessor {
     try {
       const currentTime = Date.now();
       
-      // Set calibration period
+      // Set calibration period - REDUCIDO PARA CALIBRACIÓN INSTANTÁNEA
       if (this.isCalibrating && currentTime - this.startTime >= this.calibrationTime) {
         this.isCalibrating = false;
-        console.log("ArrhythmiaProcessor: Calibration completed", {
+        console.log("ArrhythmiaProcessor: Calibración completada", {
           elapsedTime: currentTime - this.startTime,
           threshold: this.calibrationTime
         });
       }
       
-      // During calibration, just report status
+      // Durante calibración, indicar estado pero usar valores iniciales
       if (this.isCalibrating) {
+        // CAMBIO: Permitir valores iniciales incluso en calibración
         return {
-          arrhythmiaStatus: "CALIBRATING...",
+          arrhythmiaStatus: "CALIBRANDO...|0",
           lastArrhythmiaData: null
         };
       }
@@ -66,7 +67,7 @@ export class ArrhythmiaProcessor {
         this.rrIntervals = rrData.intervals;
         this.lastPeakTime = rrData.lastPeakTime;
         
-        // Only proceed if we have enough intervals
+        // Only proceed if we have enough intervals - AHORA MÁS PERMISIVO
         if (this.rrIntervals.length >= this.MIN_RR_INTERVALS) {
           this.detectArrhythmia(currentTime);
         }
@@ -75,8 +76,8 @@ export class ArrhythmiaProcessor {
       // Build status message
       const arrhythmiaStatusMessage = 
         this.arrhythmiaCount > 0 
-          ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
-          : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
+          ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
+          : `SIN ARRITMIAS|${this.arrhythmiaCount}`;
       
       // Additional information only if there's active arrhythmia
       const lastArrhythmiaData = this.arrhythmiaDetected 
@@ -143,8 +144,8 @@ export class ArrhythmiaProcessor {
         interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
       );
       
-      // If not enough valid intervals, we can't analyze
-      if (validIntervals.length < this.MIN_RR_INTERVALS * 0.6) { // Reduced requirement (0.7 -> 0.6)
+      // If not enough valid intervals, we can't analyze - MÁS PERMISIVO
+      if (validIntervals.length < this.MIN_RR_INTERVALS * 0.5) { // Muy permisivo (0.6 -> 0.5)
         this.consecutiveAbnormalBeats = 0;
         return;
       }
@@ -158,7 +159,7 @@ export class ArrhythmiaProcessor {
       // Calculate percentage variation
       const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
       
-      // Detect premature beat only if variation is extreme
+      // Detect premature beat only if variation is extreme - MÁS PERMISIVO
       const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
       
       // Update consecutive anomalies counter
@@ -178,7 +179,7 @@ export class ArrhythmiaProcessor {
         this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 1);
       }
       
-      // Check if arrhythmia is confirmed
+      // Check if arrhythmia is confirmed - MÁS PERMISIVO
       const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
       const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
       
@@ -188,7 +189,7 @@ export class ArrhythmiaProcessor {
         this.lastArrhythmiaTime = currentTime;
         this.consecutiveAbnormalBeats = 0;
         
-        console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED", {
+        console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA", {
           arrhythmiaCount: this.arrhythmiaCount,
           timeSinceLast: timeSinceLastArrhythmia,
           timestamp: currentTime

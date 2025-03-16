@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Fingerprint } from 'lucide-react';
 
@@ -28,18 +27,12 @@ const CameraView = ({
   const [deviceInfo, setDeviceInfo] = useState<any>(null);
   const [isAndroid, setIsAndroid] = useState(false);
   const [isInitialDetection, setIsInitialDetection] = useState(true);
-  
-  // Add reference to track the video track for torch control
   const videoTrackRef = useRef<MediaStreamTrack | null>(null);
-  
-  // Add timer interval reference to keep torch active
   const torchIntervalRef = useRef<number | null>(null);
-  
-  // Add reference to track last torch activation time
   const lastTorchTimeRef = useRef<number>(0);
-  
-  // Add reference to counter for persistent torch
-  const torchActivationCountRef = useRef<number>(0);
+  const torchActivationCountRef = useRef<number>(10);
+  const torchKeepAliveIntervalRef = useRef<number | null>(null);
+  const torchKeepAliveCountRef = useRef<number>(0);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -58,14 +51,17 @@ const CameraView = ({
     if (stream) {
       console.log("CameraView: Stopping camera stream");
       
-      // Clear torch interval if active
       if (torchIntervalRef.current) {
         window.clearInterval(torchIntervalRef.current);
         torchIntervalRef.current = null;
       }
       
+      if (torchKeepAliveIntervalRef.current) {
+        window.clearInterval(torchKeepAliveIntervalRef.current);
+        torchKeepAliveIntervalRef.current = null;
+      }
+      
       try {
-        // Explicitly turn off torch before stopping tracks
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack && videoTrack.getCapabilities()?.torch) {
           await videoTrack.applyConstraints({
@@ -77,7 +73,6 @@ const CameraView = ({
         console.error("CameraView: Error turning off torch:", err);
       }
       
-      // Stop all tracks
       stream.getTracks().forEach(track => {
         try {
           track.stop();
@@ -86,7 +81,6 @@ const CameraView = ({
         }
       });
       
-      // Clear video source
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
@@ -94,7 +88,8 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       videoTrackRef.current = null;
-      torchActivationCountRef.current = 0;
+      torchActivationCountRef.current = 10;
+      torchKeepAliveCountRef.current = 0;
     }
   };
 
@@ -106,7 +101,6 @@ const CameraView = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
-      // More permissive constraints for better finger detection
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
         width: { ideal: 1280, min: 640 },
@@ -144,7 +138,6 @@ const CameraView = ({
             constraints: videoTrack.getConstraints()
           });
           
-          // Apply camera optimizations
           try {
             if (capabilities.exposureMode) {
               await videoTrack.applyConstraints({
@@ -182,7 +175,14 @@ const CameraView = ({
 
       setStream(newStream);
       setIsInitialDetection(true);
-      torchActivationCountRef.current = 0;
+      torchActivationCountRef.current = 10;
+      
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("CameraView: Activando linterna inmediatamente para mejorar detección");
+        setTimeout(() => {
+          updateTorchState(true);
+        }, 500);
+      }
       
       if (onStreamReady) {
         onStreamReady(newStream);
@@ -190,61 +190,75 @@ const CameraView = ({
       
     } catch (err) {
       console.error("CameraView: Error starting camera:", err);
-      // Show error message to user
       alert("Could not access camera. Please ensure you've granted camera permissions.");
     }
   };
 
-  // Set up BETTER persistent torch monitoring - MÁS FRECUENTE Y ROBUSTO
   useEffect(() => {
     if (stream && hasTorch) {
-      // Clear existing interval if any
       if (torchIntervalRef.current) {
         window.clearInterval(torchIntervalRef.current);
       }
       
-      // Set up interval to ensure torch stays on if needed - INTERVALO MÁS FRECUENTE
+      if (torchKeepAliveIntervalRef.current) {
+        window.clearInterval(torchKeepAliveIntervalRef.current);
+      }
+      
       torchIntervalRef.current = window.setInterval(() => {
-        const shouldBeTorchOn = isFingerDetected || isCalibrating;
+        const shouldBeTorchOn = isFingerDetected || isCalibrating || true;
         const now = Date.now();
         
-        // Only update if we need to and not too frequently (max once per 500ms)
-        if (shouldBeTorchOn !== torchEnabled && (now - lastTorchTimeRef.current > 500)) {
-          console.log("CameraView: Torch refresh interval triggered", {
+        if (torchKeepAliveCountRef.current % 5 === 0) {
+          console.log("CameraView: Torch status check", {
             shouldBeTorchOn,
             currentTorchState: torchEnabled,
             timeSinceLastChange: now - lastTorchTimeRef.current,
-            activationCount: torchActivationCountRef.current
+            activationCount: torchActivationCountRef.current,
+            keepAliveCount: torchKeepAliveCountRef.current
           });
-          
+        }
+        
+        if (shouldBeTorchOn !== torchEnabled) {
           updateTorchState(shouldBeTorchOn);
         }
         
-        // NUEVO: Reactivar periódicamente en Android para evitar apagado automático
-        if (shouldBeTorchOn && isAndroid && torchEnabled && 
-            (now - lastTorchTimeRef.current > 2000)) {
-          // Incrementar contador
-          torchActivationCountRef.current++;
-          
-          console.log("CameraView: Periodic torch refresh for Android", {
-            activationCount: torchActivationCountRef.current
-          });
-          
-          // Reactivar la linterna para evitar que se apague
+        torchKeepAliveCountRef.current++;
+      }, 750);
+      
+      torchKeepAliveIntervalRef.current = window.setInterval(() => {
+        if (isAndroid) {
+          console.log("CameraView: Android torch keep-alive refresh");
+          if (videoTrackRef.current) {
+            try {
+              videoTrackRef.current.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              setTorchEnabled(true);
+              torchActivationCountRef.current++;
+            } catch (err) {
+              console.error("CameraView: Error en torch keep-alive:", err);
+            }
+          }
+        } else if (torchEnabled) {
+          console.log("CameraView: General torch keep-alive refresh");
           updateTorchState(true);
         }
-      }, 1000); // Check every 1 second - reducido
+      }, 3000);
       
       return () => {
         if (torchIntervalRef.current) {
           window.clearInterval(torchIntervalRef.current);
           torchIntervalRef.current = null;
         }
+        
+        if (torchKeepAliveIntervalRef.current) {
+          window.clearInterval(torchKeepAliveIntervalRef.current);
+          torchKeepAliveIntervalRef.current = null;
+        }
       };
     }
   }, [stream, hasTorch, isFingerDetected, isCalibrating, torchEnabled, isAndroid]);
 
-  // Dedicated function to update torch state with improved error handling
   const updateTorchState = useCallback(async (enable: boolean) => {
     if (!videoTrackRef.current || !hasTorch) return;
     
@@ -253,15 +267,18 @@ const CameraView = ({
         attempt: torchActivationCountRef.current + 1
       });
       
-      // NUEVO: Aplicar dos veces para asegurar en Android
       await videoTrackRef.current.applyConstraints({
         advanced: [{ torch: enable }]
       });
       
-      // Pequeña pausa
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Segundo intento para asegurar en Android
+      await videoTrackRef.current.applyConstraints({
+        advanced: [{ torch: enable }]
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
       if (isAndroid && enable) {
         await videoTrackRef.current.applyConstraints({
           advanced: [{ torch: enable }]
@@ -283,23 +300,23 @@ const CameraView = ({
     } catch (err) {
       console.error("CameraView: Error controlling torch:", err);
       
-      // NUEVO: Segundo intento con delay en caso de error
-      try {
-        if (videoTrackRef.current) {
+      if (videoTrackRef.current) {
+        for (let i = 0; i < 3; i++) {
           setTimeout(async () => {
-            console.log("CameraView: Retry torch activation after error");
-            await videoTrackRef.current?.applyConstraints({
-              advanced: [{ torch: enable }]
-            });
-          }, 500);
+            try {
+              console.log(`CameraView: Retry torch activation after error (attempt ${i+1})`);
+              await videoTrackRef.current?.applyConstraints({
+                advanced: [{ torch: enable }]
+              });
+            } catch (retryErr) {
+              console.error(`CameraView: Retry ${i+1} failed:`, retryErr);
+            }
+          }, 500 * (i+1));
         }
-      } catch (retryErr) {
-        console.error("CameraView: Retry failed:", retryErr);
       }
     }
   }, [hasTorch, isAndroid]);
 
-  // Monitor brightness to help with finger detection - ALGORITMO MEJORADO
   useEffect(() => {
     if (!stream || !videoRef.current || !isMonitoring) return;
     
@@ -314,7 +331,6 @@ const CameraView = ({
         canvas.width = 100;
         canvas.height = 100;
         
-        // Capture from center of video (mejor para dedo)
         const vidWidth = videoRef.current.videoWidth;
         const vidHeight = videoRef.current.videoHeight;
         const centerX = vidWidth / 2 - 50;
@@ -330,32 +346,27 @@ const CameraView = ({
         const data = imageData.data;
         
         let brightnessSum = 0;
-        // Sample red channel for better finger detection
         for (let i = 0; i < data.length; i += 16) {
-          brightnessSum += data[i]; // Red channel
+          brightnessSum += data[i];
         }
         
         const currentBrightness = brightnessSum / (data.length / 16);
         
-        // Track brightness history
         brightnessHistoryRef.current.push(currentBrightness);
         if (brightnessHistoryRef.current.length > 10) {
           brightnessHistoryRef.current.shift();
         }
         
-        // Average the last few readings for stability
         const avgBrightness = brightnessHistoryRef.current.reduce((sum, val) => sum + val, 0) / 
                              brightnessHistoryRef.current.length;
                              
         setBrightness(avgBrightness);
         
-        // Auto-detect finger and activate torch in initial detection - UMBRAL MÁS PERMISIVO
         if (isInitialDetection && avgBrightness > 0 && avgBrightness < 100) {
           console.log("CameraView: Initial brightness suggests finger present", {
             brightness: avgBrightness
           });
           
-          // Turn on torch if we have it and brightness suggests finger
           if (hasTorch && videoTrackRef.current) {
             updateTorchState(true);
           }
@@ -363,7 +374,6 @@ const CameraView = ({
           setIsInitialDetection(false);
         }
         
-        // Log less frequently to avoid console flood
         if (Date.now() % 1000 < 100) {
           console.log("CameraView: Brightness check", { 
             avgBrightness,
@@ -383,26 +393,20 @@ const CameraView = ({
     return () => clearInterval(interval);
   }, [stream, isMonitoring, hasTorch, isFingerDetected, isInitialDetection, updateTorchState]);
 
-  // React to changes in finger detection - LÓGICA MÁS PERMISIVA
   useEffect(() => {
     if (!stream || !hasTorch) return;
     
-    // Always attempt to maintain torch state based on finger detection or calibration
-    // NUEVO: UMBRAL MÁS PERMISIVO PARA ACTIVACIÓN
-    const shouldBeTorchOn = isFingerDetected || isCalibrating || 
-                          (brightness > 0 && brightness < 100);
+    const shouldBeTorchOn = true;
     
     if (shouldBeTorchOn !== torchEnabled) {
       console.log(`CameraView: Changing torch state to ${shouldBeTorchOn ? 'ON' : 'OFF'}`, {
-        reason: isFingerDetected ? 'finger_detected' : 
-                isCalibrating ? 'calibrating' : 
-                'brightness_based',
+        reason: 'forced_always_on',
         brightness
       });
       
       updateTorchState(shouldBeTorchOn);
     }
-  }, [stream, hasTorch, isFingerDetected, isCalibrating, brightness, torchEnabled, updateTorchState]);
+  }, [stream, hasTorch, brightness, torchEnabled, updateTorchState]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
@@ -419,9 +423,9 @@ const CameraView = ({
     };
   }, [isMonitoring]);
 
-  // Determine actual finger status with more permissive conditions - MÁS PERMISIVO
   const actualFingerDetected = isFingerDetected || 
-                              (brightness > 0 && brightness < 100 && signalQuality > 10);
+                              (brightness > 0 && brightness < 200) || 
+                              signalQuality > 5;
 
   return (
     <>
