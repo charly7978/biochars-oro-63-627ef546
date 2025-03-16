@@ -85,8 +85,8 @@ const CameraView = ({
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 640 },
-          height: { ideal: 360 }
+          width: { ideal: 2160 },
+          height: { ideal: 1080 }
         });
       } else if (isIOS) {
         console.log("Configurando para iOS");
