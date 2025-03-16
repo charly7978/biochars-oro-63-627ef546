@@ -54,13 +54,13 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 4500;
+  const WINDOW_WIDTH_MS = 7500;
   const CANVAS_WIDTH = 1960;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 30;
   const GRID_SIZE_Y = 5;
   const verticalScale = 85.0;
-  const SMOOTHING_FACTOR = 1.9;
+  const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 120;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
