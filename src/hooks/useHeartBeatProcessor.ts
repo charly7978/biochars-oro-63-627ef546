@@ -26,6 +26,9 @@ export const useHeartBeatProcessor = () => {
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
   const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
+  const arrhythmiaStartTimeRef = useRef<number | null>(null);
+  const arrhythmiaEndTimeRef = useRef<number | null>(null);
+  const ARRHYTHMIA_DURATION_MS = 1000; // Duration to mark a beat as arrhythmic
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -102,12 +105,18 @@ export const useHeartBeatProcessor = () => {
     const thisIsArrhythmia = isPrematureBeat || isDelayedBeat;
     
     if (thisIsArrhythmia) {
+      // Set the start time for the arrhythmia wave marking
+      arrhythmiaStartTimeRef.current = Date.now();
+      arrhythmiaEndTimeRef.current = Date.now() + ARRHYTHMIA_DURATION_MS;
+      
       console.log('useHeartBeatProcessor: Individual arrítmico detectado', {
         tipo: isPrematureBeat ? 'prematuro' : 'retrasado',
         intervaloActual: lastInterval,
         promedioAnterior: avgPreviousInterval,
         variación: variationFromPrevious,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        arrhythmiaStart: arrhythmiaStartTimeRef.current,
+        arrhythmiaEnd: arrhythmiaEndTimeRef.current
       });
     }
     
@@ -144,16 +153,26 @@ export const useHeartBeatProcessor = () => {
     // Determine if THIS SPECIFIC beat is an arrhythmia
     let currentBeatIsArrhythmia = false;
     
+    // Check if we're within an active arrhythmia period
+    const now = Date.now();
+    if (arrhythmiaStartTimeRef.current !== null && arrhythmiaEndTimeRef.current !== null) {
+      if (now <= arrhythmiaEndTimeRef.current) {
+        currentBeatIsArrhythmia = true;
+      } else {
+        // Reset arrhythmia period if it's over
+        arrhythmiaStartTimeRef.current = null;
+        arrhythmiaEndTimeRef.current = null;
+      }
+    }
+    
     // Only check for arrhythmia if we detected a peak
     if (result.isPeak && result.confidence > 0.85 && lastRRIntervalsRef.current.length >= 3) {
-      currentBeatIsArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
+      const newArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
+      if (newArrhythmia) {
+        currentBeatIsArrhythmia = true;
+      }
       // Store the arrhythmia state for this beat
       currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-    }
-
-    // Reset arrhythmia state if not a peak (only peaks can be arrhythmic)
-    if (!result.isPeak) {
-      currentBeatIsArrhythmiaRef.current = false;
     }
 
     // Si se detecta un pico y ha pasado suficiente tiempo desde el último pico
@@ -173,7 +192,7 @@ export const useHeartBeatProcessor = () => {
         confidence: result.confidence,
         isPeak: false,
         arrhythmiaCount: 0,
-        isArrhythmia: false,
+        isArrhythmia: currentBeatIsArrhythmia,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -188,7 +207,7 @@ export const useHeartBeatProcessor = () => {
 
     return {
       ...result,
-      isArrhythmia: currentBeatIsArrhythmiaRef.current,
+      isArrhythmia: currentBeatIsArrhythmia,
       rrData
     };
   }, [currentBPM, confidence, playBeepSound, detectArrhythmia]);
@@ -219,6 +238,8 @@ export const useHeartBeatProcessor = () => {
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
     currentBeatIsArrhythmiaRef.current = false;
+    arrhythmiaStartTimeRef.current = null;
+    arrhythmiaEndTimeRef.current = null;
   }, [currentBPM, confidence]);
 
   return {
