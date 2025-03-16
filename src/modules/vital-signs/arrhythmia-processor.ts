@@ -4,8 +4,8 @@
  * Designed to minimize false positives
  */
 export class ArrhythmiaProcessor {
-  // Extremely conservative thresholds
-  private MIN_RR_INTERVALS = 15; // Changed from readonly to private to allow updates
+  // Extremely conservative thresholds but with private fields
+  private _minRRIntervals = 15; // Changed from readonly to private property with getter/setter
   private readonly MIN_INTERVAL_MS = 500; // 120 BPM maximum (más permisivo)
   private readonly MAX_INTERVAL_MS = 1400; // 42 BPM minimum (más permisivo)
   private readonly MIN_VARIATION_PERCENT = 60; // Reduced from 70% to 60% (más permisivo)
@@ -24,6 +24,15 @@ export class ArrhythmiaProcessor {
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
   private readonly CONSECUTIVE_THRESHOLD = 10; // Reduced from 15 (más permisivo)
+
+  // Property accessor for MIN_RR_INTERVALS to avoid readonly error
+  get MIN_RR_INTERVALS(): number {
+    return this._minRRIntervals;
+  }
+
+  set MIN_RR_INTERVALS(value: number) {
+    this._minRRIntervals = value;
+  }
 
   /**
    * Process RR data for ultra-conservative arrhythmia detection
@@ -85,7 +94,7 @@ export class ArrhythmiaProcessor {
 
   /**
    * Método para actualizar configuración
-   * Fixed to properly handle configuration updates without readonly property error
+   * Fixed to properly handle configuration updates using our accessors
    */
   public updateConfig(config: Partial<{
     minIntervals: number;

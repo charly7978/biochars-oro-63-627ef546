@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -26,7 +27,9 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
   const measurementTimerRef = useRef(null);
+  const calibrationTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -54,7 +57,7 @@ const Index = () => {
         }
       }
     } catch (err) {
-      console.log('Error al entrar en pantalla completa:', err);
+      console.log('Error entering fullscreen:', err);
     }
   };
 
@@ -67,7 +70,7 @@ const Index = () => {
           await screen.orientation.lock('portrait');
         }
       } catch (error) {
-        console.log('No se pudo bloquear la orientación:', error);
+        console.log('Could not lock orientation:', error);
       }
     };
     
@@ -84,9 +87,6 @@ const Index = () => {
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
     document.body.addEventListener('touchstart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturestart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturechange', preventScroll, { passive: false });
-    document.body.addEventListener('gestureend', preventScroll, { passive: false });
     
     window.addEventListener('orientationchange', enterFullScreen);
     
@@ -100,9 +100,6 @@ const Index = () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
       document.body.removeEventListener('touchstart', preventScroll);
-      document.body.removeEventListener('gesturestart', preventScroll);
-      document.body.removeEventListener('gesturechange', preventScroll);
-      document.body.removeEventListener('gestureend', preventScroll);
       window.removeEventListener('orientationchange', enterFullScreen);
       document.removeEventListener('fullscreenchange', enterFullScreen);
     };
@@ -114,6 +111,23 @@ const Index = () => {
     setIsCameraOn(true);
     startProcessing();
     setElapsedTime(0);
+    
+    // Set calibration status
+    setIsCalibrating(true);
+    
+    // Start calibration timer (8 seconds)
+    if (calibrationTimerRef.current) {
+      clearTimeout(calibrationTimerRef.current);
+    }
+    
+    // Use timeout instead of interval for calibration
+    calibrationTimerRef.current = setTimeout(() => {
+      setIsCalibrating(false);
+      console.log("Calibration completed after 8 seconds");
+      toast.success("Calibración completada", {
+        description: "El sistema está listo para realizar mediciones."
+      });
+    }, 8000);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -163,10 +177,16 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    setIsCalibrating(false);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
+    }
+    
+    if (calibrationTimerRef.current) {
+      clearTimeout(calibrationTimerRef.current);
+      calibrationTimerRef.current = null;
     }
   };
 
@@ -189,10 +209,16 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    setIsCalibrating(false);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
+    }
+    
+    if (calibrationTimerRef.current) {
+      clearTimeout(calibrationTimerRef.current);
+      calibrationTimerRef.current = null;
     }
   };
 
@@ -202,48 +228,50 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    const capabilities = videoTrack.getCapabilities();
-    if (capabilities.width && capabilities.height) {
-      const maxWidth = capabilities.width.max;
-      const maxHeight = capabilities.height.max;
-      
-      videoTrack.applyConstraints({
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
-        torch: true
-      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities()?.torch) {
+    // Activate torch for improved PPG signal
+    if (videoTrack.getCapabilities()?.torch) {
+      console.log("Activating flashlight for better PPG signal");
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
+      }).catch(err => console.error("Error activating flashlight:", err));
+    } else {
+      console.warn("This camera does not have a flashlight available, measurement may be less accurate");
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
     if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
+      console.error("Could not get 2D context");
       return;
     }
+    
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30;
     
     const processImage = async () => {
       if (!isMonitoring) return;
       
-      try {
-        const frame = await imageCapture.grabFrame();
-        tempCanvas.width = frame.width;
-        tempCanvas.height = frame.height;
-        tempCtx.drawImage(frame, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processFrame(imageData);
-        
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
+      
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          const frame = await imageCapture.grabFrame();
+          
+          tempCanvas.width = frame.width;
+          tempCanvas.height = frame.height;
+          tempCtx.drawImage(frame, 0, 0);
+          const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+          processFrame(imageData);
+          
+          lastProcessTime = now;
+        } catch (error) {
+          console.error("Error capturing frame:", error);
         }
-      } catch (error) {
-        console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
+      }
+      
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
       }
     };
 
@@ -252,7 +280,17 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      // Only process if finger is detected and quality is good
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      
+      // Added debug information
+      console.log("Signal processing:", {
+        heartRate: heartBeatResult.bpm,
+        signalQuality: lastSignal.quality,
+        fingerDetected: lastSignal.fingerDetected,
+        calibrating: isCalibrating
+      });
+      
       setHeartRate(heartBeatResult.bpm);
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -262,8 +300,15 @@ const Index = () => {
       }
       
       setSignalQuality(lastSignal.quality);
+    } else if (lastSignal) {
+      // At least update signal quality even if finger not detected
+      setSignalQuality(lastSignal.quality || 0);
+      
+      if (!lastSignal.fingerDetected) {
+        console.log("No finger detected, signal quality:", lastSignal.quality);
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, isCalibrating]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -286,6 +331,7 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
+            isCalibrating={isCalibrating}
           />
         </div>
 
@@ -334,7 +380,9 @@ const Index = () => {
 
           {isMonitoring && (
             <div className="absolute bottom-40 left-0 right-0 text-center">
-              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+              <span className="text-xl font-medium text-gray-300">
+                {isCalibrating ? "Calibrando: " + Math.min(Math.round(elapsedTime/8*100), 100) + "%" : elapsedTime + "s / 30s"}
+              </span>
             </div>
           )}
 
