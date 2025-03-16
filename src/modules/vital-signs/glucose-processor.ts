@@ -6,7 +6,7 @@
 export class GlucoseProcessor {
   private confidence: number = 0;
   private readonly MIN_SAMPLES = 15; // Reduced from 20 for faster initialization
-  private readonly GLUCOSE_BASELINE = 83; // Changed from 70 to a more accurate baseline
+  private readonly GLUCOSE_BASELINE = 73; // Adjusted baseline for new range
   
   // Adjusted weight factors for better sensitivity to individual variations
   private readonly PERFUSION_FACTOR = 0.75; // Increased from 0.65
@@ -90,8 +90,8 @@ export class GlucoseProcessor {
     const individualFactor = this.calculateIndividualFactor(recentValues);
     glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.2);
     
-    // Apply wider physiological constraints based on updated range (40-200 mg/dL)
-    glucoseEstimate = Math.max(40, Math.min(200, glucoseEstimate));
+    // Apply new physiological constraints based on requested range (50-180 mg/dL)
+    glucoseEstimate = Math.max(50, Math.min(180, glucoseEstimate));
     
     // Stabilize readings with temporal smoothing
     const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
@@ -189,8 +189,8 @@ export class GlucoseProcessor {
     // Combine median and mean with their respective weights
     const finalValue = (medianValue * this.MEDIAN_WEIGHT) + (meanValue * this.MEAN_WEIGHT);
     
-    // Apply wider constraints to ensure values are within updated physiological range
-    return Math.max(40, Math.min(200, finalValue));
+    // Apply new constraints to ensure values are within 50-180 physiological range
+    return Math.max(50, Math.min(180, finalValue));
   }
   
   /**
