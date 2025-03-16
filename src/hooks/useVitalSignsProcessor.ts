@@ -27,9 +27,10 @@ export const useVitalSignsProcessor = () => {
   
   // Configuración avanzada basada en guías clínicas
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 1000, // Mínimo 1 segundo entre arritmias
-    MAX_ARRHYTHMIAS_PER_SESSION: 20, // Máximo razonable para 30 segundos
-    SIGNAL_QUALITY_THRESHOLD: 0.55 // Calidad de señal requerida para detección confiable
+    // Aumentamos el tiempo mínimo entre arritmias para reducir falsos positivos
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 5000, // Aumentado de 1000ms a 5000ms
+    MAX_ARRHYTHMIAS_PER_SESSION: 5,    // Reducido de 20 a 5 para ser más selectivos
+    SIGNAL_QUALITY_THRESHOLD: 0.7      // Aumentado de 0.55 a 0.7 para mayor calidad
   });
   
   // Inicialización
@@ -54,10 +55,18 @@ export const useVitalSignsProcessor = () => {
   }, []);
   
   /**
-   * Registra una nueva ventana de arritmia
+   * Registra una nueva ventana de arritmia - MEJORADO para evitar falsos positivos
    */
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    setArrhythmiaWindows(prev => [...prev, { start, end }]);
+    // Verificamos la calidad y número de ventanas para evitar saturación
+    const currentTime = Date.now();
+    
+    // Limitamos a las últimas 3 ventanas de arritmias para evitar que todo se vuelva rojo
+    setArrhythmiaWindows(prev => {
+      const newWindows = [...prev, { start, end }];
+      // Solo mantenemos las 3 ventanas más recientes
+      return newWindows.slice(-3);
+    });
   }, []);
   
   /**
@@ -97,10 +106,11 @@ export const useVitalSignsProcessor = () => {
     result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
     
     // Si se detectó arritmia y tenemos datos, registrar la ventana de arritmia
-    if (result.arrhythmiaStatus === "Arritmia Detectada" && result.lastArrhythmiaData) {
+    // MEJORADO para crear ventanas más precisas
+    if (result.arrhythmiaStatus.includes("ARRITMIA DETECTADA") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-      // Crear una ventana de 3 segundos alrededor del evento (1.5s antes y 1.5s después)
-      addArrhythmiaWindow(arrhythmiaTime - 1500, arrhythmiaTime + 1500);
+      // Crear una ventana más corta: 1s en total (antes era 3s)
+      addArrhythmiaWindow(arrhythmiaTime - 500, arrhythmiaTime + 500);
     }
     
     // Actualizar log de señales

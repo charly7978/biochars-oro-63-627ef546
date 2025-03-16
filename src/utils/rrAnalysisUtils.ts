@@ -6,7 +6,7 @@
 
 /**
  * Analiza intervalos RR para detectar posibles arritmias
- * MODIFICADO: Umbral ajustado para ampliar sensibilidad de detección visual
+ * MODIFICADO: Umbral drásticamente ajustado para reducir falsos positivos
  */
 export function analyzeRRIntervals(
   rrData: { intervals: number[] } | undefined,
@@ -26,37 +26,48 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 5) {
+  if (!rrData?.intervals || rrData.intervals.length < 7) { // Aumentado de 5 a 7
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
-  const lastFiveIntervals = rrData.intervals.slice(-5);
-  const avgRR = lastFiveIntervals.reduce((a, b) => a + b, 0) / lastFiveIntervals.length;
+  const lastSevenIntervals = rrData.intervals.slice(-7); // Aumentado de 5 a 7
   
-  // Calculate RMSSD (Root Mean Square of Successive Differences)
-  let rmssd = 0;
-  for (let i = 1; i < lastFiveIntervals.length; i++) {
-    rmssd += Math.pow(lastFiveIntervals[i] - lastFiveIntervals[i-1], 2);
+  // Filtrar intervalos RR para eliminar valores extremos (posibles errores de detección)
+  const filteredIntervals = lastSevenIntervals.filter(interval => 
+    interval >= 600 && interval <= 1200 // Rango más restrictivo (antes 500-1500ms)
+  );
+  
+  // Si después de filtrar no hay suficientes intervalos, no es posible analizar
+  if (filteredIntervals.length < 5) {
+    return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
-  rmssd = Math.sqrt(rmssd / (lastFiveIntervals.length - 1));
+  
+  const avgRR = filteredIntervals.reduce((a, b) => a + b, 0) / filteredIntervals.length;
+  
+  // Calculate RMSSD (Root Mean Square of Successive Differences) - más estricto
+  let rmssd = 0;
+  for (let i = 1; i < filteredIntervals.length; i++) {
+    rmssd += Math.pow(filteredIntervals[i] - filteredIntervals[i-1], 2);
+  }
+  rmssd = Math.sqrt(rmssd / (filteredIntervals.length - 1));
   
   // Calculate additional metrics
-  const lastRR = lastFiveIntervals[lastFiveIntervals.length - 1];
+  const lastRR = filteredIntervals[filteredIntervals.length - 1];
   const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
   
   // Calculate standard deviation of intervals
   const rrSD = Math.sqrt(
-    lastFiveIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
-    lastFiveIntervals.length
+    filteredIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
+    filteredIntervals.length
   );
   
-  // Más permisivo para visualización (SOLO PARA VISUALIZAR MÁS ARRITMIAS)
-  // Para detección real, debemos mantener umbrales más estrictos como prevención
+  // MUCHO más restrictivo para evitar falsos positivos
+  // Exigimos umbrales mucho más altos para considerar arritmia
   const hasArrhythmia = 
-    (rmssd > 50 && rrVariation > 0.20) || 
-    (rrSD > 35 && rrVariation > 0.18) ||
-    (lastRR > 1.35 * avgRR) ||
-    (lastRR < 0.7 * avgRR);
+    (rmssd > 70 && rrVariation > 0.35) || // Antes: rmssd > 50, rrVariation > 0.20
+    (rrSD > 50 && rrVariation > 0.30) ||  // Antes: rrSD > 35, rrVariation > 0.18
+    (lastRR > 1.50 * avgRR) ||            // Antes: 1.35
+    (lastRR < 0.6 * avgRR);               // Antes: 0.7
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 
@@ -99,8 +110,8 @@ export function logPossibleArrhythmia(
     rmssd: analysisData.rmssd,
     rrVariation: analysisData.rrVariation,
     rrSD: analysisData.rrSD,
-    condición1: analysisData.rmssd > 50 && analysisData.rrVariation > 0.20,
-    condición2: analysisData.rrSD > 35 && analysisData.rrVariation > 0.18,
+    condición1: analysisData.rmssd > 70 && analysisData.rrVariation > 0.35, // Actualizado
+    condición2: analysisData.rrSD > 50 && analysisData.rrVariation > 0.30,  // Actualizado
     timestamp: new Date().toISOString()
   });
 }

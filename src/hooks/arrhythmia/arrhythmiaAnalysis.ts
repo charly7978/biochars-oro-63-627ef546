@@ -25,9 +25,9 @@ export class ArrhythmiaAnalyzer {
   private hasDetectedArrhythmia: boolean = false;
   private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
-  // Incrementamos el umbral para reducir falsos positivos
+  // Incrementamos significativamente el umbral para reducir falsos positivos
   private consecutiveAbnormalIntervals: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 3; // Aumentado de 2 a 3 para más robustez
+  private readonly CONSECUTIVE_THRESHOLD = 5; // Aumentado de 3 a 5 para mayor robustez
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
@@ -43,7 +43,7 @@ export class ArrhythmiaAnalyzer {
     const currentTime = Date.now();
     
     // Si no hay datos RR válidos, retornar el resultado sin cambios
-    if (!rrData?.intervals || rrData.intervals.length < 5) { // Aumentado de 3 a 5 para estabilidad
+    if (!rrData?.intervals || rrData.intervals.length < 7) { // Aumentado de 5 a 7 para más estabilidad
       // Si previamente detectamos una arritmia, mantener ese estado
       if (this.hasDetectedArrhythmia) {
         return {
@@ -59,9 +59,9 @@ export class ArrhythmiaAnalyzer {
       };
     }
     
-    const lastIntervals = rrData.intervals.slice(-5); // Aumentado de 3 a 5
+    const lastIntervals = rrData.intervals.slice(-7); // Aumentado de 5 a 7
     
-    // Analizar intervalos RR para detectar posibles arritmias
+    // Analizar intervalos RR para detectar posibles arritmias con umbral muy estricto
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
       analyzeRRIntervals(
         rrData, 
@@ -80,15 +80,18 @@ export class ArrhythmiaAnalyzer {
       if (hasArrhythmia) {
         logPossibleArrhythmia(analysisData);
         
-        // Análisis de continuidad de anomalías
+        // Análisis de continuidad de anomalías - ahora más estricto
         if (hasArrhythmia) {
-          this.consecutiveAbnormalIntervals++;
+          // Solo incrementamos si la variación es REALMENTE alta para evitar falsos positivos
+          if (analysisData.rrVariation > 0.4) { // Aumentado de ~0.2 a 0.4
+            this.consecutiveAbnormalIntervals++;
+          }
         } else {
           this.consecutiveAbnormalIntervals = 0;
         }
         
         // Verificar si debemos incrementar contador (con umbral mejorado)
-        // Ahora requerimos más anomalías consecutivas para confirmar arritmia
+        // Ahora requerimos muchas más anomalías consecutivas para confirmar arritmia
         if (shouldIncrementCounter && 
             (this.consecutiveAbnormalIntervals >= this.CONSECUTIVE_THRESHOLD)) {
           // Confirmamos la arritmia e incrementamos el contador

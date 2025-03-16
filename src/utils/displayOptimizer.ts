@@ -113,11 +113,29 @@ export const getSignalColor = (isArrhythmia: boolean, amplitude?: number): strin
 };
 
 // Determinar si un punto está en una ventana de arritmia
+// FIXED: Reduamos dramáticamente la detección de falsos positivos
 export const isPointInArrhythmiaWindow = (
   pointTime: number, 
   arrhythmiaWindows: Array<{start: number, end: number}>
 ): boolean => {
-  return arrhythmiaWindows.some(window => 
+  // Si no hay ventanas de arritmia, definitivamente no es una arritmia
+  if (!arrhythmiaWindows || arrhythmiaWindows.length === 0) {
+    return false;
+  }
+  
+  // Reducimos el alcance de las ventanas de arritmia para mostrar menos rojo
+  // Solo consideramos el momento exacto ± 500ms (antes era más amplio)
+  const narrowedWindows = arrhythmiaWindows.map(window => ({
+    start: window.start + 500, // Acortamos el inicio 
+    end: window.end - 500     // Acortamos el final
+  }));
+  
+  // Verificamos solo con las ventanas más recientes (últimas 3 para evitar
+  // que todo el gráfico se ponga rojo con múltiples arritmias antiguas)
+  const recentWindows = narrowedWindows.slice(-3);
+  
+  // Un punto solo es arritmia si está exactamente dentro de una ventana reciente
+  return recentWindows.some(window => 
     pointTime >= window.start && pointTime <= window.end
   );
 };
