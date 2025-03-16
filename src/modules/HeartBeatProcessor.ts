@@ -4,28 +4,32 @@ export class HeartBeatProcessor {
   WINDOW_SIZE = 45;
   MIN_BPM = 40;
   MAX_BPM = 200;
-  SIGNAL_THRESHOLD = 0.2;        // Increased threshold for more reliable detection
-  MIN_CONFIDENCE = 0.45;         // Lowered confidence requirement to catch more peaks
-  DERIVATIVE_THRESHOLD = -0.02;  // More conservative derivative threshold
-  MIN_PEAK_TIME_MS = 250;        // Reduced minimum time between peaks to catch more rapid beats
-  WARMUP_TIME_MS = 1500;         // Shorter warmup time for quicker response
+  SIGNAL_THRESHOLD = 0.15;        // Lowered for more sensitive detection
+  MIN_CONFIDENCE = 0.40;         // Lowered confidence requirement to catch more peaks
+  DERIVATIVE_THRESHOLD = -0.015;  // More sensitive derivative threshold
+  MIN_PEAK_TIME_MS = 200;        // Reduced for more frequent beat detection
+  WARMUP_TIME_MS = 1000;         // Shorter warmup for faster response
 
   // Filters for signal stability
   MEDIAN_FILTER_WINDOW = 5;
   MOVING_AVERAGE_WINDOW = 5;
-  EMA_ALPHA = 0.15;              // Reduced for smoother signal
-  BASELINE_FACTOR = 0.997;       // Slower baseline adaptation
+  EMA_ALPHA = 0.20;              // Balanced for responsiveness
+  BASELINE_FACTOR = 0.997;       // Slow baseline adaptation for stability
 
   // Beep sound configuration
   BEEP_PRIMARY_FREQUENCY = 800;
-  BEEP_DURATION = 80;            // Longer beep duration
-  BEEP_VOLUME = 0.85;            // Increased volume
-  MIN_BEEP_INTERVAL_MS = 250;    // Reduced interval between beeps
+  BEEP_DURATION = 70;            // Shorter for more responsive beeps
+  BEEP_VOLUME = 0.95;            // High volume for clear audio
+  MIN_BEEP_INTERVAL_MS = 180;    // Reduced interval between beeps for responsiveness
 
   // Signal quality detection
-  LOW_SIGNAL_THRESHOLD = 0.03;
-  LOW_SIGNAL_FRAMES = 15;        // Increased for more stability
+  LOW_SIGNAL_THRESHOLD = 0.02;
+  LOW_SIGNAL_FRAMES = 15;
   lowSignalCount = 0;
+
+  // Flags for synchronized beeps
+  FORCE_IMMEDIATE_BEEP = true;  // Always force immediate beeps
+  SKIP_TIMING_VALIDATION = true; // Skip timing validation to maximize beeps
 
   // State variables
   signalBuffer = [];
@@ -44,119 +48,126 @@ export class HeartBeatProcessor {
   peakConfirmationBuffer = [];
   lastConfirmedPeak = false;
   smoothBPM = 0;
-  BPM_ALPHA = 0.15;              // Reduced for more stable BPM calculation
+  BPM_ALPHA = 0.15;
   
   // Peak detection variables
   peakCandidateIndex = null;
   peakCandidateValue = 0;
   lastProcessedPeakTime = 0;
-  peakThresholdAdjuster = 1.0;
-  stableDetectionCount = 0;
   
   // Variables for consistent timing
-  adaptiveThresholdHistory = [];
-  signalQualityHistory = [];
   lastBpmUpdateTime = 0;
   
   // Variables for reliable detection
   peakIntervalConsistency = 0;
   detectionConfidence = 0;
-  lastExpectedHeartbeatTime = 0;
   
   // Variables for beep management
-  beepSuccessCount = 0;
-  lastBeepAttemptTime = 0;
+  beepQueue = [];
+  lastBeepRequestTime = 0;
   pendingBeepRequest = false;
   consecutiveBeats = 0;
-  consistentBeatsRequired = 2; // Reduced from 4 to ensure beeps happen more quickly
-  FORCE_BEEP_FOR_ALL_PEAKS = true; // Always force beeps for all peaks
-  SKIP_TIMING_VALIDATION = true; // Skip timing validation to ensure all beeps are played
-  beepQueue = []; // New queue to manage pending beeps
-  lastBeepRequestTime = 0; // Track last beep request time
+  beepSuccessCount = 0;
 
   constructor() {
-    console.log("HeartBeatProcessor: Initializing with consistent timing configuration");
+    console.log("HeartBeatProcessor: Initializing with synchronized beep configuration");
     this.initAudio();
     this.startTime = Date.now();
   }
 
   async initAudio() {
     try {
-      // Only create audio context if it doesn't exist
       if (typeof window !== 'undefined' && typeof AudioContext !== 'undefined' && !this.audioContext) {
         this.audioContext = new AudioContext({ latencyHint: 'interactive' });
         
-        // Always resume the audio context
+        // Always resume the audio context for reliable playback
         if (this.audioContext.state !== 'running') {
           await this.audioContext.resume();
         }
         
-        // Test beep with minimal volume
-        const result = await this.playBeep(0.05);
+        // Test beep with minimal volume to prepare audio system
+        await this.playBeep(0.01);
+        
+        // Prepare oscillator in advance to reduce latency
+        this.prepareAudioSystem();
         
         console.log("HeartBeatProcessor: Audio Context initialized successfully", {
           sampleRate: this.audioContext?.sampleRate,
-          state: this.audioContext?.state,
-          beepResult: result
+          state: this.audioContext?.state
         });
-      } else if (!this.audioContext) {
-        console.warn("HeartBeatProcessor: AudioContext not available");
       }
     } catch (err) {
       console.error("HeartBeatProcessor: Error initializing audio", err);
-      // Reset audio context on error
+      // Reset audio context on error for clean retry
       this.audioContext = null;
+    }
+  }
+  
+  // Prepare the audio system to reduce latency on future beeps
+  async prepareAudioSystem() {
+    if (!this.audioContext) return;
+    
+    try {
+      // Create a silent oscillator and play briefly to warm up the audio system
+      const osc = this.audioContext.createOscillator();
+      const gain = this.audioContext.createGain();
+      
+      gain.gain.value = 0.001; // Nearly silent
+      osc.connect(gain);
+      gain.connect(this.audioContext.destination);
+      
+      osc.start();
+      osc.stop(this.audioContext.currentTime + 0.01);
+    } catch (err) {
+      console.error("HeartBeatProcessor: Error preparing audio system", err);
     }
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
-    // Skip beeps during warmup only
+    // Only skip during warmup
     if (this.isInWarmup()) {
       return false;
     }
     
     const now = Date.now();
     
-    // Less strict enforcement of minimum interval between beeps
+    // Skip timing validation if configured to do so
     if (!this.SKIP_TIMING_VALIDATION && now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS * 0.7) {
       // Queue the beep for later if we can't play it now
-      this.beepQueue.push({time: now, volume});
+      this.queueBeep(volume);
       return false;
     }
 
     try {
-      // Initialize audio if not already done
+      // Ensure audio context is ready
       if (!this.audioContext || this.audioContext.state !== 'running') {
         await this.initAudio();
         if (!this.audioContext || this.audioContext.state !== 'running') {
-          console.warn("HeartBeatProcessor: Cannot play beep - audio context unavailable or not running");
           return false;
         }
       }
 
-      // Create oscillator for clean tone
+      // Simple beep implementation for lower latency
       const oscillator = this.audioContext.createOscillator();
       const gainNode = this.audioContext.createGain();
       
-      // Configure oscillator with simple sine wave
       oscillator.type = "sine";
       oscillator.frequency.setValueAtTime(
         this.BEEP_PRIMARY_FREQUENCY,
         this.audioContext.currentTime
       );
 
-      // Create envelope for smooth sound
+      // Quick attack, quick release for responsive sound
       gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
       gainNode.gain.linearRampToValueAtTime(
         volume,
-        this.audioContext.currentTime + 0.01
+        this.audioContext.currentTime + 0.005 // Faster attack
       );
       gainNode.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.BEEP_DURATION / 1000
       );
 
-      // Connect and play
       oscillator.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
       
@@ -168,7 +179,7 @@ export class HeartBeatProcessor {
       this.beepSuccessCount++;
       this.pendingBeepRequest = false;
       
-      // Process queued beeps if possible
+      // Process any queued beeps if available
       this.processBeepQueue();
       
       return true;
@@ -178,32 +189,44 @@ export class HeartBeatProcessor {
     }
   }
 
-  // New method to process the beep queue
+  // Queue a beep to play later
+  queueBeep(volume) {
+    this.beepQueue.push({
+      time: Date.now(),
+      volume: volume
+    });
+    
+    // Process queue immediately if possible
+    setTimeout(() => this.processBeepQueue(), 10);
+  }
+
+  // Process queued beeps
   processBeepQueue() {
-    if (this.beepQueue.length > 0 && this.audioContext) {
-      setTimeout(() => {
-        // If enough time has passed, play the next queued beep
-        const now = Date.now();
-        if (now - this.lastBeepTime >= this.MIN_BEEP_INTERVAL_MS * 0.7) {
-          const nextBeep = this.beepQueue.shift();
-          if (nextBeep) {
-            this.playBeep(nextBeep.volume);
-          }
-        } else if (this.beepQueue.length > 0) {
-          // If we can't play now, try again after a short delay
-          this.processBeepQueue();
-        }
-      }, this.MIN_BEEP_INTERVAL_MS * 0.5);
+    if (this.beepQueue.length === 0) return;
+    
+    const now = Date.now();
+    
+    // Only process if enough time has passed since last beep
+    if (now - this.lastBeepTime >= this.MIN_BEEP_INTERVAL_MS * 0.7) {
+      const nextBeep = this.beepQueue.shift();
+      if (nextBeep) {
+        this.playBeep(nextBeep.volume);
+      }
+    } else if (this.beepQueue.length > 0) {
+      // Try again soon
+      setTimeout(() => this.processBeepQueue(), 50);
     }
   }
 
-  // This method allows external components to request beeps
+  // Method for external components to request beeps
   requestBeepForTime(timestamp) {
     const now = Date.now();
-    if (now - this.lastBeepRequestTime < 150) return false; // Avoid rapid requests
+    if (now - this.lastBeepRequestTime < 100) return false;
     
     this.lastBeepRequestTime = now;
-    this.playBeep();
+    
+    // Always force immediate beep to synchronize with visual
+    this.playBeep(this.BEEP_VOLUME);
     return true;
   }
 
@@ -249,7 +272,7 @@ export class HeartBeatProcessor {
       }
 
       // Wait for minimum buffer size
-      if (this.signalBuffer.length < 15) {
+      if (this.signalBuffer.length < 10) { // Reduced from 15 for faster startup
         return {
           bpm: 0,
           confidence: 0,
@@ -274,66 +297,36 @@ export class HeartBeatProcessor {
         this.values.shift();
       }
 
+      // Calculate smooth derivative
       let smoothDerivative = 0;
-      if (this.values.length >= 5) {
-        smoothDerivative = (this.values[4] - this.values[0]) / 4;
-      } else if (this.values.length >= 3) {
-        smoothDerivative = (this.values[2] - this.values[0]) / 2;
+      if (this.values.length >= 3) {
+        smoothDerivative = (this.values[this.values.length-1] - this.values[0]) / 
+                           Math.max(1, this.values.length - 1);
       } else {
         smoothDerivative = smoothed - this.lastValue;
       }
       this.lastValue = smoothed;
 
-      // Detect peaks with less strict confidence requirement
+      // Detect peaks with relaxed confidence requirements
       const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
       
-      // Use multiple confirmations for reliability
+      // Simplified peak confirmation for more reliable detection
       const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-      // Process confirmed peak 
+      // Process confirmed peak with immediate beep
       if (isConfirmedPeak && !this.isInWarmup()) {
         const now = Date.now();
-        const timeSinceLastPeak = this.lastPeakTime ? now - this.lastPeakTime : Number.MAX_VALUE;
+        
+        // Update peak timing history
+        this.previousPeakTime = this.lastPeakTime;
+        this.lastPeakTime = now;
 
-        // Less strict enforcement of minimum time between peaks
-        if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS * 0.7) {
-          // Always treat peaks as valid when FORCE_BEEP_FOR_ALL_PEAKS is true
-          let isValidPeak = true;
-          
-          if (isValidPeak) {
-            // Update peak timing history
-            this.previousPeakTime = this.lastPeakTime;
-            this.lastPeakTime = now;
-            
-            // Calculate next expected beat time based on current rhythm
-            if (this.smoothBPM >= 40 && this.smoothBPM <= 200) {
-              const expectedInterval = 60000 / this.smoothBPM;
-              this.lastExpectedHeartbeatTime = now + expectedInterval;
-            }
-            
-            console.log(`HeartBeatProcessor: Valid peak detected and confirmed`);
-            
-            // Update BPM and track consecutive beats
-            this.updateBPM();
-            this.stableDetectionCount++;
-            this.consecutiveBeats++;
-            
-            // Update detection confidence metrics
-            this.updateDetectionConfidence(timeSinceLastPeak);
-            
-            // Always trigger beep for confirmed peaks
-            this.pendingBeepRequest = true;
-            this.playBeep(); // Immediately play beep for the confirmed peak
-          }
-        }
-      }
-
-      // Process any pending beep
-      if (this.pendingBeepRequest) {
-        const now = Date.now();
-        if (now - this.lastBeepAttemptTime > 50) { // Reduced to 50ms for faster response
-          this.playBeep();
-          this.pendingBeepRequest = false;
+        // Calculate heart rate
+        this.updateBPM();
+        
+        // Play beep immediately for each peak if configured to do so
+        if (this.FORCE_IMMEDIATE_BEEP) {
+          this.playBeep(this.BEEP_VOLUME);
         }
       }
 
@@ -353,30 +346,6 @@ export class HeartBeatProcessor {
         filteredValue: 0,
         arrhythmiaCount: 0
       };
-    }
-  }
-
-  updateDetectionConfidence(interval) {
-    // Calculate signal quality based on consistency
-    const signalQuality = Math.min(1, this.stableDetectionCount / 15);
-    
-    // Update quality history
-    this.signalQualityHistory.push(signalQuality);
-    if (this.signalQualityHistory.length > 8) {
-      this.signalQualityHistory.shift();
-    }
-    
-    // Calculate average confidence
-    this.detectionConfidence = this.signalQualityHistory.reduce((a, b) => a + b, 0) / 
-                              Math.max(1, this.signalQualityHistory.length);
-    
-    // Update interval consistency metrics
-    if (this.previousPeakTime && this.lastPeakTime) {
-      const prevInterval = this.lastPeakTime - this.previousPeakTime;
-      const consistency = 1 - Math.min(1, Math.abs(interval - prevInterval) / Math.max(interval, prevInterval));
-      
-      // Weighted update of consistency metric
-      this.peakIntervalConsistency = 0.8 * this.peakIntervalConsistency + 0.2 * consistency;
     }
   }
 
@@ -404,44 +373,37 @@ export class HeartBeatProcessor {
     this.peakConfirmationBuffer = [];
     this.values = [];
     this.lastProcessedPeakTime = 0;
-    
-    // Reset adaptive parameters
-    this.peakThresholdAdjuster = 1.0;
-    this.stableDetectionCount = 0;
-    this.peakIntervalConsistency = 0;
-    this.pendingBeepRequest = false;
-    this.consecutiveBeats = 0;
-    this.lastExpectedHeartbeatTime = 0;
     this.lowSignalCount = 0;
   }
 
   detectPeak(normalizedValue, derivative) {
     const now = Date.now();
-    const timeSinceLastPeak = this.lastPeakTime ? now - this.lastPeakTime : Number.MAX_VALUE;
-
-    // Enforce minimum time between peaks
-    if (timeSinceLastPeak < this.MIN_PEAK_TIME_MS) {
-      return { isPeak: false, confidence: 0 };
+    
+    // Skip timing validation if configured to do so
+    if (!this.SKIP_TIMING_VALIDATION && this.lastPeakTime) {
+      const timeSinceLastPeak = now - this.lastPeakTime;
+      if (timeSinceLastPeak < this.MIN_PEAK_TIME_MS * 0.7) {
+        return { isPeak: false, confidence: 0 };
+      }
     }
 
-    // Core peak detection logic - require negative derivative and sufficient amplitude
+    // Core peak detection logic - more sensitive thresholds
     const isPeak =
       derivative < this.DERIVATIVE_THRESHOLD &&
-      normalizedValue > this.SIGNAL_THRESHOLD &&
-      this.lastValue > this.baseline;
+      normalizedValue > this.SIGNAL_THRESHOLD;
 
     // Calculate confidence based on signal characteristics
     const amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5), 0),
+      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.2), 0),
       1
     );
     const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 1.2), 0),
+      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD), 0),
       1
     );
 
-    // Combined confidence score with emphasis on amplitude
-    const confidence = (amplitudeConfidence * 0.7 + derivativeConfidence * 0.3);
+    // Combined confidence score with emphasis on derivative for better timing
+    const confidence = (amplitudeConfidence * 0.6 + derivativeConfidence * 0.4);
 
     return { isPeak, confidence };
   }
@@ -449,20 +411,19 @@ export class HeartBeatProcessor {
   confirmPeak(isPeak, normalizedValue, confidence) {
     // Add value to confirmation buffer
     this.peakConfirmationBuffer.push(normalizedValue);
-    if (this.peakConfirmationBuffer.length > 5) {
+    if (this.peakConfirmationBuffer.length > 3) { // Reduced for faster confirmation
       this.peakConfirmationBuffer.shift();
     }
 
-    // Only proceed if it's a peak and not already confirmed
+    // Simplified peak confirmation for more reliability
     if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE) {
-      // Need sufficient buffer for confirmation
-      if (this.peakConfirmationBuffer.length >= 3) {
+      if (this.peakConfirmationBuffer.length >= 2) { // Reduced for faster confirmation
         const len = this.peakConfirmationBuffer.length;
         
-        // Relaxed confirmation logic - only need one indicator of a peak
-        const goingDown1 = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
+        // Only need one indicator of a peak for more sensitivity
+        const goingDown = this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
         
-        if (goingDown1) {
+        if (goingDown) {
           this.lastConfirmedPeak = true;
           return true;
         }
@@ -488,13 +449,11 @@ export class HeartBeatProcessor {
       this.bpmHistory.push(instantBPM);
       
       // Keep a reasonable history size
-      if (this.bpmHistory.length > 8) {
+      if (this.bpmHistory.length > 6) { // Reduced for faster adaptation
         this.bpmHistory.shift();
       }
       
       this.lastBpmUpdateTime = Date.now();
-      
-      console.log(`HeartBeatProcessor: BPM updated - Instant: ${instantBPM.toFixed(1)}, Smoothed: ${this.calculateCurrentBPM().toFixed(1)}`);
     }
   }
 
@@ -507,7 +466,7 @@ export class HeartBeatProcessor {
       return rawBPM;
     }
     
-    // Apply exponential smoothing with adaptive alpha
+    // Apply exponential smoothing for stability
     if (rawBPM > 0) {
       this.smoothBPM = this.BPM_ALPHA * rawBPM + (1 - this.BPM_ALPHA) * this.smoothBPM;
     }
@@ -520,41 +479,9 @@ export class HeartBeatProcessor {
       return 0;
     }
     
-    // Use median filtering for robustness
-    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    
-    // Calculate trimmed mean for stability
-    let trimmed;
-    if (sorted.length >= 5) {
-      // Trim extremes
-      const cutSize = Math.floor(sorted.length * 0.2);
-      trimmed = sorted.slice(cutSize, sorted.length - cutSize);
-    } else {
-      trimmed = sorted;
-    }
-    
-    if (!trimmed.length) return 0;
-    
-    // Calculate mean
-    const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
-    return avg;
-  }
-
-  getFinalBPM() {
-    // Only provide final BPM with sufficient data
-    if (this.bpmHistory.length < 3) {
-      return 0;
-    }
-    
-    // Trimmed mean for robustness
-    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    const cut = Math.min(1, Math.round(sorted.length * 0.1));
-    const finalSet = sorted.slice(cut, sorted.length - cut);
-    
-    if (!finalSet.length) return 0;
-    
-    const sum = finalSet.reduce((acc, val) => acc + val, 0);
-    return Math.round(sum / finalSet.length);
+    // Simple mean for faster response
+    const sum = this.bpmHistory.reduce((a, b) => a + b, 0);
+    return sum / this.bpmHistory.length;
   }
 
   reset() {
@@ -578,29 +505,22 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
     this.lastProcessedPeakTime = 0;
-    this.peakThresholdAdjuster = 1.0;
-    this.stableDetectionCount = 0;
-    this.adaptiveThresholdHistory = [];
-    this.signalQualityHistory = [];
-    this.lastBpmUpdateTime = 0;
-    this.peakIntervalConsistency = 0;
-    this.detectionConfidence = 0;
-    this.beepSuccessCount = 0;
-    this.lastBeepAttemptTime = 0;
     this.pendingBeepRequest = false;
-    this.consecutiveBeats = 0;
-    this.lastExpectedHeartbeatTime = 0;
+    this.beepSuccessCount = 0;
+    this.lastBeepRequestTime = 0;
+    this.beepQueue = [];
     
     // Try to ensure audio context is active
     if (this.audioContext && this.audioContext.state !== 'running') {
       this.audioContext.resume()
-        .then(() => console.log("HeartBeatProcessor: Audio Context reactivated"))
+        .then(() => {
+          console.log("HeartBeatProcessor: Audio Context reactivated");
+          this.prepareAudioSystem();
+        })
         .catch(err => console.error("HeartBeatProcessor: Error reactivating Audio Context", err));
+    } else {
+      this.prepareAudioSystem();
     }
-    
-    // Clear beep queue when resetting
-    this.beepQueue = [];
-    this.lastBeepRequestTime = 0;
     
     console.log("HeartBeatProcessor: Complete reset performed");
   }
