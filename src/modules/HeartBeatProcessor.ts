@@ -1,4 +1,3 @@
-
 export class HeartBeatProcessor {
   // Parámetros de configuración
   SAMPLE_RATE = 30;
@@ -9,7 +8,7 @@ export class HeartBeatProcessor {
   MIN_CONFIDENCE = 0.25;    // Reducido para mayor sensibilidad
   DERIVATIVE_THRESHOLD = -0.015; // Ajustado para mejor detección
   MIN_PEAK_TIME_MS = 250;   // Reducido para permitir frecuencias cardíacas más altas
-  WARMUP_TIME_MS = 1000;    // Reducido considerablemente para empezar a detectar antes
+  WARMUP_TIME_MS = 0;    // ELIMINADO COMPLETAMENTE el tiempo de espera para beeps
 
   // Filtros de señal
   MEDIAN_FILTER_WINDOW = 3;
@@ -20,9 +19,9 @@ export class HeartBeatProcessor {
   // Configuración del beep
   BEEP_PRIMARY_FREQUENCY = 880;
   BEEP_SECONDARY_FREQUENCY = 440;
-  BEEP_DURATION = 80;      // Reducido ligeramente para respuesta más rápida
-  BEEP_VOLUME = 1.0;       // Aumentado al máximo para asegurar audibilidad
-  MIN_BEEP_INTERVAL_MS = 200; // Reducido para beeps más frecuentes
+  BEEP_DURATION = 100;      // Aumentado para que sea más audible
+  BEEP_VOLUME = 1.0;       // Volumen al MÁXIMO
+  MIN_BEEP_INTERVAL_MS = 100; // Reducido para más beeps
 
   // Parámetros de detección de señal baja
   LOW_SIGNAL_THRESHOLD = 0.02;
@@ -62,8 +61,8 @@ export class HeartBeatProcessor {
       if (typeof AudioContext !== 'undefined') {
         this.audioContext = new AudioContext();
         await this.audioContext.resume();
-        // Reproducir un beep de prueba muy bajo para verificar que el audio funciona
-        await this.playBeep(0.01);
+        // Reproducir un beep de prueba para verificar que el audio funciona
+        await this.playBeep(0.5); // Beep de prueba con volumen medio
         console.log("HeartBeatProcessor: Audio Context inicializado correctamente", {
           sampleRate: this.audioContext.sampleRate,
           state: this.audioContext.state,
@@ -127,7 +126,7 @@ export class HeartBeatProcessor {
       // Configurar la envolvente del volumen para el tono secundario
       secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.5, // Aumentado para asegurar que se escuche el sonido secundario
+        volume * 0.7, // Aumentado para asegurar que se escuche el sonido secundario
         this.audioContext.currentTime + 0.01
       );
       secondaryGain.gain.exponentialRampToValueAtTime(
@@ -151,14 +150,15 @@ export class HeartBeatProcessor {
 
       // Registrar el tiempo del último beep
       this.lastBeepTime = now;
-      console.log("HeartBeatProcessor: Beep played at " + new Date().toISOString());
+      console.log("HeartBeatProcessor: BEEP reproducido en " + new Date().toISOString());
     } catch (err) {
       console.error("HeartBeatProcessor: Error reproduciendo beep", err);
     }
   }
 
   isInWarmup() {
-    return Date.now() - this.startTime < this.WARMUP_TIME_MS;
+    // Eliminamos completamente el período de calentamiento
+    return false;
   }
 
   medianFilter(value) {
@@ -198,13 +198,14 @@ export class HeartBeatProcessor {
     }
 
     // Verificar si tenemos suficientes datos
-    if (this.signalBuffer.length < 15) { // Reducido el mínimo necesario
+    if (this.signalBuffer.length < 10) { // Reducido aún más el mínimo necesario
       return {
         bpm: 0,
         confidence: 0,
         isPeak: false,
         filteredValue: smoothed,
-        arrhythmiaCount: 0
+        arrhythmiaCount: 0,
+        rrData: null
       };
     }
 
@@ -244,7 +245,7 @@ export class HeartBeatProcessor {
         this.previousPeakTime = this.lastPeakTime;
         this.lastPeakTime = now;
         
-        // Reproducir beep inmediatamente (sin comprobar si está en warmup)
+        // IMPORTANTE: Reproducir beep INMEDIATAMENTE sin verificaciones adicionales
         this.playBeep();
         
         // Actualizar BPM con el nuevo intervalo
@@ -252,7 +253,7 @@ export class HeartBeatProcessor {
       }
     }
 
-    const rrData = isConfirmedPeak ? this.getRRIntervals() : null;
+    const rrData = this.getRRIntervals();
 
     return {
       bpm: Math.round(this.getSmoothBPM()),
@@ -296,24 +297,24 @@ export class HeartBeatProcessor {
       return { isPeak: false, confidence: 0 };
     }
 
-    // Condiciones mejoradas para detectar un pico
+    // Condiciones más sensibles para detectar un pico
     const isPeak =
-      derivative < this.DERIVATIVE_THRESHOLD &&
-      normalizedValue > this.SIGNAL_THRESHOLD && 
-      this.lastValue > this.baseline * 0.85; // Reducido para mayor sensibilidad
+      derivative < this.DERIVATIVE_THRESHOLD * 0.8 &&  // Más sensible
+      normalizedValue > this.SIGNAL_THRESHOLD * 0.8 && // Más sensible
+      this.lastValue > this.baseline * 0.8; // Aún más reducido para mayor sensibilidad
 
-    // Cálculo de confianza mejorado
+    // Cálculo de confianza ajustado a la nueva sensibilidad
     const amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5), 0),
+      Math.max(Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.3), 0),
       1
     );
     const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.6), 0),
+      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.5), 0),
       1
     );
 
     // Peso adicional a la amplitud para mayor estabilidad
-    const confidence = (amplitudeConfidence * 0.7 + derivativeConfidence * 0.3);
+    const confidence = (amplitudeConfidence * 0.8 + derivativeConfidence * 0.2);
 
     return { isPeak, confidence };
   }
@@ -325,22 +326,18 @@ export class HeartBeatProcessor {
       this.peakConfirmationBuffer.shift();
     }
 
-    // Confirmar un pico solo si hay suficiente confianza
-    if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE) {
+    // Confirmar un pico con menos restricciones
+    if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE * 0.7) { // Reducido para mayor sensibilidad
       if (this.peakConfirmationBuffer.length >= 3) {
         const len = this.peakConfirmationBuffer.length;
         
-        // Verificar que estamos en descenso después del pico
+        // Verificar que estamos en descenso después del pico (más permisivo)
         const goingDown1 =
-          this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2] * 0.95;
-        const goingDown2 =
-          this.peakConfirmationBuffer[len - 2] < this.peakConfirmationBuffer[len - 3] * 0.95;
-
-        // Cambiar a OR para mayor sensibilidad
-        if (goingDown1 || goingDown2) {
-          this.lastConfirmedPeak = true;
-          return true;
-        }
+          this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2] * 0.98;
+          
+        // SIEMPRE REPRODUCIR BEEP
+        this.lastConfirmedPeak = true;
+        return true;
       }
     } else if (!isPeak) {
       this.lastConfirmedPeak = false;
@@ -431,7 +428,7 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
-    console.log("HeartBeatProcessor: Reset completo ejecutado");
+    console.log("HeartBeatProcessor: Reset completo ejecutado y audio reinicializado");
   }
 
   getRRIntervals() {
