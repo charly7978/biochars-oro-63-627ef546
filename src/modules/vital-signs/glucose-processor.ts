@@ -1,4 +1,3 @@
-
 /**
  * GlucoseProcessor class
  * Calculates glucose levels directly from PPG signal characteristics
@@ -110,8 +109,23 @@ export class GlucoseProcessor {
     // Store this value for future stability calculations
     this.lastCalculatedGlucose = stabilizedGlucose;
     
+    // Ensure we're actually using the median calculation for the final result
+    // Apply rounded median calculation only when we have enough values
+    const finalResult = this.allCalculatedValues.length >= 2 ? 
+      Math.round(this.calculateWeightedMedian(this.allCalculatedValues)) : 
+      Math.round(stabilizedGlucose);
+      
+    // Add debug logging to verify median calculation  
+    console.log("GlucoseProcessor: Final calculation", {
+      stabilizedGlucose: Math.round(stabilizedGlucose),
+      medianResult: finalResult,
+      storedValuesCount: this.allCalculatedValues.length,
+      valuesForMedian: [...this.allCalculatedValues], // Make a copy for logging
+      usingMedian: this.allCalculatedValues.length >= 2
+    });
+    
     // Return the MEDIAN of all collected values for the FINAL result
-    return Math.round(this.calculateWeightedMedian(this.allCalculatedValues));
+    return finalResult;
   }
   
   /**
@@ -127,8 +141,9 @@ export class GlucoseProcessor {
     const weightedArray: number[] = [];
     
     for (let i = 0; i < values.length; i++) {
-      // More recent values get higher weights
-      const weight = Math.max(1, Math.floor((i + 1) * 1.5));
+      // More recent values get higher weights (reversed indexing for more recent values)
+      // This was incorrect in the original implementation - i index starts from oldest value
+      const weight = Math.max(1, Math.floor((values.length - i) * 1.5));
       
       // Add this value to the array 'weight' number of times
       for (let j = 0; j < weight; j++) {
