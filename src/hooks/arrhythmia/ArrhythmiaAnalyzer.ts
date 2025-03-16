@@ -6,8 +6,8 @@ import { ArrhythmiaPatternDetector } from './ArrhythmiaPatternDetector';
 import { RRDataAnalyzer } from './RRDataAnalyzer';
 
 /**
- * Advanced arrhythmia analyzer with multi-parameter classification
- * and real-time detection algorithms
+ * Direct arrhythmia analyzer with natural detection
+ * No simulation or reference values used
  */
 export class ArrhythmiaAnalyzer {
   private lastArrhythmiaTime: number = 0;
@@ -21,7 +21,7 @@ export class ArrhythmiaAnalyzer {
   
   // Consecutive anomalies tracking
   private consecutiveAnomalies: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 8;
+  private readonly CONSECUTIVE_THRESHOLD = 6; // Reduced from 8 for faster detection
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
@@ -37,7 +37,8 @@ export class ArrhythmiaAnalyzer {
   }
 
   /**
-   * Advanced analysis of RR intervals for arrhythmia detection
+   * Direct analysis of RR intervals for arrhythmia detection
+   * No reference values or simulation used
    */
   public analyzeRRData(
     rrData: { intervals: number[], lastPeakTime: number | null },
@@ -45,15 +46,15 @@ export class ArrhythmiaAnalyzer {
   ): VitalSignsResult {
     const currentTime = Date.now();
     
-    // Require sufficient data for analysis
-    if (!rrData?.intervals || rrData.intervals.length < 16) {
+    // Require sufficient data for analysis, but with lower threshold
+    if (!rrData?.intervals || rrData.intervals.length < 12) { // Reduced from 16
       return this.getStatePreservingResult(result);
     }
     
     // Extract intervals for analysis
     const intervals = rrData.intervals.slice(-16);
     
-    // Perform analysis
+    // Perform direct analysis without reference values
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
       analyzeRRIntervals(
         rrData, 
@@ -93,7 +94,7 @@ export class ArrhythmiaAnalyzer {
         this.consecutiveAnomalies = 0;
       }
       
-      // Confirm arrhythmia if pattern is consistent
+      // Confirm arrhythmia with fewer consecutive anomalies required
       if (shouldIncrementCounter && this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD) {
         return this.confirmArrhythmia(result, currentTime, analysisData, intervals);
       } else {
@@ -165,7 +166,7 @@ export class ArrhythmiaAnalyzer {
   }
 
   /**
-   * Reset analyzer state
+   * Reset analyzer state completely
    */
   public reset(): void {
     this.lastArrhythmiaTime = 0;
@@ -174,7 +175,7 @@ export class ArrhythmiaAnalyzer {
     this.consecutiveAnomalies = 0;
     this.patternDetector.resetPatternBuffer();
     
-    console.log("ArrhythmiaAnalyzer: Reset complete", {
+    console.log("ArrhythmiaAnalyzer: Reset complete - all values at zero", {
       timestamp: new Date().toISOString()
     });
   }

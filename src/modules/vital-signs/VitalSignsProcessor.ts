@@ -41,9 +41,9 @@ export class VitalSignsProcessor {
   
   private lastValidResults: VitalSignsResult | null = null;
   
-  // Thresholds for valid measurements adjusted for real PPG measurements
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.02;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25;
+  // Widen thresholds for more inclusive physiological range
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Reduced from 0.02
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Reduced from 0.25
 
   /**
    * Constructor that initializes all specialized processors
@@ -60,7 +60,7 @@ export class VitalSignsProcessor {
   
   /**
    * Processes the PPG signal and calculates all vital signs
-   * Implementing improved validation and stability strategies
+   * Using direct measurements without reference values
    */
   public processSignal(
     ppgValue: number,
@@ -83,12 +83,12 @@ export class VitalSignsProcessor {
     
     // Check minimum signal quality
     if (ppgValue < this.MIN_SIGNAL_AMPLITUDE && ppgValues.length < 60) {
-      return this.getLastValidResults() || this.createEmptyResults();
+      return this.createEmptyResults();
     }
     
     // Only process with enough data
-    if (ppgValues.length < 30) {
-      return this.getLastValidResults() || this.createEmptyResults();
+    if (ppgValues.length < 20) { // Reduced from 30 for faster response
+      return this.createEmptyResults();
     }
     
     // Calculate SpO2
@@ -128,7 +128,7 @@ export class VitalSignsProcessor {
     
     // Update valid results if there is enough confidence
     if (this.isValidMeasurement(result)) {
-      this.lastValidResults = { ...result };
+      this.lastValidResults = null; // Don't store previous results to avoid reference values
     }
 
     return result;
@@ -168,7 +168,7 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Reset the processor while maintaining the last valid results
+   * Reset the processor without maintaining the last valid results
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -178,14 +178,15 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     
-    return this.lastValidResults;
+    this.lastValidResults = null; // Don't keep last results
+    return null;
   }
   
   /**
    * Get the last valid results
    */
   public getLastValidResults(): VitalSignsResult | null {
-    return this.lastValidResults;
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
