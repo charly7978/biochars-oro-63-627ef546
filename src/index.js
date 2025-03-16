@@ -258,12 +258,20 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
+        // Important: Log complete vitals object to verify glucose is properly included
+        console.log("Index: Complete vital signs received:", {
+          ...vitals,
+          timestamp: new Date().toISOString()
+        });
+        
         setVitalSigns(vitals);
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
         
-        // Add debug logging to track glucose values
-        console.log("Index: Glucose value from vitalSigns", {
+        // Enhanced debug logging specifically for glucose display
+        console.log("Index: Glucose value being displayed", {
           glucoseValue: vitals.glucose,
+          glucoseType: typeof vitals.glucose,
+          vitalSignsState: { ...vitalSigns }, // Current state (before update)
           timestamp: new Date().toISOString()
         });
       }
