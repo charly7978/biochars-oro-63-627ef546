@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -88,6 +87,8 @@ export const useHeartBeatProcessor = () => {
     const lastInterval = lastThree[lastThree.length - 1];
     
     const previousIntervals = rrIntervals.slice(-6, -1);
+    if (previousIntervals.length === 0) return false;
+    
     const avgPreviousInterval = previousIntervals.reduce((sum, val) => sum + val, 0) / previousIntervals.length;
     
     const variationFromAvg = Math.abs(lastInterval - avgPreviousInterval) / avgPreviousInterval;
@@ -98,9 +99,9 @@ export const useHeartBeatProcessor = () => {
     
     const isArrhythmia = isPrematureBeat || isDelayedBeat || isIrregularVariation;
     
+    const now = Date.now();
+    
     if (isArrhythmia) {
-      const now = Date.now();
-      
       beatHistoryRef.current.push({time: now, isArrhythmia: true});
       
       if (currentArrhythmiaWindowRef.current.end !== null) {
@@ -122,7 +123,7 @@ export const useHeartBeatProcessor = () => {
       beatHistoryRef.current.push({time: now, isArrhythmia: false});
       
       if (currentArrhythmiaWindowRef.current.end === null) {
-        currentArrhythmiaWindowRef.current.end = Date.now();
+        currentArrhythmiaWindowRef.current.end = now;
       }
     }
     
