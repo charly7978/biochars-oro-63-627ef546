@@ -47,8 +47,7 @@ export class ArrhythmiaAnalyzer {
       if (this.hasDetectedArrhythmia) {
         return {
           ...result,
-          arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`,
-          lastArrhythmiaData: null
+          arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`
         };
       }
       
@@ -100,12 +99,7 @@ export class ArrhythmiaAnalyzer {
 
           return {
             ...result,
-            arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`,
-            lastArrhythmiaData: {
-              timestamp: currentTime,
-              rmssd: analysisData.rmssd,
-              rrVariation: analysisData.rrVariation
-            }
+            arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`
           };
         } else {
           // Arritmia detectada pero ignorada (demasiado reciente o máximo alcanzado)
@@ -125,8 +119,7 @@ export class ArrhythmiaAnalyzer {
     if (this.hasDetectedArrhythmia) {
       return {
         ...result,
-        arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`,
-        lastArrhythmiaData: null
+        arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`
       };
     }
     
