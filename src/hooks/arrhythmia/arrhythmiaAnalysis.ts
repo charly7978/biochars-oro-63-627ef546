@@ -19,15 +19,16 @@ export interface ArrhythmiaConfig {
 
 /**
  * Procesador especializado para análisis de arritmias
+ * Algoritmo ultra conservador para minimizar falsos positivos
  */
 export class ArrhythmiaAnalyzer {
   private lastArrhythmiaTime: number = 0;
   private hasDetectedArrhythmia: boolean = false;
   private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
-  // Incrementamos drásticamente el umbral para reducir falsos positivos
+  // Algoritmo ultra exigente que requiere muchas anomalías consecutivas
   private consecutiveAbnormalIntervals: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 12; // Aumentado a 12 para exigir anomalías extremas
+  private readonly CONSECUTIVE_THRESHOLD = 15; // Extremadamente alto para minimizar falsos positivos
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
@@ -35,6 +36,7 @@ export class ArrhythmiaAnalyzer {
 
   /**
    * Procesa datos de arritmia basado en intervalos RR
+   * Con algoritmo ultra conservador
    */
   public processArrhythmiaData(
     rrData: { intervals: number[], lastPeakTime: number | null } | undefined,
@@ -43,7 +45,7 @@ export class ArrhythmiaAnalyzer {
     const currentTime = Date.now();
     
     // Si no hay datos RR válidos, retornar el resultado sin cambios
-    if (!rrData?.intervals || rrData.intervals.length < 12) { // Aumentado a 12 para más estabilidad
+    if (!rrData?.intervals || rrData.intervals.length < 15) { // Aumentado a 15 para mayor estabilidad
       // Si previamente detectamos una arritmia, mantener ese estado
       if (this.hasDetectedArrhythmia) {
         return {
@@ -59,9 +61,9 @@ export class ArrhythmiaAnalyzer {
       };
     }
     
-    const lastIntervals = rrData.intervals.slice(-12); // Aumentado a 12
+    const lastIntervals = rrData.intervals.slice(-15); // Aumentado a 15
     
-    // Analizar intervalos RR para detectar posibles arritmias con umbral extremadamente estricto
+    // Analizar intervalos RR para detectar posibles arritmias con algoritmo ultra conservador
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
       analyzeRRIntervals(
         rrData, 
@@ -80,18 +82,17 @@ export class ArrhythmiaAnalyzer {
       if (hasArrhythmia) {
         logPossibleArrhythmia(analysisData);
         
-        // Análisis de continuidad de anomalías - ahora ultra estricto
-        if (hasArrhythmia) {
-          // Solo incrementamos si la variación es EXTREMA para evitar falsos positivos
-          if (analysisData.rrVariation > 0.65) { // Aumentado de 0.5 a 0.65
-            this.consecutiveAbnormalIntervals++;
-          }
+        // Análisis de continuidad de anomalías - ultra estricto
+        // Solo incrementamos contador si la variación es extrema (>70%)
+        if (hasArrhythmia && analysisData.rrVariation > 0.7) {
+          this.consecutiveAbnormalIntervals++;
         } else {
+          // Si no cumple con el criterio extremo, resetear contador
           this.consecutiveAbnormalIntervals = 0;
         }
         
-        // Verificar si debemos incrementar contador (con umbral muy mejorado)
-        // Ahora requerimos muchísimas más anomalías consecutivas para confirmar arritmia
+        // Verificar si debemos incrementar contador (con umbral extraordinariamente alto)
+        // Requerimos muchísimas anomalías consecutivas para confirmar arritmia
         if (shouldIncrementCounter && 
             (this.consecutiveAbnormalIntervals >= this.CONSECUTIVE_THRESHOLD)) {
           // Confirmamos la arritmia e incrementamos el contador

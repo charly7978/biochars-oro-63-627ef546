@@ -1,12 +1,12 @@
 
 /**
  * Utilidades para análisis de intervalos RR y detección de arritmias
- * Simplificado para detección directa, sin manipulación
+ * Algoritmo ultra conservador para minimizar falsos positivos
  */
 
 /**
  * Analiza intervalos RR para detectar latidos prematuros
- * Se enfoca solo en la variación natural del ritmo cardíaco
+ * Usando un algoritmo extremadamente conservador
  */
 export function analyzeRRIntervals(
   rrData: { intervals: number[] } | undefined,
@@ -26,37 +26,52 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 10) { // Aumentado a 10 para mayor estabilidad
+  // Requerimos al menos 15 intervalos para análisis (mayor estabilidad)
+  if (!rrData?.intervals || rrData.intervals.length < 15) {
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
-  const lastIntervals = rrData.intervals.slice(-10); // Aumentado a 10 para mayor estabilidad
+  // Tomamos solo los últimos 15 intervalos para el análisis
+  const lastIntervals = rrData.intervals.slice(-15);
+  
+  // Filtramos intervalos extremos que pueden ser errores de medición
+  // Solo consideramos intervalos entre 600ms (100 BPM) y 1200ms (50 BPM)
+  const validIntervals = lastIntervals.filter(interval => interval >= 600 && interval <= 1200);
+  
+  // Si perdemos más del 30% de los intervalos, la calidad es mala
+  if (validIntervals.length < lastIntervals.length * 0.7) {
+    return { hasArrhythmia: false, shouldIncrementCounter: false };
+  }
   
   // Calculamos información básica sobre los intervalos RR
-  const avgRR = lastIntervals.reduce((a, b) => a + b, 0) / lastIntervals.length;
-  const lastRR = lastIntervals[lastIntervals.length - 1];
+  const avgRR = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+  const lastRR = validIntervals[validIntervals.length - 1];
   
-  // Aumentamos el umbral de variación a un nivel extremo para eliminar casi todos los falsos positivos
-  // Solo consideramos arritmias con cambios extremadamente drásticos
+  // Establecemos un umbral extremadamente alto para la variación
+  // Un latido prematuro genuino suele tener una variación del 75-80%
   const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
   
   // Calculate RMSSD (Root Mean Square of Successive Differences)
   let rmssd = 0;
-  for (let i = 1; i < lastIntervals.length; i++) {
-    rmssd += Math.pow(lastIntervals[i] - lastIntervals[i-1], 2);
+  for (let i = 1; i < validIntervals.length; i++) {
+    rmssd += Math.pow(validIntervals[i] - validIntervals[i-1], 2);
   }
-  rmssd = Math.sqrt(rmssd / (lastIntervals.length - 1));
+  rmssd = Math.sqrt(rmssd / (validIntervals.length - 1));
   
   // Calculate standard deviation of intervals
   const rrSD = Math.sqrt(
-    lastIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
-    lastIntervals.length
+    validIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
+    validIntervals.length
   );
   
-  // Criterios ultra estrictos para la detección de latidos prematuros:
-  // 1. El intervalo debe ser extremadamente corto (45% en lugar de 60%)
-  // 2. La variación debe ser enorme (55% en lugar de 35%)
-  const isPremature = (lastRR < 0.45 * avgRR) || (rrVariation > 0.55);
+  // Criterios ultra conservadores para la detección:
+  // 1. El intervalo debe ser extremadamente corto (40% menos que el promedio)
+  // 2. La variación debe ser enorme (más del 65%)
+  // 3. La RMSSD debe ser mayor a 300ms (extremadamente variable)
+  const isPremature = 
+    (lastRR < 0.4 * avgRR) &&  // Intervalo extremadamente corto
+    (rrVariation > 0.65) &&    // Variación extrema
+    (rmssd > 300);             // Variabilidad muy alta
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 
@@ -95,7 +110,7 @@ export function logRRAnalysis(
 export function logPossibleArrhythmia(
   analysisData: { rmssd: number; rrVariation: number; rrSD: number },
 ): void {
-  console.log("useVitalSignsProcessor: Latido prematuro detectado", {
+  console.log("useVitalSignsProcessor: Posible latido prematuro detectado", {
     rmssd: analysisData.rmssd,
     rrVariation: analysisData.rrVariation,
     rrSD: analysisData.rrSD,

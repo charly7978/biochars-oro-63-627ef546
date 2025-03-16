@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
@@ -9,8 +10,8 @@ interface ArrhythmiaWindow {
 }
 
 /**
- * Custom hook para procesar signos vitales con algoritmos avanzados
- * Usa procesamiento de señal mejorado y detección de arritmias basada en investigación médica
+ * Custom hook para procesar signos vitales con algoritmos ultra conservadores
+ * Enfocado en minimizar falsos positivos por encima de todo
  */
 export const useVitalSignsProcessor = () => {
   // State
@@ -24,12 +25,14 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Configuración ultra estricta para eliminar falsos positivos
+  // Configuración ultra conservadora para minimizar falsos positivos
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    // Aumentamos drásticamente el tiempo mínimo entre arritmias
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 12000, // Aumentado de 8000ms a 12000ms
-    MAX_ARRHYTHMIAS_PER_SESSION: 2,     // Reducido a solo 2 para ser extremadamente selectivos
-    SIGNAL_QUALITY_THRESHOLD: 0.95      // Exigimos calidad prácticamente perfecta
+    // Tiempo extremadamente largo entre arritmias
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 15000, // 15 segundos entre arritmias
+    // Limitado a una sola arritmia por sesión para ser ultra conservador
+    MAX_ARRHYTHMIAS_PER_SESSION: 1,
+    // Requerimos calidad óptima para detección
+    SIGNAL_QUALITY_THRESHOLD: 0.98
   });
   
   // Inicialización
@@ -37,7 +40,7 @@ export const useVitalSignsProcessor = () => {
     processorRef.current = new VitalSignsProcessor();
     arrhythmiaAnalyzerRef.current = new ArrhythmiaAnalyzer(arrhythmiaConfig.current);
     
-    console.log("useVitalSignsProcessor: Hook inicializado", {
+    console.log("useVitalSignsProcessor: Hook inicializado con configuración ultra conservadora", {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString(),
       parametros: { ...arrhythmiaConfig.current }
@@ -54,19 +57,15 @@ export const useVitalSignsProcessor = () => {
   }, []);
   
   /**
-   * Registra una nueva ventana de arritmia - DRÁSTICAMENTE reducida para evitar falsos positivos
+   * Registra una nueva ventana de arritmia - extremadamente reducida
    */
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    // Limitamos a las últimas 2 ventanas de arritmias para evitar que todo se vuelva rojo
-    setArrhythmiaWindows(prev => {
-      const newWindows = [...prev, { start, end }];
-      // Solo mantenemos las 2 ventanas más recientes
-      return newWindows.slice(-2);
-    });
+    // Limitamos a 1 sola ventana de arritmia (la más reciente)
+    setArrhythmiaWindows([{ start, end }]);
   }, []);
   
   /**
-   * Procesa la señal con algoritmos extremadamente mejorados
+   * Procesa la señal con algoritmos ultra conservadores
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return {
@@ -102,11 +101,10 @@ export const useVitalSignsProcessor = () => {
     result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
     
     // Si se detectó arritmia y tenemos datos, registrar la ventana de arritmia
-    // DRÁSTICAMENTE MEJORADO para minimizar falsos positivos
+    // Ventana muy corta (300ms) para minimizar impacto visual
     if (result.arrhythmiaStatus.includes("ARRITMIA DETECTADA") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-      // Crear una ventana aún más corta: 400ms en total (antes era 600ms)
-      addArrhythmiaWindow(arrhythmiaTime - 200, arrhythmiaTime + 200);
+      addArrhythmiaWindow(arrhythmiaTime - 150, arrhythmiaTime + 150);
     }
     
     // Actualizar log de señales
