@@ -1,30 +1,31 @@
-
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
+import { HemoglobinProcessor } from './hemoglobin-processor';
 
 export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
+  lastArrhythmiaData?: { 
+    timestamp: number; 
+    rmssd: number; 
+    rrVariation: number; 
+  } | null;
   glucose: number;
   lipids: {
     totalCholesterol: number;
     triglycerides: number;
   };
+  hemoglobin: number;
   confidence?: {
     glucose: number;
     lipids: number;
     overall: number;
   };
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null;
 }
 
 /**
@@ -39,6 +40,7 @@ export class VitalSignsProcessor {
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
+  private hemoglobinProcessor: HemoglobinProcessor;
   
   private lastValidResults: VitalSignsResult | null = null;
   
@@ -56,6 +58,7 @@ export class VitalSignsProcessor {
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
+    this.hemoglobinProcessor = new HemoglobinProcessor();
     
     console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
   }
@@ -104,6 +107,9 @@ export class VitalSignsProcessor {
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
+    // Calcular hemoglobina
+    const hemoglobin = this.hemoglobinProcessor.calculateHemoglobin(ppgValues);
+    
     // Calcular confianza general basada en promedios ponderados
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
@@ -115,6 +121,7 @@ export class VitalSignsProcessor {
       lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
       glucose,
       lipids,
+      hemoglobin,
       confidence: {
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
@@ -159,7 +166,8 @@ export class VitalSignsProcessor {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      hemoglobin: 0
     };
   }
 
@@ -173,6 +181,7 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
+    this.hemoglobinProcessor.reset();
     
     return this.lastValidResults;
   }

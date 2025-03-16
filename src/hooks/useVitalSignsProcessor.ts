@@ -59,7 +59,8 @@ export const useVitalSignsProcessor = () => {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      hemoglobin: 0
     };
     
     processedSignals.current++;
