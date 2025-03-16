@@ -40,23 +40,26 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   const valleyIndices: number[] = [];
 
   // Algoritmo mejorado para detección de picos y valles usando ventana de 5 puntos
+  // Reducimos ligeramente los requisitos de altura de pico
   for (let i = 2; i < values.length - 2; i++) {
     const v = values[i];
     // Detección de picos (punto más alto en una ventana de 5 puntos)
+    // con una sensibilidad ligeramente aumentada (98% en lugar de 100%)
     if (
-      v > values[i - 1] &&
-      v > values[i - 2] &&
-      v > values[i + 1] &&
-      v > values[i + 2]
+      v >= values[i - 1] * 0.98 &&
+      v >= values[i - 2] * 0.98 &&
+      v >= values[i + 1] * 0.98 &&
+      v >= values[i + 2] * 0.98
     ) {
       peakIndices.push(i);
     }
     // Detección de valles (punto más bajo en una ventana de 5 puntos)
+    // con una sensibilidad ligeramente aumentada
     if (
-      v < values[i - 1] &&
-      v < values[i - 2] &&
-      v < values[i + 1] &&
-      v < values[i + 2]
+      v <= values[i - 1] * 1.02 &&
+      v <= values[i - 2] * 1.02 &&
+      v <= values[i + 1] * 1.02 &&
+      v <= values[i + 2] * 1.02
     ) {
       valleyIndices.push(i);
     }
@@ -88,9 +91,10 @@ export function calculateAmplitude(
 
   // Calcular la media robusta (sin outliers)
   amps.sort((a, b) => a - b);
+  // Reducimos el recorte de outliers del 10% al 8% para mantener más picos significativos
   const trimmedAmps = amps.slice(
-    Math.floor(amps.length * 0.1),
-    Math.ceil(amps.length * 0.9)
+    Math.floor(amps.length * 0.08),
+    Math.ceil(amps.length * 0.92)
   );
   
   return trimmedAmps.length > 0
