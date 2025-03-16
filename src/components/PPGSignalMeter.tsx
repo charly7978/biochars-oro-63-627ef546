@@ -575,7 +575,7 @@ const PPGSignalMeter = memo(({
           transform: 'translate3d(0,0,0)',
           backfaceVisibility: 'hidden',
           contain: 'paint layout size',
-          imageRendering: 'high-quality'
+          imageRendering: 'crisp-edges'
         }}
       />
 
