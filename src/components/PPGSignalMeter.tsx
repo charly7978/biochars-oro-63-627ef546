@@ -40,9 +40,9 @@ const PPGSignalMeter = memo(({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const WINDOW_WIDTH_MS = 4500;
-  const CANVAS_WIDTH = 1024;
-  const CANVAS_HEIGHT = 768;
-  const GRID_SIZE_X = 10;
+  const CANVAS_WIDTH = 1960;
+  const CANVAS_HEIGHT = 1080;
+  const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
   const verticalScale = 40.0;
   const SMOOTHING_FACTOR = 1.6;
