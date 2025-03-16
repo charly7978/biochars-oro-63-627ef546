@@ -1,27 +1,28 @@
+
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
   MIN_BPM = 40;
   MAX_BPM = 200;
-  SIGNAL_THRESHOLD = 0.55; // Reduced from 0.60 to detect more subtle signals
-  MIN_CONFIDENCE = 0.45; // Reduced from 0.50 to be more lenient with peak detection
-  DERIVATIVE_THRESHOLD = -0.025; // Changed from -0.03 to be more sensitive to small changes
-  MIN_PEAK_TIME_MS = 400;
-  WARMUP_TIME_MS = 3000;
+  SIGNAL_THRESHOLD = 0.45; // Reducido significativamente de 0.55 para detectar señales más débiles
+  MIN_CONFIDENCE = 0.35; // Reducido para ser más permisivo con las señales más suaves
+  DERIVATIVE_THRESHOLD = -0.020; // Menos restrictivo para captar más cambios pequeños
+  MIN_PEAK_TIME_MS = 300; // Reducido de 400ms para permitir frecuencias cardíacas más altas
+  WARMUP_TIME_MS = 2000; // Reducido de 3000ms para empezar a detectar antes
 
   MEDIAN_FILTER_WINDOW = 3;
   MOVING_AVERAGE_WINDOW = 5;
   EMA_ALPHA = 0.3;
-  BASELINE_FACTOR = 0.995;
+  BASELINE_FACTOR = 0.99; // Modificado para adaptarse más rápido a los cambios
 
   BEEP_PRIMARY_FREQUENCY = 880;
   BEEP_SECONDARY_FREQUENCY = 440;
   BEEP_DURATION = 100;
-  BEEP_VOLUME = 0.7;
-  MIN_BEEP_INTERVAL_MS = 300;
+  BEEP_VOLUME = 0.8; // Aumentado para que se escuche mejor
+  MIN_BEEP_INTERVAL_MS = 250; // Reducido para permitir beeps más frecuentes
 
-  LOW_SIGNAL_THRESHOLD = 0.03;
-  LOW_SIGNAL_FRAMES = 10;
+  LOW_SIGNAL_THRESHOLD = 0.025; // Reducido para ser más tolerante con señales débiles
+  LOW_SIGNAL_FRAMES = 15; // Aumentado para evitar reseteos demasiado frecuentes
   lowSignalCount = 0;
 
   signalBuffer = [];
@@ -40,7 +41,7 @@ export class HeartBeatProcessor {
   peakConfirmationBuffer = [];
   lastConfirmedPeak = false;
   smoothBPM = 0;
-  BPM_ALPHA = 0.2;
+  BPM_ALPHA = 0.3; // Aumentado para adaptarse más rápido a los cambios en BPM
   peakCandidateIndex = null;
   peakCandidateValue = 0;
 
@@ -61,7 +62,7 @@ export class HeartBeatProcessor {
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
-    if (!this.audioContext || this.isInWarmup()) return;
+    if (!this.audioContext) return; // Elimino la condición de warmup para permitir beeps desde el inicio
 
     const now = Date.now();
     if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) return;
@@ -159,7 +160,8 @@ export class HeartBeatProcessor {
       this.signalBuffer.shift();
     }
 
-    if (this.signalBuffer.length < 30) {
+    // Reducimos el mínimo requerido para comenzar el procesamiento de 30 a 20 muestras
+    if (this.signalBuffer.length < 20) {
       return {
         bpm: 0,
         confidence: 0,
@@ -169,6 +171,7 @@ export class HeartBeatProcessor {
       };
     }
 
+    // Adaptación más rápida de la línea base
     this.baseline =
       this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
 
@@ -189,7 +192,8 @@ export class HeartBeatProcessor {
     const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
     const isConfirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-    if (isConfirmedPeak && !this.isInWarmup()) {
+    // Eliminada la comprobación de isInWarmup para permitir beeps desde el inicio
+    if (isConfirmedPeak) {
       const now = Date.now();
       const timeSinceLastPeak = this.lastPeakTime
         ? now - this.lastPeakTime
@@ -198,7 +202,8 @@ export class HeartBeatProcessor {
       if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
         this.previousPeakTime = this.lastPeakTime;
         this.lastPeakTime = now;
-        this.playBeep(0.12);
+        // Reproducir beep inmediatamente para cada latido detectado
+        this.playBeep(0.15); // Volumen ligeramente aumentado para mejor audibilidad
         this.updateBPM();
       }
     }
@@ -206,7 +211,7 @@ export class HeartBeatProcessor {
     return {
       bpm: Math.round(this.getSmoothBPM()),
       confidence,
-      isPeak: isConfirmedPeak && !this.isInWarmup(),
+      isPeak: isConfirmedPeak, // Eliminada la verificación de warmup
       filteredValue: smoothed,
       arrhythmiaCount: 0
     };
@@ -244,24 +249,26 @@ export class HeartBeatProcessor {
       return { isPeak: false, confidence: 0 };
     }
 
+    // Lógica mejorada para detección de picos, más sensible a pequeños cambios
     const isPeak =
       derivative < this.DERIVATIVE_THRESHOLD &&
       normalizedValue > this.SIGNAL_THRESHOLD &&
-      this.lastValue > this.baseline * 0.97; // Changed from 0.98 to be slightly more sensitive
+      this.lastValue > this.baseline * 0.90; // Reducido de 0.97 a 0.90 para mayor sensibilidad
 
-    // Improved amplitude confidence calculation with slight boost for subtle signals
+    // Mejora de la confianza para señales más débiles
     const amplitudeConfidence = Math.min(
-      Math.max((Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.7)), 0), // Changed from 1.8 to 1.7
+      Math.max((Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5)), 0), // Reducido de 1.7 a 1.5
       1
     );
     
-    // Improved derivative confidence with slight boost
+    // Mejora en la confianza de la derivada
     const derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.75), 0), // Changed from 0.8 to 0.75
+      Math.max(Math.abs(derivative) / Math.abs(this.DERIVATIVE_THRESHOLD * 0.7), 0), // Reducido de 0.75 a 0.7
       1
     );
 
-    const confidence = (amplitudeConfidence * 0.6 + derivativeConfidence * 0.4); // Adjusted weighting to favor amplitude
+    // Ajustado para dar mayor peso a la amplitud
+    const confidence = (amplitudeConfidence * 0.7 + derivativeConfidence * 0.3);
 
     return { isPeak, confidence };
   }
@@ -275,13 +282,13 @@ export class HeartBeatProcessor {
     if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE) {
       if (this.peakConfirmationBuffer.length >= 3) {
         const len = this.peakConfirmationBuffer.length;
-        // Allow slightly less steep decline to still count as a peak
+        // Permite descensos más suaves para contar como pico
         const goingDown1 =
-          this.peakConfirmationBuffer[len - 1] < (this.peakConfirmationBuffer[len - 2] * 0.97);
+          this.peakConfirmationBuffer[len - 1] < (this.peakConfirmationBuffer[len - 2] * 0.95); // Cambiado de 0.97 a 0.95
         const goingDown2 =
-          this.peakConfirmationBuffer[len - 2] < (this.peakConfirmationBuffer[len - 3] * 0.97);
+          this.peakConfirmationBuffer[len - 2] < (this.peakConfirmationBuffer[len - 3] * 0.95); // Cambiado de 0.97 a 0.95
 
-        if (goingDown1 && goingDown2) {
+        if (goingDown1 || goingDown2) { // Cambiado de AND a OR para mayor sensibilidad
           this.lastConfirmedPeak = true;
           return true;
         }

@@ -39,29 +39,32 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
-  // Algoritmo mejorado para detección de picos y valles usando ventana de 5 puntos
-  // Reducimos ligeramente los requisitos de altura de pico
-  for (let i = 2; i < values.length - 2; i++) {
+  // Algoritmo optimizado para detección de picos y valles usando ventana de 3 puntos
+  // Reducimos los requisitos de altura de pico para más sensibilidad
+  for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
-    // Detección de picos (punto más alto en una ventana de 5 puntos)
-    // con una sensibilidad ligeramente aumentada (98% en lugar de 100%)
+    // Detección de picos (punto más alto en una ventana de 3 puntos)
+    // con una sensibilidad aumentada (95% en lugar de 98%)
     if (
-      v >= values[i - 1] * 0.98 &&
-      v >= values[i - 2] * 0.98 &&
-      v >= values[i + 1] * 0.98 &&
-      v >= values[i + 2] * 0.98
+      v >= values[i - 1] * 0.95 &&
+      v >= values[i + 1] * 0.95
     ) {
-      peakIndices.push(i);
+      // Agregamos una verificación de altura mínima para evitar ruido
+      const localMin = Math.min(values[i - 1], values[i + 1]);
+      if (v - localMin > 0.02) { // Umbral mínimo para considerar un pico
+        peakIndices.push(i);
+      }
     }
-    // Detección de valles (punto más bajo en una ventana de 5 puntos)
-    // con una sensibilidad ligeramente aumentada
+    // Detección de valles (punto más bajo en una ventana de 3 puntos)
+    // con una sensibilidad aumentada
     if (
-      v <= values[i - 1] * 1.02 &&
-      v <= values[i - 2] * 1.02 &&
-      v <= values[i + 1] * 1.02 &&
-      v <= values[i + 2] * 1.02
+      v <= values[i - 1] * 1.05 &&
+      v <= values[i + 1] * 1.05
     ) {
-      valleyIndices.push(i);
+      const localMax = Math.max(values[i - 1], values[i + 1]);
+      if (localMax - v > 0.02) { // Umbral mínimo para considerar un valle
+        valleyIndices.push(i);
+      }
     }
   }
   return { peakIndices, valleyIndices };
@@ -78,28 +81,33 @@ export function calculateAmplitude(
   if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
   const amps: number[] = [];
-  const len = Math.min(peakIndices.length, valleyIndices.length);
   
-  for (let i = 0; i < len; i++) {
-    const amp = values[peakIndices[i]] - values[valleyIndices[i]];
-    if (amp > 0) {
-      amps.push(amp);
+  // Usamos un enfoque más flexible para relacionar picos y valles
+  // Para cada pico, buscamos el valle más cercano
+  for (const peakIdx of peakIndices) {
+    let closestValleyIdx = -1;
+    let minDistance = Number.MAX_VALUE;
+    
+    for (const valleyIdx of valleyIndices) {
+      const distance = Math.abs(peakIdx - valleyIdx);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestValleyIdx = valleyIdx;
+      }
+    }
+    
+    if (closestValleyIdx !== -1 && minDistance < 10) { // Limitamos a valles cercanos
+      const amp = values[peakIdx] - values[closestValleyIdx];
+      if (amp > 0) {
+        amps.push(amp);
+      }
     }
   }
   
   if (amps.length === 0) return 0;
 
-  // Calcular la media robusta (sin outliers)
-  amps.sort((a, b) => a - b);
-  // Reducimos el recorte de outliers del 10% al 8% para mantener más picos significativos
-  const trimmedAmps = amps.slice(
-    Math.floor(amps.length * 0.08),
-    Math.ceil(amps.length * 0.92)
-  );
-  
-  return trimmedAmps.length > 0
-    ? trimmedAmps.reduce((a, b) => a + b, 0) / trimmedAmps.length
-    : amps.reduce((a, b) => a + b, 0) / amps.length;
+  // Usamos todos los valores para calcular la media
+  return amps.reduce((a, b) => a + b, 0) / amps.length;
 }
 
 /**
@@ -115,4 +123,34 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
   }
   const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
   return { filteredValue, updatedBuffer };
+}
+
+/**
+ * Amplifica la señal de forma adaptativa basada en su amplitud
+ */
+export function amplifySignal(value: number, recentValues: number[]): number {
+  if (recentValues.length === 0) return value;
+  
+  // Calcular la amplitud reciente
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
+  const recentRange = recentMax - recentMin;
+  
+  // Factor de amplificación inversamente proporcional a la amplitud
+  // Señales débiles se amplifican más
+  let amplificationFactor = 1.0;
+  if (recentRange < 0.1) {
+    amplificationFactor = 2.5; // Alta amplificación para señales muy débiles
+  } else if (recentRange < 0.3) {
+    amplificationFactor = 1.8; // Amplificación media para señales débiles
+  } else if (recentRange < 0.5) {
+    amplificationFactor = 1.4; // Baja amplificación para señales medias
+  }
+  
+  // Centrar el valor respecto a la media y amplificar
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+  const centeredValue = value - mean;
+  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
+  
+  return amplifiedValue;
 }
