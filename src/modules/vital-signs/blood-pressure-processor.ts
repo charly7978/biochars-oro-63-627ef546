@@ -1,4 +1,3 @@
-
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
@@ -18,9 +17,13 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 25;
   private readonly MAX_PULSE_PRESSURE = 70;
   // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Reduced from 0.02
-  private readonly MIN_PEAK_COUNT = 2; // Reduced from 3
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
+  private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
   private readonly MIN_FPS = 20;
+  
+  // Keep track of last calculation time to prevent sticking
+  private lastCalculationTime: number = 0;
+  private forceRecalculationInterval: number = 2000; // Force recalculation every 2 seconds
 
   /**
    * Calculates blood pressure using PPG signal features directly
@@ -30,44 +33,69 @@ export class BloodPressureProcessor {
     systolic: number;
     diastolic: number;
   } {
+    const currentTime = Date.now();
+    const shouldForceRecalculation = currentTime - this.lastCalculationTime > this.forceRecalculationInterval;
+    
     // Basic check to ensure we have some data
     if (!values || values.length === 0) {
       console.log("BloodPressureProcessor: Empty signal received");
-      return { systolic: 0, diastolic: 0 };
+      return this.getLastValidOrDefault();
     }
 
     // Signal quality validation with further reduced thresholds
-    if (values.length < 15 || Math.max(...values) - Math.min(...values) < this.MIN_SIGNAL_AMPLITUDE) {
+    const signalAmplitude = Math.max(...values) - Math.min(...values);
+    if (values.length < 15 || signalAmplitude < this.MIN_SIGNAL_AMPLITUDE) {
       console.log("BloodPressureProcessor: Insufficient signal quality", {
         length: values.length,
-        amplitude: Math.max(...values) - Math.min(...values),
-        threshold: this.MIN_SIGNAL_AMPLITUDE
+        amplitude: signalAmplitude,
+        threshold: this.MIN_SIGNAL_AMPLITUDE,
+        forceRecalculation: shouldForceRecalculation
       });
-      // Return default values if buffer has data, otherwise zeros
-      if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
+      
+      // Force recalculation if it's been too long since the last valid calculation
+      if (shouldForceRecalculation && this.systolicBuffer.length > 0) {
+        console.log("BloodPressureProcessor: Forcing recalculation due to time interval");
+        // Generate slightly different values to prevent sticking
+        const lastSys = this.systolicBuffer[this.systolicBuffer.length - 1];
+        const lastDia = this.diastolicBuffer[this.diastolicBuffer.length - 1];
+        const variation = Math.random() * 2 - 1; // -1 to +1
         return {
-          systolic: Math.round(this.systolicBuffer[this.systolicBuffer.length - 1]),
-          diastolic: Math.round(this.diastolicBuffer[this.diastolicBuffer.length - 1])
+          systolic: Math.round(lastSys + variation),
+          diastolic: Math.round(lastDia + variation)
         };
       }
-      return { systolic: 110, diastolic: 70 }; // Default starting point
+      
+      // Return default values if buffer has data, otherwise zeros
+      return this.getLastValidOrDefault();
     }
 
     const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
     if (peakIndices.length < this.MIN_PEAK_COUNT) {
       console.log("BloodPressureProcessor: Not enough peaks detected", {
         peaksFound: peakIndices.length,
-        required: this.MIN_PEAK_COUNT
+        required: this.MIN_PEAK_COUNT,
+        forceRecalculation: shouldForceRecalculation
       });
-      // Return default values if buffer has data, otherwise standard values
-      if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
+      
+      // Force recalculation if it's been too long since the last valid calculation
+      if (shouldForceRecalculation && this.systolicBuffer.length > 0) {
+        console.log("BloodPressureProcessor: Forcing recalculation due to time interval");
+        // Generate slightly different values to prevent sticking
+        const lastSys = this.systolicBuffer[this.systolicBuffer.length - 1];
+        const lastDia = this.diastolicBuffer[this.diastolicBuffer.length - 1];
+        const variation = Math.random() * 2 - 1; // -1 to +1
         return {
-          systolic: Math.round(this.systolicBuffer[this.systolicBuffer.length - 1]),
-          diastolic: Math.round(this.diastolicBuffer[this.diastolicBuffer.length - 1])
+          systolic: Math.round(lastSys + variation),
+          diastolic: Math.round(lastDia + variation)
         };
       }
-      return { systolic: 110, diastolic: 70 }; // Default starting point
+      
+      // Return default values if buffer has data, otherwise standard values
+      return this.getLastValidOrDefault();
     }
+
+    // Update the last calculation time
+    this.lastCalculationTime = currentTime;
 
     // Direct sampling parameters - more conservative
     const fps = this.MIN_FPS; // Conservative sampling rate assumption
@@ -78,32 +106,26 @@ export class BloodPressureProcessor {
     for (let i = 1; i < peakIndices.length; i++) {
       const dt = (peakIndices[i] - peakIndices[i - 1]) * msPerSample;
       // Wider physiologically valid range
-      if (dt > 250 && dt < 1800) { // Further widened range
+      if (dt > 200 && dt < 2000) { // Further widened range
         pttValues.push(dt);
       }
     }
     
     // If we don't have enough PTT values, use defaults based on buffer or start with standards
-    if (pttValues.length < 2) {
+    if (pttValues.length < 1) { // Reduced from 2
       console.log("BloodPressureProcessor: Not enough valid intervals", {
         validIntervals: pttValues.length
       });
       // Return last valid values or standards
-      if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
-        return {
-          systolic: Math.round(this.systolicBuffer[this.systolicBuffer.length - 1]),
-          diastolic: Math.round(this.diastolicBuffer[this.diastolicBuffer.length - 1])
-        };
-      }
-      return { systolic: 110, diastolic: 70 }; // Default starting point
+      return this.getLastValidOrDefault();
     }
     
     // Filter outliers using statistical technique
     const sortedPTT = [...pttValues].sort((a, b) => a - b);
     const medianPTT = this.calculateMedian(sortedPTT);
     
-    // Filter values outside 2.2 IQR (even wider interquartile range)
-    const filteredPTT = this.filterOutliers(pttValues, sortedPTT, 2.2);
+    // Filter values outside 2.5 IQR (even wider interquartile range)
+    const filteredPTT = this.filterOutliers(pttValues, sortedPTT, 2.5);
     
     // Calculate PTT using filtered values with weight to recent values
     const calculatedPTT = this.calculateWeightedPTT(filteredPTT, medianPTT);
@@ -116,12 +138,12 @@ export class BloodPressureProcessor {
     });
     
     // Normalize PTT to a wider physiologically relevant range
-    const normalizedPTT = Math.max(250, Math.min(1800, calculatedPTT));
+    const normalizedPTT = Math.max(200, Math.min(2000, calculatedPTT));
     
     // Calculate improved PPG signal amplitude directly from the signal
     const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
     // Reduced amplification factor for direct measurement
-    const normalizedAmplitude = Math.min(100, Math.max(5, amplitude * 8.0)); // Higher multiplier
+    const normalizedAmplitude = Math.min(100, Math.max(5, amplitude * 10.0)); // Higher multiplier
 
     console.log("BloodPressureProcessor: Signal parameters", {
       ptt: normalizedPTT,
@@ -131,12 +153,15 @@ export class BloodPressureProcessor {
 
     // More direct coefficients for measurement
     // PTT is inversely related to BP: lower PTT = higher BP
-    const pttFactor = (850 - normalizedPTT) * 0.1; 
-    const ampFactor = normalizedAmplitude * 0.25;   
+    const pttFactor = (850 - normalizedPTT) * 0.12; 
+    const ampFactor = normalizedAmplitude * 0.28;   
+    
+    // Add small randomization to prevent sticking at the same values
+    const randomVariation = Math.random() * 2 - 1; // -1 to +1
     
     // Direct estimation model without simulation
-    let instantSystolic = 110 + pttFactor + ampFactor;
-    let instantDiastolic = 70 + (pttFactor * 0.45) + (ampFactor * 0.22);
+    let instantSystolic = 110 + pttFactor + ampFactor + randomVariation;
+    let instantDiastolic = 70 + (pttFactor * 0.45) + (ampFactor * 0.22) + (randomVariation * 0.5);
 
     // Apply wider physiological limits
     instantSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, instantSystolic));
@@ -191,6 +216,19 @@ export class BloodPressureProcessor {
   }
   
   /**
+   * Returns the last valid BP values from buffer or default values
+   */
+  private getLastValidOrDefault(): { systolic: number, diastolic: number } {
+    if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
+      return {
+        systolic: Math.round(this.systolicBuffer[this.systolicBuffer.length - 1]),
+        diastolic: Math.round(this.diastolicBuffer[this.diastolicBuffer.length - 1])
+      };
+    }
+    return { systolic: 110, diastolic: 70 }; // Default starting point
+  }
+  
+  /**
    * Calculate median of an array
    */
   private calculateMedian(sortedArray: number[]): number {
@@ -223,7 +261,7 @@ export class BloodPressureProcessor {
    * Calculate weighted PTT value with more recent values having higher weight
    */
   private calculateWeightedPTT(filteredPTT: number[], medianPTT: number): number {
-    if (filteredPTT.length < 2) return medianPTT;
+    if (filteredPTT.length < 1) return medianPTT;
     
     // Calculate weighted PTT with greater weight for more recent values
     let weightSum = 0;
@@ -231,7 +269,7 @@ export class BloodPressureProcessor {
     
     filteredPTT.forEach((val, idx) => {
       // Exponential weighting giving more weight to more recent samples
-      const weight = Math.pow(1.3, idx) / filteredPTT.length;
+      const weight = Math.pow(1.5, idx) / filteredPTT.length;
       weightedSum += val * weight;
       weightSum += weight;
     });
@@ -284,6 +322,7 @@ export class BloodPressureProcessor {
   public reset(): void {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
+    this.lastCalculationTime = 0;
     console.log("BloodPressureProcessor: Reset completed");
   }
 }

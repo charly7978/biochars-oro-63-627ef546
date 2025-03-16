@@ -24,7 +24,7 @@ export const useHeartBeatProcessor = () => {
   
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 200; // Further reduced to ensure beeps are more responsive
+  const MIN_BEEP_INTERVAL_MS = 150; // Further reduced to ensure beeps are more responsive
   
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
@@ -40,6 +40,9 @@ export const useHeartBeatProcessor = () => {
   const consistentBeatsCountRef = useRef<number>(0);
   const lastValidBpmRef = useRef<number>(0);
   const initializedRef = useRef<boolean>(false);
+  
+  const missedBeepsCounter = useRef<number>(0);
+  const forceBeepInterval = useRef<number>(0);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -55,6 +58,10 @@ export const useHeartBeatProcessor = () => {
         if (typeof window !== 'undefined') {
           (window as any).heartBeatProcessor = processorRef.current;
         }
+      }
+      
+      if (processorRef.current) {
+        processorRef.current.initAudio();
       }
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
@@ -87,11 +94,17 @@ export const useHeartBeatProcessor = () => {
     const oldestBeep = pendingBeepsQueue.current[0];
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5) {
-      processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
-      lastBeepTimeRef.current = now;
-      pendingBeepsQueue.current.shift();
-      
-      console.log(`useHeartBeatProcessor: Beep played from queue, ${pendingBeepsQueue.current.length} pending`);
+      try {
+        processorRef.current.playBeep(1.0); // Maximum volume for clearer beeps
+        lastBeepTimeRef.current = now;
+        pendingBeepsQueue.current.shift();
+        missedBeepsCounter.current = 0; // Reset missed beeps counter
+        
+        console.log(`useHeartBeatProcessor: Beep played from queue, ${pendingBeepsQueue.current.length} pending`);
+      } catch (err) {
+        console.error('Error playing beep from queue:', err);
+        pendingBeepsQueue.current.shift(); // Remove failed beep and continue
+      }
     }
     
     if (pendingBeepsQueue.current.length > 0) {
@@ -108,9 +121,29 @@ export const useHeartBeatProcessor = () => {
     const now = Date.now();
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5) {
-      processorRef.current.playBeep(1.0); 
-      lastBeepTimeRef.current = now;
-      return;
+      try {
+        const success = processorRef.current.playBeep(1.0);
+        
+        if (success) {
+          lastBeepTimeRef.current = now;
+          missedBeepsCounter.current = 0; // Reset missed beeps counter
+          return;
+        } else {
+          console.warn('useHeartBeatProcessor: Beep failed to play immediately');
+          missedBeepsCounter.current++;
+        }
+      } catch (err) {
+        console.error('Error playing immediate beep:', err);
+        missedBeepsCounter.current++;
+      }
+    } else {
+      missedBeepsCounter.current++;
+    }
+    
+    if (missedBeepsCounter.current > 5 && processorRef.current) {
+      console.log('useHeartBeatProcessor: Too many missed beeps, reinitializing audio');
+      processorRef.current.initAudio();
+      missedBeepsCounter.current = 0;
     }
     
     pendingBeepsQueue.current.push({ time: now, value });
@@ -146,9 +179,11 @@ export const useHeartBeatProcessor = () => {
       if (beepSuccess) {
         lastBeepTimeRef.current = now;
         consistentBeatsCountRef.current++;
+        missedBeepsCounter.current = 0; // Reset missed beeps counter
       } else {
         console.warn('useHeartBeatProcessor: Failed to play beep, adding to queue');
         pendingBeepsQueue.current.push({ time: now, value: currentBPM });
+        missedBeepsCounter.current++;
         
         if (!beepProcessorTimeoutRef.current) {
           beepProcessorTimeoutRef.current = window.setTimeout(
@@ -159,8 +194,33 @@ export const useHeartBeatProcessor = () => {
       }
     } catch (err) {
       console.error('useHeartBeatProcessor: Error playing beep', err);
+      missedBeepsCounter.current++;
     }
   }, [currentBPM, processBeepQueue]);
+
+  useEffect(() => {
+    if (currentBPM >= 40 && currentBPM <= 200) {
+      const interval = Math.round(60000 / currentBPM); // Calculate milliseconds between beats
+      
+      if (forceBeepInterval.current) {
+        clearInterval(forceBeepInterval.current);
+      }
+      
+      forceBeepInterval.current = window.setInterval(() => {
+        const now = Date.now();
+        if (now - lastBeepTimeRef.current > interval * 1.5) {
+          console.log('useHeartBeatProcessor: Forcing beep due to silence');
+          requestImmediateBeep(currentBPM);
+        }
+      }, interval);
+      
+      return () => {
+        if (forceBeepInterval.current) {
+          clearInterval(forceBeepInterval.current);
+        }
+      };
+    }
+  }, [currentBPM, requestImmediateBeep]);
 
   const detectArrhythmia = useCallback((rrIntervals: number[]): RRAnalysisResult => {
     if (rrIntervals.length < 5) {
@@ -241,7 +301,7 @@ export const useHeartBeatProcessor = () => {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      if (result.isPeak && result.confidence > 0.2) {
+      if (result.isPeak && result.confidence > 0.15) {
         lastPeakTimeRef.current = now;
         
         requestImmediateBeep(value);
@@ -299,6 +359,7 @@ export const useHeartBeatProcessor = () => {
     
     if (processorRef.current) {
       processorRef.current.reset();
+      processorRef.current.initAudio();
     }
     
     setCurrentBPM(0);
@@ -315,6 +376,11 @@ export const useHeartBeatProcessor = () => {
     lastValidBpmRef.current = 0;
     calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
+    missedBeepsCounter.current = 0;
+    
+    if (forceBeepInterval.current) {
+      clearInterval(forceBeepInterval.current);
+    }
   }, []);
 
   return {
