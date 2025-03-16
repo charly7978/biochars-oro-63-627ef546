@@ -54,6 +54,7 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
+  const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5000;
   const CANVAS_WIDTH = 1080;
   const CANVAS_HEIGHT = 720;
@@ -254,7 +255,7 @@ const PPGSignalMeter = memo(({
     }
     ctx.stroke();
     
-    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
+    const centerLineY = (CANVAS_HEIGHT / 2) - CANVAS_CENTER_OFFSET;
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
     ctx.lineWidth = 1.5;
@@ -428,7 +429,7 @@ const PPGSignalMeter = memo(({
         point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
         
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2) - 40 - point.value;
+        const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
         
         if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
           if (segmentPoints.length > 0) {
@@ -437,6 +438,11 @@ const PPGSignalMeter = memo(({
             renderCtx.lineWidth = 2;
             renderCtx.lineJoin = 'round';
             renderCtx.lineCap = 'round';
+            
+            if (window.devicePixelRatio > 1) {
+              renderCtx.shadowBlur = 0.5;
+              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+            }
             
             for (let j = 0; j < segmentPoints.length; j++) {
               const segPoint = segmentPoints[j];
@@ -448,6 +454,10 @@ const PPGSignalMeter = memo(({
             }
             
             renderCtx.stroke();
+            if (window.devicePixelRatio > 1) {
+              renderCtx.shadowBlur = 0;
+            }
+            
             segmentPoints = [];
           }
           
@@ -464,6 +474,11 @@ const PPGSignalMeter = memo(({
         renderCtx.lineJoin = 'round';
         renderCtx.lineCap = 'round';
         
+        if (window.devicePixelRatio > 1) {
+          renderCtx.shadowBlur = 0.5;
+          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+        }
+        
         for (let j = 0; j < segmentPoints.length; j++) {
           const segPoint = segmentPoints[j];
           if (j === 0) {
@@ -474,12 +489,15 @@ const PPGSignalMeter = memo(({
         }
         
         renderCtx.stroke();
+        if (window.devicePixelRatio > 1) {
+          renderCtx.shadowBlur = 0;
+        }
       }
       
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - 40 - peak.value;
+          const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
@@ -556,7 +574,8 @@ const PPGSignalMeter = memo(({
         style={{
           transform: 'translate3d(0,0,0)',
           backfaceVisibility: 'hidden',
-          contain: 'paint layout size'
+          contain: 'paint layout size',
+          imageRendering: 'high-quality'
         }}
       />
 
