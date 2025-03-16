@@ -39,7 +39,7 @@ const PPGSignalMeter = memo(({
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const WINDOW_WIDTH_MS = 4500;
+  const WINDOW_WIDTH_MS = 6500;
   const CANVAS_WIDTH = 1960;
   const CANVAS_HEIGHT = 1080;
   const GRID_SIZE_X = 30;
@@ -55,7 +55,7 @@ const PPGSignalMeter = memo(({
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
-  const QUALITY_HISTORY_SIZE = 5;
+  const QUALITY_HISTORY_SIZE = 9;
   const USE_OFFSCREEN_CANVAS = true;
 
   useEffect(() => {
