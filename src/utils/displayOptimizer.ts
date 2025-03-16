@@ -100,17 +100,17 @@ export const optimizeSelector = (selector: string): void => {
   elements.forEach(optimizeElement);
 };
 
-// Helper for improved signal graph colors - 100% honesto
+// Helper for improved signal graph colors - con criterio mucho más estricto
 export const getSignalColor = (isArrhythmia: boolean): string => {
   // Rojo para arritmias, azul para latidos normales
   return isArrhythmia ? '#ea384c' : '#0EA5E9';
 };
 
-// Simplified logic to determine if a point is an arrhythmia - sin ventanas artificiales
+// Lógica simplificada para determinar si un punto es una arritmia - sin manipulación artificial
 export const isPointInArrhythmiaWindow = (
   pointData: any
 ): boolean => {
-  // Si pointData tiene una propiedad isArrhythmia explícita, usamos esa
+  // Solo usamos la propiedad isArrhythmia explícita, sin artificios
   if (pointData && typeof pointData.isArrhythmia === 'boolean') {
     return pointData.isArrhythmia;
   }

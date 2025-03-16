@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
@@ -25,12 +24,12 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Configuración avanzada basada en guías clínicas
+  // Configuración extremadamente estricta para reducir falsos positivos
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    // Aumentamos el tiempo mínimo entre arritmias para reducir falsos positivos
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 5000, // Aumentado de 1000ms a 5000ms
-    MAX_ARRHYTHMIAS_PER_SESSION: 5,    // Reducido de 20 a 5 para ser más selectivos
-    SIGNAL_QUALITY_THRESHOLD: 0.7      // Aumentado de 0.55 a 0.7 para mayor calidad
+    // Aumentamos drásticamente el tiempo mínimo entre arritmias para reducir falsos positivos
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 8000, // Aumentado de 5000ms a 8000ms
+    MAX_ARRHYTHMIAS_PER_SESSION: 3,    // Reducido de 5 a 3 para ser mucho más selectivos
+    SIGNAL_QUALITY_THRESHOLD: 0.85      // Aumentado de 0.7 a 0.85 para exigir calidad excelente
   });
   
   // Inicialización
@@ -55,22 +54,19 @@ export const useVitalSignsProcessor = () => {
   }, []);
   
   /**
-   * Registra una nueva ventana de arritmia - MEJORADO para evitar falsos positivos
+   * Registra una nueva ventana de arritmia - DRÁSTICAMENTE reducida para evitar falsos positivos
    */
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    // Verificamos la calidad y número de ventanas para evitar saturación
-    const currentTime = Date.now();
-    
-    // Limitamos a las últimas 3 ventanas de arritmias para evitar que todo se vuelva rojo
+    // Limitamos a las últimas 2 ventanas de arritmias para evitar que todo se vuelva rojo
     setArrhythmiaWindows(prev => {
       const newWindows = [...prev, { start, end }];
-      // Solo mantenemos las 3 ventanas más recientes
-      return newWindows.slice(-3);
+      // Solo mantenemos las 2 ventanas más recientes
+      return newWindows.slice(-2);
     });
   }, []);
   
   /**
-   * Procesa la señal con algoritmos mejorados
+   * Procesa la señal con algoritmos extremadamente mejorados
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return {
@@ -106,11 +102,11 @@ export const useVitalSignsProcessor = () => {
     result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
     
     // Si se detectó arritmia y tenemos datos, registrar la ventana de arritmia
-    // MEJORADO para crear ventanas más precisas
+    // DRÁSTICAMENTE MEJORADO para minimizar falsos positivos
     if (result.arrhythmiaStatus.includes("ARRITMIA DETECTADA") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-      // Crear una ventana más corta: 1s en total (antes era 3s)
-      addArrhythmiaWindow(arrhythmiaTime - 500, arrhythmiaTime + 500);
+      // Crear una ventana aún más corta: 600ms en total (antes era 1s)
+      addArrhythmiaWindow(arrhythmiaTime - 300, arrhythmiaTime + 300);
     }
     
     // Actualizar log de señales
