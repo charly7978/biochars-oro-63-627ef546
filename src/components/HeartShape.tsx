@@ -15,7 +15,7 @@ const HeartShape = ({ isBeating, className, reducedMotion = false }: HeartShapeP
   return (
     <div
       className={cn(
-        "relative w-32 h-32 transform hardware-accelerated will-change-transform",
+        "relative w-32 h-32 transform animation-hardware-accelerated will-change-transform",
         animationClass,
         className
       )}

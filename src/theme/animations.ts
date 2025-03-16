@@ -10,7 +10,7 @@ export const animations = {
   "fade-in-up": "fade-in-up 0.5s ease-out forwards",
   "subtle-pulse": "subtle-pulse 3s ease-in-out infinite",
   
-  /* Animations with standard format (not using objects) */
+  /* All animations must use simple string format */
   "efficient-pulse": "subtle-pulse 3s ease-in-out infinite",
   "efficient-fade": "fade-in-up 0.4s cubic-bezier(0.2, 0, 0, 1) forwards",
   "efficient-beat": "heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite",

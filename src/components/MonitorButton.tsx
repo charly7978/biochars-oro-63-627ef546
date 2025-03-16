@@ -19,7 +19,7 @@ const MonitorButton: React.FC<MonitorButtonProps> = ({
   // Get the button variant accepted by shadcn/ui Button component
   const getButtonVariant = () => {
     if (variant === "reset") return "secondary";
-    return isMonitoring ? "destructive" : "default"; // Changed 'primary' to 'default'
+    return isMonitoring ? "destructive" : "default"; // Using 'default' instead of 'primary'
   };
   
   return (
