@@ -1,4 +1,6 @@
 
+// We need to create or update this file to call the finalizeMeasurement method
+// in the glucose processor when the measurement is finished
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { LipidProcessor } from './lipid-processor';
@@ -45,7 +47,6 @@ export class VitalSignsProcessor {
   
   /**
    * Process PPG signal to extract vital signs
-   * Returns raw glucose values during measurement without applying median/average
    */
   public processSignal(
     ppgValue: number,
@@ -61,10 +62,7 @@ export class VitalSignsProcessor {
     const spo2 = this.spo2Processor.calculateSpO2(this.signalBuffer);
     const pressure = this.bpProcessor.calculateBloodPressure(this.signalBuffer);
     const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-    
-    // Get raw glucose value during measurement without final processing
     const glucose = this.glucoseProcessor.calculateGlucose(this.signalBuffer);
-    
     const lipids = this.lipidProcessor.calculateLipids(this.signalBuffer);
     
     const result: VitalSignsResult = {
@@ -86,22 +84,15 @@ export class VitalSignsProcessor {
   
   /**
    * Reset the processor, but save the last valid results
-   * Now explicitly calls finalizeMeasurement on the glucose processor
-   * to apply weighted median and average ONLY at the end
+   * Now calls finalizeMeasurement on the glucose processor
    */
   public reset(): VitalSignsResult | null {
     // Save last valid results
     const savedResults = this.lastValidResults;
     
-    // Apply final processing for glucose - THIS IS THE CRITICAL PART
+    // Apply final processing for glucose
     if (savedResults && this.glucoseProcessor) {
-      console.log("VitalSignsProcessor: Finalizing glucose measurement with weighted median and average");
-      
-      // Get the final glucose value with weighted median and average
       const finalGlucoseValue = this.glucoseProcessor.finalizeMeasurement();
-      console.log(`VitalSignsProcessor: Final glucose value: ${finalGlucoseValue}`);
-      
-      // Update the saved results with the final glucose value
       savedResults.glucose = finalGlucoseValue;
     }
     
