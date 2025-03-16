@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -117,6 +118,7 @@ export const useHeartBeatProcessor = () => {
         timestamp: new Date().toISOString()
       });
     } else {
+      const now = Date.now(); // Fix: Added missing 'now' variable
       beatHistoryRef.current.push({time: now, isArrhythmia: false});
       
       if (currentArrhythmiaWindowRef.current.end === null) {
