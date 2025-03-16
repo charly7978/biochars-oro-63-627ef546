@@ -9,18 +9,14 @@ interface HeartShapeProps {
 }
 
 const HeartShape = ({ isBeating, className, reducedMotion = false }: HeartShapeProps) => {
-  // Apply animation with reduced motion preference check
-  const animationClass = isBeating && !reducedMotion ? "animate-efficient-beat" : "";
-  
-  // If reduced motion is preferred but we still want to indicate activity
-  const staticScaleClass = isBeating && reducedMotion ? "scale-105" : "";
+  // Use our CSS-based animation with inherent reduced motion support
+  const animationClass = isBeating ? "animate-efficient-beat" : "";
   
   return (
     <div
       className={cn(
         "relative w-32 h-32 transform hardware-accelerated will-change-transform",
         animationClass,
-        staticScaleClass,
         className
       )}
     >

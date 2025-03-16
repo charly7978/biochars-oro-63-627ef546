@@ -10,21 +10,9 @@ export const animations = {
   "fade-in-up": "fade-in-up 0.5s ease-out forwards",
   "subtle-pulse": "subtle-pulse 3s ease-in-out infinite",
   
-  /* Optimized animation with reduced motion alternatives */
-  "efficient-pulse": {
-    value: "subtle-pulse 3s ease-in-out infinite",
-    "prefers-reduced-motion": "none"
-  },
-  "efficient-fade": {
-    value: "fade-in-up 0.4s cubic-bezier(0.2, 0, 0, 1) forwards",
-    "prefers-reduced-motion": "none" 
-  },
-  "efficient-beat": {
-    value: "heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite",
-    "prefers-reduced-motion": "none"
-  },
-  "efficient-update": {
-    value: "vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards",
-    "prefers-reduced-motion": "none"
-  }
+  /* Animations with standard format (not using objects) */
+  "efficient-pulse": "subtle-pulse 3s ease-in-out infinite",
+  "efficient-fade": "fade-in-up 0.4s cubic-bezier(0.2, 0, 0, 1) forwards",
+  "efficient-beat": "heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite",
+  "efficient-update": "vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards"
 };

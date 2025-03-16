@@ -16,9 +16,10 @@ const MonitorButton: React.FC<MonitorButtonProps> = ({
 }) => {
   const baseClass = "w-full animation-smooth";
   
+  // Get the button variant accepted by shadcn/ui Button component
   const getButtonVariant = () => {
     if (variant === "reset") return "secondary";
-    return isMonitoring ? "destructive" : "primary";
+    return isMonitoring ? "destructive" : "default"; // Changed 'primary' to 'default'
   };
   
   return (

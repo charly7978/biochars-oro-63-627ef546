@@ -264,6 +264,35 @@ export const utilities = function({ addUtilities }) {
         'transform': 'scale(1)'
       }
     },
+    '.animate-efficient-beat': {
+      'animation': 'heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none',
+        'transform': 'scale(1.05)'
+      }
+    },
+    '.animate-efficient-pulse': {
+      'animation': 'subtle-pulse 3s ease-in-out infinite',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none'
+      }
+    },
+    '.animate-efficient-fade': {
+      'animation': 'fade-in-up 0.4s cubic-bezier(0.2, 0, 0, 1) forwards',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none',
+        'opacity': '1',
+        'transform': 'translateY(0)'
+      }
+    },
+    '.animate-efficient-update': {
+      'animation': 'vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards',
+      '@media (prefers-reduced-motion: reduce)': {
+        'animation': 'none',
+        'opacity': '1',
+        'transform': 'scale(1)'
+      }
+    },
     // Optimized animation utilities
     '.will-change-opacity': {
       'will-change': 'opacity'
