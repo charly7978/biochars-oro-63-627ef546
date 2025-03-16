@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -54,30 +55,6 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
-  const beepRequesterRef = useRef<((time: number) => void) | null>(null);
-  const lastBeepRequestTimeRef = useRef<number>(0);
-  const queuedPeaksRef = useRef<{time: number, value: number}[]>([]);
-  const lastPeakRequestTimeRef = useRef<number>(0);
-  const beepProcessorTimeoutRef = useRef<number | null>(null);
-  const visiblePeaksRef = useRef<{time: number, value: number}[]>([]);
-  const pendingBeepTimeoutsRef = useRef<number[]>([]);
-
-  const requestBeepForPeak = useCallback((timestamp: number) => {
-    if (!beepRequesterRef.current) {
-      console.log(`PPGSignalMeter: No beep requester available for peak at ${timestamp}`);
-      return;
-    }
-    
-    try {
-      beepRequesterRef.current(timestamp);
-      console.log(`PPGSignalMeter: Beep requested for peak at ${timestamp}`);
-      
-      visiblePeaksRef.current.push({time: timestamp, value: 0});
-    } catch (err) {
-      console.error(`PPGSignalMeter: Error requesting beep for peak at ${timestamp}`, err);
-    }
-  }, []);
-
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5000;
   const CANVAS_WIDTH = 1080;
@@ -86,12 +63,12 @@ const PPGSignalMeter = memo(({
   const GRID_SIZE_Y = 5;
   const verticalScale = 65.0;
   const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 120;
+  const TARGET_FPS = 180;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 4;
-  const PEAK_THRESHOLD = 1.6;
-  const MIN_PEAK_DISTANCE_MS = 150;
+  const PEAK_DETECTION_WINDOW = 8;
+  const PEAK_THRESHOLD = 2.5;
+  const MIN_PEAK_DISTANCE_MS = 220;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
@@ -101,6 +78,21 @@ const PPGSignalMeter = memo(({
   const NORMAL_COLOR = '#0EA5E9';
   const ARRHYTHMIA_INDICATOR_SIZE = 8;
   const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
+  const ARRHYTHMIA_DURATION_MS = 800;
+
+  const beepRequesterRef = useRef<((time: number) => void) | null>(null);
+  const lastBeepRequestTimeRef = useRef<number>(0);
+
+  // Define requestBeepForPeak BEFORE detectPeaks to fix the "used before declaration" error
+  const requestBeepForPeak = useCallback((timestamp: number) => {
+    const now = Date.now();
+    if (now - lastBeepRequestTimeRef.current < 300) return;
+    
+    if (beepRequesterRef.current) {
+      beepRequesterRef.current(timestamp);
+      lastBeepRequestTimeRef.current = now;
+    }
+  }, []);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -144,52 +136,6 @@ const PPGSignalMeter = memo(({
       drawGrid(gridCtx);
       gridCanvasRef.current = gridCanvas;
     }
-
-    return () => {
-      pendingBeepTimeoutsRef.current.forEach(timeoutId => {
-        clearTimeout(timeoutId);
-      });
-      pendingBeepTimeoutsRef.current = [];
-      
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-        beepProcessorTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const heartBeatProcessor = (window as any).heartBeatProcessor;
-    
-    if (heartBeatProcessor) {
-      beepRequesterRef.current = (timestamp: number) => {
-        try {
-          heartBeatProcessor.requestBeepForTime(timestamp);
-        } catch (err) {
-          console.error("Error requesting beep:", err);
-          
-          try {
-            heartBeatProcessor.playBeep(1.0);
-          } catch (innerErr) {
-            console.error("Error playing fallback beep:", innerErr);
-          }
-        }
-      };
-    }
-    
-    return () => {
-      beepRequesterRef.current = null;
-      
-      pendingBeepTimeoutsRef.current.forEach(timeoutId => {
-        clearTimeout(timeoutId);
-      });
-      pendingBeepTimeoutsRef.current = [];
-      
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-        beepProcessorTimeoutRef.current = null;
-      }
-    };
   }, []);
 
   useEffect(() => {
@@ -344,7 +290,7 @@ const PPGSignalMeter = memo(({
       const currentPoint = points[i];
       
       const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS * 0.8
+        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
       );
       
       if (recentlyProcessed) continue;
@@ -352,7 +298,7 @@ const PPGSignalMeter = memo(({
       let isPeak = true;
       
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value * 0.95) {
+        if (points[j].value >= currentPoint.value) {
           isPeak = false;
           break;
         }
@@ -360,7 +306,7 @@ const PPGSignalMeter = memo(({
       
       if (isPeak) {
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value * 0.95) {
+          if (j < points.length && points[j].value > currentPoint.value) {
             isPeak = false;
             break;
           }
@@ -384,7 +330,7 @@ const PPGSignalMeter = memo(({
     
     for (const peak of potentialPeaks) {
       const tooClose = peaksRef.current.some(
-        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS * 0.8
+        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
       );
       
       if (!tooClose) {
@@ -395,7 +341,6 @@ const PPGSignalMeter = memo(({
         });
         
         requestBeepForPeak(peak.time);
-        console.log(`PPGSignalMeter: Peak detected at ${peak.time} with value ${peak.value.toFixed(2)}`);
       }
     }
     
@@ -418,6 +363,24 @@ const PPGSignalMeter = memo(({
       const segmentAge = now - endTime;
       return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
     });
+  }, []);
+
+  useEffect(() => {
+    const heartBeatProcessor = (window as any).heartBeatProcessor;
+    
+    if (heartBeatProcessor) {
+      beepRequesterRef.current = (timestamp: number) => {
+        try {
+          heartBeatProcessor.playBeep(0.8);
+        } catch (err) {
+          console.error("Error requesting beep:", err);
+        }
+      };
+    }
+    
+    return () => {
+      beepRequesterRef.current = null;
+    };
   }, []);
 
   const renderSignal = useCallback(() => {
@@ -574,14 +537,6 @@ const PPGSignalMeter = memo(({
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
             
-            const hasBeepRequested = visiblePeaksRef.current.some(p => 
-              Math.abs(p.time - peak.time) < 50
-            );
-            
-            if (!hasBeepRequested) {
-              requestBeepForPeak(peak.time);
-            }
-            
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
@@ -631,31 +586,13 @@ const PPGSignalMeter = memo(({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-        beepProcessorTimeoutRef.current = null;
-      }
-      
-      pendingBeepTimeoutsRef.current.forEach(timeoutId => {
-        clearTimeout(timeoutId);
-      });
-      pendingBeepTimeoutsRef.current = [];
     };
   }, [renderSignal]);
 
   const handleReset = useCallback(() => {
     peaksRef.current = [];
-    queuedPeaksRef.current = [];
-    visiblePeaksRef.current = [];
     arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     arrhythmiaSegmentsRef.current = [];
-    
-    pendingBeepTimeoutsRef.current.forEach(timeoutId => {
-      clearTimeout(timeoutId);
-    });
-    pendingBeepTimeoutsRef.current = [];
-    
     onReset();
   }, [onReset]);
 
