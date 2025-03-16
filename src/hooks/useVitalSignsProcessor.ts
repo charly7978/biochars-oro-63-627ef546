@@ -25,14 +25,14 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Advanced configuration with optimized parameters
+  // Advanced configuration with optimized parameters for reducir falsos positivos
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    // Parameters optimized for high specificity (low false positive rate)
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 10000, // 10 seconds between arrhythmias
-    MAX_ARRHYTHMIAS_PER_SESSION: 3, // Limited to detect only significant occurrences
-    SIGNAL_QUALITY_THRESHOLD: 0.92, // High threshold for signal quality
-    SEQUENTIAL_DETECTION_THRESHOLD: 0.65, // High threshold for sequential detection
-    SPECTRAL_FREQUENCY_THRESHOLD: 0.45 // Frequency domain threshold for validation
+    // Parámetros optimizados para sincronización precisa con beeps
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 15000, // 15 segundos entre arritmias
+    MAX_ARRHYTHMIAS_PER_SESSION: 5,     // Máximo 5 por sesión
+    SIGNAL_QUALITY_THRESHOLD: 0.75,     // Umbral de calidad reducido
+    SEQUENTIAL_DETECTION_THRESHOLD: 0.55, // Umbral para detección secuencial ajustado
+    SPECTRAL_FREQUENCY_THRESHOLD: 0.40   // Umbral para validación de frecuencia ajustado
   });
   
   // Initialize processor components
@@ -101,15 +101,29 @@ export const useVitalSignsProcessor = () => {
     let result = processorRef.current.processSignal(value, rrData);
     const currentTime = Date.now();
     
-    // Process arrhythmia data with advanced algorithms
-    result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
-    
-    // If arrhythmia detected, register visualization window
-    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
-      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-      // Create window centered on arrhythmia with dynamic width based on heart rate
-      const windowWidth = 500; // 500ms window for visualization
-      addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+    // Procesar arritmias solo si hay suficientes datos
+    if (rrData && rrData.intervals.length >= 8) {
+      // Process arrhythmia data with advanced algorithms
+      result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
+      
+      // If arrhythmia detected, register visualization window
+      if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+        
+        // Create window centered on arrhythmia with dynamic width based on heart rate
+        // Para sincronización con beeps, usamos ventana más precisa
+        let windowWidth = 800; // 800ms ventana por defecto
+        
+        // Ajustar ancho según intervalos RR si disponibles
+        if (rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-5);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          // Ventana de 1.5x el intervalo RR promedio
+          windowWidth = Math.max(500, Math.min(1200, avgInterval * 1.5));
+        }
+        
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+      }
     }
     
     // Update signal log with complete information

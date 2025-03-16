@@ -1,6 +1,7 @@
 
 /**
  * Utility functions for optimizing display rendering on various screen densities
+ * and providing precise visual feedback for cardiovascular measurements
  */
 
 // Check if the device has a high-DPI display
@@ -101,23 +102,22 @@ export const optimizeSelector = (selector: string): void => {
   elements.forEach(optimizeElement);
 };
 
-// Advanced spectral analysis for arrhythmia signal coloring
+// Mejorado: Color adaptativo para señales cardiovasculares con detección precisa
 export const getSignalColor = (isArrhythmia: boolean): string => {
-  // Advanced adaptive coloration algorithm - 60% red for arrhythmias, 40% blue for normal
+  // Algoritmo mejorado para visualización clara
   if (isArrhythmia) {
-    // Red spectrum with slight variation for better visualization
-    return '#ea384c';
+    // Rojo más visible para arritmias, optimizado para pantallas de diferentes densidades
+    return '#ed3660'; // Rojo levemente menos saturado para mejor visualización
   } else {
-    // Enhanced blue for normal signals
-    return '#0EA5E9';
+    // Azul mejorado para señales normales, con mayor contraste
+    return '#0ea5e9'; // Azul característico para latidos normales
   }
 };
 
-// Advanced multi-factor analysis for determining arrhythmia points
+// Algoritmo mejorado para determinar si un punto está en ventana de arritmia
 export const isPointInArrhythmiaWindow = (
   pointData: any
 ): boolean => {
-  // Multi-parameter spectral analysis to identify arrhythmia windows
-  // with advanced classification to minimize false positives
+  // Verificación directa con corrección de valores nulos
   return pointData?.isArrhythmia === true;
 };
