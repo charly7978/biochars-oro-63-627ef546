@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { RRAnalysisResult } from './arrhythmia/types';
+import { autoCalibrate, adaptProcessorToSignalQuality } from '../utils/displayOptimizer';
 
 interface HeartBeatResult {
   bpm: number;
@@ -27,7 +28,7 @@ export const useHeartBeatProcessor = () => {
   // References for precise beep synchronization
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 450; // Increased minimum interval for more natural rhythm
+  const MIN_BEEP_INTERVAL_MS = 300; // Natural minimum interval for heartbeats
   
   // References for arrhythmia analysis
   const lastRRIntervalsRef = useRef<number[]>([]);
@@ -39,13 +40,17 @@ export const useHeartBeatProcessor = () => {
   const heartRateVariabilityRef = useRef<number[]>([]);
   const stabilityCounterRef = useRef<number>(0);
   
+  // References for auto-calibration
+  const calibrationCounterRef = useRef<number>(0);
+  const lastSignalQualityRef = useRef<number>(0);
+  const calibrationCompleteRef = useRef<boolean>(false);
+  
   // References for improved beep reliability
   const consistentBeatsCountRef = useRef<number>(0);
   const lastValidBpmRef = useRef<number>(0);
-  const beepPendingRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
 
-  // Initialize the processor
+  // Initialize the processor with auto-calibration
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
       sessionId: sessionId.current,
@@ -62,6 +67,16 @@ export const useHeartBeatProcessor = () => {
         if (typeof window !== 'undefined') {
           (window as any).heartBeatProcessor = processorRef.current;
         }
+        
+        // Schedule initial calibration after warmup period
+        setTimeout(() => {
+          performAutoCalibration();
+          // Schedule periodic recalibration
+          const calibrationInterval = setInterval(performAutoCalibration, 30000); // Recalibrate every 30 seconds
+          
+          // Clear interval on cleanup
+          return () => clearInterval(calibrationInterval);
+        }, 5000); // Initial calibration after 5 seconds of data collection
       }
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
@@ -83,8 +98,37 @@ export const useHeartBeatProcessor = () => {
       }
     };
   }, []);
+  
+  // Auto-calibration function
+  const performAutoCalibration = useCallback(() => {
+    if (!processorRef.current) return;
+    
+    try {
+      // Get optimal configuration
+      const optimalConfig = autoCalibrate(processorRef.current);
+      
+      if (optimalConfig) {
+        // Apply optimal settings
+        Object.keys(optimalConfig).forEach(key => {
+          if (processorRef.current && key in processorRef.current) {
+            (processorRef.current as any)[key] = optimalConfig[key];
+          }
+        });
+        
+        calibrationCompleteRef.current = true;
+        
+        console.log('HeartBeatProcessor: Auto-calibration applied successfully', {
+          sessionId: sessionId.current,
+          timestamp: new Date().toISOString(),
+          appliedSettings: optimalConfig
+        });
+      }
+    } catch (error) {
+      console.error('Error during auto-calibration:', error);
+    }
+  }, []);
 
-  // Function to play beep sound with natural synchronization
+  // Function to play beep sound with natural timing
   const playBeepSound = useCallback(() => {
     if (!processorRef.current) {
       console.warn('useHeartBeatProcessor: Processor not available for beep');
@@ -93,7 +137,7 @@ export const useHeartBeatProcessor = () => {
     
     const now = Date.now();
     
-    // Enforce minimum interval between beeps
+    // Natural timing - enforce physiologically reasonable intervals
     if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
       console.log('useHeartBeatProcessor: Beep rejected - too soon after last beep');
       return;
@@ -106,12 +150,11 @@ export const useHeartBeatProcessor = () => {
     }
     
     try {
-      // Play beep with appropriate volume
+      // Play natural heartbeat beep
       const beepSuccess = processorRef.current.playBeep(0.7);
       if (beepSuccess) {
         console.log(`useHeartBeatProcessor: Beep played successfully - BPM: ${currentBPM}`);
         lastBeepTimeRef.current = now;
-        beepPendingRef.current = false;
         consistentBeatsCountRef.current++;
       } else {
         console.warn('useHeartBeatProcessor: Failed to play beep');
@@ -187,7 +230,7 @@ export const useHeartBeatProcessor = () => {
     };
   }, []);
 
-  // Process input signal
+  // Process input signal with auto-calibration awareness
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       return {
@@ -203,6 +246,9 @@ export const useHeartBeatProcessor = () => {
     }
 
     try {
+      // Update calibration counter for adaptive calibration
+      calibrationCounterRef.current++;
+      
       // Process signal
       const result = processorRef.current.processSignal(value);
       const rrData = processorRef.current.getRRIntervals();
@@ -229,9 +275,14 @@ export const useHeartBeatProcessor = () => {
         lastIsArrhythmiaRef.current = currentBeatIsArrhythmia;
       }
 
-      // Handle peak detection (already managed by processor's playBeep)
+      // Handle peak detection for natural beep timing
       if (result.isPeak && result.confidence > 0.60) {
         lastPeakTimeRef.current = now;
+        
+        // Natural beep timing - play immediately when peak is detected
+        if (result.confidence > 0.70) {
+          playBeepSound();
+        }
         
         // Update valid BPM
         if (result.bpm >= 40 && result.bpm <= 200) {
@@ -241,6 +292,14 @@ export const useHeartBeatProcessor = () => {
           const expectedInterval = 60000 / result.bpm;
           expectedNextBeatTimeRef.current = now + expectedInterval;
         }
+      }
+      
+      // Update signal quality for adaptive calibration
+      lastSignalQualityRef.current = result.confidence;
+      
+      // Apply adaptive calibration based on signal quality
+      if (calibrationCompleteRef.current && calibrationCounterRef.current % 50 === 0) {
+        adaptProcessorToSignalQuality(processorRef.current, lastSignalQualityRef.current);
       }
 
       // With low confidence, maintain previous values
@@ -282,9 +341,9 @@ export const useHeartBeatProcessor = () => {
         }
       };
     }
-  }, [currentBPM, confidence, detectArrhythmia]);
+  }, [currentBPM, confidence, detectArrhythmia, playBeepSound]);
 
-  // Reset processor
+  // Reset processor with new auto-calibration
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
@@ -305,11 +364,16 @@ export const useHeartBeatProcessor = () => {
     currentBeatIsArrhythmiaRef.current = false;
     expectedNextBeatTimeRef.current = 0;
     heartRateVariabilityRef.current = [];
-    beepPendingRef.current = false;
     stabilityCounterRef.current = 0;
     consistentBeatsCountRef.current = 0;
     lastValidBpmRef.current = 0;
-  }, []);
+    calibrationCounterRef.current = 0;
+    lastSignalQualityRef.current = 0;
+    calibrationCompleteRef.current = false;
+    
+    // Schedule auto-calibration after reset
+    setTimeout(performAutoCalibration, 3000);
+  }, [performAutoCalibration]);
 
   return {
     currentBPM,
