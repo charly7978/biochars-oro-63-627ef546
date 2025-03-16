@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -28,10 +29,6 @@ const VitalSign = ({
           return '';
         case 'SPO2':
           if (value < 95) return 'Hipoxemia';
-          return '';
-        case 'HEMOGLOBINA':
-          if (value < 12) return 'Anemia';
-          if (value > 16) return 'Policitemia';
           return '';
         case 'GLUCOSA':
           if (value > 126) return 'Hiperglucemia';
@@ -104,10 +101,6 @@ const VitalSign = ({
       case 'Hipoglucemia':
       case 'Hipotensión':
         return 'text-[#F97316]';
-      case 'Anemia':
-        return 'text-[#FEF7CD]';
-      case 'Policitemia':
-        return 'text-[#F2FCE2]';
       default:
         return '';
     }
@@ -200,21 +193,6 @@ const VitalSign = ({
           'Dieta alta en sodio'
         ];
         break;
-      case 'HEMOGLOBINA':
-        info.normalRange = '12-16 g/dL (mujeres), 14-17 g/dL (hombres)';
-        info.description = 'La hemoglobina es una proteína en los glóbulos rojos que transporta oxígeno desde los pulmones al resto del cuerpo. Niveles bajos pueden indicar anemia.';
-        info.recommendations = [
-          'Consumir alimentos ricos en hierro',
-          'Incluir vitamina C para mejor absorción del hierro',
-          'Consultar al médico para suplementos si es necesario'
-        ];
-        info.riskFactors = [
-          'Deficiencia de hierro',
-          'Pérdida crónica de sangre',
-          'Enfermedades crónicas',
-          'Malnutrición'
-        ];
-        break;
       case 'GLUCOSA':
         info.normalRange = '70-100 mg/dL en ayunas';
         info.description = 'La glucosa es el principal azúcar en la sangre y la fuente de energía del cuerpo. Niveles altos persistentes pueden indicar diabetes.';
@@ -271,9 +249,6 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
-    if (label === 'HEMOGLOBINA' && typeof value === 'number') {
-      return Math.round(value);
-    }
     return value;
   };
 
