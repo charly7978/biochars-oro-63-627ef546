@@ -8,13 +8,13 @@ interface GraphGridProps {
 	cellSize?: number;
 }
 
-const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellSize = 20 }) => {
+const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cellSize = 20 }) => {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		if (canvas) {
-			// Optimize the canvas for device pixel ratio
+			// Optimize the canvas for device pixel ratio with maximum resolution
 			optimizeCanvas(canvas);
 			
 			const ctx = canvas.getContext('2d');
@@ -26,18 +26,18 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
 				
-				// Improved background with subtle gradient and golden tone transition from middle to bottom
+				// Enhanced background with subtle gradient and lilac-blue tone transition
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
 				gradient.addColorStop(0, '#F3F7FC'); // Lighter blue-cream at top
-				gradient.addColorStop(0.45, '#EBF2F9'); // Slightly darker at middle
-				gradient.addColorStop(0.55, '#F1EEE8'); // Start transitioning to subtle gold
-				gradient.addColorStop(1, '#F5EED8'); // Subtle golden tone at bottom
+				gradient.addColorStop(0.4, '#EDF4F9'); // Slightly darker at middle
+				gradient.addColorStop(0.6, '#F1EEF8'); // Start transitioning to subtle lilac
+				gradient.addColorStop(1, '#F0E6FF'); // Subtle lilac tone at bottom
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				
 				// Draw grid with improved quality
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(60,80,120,0.15)'; // More medical blue tone, subtle
+				ctx.strokeStyle = 'rgba(70,80,130,0.15)'; // More medical blue tone, subtle
 				ctx.lineWidth = 0.8; // Slightly thicker for better visibility
 				
 				// Draw vertical grid lines with better precision
@@ -59,7 +59,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 				
 				// Add an enhanced grid with major lines
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(40,60,100,0.2)'; // Darker lines for major grid
+				ctx.strokeStyle = 'rgba(50,70,120,0.2)'; // Darker lines for major grid
 				ctx.lineWidth = 1.2;
 				
 				// Major vertical lines every 5 cells
@@ -89,7 +89,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1000, height = 900, cellS
 				display: 'block',
 				imageRendering: 'crisp-edges'
 			}} 
-			className="ppg-graph performance-boost"
+			className="ppg-graph performance-boost ultra-high-resolution"
 		/>
 	);
 };

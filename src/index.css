@@ -115,6 +115,22 @@
   }
 }
 
+/* Ultra HD display optimizations - 4K and higher */
+@media (min-resolution: 300dpi), (-webkit-min-device-pixel-ratio: 3) {
+  html, body {
+    -webkit-font-smoothing: subpixel-antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
+    letter-spacing: -0.02em;
+  }
+  
+  .precision-text {
+    font-feature-settings: "kern", "liga", "calt";
+    letter-spacing: -0.02em;
+    text-rendering: optimizeLegibility;
+  }
+}
+
 /* Screen size specific scaling */
 @media screen and (min-width: 2048px) {
   .high-res-interface {
@@ -164,5 +180,32 @@
     height: 400%;
     max-width: 400vw;
     max-height: 400vh;
+  }
+}
+
+/* 5K and higher resolution displays - added for maximum resolution */
+@media screen and (min-width: 5120px) {
+  .high-res-interface {
+    transform: scale(0.2);
+    width: 500%;
+    height: 500%;
+    max-width: 500vw;
+    max-height: 500vh;
+  }
+  
+  body {
+    image-rendering: high-quality;
+    text-rendering: geometricPrecision;
+  }
+}
+
+/* 8K support for ultra high end displays */
+@media screen and (min-width: 7680px) {
+  .high-res-interface {
+    transform: scale(0.125);
+    width: 800%;
+    height: 800%;
+    max-width: 800vw;
+    max-height: 800vh;
   }
 }

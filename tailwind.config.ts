@@ -28,6 +28,8 @@ export default {
         medical: {
           red: "#FF2E2E",
           blue: "#2E5BFF",
+          lilac: "#A098E8",
+          "lilac-light": "#E0D9FF",
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",
@@ -117,6 +119,28 @@ export default {
           'color': 'transparent',
           'text-shadow': '0 0 5px rgba(255,255,255,0.3)'
         },
+        '.ultra-high-resolution': {
+          'image-rendering': 'high-quality',
+          'backface-visibility': 'hidden',
+          'transform': 'translate3d(0, 0, 0)',
+          'will-change': 'transform',
+          'contain': 'strict',
+          'text-rendering': 'geometricPrecision'
+        },
+        '.super-crisp-text': {
+          'text-rendering': 'geometricPrecision',
+          '-webkit-font-smoothing': 'antialiased',
+          'font-feature-settings': '"kern", "liga", "calt", "pnum", "tnum"',
+          'font-variant-numeric': 'tabular-nums',
+          'letter-spacing': '-0.01em'
+        },
+        '.ultra-crisp-graphics': {
+          'image-rendering': '-webkit-optimize-contrast',
+          'image-rendering': 'crisp-edges',
+          'shape-rendering': 'crispEdges',
+          'transform': 'translate3d(0, 0, 0)',
+          'backface-visibility': 'hidden'
+        }
       }
       addUtilities(newUtilities)
     }
