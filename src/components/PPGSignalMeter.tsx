@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -353,26 +352,20 @@ const PPGSignalMeter = memo(({
     detectPeaks(points, now);
     
     if (points.length > 1) {
-      // Draw individual segments with their own color based on arrhythmia status
       let lastPoint: PPGDataPointExtended | null = null;
       let currentSegmentIsArrhythmia = false;
       let segmentStartIndex = 0;
       
-      // First, find segments with the same isArrhythmia status and draw them
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
-        // If we're at a boundary between normal and arrhythmic points,
-        // or at the last point, draw the current segment
-        if (lastPoint && lastPoint.isArrhythmia !== point.isArrhythmia || i === points.length - 1) {
+        if ((lastPoint && lastPoint.isArrhythmia !== point.isArrhythmia) || i === points.length - 1) {
           renderCtx.beginPath();
-          // Set color based on the segment's arrhythmia status
           renderCtx.strokeStyle = currentSegmentIsArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
           renderCtx.lineWidth = 2;
           renderCtx.lineJoin = 'round';
           renderCtx.lineCap = 'round';
           
-          // Draw the segment path
           for (let j = segmentStartIndex; j <= i; j++) {
             const segPoint = points[j];
             const x = canvas.width - ((now - segPoint.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -387,52 +380,43 @@ const PPGSignalMeter = memo(({
           
           renderCtx.stroke();
           
-          // Start a new segment
           segmentStartIndex = i;
           currentSegmentIsArrhythmia = point.isArrhythmia || false;
         } else if (i === 0 || lastPoint === null) {
-          // Initialize segment tracking for the first point
           currentSegmentIsArrhythmia = point.isArrhythmia || false;
         }
         
         lastPoint = point;
       }
       
-      // Draw the detected peaks with animated yellow circles for arrhythmias
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
           const y = (canvas.height / 2) - 40 - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
-            // Use the peak's isArrhythmia flag to determine appearance
             if (peak.isArrhythmia) {
-              // Draw the yellow pulsing circle for arrhythmia peaks
-              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR; // Yellow
+              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
               
-              // Animated pulse effect - size oscillates between normal and 15% larger
-              const pulsePhase = (now % 1500) / 1500; // 0 to 1 over 1.5 seconds
-              const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2); // -1 to 1 times 15%
+              const pulsePhase = (now % 1500) / 1500;
+              const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
               const pulseSize = ARRHYTHMIA_INDICATOR_SIZE * pulseScale;
               
               renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
               renderCtx.fill();
               
-              // Draw a smaller red circle inside
               renderCtx.fillStyle = ARRHYTHMIA_COLOR;
               renderCtx.beginPath();
               renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
             } else {
-              // Normal peak marker
               renderCtx.fillStyle = NORMAL_COLOR;
               renderCtx.beginPath();
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
             }
             
-            // Add peak value labels
             renderCtx.font = 'bold 16px Inter';
             renderCtx.fillStyle = peak.isArrhythmia ? ARRHYTHMIA_COLOR : '#000000';
             renderCtx.textAlign = 'center';
