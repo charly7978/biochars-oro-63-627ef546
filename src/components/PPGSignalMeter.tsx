@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -81,6 +82,17 @@ const PPGSignalMeter = memo(({
 
   const beepRequesterRef = useRef<((time: number) => void) | null>(null);
   const lastBeepRequestTimeRef = useRef<number>(0);
+
+  // Define requestBeepForPeak BEFORE detectPeaks to fix the "used before declaration" error
+  const requestBeepForPeak = useCallback((timestamp: number) => {
+    const now = Date.now();
+    if (now - lastBeepRequestTimeRef.current < 300) return;
+    
+    if (beepRequesterRef.current) {
+      beepRequesterRef.current(timestamp);
+      lastBeepRequestTimeRef.current = now;
+    }
+  }, []);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -351,16 +363,6 @@ const PPGSignalMeter = memo(({
       const segmentAge = now - endTime;
       return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
     });
-  }, []);
-
-  const requestBeepForPeak = useCallback((timestamp: number) => {
-    const now = Date.now();
-    if (now - lastBeepRequestTimeRef.current < 300) return;
-    
-    if (beepRequesterRef.current) {
-      beepRequesterRef.current(timestamp);
-      lastBeepRequestTimeRef.current = now;
-    }
   }, []);
 
   useEffect(() => {
