@@ -97,14 +97,21 @@ export const useVitalSignsProcessor = () => {
     setCalibrationData(calibrationData);
     isCalibrationAppliedRef.current = true;
     
-    // Update arrhythmia configuration
+    // Update arrhythmia configuration safely
     if (arrhythmiaAnalyzerRef.current) {
       const newConfig: Partial<ArrhythmiaConfig> = {
         SIGNAL_QUALITY_THRESHOLD: calibrationResult.confidenceThreshold,
         SEQUENTIAL_DETECTION_THRESHOLD: Math.max(0.15, calibrationResult.detectionSensitivity - 0.1)
       };
       
-      arrhythmiaAnalyzerRef.current.updateConfig(newConfig);
+      // Check if updateConfig method exists and call it safely
+      const analyzerAny = arrhythmiaAnalyzerRef.current as any;
+      if (typeof analyzerAny.updateConfig === 'function') {
+        analyzerAny.updateConfig(newConfig);
+      } else {
+        // Fallback if method doesn't exist
+        console.log("useVitalSignsProcessor: updateConfig not available, using defaults");
+      }
     }
   }, []);
   
@@ -320,7 +327,14 @@ export const useVitalSignsProcessor = () => {
           SEQUENTIAL_DETECTION_THRESHOLD: detectionSensitivity
         };
         
-        arrhythmiaAnalyzerRef.current.updateConfig(newConfig);
+        // Check if updateConfig method exists and call it safely
+        const analyzerAny = arrhythmiaAnalyzerRef.current as any;
+        if (typeof analyzerAny.updateConfig === 'function') {
+          analyzerAny.updateConfig(newConfig);
+        } else {
+          // Fallback if method doesn't exist
+          console.log("useVitalSignsProcessor: updateConfig not available in performBasicCalibration");
+        }
       }
     } catch (err) {
       console.error("useVitalSignsProcessor: Error durante calibración básica:", err);

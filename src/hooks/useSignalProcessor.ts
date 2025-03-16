@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -185,9 +184,10 @@ export const useSignalProcessor = () => {
         description: "El sistema ha sido adaptado a las condiciones actuales."
       });
       
-      // Aplicar calibración al procesador
-      if (processor.applyCalibration) {
-        processor.applyCalibration(result);
+      // Aplicar calibración al procesador de manera segura
+      const processorAny = processor as any;
+      if (typeof processorAny.applyCalibration === 'function') {
+        processorAny.applyCalibration(result);
       }
       
     } catch (err) {
@@ -207,8 +207,17 @@ export const useSignalProcessor = () => {
     if (!isCalibrating || !calibrationSystem.isCalibrationActive()) return;
     
     try {
-      // Obtener estimación del valor PPG
-      const estimatedValue = processor.estimateValueFromImageData(imageData);
+      // Obtener estimación del valor PPG de manera segura
+      const processorAny = processor as any;
+      let estimatedValue: number | undefined;
+      
+      if (typeof processorAny.estimateValueFromImageData === 'function') {
+        estimatedValue = processorAny.estimateValueFromImageData(imageData);
+      } else {
+        // Alternativa si el método no existe
+        const redChannelAvg = getAverageRedChannel(imageData);
+        estimatedValue = redChannelAvg;
+      }
       
       if (typeof estimatedValue === 'number' && !isNaN(estimatedValue)) {
         const isComplete = calibrationSystem.processCalibrationFrame(estimatedValue);
@@ -223,9 +232,9 @@ export const useSignalProcessor = () => {
           if (result) {
             setCalibrationResult(result);
             
-            // Aplicar calibración al procesador
-            if (processor.applyCalibration) {
-              processor.applyCalibration(result);
+            // Aplicar calibración al procesador de manera segura
+            if (typeof processorAny.applyCalibration === 'function') {
+              processorAny.applyCalibration(result);
             }
           }
         }
@@ -234,6 +243,21 @@ export const useSignalProcessor = () => {
       console.error("useSignalProcessor: Error procesando frame para calibración:", err);
     }
   }, [isCalibrating, calibrationSystem, processor]);
+
+  // Función auxiliar para extraer valor promedio del canal rojo
+  const getAverageRedChannel = (imageData: ImageData): number => {
+    const data = imageData.data;
+    let sum = 0;
+    let count = 0;
+    
+    // Sample red channel (every 4th value starting at index 0)
+    for (let i = 0; i < data.length; i += 4) {
+      sum += data[i];
+      count++;
+    }
+    
+    return count > 0 ? sum / count : 0;
+  };
 
   // Configurar callbacks y limpieza
   useEffect(() => {

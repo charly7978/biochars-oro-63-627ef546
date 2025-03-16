@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 
+// Update the props interface to include isCalibrating
 const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 

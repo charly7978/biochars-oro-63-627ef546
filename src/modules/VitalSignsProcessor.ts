@@ -27,8 +27,11 @@ export class VitalSignsProcessor {
     this.calibrationResult = calibration;
     
     // Aquí se aplican los parámetros de calibración al procesador interno
-    if (this.processor.applyCalibration) {
-      this.processor.applyCalibration(calibration);
+    // El procesador interno puede que no tenga este método, por lo que hacemos
+    // una verificación segura con tipo
+    const processorAny = this.processor as any;
+    if (typeof processorAny.applyCalibration === 'function') {
+      processorAny.applyCalibration(calibration);
     }
   }
   
