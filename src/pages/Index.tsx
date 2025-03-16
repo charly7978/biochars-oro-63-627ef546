@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -25,15 +24,9 @@ const Index = () => {
     }
   });
   const [heartRate, setHeartRate] = useState(0);
-  const [arrhythmiaCount, setArrhythmiaCount] = useState<string | number>("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -84,10 +77,6 @@ const Index = () => {
       
       // Resetear valores
       setElapsedTime(0);
-      setVitalSigns(prev => ({
-        ...prev,
-        arrhythmiaStatus: "SIN ARRITMIAS|0"
-      }));
       
       // Iniciar temporizador para medición
       if (measurementTimerRef.current) {
@@ -157,9 +146,7 @@ const Index = () => {
         triglycerides: 0
       }
     });
-    setArrhythmiaCount("--");
     setSignalQuality(0);
-    setLastArrhythmiaData(null);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -283,12 +270,6 @@ const Index = () => {
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         setVitalSigns(vitals);
-        
-        if (vitals.lastArrhythmiaData) {
-          setLastArrhythmiaData(vitals.lastArrhythmiaData);
-          const [status, count] = vitals.arrhythmiaStatus.split('|');
-          setArrhythmiaCount(count || "0");
-        }
       }
       
       setSignalQuality(lastSignal.quality);
@@ -341,7 +322,6 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              rawArrhythmiaData={lastArrhythmiaData}
               preserveResults={showResults}
             />
           </div>
@@ -349,7 +329,7 @@ const Index = () => {
           <AppTitle />
 
           <div className="absolute inset-x-0 top-[55%] bottom-[60px] bg-black/10 px-4 py-6">
-            <div className="grid grid-cols-3 gap-4 place-items-center">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}
@@ -375,14 +355,15 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
-                label="COLESTEROL/TRIGL."
-                value={`${vitalSigns.lipids?.totalCholesterol || "--"}/${vitalSigns.lipids?.triglycerides || "--"}`}
+                label="COLESTEROL"
+                value={vitalSigns.lipids?.totalCholesterol || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
               />
               <VitalSign 
-                label="ARRITMIAS"
-                value={vitalSigns.arrhythmiaStatus || "--"}
+                label="TRIGLICÉRIDOS"
+                value={vitalSigns.lipids?.triglycerides || "--"}
+                unit="mg/dL"
                 highlighted={showResults}
               />
             </div>

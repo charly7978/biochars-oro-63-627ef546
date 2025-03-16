@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -52,32 +51,16 @@ const VitalSign = ({
             }
           }
           return '';
-        case 'COLESTEROL/TRIGL.':
-          const lipidParts = value.split('/');
-          if (lipidParts.length === 2) {
-            const cholesterol = parseInt(lipidParts[0], 10);
-            const triglycerides = parseInt(lipidParts[1], 10);
-            if (!isNaN(cholesterol)) {
-              if (cholesterol > 200) return 'Hipercolesterolemia';
-            }
-            if (!isNaN(triglycerides)) {
-              if (triglycerides > 150) return 'Hipertrigliceridemia';
-            }
+        case 'COLESTEROL':
+          const cholesterol = parseInt(String(value), 10);
+          if (!isNaN(cholesterol)) {
+            if (cholesterol > 200) return 'Hipercolesterolemia';
           }
           return '';
-        case 'ARRITMIAS':
-          const arrhythmiaParts = value.split('|');
-          if (arrhythmiaParts.length === 2) {
-            const status = arrhythmiaParts[0];
-            const count = arrhythmiaParts[1];
-            
-            if (status === "ARRITMIA DETECTADA" && parseInt(count) > 1) {
-              return `Arritmias: ${count}`;
-            } else if (status === "SIN ARRITMIAS") {
-              return 'Normal';
-            } else if (status === "CALIBRANDO...") {
-              return 'Calibrando';
-            }
+        case 'TRIGLICÉRIDOS':
+          const triglycerides = parseInt(String(value), 10);
+          if (!isNaN(triglycerides)) {
+            if (triglycerides > 150) return 'Hipertrigliceridemia';
           }
           return '';
         default:
@@ -104,38 +87,6 @@ const VitalSign = ({
       default:
         return '';
     }
-  };
-
-  const getArrhythmiaDisplay = (value: string | number) => {
-    if (typeof value !== 'string') return null;
-    
-    const arrhythmiaData = value.split('|');
-    if (arrhythmiaData.length !== 2) return null;
-    
-    const status = arrhythmiaData[0];
-    const count = arrhythmiaData[1];
-    
-    if (status === "ARRITMIA DETECTADA" && parseInt(count) > 1) {
-      return (
-        <div className="text-xl font-medium mt-2 text-[#ea384c]">
-          Arritmias: {count}
-        </div>
-      );
-    } else if (status === "SIN ARRITMIAS") {
-      return (
-        <div className="text-sm font-medium mt-2 text-green-500">
-          Normal
-        </div>
-      );
-    } else if (status === "CALIBRANDO...") {
-      return (
-        <div className="text-sm font-medium mt-2 text-blue-400">
-          Calibrando...
-        </div>
-      );
-    }
-    
-    return null;
   };
 
   const getDetailedInfo = (label: string, value: string | number) => {
@@ -209,9 +160,25 @@ const VitalSign = ({
           'Síndrome metabólico'
         ];
         break;
-      case 'COLESTEROL/TRIGL.':
-        info.normalRange = 'Colesterol total: <200 mg/dL, Triglicéridos: <150 mg/dL';
-        info.description = 'El colesterol y los triglicéridos son grasas en la sangre. Niveles elevados pueden aumentar el riesgo de enfermedad cardíaca.';
+      case 'COLESTEROL':
+        info.normalRange = 'Colesterol total: <200 mg/dL';
+        info.description = 'El colesterol es una de las grasas en la sangre. Niveles elevados pueden aumentar el riesgo de enfermedad cardíaca.';
+        info.recommendations = [
+          'Consumir menos grasas saturadas y trans',
+          'Aumentar el consumo de fibra',
+          'Hacer ejercicio regularmente',
+          'Limitar el consumo de alcohol'
+        ];
+        info.riskFactors = [
+          'Obesidad',
+          'Dieta alta en grasas',
+          'Sedentarismo',
+          'Genética'
+        ];
+        break;
+      case 'TRIGLICÉRIDOS':
+        info.normalRange = 'Triglicéridos: <150 mg/dL';
+        info.description = 'Los triglicéridos son otras grasas en la sangre. Niveles elevados pueden aumentar el riesgo de enfermedad cardíaca.';
         info.recommendations = [
           'Consumir menos grasas saturadas y trans',
           'Aumentar el consumo de fibra',
@@ -254,7 +221,6 @@ const VitalSign = ({
 
   const riskLabel = getRiskLabel(label, value);
   const riskColor = getRiskColor(riskLabel);
-  const isArrhytmia = label === 'ARRITMIAS';
   const detailedInfo = getDetailedInfo(label, value);
   const formattedValue = displayValue(label, value);
 
@@ -268,18 +234,16 @@ const VitalSign = ({
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
             <span className="text-gradient-soft">
-              {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
+              {formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
           </div>
 
-          {!isArrhytmia && riskLabel && (
+          {riskLabel && (
             <div className={`text-sm font-medium mt-1 ${riskColor}`}>
               {riskLabel}
             </div>
           )}
-          
-          {isArrhytmia && getArrhythmiaDisplay(value)}
           
           {calibrationProgress !== undefined && (
             <div className="absolute inset-0 bg-transparent overflow-hidden pointer-events-none border-0">
@@ -312,7 +276,7 @@ const VitalSign = ({
               <span className={`text-xl px-3 py-1 rounded-full ${
                 riskLabel ? riskColor.replace('text-', 'bg-').replace('[#', 'rgba(').replace(']', ', 0.1)') : 'bg-green-500/10'
               }`}>
-                {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
+                {formattedValue}
                 {unit && unit}
               </span>
             </div>
