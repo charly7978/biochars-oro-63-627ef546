@@ -1,4 +1,5 @@
-import { RRDataAnalyzer } from '../hooks/arrhythmia/RRDataAnalyzer';
+
+// Using the internal class definition instead of importing the conflicting module
 
 export class HeartBeatProcessor {
   private readonly HEART_BPM_BUFFER_SIZE = 10;
