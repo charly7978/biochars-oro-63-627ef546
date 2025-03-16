@@ -79,6 +79,9 @@ const PPGSignalMeter = memo(({
   const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
   const ARRHYTHMIA_DURATION_MS = 800;
 
+  const beepRequesterRef = useRef<((time: number) => void) | null>(null);
+  const lastBeepRequestTimeRef = useRef<number>(0);
+
   useEffect(() => {
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
@@ -324,6 +327,8 @@ const PPGSignalMeter = memo(({
           value: peak.value,
           isArrhythmia: peak.isArrhythmia
         });
+        
+        requestBeepForPeak(peak.time);
       }
     }
     
@@ -332,7 +337,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, []);
+  }, [requestBeepForPeak]);
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number, now: number): boolean => {
     const isNearArrhythmicPeak = peaksRef.current.some(peak => 
@@ -346,6 +351,34 @@ const PPGSignalMeter = memo(({
       const segmentAge = now - endTime;
       return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
     });
+  }, []);
+
+  const requestBeepForPeak = useCallback((timestamp: number) => {
+    const now = Date.now();
+    if (now - lastBeepRequestTimeRef.current < 300) return;
+    
+    if (beepRequesterRef.current) {
+      beepRequesterRef.current(timestamp);
+      lastBeepRequestTimeRef.current = now;
+    }
+  }, []);
+
+  useEffect(() => {
+    const heartBeatProcessor = (window as any).heartBeatProcessor;
+    
+    if (heartBeatProcessor) {
+      beepRequesterRef.current = (timestamp: number) => {
+        try {
+          heartBeatProcessor.playBeep(0.8);
+        } catch (err) {
+          console.error("Error requesting beep:", err);
+        }
+      };
+    }
+    
+    return () => {
+      beepRequesterRef.current = null;
+    };
   }, []);
 
   const renderSignal = useCallback(() => {
@@ -542,7 +575,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, requestBeepForPeak]);
 
   useEffect(() => {
     renderSignal();
