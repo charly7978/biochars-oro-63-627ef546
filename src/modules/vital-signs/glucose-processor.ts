@@ -21,12 +21,13 @@ export class GlucoseProcessor {
   private previousValues: number[] = [];
   private lastCalculatedGlucose: number = 0;
   
-  // New: History storage for weighted median and average calculation
+  // History storage for final weighted median and average calculation
   private glucoseHistory: number[] = [];
-  private readonly HISTORY_SIZE = 10; // Number of values to keep for final calculation
+  private readonly HISTORY_SIZE = 20; // Increased from 10 to get more data points for final calculation
   private readonly MEDIAN_WEIGHT = 0.65; // Median has higher weight
   private readonly MEAN_WEIGHT = 0.35; // Mean has lower weight
   private confidenceWeights: number[] = []; // Stores confidence for each measurement
+  private isMeasurementFinished: boolean = false; // Flag to track if measurement is finished
   
   /**
    * Initialize the processor
@@ -89,9 +90,8 @@ export class GlucoseProcessor {
     const individualFactor = this.calculateIndividualFactor(recentValues);
     glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.2);
     
-    // Apply physiological constraints with wider range for better accuracy
-    // Normal fasting range: 70-99 mg/dL, but we allow a wider measurement range
-    glucoseEstimate = Math.max(70, Math.min(180, glucoseEstimate));
+    // Apply wider physiological constraints based on updated range (40-200 mg/dL)
+    glucoseEstimate = Math.max(40, Math.min(200, glucoseEstimate));
     
     // Stabilize readings with temporal smoothing
     const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
@@ -102,7 +102,7 @@ export class GlucoseProcessor {
     // Store this value for future stability calculations
     this.lastCalculatedGlucose = stabilizedGlucose;
     
-    // New: Add to history for final weighted calculation
+    // Add to history for final weighted calculation
     this.glucoseHistory.push(stabilizedGlucose);
     this.confidenceWeights.push(this.confidence);
     if (this.glucoseHistory.length > this.HISTORY_SIZE) {
@@ -110,14 +110,35 @@ export class GlucoseProcessor {
       this.confidenceWeights.shift();
     }
     
-    // New: Apply weighted median and average on history
-    const finalGlucose = this.calculateWeightedMedianAndAverage();
+    // During ongoing measurement, return the stabilized value
+    if (!this.isMeasurementFinished) {
+      return Math.round(stabilizedGlucose);
+    }
     
+    // Only when measurement is finished, apply weighted median and average
+    const finalGlucose = this.calculateWeightedMedianAndAverage();
     return Math.round(finalGlucose);
   }
   
   /**
-   * New: Calculate the final glucose value using weighted median and average
+   * Finalize the measurement - call this at the end of the measurement period
+   * This will apply the weighted median and average to get the final result
+   */
+  public finalizeMeasurement(): number {
+    this.isMeasurementFinished = true;
+    
+    // If we don't have enough history, return the last value
+    if (this.glucoseHistory.length < 3) {
+      return Math.round(this.lastCalculatedGlucose);
+    }
+    
+    // Calculate the final value using weighted median and average
+    const finalValue = this.calculateWeightedMedianAndAverage();
+    return Math.round(finalValue);
+  }
+  
+  /**
+   * Calculate the final glucose value using weighted median and average
    */
   private calculateWeightedMedianAndAverage(): number {
     if (this.glucoseHistory.length < 3) {
@@ -160,16 +181,16 @@ export class GlucoseProcessor {
     // Calculate weighted mean
     let weightedSum = 0;
     for (let i = 0; i < this.glucoseHistory.length; i++) {
-      const weight = weightedValues[i].weight;
+      const weight = weightedValues[i].weight / totalWeight;
       weightedSum += this.glucoseHistory[i] * weight;
     }
-    const meanValue = weightedSum / totalWeight;
+    const meanValue = weightedSum;
     
     // Combine median and mean with their respective weights
     const finalValue = (medianValue * this.MEDIAN_WEIGHT) + (meanValue * this.MEAN_WEIGHT);
     
-    // Apply constraints again to ensure values are within physiological range
-    return Math.max(70, Math.min(180, finalValue));
+    // Apply wider constraints to ensure values are within updated physiological range
+    return Math.max(40, Math.min(200, finalValue));
   }
   
   /**
@@ -443,5 +464,6 @@ export class GlucoseProcessor {
     this.lastCalculatedGlucose = 0;
     this.glucoseHistory = [];
     this.confidenceWeights = [];
+    this.isMeasurementFinished = false;
   }
 }
