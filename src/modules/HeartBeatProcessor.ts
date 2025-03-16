@@ -1,12 +1,11 @@
-
 // Using the internal class definition instead of importing the conflicting module
 
 export class HeartBeatProcessor {
   private readonly HEART_BPM_BUFFER_SIZE = 10;
   private readonly HEART_PEAK_BUFFER_SIZE = 20;
-  private readonly MIN_PEAK_INTERVAL_MS = 300;
+  private readonly MIN_PEAK_INTERVAL_MS = 400; // Aumentado para prevenir detecciones falsas
   private readonly MAX_PEAK_INTERVAL_MS = 1500;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25; // Aumentado para exigir mayor confianza
 
   private heartBPMBuffer: number[] = [];
   private peakTimestamps: number[] = [];
@@ -21,7 +20,8 @@ export class HeartBeatProcessor {
   private arrhythmiaWindows: Array<{start: number, end: number}> = [];
   private heartRateHistory: number[] = [];
   private confidenceHistory: number[] = [];
-  private isMonitoring = false; // Add monitoring state flag
+  private isMonitoring = false; // Estado de monitorización
+  private consecutiveLowQualityCount = 0;
 
   constructor() {
     this.rrAnalyzer = new RRDataAnalyzer();
@@ -160,7 +160,7 @@ export class HeartBeatProcessor {
     confidence: number;
     isPeak: boolean;
     filteredValue?: number;
-    arrhythmiaCount: number; // Make sure arrhythmiaCount is included
+    arrhythmiaCount: number;
   } {
     // Only process if we're in monitoring mode
     if (!this.isMonitoring) {
@@ -172,11 +172,27 @@ export class HeartBeatProcessor {
       };
     }
 
+    // Implementar detección de señal baja o ausente
+    if (Math.abs(value) < 0.05) {
+      this.consecutiveLowQualityCount++;
+      if (this.consecutiveLowQualityCount > 30) {
+        // Si hay muchas muestras de baja calidad consecutivas, devuelve confianza cero
+        return {
+          bpm: 0,
+          confidence: 0,
+          isPeak: false,
+          arrhythmiaCount: 0
+        };
+      }
+    } else {
+      this.consecutiveLowQualityCount = 0;
+    }
+
     const now = Date.now();
     const timeDelta = now - this.lastProcessedTime;
     this.lastProcessedTime = now;
 
-    // Check if this is a peak
+    // Check if this is a peak with umbral más estricto
     const isPeak = this.isPeak(value, now);
     
     // Update RR intervals if this is a peak
@@ -201,7 +217,7 @@ export class HeartBeatProcessor {
     // Calculate current BPM
     const bpm = this.calculateCurrentBPM();
     
-    // Calculate confidence based on consistency of peaks
+    // Calcular confianza con criterios más estrictos
     let confidence = 0;
     
     if (this.peakTimestamps.length >= 3) {
@@ -228,7 +244,7 @@ export class HeartBeatProcessor {
       
       // Adjust confidence based on physiological plausibility
       if (bpm < 40 || bpm > 200) {
-        confidence *= 0.5;
+        confidence *= 0.3; // Reduce confidence for implausible values
       }
       
       // Store confidence history
@@ -243,8 +259,8 @@ export class HeartBeatProcessor {
       confidence = avgConfidence;
     }
 
-    // Store heart rate history
-    if (bpm > 0) {
+    // Store heart rate history only if confidence is good
+    if (bpm > 0 && confidence > 0.3) {
       this.heartRateHistory.push(bpm);
       if (this.heartRateHistory.length > 10) {
         this.heartRateHistory.shift();
@@ -261,7 +277,7 @@ export class HeartBeatProcessor {
   }
 
   public calculateCurrentBPM(): number {
-    if (this.peakTimestamps.length < 2) {
+    if (this.peakTimestamps.length < 4) { // Exigir más picos para calcular BPM
       return 0;
     }
 
@@ -274,52 +290,51 @@ export class HeartBeatProcessor {
       }
     }
 
-    if (intervals.length === 0) {
+    if (intervals.length < 3) { // Exigir más intervalos válidos
       return 0;
     }
 
-    // Calculate average interval
-    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    // Eliminar outliers usando IQR (rango intercuartil)
+    const sortedIntervals = [...intervals].sort((a, b) => a - b);
+    const q1 = sortedIntervals[Math.floor(sortedIntervals.length * 0.25)];
+    const q3 = sortedIntervals[Math.floor(sortedIntervals.length * 0.75)];
+    const iqr = q3 - q1;
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    const filteredIntervals = intervals.filter(
+      interval => interval >= lowerBound && interval <= upperBound
+    );
+    
+    if (filteredIntervals.length === 0) {
+      return 0;
+    }
+    
+    // Calculate average interval from filtered intervals
+    const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
     
     // Convert to BPM
-    const instantBPM = Math.round(60000 / avgInterval);
+    const bpm = Math.round(60000 / avgInterval);
     
-    // Add to buffer
-    this.heartBPMBuffer.push(instantBPM);
-    if (this.heartBPMBuffer.length > this.HEART_BPM_BUFFER_SIZE) {
-      this.heartBPMBuffer.shift();
+    // Validate physiological range
+    if (bpm < 40 || bpm > 200) {
+      return 0;
     }
     
-    // Calculate median BPM
-    const sortedBPMs = [...this.heartBPMBuffer].sort((a, b) => a - b);
-    const medianBPM = sortedBPMs[Math.floor(sortedBPMs.length / 2)];
-    
-    // Calculate weighted average (more weight to recent values)
-    let weightedSum = 0;
-    let weightSum = 0;
-    for (let i = 0; i < this.heartBPMBuffer.length; i++) {
-      const weight = i + 1;
-      weightedSum += this.heartBPMBuffer[i] * weight;
-      weightSum += weight;
-    }
-    
-    const weightedBPM = Math.round(weightedSum / weightSum);
-    
-    // Return weighted average of median and weighted BPM
-    return Math.round(medianBPM * 0.6 + weightedBPM * 0.4);
+    return bpm;
   }
 
   private isPeak(value: number, timestamp: number): boolean {
     if (this.lastPeakTime !== null) {
       const timeSinceLastPeak = timestamp - this.lastPeakTime;
       
-      // Enforce minimum time between peaks
+      // Enforce minimum time between peaks (strict)
       if (timeSinceLastPeak < this.MIN_PEAK_INTERVAL_MS) {
         return false;
       }
     }
     
-    // Simple peak detection
+    // Peak detection with higher threshold
     if (value > this.MIN_CONFIDENCE_THRESHOLD) {
       this.lastPeakTime = timestamp;
       
@@ -360,9 +375,16 @@ export class HeartBeatProcessor {
     this.arrhythmiaWindows = [];
     this.heartRateHistory = [];
     this.confidenceHistory = [];
+    this.consecutiveLowQualityCount = 0;
+    
+    // Mantener el estado de monitoreo actual
+    const wasMonitoring = this.isMonitoring;
     
     // Reinitialize audio on reset
     this.initAudio();
+    
+    // Restore monitoring state
+    this.setMonitoring(wasMonitoring);
   }
 
   public getArrhythmiaCounter(): number {
@@ -384,8 +406,8 @@ class RRDataAnalyzer {
     if (this.lastPeakTime !== null) {
       const interval = timestamp - this.lastPeakTime;
       
-      // Only add physiologically plausible intervals (300ms to 1500ms)
-      if (interval >= 300 && interval <= 1500) {
+      // Only add physiologically plausible intervals (400ms to 1500ms)
+      if (interval >= 400 && interval <= 1500) {
         this.rrIntervals.push(interval);
         
         // Keep buffer size limited
@@ -425,7 +447,8 @@ class RRDataAnalyzer {
     const lastInterval = recentIntervals[recentIntervals.length - 1];
     const deviation = Math.abs(lastInterval - mean) / mean;
     
-    this.isArrhythmiaDetected = deviation > this.ARRHYTHMIA_THRESHOLD;
+    // Utilizar umbral más exigente para arritmias
+    this.isArrhythmiaDetected = deviation > this.ARRHYTHMIA_THRESHOLD && mean > 0;
   }
   
   public reset(): void {

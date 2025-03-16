@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -70,6 +71,37 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Modificación principal: Mejora de la detección de señal
+  useEffect(() => {
+    if (lastSignal && isMonitoring) {
+      // Solo procesar si la calidad es suficiente y el dedo está detectado
+      const minQualityThreshold = 30; // Aumentado para exigir mayor calidad
+      
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        
+        // Solo actualizar la frecuencia cardíaca si la confianza es suficiente
+        if (heartBeatResult.confidence > 0.3) { // Aumentado umbral de confianza
+          setHeartRate(heartBeatResult.bpm);
+          
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
+          }
+        }
+        
+        setSignalQuality(lastSignal.quality);
+      } else {
+        // Cuando no hay señal de calidad, no actualizar valores
+        // pero mantener la calidad de señal actualizada
+        setSignalQuality(lastSignal.quality);
+      }
+    } else if (!isMonitoring) {
+      // Si no está monitorizando, mantener valores a cero
+      setSignalQuality(0);
+    }
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+
   const startMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -80,7 +112,7 @@ const Index = () => {
       setShowResults(false);
       
       startProcessing();
-      startHeartBeatMonitoring();
+      startHeartBeatMonitoring(); // Ahora actualiza el estado interno del procesador
       
       setElapsedTime(0);
       
@@ -109,7 +141,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
+    stopHeartBeatMonitoring(); // Asegura que no haya beeps después de parar
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
