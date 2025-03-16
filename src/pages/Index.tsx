@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,6 +9,8 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { toast } from "sonner";
+import SignalQualityIndicator from "@/components/SignalQualityIndicator";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -26,9 +29,22 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  
   const measurementTimerRef = useRef<number | null>(null);
   
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
+  const { 
+    startProcessing, 
+    stopProcessing, 
+    lastSignal, 
+    processFrame, 
+    isCalibrating: signalCalibrating,
+    calibrationProgress: signalCalibrationProgress,
+    calibrationResult,
+    startCalibration
+  } = useSignalProcessor();
+  
   const { 
     processSignal: processHeartBeat, 
     isArrhythmia,
@@ -41,8 +57,22 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults
+    lastValidResults,
+    applyCalibration
   } = useVitalSignsProcessor();
+
+  // Actualizar estado de calibración desde el procesador de señal
+  useEffect(() => {
+    setIsCalibrating(signalCalibrating);
+    setCalibrationProgress(signalCalibrationProgress);
+  }, [signalCalibrating, signalCalibrationProgress]);
+  
+  // Aplicar resultados de calibración a todos los procesadores
+  useEffect(() => {
+    if (calibrationResult) {
+      applyCalibration(calibrationResult);
+    }
+  }, [calibrationResult, applyCalibration]);
 
   const enterFullScreen = async () => {
     try {
@@ -74,13 +104,17 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      const minQualityThreshold = calibrationResult ? 
+        calibrationResult.signalQualityThreshold : 40; // Usar umbral calibrado si está disponible
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+        const confidenceThreshold = calibrationResult ? 
+          calibrationResult.confidenceThreshold : 0.4; // Usar umbral calibrado si está disponible
+          
+        if (heartBeatResult.confidence > confidenceThreshold) {
           setHeartRate(heartBeatResult.bpm);
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -103,9 +137,9 @@ const Index = () => {
       // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, calibrationResult]);
 
-  const startMonitoring = () => {
+  const startMonitoring = async () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
@@ -122,6 +156,27 @@ const Index = () => {
       
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
+      }
+      
+      // Iniciar calibración al comenzar la medición
+      try {
+        toast.info("Calibrando sensores", {
+          description: "Mantenga el dispositivo estable durante el proceso."
+        });
+        
+        setIsCalibrating(true);
+        await startCalibration();
+        
+        toast.success("Calibración completada", {
+          description: "El sistema ha sido optimizado para su dispositivo."
+        });
+      } catch (err) {
+        console.error("Error durante la calibración:", err);
+        toast.error("Error de calibración", {
+          description: "Utilizando valores por defecto."
+        });
+      } finally {
+        setIsCalibrating(false);
       }
       
       measurementTimerRef.current = window.setInterval(() => {
@@ -191,6 +246,8 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    setIsCalibrating(false);
+    setCalibrationProgress(0);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -277,7 +334,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -294,17 +350,25 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
+            isCalibrating={isCalibrating}
           />
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-white text-lg">
-              Calidad: {signalQuality}
-            </div>
-            <div className="text-white text-lg">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
-            </div>
+            <SignalQualityIndicator 
+              quality={signalQuality} 
+              isMonitoring={isMonitoring}
+            />
+            
+            {isCalibrating && (
+              <div className="bg-black/40 py-1 px-3 rounded-full">
+                <div className="text-white text-xs flex items-center">
+                  <span className="animate-pulse mr-1">⚙️</span>
+                  <span>Calibrando: {calibrationProgress}%</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex-1">

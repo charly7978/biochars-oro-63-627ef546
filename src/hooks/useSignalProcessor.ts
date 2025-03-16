@@ -2,10 +2,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
+import { AutoCalibrationSystem, CalibrationResult } from '../modules/AutoCalibrationSystem';
+import { toast } from 'sonner';
 
 /**
  * Hook para gestionar el procesamiento de señales PPG.
- * Implementa detección robusta, adaptativa y natural.
+ * Implementa detección robusta, adaptativa y natural con calibración real.
  */
 export const useSignalProcessor = () => {
   // Instancia del procesador
@@ -18,6 +20,9 @@ export const useSignalProcessor = () => {
     return new PPGSignalProcessor();
   });
   
+  // Sistema de calibración autónomo
+  const [calibrationSystem] = useState(() => new AutoCalibrationSystem());
+  
   // Estado del procesador
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
@@ -29,6 +34,9 @@ export const useSignalProcessor = () => {
     avgValue: 0,
     totalValues: 0
   });
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [calibrationResult, setCalibrationResult] = useState<CalibrationResult | null>(null);
   
   // Referencias para historial y estabilización
   const qualityHistoryRef = useRef<number[]>([]);
@@ -46,7 +54,11 @@ export const useSignalProcessor = () => {
   const signalLockCounterRef = useRef<number>(0);
   const MAX_SIGNAL_LOCK = 4;
   const RELEASE_GRACE_PERIOD = 3;
-
+  
+  // Contador de frames para calibración
+  const calibrationFramesRef = useRef<number>(0);
+  const requiredCalibrationFramesRef = useRef<number>(60);
+  
   /**
    * Procesa la detección de dedo de manera robusta y adaptativa
    */
@@ -77,26 +89,36 @@ export const useSignalProcessor = () => {
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // Lógica adaptativa para ajustar el umbral
-    adaptiveCounterRef.current++;
-    if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
-      adaptiveCounterRef.current = 0;
+    // Aplicar calibración si está disponible
+    if (calibrationResult) {
+      if (avgQuality < calibrationResult.signalQualityThreshold) {
+        signal.fingerDetected = false;
+      }
       
-      const consistentDetection = rawDetectionRatio > 0.8;
-      const consistentNonDetection = rawDetectionRatio < 0.2;
-      
-      if (consistentNonDetection) {
-        // Hacer más fácil la detección
-        detectionThresholdRef.current = Math.max(
-          MIN_DETECTION_THRESHOLD,
-          detectionThresholdRef.current - 0.08
-        );
-      } else if (consistentDetection && avgQuality < 35) {
-        // Ser más estrictos con detección pero baja calidad
-        detectionThresholdRef.current = Math.min(
-          0.6,
-          detectionThresholdRef.current + 0.05
-        );
+      // Ajustar umbral de detección si hay calibración
+      detectionThresholdRef.current = calibrationResult.detectionSensitivity;
+    } else {
+      // Lógica adaptativa para ajustar el umbral sin calibración
+      adaptiveCounterRef.current++;
+      if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
+        adaptiveCounterRef.current = 0;
+        
+        const consistentDetection = rawDetectionRatio > 0.8;
+        const consistentNonDetection = rawDetectionRatio < 0.2;
+        
+        if (consistentNonDetection) {
+          // Hacer más fácil la detección
+          detectionThresholdRef.current = Math.max(
+            MIN_DETECTION_THRESHOLD,
+            detectionThresholdRef.current - 0.08
+          );
+        } else if (consistentDetection && avgQuality < 35) {
+          // Ser más estrictos con detección pero baja calidad
+          detectionThresholdRef.current = Math.min(
+            0.6,
+            detectionThresholdRef.current + 0.05
+          );
+        }
       }
     }
     
@@ -132,7 +154,86 @@ export const useSignalProcessor = () => {
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
-  }, []);
+  }, [calibrationResult]);
+  
+  /**
+   * Inicia una nueva calibración del sistema
+   */
+  const startCalibration = useCallback(async () => {
+    if (calibrationSystem.isCalibrationActive()) {
+      console.log("useSignalProcessor: Ya hay una calibración en curso");
+      return;
+    }
+    
+    setIsCalibrating(true);
+    calibrationFramesRef.current = 0;
+    setCalibrationProgress(0);
+    
+    try {
+      toast.info("Iniciando calibración del sistema", {
+        description: "No mueva el dispositivo durante este proceso."
+      });
+      
+      console.log("useSignalProcessor: Iniciando calibración");
+      
+      const result = await calibrationSystem.startCalibration(requiredCalibrationFramesRef.current);
+      
+      setCalibrationResult(result);
+      console.log("useSignalProcessor: Calibración completada con éxito", result);
+      
+      toast.success("Calibración completada", {
+        description: "El sistema ha sido adaptado a las condiciones actuales."
+      });
+      
+      // Aplicar calibración al procesador
+      if (processor.applyCalibration) {
+        processor.applyCalibration(result);
+      }
+      
+    } catch (err) {
+      console.error("useSignalProcessor: Error en calibración:", err);
+      toast.error("Error en calibración", {
+        description: "No se pudo completar el proceso. Intente de nuevo en mejores condiciones de luz."
+      });
+    } finally {
+      setIsCalibrating(false);
+    }
+  }, [calibrationSystem, processor]);
+  
+  /**
+   * Procesa un frame para calibración
+   */
+  const processCalibrationFrame = useCallback((imageData: ImageData) => {
+    if (!isCalibrating || !calibrationSystem.isCalibrationActive()) return;
+    
+    try {
+      // Obtener estimación del valor PPG
+      const estimatedValue = processor.estimateValueFromImageData(imageData);
+      
+      if (typeof estimatedValue === 'number' && !isNaN(estimatedValue)) {
+        const isComplete = calibrationSystem.processCalibrationFrame(estimatedValue);
+        
+        calibrationFramesRef.current++;
+        const progress = Math.min(100, Math.round((calibrationFramesRef.current / requiredCalibrationFramesRef.current) * 100));
+        setCalibrationProgress(progress);
+        
+        if (isComplete) {
+          setIsCalibrating(false);
+          const result = calibrationSystem.getCalibrationResult();
+          if (result) {
+            setCalibrationResult(result);
+            
+            // Aplicar calibración al procesador
+            if (processor.applyCalibration) {
+              processor.applyCalibration(result);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("useSignalProcessor: Error procesando frame para calibración:", err);
+    }
+  }, [isCalibrating, calibrationSystem, processor]);
 
   // Configurar callbacks y limpieza
   useEffect(() => {
@@ -169,13 +270,14 @@ export const useSignalProcessor = () => {
     // Cleanup al desmontar
     return () => {
       processor.stop();
+      calibrationSystem.cancelCalibration();
     };
-  }, [processor, processRobustFingerDetection]);
+  }, [processor, processRobustFingerDetection, calibrationSystem]);
 
   /**
-   * Inicia el procesamiento de señales
+   * Inicia el procesamiento de señales con calibración automática
    */
-  const startProcessing = useCallback(() => {
+  const startProcessing = useCallback(async () => {
     console.log("useSignalProcessor: Iniciando procesamiento");
     
     setIsProcessing(true);
@@ -195,8 +297,16 @@ export const useSignalProcessor = () => {
     detectionThresholdRef.current = 0.45; // Umbral inicial más permisivo
     adaptiveCounterRef.current = 0;
     
+    // Iniciar procesador
     processor.start();
-  }, [processor]);
+    
+    // Realizar calibración automática al inicio
+    try {
+      await startCalibration();
+    } catch (err) {
+      console.error("useSignalProcessor: Error en calibración inicial:", err);
+    }
+  }, [processor, startCalibration]);
 
   /**
    * Detiene el procesamiento de señales
@@ -206,14 +316,19 @@ export const useSignalProcessor = () => {
     
     setIsProcessing(false);
     processor.stop();
-  }, [processor]);
+    
+    if (isCalibrating) {
+      calibrationSystem.cancelCalibration();
+      setIsCalibrating(false);
+    }
+  }, [processor, isCalibrating, calibrationSystem]);
 
   /**
    * Calibra el procesador para mejores resultados
    */
   const calibrate = useCallback(async () => {
     try {
-      console.log("useSignalProcessor: Iniciando calibración");
+      console.log("useSignalProcessor: Iniciando calibración manual");
       
       // Resetear contadores adaptativos
       qualityHistoryRef.current = [];
@@ -223,28 +338,31 @@ export const useSignalProcessor = () => {
       detectionThresholdRef.current = 0.40; // Umbral más permisivo para calibración
       adaptiveCounterRef.current = 0;
       
-      await processor.calibrate();
+      // Iniciar proceso de calibración
+      await startCalibration();
       
-      console.log("useSignalProcessor: Calibración exitosa");
+      console.log("useSignalProcessor: Calibración manual exitosa");
       return true;
     } catch (error) {
-      console.error("useSignalProcessor: Error de calibración:", error);
+      console.error("useSignalProcessor: Error de calibración manual:", error);
       return false;
     }
-  }, [processor]);
+  }, [startCalibration]);
 
   /**
    * Procesa un frame de imagen
    */
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing) {
+    if (isCalibrating) {
+      processCalibrationFrame(imageData);
+    } else if (isProcessing) {
       try {
         processor.processFrame(imageData);
       } catch (err) {
         console.error("useSignalProcessor: Error procesando frame:", err);
       }
     }
-  }, [isProcessing, processor]);
+  }, [isProcessing, isCalibrating, processor, processCalibrationFrame]);
 
   return {
     isProcessing,
@@ -255,6 +373,10 @@ export const useSignalProcessor = () => {
     startProcessing,
     stopProcessing,
     calibrate,
-    processFrame
+    processFrame,
+    isCalibrating,
+    calibrationProgress,
+    calibrationResult,
+    startCalibration
   };
 };

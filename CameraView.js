@@ -7,13 +7,16 @@ const CameraView = ({
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
-  buttonPosition 
+  buttonPosition,
+  isCalibrating = false 
 }) => {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [brightnessSamples, setBrightnessSamples] = useState([]);
   const [avgBrightness, setAvgBrightness] = useState(0);
   const brightnessSampleLimit = 10;
+  const [hasTorch, setHasTorch] = useState(false);
+  const [deviceInfo, setDeviceInfo] = useState(null);
 
   const stopCamera = async () => {
     if (stream) {
@@ -54,6 +57,19 @@ const CameraView = ({
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = newStream.getVideoTracks()[0];
+
+      // Guardar información del dispositivo para diagnóstico
+      if (videoTrack) {
+        setDeviceInfo({
+          label: videoTrack.label,
+          settings: videoTrack.getSettings(),
+          constraints: videoTrack.getConstraints()
+        });
+        
+        // Verificar si tiene linterna
+        const capabilities = videoTrack.getCapabilities();
+        setHasTorch(capabilities?.torch === true);
+      }
 
       if (videoTrack && isAndroid) {
         try {
@@ -102,6 +118,34 @@ const CameraView = ({
       console.error("Error al iniciar la cámara:", err);
     }
   };
+
+  // Activar la linterna cuando se detecta el dedo
+  useEffect(() => {
+    if (!stream || !hasTorch) return;
+    
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return;
+    
+    try {
+      // Solo activar la linterna cuando se detecta un dedo
+      const torchEnabled = isFingerDetected || isCalibrating;
+      
+      videoTrack.applyConstraints({
+        advanced: [{ torch: torchEnabled }]
+      }).catch(err => {
+        console.log("Error al controlar la linterna:", err);
+      });
+      
+      console.log("CameraView: Estado de linterna cambiado", {
+        torchEnabled,
+        fingerDetected: isFingerDetected,
+        isCalibrating
+      });
+    } catch (err) {
+      console.error("Error al controlar la linterna:", err);
+    }
+    
+  }, [stream, hasTorch, isFingerDetected, isCalibrating]);
 
   // Monitor camera brightness to help with finger detection verification
   useEffect(() => {
@@ -154,7 +198,8 @@ const CameraView = ({
           currentBrightness: brightness,
           avgBrightness,
           fingerDetected: isFingerDetected,
-          signalQuality
+          signalQuality,
+          deviceInfo: deviceInfo?.label
         });
       } catch (err) {
         console.error("Error checking brightness:", err);
@@ -163,7 +208,7 @@ const CameraView = ({
 
     const interval = setInterval(checkBrightness, 500);
     return () => clearInterval(interval);
-  }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples]);
+  }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples, deviceInfo]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
@@ -209,10 +254,23 @@ const CameraView = ({
             }`}
           />
           <span className={`text-xs mt-2 transition-colors duration-300 ${
-            actualFingerStatus ? 'text-green-500' : 'text-gray-400'
+            actualFingerStatus ? "text-green-500" : "text-gray-400"
           }`}>
-            {actualFingerStatus ? "dedo detectado" : "ubique su dedo en el lente"}
+            {isCalibrating ? "calibrando..." : actualFingerStatus ? "dedo detectado" : "ubique su dedo en el lente"}
           </span>
+          
+          {hasTorch && (
+            <span className="text-[10px] text-yellow-400 mt-1">
+              {isFingerDetected ? "linterna activada" : ""}
+            </span>
+          )}
+        </div>
+      )}
+      
+      {isCalibrating && (
+        <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 z-20 bg-black/70 px-4 py-2 rounded-lg">
+          <div className="text-white text-sm font-semibold mb-1 text-center">Calibrando sistema</div>
+          <div className="text-xs text-white/80 mb-2 text-center">Mantenga el dispositivo estable</div>
         </div>
       )}
     </>
