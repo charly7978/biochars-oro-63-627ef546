@@ -1,4 +1,4 @@
-import { RRIntervalAnalyzer } from './RRIntervalAnalyzer';
+import { RRDataAnalyzer } from '../hooks/arrhythmia/RRDataAnalyzer';
 
 export class HeartBeatProcessor {
   private readonly HEART_BPM_BUFFER_SIZE = 10;
@@ -11,7 +11,7 @@ export class HeartBeatProcessor {
   private peakTimestamps: number[] = [];
   private lastPeakTime: number | null = null;
   private lastProcessedTime: number = 0;
-  private rrAnalyzer: RRIntervalAnalyzer;
+  private rrAnalyzer: RRDataAnalyzer;
   private audioContext: AudioContext | null = null;
   private beepGain: GainNode | null = null;
   private beepOscillator: OscillatorNode | null = null;
@@ -22,7 +22,7 @@ export class HeartBeatProcessor {
   private confidenceHistory: number[] = [];
 
   constructor() {
-    this.rrAnalyzer = new RRIntervalAnalyzer();
+    this.rrAnalyzer = new RRDataAnalyzer();
     this.initAudio();
   }
 
@@ -318,8 +318,8 @@ export class HeartBeatProcessor {
   }
 }
 
-// Helper class definition
-class RRIntervalAnalyzer {
+// Create helper class for RR interval analysis to replace the missing RRIntervalAnalyzer
+class RRDataAnalyzer {
   private readonly MAX_RR_INTERVALS = 20;
   private readonly MIN_INTERVALS_FOR_ANALYSIS = 5;
   private readonly ARRHYTHMIA_THRESHOLD = 0.2;

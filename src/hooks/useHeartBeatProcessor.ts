@@ -318,7 +318,7 @@ export const useHeartBeatProcessor = () => {
           bpm: currentBPM,
           confidence: result.confidence,
           isPeak: false,
-          arrhythmiaCount: 0,
+          arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
           rrData: {
             intervals: [],
             lastPeakTime: null
@@ -334,6 +334,7 @@ export const useHeartBeatProcessor = () => {
       return {
         ...result,
         isArrhythmia: currentBeatIsArrhythmiaRef.current,
+        arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
         rrData
       };
     } catch (error) {
