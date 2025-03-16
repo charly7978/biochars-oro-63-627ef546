@@ -6,6 +6,7 @@
 
 /**
  * Analiza intervalos RR para detectar posibles arritmias
+ * MODIFICADO: Umbral ajustado para reducir sensibilidad
  */
 export function analyzeRRIntervals(
   rrData: { intervals: number[] } | undefined,
@@ -25,36 +26,36 @@ export function analyzeRRIntervals(
     rrSD: number;
   };
 } {
-  if (!rrData?.intervals || rrData.intervals.length < 3) {
+  if (!rrData?.intervals || rrData.intervals.length < 5) {
     return { hasArrhythmia: false, shouldIncrementCounter: false };
   }
 
-  const lastThreeIntervals = rrData.intervals.slice(-3);
-  const avgRR = lastThreeIntervals.reduce((a, b) => a + b, 0) / lastThreeIntervals.length;
+  const lastFiveIntervals = rrData.intervals.slice(-5); // Aumentado de 3 a 5 para más estabilidad
+  const avgRR = lastFiveIntervals.reduce((a, b) => a + b, 0) / lastFiveIntervals.length;
   
   // Calculate RMSSD (Root Mean Square of Successive Differences)
   let rmssd = 0;
-  for (let i = 1; i < lastThreeIntervals.length; i++) {
-    rmssd += Math.pow(lastThreeIntervals[i] - lastThreeIntervals[i-1], 2);
+  for (let i = 1; i < lastFiveIntervals.length; i++) {
+    rmssd += Math.pow(lastFiveIntervals[i] - lastFiveIntervals[i-1], 2);
   }
-  rmssd = Math.sqrt(rmssd / (lastThreeIntervals.length - 1));
+  rmssd = Math.sqrt(rmssd / (lastFiveIntervals.length - 1));
   
   // Calculate additional metrics
-  const lastRR = lastThreeIntervals[lastThreeIntervals.length - 1];
+  const lastRR = lastFiveIntervals[lastFiveIntervals.length - 1];
   const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
   
   // Calculate standard deviation of intervals
   const rrSD = Math.sqrt(
-    lastThreeIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
-    lastThreeIntervals.length
+    lastFiveIntervals.reduce((acc, val) => acc + Math.pow(val - avgRR, 2), 0) / 
+    lastFiveIntervals.length
   );
   
-  // Multi-parametric arrhythmia detection conditions
+  // Multi-parametric arrhythmia detection conditions - AJUSTADO: umbrales menos sensibles
   const hasArrhythmia = 
-    (rmssd > 50 && rrVariation > 0.20) || // Primary condition
-    (rrSD > 35 && rrVariation > 0.18) ||  // Secondary condition
-    (lastRR > 1.4 * avgRR) ||             // Extreme outlier condition
-    (lastRR < 0.6 * avgRR);               // Extreme outlier condition
+    (rmssd > 65 && rrVariation > 0.25) || // Antes: rmssd > 50, rrVariation > 0.20
+    (rrSD > 45 && rrVariation > 0.28) ||  // Antes: rrSD > 35, rrVariation > 0.18
+    (lastRR > 1.6 * avgRR) ||             // Antes: 1.4
+    (lastRR < 0.55 * avgRR);              // Antes: 0.6
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 

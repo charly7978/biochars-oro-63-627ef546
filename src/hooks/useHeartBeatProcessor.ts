@@ -79,15 +79,16 @@ export const useHeartBeatProcessor = () => {
   }, []);
 
   // Function to determine if the current beat pattern indicates an arrhythmia
+  // MODIFICADO: Reducimos sensibilidad para menos falsos positivos
   const detectArrhythmia = useCallback((rrIntervals: number[]): boolean => {
-    if (rrIntervals.length < 3) return false;
+    if (rrIntervals.length < 5) return false; // Aumentamos a 5 intervalos para más estabilidad
     
-    // Get the last 3 intervals for analysis
-    const recentIntervals = rrIntervals.slice(-3);
+    // Get the last 5 intervals for analysis (antes: 3)
+    const recentIntervals = rrIntervals.slice(-5);
     const avgInterval = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
     const lastInterval = recentIntervals[recentIntervals.length - 1];
     
-    // Calculate RR variation percentage from average
+    // Calculate RR variation percentage from average - ahora más permisivo
     const variation = Math.abs(lastInterval - avgInterval) / avgInterval;
     
     // Calculate standard deviation for recent intervals
@@ -96,11 +97,12 @@ export const useHeartBeatProcessor = () => {
     );
     
     // Detect arrhythmia based on significant variations or extreme values
+    // Umbral aumentado del 20% al 30% para reducir falsos positivos
     const isArrhythmia = 
-      (variation > 0.20) || // More than 20% variation from average
-      (stdDev > 40) ||      // High variability among recent intervals
-      (lastInterval > 1.3 * avgInterval) || // Significantly longer than average (potential pause)
-      (lastInterval < 0.7 * avgInterval);   // Significantly shorter than average (potential premature beat)
+      (variation > 0.30) || // Más del 30% de variación del promedio (antes: 20%)
+      (stdDev > 70) ||      // Mayor variabilidad requerida (antes: 40)
+      (lastInterval > 1.5 * avgInterval) || // Significativamente más largo (antes: 1.3)
+      (lastInterval < 0.6 * avgInterval);   // Significativamente más corto (antes: 0.7)
     
     if (isArrhythmia) {
       console.log('useHeartBeatProcessor: Arrhythmia detected', {
@@ -108,7 +110,7 @@ export const useHeartBeatProcessor = () => {
         stdDev,
         lastInterval,
         avgInterval,
-        threshold: 0.20,
+        threshold: 0.30, // Actualizado
         timestamp: new Date().toISOString()
       });
     }
@@ -153,7 +155,8 @@ export const useHeartBeatProcessor = () => {
     }
     
     // Determine if this beat is an arrhythmia
-    const isArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
+    // Añadimos filtro adicional de confianza para reducir falsos positivos
+    const isArrhythmia = result.confidence > 0.85 && detectArrhythmia(lastRRIntervalsRef.current);
     lastIsArrhythmiaRef.current = isArrhythmia;
 
     // Si se detecta un pico y ha pasado suficiente tiempo desde el último pico
@@ -180,7 +183,8 @@ export const useHeartBeatProcessor = () => {
       timestamp: new Date().toISOString()
     });
     
-    if (result.confidence < 0.7) {
+    // Aumentamos umbral de confianza para reducir falsos positivos
+    if (result.confidence < 0.8) {
       console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
         bpm: currentBPM,

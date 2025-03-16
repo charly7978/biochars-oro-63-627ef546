@@ -25,8 +25,9 @@ export class ArrhythmiaAnalyzer {
   private hasDetectedArrhythmia: boolean = false;
   private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
+  // Incrementamos el umbral para reducir falsos positivos
   private consecutiveAbnormalIntervals: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 2; // Nuevo: número de intervalos anormales consecutivos para confirmar
+  private readonly CONSECUTIVE_THRESHOLD = 3; // Aumentado de 2 a 3 para más robustez
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
@@ -42,7 +43,7 @@ export class ArrhythmiaAnalyzer {
     const currentTime = Date.now();
     
     // Si no hay datos RR válidos, retornar el resultado sin cambios
-    if (!rrData?.intervals || rrData.intervals.length < 3) {
+    if (!rrData?.intervals || rrData.intervals.length < 5) { // Aumentado de 3 a 5 para estabilidad
       // Si previamente detectamos una arritmia, mantener ese estado
       if (this.hasDetectedArrhythmia) {
         return {
@@ -58,7 +59,7 @@ export class ArrhythmiaAnalyzer {
       };
     }
     
-    const lastThreeIntervals = rrData.intervals.slice(-3);
+    const lastIntervals = rrData.intervals.slice(-5); // Aumentado de 3 a 5
     
     // Analizar intervalos RR para detectar posibles arritmias
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
@@ -73,13 +74,13 @@ export class ArrhythmiaAnalyzer {
     
     if (analysisData) {
       // Registrar análisis RR para depuración
-      logRRAnalysis(analysisData, lastThreeIntervals);
+      logRRAnalysis(analysisData, lastIntervals);
       
       // Si se detecta una posible arritmia, registrar detalles
       if (hasArrhythmia) {
         logPossibleArrhythmia(analysisData);
         
-        // Nuevo: análisis de continuidad de anomalías
+        // Análisis de continuidad de anomalías
         if (hasArrhythmia) {
           this.consecutiveAbnormalIntervals++;
         } else {
@@ -87,6 +88,7 @@ export class ArrhythmiaAnalyzer {
         }
         
         // Verificar si debemos incrementar contador (con umbral mejorado)
+        // Ahora requerimos más anomalías consecutivas para confirmar arritmia
         if (shouldIncrementCounter && 
             (this.consecutiveAbnormalIntervals >= this.CONSECUTIVE_THRESHOLD)) {
           // Confirmamos la arritmia e incrementamos el contador
@@ -96,7 +98,7 @@ export class ArrhythmiaAnalyzer {
           this.consecutiveAbnormalIntervals = 0; // Reiniciar contador de anomalías
           
           // Registrar la arritmia confirmada
-          logConfirmedArrhythmia(analysisData, lastThreeIntervals, this.arrhythmiaCounter);
+          logConfirmedArrhythmia(analysisData, lastIntervals, this.arrhythmiaCounter);
 
           return {
             ...result,
