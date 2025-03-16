@@ -43,7 +43,7 @@ export class VitalSignsProcessor {
   /**
    * Reinicia el procesador
    */
-  public reset(): VitalSignsResult | null {
+  public reset() {
     return this.processor.reset();
   }
   

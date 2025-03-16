@@ -94,7 +94,6 @@ export const useVitalSignsProcessor = () => {
         presión: result.pressure,
         glucosa: result.glucose,
         lípidos: result.lipids,
-        hemoglobina: result.hemoglobin,
         timestamp: new Date().toISOString()
       });
       setLastValidResults(result);
@@ -128,16 +127,12 @@ export const useVitalSignsProcessor = () => {
         resultadosGuardados: {
           spo2: savedResults.spo2,
           presión: savedResults.pressure,
-          estadoArritmia: savedResults.arrhythmiaStatus,
-          glucosa: savedResults.glucose,
-          lípidos: savedResults.lipids,
-          hemoglobina: savedResults.hemoglobin
+          estadoArritmia: savedResults.arrhythmiaStatus
         },
         timestamp: new Date().toISOString()
       });
       
       setLastValidResults(savedResults);
-      return savedResults;
     } else {
       console.log("useVitalSignsProcessor: No hay resultados para guardar tras reset", {
         timestamp: new Date().toISOString()
@@ -145,7 +140,7 @@ export const useVitalSignsProcessor = () => {
     }
     
     console.log("Reseteo suave completado - manteniendo resultados");
-    return null;
+    return savedResults;
   }, [lastValidResults]);
   
   /**

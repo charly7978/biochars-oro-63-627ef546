@@ -2,26 +2,20 @@
  * Advanced Arrhythmia Processor based on peer-reviewed cardiac research
  */
 export class ArrhythmiaProcessor {
-  // Configuration based on clinical research on HRV
-  private readonly RR_WINDOW_SIZE = 8; // Reduced from 10 for faster response
-  private readonly RMSSD_THRESHOLD = 40; // Reduced from 45 for better sensitivity
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 5000; // Reduced from 6000 for faster learning
-  private readonly SD1_THRESHOLD = 30; // Reduced from 35 for better detection
-  private readonly PERFUSION_INDEX_MIN = 0.25; // Reduced from 0.3 for better sensitivity
+  // Configuration based on Harvard Medical School research on HRV
+  private readonly RR_WINDOW_SIZE = 10; // Increased window for better statistical power
+  private readonly RMSSD_THRESHOLD = 45; // More conservative threshold
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 6000; // Extended learning period
+  private readonly SD1_THRESHOLD = 35; // More conservative Poincaré plot SD1 threshold
+  private readonly PERFUSION_INDEX_MIN = 0.3; // Higher minimum PI for reliable detection
   
-  // Advanced detection parameters
-  private readonly PNNX_THRESHOLD = 0.22; // Reduced from 0.25 for better sensitivity
-  private readonly SHANNON_ENTROPY_THRESHOLD = 1.5; // Reduced from 1.8 for better sensitivity
-  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.2; // Reduced from 1.4 for better sensitivity
+  // Advanced detection parameters from Mayo Clinic research
+  private readonly PNNX_THRESHOLD = 0.25; // More conservative pNN50 threshold
+  private readonly SHANNON_ENTROPY_THRESHOLD = 1.8; // Higher entropy threshold
+  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.4; // Higher sample entropy threshold
   
   // Minimum time between arrhythmias to reduce false positives
-  private readonly MIN_ARRHYTHMIA_INTERVAL = 1800; // Reduced from 2000 ms
-
-  // Added: correlation threshold for pattern matching
-  private readonly CORRELATION_THRESHOLD = 0.6;
-  
-  // Added: minimum number of intervals needed for reliable detection
-  private readonly MIN_INTERVALS_FOR_DETECTION = 4;
+  private readonly MIN_ARRHYTHMIA_INTERVAL = 2000; // 2 seconds minimum between detections
 
   // State variables
   private rrIntervals: number[] = [];
@@ -40,17 +34,10 @@ export class ArrhythmiaProcessor {
   private shannonEntropy: number = 0;
   private sampleEntropy: number = 0;
   private pnnX: number = 0;
-  
-  // Added: variables for consecutive detection requirements
-  private consecutiveArrhythmiaDetections: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 2;
-  
-  // Added: normal template for pattern matching
-  private normalTemplate: number[] = [];
-  private readonly NORMAL_TEMPLATE_SIZE = 6;
 
   /**
    * Processes heart beat data to detect arrhythmias using advanced HRV analysis
+   * Based on techniques from "New frontiers in heart rate variability analysis"
    */
   public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
     arrhythmiaStatus: string;
@@ -60,40 +47,26 @@ export class ArrhythmiaProcessor {
 
     // Update RR intervals if available
     if (rrData?.intervals && rrData.intervals.length > 0) {
-      // Check if we have new intervals by comparing with our current count
-      const hasNewIntervals = rrData.intervals.length > this.rrIntervals.length;
-      
       this.rrIntervals = rrData.intervals;
       this.lastPeakTime = rrData.lastPeakTime;
       
-      // Only compute RR differences if we have new data
-      if (hasNewIntervals && this.rrIntervals.length >= 2) {
+      // Compute RR differences for variability analysis
+      if (this.rrIntervals.length >= 2) {
         this.rrDifferences = [];
         for (let i = 1; i < this.rrIntervals.length; i++) {
           this.rrDifferences.push(this.rrIntervals[i] - this.rrIntervals[i-1]);
         }
-        
-        // Update normal template if we're in learning phase
-        if (this.isLearningPhase && this.rrIntervals.length >= this.NORMAL_TEMPLATE_SIZE) {
-          this.updateNormalTemplate();
-        }
       }
       
-      // Analyze intervals if we have enough data and are not in learning phase
-      if (!this.isLearningPhase && 
-          this.rrIntervals.length >= this.MIN_INTERVALS_FOR_DETECTION) {
+      if (!this.isLearningPhase && this.rrIntervals.length >= this.RR_WINDOW_SIZE) {
         this.detectArrhythmia();
       }
     }
 
     // Check if learning phase is complete
     const timeSinceStart = currentTime - this.measurementStartTime;
-    if (timeSinceStart > this.ARRHYTHMIA_LEARNING_PERIOD && this.isLearningPhase) {
+    if (timeSinceStart > this.ARRHYTHMIA_LEARNING_PERIOD) {
       this.isLearningPhase = false;
-      console.log("ArrhythmiaProcessor: Learning phase complete", {
-        normalTemplate: this.normalTemplate,
-        timestamp: new Date().toISOString()
-      });
     }
 
     // Determine arrhythmia status message
@@ -118,87 +91,13 @@ export class ArrhythmiaProcessor {
       lastArrhythmiaData
     };
   }
-  
-  /**
-   * Creates or updates a normal pattern template during learning phase
-   */
-  private updateNormalTemplate(): void {
-    // Use the most recent intervals for the template
-    const recentIntervals = this.rrIntervals.slice(-this.NORMAL_TEMPLATE_SIZE);
-    
-    // Only update if intervals are within physiological range
-    const allValid = recentIntervals.every(interval => interval >= 500 && interval <= 1500);
-    
-    if (allValid) {
-      // Calculate variability of these intervals
-      const mean = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
-      const variance = recentIntervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentIntervals.length;
-      const stdDev = Math.sqrt(variance);
-      const coeffVar = stdDev / mean;
-      
-      // Only use as template if variability is low (normal rhythm)
-      if (coeffVar < 0.1) {
-        this.normalTemplate = [...recentIntervals];
-        console.log("ArrhythmiaProcessor: Updated normal template", {
-          template: this.normalTemplate,
-          coeffVar,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-  }
-  
-  /**
-   * Compares current pattern to normal template
-   * Returns correlation coefficient (1.0 = perfect match, 0.0 = no correlation)
-   */
-  private compareToNormalTemplate(currentIntervals: number[]): number {
-    if (this.normalTemplate.length < this.NORMAL_TEMPLATE_SIZE || 
-        currentIntervals.length < this.normalTemplate.length) {
-      return 1.0; // Default to high correlation if not enough data
-    }
-    
-    // Get most recent intervals matching template size
-    const recentIntervals = currentIntervals.slice(-this.normalTemplate.length);
-    
-    // Normalize both sequences for better comparison
-    const normalizedTemplate = this.normalizeArray(this.normalTemplate);
-    const normalizedCurrent = this.normalizeArray(recentIntervals);
-    
-    // Calculate correlation coefficient
-    let numerator = 0;
-    let denom1 = 0;
-    let denom2 = 0;
-    
-    for (let i = 0; i < normalizedTemplate.length; i++) {
-      numerator += normalizedTemplate[i] * normalizedCurrent[i];
-      denom1 += normalizedTemplate[i] * normalizedTemplate[i];
-      denom2 += normalizedCurrent[i] * normalizedCurrent[i];
-    }
-    
-    const denominator = Math.sqrt(denom1 * denom2);
-    if (denominator === 0) return 1.0;
-    
-    return numerator / denominator;
-  }
-  
-  /**
-   * Normalizes an array (zero mean, unit variance)
-   */
-  private normalizeArray(array: number[]): number[] {
-    const mean = array.reduce((sum, val) => sum + val, 0) / array.length;
-    const variance = array.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / array.length;
-    const stdDev = Math.sqrt(variance);
-    
-    if (stdDev === 0) return array.map(() => 0);
-    return array.map(val => (val - mean) / stdDev);
-  }
 
   /**
    * Detects arrhythmia using multiple advanced HRV metrics
+   * Based on ESC Guidelines for arrhythmia detection
    */
   private detectArrhythmia(): void {
-    if (this.rrIntervals.length < this.MIN_INTERVALS_FOR_DETECTION) return;
+    if (this.rrIntervals.length < this.RR_WINDOW_SIZE) return;
 
     const currentTime = Date.now();
     const recentRR = this.rrIntervals.slice(-this.RR_WINDOW_SIZE);
@@ -217,12 +116,7 @@ export class ArrhythmiaProcessor {
     }
     
     // Require at least 70% valid intervals
-    if (validIntervals < Math.ceil(this.RR_WINDOW_SIZE * 0.7)) {
-      console.log("ArrhythmiaProcessor: Insufficient valid intervals", {
-        validIntervals,
-        required: Math.ceil(this.RR_WINDOW_SIZE * 0.7),
-        timestamp: new Date().toISOString()
-      });
+    if (validIntervals < this.RR_WINDOW_SIZE * 0.7) {
       return;
     }
     
@@ -230,7 +124,7 @@ export class ArrhythmiaProcessor {
     
     // Calculate mean RR and standard deviation with outlier rejection
     const validRRs = recentRR.filter(rr => rr >= 500 && rr <= 1500);
-    if (validRRs.length < Math.ceil(this.RR_WINDOW_SIZE * 0.7)) return;
+    if (validRRs.length < this.RR_WINDOW_SIZE * 0.7) return;
     
     const avgRR = validRRs.reduce((a, b) => a + b, 0) / validRRs.length;
     const lastRR = validRRs[validRRs.length - 1];
@@ -242,10 +136,6 @@ export class ArrhythmiaProcessor {
     
     const coefficientOfVariation = rrStandardDeviation / avgRR;
     const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
-    
-    // Pattern matching with normal template - NEW
-    const templateCorrelation = this.compareToNormalTemplate(validRRs);
-    const patternMatches = templateCorrelation > this.CORRELATION_THRESHOLD;
     
     // Advanced non-linear dynamics metrics with stricter thresholds
     this.calculateNonLinearMetrics(validRRs);
@@ -259,65 +149,41 @@ export class ArrhythmiaProcessor {
       timeSinceLastArrhythmia >= this.MIN_ARRHYTHMIA_INTERVAL && (
         // Primary condition: requires multiple criteria to be met
         (rmssd > this.RMSSD_THRESHOLD && 
-         rrVariation > 0.22 && // Reduced from 0.25 for better sensitivity
-         coefficientOfVariation > 0.15 && 
-         !patternMatches) || // Added pattern matching criterion
+         rrVariation > 0.25 && 
+         coefficientOfVariation > 0.15) ||
         
         // Secondary condition: requires very strong signal quality
         (this.shannonEntropy > this.SHANNON_ENTROPY_THRESHOLD && 
          this.pnnX > this.PNNX_THRESHOLD && 
-         coefficientOfVariation > 0.18 && // Reduced from 0.2 for better sensitivity
-         !patternMatches) || // Added pattern matching criterion
+         coefficientOfVariation > 0.2) ||
         
         // Extreme variation condition: requires multiple confirmations
-        (rrVariation > 0.3 && // Reduced from 0.35 for better sensitivity
-         coefficientOfVariation > 0.22 && // Reduced from 0.25 for better sensitivity
+        (rrVariation > 0.35 && 
+         coefficientOfVariation > 0.25 && 
          this.sampleEntropy > this.SAMPLE_ENTROPY_THRESHOLD)
       );
 
-    // Use consecutive detection requirement to reduce false positives
-    if (newArrhythmiaState) {
-      this.consecutiveArrhythmiaDetections++;
-      console.log("ArrhythmiaProcessor: Possible arrhythmia detected", {
-        consecutiveCount: this.consecutiveArrhythmiaDetections,
-        rmssd,
-        rrVariation,
-        correlation: templateCorrelation,
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      this.consecutiveArrhythmiaDetections = Math.max(0, this.consecutiveArrhythmiaDetections - 1);
-    }
-    
-    // Confirm arrhythmia only after consecutive detections
-    const confirmedArrhythmia = 
-      this.consecutiveArrhythmiaDetections >= this.CONSECUTIVE_THRESHOLD && 
-      timeSinceLastArrhythmia > 1000; // Minimum 1 second between arrhythmias
-
-    // If it's a confirmed arrhythmia
-    if (confirmedArrhythmia) {
+    // If it's a new arrhythmia and enough time has passed since the last one
+    if (newArrhythmiaState && 
+        currentTime - this.lastArrhythmiaTime > 1000) { // Minimum 1 second between arrhythmias
       this.arrhythmiaCount++;
       this.lastArrhythmiaTime = currentTime;
       
       // Mark that we've detected the first arrhythmia
       this.hasDetectedFirstArrhythmia = true;
       
-      console.log('ArrhythmiaProcessor: Nueva arritmia confirmada:', {
+      console.log('VitalSignsProcessor - Nueva arritmia detectada:', {
         contador: this.arrhythmiaCount,
         rmssd,
         rrVariation,
         shannonEntropy: this.shannonEntropy,
         pnnX: this.pnnX,
         coefficientOfVariation,
-        correlation: templateCorrelation,
         timestamp: currentTime
       });
-      
-      // Reset consecutive counter after confirmation
-      this.consecutiveArrhythmiaDetections = 0;
     }
 
-    this.arrhythmiaDetected = confirmedArrhythmia;
+    this.arrhythmiaDetected = newArrhythmiaState;
   }
   
   /**
@@ -410,8 +276,5 @@ export class ArrhythmiaProcessor {
     this.shannonEntropy = 0;
     this.sampleEntropy = 0;
     this.pnnX = 0;
-    this.consecutiveArrhythmiaDetections = 0;
-    this.normalTemplate = [];
-    console.log("ArrhythmiaProcessor: Reset complete");
   }
 }

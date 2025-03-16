@@ -9,7 +9,7 @@ interface HeartRateDisplayProps {
 
 const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isReliable = confidence > 0.6; // Increase reliability threshold
+  const isReliable = confidence > 0.5;
   
   // Apply high-DPI optimizations after component mounts
   useEffect(() => {
@@ -20,15 +20,9 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
-    if (bpm > 100) return "text-amber-500";
-    if (bpm < 60) return "text-amber-500";
-    return "text-green-500";
-  };
-
-  const getBpmDisplay = () => {
-    if (bpm === 0) return '--';
-    if (!isReliable) return `~${bpm}`; // Show approximate indicator for unreliable readings
-    return bpm;
+    if (bpm > 100) return "value-warning";
+    if (bpm < 60) return "value-warning";
+    return "value-normal";
   };
 
   return (
@@ -44,13 +38,10 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       <h3 className="text-gray-400/90 text-sm mb-1 crisp-text precision-text">Heart Rate</h3>
       <div className="flex items-baseline justify-center gap-1">
         <span className={`text-2xl font-bold vital-display precision-number ${getValueClass()}`}>
-          {getBpmDisplay()}
+          {bpm > 0 ? bpm : '--'}
         </span>
         <span className="text-gray-400/90 text-xs unit-text">BPM</span>
       </div>
-      {!isReliable && bpm > 0 && (
-        <div className="text-xs text-gray-400/70 mt-1">Calculating...</div>
-      )}
     </div>
   );
 });

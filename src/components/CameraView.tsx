@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -22,8 +21,6 @@ const CameraView = ({
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
-  const fingerDetectionRef = useRef<boolean>(false);
-  const fingerLostTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -40,44 +37,6 @@ const CameraView = ({
     setIsAndroid(androidDetected);
     setIsWindows(windowsDetected);
   }, []);
-
-  // Efecto para mantener la estabilidad en la detección del dedo
-  useEffect(() => {
-    // Reducimos el tiempo de tolerancia para fluctuaciones de 3000ms a 2000ms
-    // para detectar más rápidamente cambios genuinos pero manteniendo estabilidad
-    if (isFingerDetected) {
-      if (fingerLostTimeoutRef.current) {
-        window.clearTimeout(fingerLostTimeoutRef.current);
-        fingerLostTimeoutRef.current = null;
-      }
-      fingerDetectionRef.current = true;
-    } else if (fingerDetectionRef.current) {
-      if (!fingerLostTimeoutRef.current) {
-        fingerLostTimeoutRef.current = window.setTimeout(() => {
-          fingerDetectionRef.current = false;
-          fingerLostTimeoutRef.current = null;
-          
-          // Solo apagar la linterna si realmente se perdió el dedo por un tiempo
-          if (stream) {
-            const videoTrack = stream.getVideoTracks()[0];
-            if (videoTrack && torchEnabled && videoTrack.getCapabilities()?.torch) {
-              console.log("Apagando linterna después de pérdida confirmada de dedo");
-              videoTrack.applyConstraints({
-                advanced: [{ torch: false }]
-              }).catch(err => console.error("Error desactivando linterna:", err));
-              setTorchEnabled(false);
-            }
-          }
-        }, 2000); // Reducido de 3000ms para mayor reactividad sin perder estabilidad
-      }
-    }
-    
-    return () => {
-      if (fingerLostTimeoutRef.current) {
-        window.clearTimeout(fingerLostTimeoutRef.current);
-      }
-    };
-  }, [isFingerDetected, stream, torchEnabled]);
 
   const stopCamera = async () => {
     if (stream) {
@@ -116,17 +75,15 @@ const CameraView = ({
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
-      // Aumentamos la resolución ideal para capturar más detalles
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },  // Mantenemos resolución alta
+        width: { ideal: 1920 },
         height: { ideal: 1080 }
       };
 
       if (isAndroid) {
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
-          // Aumentamos el framerate para Android para mejor captura
           frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
@@ -134,7 +91,7 @@ const CameraView = ({
       } else if (isIOS) {
         console.log("Configurando para iOS");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 }, // Máximo framerate en iOS
+          frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         });
@@ -170,8 +127,7 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          // Damos un poco más de tiempo para que la cámara se estabilice
-          await new Promise(resolve => setTimeout(resolve, 700)); // Aumentado de 500ms
+          await new Promise(resolve => setTimeout(resolve, 500));
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
@@ -193,9 +149,8 @@ const CameraView = ({
                 exposureMode: 'continuous' 
               };
               
-              // Aumentamos la compensación de exposición para mejor contraste
               if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max * 0.9; // Aumentado de 0.7
+                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
               }
               
               advancedConstraints.push(exposureConstraint);
@@ -209,16 +164,14 @@ const CameraView = ({
               advancedConstraints.push({ whiteBalanceMode: 'continuous' });
             }
             
-            // Aumentamos el brillo para mejor detección de cambios en la sangre
             if (capabilities.brightness && capabilities.brightness.max) {
               const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 1.1 }); // Aumentado de 0.7
+              advancedConstraints.push({ brightness: maxBrightness * 0.7 });
             }
             
-            // Aumentamos el contraste para resaltar diferencias en la señal
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 1.7 }); // Aumentado de 0.6
+              advancedConstraints.push({ contrast: maxContrast * 0.6 });
             }
 
             if (advancedConstraints.length > 0) {
@@ -320,8 +273,7 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    // Mejorado: Persistencia en la detección del dedo y manejo del estado de la linterna
-    if (stream && (isFingerDetected || fingerDetectionRef.current) && !torchEnabled) {
+    if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
         console.log("Activando linterna después de detectar dedo");
@@ -335,18 +287,14 @@ const CameraView = ({
       }
     }
     
-    // Refrescamos el autoenfoque con más frecuencia cuando la calidad de señal es baja
-    const autoFocusInterval = signalQuality > 70 ? 5000 : 3000;
-    
-    if ((isFingerDetected || fingerDetectionRef.current) && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, autoFocusInterval);
+    if (isFingerDetected && !isAndroid) {
+      const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid, signalQuality]);
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
-  // Ajustamos la velocidad de captura basada en la calidad de señal
   const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/20; // Aumentado de 1000/15
+                             signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
     <video

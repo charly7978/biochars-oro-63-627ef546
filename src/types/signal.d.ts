@@ -18,9 +18,9 @@ export interface ProcessedSignal {
   };
   perfusionIndex?: number;  // Índice de perfusión opcional
   spectrumData?: {          // Datos del espectro de frecuencia
-    frequencies: number[];  // Frecuencias en BPM (60-180)
-    amplitudes: number[];   // Amplitudes normalizadas (0-1)
-    dominantFrequency: number; // Frecuencia dominante en BPM
+    frequencies: number[];
+    amplitudes: number[];
+    dominantFrequency: number;
   };
 }
 
@@ -43,7 +43,6 @@ export interface SignalProcessor {
   calibrate: () => Promise<boolean>;                    // Calibrar el procesador
   onSignalReady?: (signal: ProcessedSignal) => void;    // Callback de señal lista
   onError?: (error: ProcessingError) => void;           // Callback de error
-  processFrame?: (imageData: ImageData) => void;        // Procesar frame de imagen
 }
 
 /**
