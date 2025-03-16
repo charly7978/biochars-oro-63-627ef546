@@ -25,6 +25,7 @@ export const useHeartBeatProcessor = () => {
   const MIN_BEEP_INTERVAL_MS = 300; // Minimum time between beeps
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
+  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -79,43 +80,38 @@ export const useHeartBeatProcessor = () => {
   }, []);
 
   // Function to determine if the current beat pattern indicates an arrhythmia
-  // MODIFICADO: Reducimos sensibilidad para menos falsos positivos
+  // Modified to analyze only individual beats, not the whole pattern
   const detectArrhythmia = useCallback((rrIntervals: number[]): boolean => {
-    if (rrIntervals.length < 5) return false; // Aumentamos a 5 intervalos para más estabilidad
+    if (rrIntervals.length < 3) return false;
     
-    // Get the last 5 intervals for analysis (antes: 3)
-    const recentIntervals = rrIntervals.slice(-5);
-    const avgInterval = recentIntervals.reduce((sum, val) => sum + val, 0) / recentIntervals.length;
-    const lastInterval = recentIntervals[recentIntervals.length - 1];
+    // We only care about the last interval for individual beat analysis
+    const lastInterval = rrIntervals[rrIntervals.length - 1];
     
-    // Calculate RR variation percentage from average - ahora más permisivo
-    const variation = Math.abs(lastInterval - avgInterval) / avgInterval;
+    // Get previous intervals for comparison
+    const previousIntervals = rrIntervals.slice(-4, -1);
+    const avgPreviousInterval = previousIntervals.reduce((sum, val) => sum + val, 0) / previousIntervals.length;
     
-    // Calculate standard deviation for recent intervals
-    const stdDev = Math.sqrt(
-      recentIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / recentIntervals.length
-    );
+    // Calculate how much this specific beat differs from previous ones
+    const variationFromPrevious = Math.abs(lastInterval - avgPreviousInterval) / avgPreviousInterval;
     
-    // Detect arrhythmia based on significant variations or extreme values
-    // Umbral aumentado del 20% al 30% para reducir falsos positivos
-    const isArrhythmia = 
-      (variation > 0.30) || // Más del 30% de variación del promedio (antes: 20%)
-      (stdDev > 70) ||      // Mayor variabilidad requerida (antes: 40)
-      (lastInterval > 1.5 * avgInterval) || // Significativamente más largo (antes: 1.3)
-      (lastInterval < 0.6 * avgInterval);   // Significativamente más corto (antes: 0.7)
+    // This specific beat is arrhythmic if it's significantly early or late
+    const isPrematureBeat = lastInterval < 0.75 * avgPreviousInterval;
+    const isDelayedBeat = lastInterval > 1.35 * avgPreviousInterval;
     
-    if (isArrhythmia) {
-      console.log('useHeartBeatProcessor: Arrhythmia detected', {
-        variation,
-        stdDev,
-        lastInterval,
-        avgInterval,
-        threshold: 0.30, // Actualizado
+    // Mark only this specific beat as arrhythmic
+    const thisIsArrhythmia = isPrematureBeat || isDelayedBeat;
+    
+    if (thisIsArrhythmia) {
+      console.log('useHeartBeatProcessor: Individual arrítmico detectado', {
+        tipo: isPrematureBeat ? 'prematuro' : 'retrasado',
+        intervaloActual: lastInterval,
+        promedioAnterior: avgPreviousInterval,
+        variación: variationFromPrevious,
         timestamp: new Date().toISOString()
       });
     }
     
-    return isArrhythmia;
+    return thisIsArrhythmia;
   }, []);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
@@ -137,15 +133,6 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    console.log('useHeartBeatProcessor - processSignal detallado:', {
-      inputValue: value,
-      normalizadoValue: value.toFixed(2),
-      currentProcessor: !!processorRef.current,
-      processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-
     const result = processorRef.current.processSignal(value);
     const rrData = processorRef.current.getRRIntervals();
     
@@ -154,10 +141,20 @@ export const useHeartBeatProcessor = () => {
       lastRRIntervalsRef.current = [...rrData.intervals];
     }
     
-    // Determine if this beat is an arrhythmia
-    // Añadimos filtro adicional de confianza para reducir falsos positivos
-    const isArrhythmia = result.confidence > 0.85 && detectArrhythmia(lastRRIntervalsRef.current);
-    lastIsArrhythmiaRef.current = isArrhythmia;
+    // Determine if THIS SPECIFIC beat is an arrhythmia
+    let currentBeatIsArrhythmia = false;
+    
+    // Only check for arrhythmia if we detected a peak
+    if (result.isPeak && result.confidence > 0.85 && lastRRIntervalsRef.current.length >= 3) {
+      currentBeatIsArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
+      // Store the arrhythmia state for this beat
+      currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
+    }
+
+    // Reset arrhythmia state if not a peak (only peaks can be arrhythmic)
+    if (!result.isPeak) {
+      currentBeatIsArrhythmiaRef.current = false;
+    }
 
     // Si se detecta un pico y ha pasado suficiente tiempo desde el último pico
     if (result.isPeak && 
@@ -169,23 +166,8 @@ export const useHeartBeatProcessor = () => {
       playBeepSound();
     }
 
-    console.log('useHeartBeatProcessor - resultado detallado:', {
-      bpm: result.bpm,
-      confidence: result.confidence,
-      isPeak: result.isPeak,
-      arrhythmiaCount: result.arrhythmiaCount,
-      isArrhythmia: isArrhythmia,
-      rrIntervals: JSON.stringify(rrData.intervals),
-      ultimosIntervalos: rrData.intervals.slice(-5),
-      ultimoPico: rrData.lastPeakTime,
-      tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
     // Aumentamos umbral de confianza para reducir falsos positivos
     if (result.confidence < 0.8) {
-      console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });
       return {
         bpm: currentBPM,
         confidence: result.confidence,
@@ -200,22 +182,13 @@ export const useHeartBeatProcessor = () => {
     }
 
     if (result.bpm > 0) {
-      console.log('useHeartBeatProcessor - Actualizando BPM y confianza', {
-        prevBPM: currentBPM,
-        newBPM: result.bpm,
-        prevConfidence: confidence,
-        newConfidence: result.confidence,
-        sessionId: sessionId.current,
-        timestamp: new Date().toISOString()
-      });
-      
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
     return {
       ...result,
-      isArrhythmia,
+      isArrhythmia: currentBeatIsArrhythmiaRef.current,
       rrData
     };
   }, [currentBPM, confidence, playBeepSound, detectArrhythmia]);
@@ -245,6 +218,7 @@ export const useHeartBeatProcessor = () => {
     lastBeepTimeRef.current = 0;
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
+    currentBeatIsArrhythmiaRef.current = false;
   }, [currentBPM, confidence]);
 
   return {
@@ -252,6 +226,6 @@ export const useHeartBeatProcessor = () => {
     confidence,
     processSignal,
     reset,
-    isArrhythmia: lastIsArrhythmiaRef.current
+    isArrhythmia: currentBeatIsArrhythmiaRef.current
   };
 };

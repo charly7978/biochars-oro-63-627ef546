@@ -87,32 +87,6 @@ const PPGSignalMeter = memo(({
   }, [preserveResults, isFingerDetected]);
 
   useEffect(() => {
-    if (isArrhythmia && !arrhythmiaTransitionRef.current.active) {
-      arrhythmiaTransitionRef.current = {
-        active: true,
-        startTime: Date.now(),
-        endTime: null
-      };
-      console.log('PPGSignalMeter: Starting arrhythmia transition', {
-        startTime: new Date(arrhythmiaTransitionRef.current.startTime).toISOString()
-      });
-    } 
-    else if (!isArrhythmia && arrhythmiaTransitionRef.current.active) {
-      const currentTime = Date.now();
-      if (currentTime - arrhythmiaTransitionRef.current.startTime >= ARRHYTHMIA_DURATION_MS) {
-        arrhythmiaTransitionRef.current = {
-          active: false,
-          startTime: 0,
-          endTime: null
-        };
-        console.log('PPGSignalMeter: Ending arrhythmia transition', {
-          endTime: new Date(currentTime).toISOString()
-        });
-      }
-    }
-  }, [isArrhythmia]);
-
-  useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
@@ -365,12 +339,11 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
-    const currentArrhythmiaState = arrhythmiaTransitionRef.current.active;
-    
+    // Mark each point individually as arrhythmic or not
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
-      isArrhythmia: currentArrhythmiaState
+      isArrhythmia
     };
     
     dataBufferRef.current.push(dataPoint);
@@ -379,66 +352,51 @@ const PPGSignalMeter = memo(({
     detectPeaks(points, now);
     
     if (points.length > 1) {
-      let segments: { startIndex: number, endIndex: number, isArrhythmia: boolean }[] = [];
-      let currentSegment = { 
-        startIndex: 0, 
-        endIndex: 0, 
-        isArrhythmia: !!points[0].isArrhythmia 
-      };
+      // Render each point with its own color based on arrhythmia status
+      renderCtx.beginPath();
+      renderCtx.lineWidth = 2;
+      renderCtx.lineJoin = 'round';
+      renderCtx.lineCap = 'round';
       
-      for (let i = 1; i < points.length; i++) {
-        const currentPointIsArrhythmia = !!points[i].isArrhythmia;
+      // Draw individual segments with their own color
+      let lastPoint: PPGDataPointExtended | null = null;
+      
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = (canvas.height / 2) - 40 - point.value;
         
-        if (currentPointIsArrhythmia !== currentSegment.isArrhythmia) {
-          currentSegment.endIndex = i - 1;
-          segments.push(currentSegment);
-          
-          currentSegment = {
-            startIndex: i,
-            endIndex: i,
-            isArrhythmia: currentPointIsArrhythmia
-          };
-        } else {
-          currentSegment.endIndex = i;
+        // If we're at a boundary between normal and arrhythmic points, close the current path and start a new one
+        if (lastPoint && lastPoint.isArrhythmia !== point.isArrhythmia) {
+          renderCtx.stroke();
+          renderCtx.beginPath();
         }
+        
+        // Set the color for the current point
+        renderCtx.strokeStyle = point.isArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
+        
+        if (i === 0 || (lastPoint && lastPoint.isArrhythmia !== point.isArrhythmia)) {
+          renderCtx.moveTo(x, y);
+        } else {
+          renderCtx.lineTo(x, y);
+        }
+        
+        // Complete the segment if we've reached the end
+        if (i === points.length - 1) {
+          renderCtx.stroke();
+        }
+        
+        lastPoint = point;
       }
       
-      segments.push(currentSegment);
-      
-      segments.forEach(segment => {
-        const segmentPoints = points.slice(segment.startIndex, segment.endIndex + 1);
-        if (segmentPoints.length < 2) return;
-        
-        renderCtx.beginPath();
-        renderCtx.strokeStyle = segment.isArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
-        renderCtx.lineWidth = segment.isArrhythmia ? 3 : 2;
-        renderCtx.lineJoin = 'round';
-        renderCtx.lineCap = 'round';
-        
-        let firstPoint = true;
-        
-        for (let i = 0; i < segmentPoints.length; i++) {
-          const point = segmentPoints[i];
-          const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - 40 - point.value;
-          
-          if (firstPoint) {
-            renderCtx.moveTo(x, y);
-            firstPoint = false;
-          } else {
-            renderCtx.lineTo(x, y);
-          }
-        }
-        
-        renderCtx.stroke();
-      });
-      
+      // Draw the detected peaks
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
           const y = (canvas.height / 2) - 40 - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
+            // Use the peak's isArrhythmia flag to determine color
             renderCtx.fillStyle = peak.isArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
             renderCtx.beginPath();
             renderCtx.arc(x, y, 5, 0, Math.PI * 2);
@@ -462,7 +420,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia]);
 
   useEffect(() => {
     renderSignal();
