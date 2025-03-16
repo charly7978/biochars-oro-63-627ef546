@@ -26,6 +26,10 @@ export class GlucoseProcessor {
   private previousValues: number[] = [];
   private lastCalculatedGlucose: number = 0;
   
+  // Store all calculated values for final median calculation
+  private allCalculatedValues: number[] = [];
+  private readonly MAX_STORED_VALUES = 10; // Store last 10 values for median
+  
   /**
    * Initialize the processor
    */
@@ -91,8 +95,14 @@ export class GlucoseProcessor {
     // New range: 50-180 mg/dL
     glucoseEstimate = Math.max(this.MIN_GLUCOSE, Math.min(this.MAX_GLUCOSE, glucoseEstimate));
     
-    // Stabilize readings with temporal smoothing
+    // Stabilize individual reading with temporal smoothing
     const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
+    
+    // Add this value to our collection for final median calculation
+    this.allCalculatedValues.push(stabilizedGlucose);
+    if (this.allCalculatedValues.length > this.MAX_STORED_VALUES) {
+      this.allCalculatedValues.shift();
+    }
     
     // Calculate confidence based on signal quality and stability
     this.confidence = this.calculateConfidence(recentValues, perfusionIndex, signalVariability);
@@ -100,7 +110,43 @@ export class GlucoseProcessor {
     // Store this value for future stability calculations
     this.lastCalculatedGlucose = stabilizedGlucose;
     
-    return Math.round(stabilizedGlucose);
+    // Return the MEDIAN of all collected values for the FINAL result
+    return Math.round(this.calculateWeightedMedian(this.allCalculatedValues));
+  }
+  
+  /**
+   * Calculate a weighted median for more stable final glucose readings
+   * This gives more importance to recent values while still providing
+   * the stability benefits of a median calculation
+   */
+  private calculateWeightedMedian(values: number[]): number {
+    if (values.length === 0) return 0;
+    if (values.length === 1) return values[0];
+    
+    // Create a weighted array where more recent values appear more times
+    const weightedArray: number[] = [];
+    
+    for (let i = 0; i < values.length; i++) {
+      // More recent values get higher weights
+      const weight = Math.max(1, Math.floor((i + 1) * 1.5));
+      
+      // Add this value to the array 'weight' number of times
+      for (let j = 0; j < weight; j++) {
+        weightedArray.push(values[i]);
+      }
+    }
+    
+    // Sort the weighted array and find the median
+    weightedArray.sort((a, b) => a - b);
+    const middleIndex = Math.floor(weightedArray.length / 2);
+    
+    // If even number of elements, average the two middle values
+    if (weightedArray.length % 2 === 0) {
+      return (weightedArray[middleIndex - 1] + weightedArray[middleIndex]) / 2;
+    }
+    
+    // If odd number of elements, return the middle value
+    return weightedArray[middleIndex];
   }
   
   /**
@@ -372,5 +418,6 @@ export class GlucoseProcessor {
     this.confidence = 0;
     this.previousValues = [];
     this.lastCalculatedGlucose = 0;
+    this.allCalculatedValues = [];
   }
 }
