@@ -432,4 +432,4 @@ export class HeartBeatProcessor {
       lastPeakTime: this.lastPeakTime
     };
   }
-} 
+}

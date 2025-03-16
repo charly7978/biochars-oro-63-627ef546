@@ -1,8 +1,8 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { RRAnalysisResult } from './arrhythmia/types';
-import { autoCalibrate, adaptProcessorToSignalQuality } from '../utils/displayOptimizer';
 
 interface HeartBeatResult {
   bpm: number;
@@ -37,7 +37,6 @@ export const useHeartBeatProcessor = () => {
   
   const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
-  const calibrationCompleteRef = useRef<boolean>(false);
   
   const consistentBeatsCountRef = useRef<number>(0);
   const lastValidBpmRef = useRef<number>(0);
@@ -57,12 +56,6 @@ export const useHeartBeatProcessor = () => {
         if (typeof window !== 'undefined') {
           (window as any).heartBeatProcessor = processorRef.current;
         }
-        
-        setTimeout(() => {
-          performAutoCalibration();
-          const calibrationInterval = setInterval(performAutoCalibration, 30000);
-          return () => clearInterval(calibrationInterval);
-        }, 5000);
       }
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
@@ -83,32 +76,6 @@ export const useHeartBeatProcessor = () => {
         (window as any).heartBeatProcessor = undefined;
       }
     };
-  }, []);
-
-  const performAutoCalibration = useCallback(() => {
-    if (!processorRef.current) return;
-    
-    try {
-      const optimalConfig = autoCalibrate(processorRef.current);
-      
-      if (optimalConfig) {
-        Object.keys(optimalConfig).forEach(key => {
-          if (processorRef.current && key in processorRef.current) {
-            (processorRef.current as any)[key] = optimalConfig[key];
-          }
-        });
-        
-        calibrationCompleteRef.current = true;
-        
-        console.log('HeartBeatProcessor: Auto-calibration applied successfully', {
-          sessionId: sessionId.current,
-          timestamp: new Date().toISOString(),
-          appliedSettings: optimalConfig
-        });
-      }
-    } catch (error) {
-      console.error('Error during auto-calibration:', error);
-    }
   }, []);
 
   const lastBeepRequestRef = useRef<{time: number, value: number, processed: boolean} | null>(null);
@@ -309,10 +276,6 @@ export const useHeartBeatProcessor = () => {
       }
       
       lastSignalQualityRef.current = result.confidence;
-      
-      if (calibrationCompleteRef.current && calibrationCounterRef.current % 50 === 0) {
-        adaptProcessorToSignalQuality(processorRef.current, lastSignalQualityRef.current);
-      }
 
       if (result.confidence < 0.25) {
         return {
@@ -376,10 +339,7 @@ export const useHeartBeatProcessor = () => {
     lastValidBpmRef.current = 0;
     calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
-    calibrationCompleteRef.current = false;
-    
-    setTimeout(performAutoCalibration, 3000);
-  }, [performAutoCalibration]);
+  }, []);
 
   return {
     currentBPM,

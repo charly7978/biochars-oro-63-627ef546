@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { SignalAmplifier } from '../modules/SignalAmplifier';
 
@@ -101,32 +102,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.lastAmplifiedValue = 0;
     this.signalQuality = 0;
     console.log("PPGSignalProcessor: Detenido");
-  }
-
-  async calibrate(): Promise<boolean> {
-    try {
-      console.log("PPGSignalProcessor: Iniciando calibración");
-      await this.initialize();
-
-      // Simulamos el proceso de calibración
-      await new Promise(resolve => setTimeout(resolve, 1800)); // Reducido de 2000ms a 1800ms
-      
-      // Ajustamos los umbrales basados en las condiciones actuales
-      this.currentConfig = {
-        ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(25, this.MIN_RED_THRESHOLD - 8), // Más agresivo
-        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
-        STABILITY_WINDOW: this.STABILITY_WINDOW,
-        MIN_STABILITY_COUNT: this.MIN_STABILITY_COUNT
-      };
-
-      console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
-      return true;
-    } catch (error) {
-      console.error("PPGSignalProcessor: Error de calibración", error);
-      this.handleError("CALIBRATION_ERROR", "Error durante la calibración");
-      return false;
-    }
   }
 
   resetToDefault(): void {
