@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -21,6 +22,10 @@ const CameraView = ({
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
+  const [brightnessSamples, setBrightnessSamples] = useState<number[]>([]);
+  const [avgBrightness, setAvgBrightness] = useState(0);
+  const brightnessSampleLimit = 8;
+  const [realFingerDetected, setRealFingerDetected] = useState(false);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -62,6 +67,9 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
+      setBrightnessSamples([]);
+      setAvgBrightness(0);
+      setRealFingerDetected(false);
     }
   };
 
@@ -234,6 +242,107 @@ const CameraView = ({
     }
   };
 
+  // Monitor camera brightness to help with finger detection verification
+  useEffect(() => {
+    if (!stream || !videoRef.current || !isMonitoring) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    canvas.width = 100;
+    canvas.height = 100;
+
+    const checkBrightness = () => {
+      if (!videoRef.current || !videoRef.current.videoWidth) return;
+      
+      try {
+        ctx.drawImage(
+          videoRef.current,
+          0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight,
+          0, 0, 100, 100
+        );
+        
+        const imageData = ctx.getImageData(0, 0, 100, 100);
+        const data = imageData.data;
+        
+        let brightness = 0;
+        let pixelCount = 0;
+        
+        // Sample center of the image (more likely to have finger)
+        const centerStartX = 35;
+        const centerEndX = 65;
+        const centerStartY = 35;
+        const centerEndY = 65;
+        
+        for (let y = centerStartY; y < centerEndY; y++) {
+          for (let x = centerStartX; x < centerEndX; x++) {
+            const i = (y * 100 + x) * 4;
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            brightness += (r + g + b) / 3;
+            pixelCount++;
+          }
+        }
+        
+        brightness /= pixelCount;
+        
+        setBrightnessSamples(prev => {
+          const newSamples = [...prev, brightness];
+          if (newSamples.length > brightnessSampleLimit) {
+            newSamples.shift();
+          }
+          return newSamples;
+        });
+
+        const avgBrightness = brightnessSamples.reduce((sum, val) => sum + val, 0) / 
+                            Math.max(1, brightnessSamples.length);
+        setAvgBrightness(avgBrightness);
+        
+        // Calculate brightness variance to detect finger presence
+        let brightnessVariance = 0;
+        if (brightnessSamples.length > 3) {
+          const brightnessAvg = brightnessSamples.reduce((sum, val) => sum + val, 0) / brightnessSamples.length;
+          brightnessVariance = brightnessSamples.reduce((sum, val) => sum + Math.pow(val - brightnessAvg, 2), 0) / brightnessSamples.length;
+        }
+        
+        // Determine real finger status using:
+        // 1. Brightness level (dark means finger is present)
+        // 2. Signal quality (good quality confirms finger)
+        // 3. Brightness variance (low variance often means consistent finger placement)
+        const fingerPresentByBrightness = avgBrightness < 80;
+        const fingerPresentByQuality = signalQuality > 40;
+        const stableFingerPlacement = brightnessVariance < 200;
+        
+        // We need at least 2 of 3 conditions to confirm a real finger
+        const confirmedFingerDetection = 
+          (fingerPresentByBrightness && fingerPresentByQuality) || 
+          (fingerPresentByBrightness && stableFingerPlacement) || 
+          (fingerPresentByQuality && stableFingerPlacement);
+        
+        setRealFingerDetected(confirmedFingerDetection);
+        
+        console.log("CameraView: Brightness and finger detection", { 
+          brightness,
+          avgBrightness,
+          brightnessVariance,
+          fingerPresentByBrightness,
+          fingerPresentByQuality,
+          stableFingerPlacement,
+          confirmedFingerDetection,
+          reportedFingerDetected: isFingerDetected,
+          signalQuality
+        });
+      } catch (err) {
+        console.error("Error checking brightness:", err);
+      }
+    };
+
+    const interval = setInterval(checkBrightness, 500);
+    return () => clearInterval(interval);
+  }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples]);
+
   const refreshAutoFocus = useCallback(async () => {
     if (stream && !isFocusing && !isAndroid) {
       const videoTrack = stream.getVideoTracks()[0];
@@ -293,8 +402,12 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
+  // Use realFingerDetected (verified with brightness) instead of isFingerDetected (from signal)
+  // This provides an additional layer of verification
+  const actualFingerStatus = isFingerDetected && realFingerDetected;
+
   const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/15;
+                              signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
     <video
