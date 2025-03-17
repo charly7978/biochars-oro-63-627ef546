@@ -1,4 +1,3 @@
-
 /**
  * Legacy VitalSignsProcessor converted to TypeScript
  * This file adapts the old JavaScript implementation into the new TypeScript structure
@@ -154,17 +153,7 @@ export class LegacyVitalSignsProcessor {
       lipids: {
         totalCholesterol: 0, // Not calculated in legacy processor
         triglycerides: 0 // Not calculated in legacy processor
-      },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: signalQuality / 100
-      },
-      lastArrhythmiaData: this.arrhythmiaDetected ? {
-        timestamp: Date.now(),
-        rmssd: 0, // Not explicitly tracked in legacy processor
-        rrVariation: 0 // Not explicitly tracked in legacy processor
-      } : null
+      }
     };
   }
 
