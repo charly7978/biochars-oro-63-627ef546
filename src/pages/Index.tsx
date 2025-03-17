@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -30,7 +31,7 @@ const Index = () => {
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
-    processSignal: processHeartBeat, 
+    processSignal: processHeartBeat,
     isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
@@ -74,7 +75,7 @@ const Index = () => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      if (lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         if (heartBeatResult.confidence > 0.4) {
@@ -89,10 +90,6 @@ const Index = () => {
         setSignalQuality(lastSignal.quality);
       } else {
         setSignalQuality(lastSignal.quality);
-        
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
-        }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
@@ -271,7 +268,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -286,7 +282,6 @@ const Index = () => {
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
-            isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
           />
         </div>
@@ -296,16 +291,12 @@ const Index = () => {
             <div className="text-white text-lg">
               Calidad: {signalQuality}
             </div>
-            <div className="text-white text-lg">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
-            </div>
           </div>
 
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
               quality={lastSignal?.quality || 0}
-              isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}

@@ -2,11 +2,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
-import { fingerDetectionService } from '../core/FingerDetectionService';
 
 /**
  * Hook para gestionar el procesamiento de señales PPG.
- * Utiliza el servicio centralizado de detección de dedo.
  */
 export const useSignalProcessor = () => {
   // Instancia del procesador
@@ -82,8 +80,6 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Resetear servicio de detección
-    fingerDetectionService.reset();
     processor.start();
   }, [processor]);
 
@@ -103,7 +99,6 @@ export const useSignalProcessor = () => {
   const calibrate = useCallback(async () => {
     try {
       console.log("useSignalProcessor: Iniciando calibración");
-      fingerDetectionService.reset();
       await processor.calibrate();
       console.log("useSignalProcessor: Calibración exitosa");
       return true;

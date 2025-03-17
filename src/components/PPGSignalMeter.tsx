@@ -1,6 +1,5 @@
 
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { getSignalColor, isPointInArrhythmiaWindow } from '../utils/displayOptimizer';
@@ -8,7 +7,6 @@ import { getSignalColor, isPointInArrhythmiaWindow } from '../utils/displayOptim
 interface PPGSignalMeterProps {
   value: number;
   quality: number;
-  isFingerDetected: boolean;
   onStartMeasurement: () => void;
   onReset: () => void;
   arrhythmiaStatus?: string;
@@ -28,7 +26,6 @@ interface PPGDataPointExtended extends PPGDataPoint {
 const PPGSignalMeter = memo(({ 
   value, 
   quality, 
-  isFingerDetected,
   onStartMeasurement,
   onReset,
   arrhythmiaStatus,
@@ -44,7 +41,7 @@ const PPGSignalMeter = memo(({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia?: boolean}[]>([]);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
-  const consecutiveFingerFramesRef = useRef<number>(0);
+  const consecutiveFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaTransitionRef = useRef<{
     active: boolean,
@@ -56,12 +53,9 @@ const PPGSignalMeter = memo(({
   const lastArrhythmiaTimeRef = useRef<number>(0);
   
   const signalAmplitudeHistoryRef = useRef<number[]>([]);
-  const fingerprintConfidenceRef = useRef<number>(0);
-  const detectionStabilityCounterRef = useRef<number>(0);
-  const lastDetectionStateRef = useRef<boolean>(false);
   const noiseBufferRef = useRef<number[]>([]);
   const peakVarianceRef = useRef<number[]>([]);
-  const lastStableDetectionTimeRef = useRef<number>(0);
+  const lastStableTimeRef = useRef<number>(0);
   const derivativeBufferRef = useRef<number[]>([]);
 
   const CANVAS_CENTER_OFFSET = 60;
@@ -81,7 +75,7 @@ const PPGSignalMeter = memo(({
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
   
-  const REQUIRED_FINGER_FRAMES = 12;
+  const REQUIRED_FRAMES = 12;
   const QUALITY_HISTORY_SIZE = 20;
   const AMPLITUDE_HISTORY_SIZE = 20;
   const MIN_AMPLITUDE_THRESHOLD = 1.5;
@@ -117,7 +111,7 @@ const PPGSignalMeter = memo(({
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
-    if (preserveResults && !isFingerDetected) {
+    if (preserveResults) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
       }
@@ -125,7 +119,7 @@ const PPGSignalMeter = memo(({
       baselineRef.current = null;
       lastValueRef.current = null;
     }
-  }, [preserveResults, isFingerDetected]);
+  }, [preserveResults]);
 
   const calculateDerivative = useCallback((value: number) => {
     if (lastValueRef.current === null) return 0;
@@ -141,7 +135,7 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    if (isFingerDetected && quality > 5) {
+    if (quality > 5) {
       qualityHistoryRef.current.push(quality);
     } else {
       qualityHistoryRef.current.push(Math.max(0, quality * QUALITY_DECAY_RATE));
@@ -166,34 +160,20 @@ const PPGSignalMeter = memo(({
     
     const now = Date.now();
     
-    if (now - lastStableDetectionTimeRef.current > STABILITY_TIMEOUT_MS) {
-      detectionStabilityCounterRef.current = 0;
-      consecutiveFingerFramesRef.current = 0;
+    if (now - lastStableTimeRef.current > STABILITY_TIMEOUT_MS) {
+      consecutiveFramesRef.current = 0;
     }
     
-    if (isFingerDetected) {
-      if (quality > 55) {
-        consecutiveFingerFramesRef.current++;
-        detectionStabilityCounterRef.current = Math.min(10, detectionStabilityCounterRef.current + 0.5);
-        
-        if (detectionStabilityCounterRef.current >= REQUIRED_STABILITY_FRAMES) {
-          lastStableDetectionTimeRef.current = now;
-        }
-      } else {
-        consecutiveFingerFramesRef.current = Math.max(0, consecutiveFingerFramesRef.current - 0.3);
-        detectionStabilityCounterRef.current = Math.max(0, detectionStabilityCounterRef.current - 0.7);
+    if (quality > 55) {
+      consecutiveFramesRef.current++;
+      if (consecutiveFramesRef.current >= REQUIRED_STABILITY_FRAMES) {
+        lastStableTimeRef.current = now;
       }
     } else {
-      consecutiveFingerFramesRef.current = Math.max(0, consecutiveFingerFramesRef.current - 1.5);
-      detectionStabilityCounterRef.current = Math.max(0, detectionStabilityCounterRef.current - 1.2);
+      consecutiveFramesRef.current = Math.max(0, consecutiveFramesRef.current - 0.7);
     }
     
-    const highQualityFrames = qualityHistoryRef.current.filter(q => q > 55);
-    const detectionRatio = highQualityFrames.length / Math.max(1, qualityHistoryRef.current.length);
-    fingerprintConfidenceRef.current = Math.min(1, detectionRatio * 1.3);
-    
-    lastDetectionStateRef.current = isFingerDetected;
-  }, [quality, isFingerDetected, value, calculateDerivative]);
+  }, [quality, value, calculateDerivative]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -303,51 +283,23 @@ const PPGSignalMeter = memo(({
     return stdDev / (Math.abs(mean) + 0.001);
   }, []);
 
-  const getTrueFingerDetection = useCallback(() => {
-    const avgQuality = getAverageQuality();
-    
-    const hasStableDetection = detectionStabilityCounterRef.current >= REQUIRED_STABILITY_FRAMES;
-    const hasMinimumQuality = avgQuality > 35;
-    const hasRequiredFrames = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
-    
-    // Changed from const to let to allow reassignment
-    let hasSignalVariability = false;
-    if (derivativeBufferRef.current.length > 10) {
-      const maxDerivative = Math.max(...derivativeBufferRef.current);
-      hasSignalVariability = maxDerivative > MIN_DERIVATIVE_THRESHOLD;
-    }
-    
-    // Changed from const to let to allow reassignment
-    let hasSufficientAmplitude = false;
-    if (signalAmplitudeHistoryRef.current.length > 10) {
-      const avgAmplitude = signalAmplitudeHistoryRef.current.reduce((sum, a) => sum + a, 0) / 
-                          signalAmplitudeHistoryRef.current.length;
-      hasSufficientAmplitude = avgAmplitude > MIN_AMPLITUDE_THRESHOLD;
-    }
-    
-    return hasStableDetection && hasMinimumQuality && hasRequiredFrames && 
-           (hasSignalVariability || hasSufficientAmplitude);
-  }, [getAverageQuality]);
-
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-    const isFingerDetected = getTrueFingerDetection();
     
-    if (!isFingerDetected) return 'from-gray-400 to-gray-500';
+    if (avgQuality < 20) return 'from-gray-400 to-gray-500';
     if (avgQuality > 70) return 'from-green-500 to-emerald-500';
     if (avgQuality > 45) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality, getTrueFingerDetection]);
+  }, [getAverageQuality]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-    const isFingerDetected = getTrueFingerDetection();
     
-    if (!isFingerDetected) return 'Sin detección';
+    if (avgQuality < 20) return 'Señal no detectada';
     if (avgQuality > 70) return 'Señal óptima';
     if (avgQuality > 45) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality, getTrueFingerDetection]);
+  }, [getAverageQuality]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -553,7 +505,7 @@ const PPGSignalMeter = memo(({
       drawGrid(renderCtx);
     }
     
-    if (preserveResults && !isFingerDetected) {
+    if (preserveResults) {
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
         const visibleCtx = canvas.getContext('2d', { alpha: false });
         if (visibleCtx) {
@@ -569,7 +521,7 @@ const PPGSignalMeter = memo(({
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      const adaptationRate = isFingerDetected ? 0.97 : 0.95;
+      const adaptationRate = 0.97;
       baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
     }
     
@@ -715,7 +667,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, requestBeepForPeak]);
+  }, [value, quality, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, requestBeepForPeak]);
 
   useEffect(() => {
     renderSignal();
@@ -733,18 +685,15 @@ const PPGSignalMeter = memo(({
     arrhythmiaSegmentsRef.current = [];
     signalAmplitudeHistoryRef.current = [];
     qualityHistoryRef.current = [];
-    fingerprintConfidenceRef.current = 0;
-    detectionStabilityCounterRef.current = 0;
-    consecutiveFingerFramesRef.current = 0;
+    consecutiveFramesRef.current = 0;
     noiseBufferRef.current = [];
     peakVarianceRef.current = [];
     derivativeBufferRef.current = [];
-    lastStableDetectionTimeRef.current = 0;
+    lastStableTimeRef.current = 0;
     onReset();
   }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = getTrueFingerDetection();
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -767,7 +716,7 @@ const PPGSignalMeter = memo(({
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
+                style={{ width: `${displayQuality}%` }}
               />
             </div>
             <span className="text-[7px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
@@ -778,25 +727,6 @@ const PPGSignalMeter = memo(({
           <div style={{ marginLeft: '2mm' }}>
             <AppTitle />
           </div>
-        </div>
-
-        <div className="flex flex-col items-center">
-          <Fingerprint
-            className={`h-7 w-7 transition-colors duration-300 ${
-              !displayFingerDetected ? 'text-gray-400' :
-              displayQuality > 65 ? 'text-green-500' :
-              displayQuality > 40 ? 'text-yellow-500' :
-              'text-red-500'
-            }`}
-            strokeWidth={1.5}
-            style={{
-              opacity: displayFingerDetected ? 1 : 0.6,
-              filter: displayFingerDetected ? 'none' : 'grayscale(0.5)'
-            }}
-          />
-          <span className="text-[7px] text-center font-medium text-black/80">
-            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
-          </span>
         </div>
       </div>
 
