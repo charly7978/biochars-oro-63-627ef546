@@ -37,7 +37,7 @@ const Index = () => {
   const [arrhythmiaCalibrationComplete, setArrhythmiaCalibrationComplete] = useState(false);
   
   const measurementTimerRef = useRef<number | null>(null);
-  const calibrationTimerRef = useRef<number | null>(null);
+  const calibrationCheckTimerRef = useRef<number | null>(null);
   const consecutiveFingerDetectionsRef = useRef<number>(0);
   const fingerDetectedRef = useRef<boolean>(false);
   const lastCalibrationUpdateRef = useRef<number>(0);
@@ -63,6 +63,36 @@ const Index = () => {
     arrhythmiaCounter,
     arrhythmiaWindows
   } = useVitalSignsProcessor();
+
+  // Create a separate timer specifically for checking calibration progress
+  useEffect(() => {
+    if (isMonitoring && !calibrationComplete) {
+      console.log("Setting up calibration check timer");
+      
+      // Check calibration progress frequently
+      if (calibrationCheckTimerRef.current === null) {
+        calibrationCheckTimerRef.current = window.setInterval(() => {
+          const progress = getCalibrationProgress();
+          console.log("Regular calibration check:", progress);
+          setCalibrationProgress(progress);
+          
+          if (progress >= 100) {
+            console.log("Calibration complete from timer check!");
+            setCalibrationComplete(true);
+            clearInterval(calibrationCheckTimerRef.current!);
+            calibrationCheckTimerRef.current = null;
+          }
+        }, 250); // Check 4 times per second
+      }
+    }
+    
+    return () => {
+      if (calibrationCheckTimerRef.current) {
+        clearInterval(calibrationCheckTimerRef.current);
+        calibrationCheckTimerRef.current = null;
+      }
+    };
+  }, [isMonitoring, calibrationComplete, getCalibrationProgress]);
 
   const enterFullScreen = async () => {
     try {
@@ -103,15 +133,23 @@ const Index = () => {
         if (heartBeatResult.confidence > 0.3) {
           setHeartRate(heartBeatResult.bpm);
           
-          // Get and update calibration progress more frequently
+          // Get and update calibration progress continuously
           const now = Date.now();
           if (now - lastCalibrationUpdateRef.current > 100) { // Update every 100ms
             lastCalibrationUpdateRef.current = now;
             
             // Get calibration progress from VitalSignsProcessor
             const progress = getCalibrationProgress();
-            console.log("Current calibration progress:", progress);
             setCalibrationProgress(progress);
+            
+            // Log when we have a valid signal but calibration isn't advancing
+            if (fingerDetectedRef.current && progress === 0 && lastSignal.quality > 35) {
+              console.log("WARNING: Valid signal detected but calibration progress is 0", {
+                signalQuality: lastSignal.quality,
+                fingerDetected: fingerDetectedRef.current,
+                calibrationProgress: progress
+              });
+            }
             
             if (progress >= 100) {
               setCalibrationComplete(true);
@@ -161,9 +199,9 @@ const Index = () => {
     if (calibrationComplete && isMonitoring && !measurementTimerRef.current) {
       console.log("Calibration complete, starting measurement timer");
       
-      if (calibrationTimerRef.current) {
-        clearInterval(calibrationTimerRef.current);
-        calibrationTimerRef.current = null;
+      if (calibrationCheckTimerRef.current) {
+        clearInterval(calibrationCheckTimerRef.current);
+        calibrationCheckTimerRef.current = null;
       }
       
       measurementTimerRef.current = window.setInterval(() => {
@@ -205,6 +243,17 @@ const Index = () => {
       setArrhythmiaCalibrationComplete(false);
       lastCalibrationUpdateRef.current = 0;
       
+      // Clear any existing timers
+      if (calibrationCheckTimerRef.current) {
+        clearInterval(calibrationCheckTimerRef.current);
+        calibrationCheckTimerRef.current = null;
+      }
+      
+      if (measurementTimerRef.current) {
+        clearInterval(measurementTimerRef.current);
+        measurementTimerRef.current = null;
+      }
+      
       startProcessing();
       startHeartBeatMonitoring();
       
@@ -231,9 +280,9 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-      calibrationTimerRef.current = null;
+    if (calibrationCheckTimerRef.current) {
+      clearInterval(calibrationCheckTimerRef.current);
+      calibrationCheckTimerRef.current = null;
     }
     
     const savedResults = resetVitalSigns();
@@ -267,9 +316,9 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-      calibrationTimerRef.current = null;
+    if (calibrationCheckTimerRef.current) {
+      clearInterval(calibrationCheckTimerRef.current);
+      calibrationCheckTimerRef.current = null;
     }
     
     fullResetVitalSigns();
@@ -326,11 +375,17 @@ const Index = () => {
         return;
       }
       
-      if ('getCapabilities' in videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Enabling torch for better PPG signal");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).catch(err => console.error("Error enabling torch:", err));
+      // Check if torch is available and enable it
+      if ('getCapabilities' in videoTrack) {
+        const capabilities = videoTrack.getCapabilities();
+        console.log("Camera capabilities:", capabilities);
+        
+        if (capabilities?.torch) {
+          console.log("Enabling torch for better PPG signal");
+          videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          }).catch(err => console.error("Error enabling torch:", err));
+        }
       }
       
       const tempCanvas = document.createElement('canvas');

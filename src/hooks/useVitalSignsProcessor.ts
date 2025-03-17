@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
 import type { VitalSignsResult } from '../types/vital-signs';
@@ -86,6 +87,15 @@ export const useVitalSignsProcessor = () => {
     
     processedSignals.current++;
     
+    // Periodic logging for calibration progress - helps debug stalled calibration
+    if (processedSignals.current % 30 === 0) {
+      console.log("useVitalSignsProcessor: Calibration progress check:", {
+        progress: processorRef.current.getCalibrationProgress(),
+        phase: processorRef.current.isCalibrationComplete() ? 'completed' : 'calibrating',
+        processedSignals: processedSignals.current
+      });
+    }
+    
     // Check for weak signal to detect finger removal
     if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
       consecutiveWeakSignalsRef.current++;
@@ -173,9 +183,13 @@ export const useVitalSignsProcessor = () => {
    * Get current calibration progress percentage
    */
   const getCalibrationProgress = useCallback(() => {
-    if (!processorRef.current) return 0;
+    if (!processorRef.current) {
+      console.log("useVitalSignsProcessor: Processor not initialized for getCalibrationProgress");
+      return 0;
+    }
     const progress = processorRef.current.getCalibrationProgress();
-    if (processedSignals.current % 50 === 0) {
+    // Log progress more frequently for debugging
+    if (processedSignals.current % 20 === 0 || progress > 0) {
       console.log("useVitalSignsProcessor: Current calibration progress:", progress);
     }
     return progress;
