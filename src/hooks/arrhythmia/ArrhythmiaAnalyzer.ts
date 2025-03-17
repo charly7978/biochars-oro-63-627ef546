@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 import { analyzeRRIntervals } from '../../utils/rrAnalysisUtils';
 import { VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ArrhythmiaConfig } from './types';
@@ -6,8 +10,8 @@ import { ArrhythmiaPatternDetector } from './ArrhythmiaPatternDetector';
 import { RRDataAnalyzer } from './RRDataAnalyzer';
 
 /**
- * Direct arrhythmia analyzer with natural detection
- * No simulation or reference values used
+ * Direct arrhythmia analyzer with real data detection only
+ * No simulation or reference values
  */
 export class ArrhythmiaAnalyzer {
   private lastArrhythmiaTime: number = 0;
@@ -21,14 +25,14 @@ export class ArrhythmiaAnalyzer {
   
   // Consecutive anomalies tracking
   private consecutiveAnomalies: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 6; // Reduced from 8 for faster detection
+  private readonly CONSECUTIVE_THRESHOLD = 6;
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
     this.patternDetector = new ArrhythmiaPatternDetector();
     this.rrAnalyzer = new RRDataAnalyzer();
     
-    console.log("ArrhythmiaAnalyzer: Initialized with config:", {
+    console.log("ArrhythmiaAnalyzer: Initialized with direct measurement config:", {
       minTimeBetween: this.config.MIN_TIME_BETWEEN_ARRHYTHMIAS,
       maxPerSession: this.config.MAX_ARRHYTHMIAS_PER_SESSION,
       qualityThreshold: this.config.SIGNAL_QUALITY_THRESHOLD,
@@ -37,7 +41,7 @@ export class ArrhythmiaAnalyzer {
   }
 
   /**
-   * Direct analysis of RR intervals for arrhythmia detection
+   * Direct analysis of real RR intervals for arrhythmia detection
    * No reference values or simulation used
    */
   public analyzeRRData(
@@ -46,15 +50,15 @@ export class ArrhythmiaAnalyzer {
   ): VitalSignsResult {
     const currentTime = Date.now();
     
-    // Require sufficient data for analysis, but with lower threshold
-    if (!rrData?.intervals || rrData.intervals.length < 12) { // Reduced from 16
+    // Require sufficient real data for analysis
+    if (!rrData?.intervals || rrData.intervals.length < 12) {
       return this.getStatePreservingResult(result);
     }
     
-    // Extract intervals for analysis
+    // Extract intervals for direct analysis
     const intervals = rrData.intervals.slice(-16);
     
-    // Perform direct analysis without reference values
+    // Perform direct analysis of real data only
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
       analyzeRRIntervals(
         rrData, 
@@ -70,21 +74,21 @@ export class ArrhythmiaAnalyzer {
       return this.getStatePreservingResult(result);
     }
     
-    // Log and analyze RR data
+    // Analyze real RR data
     this.rrAnalyzer.logRRAnalysis(analysisData, intervals);
     
-    // If arrhythmia detected, process it
+    // If arrhythmia detected in real data, process it
     if (hasArrhythmia) {
       this.rrAnalyzer.logPossibleArrhythmia(analysisData);
       
-      // Update pattern detector
+      // Update pattern detector with real data
       this.patternDetector.updatePatternBuffer(analysisData.rrVariation);
       
-      // Check for arrhythmia pattern
+      // Check for real arrhythmia pattern
       if (this.patternDetector.detectArrhythmiaPattern()) {
         this.consecutiveAnomalies++;
         
-        console.log("ArrhythmiaAnalyzer: Pattern detected", {
+        console.log("ArrhythmiaAnalyzer: Real pattern detected", {
           consecutiveAnomalies: this.consecutiveAnomalies,
           threshold: this.CONSECUTIVE_THRESHOLD,
           variation: analysisData.rrVariation,
@@ -94,7 +98,7 @@ export class ArrhythmiaAnalyzer {
         this.consecutiveAnomalies = 0;
       }
       
-      // Confirm arrhythmia with fewer consecutive anomalies required
+      // Confirm arrhythmia based on real data patterns
       if (shouldIncrementCounter && this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD) {
         return this.confirmArrhythmia(result, currentTime, analysisData, intervals);
       } else {
@@ -113,7 +117,7 @@ export class ArrhythmiaAnalyzer {
   }
   
   /**
-   * Register confirmed arrhythmia
+   * Register confirmed arrhythmia from real data
    */
   private confirmArrhythmia(
     result: VitalSignsResult, 

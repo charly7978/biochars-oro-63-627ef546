@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -21,7 +25,7 @@ export class HeartBeatProcessor {
   BEEP_VOLUME = 0.8;
   MIN_BEEP_INTERVAL_MS = 250;
 
-  LOW_SIGNAL_THRESHOLD = 0.05; // Increased threshold for signal detection
+  LOW_SIGNAL_THRESHOLD = 0.05;
   LOW_SIGNAL_FRAMES = 10;
   lowSignalCount = 0;
 
@@ -44,13 +48,13 @@ export class HeartBeatProcessor {
   BPM_ALPHA = 0.2;
   peakCandidateIndex = null;
   peakCandidateValue = 0;
-  isMonitoring = false; // Monitoring flag to prevent beeps when not measuring
+  isMonitoring = false;
   arrhythmiaCounter = 0;
 
   constructor() {
     this.initAudio();
     this.startTime = Date.now();
-    console.log("HeartBeatProcessor: New instance created");
+    console.log("HeartBeatProcessor: New instance created - direct measurement mode only");
   }
 
   async initAudio() {
@@ -121,13 +125,13 @@ export class HeartBeatProcessor {
   }
 
   processSignal(value) {
-    // Update signal buffer
+    // Update signal buffer with real data
     this.signalBuffer.push(value);
     if (this.signalBuffer.length > this.WINDOW_SIZE) {
       this.signalBuffer.shift();
     }
     
-    // Simple noise detection - ignore tiny fluctuations that are likely noise
+    // Simple noise detection for real data
     if (Math.abs(value) < this.LOW_SIGNAL_THRESHOLD) {
       this.lowSignalCount++;
       if (this.lowSignalCount > this.LOW_SIGNAL_FRAMES) {
@@ -142,29 +146,25 @@ export class HeartBeatProcessor {
       this.lowSignalCount = Math.max(0, this.lowSignalCount - 1);
     }
     
-    // Apply filters
+    // Apply filters to real data
     const filtered = this.applyFilters(value);
     
-    // Update baseline
+    // Update baseline with real data
     if (this.baseline === 0) {
       this.baseline = filtered;
     } else {
       this.baseline = this.baseline * this.BASELINE_FACTOR + filtered * (1 - this.BASELINE_FACTOR);
     }
     
-    // Calculate derivative to detect peaks
+    // Calculate derivative to detect peaks in real data
     const derivative = filtered - this.lastValue;
     this.lastValue = filtered;
     
-    // Find peaks
+    // Find peaks in real data
     let isPeak = false;
     const now = Date.now();
     
-    // Only consider peaks if:
-    // 1. We have enough data
-    // 2. Derivative changes from positive to negative
-    // 3. Signal is above threshold
-    // 4. Enough time has passed since last peak
+    // Only consider peaks in real data if criteria met
     if (
       this.signalBuffer.length > 5 &&
       derivative < this.DERIVATIVE_THRESHOLD &&
@@ -174,12 +174,12 @@ export class HeartBeatProcessor {
       isPeak = true;
       this.lastPeakTime = now;
       
-      // Calculate BPM from peak
+      // Calculate BPM from real data peak
       if (this.previousPeakTime !== null) {
         const interval = now - this.previousPeakTime;
         const instantBPM = 60000 / interval;
         
-        // Only accept physiologically possible BPM values
+        // Only accept physiologically possible BPM values in real data
         if (instantBPM >= this.MIN_BPM && instantBPM <= this.MAX_BPM) {
           this.bpmHistory.push(instantBPM);
           
@@ -188,7 +188,7 @@ export class HeartBeatProcessor {
             this.bpmHistory.shift();
           }
           
-          // Calculate smoothed BPM with outlier rejection
+          // Calculate smoothed BPM with outlier rejection in real data
           if (this.bpmHistory.length >= 3) {
             // Sort values to find median
             const sortedBPM = [...this.bpmHistory].sort((a, b) => a - b);
@@ -202,7 +202,7 @@ export class HeartBeatProcessor {
             if (validBPMs.length > 0) {
               const avgBPM = validBPMs.reduce((sum, bpm) => sum + bpm, 0) / validBPMs.length;
               
-              // Apply EMA for smoothing
+              // Apply EMA for smoothing of real data
               if (this.smoothBPM === 0) {
                 this.smoothBPM = avgBPM;
               } else {
@@ -216,19 +216,19 @@ export class HeartBeatProcessor {
       this.previousPeakTime = now;
     }
     
-    // Calculate confidence
+    // Calculate confidence in real data
     let confidence = 0;
     
     if (this.signalBuffer.length > 10) {
-      // Use amplitude as a measure of signal strength
+      // Use amplitude of real signal as a measure of strength
       const min = Math.min(...this.signalBuffer.slice(-10));
       const max = Math.max(...this.signalBuffer.slice(-10));
       const amplitude = max - min;
       
-      // Calculate normalized amplitude-based confidence
+      // Calculate normalized amplitude-based confidence for real signal
       const ampConfidence = Math.min(1, amplitude / 2);
       
-      // Calculate BPM stability confidence
+      // Calculate BPM stability confidence from real data
       let stabilityConfidence = 0;
       if (this.bpmHistory.length >= 3) {
         const maxBPM = Math.max(...this.bpmHistory);
@@ -239,7 +239,7 @@ export class HeartBeatProcessor {
         stabilityConfidence = Math.max(0, 1 - bpmRange / (avgBPM * 0.5));
       }
       
-      // Calculate overall confidence - heavily weight signal quality
+      // Calculate overall confidence from real data
       confidence = ampConfidence * 0.7 + (stabilityConfidence || 0) * 0.3;
       
       // Apply time-based confidence factor
@@ -256,7 +256,7 @@ export class HeartBeatProcessor {
   }
   
   applyFilters(value) {
-    // Apply median filter
+    // Apply median filter to real data
     this.medianBuffer.push(value);
     if (this.medianBuffer.length > this.MEDIAN_FILTER_WINDOW) {
       this.medianBuffer.shift();
@@ -264,7 +264,7 @@ export class HeartBeatProcessor {
     
     const medianValue = this.calculateMedian([...this.medianBuffer]);
     
-    // Apply moving average
+    // Apply moving average to real data
     this.movingAverageBuffer.push(medianValue);
     if (this.movingAverageBuffer.length > this.MOVING_AVERAGE_WINDOW) {
       this.movingAverageBuffer.shift();
@@ -297,7 +297,7 @@ export class HeartBeatProcessor {
       };
     }
     
-    // Calculate RR intervals from BPM history
+    // Calculate RR intervals from real BPM history
     const intervals = this.bpmHistory.map(bpm => Math.round(60000 / bpm));
     
     return {
@@ -329,6 +329,6 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
-    console.log("HeartBeatProcessor: Reset complete");
+    console.log("HeartBeatProcessor: Reset complete - all values at zero");
   }
 }

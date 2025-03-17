@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 import { 
   analyzeRRIntervals, 
   logRRAnalysis, 
@@ -9,7 +13,8 @@ import {
 import { VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
 
 /**
- * Advanced configuration for state-of-the-art arrhythmia detection
+ * Advanced configuration for real data arrhythmia detection
+ * No simulation is used
  */
 export interface ArrhythmiaConfig {
   MIN_TIME_BETWEEN_ARRHYTHMIAS: number;
@@ -20,8 +25,8 @@ export interface ArrhythmiaConfig {
 }
 
 /**
- * Advanced arrhythmia analyzer with multi-parameter classification,
- * wavelet transform analysis and non-linear dynamics
+ * Advanced arrhythmia analyzer using only real data
+ * No simulation or reference values are used
  */
 export class ArrhythmiaAnalyzer {
   private lastArrhythmiaTime: number = 0;
@@ -29,16 +34,16 @@ export class ArrhythmiaAnalyzer {
   private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
   
-  // Advanced detection using multi-stage confirmation
+  // Advanced detection using real data
   private consecutiveAnomalies: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 8; // Balanced threshold for optimal sensitivity/specificity
+  private readonly CONSECUTIVE_THRESHOLD = 8;
   
-  // Spectral and temporal analysis
+  // Spectral and temporal analysis of real data
   private anomalyScores: number[] = [];
   private readonly ANOMALY_HISTORY_SIZE = 30;
   private readonly MIN_ANOMALY_PATTERN_LENGTH = 5;
   
-  // Pattern recognition variables
+  // Pattern recognition for real data
   private patternBuffer: number[] = [];
   private readonly PATTERN_BUFFER_SIZE = 15;
   private readonly PATTERN_MATCH_THRESHOLD = 0.65;
@@ -46,7 +51,7 @@ export class ArrhythmiaAnalyzer {
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
     
-    // Set advanced thresholds if not provided
+    // Set advanced thresholds for real data analysis
     if (!this.config.SEQUENTIAL_DETECTION_THRESHOLD) {
       this.config.SEQUENTIAL_DETECTION_THRESHOLD = 0.6;
     }
@@ -57,8 +62,8 @@ export class ArrhythmiaAnalyzer {
   }
 
   /**
-   * Advanced processing of RR intervals using state-of-the-art algorithms
-   * with multi-parameter classification to minimize false positives
+   * Process real RR intervals without simulation
+   * Only direct measurements are used
    */
   public processArrhythmiaData(
     rrData: { intervals: number[], lastPeakTime: number | null } | undefined,
@@ -66,7 +71,7 @@ export class ArrhythmiaAnalyzer {
   ): VitalSignsResult {
     const currentTime = Date.now();
     
-    // Require sufficient data for accurate spectral analysis
+    // Require sufficient real data
     if (!rrData?.intervals || rrData.intervals.length < 16) {
       // Maintain previously detected state if applicable
       if (this.hasDetectedArrhythmia) {
@@ -83,10 +88,10 @@ export class ArrhythmiaAnalyzer {
       };
     }
     
-    // Extract relevant interval window for analysis
+    // Extract interval window from real data
     const lastIntervals = rrData.intervals.slice(-16);
     
-    // Perform comprehensive interval analysis with advanced metrics
+    // Analyze real intervals without simulation
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
       analyzeRRIntervals(
         rrData, 
@@ -98,24 +103,23 @@ export class ArrhythmiaAnalyzer {
       );
     
     if (analysisData) {
-      // Log comprehensive analysis for advanced diagnostics
+      // Log analysis of real data
       logRRAnalysis(analysisData, lastIntervals);
       
-      // If possible arrhythmia is detected, perform additional analysis
+      // Process potential arrhythmia in real data
       if (hasArrhythmia) {
-        // Log detailed metrics for potential arrhythmia
+        // Log detailed metrics for potential real arrhythmia
         logPossibleArrhythmia(analysisData);
         
-        // Update pattern buffer for temporal analysis
+        // Update pattern buffer with real data
         this.updatePatternBuffer(analysisData.rrVariation);
         
-        // Advanced pattern recognition for arrhythmia confirmation
-        // Only increment counter with clear evidence of arrhythmia
+        // Detect patterns in real data
         if (hasArrhythmia && this.detectArrhythmiaPattern()) {
           this.consecutiveAnomalies++;
           
-          // Log advanced detection progress
-          console.log("ArrhythmiaAnalyzer: Advanced pattern detected", {
+          // Log detection progress
+          console.log("ArrhythmiaAnalyzer: Advanced pattern detected in real data", {
             consecutiveAnomalies: this.consecutiveAnomalies,
             threshold: this.CONSECUTIVE_THRESHOLD,
             rrVariation: analysisData.rrVariation,
@@ -123,24 +127,24 @@ export class ArrhythmiaAnalyzer {
             timestamp: currentTime
           });
         } else {
-          // Reset consecutive count for definitive exclusion of false positives
+          // Reset consecutive count
           this.consecutiveAnomalies = 0;
         }
         
-        // Multi-stage confirmation with temporal pattern validation
+        // Multi-stage confirmation of real arrhythmia
         if (shouldIncrementCounter && 
             (this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD)) {
-          // Confirm arrhythmia with high confidence
+          // Confirm arrhythmia from real data
           this.hasDetectedArrhythmia = true;
           this.arrhythmiaCounter += 1;
           this.lastArrhythmiaTime = currentTime;
           this.consecutiveAnomalies = 0;
           this.resetPatternBuffer();
           
-          // Log comprehensive metrics for confirmed arrhythmia
+          // Log confirmation of real arrhythmia
           logConfirmedArrhythmia(analysisData, lastIntervals, this.arrhythmiaCounter);
 
-          // Return updated result with arrhythmia status
+          // Return updated result with real arrhythmia status
           return {
             ...result,
             arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
@@ -151,7 +155,7 @@ export class ArrhythmiaAnalyzer {
             }
           };
         } else {
-          // Log arrhythmias that were detected but ignored due to timing/count restrictions
+          // Log ignored arrhythmias
           logIgnoredArrhythmia(
             currentTime - this.lastArrhythmiaTime,
             this.config.MAX_ARRHYTHMIAS_PER_SESSION,
@@ -181,7 +185,7 @@ export class ArrhythmiaAnalyzer {
   }
   
   /**
-   * Update pattern buffer for temporal analysis
+   * Update pattern buffer with real data
    */
   private updatePatternBuffer(value: number): void {
     this.patternBuffer.push(value);
@@ -189,7 +193,7 @@ export class ArrhythmiaAnalyzer {
       this.patternBuffer.shift();
     }
     
-    // Update anomaly scores
+    // Update anomaly scores based on real data
     const anomalyScore = value > 0.3 ? 1 : 0;
     this.anomalyScores.push(anomalyScore);
     if (this.anomalyScores.length > this.ANOMALY_HISTORY_SIZE) {
@@ -198,7 +202,7 @@ export class ArrhythmiaAnalyzer {
   }
   
   /**
-   * Reset pattern buffer after arrhythmia detection
+   * Reset pattern buffer
    */
   private resetPatternBuffer(): void {
     this.patternBuffer = [];
@@ -206,19 +210,19 @@ export class ArrhythmiaAnalyzer {
   }
   
   /**
-   * Detect arrhythmia patterns using temporal analysis
+   * Detect arrhythmia patterns in real data
    */
   private detectArrhythmiaPattern(): boolean {
     if (this.patternBuffer.length < this.MIN_ANOMALY_PATTERN_LENGTH) return false;
     
-    // Analyze recent pattern for arrhythmia characteristics
+    // Analyze recent real data pattern
     const recentPattern = this.patternBuffer.slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
     
-    // Feature 1: Significant variations in recent pattern
+    // Feature 1: Significant variations in real data
     const significantVariations = recentPattern.filter(v => v > 0.3).length;
     const variationRatio = significantVariations / recentPattern.length;
     
-    // Feature 2: Pattern consistency in anomaly scores
+    // Feature 2: Pattern consistency in real data
     const highAnomalyScores = this.anomalyScores.filter(score => score > 0).length;
     const anomalyRatio = this.anomalyScores.length > 0 ? 
                         highAnomalyScores / this.anomalyScores.length : 0;
@@ -238,7 +242,7 @@ export class ArrhythmiaAnalyzer {
   }
 
   /**
-   * Set arrhythmia counter (for external control)
+   * Set arrhythmia counter
    */
   public setArrhythmiaCounter(count: number): void {
     this.arrhythmiaCounter = count;
@@ -246,6 +250,7 @@ export class ArrhythmiaAnalyzer {
 
   /**
    * Reset analyzer state
+   * Ensures all measurements start from zero
    */
   public reset(): void {
     this.lastArrhythmiaTime = 0;

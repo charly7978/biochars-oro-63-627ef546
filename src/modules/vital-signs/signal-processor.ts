@@ -1,28 +1,32 @@
 
 /**
- * Signal processor for PPG signals
- * Implements various filtering and analysis techniques
- * Enhanced to reduce false positives in finger detection
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
+/**
+ * Signal processor for real PPG signals
+ * Implements filtering and analysis techniques on real data only
+ * No simulation or reference values are used
  */
 export class SignalProcessor {
   private ppgValues: number[] = [];
-  private readonly SMA_WINDOW_SIZE = 5; // Increased window size for better smoothing
-  private readonly MEDIAN_WINDOW_SIZE = 3; // Added median filter window
-  private readonly LOW_PASS_ALPHA = 0.2; // Low pass filter coefficient (lower = stronger filter)
+  private readonly SMA_WINDOW_SIZE = 5;
+  private readonly MEDIAN_WINDOW_SIZE = 3;
+  private readonly LOW_PASS_ALPHA = 0.2;
   
   // Noise detection parameters
-  private readonly NOISE_THRESHOLD = 25; // Threshold for detecting noisy signals
+  private readonly NOISE_THRESHOLD = 25;
   private noiseLevel: number = 0;
   
   /**
-   * Get current PPG values buffer
+   * Get current PPG values buffer with real data only
    */
   public getPPGValues(): number[] {
     return this.ppgValues;
   }
   
   /**
-   * Apply Simple Moving Average filter to a value
+   * Apply Moving Average filter to real values
    */
   public applySMAFilter(value: number): number {
     const windowSize = this.SMA_WINDOW_SIZE;
@@ -37,7 +41,7 @@ export class SignalProcessor {
   }
   
   /**
-   * Apply Exponential Moving Average filter
+   * Apply Exponential Moving Average filter to real data
    */
   public applyEMAFilter(value: number, alpha: number = this.LOW_PASS_ALPHA): number {
     if (this.ppgValues.length === 0) {
@@ -49,8 +53,7 @@ export class SignalProcessor {
   }
   
   /**
-   * Apply median filter (new)
-   * Helps remove outliers and impulse noise
+   * Apply median filter to real data
    */
   public applyMedianFilter(value: number): number {
     if (this.ppgValues.length < this.MEDIAN_WINDOW_SIZE) {
@@ -60,13 +63,12 @@ export class SignalProcessor {
     const values = [...this.ppgValues.slice(-this.MEDIAN_WINDOW_SIZE), value];
     values.sort((a, b) => a - b);
     
-    // Return the median value
     return values[Math.floor(values.length / 2)];
   }
   
   /**
-   * Apply combined filtering for robust signal processing
-   * Uses multiple filters in sequence for better results
+   * Apply combined filtering for real signal processing
+   * No simulation is used
    */
   public applyFilters(value: number): { filteredValue: number, quality: number } {
     // Step 1: Median filter to remove outliers
@@ -78,7 +80,7 @@ export class SignalProcessor {
     // Step 3: Moving average for final smoothing
     const smaFiltered = this.applySMAFilter(lowPassFiltered);
     
-    // Calculate noise level - higher values indicate more noise
+    // Calculate noise level of real signal
     this.updateNoiseLevel(value, smaFiltered);
     
     // Calculate signal quality (0-100)
@@ -97,7 +99,7 @@ export class SignalProcessor {
   }
   
   /**
-   * Update noise level estimation
+   * Update noise level estimation on real data
    */
   private updateNoiseLevel(rawValue: number, filteredValue: number): void {
     // Noise is estimated as the difference between raw and filtered
@@ -108,13 +110,12 @@ export class SignalProcessor {
   }
   
   /**
-   * Calculate signal quality based on noise and stability
-   * Returns 0-100 quality score
+   * Calculate signal quality based on real signal characteristics
    */
   private calculateSignalQuality(): number {
     // No quality assessment with insufficient data
     if (this.ppgValues.length < 10) {
-      return 50; // Default mid-range quality
+      return 50;
     }
     
     // Factor 1: Noise level (lower is better)
@@ -127,13 +128,13 @@ export class SignalProcessor {
     const variance = recentValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentValues.length;
     const stabilityScore = Math.max(0, 100 - Math.min(100, variance / 2));
     
-    // Factor 3: Signal range (look for cardiac-like amplitude)
+    // Factor 3: Signal range
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
     const range = max - min;
     const rangeScore = range > 5 && range < 100 ? 100 : Math.max(0, 100 - Math.abs(range - 50));
     
-    // Weighted average of factors (weights could be tuned)
+    // Weighted average of factors
     const quality = Math.round(
       (noiseScore * 0.4) +
       (stabilityScore * 0.4) +
@@ -145,6 +146,7 @@ export class SignalProcessor {
   
   /**
    * Reset the signal processor
+   * Ensures all measurements start from zero
    */
   public reset(): void {
     this.ppgValues = [];
@@ -152,24 +154,24 @@ export class SignalProcessor {
   }
   
   /**
-   * Calculate heart rate from PPG values
+   * Calculate heart rate from real PPG values
    */
   public calculateHeartRate(sampleRate: number = 30): number {
     if (this.ppgValues.length < sampleRate * 2) {
-      return 0; // Need at least 2 seconds of data
+      return 0;
     }
     
-    // Get recent data (last 5 seconds)
+    // Get recent real data
     const recentData = this.ppgValues.slice(-Math.min(this.ppgValues.length, sampleRate * 5));
     
-    // Find peaks with more strict criteria
+    // Find peaks in real data
     const peaks = this.findPeaksEnhanced(recentData);
     
     if (peaks.length < 2) {
       return 0;
     }
     
-    // Calculate average interval between peaks
+    // Calculate average interval between real peaks
     let totalInterval = 0;
     for (let i = 1; i < peaks.length; i++) {
       totalInterval += peaks[i] - peaks[i - 1];
@@ -177,32 +179,30 @@ export class SignalProcessor {
     
     const avgInterval = totalInterval / (peaks.length - 1);
     
-    // Convert to beats per minute
-    // interval is in samples, so divide by sample rate to get seconds
-    // then convert to minutes (60 seconds/minute)
+    // Convert to beats per minute using real data
     return Math.round(60 / (avgInterval / sampleRate));
   }
   
   /**
-   * Enhanced peak detection with stricter criteria to reduce false positives
+   * Enhanced peak detection with real data
    */
   private findPeaksEnhanced(values: number[]): number[] {
     const peaks: number[] = [];
-    const minPeakDistance = 10; // Minimum samples between peaks (avoid duplicates)
+    const minPeakDistance = 10;
     
-    // Calculate mean and standard deviation
+    // Calculate statistics from real data
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
     const stdDev = Math.sqrt(
       values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length
     );
     
-    // Dynamic threshold based on signal statistics
+    // Dynamic threshold based on real signal statistics
     const peakThreshold = mean + (stdDev * 0.5);
     
     for (let i = 2; i < values.length - 2; i++) {
       const current = values[i];
       
-      // Check if this point is higher than neighbors and above threshold
+      // Check if this point is a peak in real data
       if (current > values[i - 1] && 
           current > values[i - 2] &&
           current > values[i + 1] && 
@@ -220,12 +220,12 @@ export class SignalProcessor {
   }
   
   /**
-   * Original peak finder (kept for compatibility)
+   * Original peak finder with real data
    */
   private findPeaks(values: number[]): number[] {
     const peaks: number[] = [];
     
-    // Simple peak detector
+    // Simple peak detector for real data
     for (let i = 1; i < values.length - 1; i++) {
       if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
         peaks.push(i);

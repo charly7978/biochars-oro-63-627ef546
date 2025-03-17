@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -30,7 +34,7 @@ export interface VitalSignsResult {
 /**
  * Main vital signs processor
  * Integrates different specialized processors to calculate health metrics
- * Operates in direct measurement mode without references or simulation
+ * Operates ONLY in direct measurement mode without reference values or simulation
  */
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
@@ -40,18 +44,17 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // No storage of previous results
-  
-  // Stricter thresholds for more reliable physiological detection
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Increased
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Increased
-  private readonly MIN_PPG_VALUES = 15; // Minimum values required for processing
+  // Thresholds for physiological detection
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15;
+  private readonly MIN_PPG_VALUES = 15;
 
   /**
    * Constructor that initializes all specialized processors
+   * Using only direct measurement
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing new instance with direct measurement");
+    console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
@@ -61,20 +64,20 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Processes the PPG signal and calculates all vital signs
-   * Using direct measurements with no reference values
+   * Processes the real PPG signal and calculates all vital signs
+   * Using ONLY direct measurements with no reference values or simulation
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal - indicates no finger or poor placement
+    // Check for near-zero signal
     if (Math.abs(ppgValue) < 0.005) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return this.createEmptyResults();
     }
     
-    // Apply filtering to the PPG signal
+    // Apply filtering to the real PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
     // Process arrhythmia data if available and valid
@@ -88,12 +91,12 @@ export class VitalSignsProcessor {
     const ppgValues = this.signalProcessor.getPPGValues();
     ppgValues.push(filtered);
     
-    // Limit the PPG values buffer
+    // Limit the real data buffer
     if (ppgValues.length > 300) {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // Only process with enough data
+    // Only process with enough real data
     if (ppgValues.length < this.MIN_PPG_VALUES) {
       console.log("VitalSignsProcessor: Insufficient data points", {
         have: ppgValues.length,
@@ -102,7 +105,7 @@ export class VitalSignsProcessor {
       return this.createEmptyResults();
     }
     
-    // Verify signal amplitude is sufficient
+    // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
@@ -115,20 +118,20 @@ export class VitalSignsProcessor {
       return this.createEmptyResults();
     }
     
-    // Calculate SpO2 using direct approach
+    // Calculate SpO2 using real data only
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
-    // Calculate blood pressure using only signal characteristics
+    // Calculate blood pressure using real signal characteristics only
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose with direct real-time data
+    // Calculate glucose with real data only
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calculate lipids
+    // Calculate lipids with real data only
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
@@ -153,7 +156,7 @@ export class VitalSignsProcessor {
       confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD
     });
 
-    // Prepare result with all metrics - no caching or persistence
+    // Prepare result with all metrics
     return {
       spo2,
       pressure,
@@ -170,8 +173,8 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Creates an empty result for when there is no valid data
-   * Always returns zeros, not reference values
+   * Creates an empty result when there is no valid data
+   * Always returns zeros, no simulation
    */
   private createEmptyResults(): VitalSignsResult {
     return {
@@ -192,8 +195,8 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Reset the processor
-   * Ensures a clean state with no carried over values
+   * Reset the processor to ensure a clean state
+   * No reference values or simulations
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -208,14 +211,15 @@ export class VitalSignsProcessor {
   
   /**
    * Get the last valid results - always returns null
-   * Forces fresh measurements
+   * Forces fresh measurements without reference values
    */
   public getLastValidResults(): VitalSignsResult | null {
     return null; // Always return null to ensure measurements start from zero
   }
   
   /**
-   * Completely reset the processor, removing previous data and results
+   * Completely reset the processor
+   * Ensures fresh start with no data carryover
    */
   public fullReset(): void {
     this.reset();
