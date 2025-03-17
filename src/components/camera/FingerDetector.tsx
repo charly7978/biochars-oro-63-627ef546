@@ -48,8 +48,7 @@ const FingerDetector = ({
       
       {isArrhythmiaCalibrating && isFingerDetected && !isCalibrating && (
         <div className="mt-2 w-32">
-          <Progress value={arrhythmiaCalibrationProgress} className="h-1.5 bg-yellow-300/20" 
-            indicatorClassName="bg-yellow-400" />
+          <Progress value={arrhythmiaCalibrationProgress} className="h-1.5 bg-yellow-300/20" />
           <span className="text-xs text-center block mt-1 text-yellow-200">
             {Math.round(arrhythmiaCalibrationProgress)}% calibrando arritmias
           </span>

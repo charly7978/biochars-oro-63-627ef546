@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import VitalSign from "@/components/VitalSign";
-import CameraView from "@/components/CameraView";
+import CameraView from "@/components/camera/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
+import HelpOverlay from "@/components/HelpOverlay";
 import { toast } from "sonner";
 import { VitalSignsResult } from "@/types/vital-signs";
+import { HelpCircle } from "lucide-react";
 
 const Index = () => {
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -45,7 +48,8 @@ const Index = () => {
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor,
-    getCalibrationProgress: getHeartBeatCalibrationProgress
+    getCalibrationProgress: getHeartBeatCalibrationProgress,
+    isCalibrationComplete: isHeartBeatCalibrationComplete
   } = useHeartBeatProcessor();
   
   const { 
@@ -98,6 +102,11 @@ const Index = () => {
         if (heartBeatResult.confidence > 0.3) {
           setHeartRate(heartBeatResult.bpm);
           
+          const hrCalibProgress = getHeartBeatCalibrationProgress();
+          if (hrCalibProgress < 100) {
+            setCalibrationProgress(hrCalibProgress);
+          }
+          
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
             setVitalSigns(vitals);
@@ -143,7 +152,7 @@ const Index = () => {
       consecutiveFingerDetectionsRef.current = 0;
       fingerDetectedRef.current = false;
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime, getHeartBeatCalibrationProgress]);
 
   useEffect(() => {
     if (calibrationComplete && isMonitoring && !measurementTimerRef.current) {
@@ -204,6 +213,13 @@ const Index = () => {
         duration: 8000,
         id: "app-purpose"
       });
+      
+      setTimeout(() => {
+        toast.info("El sistema necesita calibrar antes de mostrar mediciones. Espere 30 segundos.", {
+          duration: 10000,
+          id: "calibration-explanation"
+        });
+      }, 6000);
     }).catch(err => {
       console.error("Error starting monitoring:", err);
       toast.error("Error al iniciar. Por favor intente de nuevo.");
@@ -426,6 +442,10 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={fingerDetectedRef.current}
             signalQuality={signalQuality}
+            calibrationProgress={calibrationProgress}
+            isCalibrating={!calibrationComplete}
+            arrhythmiaCalibrationProgress={arrhythmiaCalibrationProgress}
+            isArrhythmiaCalibrating={calibrationComplete && !arrhythmiaCalibrationComplete}
           />
         </div>
 
@@ -434,10 +454,17 @@ const Index = () => {
             <div className="text-white text-lg">
               {getStatusMessage()}
             </div>
-            <div className="text-white text-lg">
+            <div className="text-white text-lg flex items-center">
+              <button 
+                onClick={() => setIsHelpOpen(true)}
+                className="ml-2 text-blue-400 hover:text-blue-300 transition-colors"
+                aria-label="Ayuda"
+              >
+                <HelpCircle size={24} />
+              </button>
               {fingerDetectedRef.current ? 
-                <span className="text-green-500">Dedo Detectado</span> : 
-                <span className="text-gray-400">Sin Detección</span>
+                <span className="text-green-500 ml-2">Dedo Detectado</span> : 
+                <span className="text-gray-400 ml-2">Sin Detección</span>
               }
             </div>
           </div>
@@ -463,44 +490,44 @@ const Index = () => {
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}
                 unit="BPM"
-                highlighted={showResults || calibrationComplete}
-                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
-                  vitalSigns.calibration.progress.heartRate * 100 : undefined}
+                highlighted={showResults || (calibrationComplete && vitalCalibrationComplete)}
+                calibrationProgress={calibrationComplete && !vitalCalibrationComplete ? 
+                  Math.max(1, vitalSigns.calibration?.progress.heartRate * 100 || 0) : undefined}
               />
               <VitalSign 
                 label="SPO2"
                 value={vitalSigns.spo2 || "--"}
                 unit="%"
-                highlighted={showResults || calibrationComplete}
-                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
-                  vitalSigns.calibration.progress.spo2 * 100 : undefined}
+                highlighted={showResults || (calibrationComplete && vitalCalibrationComplete)}
+                calibrationProgress={calibrationComplete && !vitalCalibrationComplete ? 
+                  Math.max(1, vitalSigns.calibration?.progress.spo2 * 100 || 0) : undefined}
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
                 value={vitalSigns.pressure}
                 unit="mmHg"
-                highlighted={showResults || calibrationComplete}
-                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
-                  vitalSigns.calibration.progress.pressure * 100 : undefined}
+                highlighted={showResults || (calibrationComplete && vitalCalibrationComplete)}
+                calibrationProgress={calibrationComplete && !vitalCalibrationComplete ? 
+                  Math.max(1, vitalSigns.calibration?.progress.pressure * 100 || 0) : undefined}
               />
               <VitalSign 
                 label="ARRITMIAS"
                 value={vitalSigns.arrhythmiaStatus}
-                highlighted={showResults || calibrationComplete}
-                calibrationProgress={!arrhythmiaCalibrationComplete && calibrationComplete ? 
+                highlighted={showResults || (calibrationComplete && arrhythmiaCalibrationComplete)}
+                calibrationProgress={calibrationComplete && !arrhythmiaCalibrationComplete ? 
                   arrhythmiaCalibrationProgress : undefined}
               />
               <VitalSign 
                 label="GLUCOSA"
                 value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
-                highlighted={showResults || calibrationComplete}
+                highlighted={showResults || (calibrationComplete && vitalCalibrationComplete)}
               />
               <VitalSign 
                 label="COLESTEROL"
                 value={vitalSigns.lipids?.totalCholesterol || "--"}
                 unit="mg/dL"
-                highlighted={showResults || calibrationComplete}
+                highlighted={showResults || (calibrationComplete && vitalCalibrationComplete)}
               />
             </div>
           </div>
@@ -523,6 +550,8 @@ const Index = () => {
           </div>
         </div>
       </div>
+      
+      <HelpOverlay isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
   );
 };

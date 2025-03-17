@@ -1,3 +1,4 @@
+
 /**
  * Ultra-simple algorithm for arrhythmia detection
  * Designed to minimize false positives
@@ -7,13 +8,13 @@ export class ArrhythmiaProcessor {
   private readonly MIN_RR_INTERVALS = 20; // Need lots of data to detect
   private readonly MIN_INTERVAL_MS = 600; // 100 BPM maximum 
   private readonly MAX_INTERVAL_MS = 1200; // 50 BPM minimum
-  private readonly MIN_VARIATION_PERCENT = 70; // Extreme variation (70%)
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000; // 20 seconds between arrhythmias
+  private readonly MIN_VARIATION_PERCENT = 20; // Less extreme variation (was 70%)
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 10000; // 10 seconds between arrhythmias (was 20s)
   
   // State
   private rrIntervals: number[] = [];
   private lastPeakTime: number | null = null;
-  private calibrationTime: number = 20000; // 20 seconds of calibration
+  private calibrationTime: number = 10000; // 10 seconds of calibration (was 20s)
   private isCalibrating = true;
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
@@ -22,10 +23,10 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 15; // Very high to avoid false positives
+  private readonly CONSECUTIVE_THRESHOLD = 5; // Lower threshold to make detection easier (was 15)
 
   /**
-   * Process RR data for ultra-conservative arrhythmia detection
+   * Process RR data for arrhythmia detection
    */
   public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
     arrhythmiaStatus: string;
@@ -65,15 +66,15 @@ export class ArrhythmiaProcessor {
     // Build status message
     const arrhythmiaStatusMessage = 
       this.arrhythmiaCount > 0 
-        ? `ARRHYTHMIA DETECTADA|${this.arrhythmiaCount}` 
+        ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
         : `NO ARRITMIAS|${this.arrhythmiaCount}`;
     
     // Additional information only if there's active arrhythmia
     const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
-          rmssd: 0, // Simplified
-          rrVariation: 0 // Simplified
+          rmssd: this.calculateRMSSD(this.rrIntervals.slice(-8)), 
+          rrVariation: this.calculateRRVariation(this.rrIntervals.slice(-8))
         } 
       : null;
     
@@ -84,8 +85,7 @@ export class ArrhythmiaProcessor {
   }
 
   /**
-   * Ultra-conservative algorithm for arrhythmia detection
-   * Designed to minimize false positives
+   * Arrhythmia detection algorithm with lowered thresholds
    */
   private detectArrhythmia(currentTime: number): void {
     if (this.rrIntervals.length < this.MIN_RR_INTERVALS) return;
@@ -93,7 +93,7 @@ export class ArrhythmiaProcessor {
     // Take latest intervals for analysis
     const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
     
-    // Filter only valid intervals (within conservative physiological limits)
+    // Filter only valid intervals (within physiological limits)
     const validIntervals = recentRR.filter(interval => 
       interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
     );
@@ -113,14 +113,14 @@ export class ArrhythmiaProcessor {
     // Calculate percentage variation
     const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
     
-    // Detect premature beat only if variation is extreme
+    // Detect premature beat with lower threshold
     const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
     
     // Update consecutive anomalies counter
     if (prematureBeat) {
       this.consecutiveAbnormalBeats++;
       
-      // Log detection
+      // Log detection with more details
       console.log("ArrhythmiaProcessor: Possible premature beat", {
         percentageVariation: variation,
         threshold: this.MIN_VARIATION_PERCENT,
@@ -133,7 +133,7 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
     }
     
-    // Check if arrhythmia is confirmed
+    // Check if arrhythmia is confirmed with lower threshold
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
     
@@ -143,12 +143,39 @@ export class ArrhythmiaProcessor {
       this.lastArrhythmiaTime = currentTime;
       this.consecutiveAbnormalBeats = 0;
       
-      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMADA", {
+      console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA", {
         arrhythmiaCount: this.arrhythmiaCount,
         timeSinceLast: timeSinceLastArrhythmia,
+        variation: variation,
         timestamp: currentTime
       });
     }
+  }
+
+  /**
+   * Calculate RMSSD (Root Mean Square of Successive Differences)
+   */
+  private calculateRMSSD(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
+    
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      sumSquaredDiff += Math.pow(intervals[i] - intervals[i-1], 2);
+    }
+    
+    return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
+  }
+  
+  /**
+   * Calculate RR interval variation
+   */
+  private calculateRRVariation(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
+    
+    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const lastRR = intervals[intervals.length - 1];
+    
+    return Math.abs(lastRR - mean) / mean;
   }
 
   /**
