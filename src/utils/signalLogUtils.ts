@@ -1,12 +1,10 @@
 
 /**
  * Utilidades para el registro y análisis de señales
- * Optimizado para mejor rendimiento
  */
 
 /**
  * Actualiza el registro de señales, manteniendo un tamaño manejable
- * Implementación optimizada para rendimiento
  */
 export function updateSignalLog(
   signalLog: {timestamp: number, value: number, result: any}[],
@@ -15,51 +13,77 @@ export function updateSignalLog(
   result: any,
   processedSignals: number
 ): {timestamp: number, value: number, result: any}[] {
-  // Solo registrar cada X señales para reducir carga de procesamiento
-  // Incrementado para mejorar rendimiento
-  if (processedSignals % 30 !== 0) {
+  // Solo registrar cada X señales para no sobrecargar la memoria
+  // Further increased sampling interval for more efficient memory usage
+  if (processedSignals % 40 !== 0) {
     return signalLog;
   }
   
-  // Usar Array.push para mejor rendimiento que spread operator
-  const updatedLog = signalLog.slice();
-  updatedLog.push({
-    timestamp: currentTime,
-    value,
-    result: {...result}
-  });
+  const updatedLog = [
+    ...signalLog,
+    {
+      timestamp: currentTime,
+      value,
+      result: {...result}
+    }
+  ];
   
   // Mantener el log a un tamaño manejable
-  // Usar slice directo es más eficiente
-  const trimmedLog = updatedLog.length > 40 ? updatedLog.slice(-40) : updatedLog;
+  // Further reduced log size to improve performance
+  const trimmedLog = updatedLog.length > 30 ? updatedLog.slice(-30) : updatedLog;
   
-  // Log menos frecuente para mejorar rendimiento
-  if (processedSignals % 150 === 0) {
-    console.log("useVitalSignsProcessor: Log de señales", {
-      totalEntradas: trimmedLog.length,
-      ultimasEntradas: trimmedLog.slice(-2)
-    });
-  }
+  // Enhanced logging with more detailed detection information
+  const fingerDetected = result.fingerDetected ? "SI" : "NO";
+  const quality = result.quality || 0;
+  
+  console.log(`SignalLog: Calidad: ${Math.round(quality)}, Dedo: ${fingerDetected}, Valor: ${Math.round(value)}, Amplitud: ${result.amplitude || 'N/A'}`);
   
   return trimmedLog;
 }
 
 /**
- * Optimiza el manejo de datos para renderizado eficiente
- * @param data Datos a procesar
- * @param maxPoints Número máximo de puntos a mantener
- * @returns Datos optimizados
+ * Analiza un registro de señales para detectar falsos positivos
+ * @param signalLog Registro de señales a analizar
+ * @returns Información de análisis
  */
-export function optimizeRenderData<T>(data: T[], maxPoints: number = 120): T[] {
-  if (data.length <= maxPoints) return data;
-  
-  // Estrategia de diezmado para mantener puntos críticos
-  const stride = Math.ceil(data.length / maxPoints);
-  const result: T[] = [];
-  
-  for (let i = 0; i < data.length; i += stride) {
-    result.push(data[i]);
+export function analyzeSignalLog(
+  signalLog: {timestamp: number, value: number, result: any}[]
+): { falsePositives: number, stability: number, variationIndex: number } {
+  if (signalLog.length < 10) {
+    return { falsePositives: 0, stability: 0, variationIndex: 0 };
   }
   
-  return result;
+  // Detectar cambios rápidos en la detección (posibles falsos positivos)
+  let detectionChanges = 0;
+  let lastDetection = false;
+  
+  signalLog.forEach(entry => {
+    const currentDetection = entry.result.fingerDetected;
+    if (currentDetection !== lastDetection) {
+      detectionChanges++;
+      lastDetection = currentDetection;
+    }
+  });
+  
+  // Calcular estabilidad de la señal
+  const values = signalLog.map(entry => entry.value);
+  const sum = values.reduce((a, b) => a + b, 0);
+  const mean = sum / values.length;
+  const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+  const stability = Math.max(0, 100 - Math.min(100, variance / 2));
+  
+  // Nuevo: calcular índice de variación
+  const deltas = [];
+  for (let i = 1; i < values.length; i++) {
+    deltas.push(Math.abs(values[i] - values[i-1]));
+  }
+  
+  const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  const variationIndex = (avgDelta / mean) * 100;
+  
+  return {
+    falsePositives: detectionChanges / 2, // Approximate count
+    stability,
+    variationIndex
+  };
 }
