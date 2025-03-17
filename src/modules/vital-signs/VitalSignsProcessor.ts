@@ -1,9 +1,11 @@
+
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from '../arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
+import { SignalAnalyzer } from '../signal-analysis/SignalAnalyzer';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -64,11 +66,15 @@ export class VitalSignsProcessor {
     
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
+    // Process arrhythmia data with the ArrhythmiaProcessor
     const arrhythmiaResult = rrData && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+                           { isArrhythmia: false, arrhythmiaCounter: 0, lastArrhythmiaData: null };
+                           
+    // Convert arrhythmia result to standard format
+    const formattedArrhythmiaResult = SignalAnalyzer.formatArrhythmiaResult(arrhythmiaResult);
     
     const ppgValues = this.signalProcessor.getPPGValues();
     ppgValues.push(filtered);
@@ -121,7 +127,7 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Results with confidence", {
       spo2,
       pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
       glucoseConfidence,
       lipidsConfidence,
@@ -132,8 +138,8 @@ export class VitalSignsProcessor {
     return {
       spo2,
       pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
+      arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
+      lastArrhythmiaData: formattedArrhythmiaResult.lastArrhythmiaData,
       glucose: finalGlucose,
       lipids: finalLipids,
       confidence: {

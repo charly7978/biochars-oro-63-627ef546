@@ -3,6 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
 import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
+import { SignalAnalyzer } from '../modules/signal-analysis/SignalAnalyzer';
 
 interface ArrhythmiaWindow {
   start: number;
@@ -68,16 +69,7 @@ export const useVitalSignsProcessor = () => {
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     if (!processorRef.current || !arrhythmiaProcessorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
+      return SignalAnalyzer.createEmptyResult();
     }
     
     processedSignals.current++;
@@ -93,16 +85,7 @@ export const useVitalSignsProcessor = () => {
           threshold: MAX_CONSECUTIVE_WEAK_SIGNALS,
           value
         });
-        return {
-          spo2: 0,
-          pressure: "--/--",
-          arrhythmiaStatus: "--",
-          glucose: 0,
-          lipids: {
-            totalCholesterol: 0,
-            triglycerides: 0
-          }
-        };
+        return SignalAnalyzer.createEmptyResult();
       }
     } else {
       // Reset weak signal counter
@@ -117,9 +100,12 @@ export const useVitalSignsProcessor = () => {
       const arrhythmiaResult = arrhythmiaProcessorRef.current.processRRData(rrData);
       
       // Add arrhythmia status to result
+      const formattedArrhythmiaResult = SignalAnalyzer.formatArrhythmiaResult(arrhythmiaResult);
+      
+      // Update result with arrhythmia data
       result = {
         ...result,
-        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus
+        arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus
       };
       
       // If new arrhythmia detected, register visualization window
