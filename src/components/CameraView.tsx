@@ -1,15 +1,16 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
   isMonitoring: boolean;
+  isFingerDetected?: boolean;
   signalQuality?: number;
 }
 
 const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 
+  isFingerDetected = false, 
   signalQuality = 0,
 }: CameraViewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -272,10 +273,10 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    if (stream && !torchEnabled) {
+    if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna");
+        console.log("Activando linterna después de detectar dedo");
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
         }).then(() => {
@@ -286,11 +287,11 @@ const CameraView = ({
       }
     }
     
-    if (!isAndroid) {
+    if (isFingerDetected && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);
     }
-  }, [stream, torchEnabled, refreshAutoFocus, isAndroid]);
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
   const targetFrameInterval = isAndroid ? 1000/10 : 
                              signalQuality > 70 ? 1000/30 : 1000/15;
