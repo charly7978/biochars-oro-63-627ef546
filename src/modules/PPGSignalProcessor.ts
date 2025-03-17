@@ -19,6 +19,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   private fingerDetector: FingerDetector;
   private perfusionCalculator: PerfusionIndexCalculator; 
   private redChannelExtractor: RedChannelExtractor;
+  private frameCount: number = 0;
   
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -52,6 +53,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (this.isProcessing) return;
     this.isProcessing = true;
     this.initialize();
+    this.frameCount = 0;
     console.log("PPGSignalProcessor: Started");
   }
 
@@ -72,6 +74,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.signalQualityAnalyzer.reset();
     this.fingerDetector.reset();
     this.perfusionCalculator.reset();
+    this.frameCount = 0;
     console.log("PPGSignalProcessor: Reset complete");
   }
 
@@ -94,18 +97,23 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
 
     try {
+      this.frameCount++;
       // Log dimensions of incoming imageData for debugging
-      console.log("Processing frame with dimensions:", { 
-        width: imageData.width, 
-        height: imageData.height,
-        dataLength: imageData.data.length,
-        timestamp: Date.now()
-      });
+      if (this.frameCount % 30 === 0 || this.frameCount < 5) {
+        console.log("Processing frame #" + this.frameCount + " with dimensions:", { 
+          width: imageData.width, 
+          height: imageData.height,
+          dataLength: imageData.data.length,
+          timestamp: Date.now()
+        });
+      }
       
       // Extract red channel value from image
       const redValue = this.redChannelExtractor.extractRedValue(imageData);
       
-      console.log("Extracted red value:", redValue);
+      if (this.frameCount % 30 === 0) {
+        console.log("Extracted red value:", redValue);
+      }
       
       // Apply Kalman filter to reduce noise
       const filtered = this.kalmanFilter.filter(redValue);
@@ -114,12 +122,16 @@ export class PPGSignalProcessor implements SignalProcessor {
       const quality = this.signalQualityAnalyzer.assessQuality(filtered, redValue);
       
       // Detect if finger is present - log parameters for debugging
-      console.log("Finger detection parameters:", { redValue, filtered, quality });
+      if (this.frameCount % 30 === 0) {
+        console.log("Finger detection parameters:", { redValue, filtered, quality });
+      }
       
       const { isFingerDetected, confidence } = 
         this.fingerDetector.detectFinger(redValue, filtered, quality);
       
-      console.log("Finger detection result:", { isFingerDetected, confidence, quality });
+      if (this.frameCount % 15 === 0 || isFingerDetected) {
+        console.log("Finger detection result:", { isFingerDetected, confidence, quality });
+      }
       
       // Calculate perfusion index
       const perfusionIndex = this.perfusionCalculator.calculatePI(filtered);
@@ -141,11 +153,13 @@ export class PPGSignalProcessor implements SignalProcessor {
       };
 
       // Log the signal we're about to send
-      console.log("Sending processed signal:", { 
-        fingerDetected: processedSignal.fingerDetected, 
-        quality: processedSignal.quality,
-        timestamp: processedSignal.timestamp
-      });
+      if (isFingerDetected || this.frameCount % 30 === 0) {
+        console.log("Sending processed signal:", { 
+          fingerDetected: processedSignal.fingerDetected, 
+          quality: processedSignal.quality,
+          timestamp: processedSignal.timestamp
+        });
+      }
 
       // Notify listeners
       if (this.onSignalReady) {

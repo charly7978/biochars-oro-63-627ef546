@@ -14,9 +14,9 @@ export class SignalQualityAnalyzer {
    */
   public assessQuality(filteredValue: number, rawValue: number): number {
     // For very weak signals, return minimal quality
-    if (Math.abs(filteredValue) < 0.01) { // More sensitive threshold (was 0.02)
+    if (Math.abs(filteredValue) < 0.005) { // More sensitive threshold (was 0.01)
       console.log("SignalQualityAnalyzer: Signal very weak", { filteredValue });
-      return 15; // Slightly increased minimum quality (was 10)
+      return 20; // Slightly increased minimum quality (was 15)
     }
     
     // Add to quality history
@@ -30,7 +30,7 @@ export class SignalQualityAnalyzer {
       console.log("SignalQualityAnalyzer: Initial data collection", { 
         historyLength: this.qualityHistory.length 
       });
-      return this.qualityHistory.length * 8; // Higher initial quality (was 30 fixed)
+      return this.qualityHistory.length * 10; // Higher initial quality (was 8)
     }
     
     // Calculate metrics - stability, range, noise
@@ -47,15 +47,15 @@ export class SignalQualityAnalyzer {
     
     const avgVariation = variations.reduce((sum, v) => sum + v, 0) / variations.length;
     
-    // Calculate quality based on signal properties - less strict criteria
-    const stabilityScore = Math.max(0, 100 - (avgVariation * 500)); // Less sensitive to variation (was 600)
-    const rangeScore = range > 0.005 && range < 1.0 ? 100 : 50; // More permissive range (was 0.01-0.8)
+    // Calculate quality based on signal properties - even less strict criteria
+    const stabilityScore = Math.max(0, 100 - (avgVariation * 400)); // Less sensitive to variation (was 500)
+    const rangeScore = range > 0.001 && range < 1.5 ? 100 : 50; // More permissive range (was 0.005-1.0)
     
     // Weighted combined score
-    const qualityScore = (stabilityScore * 0.55) + (rangeScore * 0.45); // Adjusted weights
+    const qualityScore = (stabilityScore * 0.5) + (rangeScore * 0.5); // Even more balanced weights
     
-    // Debug reporting (occasionally)
-    if (Math.random() < 0.1) { // Increased reporting frequency for debugging (was 0.05)
+    // Debug reporting (frequently)
+    if (Math.random() < 0.25) { // Increased reporting frequency for debugging (was 0.1)
       console.log("SignalQualityAnalyzer: Quality assessment", {
         qualityScore,
         stabilityScore,

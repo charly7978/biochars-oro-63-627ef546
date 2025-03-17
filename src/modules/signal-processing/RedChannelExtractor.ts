@@ -25,8 +25,8 @@ export class RedChannelExtractor {
       return 0;
     }
     
-    // Analyze a larger central region (70% of image)
-    const centerRegionSize = 0.7; // Increased from 50% to 70%
+    // Analyze a much larger central region (90% of image) for better sensitivity
+    const centerRegionSize = 0.9; // Increased from 70% to 90%
     const startX = Math.floor(imageData.width * ((1 - centerRegionSize) / 2));
     const endX = Math.floor(imageData.width * (1 - ((1 - centerRegionSize) / 2)));
     const startY = Math.floor(imageData.height * ((1 - centerRegionSize) / 2));
@@ -40,7 +40,8 @@ export class RedChannelExtractor {
     
     // Extract red channel from each pixel in the central region
     // Use a sampling approach for larger images to improve performance
-    const skipFactor = (imageData.width > 400) ? 2 : 1;
+    // Using lower skipFactor to capture more pixels 
+    const skipFactor = (imageData.width > 400) ? 1 : 1;
     
     for (let y = startY; y < endY; y += skipFactor) {
       for (let x = startX; x < endX; x += skipFactor) {
@@ -62,7 +63,7 @@ export class RedChannelExtractor {
     const avgRed = redSum / pixelCount;
     
     // Report values for debugging - more frequent reporting
-    if (Math.random() < 0.1) { // Increased from 0.05 to 0.1
+    if (Math.random() < 0.2) { // Increased from 0.1 to 0.2
       console.log("RedChannelExtractor: Extracted value", {
         avgRed,
         pixelsAnalyzed: pixelCount,
