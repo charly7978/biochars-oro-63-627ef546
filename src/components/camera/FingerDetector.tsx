@@ -20,8 +20,9 @@ const FingerDetector = ({
   arrhythmiaCalibrationProgress = 0,
   isArrhythmiaCalibrating = false
 }: FingerDetectorProps) => {
-  // Ensure progress is always a valid number
-  const validCalibrationProgress = isNaN(calibrationProgress) ? 0 : Math.max(0, Math.min(100, calibrationProgress));
+  // Ensure progress is always a valid number and at least 1 if calibrating
+  const validCalibrationProgress = isNaN(calibrationProgress) ? 0 : 
+    isCalibrating && calibrationProgress <= 0 ? 1 : Math.max(0, Math.min(100, calibrationProgress));
   const validArrhythmiaProgress = isNaN(arrhythmiaCalibrationProgress) ? 0 : Math.max(0, Math.min(100, arrhythmiaCalibrationProgress));
   
   return (
@@ -41,7 +42,7 @@ const FingerDetector = ({
         {isFingerDetected ? "dedo detectado" : "ubique su dedo en el lente"}
       </span>
       
-      {isCalibrating && isFingerDetected && (
+      {isCalibrating && (
         <div className="mt-2 w-32">
           <Progress value={validCalibrationProgress} className="h-1.5" />
           <span className="text-xs text-center block mt-1 text-white">

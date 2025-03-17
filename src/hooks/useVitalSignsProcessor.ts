@@ -17,6 +17,7 @@ export const useVitalSignsProcessor = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   const calibrationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const calibrationProgressRef = useRef<number>(0);
   
   // Configuration with wider physiological ranges for direct measurement
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
@@ -55,9 +56,10 @@ export const useVitalSignsProcessor = () => {
     const checkInterval = setInterval(() => {
       if (processorRef.current) {
         const progress = processorRef.current.getCalibrationProgress();
+        calibrationProgressRef.current = progress;
         console.log("useVitalSignsProcessor: Continuous calibration check:", progress);
       }
-    }, 2000); // Check every 2 seconds
+    }, 200); // Check every 200ms
     
     calibrationIntervalRef.current = checkInterval;
     
@@ -115,14 +117,17 @@ export const useVitalSignsProcessor = () => {
       // Log calibration progress more frequently during early calibration phase
       if (!processorRef.current.isCalibrationComplete() && processedSignals.current < 100) {
         const progress = processorRef.current.getCalibrationProgress();
+        calibrationProgressRef.current = progress;
         console.log("useVitalSignsProcessor: Current calibration progress:", progress);
       }
     }
     
     // Periodic logging for calibration progress - helps debug stalled calibration
     if (processedSignals.current % 10 === 0) {
+      const progress = processorRef.current.getCalibrationProgress();
+      calibrationProgressRef.current = progress;
       console.log("useVitalSignsProcessor: Calibration progress check:", {
-        progress: processorRef.current.getCalibrationProgress(),
+        progress,
         phase: processorRef.current.isCalibrationComplete() ? 'completed' : 'calibrating',
         processedSignals: processedSignals.current,
         value: Math.abs(value)
@@ -178,7 +183,7 @@ export const useVitalSignsProcessor = () => {
         result = arrhythmiaResult;
         
         // Handle arrhythmia visualization
-        if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+        if (result.arrhythmiaStatus.includes("ARRITMIA DETECTADA") && result.lastArrhythmiaData) {
           const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
           
           // Window based on heart rate
@@ -218,9 +223,10 @@ export const useVitalSignsProcessor = () => {
   const getCalibrationProgress = useCallback(() => {
     if (!processorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized for getCalibrationProgress");
-      return 0;
+      return 1;
     }
     const progress = processorRef.current.getCalibrationProgress();
+    calibrationProgressRef.current = progress;
     
     // More frequent logging for debugging early calibration
     if (progress < 10 || progress % 10 < 1) {
@@ -247,6 +253,7 @@ export const useVitalSignsProcessor = () => {
     setArrhythmiaWindows([]);
     lastBPUpdateRef.current = Date.now();
     consecutiveWeakSignalsRef.current = 0;
+    calibrationProgressRef.current = 1;
     
     console.log("useVitalSignsProcessor: Reset completed with calibration retention");
     return lastResults;
@@ -268,6 +275,7 @@ export const useVitalSignsProcessor = () => {
     signalLog.current = [];
     lastBPUpdateRef.current = Date.now();
     consecutiveWeakSignalsRef.current = 0;
+    calibrationProgressRef.current = 1;
     
     console.log("useVitalSignsProcessor: Full reset complete - all data cleared");
   }, []);
@@ -283,7 +291,8 @@ export const useVitalSignsProcessor = () => {
     arrhythmiaWindows,
     debugInfo: {
       processedSignals: processedSignals.current,
-      signalLog: signalLog.current.slice(-10)
+      signalLog: signalLog.current.slice(-10),
+      calibrationProgress: calibrationProgressRef.current
     }
   };
 };
