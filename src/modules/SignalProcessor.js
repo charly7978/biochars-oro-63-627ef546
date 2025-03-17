@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { SignalAmplifier } from './SignalAmplifier';
 

@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -204,8 +205,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Calcular puntuación de movimiento (inestabilidad)
       const movementScore = this.calculateMovementScore();
       
-      // Analizar la señal para determinar calidad y presencia del dedo
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue, movementScore);
+      // Analizar la señal para determinar calidad
+      const quality = this.calculateSignalQuality(filtered, redValue, movementScore);
       
       // Calcular índice de perfusión
       const perfusionIndex = this.calculatePerfusionIndex();
@@ -236,6 +237,71 @@ export class PPGSignalProcessor implements SignalProcessor {
       console.error("PPGSignalProcessor: Error procesando frame", error);
       this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
+  }
+  
+  /**
+   * Calcula la calidad de la señal (0-100)
+   */
+  private calculateSignalQuality(
+    filtered: number, 
+    rawValue: number, 
+    movementScore: number
+  ): number {
+    // Si tenemos suficientes datos para analizar
+    if (this.lastValues.length < 3) {
+      return 0;
+    }
+
+    // Analizar estabilidad de la señal
+    const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
+    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Evaluar variaciones entre muestras consecutivas
+    const variations = recentValues.map((val, i, arr) => {
+      if (i === 0) return 0;
+      return val - arr[i-1];
+    });
+
+    // Detectar estabilidad con umbral adaptativo
+    const maxVariation = Math.max(...variations.map(Math.abs));
+    const minVariation = Math.min(...variations);
+    
+    // Umbral adaptativo basado en promedio
+    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
+    
+    // Detección de estabilidad
+    const isStable = maxVariation < adaptiveThreshold * 3 && 
+                    minVariation > -adaptiveThreshold * 3;
+    
+    // Ajustar contador de estabilidad
+    if (isStable) {
+      this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.MIN_STABILITY_COUNT * 2);
+      this.lastStableValue = filtered;
+    } else {
+      // Reducción más gradual
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
+    }
+    
+    // Factor de movimiento (permite más movimiento)
+    const movementFactor = Math.max(0, 1 - (movementScore / this.MAX_MOVEMENT_THRESHOLD));
+    
+    // Factor de periodicidad (buscar patrones cardíacos)
+    const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
+    
+    // Calcular calidad ponderando múltiples factores
+    const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 1.5), 1);
+    const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
+                                 (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
+    const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
+    
+    // Ponderación ajustada para ser más permisiva
+    const quality = Math.round((stabilityScore * 0.4 + 
+                        intensityScore * 0.3 + 
+                        variationScore * 0.1 + 
+                        movementFactor * 0.1 + 
+                        periodicityFactor * 0.1) * 100);
+    
+    return quality;
   }
   
   /**
@@ -375,91 +441,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     const dc = (max + min) / 2;
     
     return dc > 0 ? ac / dc : 0;
-  }
-
-  /**
-   * Analiza la señal para determinar calidad y presencia de dedo
-   * Incluye análisis de movimiento y periodicidad como factores
-   */
-  private analyzeSignal(
-    filtered: number, 
-    rawValue: number, 
-    movementScore: number
-  ): { isFingerDetected: boolean, quality: number } {
-    // Verificación de umbrales básicos (más permisiva)
-    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
-    
-    // Si está completamente fuera de rango, no hay dedo
-    if (!isInRange) {
-      // Reducir contador de estabilidad gradualmente en lugar de reiniciar
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
-      return { isFingerDetected: this.stableFrameCount > 0, quality: Math.max(0, this.stableFrameCount * 10) };
-    }
-
-    // Verificar si tenemos suficientes muestras para analizar
-    if (this.lastValues.length < 3) {
-      return { isFingerDetected: false, quality: 0 };
-    }
-
-    // Analizar estabilidad de la señal (ahora más permisiva)
-    const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
-    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    
-    // Evaluar variaciones entre muestras consecutivas
-    const variations = recentValues.map((val, i, arr) => {
-      if (i === 0) return 0;
-      return val - arr[i-1];
-    });
-
-    // Detectar estabilidad con umbral adaptativo
-    const maxVariation = Math.max(...variations.map(Math.abs));
-    const minVariation = Math.min(...variations);
-    
-    // Umbral adaptativo basado en promedio (más permisivo)
-    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
-    
-    // Detección de estabilidad más permisiva
-    const isStable = maxVariation < adaptiveThreshold * 3 && 
-                    minVariation > -adaptiveThreshold * 3;
-    
-    // Ajustar contador de estabilidad
-    if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.MIN_STABILITY_COUNT * 2);
-      this.lastStableValue = filtered;
-    } else {
-      // Reducción más gradual
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
-    }
-    
-    // Factor de movimiento (permite más movimiento)
-    const movementFactor = Math.max(0, 1 - (movementScore / this.MAX_MOVEMENT_THRESHOLD));
-    
-    // Factor de periodicidad (buscar patrones cardíacos)
-    const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
-    
-    // Calcular calidad ponderando múltiples factores
-    let quality = 0;
-    
-    // Siempre calcular calidad, incluso con estabilidad baja
-    const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 1.5), 1);
-    const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
-                                  (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
-    const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
-    
-    // Ponderación ajustada para ser más permisiva
-    quality = Math.round((stabilityScore * 0.4 + 
-                        intensityScore * 0.3 + 
-                        variationScore * 0.1 + 
-                        movementFactor * 0.1 + 
-                        periodicityFactor * 0.1) * 100);
-    
-    // Detección de dedo más permisiva
-    // Permitimos detección con calidad mínima más baja
-    const minQualityThreshold = 30; // Umbral de calidad reducido
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.7 && 
-                            quality >= minQualityThreshold;
-
-    return { isFingerDetected, quality };
   }
 
   /**
