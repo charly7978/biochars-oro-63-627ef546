@@ -1,6 +1,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Fingerprint } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -24,6 +25,43 @@ const CameraView = ({
   const streamRef = useRef<MediaStream | null>(null);
   const activeImageCaptureRef = useRef<ImageCapture | null>(null);
   const cameraStartTimeoutRef = useRef<number | null>(null);
+  const permissionRequestedRef = useRef<boolean>(false);
+
+  // Request permissions explicitly before accessing the camera
+  const requestCameraPermission = useCallback(async (): Promise<boolean> => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError("Tu navegador no soporta acceso a la cámara");
+      return false;
+    }
+
+    try {
+      // Check if permission API is available
+      if (navigator.permissions && navigator.permissions.query) {
+        const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
+        
+        if (result.state === 'denied') {
+          setCameraError("Permiso de cámara denegado. Por favor, habilita el acceso a la cámara en la configuración de tu navegador.");
+          return false;
+        }
+      }
+      
+      // Try to get a minimal video stream just to trigger the permission dialog
+      const permissionStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }, 
+        audio: false 
+      });
+      
+      // Stop the permission test stream immediately
+      permissionStream.getTracks().forEach(track => track.stop());
+      permissionRequestedRef.current = true;
+      return true;
+    } catch (err) {
+      console.error("Error requesting camera permission:", err);
+      const errorMessage = err instanceof Error ? err.message : "Error desconocido";
+      setCameraError(`No se pudo acceder a la cámara: ${errorMessage}`);
+      return false;
+    }
+  }, []);
 
   // Robust camera stopping
   const stopCamera = useCallback(async () => {
@@ -86,6 +124,14 @@ const CameraView = ({
     setCameraError(null);
     console.log("CameraView: Starting camera with optimized settings");
     
+    // Request permissions first if not already requested
+    if (!permissionRequestedRef.current) {
+      const permissionGranted = await requestCameraPermission();
+      if (!permissionGranted) {
+        return;
+      }
+    }
+    
     // Set a timeout to prevent hanging
     if (cameraStartTimeoutRef.current) {
       clearTimeout(cameraStartTimeoutRef.current);
@@ -106,7 +152,7 @@ const CameraView = ({
 
       // Try different configurations in sequence if needed
       const configurations = [
-        // First try: Basic configuration
+        // First try: Basic configuration with environment camera
         {
           video: {
             facingMode: 'environment',
@@ -115,14 +161,27 @@ const CameraView = ({
           },
           audio: false
         },
-        // Second try: Even more basic
+        // Second try: Environment camera with lower resolution
         {
-          video: true,
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 320 },
+            height: { ideal: 240 }
+          },
+          audio: false
+        },
+        // Third try: User camera (front)
+        {
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
           audio: false
         },
         // Last resort: Just any video
         {
-          video: { facingMode: 'environment' },
+          video: true,
           audio: false
         }
       ];
@@ -175,22 +234,35 @@ const CameraView = ({
       
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
+        
+        // Add event listeners for video playback
+        videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current) {
+            videoRef.current.play()
+              .catch(err => console.error("Error playing video:", err));
+          }
+        };
       }
       
-      // Try to enable torch for better visibility
-      if ('getCapabilities' in videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("CameraView: Enabling torch");
-        try {
-          await videoTrack.applyConstraints({
-            advanced: [{ torch: true }]
-          });
-          setTorchEnabled(true);
-          console.log("CameraView: Torch enabled successfully");
-        } catch (torchErr) {
-          console.log("CameraView: Error enabling torch:", torchErr);
-          // Continue even if torch fails
+      // Try to enable torch for better visibility after a short delay
+      setTimeout(() => {
+        if (videoTrack && 'getCapabilities' in videoTrack && videoTrack.getCapabilities()?.torch) {
+          console.log("CameraView: Enabling torch");
+          try {
+            videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            }).then(() => {
+              setTorchEnabled(true);
+              console.log("CameraView: Torch enabled successfully");
+            }).catch(torchErr => {
+              console.log("CameraView: Error enabling torch:", torchErr);
+            });
+          } catch (torchErr) {
+            console.log("CameraView: Error enabling torch:", torchErr);
+            // Continue even if torch fails
+          }
         }
-      }
+      }, 1000);
       
       // Notify parent that stream is ready
       if (onStreamReady) {
@@ -199,6 +271,7 @@ const CameraView = ({
       }
       
       retryAttemptsRef.current = 0;
+      toast.success("Cámara iniciada correctamente");
       
     } catch (err) {
       console.error("CameraView: Error starting camera:", err);
@@ -214,7 +287,7 @@ const CameraView = ({
       // Implement retry logic
       retryCamera();
     }
-  }, [onStreamReady]);
+  }, [onStreamReady, requestCameraPermission]);
   
   // Retry camera startup
   const retryCamera = useCallback(() => {
@@ -224,6 +297,7 @@ const CameraView = ({
       setTimeout(startCamera, 1000);
     } else {
       console.error(`CameraView: Failed to start camera after ${maxRetryAttempts} attempts`);
+      toast.error(`No se pudo iniciar la cámara después de ${maxRetryAttempts} intentos`);
     }
   }, [startCamera, maxRetryAttempts]);
 
@@ -269,6 +343,7 @@ const CameraView = ({
             <button 
               onClick={() => {
                 setCameraError(null);
+                permissionRequestedRef.current = false; // Reset permission flag to try again
                 startCamera();
               }}
               className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
