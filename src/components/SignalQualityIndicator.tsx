@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 interface SignalQualityIndicatorProps {
@@ -20,14 +20,24 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [stabilityScore, setStabilityScore] = useState(0);
   const [consecutiveGoodReadings, setConsecutiveGoodReadings] = useState(0);
   const [falsePositiveDetected, setFalsePositiveDetected] = useState(false);
+  const [suspiciousPattern, setSuspiciousPattern] = useState(false);
+  
+  // Contadores para detección avanzada de falsos positivos
+  const suspiciousPatternsCountRef = useRef(0);
+  const goodSignalCountRef = useRef(0);
+  const sampleCountRef = useRef(0);
+  const lastThreeQualitiesRef = useRef<number[]>([]);
   
   // Constantes de configuración - extremadamente estrictas
-  const historySize = 12; // Ventana más grande para mejor análisis
-  const QUALITY_THRESHOLD = 85; // Umbral muy elevado para calidad considerada "buena"
-  const MIN_QUALITY_FOR_DETECTION = 50; // Umbral mínimo más elevado para evitar falsos positivos
-  const SIGNAL_STABILITY_THRESHOLD = 0.65; // Umbral de estabilidad extremadamente exigente
-  const VERIFICATION_FACTOR = 0.85; // Factor de verificación ultrastricto
-  const CONSECUTIVE_READINGS_NEEDED = 5; // Número de lecturas buenas consecutivas necesarias
+  const historySize = 15; // Ventana más grande para mejor análisis (aumentado de 12)
+  const QUALITY_THRESHOLD = 90; // Umbral extremadamente elevado (aumentado de 85)
+  const MIN_QUALITY_FOR_DETECTION = 65; // Umbral mínimo mucho más elevado (aumentado de 50)
+  const SIGNAL_STABILITY_THRESHOLD = 0.75; // Umbral de estabilidad extremadamente exigente (aumentado de 0.65)
+  const VERIFICATION_FACTOR = 0.90; // Factor de verificación ultrastricto (aumentado de 0.85)
+  const CONSECUTIVE_READINGS_NEEDED = 10; // Número de lecturas buenas consecutivas necesarias (aumentado de 5)
+  const TEMPORAL_VARIATION_MIN = 2.0; // Mínima variación temporal necesaria (nuevo)
+  const TEMPORAL_VARIATION_MAX = 30.0; // Máxima variación temporal permitida (nuevo)
+  const SUSPICIOUSLY_STABLE_COUNT = 6; // Cuenta para considerar una señal sospechosamente estable (nuevo)
 
   // Detectar plataforma
   useEffect(() => {
@@ -44,15 +54,54 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   // Mantener historial de calidad para promedio con mayor peso a valores recientes
   useEffect(() => {
     if (isMonitoring) {
+      // Incrementar contador de muestras
+      sampleCountRef.current += 1;
+      
       // Verificación extrema para valores sospechosos que podrían ser falsos positivos
-      if (quality > 90 && quality < 100) {
-        // Valores cercanos a 100 sin ser 100 exactos son altamente sospechosos (comunes en simulaciones)
-        console.log("SignalQualityIndicator: Valor sospechosamente perfecto detectado", quality);
-        setFalsePositiveDetected(true);
-        setTimeout(() => setFalsePositiveDetected(false), 5000);
-        return;
+      if (quality > 90) {
+        // Valores cercanos a 100 sin cambio significativo son altamente sospechosos
+        lastThreeQualitiesRef.current.push(quality);
+        if (lastThreeQualitiesRef.current.length > 3) {
+          lastThreeQualitiesRef.current.shift();
+        }
+        
+        // Calcular variación entre muestras consecutivas
+        if (lastThreeQualitiesRef.current.length === 3) {
+          const diffs = [
+            Math.abs(lastThreeQualitiesRef.current[1] - lastThreeQualitiesRef.current[0]),
+            Math.abs(lastThreeQualitiesRef.current[2] - lastThreeQualitiesRef.current[1])
+          ];
+          
+          const avgDiff = (diffs[0] + diffs[1]) / 2;
+          
+          // Si la diferencia es muy pequeña, es sospechosamente estable
+          if (avgDiff < 0.8) {
+            suspiciousPatternsCountRef.current += 1;
+            if (suspiciousPatternsCountRef.current >= SUSPICIOUSLY_STABLE_COUNT) {
+              setSuspiciousPattern(true);
+              setFalsePositiveDetected(true);
+              console.log("SignalQualityIndicator: Patrón sospechosamente estable detectado", {
+                lastValues: [...lastThreeQualitiesRef.current],
+                avgDiff,
+                count: suspiciousPatternsCountRef.current
+              });
+              setTimeout(() => {
+                setFalsePositiveDetected(false);
+                setSuspiciousPattern(false);
+                suspiciousPatternsCountRef.current = 0;
+              }, 5000);
+            }
+          } else {
+            // Reducir contador si hay variación natural
+            suspiciousPatternsCountRef.current = Math.max(0, suspiciousPatternsCountRef.current - 1);
+          }
+        }
+      } else {
+        // Reducir contador para valores normales
+        suspiciousPatternsCountRef.current = Math.max(0, suspiciousPatternsCountRef.current - 1);
       }
       
+      // Actualizar historial de calidad
       setQualityHistory(prev => {
         const newHistory = [...prev, quality];
         return newHistory.slice(-historySize);
@@ -62,6 +111,12 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       setDisplayQuality(0);
       setStabilityScore(0);
       setConsecutiveGoodReadings(0);
+      setSuspiciousPattern(false);
+      setFalsePositiveDetected(false);
+      suspiciousPatternsCountRef.current = 0;
+      goodSignalCountRef.current = 0;
+      sampleCountRef.current = 0;
+      lastThreeQualitiesRef.current = [];
     }
   }, [quality, isMonitoring]);
 
@@ -76,13 +131,29 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     // Verificar varianza para detectar señales artificiales o demasiado estables
     const variance = calculateVariance(qualityHistory);
-    if (variance < 0.1 && qualityHistory.every(q => q > 0)) {
+    
+    // Rechazar señales con varianza extremadamente baja (posible simulación)
+    if (variance < 0.5 && qualityHistory.every(q => q > 0)) {
       console.log("SignalQualityIndicator: Señal artificialmente estable detectada", {
         variance,
         history: qualityHistory.slice(-5)
       });
-      setDisplayQuality(Math.min(10, displayQuality));
+      setDisplayQuality(Math.min(5, displayQuality));
       setStabilityScore(0.1);
+      setConsecutiveGoodReadings(0);
+      setSuspiciousPattern(true);
+      return;
+    }
+    
+    // Verificar si la varianza está dentro de un rango fisiológicamente plausible
+    if (variance < TEMPORAL_VARIATION_MIN || variance > TEMPORAL_VARIATION_MAX) {
+      console.log("SignalQualityIndicator: Varianza de señal fuera de rango fisiológico", {
+        variance,
+        minAllowed: TEMPORAL_VARIATION_MIN,
+        maxAllowed: TEMPORAL_VARIATION_MAX
+      });
+      setDisplayQuality(Math.min(10, displayQuality));
+      setStabilityScore(0.2);
       setConsecutiveGoodReadings(0);
       return;
     }
@@ -93,7 +164,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     qualityHistory.forEach((q, index) => {
       // Ponderación exponencial - valores recientes tienen mucho más peso
-      const weight = Math.pow(1.5, index); 
+      const weight = Math.pow(1.8, index); // Aumentado de 1.5 a 1.8
       weightedSum += q * weight;
       totalWeight += weight;
     });
@@ -119,32 +190,33 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       qualityHistory: qualityHistory.slice(-3),
       weightedAverage,
       threshold: QUALITY_THRESHOLD,
-      consecutiveGoodReadings
+      consecutiveGoodReadings,
+      suspiciousPattern
     });
     
     // Penalizar fuertemente señales inestables
     if (variance > 120) { 
-      weightedAverage = Math.round(weightedAverage * 0.3);
+      weightedAverage = Math.round(weightedAverage * 0.2); // Reducido de 0.3
     } else if (variance > 80) {
-      weightedAverage = Math.round(weightedAverage * 0.5);
+      weightedAverage = Math.round(weightedAverage * 0.4); // Reducido de 0.5
     } else if (variance > 40) {
-      weightedAverage = Math.round(weightedAverage * 0.7);
+      weightedAverage = Math.round(weightedAverage * 0.6); // Reducido de 0.7
     }
     
     // Penalizar señales inconsistentes
-    if (consistencyFactor < 0.8) {
-      weightedAverage = Math.round(weightedAverage * consistencyFactor * 0.8);
+    if (consistencyFactor < 0.85) { // Aumentado de 0.8 a 0.85
+      weightedAverage = Math.round(weightedAverage * consistencyFactor * 0.7); // Reducido de 0.8 a 0.7
     }
     
     // Verificación adicional para evitar falsos positivos
-    if (weightedAverage > 60 && (stabilityMetric < 0.7 || consistencyFactor < 0.75)) {
-      weightedAverage = Math.min(50, weightedAverage);
+    if (weightedAverage > 60 && (stabilityMetric < 0.75 || consistencyFactor < 0.8)) {
+      weightedAverage = Math.min(40, weightedAverage); // Reducido de 50 a 40
     }
     
     // Verificación fisiológica más estricta
-    if (weightedAverage > 30 && variance < 3) {
+    if (weightedAverage > 30 && variance < 4) { // Aumentado de 3 a 4
       // Señal demasiado estable para ser fisiológica (posible simulación)
-      weightedAverage = Math.min(20, weightedAverage);
+      weightedAverage = Math.min(15, weightedAverage); // Reducido de 20 a 15
       console.log("SignalQualityIndicator: Señal sospechosamente estable - posible simulación", {
         variance, weightedAverage
       });
@@ -153,18 +225,32 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     // Verificación de consistencia entre lecturas
     if (weightedAverage > MIN_QUALITY_FOR_DETECTION) {
       setConsecutiveGoodReadings(prev => prev + 1);
+      goodSignalCountRef.current += 1;
     } else {
       setConsecutiveGoodReadings(0);
     }
     
+    // Verificar la proporción total de buenas señales
+    const goodSignalRatio = goodSignalCountRef.current / Math.max(1, sampleCountRef.current);
+    if (sampleCountRef.current > 20 && goodSignalRatio > 0.9) {
+      // Demasiadas "buenas" señales consecutivas es sospechoso
+      console.log("SignalQualityIndicator: Proporción sospechosamente alta de 'buenas' señales", {
+        ratio: goodSignalRatio,
+        goodCount: goodSignalCountRef.current,
+        totalSamples: sampleCountRef.current
+      });
+      setSuspiciousPattern(true);
+      weightedAverage = Math.min(30, weightedAverage);
+    }
+    
     // Sólo mostrar calidad alta después de varias lecturas buenas consecutivas
-    const finalQuality = (consecutiveGoodReadings >= CONSECUTIVE_READINGS_NEEDED) 
+    const finalQuality = (consecutiveGoodReadings >= CONSECUTIVE_READINGS_NEEDED && !suspiciousPattern) 
       ? weightedAverage 
-      : Math.min(weightedAverage, MIN_QUALITY_FOR_DETECTION - 5);
+      : Math.min(weightedAverage, MIN_QUALITY_FOR_DETECTION - 10); // Más estricto, bajado 10 puntos más
     
     // Transición suave para mejor UX, pero con más peso a nuevos valores
     setDisplayQuality(prev => {
-      const delta = (finalQuality - prev) * 0.5; 
+      const delta = (finalQuality - prev) * 0.4; // Reducido de 0.5 a 0.4 para transición más suave
       return Math.round(prev + delta);
     });
 
@@ -173,7 +259,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         isMonitoring && 
         stabilityMetric > SIGNAL_STABILITY_THRESHOLD &&
         consistencyFactor > VERIFICATION_FACTOR &&
-        consecutiveGoodReadings >= CONSECUTIVE_READINGS_NEEDED) {
+        consecutiveGoodReadings >= CONSECUTIVE_READINGS_NEEDED &&
+        !suspiciousPattern) {
       
       const eventDetail = { 
         quality: finalQuality,
@@ -191,7 +278,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       
       console.log("SignalQualityIndicator: Evento validSignalDetected emitido tras verificación estricta", eventDetail);
     }
-  }, [qualityHistory, isMonitoring, consecutiveGoodReadings]);
+  }, [qualityHistory, isMonitoring, consecutiveGoodReadings, displayQuality, suspiciousPattern]);
 
   // Calcular varianza para detección de estabilidad
   const calculateVariance = (values: number[]): number => {
@@ -218,7 +305,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    * Obtiene el color basado en la calidad con niveles intermedios más definidos
    */
   const getQualityColor = (q: number) => {
-    if (falsePositiveDetected) return '#ff6b6b';
+    if (falsePositiveDetected || suspiciousPattern) return '#ff6b6b';
     if (q === 0) return '#666666';
     if (q > 75) return '#00ff00';
     if (q > 60) return '#bfff00';
@@ -233,6 +320,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getQualityText = (q: number) => {
     if (falsePositiveDetected) return 'Falso Positivo';
+    if (suspiciousPattern) return 'Patrón Sospechoso';
     if (q === 0) return 'Sin Dedo';
     if (q > 75) return 'Excelente';
     if (q > 60) return 'Muy Buena';
@@ -293,7 +381,9 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       {showHelpTip && displayQuality < QUALITY_THRESHOLD && (
         <div className="absolute -bottom-20 left-0 right-0 bg-black/70 p-2 rounded text-white text-xs flex items-center gap-1">
           <AlertCircle className="h-4 w-4 text-yellow-400 flex-shrink-0" />
-          {displayQuality === 0 ? (
+          {suspiciousPattern ? (
+            <span>Posible falso positivo detectado. Reajuste la posición del dedo.</span>
+          ) : displayQuality === 0 ? (
             <span>Coloque su dedo cubriendo completamente la cámara y la luz de flash.</span>
           ) : displayQuality < 30 ? (
             <span>Presione firmemente y mantenga el dedo quieto. Ajuste la posición.</span>
