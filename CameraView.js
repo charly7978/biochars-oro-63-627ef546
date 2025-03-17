@@ -20,24 +20,34 @@ const CameraView = ({
   const [deviceInfo, setDeviceInfo] = useState(null);
   const imageCaptureCacheRef = useRef(null); // Para cachear la instancia de ImageCapture
   const processRunningRef = useRef(false); // Para evitar llamadas simultáneas
+  const activeTrackRef = useRef(null); // NUEVO: Referencia para track de video activo
 
-  // CAMBIO CRÍTICO: Detener la cámara cuidadosamente para evitar InvalidStateError
+  // CAMBIO CRÍTICO: Asegurarnos de detener recursos antes de reiniciar
   const stopCamera = async () => {
     try {
-      // Limpiar referencia de ImageCapture primero
+      console.log("CameraView: Deteniendo cámara cuidadosamente");
+      
+      // CRÍTICO: Limpiar referencia de ImageCapture primero
       imageCaptureCacheRef.current = null;
       processRunningRef.current = false;
       
+      // CRÍTICO: Limpiar referencia de track activo
+      activeTrackRef.current = null;
+      
       if (stream) {
-        stream.getTracks().forEach(track => {
+        const tracks = stream.getTracks();
+        console.log(`CameraView: Deteniendo ${tracks.length} tracks`);
+        
+        for (const track of tracks) {
           try {
-            // Detener tracks con manejo de errores
+            console.log(`CameraView: Deteniendo track: ${track.kind} (${track.label})`);
             track.stop();
           } catch (err) {
             console.error("Error al detener track:", err);
           }
-        });
+        }
         
+        // CRÍTICO: Limpiar video source
         if (videoRef.current) {
           videoRef.current.srcObject = null;
         }
@@ -45,7 +55,7 @@ const CameraView = ({
         setStream(null);
       }
     } catch (err) {
-      console.error("Error al detener cámara:", err);
+      console.error("Error general al detener cámara:", err);
     }
   };
 
@@ -55,33 +65,44 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      // CAMBIO CRÍTICO: Detener primero para limpiar recursos
+      // IMPORTANTE: Detener primero para limpiar recursos
       await stopCamera();
+      
+      console.log("CameraView: Iniciando cámara con nuevos recursos");
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
+      // Usar configuración más básica para maximizar compatibilidad
       const baseVideoConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
+        width: { ideal: 640 }, // Reducido 720 -> 640
         height: { ideal: 480 }
       };
 
       if (isAndroid) {
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 25 },
-          resizeMode: 'crop-and-scale'
+          frameRate: { ideal: 20 }, // Reducido 25 -> 20
         });
       }
 
       const constraints = {
         video: baseVideoConstraints
       };
+      
+      console.log("CameraView: Solicitando acceso a cámara con:", JSON.stringify(constraints));
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("CameraView: Stream obtenido correctamente");
+      
       const videoTrack = newStream.getVideoTracks()[0];
+      
+      // CRÍTICO: Guardar referencia al track activo
+      activeTrackRef.current = videoTrack;
 
       // Guardar información del dispositivo para diagnóstico
       if (videoTrack) {
+        console.log(`CameraView: Track de video obtenido: ${videoTrack.label}`);
+        
         setDeviceInfo({
           label: videoTrack.label,
           settings: videoTrack.getSettings(),
@@ -89,65 +110,46 @@ const CameraView = ({
         });
         
         // Verificar si tiene linterna
-        const capabilities = videoTrack.getCapabilities();
-        setHasTorch(capabilities?.torch === true);
-        
-        // CAMBIO CRÍTICO: Activar linterna inmediatamente
-        if (capabilities?.torch) {
-          try {
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            console.log("Linterna activada inmediatamente");
-          } catch (err) {
-            console.error("Error activando linterna inicial:", err);
-          }
-        }
-      }
-
-      if (videoTrack && isAndroid) {
         try {
           const capabilities = videoTrack.getCapabilities();
-          const advancedConstraints = [];
+          const hasTorchCapability = capabilities?.torch === true;
+          setHasTorch(hasTorchCapability);
           
-          if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
-          }
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-
-          if (advancedConstraints.length > 0) {
-            await videoTrack.applyConstraints({
-              advanced: advancedConstraints
-            });
-          }
-
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
+          console.log(`CameraView: Capacidad de linterna: ${hasTorchCapability}`);
+          
+          // CAMBIO CRÍTICO: Activar linterna inmediatamente si disponible
+          if (hasTorchCapability) {
+            try {
+              console.log("CameraView: Activando linterna inmediatamente");
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              console.log("CameraView: Linterna activada correctamente");
+            } catch (err) {
+              console.error("Error activando linterna inicial:", err);
+            }
           }
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.error("Error verificando capacidades:", err);
+          // Asumir que tiene linterna de todos modos para intentarlo
+          setHasTorch(true);
         }
       }
 
+      // Configurar video
       if (videoRef.current) {
+        console.log("CameraView: Asignando stream a elemento video");
         videoRef.current.srcObject = newStream;
-        if (isAndroid) {
-          videoRef.current.style.willChange = 'transform';
-          videoRef.current.style.transform = 'translateZ(0)';
-        }
+        videoRef.current.style.transform = 'translateZ(0)';
+        videoRef.current.style.backfaceVisibility = 'hidden';
       }
 
       setStream(newStream);
       
-      // CAMBIO CRÍTICO: Crear instancia de ImageCapture una sola vez y cachearla
+      // CAMBIO CRÍTICO: Crear instancia de ImageCapture una sola vez
       if (videoTrack) {
         try {
+          console.log("CameraView: Creando instancia de ImageCapture");
           imageCaptureCacheRef.current = new ImageCapture(videoTrack);
         } catch (err) {
           console.error("Error creando ImageCapture:", err);
@@ -155,49 +157,61 @@ const CameraView = ({
       }
       
       // CAMBIO CRÍTICO: Usar setTimeout para asegurar que el stream esté estable
+      console.log("CameraView: Programando llamada a onStreamReady");
       setTimeout(() => {
         if (onStreamReady && newStream.active) {
+          console.log("CameraView: Llamando a onStreamReady con stream activo");
           onStreamReady(newStream);
+        } else {
+          console.log("CameraView: No se pudo llamar a onStreamReady", {
+            onStreamReadyExists: !!onStreamReady,
+            streamActive: newStream?.active
+          });
         }
-      }, 500);
+      }, 800); // Mayor tiempo para estabilizar (500 -> 800ms)
       
     } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
+      console.error("Error crítico al iniciar la cámara:", err);
+      alert("No se pudo acceder a la cámara. Por favor, reinicie la aplicación y otorgue permisos.");
     }
   };
 
-  // CAMBIO CRÍTICO: Mantener linterna siempre activa
+  // CAMBIO CRÍTICO: Mantener linterna siempre activa con intervalo agresivo
   useEffect(() => {
+    if (!stream || !hasTorch) return;
+    
+    console.log("CameraView: Configurando intervalo de mantenimiento de linterna");
+    
     const activateTorch = async () => {
-      if (!stream || !hasTorch) return;
-      
-      const videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack || videoTrack.readyState !== 'live') return;
+      if (!activeTrackRef.current) {
+        console.log("CameraView: No hay track activo para activar linterna");
+        return;
+      }
       
       try {
-        // CAMBIO CRÍTICO: Siempre activar la linterna
-        await videoTrack.applyConstraints({
+        // CRÍTICO: Siempre activar la linterna
+        await activeTrackRef.current.applyConstraints({
           advanced: [{ torch: true }]
         }).catch(err => {
           console.log("Error al controlar la linterna:", err);
         });
         
-        console.log("CameraView: Linterna activada permanentemente");
+        console.log("CameraView: Linterna mantenida activa", new Date().toISOString());
       } catch (err) {
-        console.error("Error al controlar la linterna:", err);
+        console.error("Error al mantener activa la linterna:", err);
       }
     };
     
-    // Activar linterna inmediatamente y periódicamente
+    // Activar linterna inmediatamente
     activateTorch();
     
-    // Ping cada 1 segundo para mantener la linterna encendida
+    // Intervalo agresivo cada 1 segundo para mantener la linterna encendida
     const torchInterval = setInterval(activateTorch, 1000);
     
     return () => clearInterval(torchInterval);
   }, [stream, hasTorch]);
 
-  // Monitor camera brightness to help with finger detection verification
+  // Monitor camera brightness - SIMPLIFICADO para evitar problemas de rendimiento
   useEffect(() => {
     if (!stream || !videoRef.current || !isMonitoring) return;
 
@@ -205,8 +219,8 @@ const CameraView = ({
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
-    canvas.width = 100;
-    canvas.height = 100;
+    canvas.width = 50; // Reducido para mejor rendimiento (100 -> 50)
+    canvas.height = 50; // Reducido para mejor rendimiento (100 -> 50)
 
     const checkBrightness = () => {
       if (!videoRef.current || !videoRef.current.videoWidth) return;
@@ -215,22 +229,22 @@ const CameraView = ({
         ctx.drawImage(
           videoRef.current,
           0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight,
-          0, 0, 100, 100
+          0, 0, 50, 50
         );
         
-        const imageData = ctx.getImageData(0, 0, 100, 100);
+        const imageData = ctx.getImageData(0, 0, 50, 50);
         const data = imageData.data;
         
         let brightness = 0;
-        // Sample every 4th pixel to improve performance
-        for (let i = 0; i < data.length; i += 16) {
+        // Sample every 20th pixel to improve performance (reduced from 16th)
+        for (let i = 0; i < data.length; i += 20) {
           const r = data[i];
           const g = data[i + 1];
           const b = data[i + 2];
           brightness += (r + g + b) / 3;
         }
         
-        brightness /= (data.length / 16);
+        brightness /= (data.length / 20);
         
         setBrightnessSamples(prev => {
           const newSamples = [...prev, brightness];
@@ -244,22 +258,30 @@ const CameraView = ({
                             Math.max(1, brightnessSamples.length);
         setAvgBrightness(avgBrightness);
       } catch (err) {
-        console.error("Error checking brightness:", err);
+        console.error("Error verificando brillo:", err);
       }
     };
 
-    const interval = setInterval(checkBrightness, 500);
+    // Intervalo menos frecuente para reducir carga (500ms -> 1000ms)
+    const interval = setInterval(checkBrightness, 1000);
     return () => clearInterval(interval);
   }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples, deviceInfo]);
 
+  // Efecto para iniciar/detener cámara según isMonitoring
   useEffect(() => {
+    console.log(`CameraView: Cambio en isMonitoring: ${isMonitoring}`);
+    
     if (isMonitoring && !stream) {
+      console.log("CameraView: Iniciando cámara porque isMonitoring=true");
       startCamera();
     } else if (!isMonitoring && stream) {
+      console.log("CameraView: Deteniendo cámara porque isMonitoring=false");
       stopCamera();
     }
+    
+    // Cleanup al desmontar componente
     return () => {
-      console.log("CameraView component unmounting, stopping camera");
+      console.log("CameraView: Componente desmontando, deteniendo cámara");
       stopCamera();
     };
   }, [isMonitoring]);
@@ -285,7 +307,7 @@ const CameraView = ({
         <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
           <Fingerprint
             size={48}
-            className="text-green-500" // CAMBIO CRÍTICO: Siempre verde
+            className="text-green-500" // CAMBIO CRÍTICO: Siempre verde para indicar detección
           />
           <span className="text-xs mt-2 text-green-500"> {/* CAMBIO CRÍTICO: Siempre verde */}
             {isCalibrating ? "calibrando..." : "dedo detectado"}
