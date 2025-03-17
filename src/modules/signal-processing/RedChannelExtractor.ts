@@ -13,11 +13,12 @@ export class RedChannelExtractor {
     let redSum = 0;
     let pixelCount = 0;
     
-    // Debug values
+    // Debug values - more frequent logging
     console.log("RedChannelExtractor: Processing image", {
       width: imageData.width,
       height: imageData.height,
-      dataLength: data.length
+      dataLength: data.length,
+      timestamp: Date.now()
     });
     
     if (imageData.width === 0 || imageData.height === 0 || data.length === 0) {
@@ -25,12 +26,12 @@ export class RedChannelExtractor {
       return 0;
     }
     
-    // Analyze a much larger central region (90% of image) for better sensitivity
-    const centerRegionSize = 0.9; // Increased from 70% to 90%
-    const startX = Math.floor(imageData.width * ((1 - centerRegionSize) / 2));
-    const endX = Math.floor(imageData.width * (1 - ((1 - centerRegionSize) / 2)));
-    const startY = Math.floor(imageData.height * ((1 - centerRegionSize) / 2));
-    const endY = Math.floor(imageData.height * (1 - ((1 - centerRegionSize) / 2)));
+    // Analyze the ENTIRE image area for maximum sensitivity
+    const centerRegionSize = 1.0; // Use 100% of the image
+    const startX = 0;
+    const endX = imageData.width;
+    const startY = 0;
+    const endY = imageData.height;
     
     console.log("RedChannelExtractor: Analysis region", {
       startX, endX, startY, endY,
@@ -38,13 +39,10 @@ export class RedChannelExtractor {
       regionHeight: endY - startY
     });
     
-    // Extract red channel from each pixel in the central region
-    // Use a sampling approach for larger images to improve performance
-    // Using lower skipFactor to capture more pixels 
-    const skipFactor = (imageData.width > 400) ? 1 : 1;
-    
-    for (let y = startY; y < endY; y += skipFactor) {
-      for (let x = startX; x < endX; x += skipFactor) {
+    // Extract red channel from each pixel with NO SAMPLING - check every pixel
+    // This ensures we don't miss any signal
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
         
         // Ensure index is within bounds
@@ -62,14 +60,12 @@ export class RedChannelExtractor {
     
     const avgRed = redSum / pixelCount;
     
-    // Report values for debugging - more frequent reporting
-    if (Math.random() < 0.2) { // Increased from 0.1 to 0.2
-      console.log("RedChannelExtractor: Extracted value", {
-        avgRed,
-        pixelsAnalyzed: pixelCount,
-        timestamp: Date.now()
-      });
-    }
+    // Report values for debugging - much more frequent
+    console.log("RedChannelExtractor: Extracted value", {
+      avgRed,
+      pixelsAnalyzed: pixelCount,
+      timestamp: Date.now()
+    });
     
     return avgRed;
   }

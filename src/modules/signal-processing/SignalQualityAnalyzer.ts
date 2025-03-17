@@ -3,7 +3,7 @@
  * Analyzes signal quality based on medical-grade standards
  */
 export class SignalQualityAnalyzer {
-  private readonly QUALITY_BUFFER_SIZE = 20;
+  private readonly QUALITY_BUFFER_SIZE = 5; // Reduced for faster response
   private qualityHistory: number[] = [];
   
   /**
@@ -13,10 +13,10 @@ export class SignalQualityAnalyzer {
    * @returns Quality score from 0-100
    */
   public assessQuality(filteredValue: number, rawValue: number): number {
-    // For very weak signals, return minimal quality
-    if (Math.abs(filteredValue) < 0.005) { // More sensitive threshold (was 0.01)
+    // For very weak signals, still give minimal quality
+    if (Math.abs(filteredValue) < 0.001) { // Extremely sensitive threshold
       console.log("SignalQualityAnalyzer: Signal very weak", { filteredValue });
-      return 20; // Slightly increased minimum quality (was 15)
+      return 30; // Higher minimum quality
     }
     
     // Add to quality history
@@ -26,15 +26,15 @@ export class SignalQualityAnalyzer {
     }
     
     // Need enough data points for meaningful analysis
-    if (this.qualityHistory.length < 5) {
+    if (this.qualityHistory.length < 3) { // Reduced requirement
       console.log("SignalQualityAnalyzer: Initial data collection", { 
         historyLength: this.qualityHistory.length 
       });
-      return this.qualityHistory.length * 10; // Higher initial quality (was 8)
+      return this.qualityHistory.length * 15; // Much higher initial quality
     }
     
     // Calculate metrics - stability, range, noise
-    const recent = this.qualityHistory.slice(-5);
+    const recent = this.qualityHistory.slice(-3); // Use fewer points
     const min = Math.min(...recent);
     const max = Math.max(...recent);
     const range = max - min;
@@ -47,25 +47,23 @@ export class SignalQualityAnalyzer {
     
     const avgVariation = variations.reduce((sum, v) => sum + v, 0) / variations.length;
     
-    // Calculate quality based on signal properties - even less strict criteria
-    const stabilityScore = Math.max(0, 100 - (avgVariation * 400)); // Less sensitive to variation (was 500)
-    const rangeScore = range > 0.001 && range < 1.5 ? 100 : 50; // More permissive range (was 0.005-1.0)
+    // Calculate quality based on signal properties - extremely permissive
+    const stabilityScore = Math.max(0, 100 - (avgVariation * 200)); // Much less sensitive to variation
+    const rangeScore = range > 0.0001 ? 100 : 50; // Super permissive range
     
-    // Weighted combined score
-    const qualityScore = (stabilityScore * 0.5) + (rangeScore * 0.5); // Even more balanced weights
+    // Weighted combined score - biased toward stability
+    const qualityScore = (stabilityScore * 0.7) + (rangeScore * 0.3);
     
-    // Debug reporting (frequently)
-    if (Math.random() < 0.25) { // Increased reporting frequency for debugging (was 0.1)
-      console.log("SignalQualityAnalyzer: Quality assessment", {
-        qualityScore,
-        stabilityScore,
-        rangeScore,
-        avgVariation,
-        range,
-        rawValue,
-        filteredValue
-      });
-    }
+    // Debug reporting (very frequently)
+    console.log("SignalQualityAnalyzer: Quality assessment", {
+      qualityScore,
+      stabilityScore,
+      rangeScore,
+      avgVariation,
+      range,
+      rawValue,
+      filteredValue
+    });
     
     return Math.min(100, Math.max(0, qualityScore));
   }

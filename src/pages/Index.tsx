@@ -11,6 +11,7 @@ import StatusBar from "./index/components/StatusBar";
 import VitalSignsDisplay from "./index/components/VitalSignsDisplay";
 import MonitoringTimer from "./index/components/MonitoringTimer";
 import ActionButtons from "./index/components/ActionButtons";
+import DiagnosticOverlay from "@/components/DiagnosticOverlay";
 
 const Index = () => {
   console.log("DEBUG: Index component - Initialization start");
@@ -42,13 +43,17 @@ const Index = () => {
     onMeasurementComplete: finalizeMeasurement
   });
   
-  // Start camera access on component mount
+  // Start camera access immediately on component mount
   useEffect(() => {
-    console.log("DEBUG: Index component - Attempting initial camera access");
-    if (isCameraOn) {
+    console.log("DEBUG: Index component - Immediate camera access request");
+    // Force full reset and camera restart on mount
+    handleReset();
+    
+    // Small delay to ensure everything is reset
+    setTimeout(() => {
       requestCameraAccess();
-    }
-  }, [requestCameraAccess, isCameraOn]);
+    }, 500);
+  }, []);
   
   // Start or stop the timer based on monitoring state
   useEffect(() => {
@@ -59,16 +64,15 @@ const Index = () => {
     }
   }, [isMonitoring, startTimer, stopTimer]);
 
-  // Auto-retry camera access if not detecting finger after a while
+  // Auto-retry camera access frequently
   useEffect(() => {
     let timeoutId: number | null = null;
     
     if (isMonitoring && (!lastSignal || !lastSignal.fingerDetected) && isCameraOn) {
-      console.log("DEBUG: Index component - Setting up auto-retry for camera");
       timeoutId = window.setTimeout(() => {
         console.log("DEBUG: Index component - Auto-retrying camera access");
         requestCameraAccess();
-      }, 5000); // Try again after 5 seconds if no finger detected
+      }, 3000); // Try again every 3 seconds if no finger detected
     }
     
     return () => {
@@ -83,7 +87,8 @@ const Index = () => {
     isCameraOn,
     signalQuality,
     showResults,
-    hasLastSignal: !!lastSignal
+    hasLastSignal: !!lastSignal,
+    fingerDetected: lastSignal?.fingerDetected
   });
 
   return (
@@ -100,7 +105,7 @@ const Index = () => {
         <div className="absolute inset-0">
           <CameraView 
             onStreamReady={handleStreamReady}
-            isMonitoring={isCameraOn}
+            isMonitoring={true} // Always keep camera on for better detection
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
           />
@@ -145,6 +150,14 @@ const Index = () => {
           />
         </div>
       </div>
+      
+      {/* Add the diagnostic overlay */}
+      <DiagnosticOverlay
+        isMonitoring={isMonitoring}
+        lastSignal={lastSignal}
+        heartRate={heartRate}
+        signalQuality={signalQuality}
+      />
     </div>
   );
 };

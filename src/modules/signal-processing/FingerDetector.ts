@@ -8,13 +8,13 @@ export interface FingerDetectionResult {
 }
 
 export class FingerDetector {
-  private readonly HISTORY_SIZE = 10;
-  private readonly MIN_RED_THRESHOLD = 30; // Significantly reduced for much greater sensitivity (was 50)
+  private readonly HISTORY_SIZE = 5; // Reduced for faster detection
+  private readonly MIN_RED_THRESHOLD = 10; // Extreme reduction for any detection
   private readonly MAX_RED_THRESHOLD = 255; // Maximum possible value
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.02; // Reduced for greater sensitivity (was 0.05)
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.001; // Extremely sensitive
   
   private consecutiveWeakSignals: number = 0;
-  private readonly MAX_WEAK_SIGNALS = 8; // Increased tolerance (was 5)
+  private readonly MAX_WEAK_SIGNALS = 10; // Very high tolerance
   private detectionHistory: boolean[] = [];
   
   /**
@@ -40,7 +40,7 @@ export class FingerDetector {
       }
     });
     
-    // Basic range check - much more permissive
+    // Basic range check - EXTREMELY permissive
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && 
                      rawValue <= this.MAX_RED_THRESHOLD;
     
@@ -53,7 +53,7 @@ export class FingerDetector {
       };
     }
     
-    // Check for weak signal
+    // Check for weak signal - VERY forgiving
     const isWeakSignal = Math.abs(processedValue) < this.WEAK_SIGNAL_THRESHOLD;
     
     if (isWeakSignal) {
@@ -63,13 +63,14 @@ export class FingerDetector {
         processedValue 
       });
     } else {
-      this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 2); // Faster recovery
+      this.consecutiveWeakSignals = 0; // Reset immediately on any strong signal
     }
     
-    // Determine detection based on signal quality and weak signal history - much more permissive
-    const minQualityThreshold = 15; // Reduced for greater sensitivity (was 20)
-    const isDetected = signalQuality >= minQualityThreshold && 
-                     this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS;
+    // Determine detection based on signal quality and weak signal history
+    // EXTREMELY permissive - almost any signal will be detected
+    const minQualityThreshold = 5; // Significantly reduced threshold
+    const isDetected = signalQuality >= minQualityThreshold || 
+                      rawValue > this.MIN_RED_THRESHOLD * 2;
     
     console.log("FingerDetector: detection decision", { 
       isDetected, 
@@ -80,10 +81,10 @@ export class FingerDetector {
     
     this.updateHistory(isDetected);
     
-    // Calculate detection confidence
+    // Calculate detection confidence - highly optimistic
     const historyConfidence = this.calculateHistoryConfidence();
     const qualityFactor = signalQuality / 100;
-    const confidence = historyConfidence * 0.5 + qualityFactor * 0.5; // Equal weights
+    const confidence = Math.max(historyConfidence * 0.3 + qualityFactor * 0.3 + 0.4, 0.5);
     
     return {
       isFingerDetected: isDetected,
