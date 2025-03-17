@@ -27,6 +27,7 @@ const CameraView = ({
   const cameraStartTimeoutRef = useRef<number | null>(null);
   const permissionRequestedRef = useRef<boolean>(false);
   const permissionRequestInProgressRef = useRef<boolean>(false);
+  const cameraStartAttemptedRef = useRef<boolean>(false);
 
   // Request permissions explicitly before accessing the camera
   const requestCameraPermission = useCallback(async (): Promise<boolean> => {
@@ -36,6 +37,7 @@ const CameraView = ({
     }
     
     permissionRequestInProgressRef.current = true;
+    console.log("CameraView: Starting permission request");
     
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError("Tu navegador no soporta acceso a la cámara");
@@ -52,6 +54,8 @@ const CameraView = ({
         audio: false 
       });
       
+      console.log("CameraView: Permission granted, obtained test stream");
+      
       // Stop the permission test stream immediately
       permissionStream.getTracks().forEach(track => track.stop());
       permissionRequestedRef.current = true;
@@ -61,6 +65,7 @@ const CameraView = ({
       console.error("Error requesting camera permission:", err);
       const errorMessage = err instanceof Error ? err.message : "Error desconocido";
       setCameraError(`No se pudo acceder a la cámara: ${errorMessage}`);
+      toast.error(`Error de cámara: ${errorMessage}`);
       permissionRequestInProgressRef.current = false;
       return false;
     }
@@ -114,6 +119,7 @@ const CameraView = ({
     setStream(null);
     setTorchEnabled(false);
     retryAttemptsRef.current = 0;
+    cameraStartAttemptedRef.current = false;
     
   }, []);
 
@@ -124,6 +130,13 @@ const CameraView = ({
       return;
     }
     
+    if (cameraStartAttemptedRef.current) {
+      console.log("CameraView: Camera start already attempted");
+      return;
+    }
+    
+    cameraStartAttemptedRef.current = true;
+    
     setCameraError(null);
     console.log("CameraView: Starting camera with optimized settings");
     
@@ -132,6 +145,7 @@ const CameraView = ({
       const permissionGranted = await requestCameraPermission();
       if (!permissionGranted) {
         toast.error("No se pudo acceder a la cámara. Por favor, verifica los permisos.");
+        cameraStartAttemptedRef.current = false;
         return;
       }
     }
@@ -145,6 +159,7 @@ const CameraView = ({
       if (!streamRef.current) {
         console.error("CameraView: Camera request timed out");
         setCameraError("Tiempo de espera agotado. Por favor intente de nuevo.");
+        cameraStartAttemptedRef.current = false;
         retryCamera();
       }
     }, 10000) as unknown as number;
@@ -228,9 +243,14 @@ const CameraView = ({
 
       console.log("CameraView: Got video track:", videoTrack.label);
       
-      // Create ImageCapture once and store in ref
+      // Create ImageCapture once and store in ref - with error checking
       try {
-        activeImageCaptureRef.current = new ImageCapture(videoTrack);
+        if (videoTrack.readyState === 'live') {
+          activeImageCaptureRef.current = new ImageCapture(videoTrack);
+          console.log("CameraView: ImageCapture created successfully");
+        } else {
+          console.warn("CameraView: Video track not in live state, cannot create ImageCapture");
+        }
       } catch (imageCaptureErr) {
         console.error("CameraView: Failed to create ImageCapture:", imageCaptureErr);
         // Continue even if ImageCapture fails
@@ -250,10 +270,15 @@ const CameraView = ({
       
       // Try to enable torch for better visibility after a short delay
       setTimeout(() => {
-        if (videoTrack && 'getCapabilities' in videoTrack && videoTrack.getCapabilities()?.torch) {
+        if (!streamRef.current) return;
+        
+        const currentVideoTrack = streamRef.current.getVideoTracks()[0];
+        if (currentVideoTrack && currentVideoTrack.readyState === 'live' && 
+            'getCapabilities' in currentVideoTrack && 
+            currentVideoTrack.getCapabilities()?.torch) {
           console.log("CameraView: Enabling torch");
           try {
-            videoTrack.applyConstraints({
+            currentVideoTrack.applyConstraints({
               advanced: [{ torch: true }]
             }).then(() => {
               setTorchEnabled(true);
@@ -269,9 +294,9 @@ const CameraView = ({
       }, 1000);
       
       // Notify parent that stream is ready
-      if (onStreamReady) {
+      if (onStreamReady && streamRef.current) {
         console.log("CameraView: Calling onStreamReady callback");
-        onStreamReady(newStream);
+        onStreamReady(streamRef.current);
       }
       
       retryAttemptsRef.current = 0;
@@ -287,6 +312,10 @@ const CameraView = ({
       
       const errorMessage = err instanceof Error ? err.message : "Error de cámara desconocido";
       setCameraError(`Error de cámara: ${errorMessage}`);
+      toast.error(`Error de cámara: ${errorMessage}`);
+      
+      // Set flag to false so we can retry
+      cameraStartAttemptedRef.current = false;
       
       // Implement retry logic
       retryCamera();
@@ -301,6 +330,7 @@ const CameraView = ({
       
       // Reset the permission flag to try requesting permission again
       permissionRequestedRef.current = false;
+      cameraStartAttemptedRef.current = false;
       
       setTimeout(startCamera, 1000);
     } else {
@@ -352,6 +382,7 @@ const CameraView = ({
               onClick={() => {
                 setCameraError(null);
                 permissionRequestedRef.current = false; // Reset permission flag to try again
+                cameraStartAttemptedRef.current = false; // Reset start attempt flag
                 startCamera();
               }}
               className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
