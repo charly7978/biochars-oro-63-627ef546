@@ -1,36 +1,46 @@
+
+// Fix SignalLogEntry type error
+import { SignalValue } from '../../types/signal';
+
 /**
  * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
- * Signal logging utility for medical-grade signals
  */
 
-import { SignalLogEntry } from '../../hooks/vital-signs/types';
+export interface SignalLogEntry {
+  timestamp: number;
+  value: SignalValue;
+  quality: number;
+  isFingerDetected: boolean;
+  heartRate?: number;
+  rmssd?: number;
+}
 
-/**
- * Updates the signal log with new entry, maintaining a limited buffer size
- */
-export function updateSignalLog(
-  logEntries: SignalLogEntry[],
-  timestamp: number,
-  value: number,
-  result: any,
-  processedCount: number
-): SignalLogEntry[] {
-  // Create a new log entry
-  const entry: SignalLogEntry = {
-    timestamp,
-    value,
-    spo2: result.spo2,
-    pressure: result.pressure,
-    arrhythmiaStatus: result.arrhythmiaStatus,
-    processedCount
-  };
+export class SignalLogger {
+  private logs: SignalLogEntry[] = [];
+  private readonly MAX_LOG_SIZE = 1000;
   
-  // Add new entry to log and keep only the most recent 100 entries
-  const updatedLog = [...logEntries, entry];
-  if (updatedLog.length > 100) {
-    return updatedLog.slice(-100);
+  logSignal(entry: SignalLogEntry): void {
+    this.logs.push({
+      timestamp: entry.timestamp,
+      value: entry.value,
+      quality: entry.quality,
+      isFingerDetected: entry.isFingerDetected,
+      heartRate: entry.heartRate,
+      rmssd: entry.rmssd
+    });
+    
+    if (this.logs.length > this.MAX_LOG_SIZE) {
+      this.logs.shift();
+    }
   }
   
-  return updatedLog;
+  getLogs(): SignalLogEntry[] {
+    return [...this.logs];
+  }
+  
+  clear(): void {
+    this.logs = [];
+  }
 }
+
+export const signalLogger = new SignalLogger();
