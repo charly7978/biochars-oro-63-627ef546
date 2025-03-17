@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
@@ -209,31 +213,6 @@ export const useSignalProcessor = () => {
   }, [processor]);
 
   /**
-   * Calibra el procesador para mejores resultados
-   */
-  const calibrate = useCallback(async () => {
-    try {
-      console.log("useSignalProcessor: Iniciando calibración");
-      
-      // Resetear contadores adaptativos
-      qualityHistoryRef.current = [];
-      fingerDetectedHistoryRef.current = [];
-      consecutiveNonDetectionRef.current = 0;
-      signalLockCounterRef.current = 0;
-      detectionThresholdRef.current = 0.40; // Umbral más permisivo para calibración
-      adaptiveCounterRef.current = 0;
-      
-      await processor.calibrate();
-      
-      console.log("useSignalProcessor: Calibración exitosa");
-      return true;
-    } catch (error) {
-      console.error("useSignalProcessor: Error de calibración:", error);
-      return false;
-    }
-  }, [processor]);
-
-  /**
    * Procesa un frame de imagen
    */
   const processFrame = useCallback((imageData: ImageData) => {
@@ -254,7 +233,6 @@ export const useSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    calibrate,
     processFrame
   };
 };

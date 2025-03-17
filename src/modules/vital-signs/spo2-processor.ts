@@ -6,8 +6,6 @@
 import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
-  private readonly SPO2_CALIBRATION_FACTOR = 1.02;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06;
   private readonly SPO2_BUFFER_SIZE = 10;
   private spo2Buffer: number[] = [];
 
@@ -29,12 +27,12 @@ export class SpO2Processor {
     
     const perfusionIndex = ac / dc;
     
-    if (perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
+    if (perfusionIndex < 0.06) {
       return this.getLastValidSpo2(2);
     }
 
     // Direct calculation from real signal characteristics
-    const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
+    const R = (ac / dc);
     
     let spO2 = Math.round(98 - (15 * R));
     

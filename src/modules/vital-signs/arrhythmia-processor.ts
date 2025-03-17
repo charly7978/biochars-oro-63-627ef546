@@ -18,8 +18,6 @@ export class ArrhythmiaProcessor {
   // State
   private rrIntervals: number[] = [];
   private lastPeakTime: number | null = null;
-  private calibrationTime: number = 20000;
-  private isCalibrating = true;
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
   private lastArrhythmiaTime: number = 0;
@@ -38,23 +36,6 @@ export class ArrhythmiaProcessor {
     lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
     const currentTime = Date.now();
-    
-    // Set calibration period for learning normal heart rhythm
-    if (this.isCalibrating && currentTime - this.startTime >= this.calibrationTime) {
-      this.isCalibrating = false;
-      console.log("ArrhythmiaProcessor: Calibration completed with real data", {
-        elapsedTime: currentTime - this.startTime,
-        threshold: this.calibrationTime
-      });
-    }
-    
-    // During calibration, just report status
-    if (this.isCalibrating) {
-      return {
-        arrhythmiaStatus: "CALIBRATING...",
-        lastArrhythmiaData: null
-      };
-    }
     
     // Update RR intervals with real data
     if (rrData?.intervals && rrData.intervals.length > 0) {
@@ -163,7 +144,6 @@ export class ArrhythmiaProcessor {
   public reset(): void {
     this.rrIntervals = [];
     this.lastPeakTime = null;
-    this.isCalibrating = true;
     this.arrhythmiaDetected = false;
     this.arrhythmiaCount = 0;
     this.lastArrhythmiaTime = 0;
