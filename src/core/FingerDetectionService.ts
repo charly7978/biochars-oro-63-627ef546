@@ -74,6 +74,33 @@ export class FingerDetectionService {
       quality: enhancedQuality
     };
   }
+  
+  /**
+   * Actualiza directamente la calidad de la señal
+   * Método agregado para componentes externos
+   */
+  public updateQuality(quality: number): void {
+    if (quality > 5) {
+      this.qualityHistory.push(quality);
+    } else {
+      this.qualityHistory.push(Math.max(0, quality * 0.75));
+    }
+    
+    if (this.qualityHistory.length > this.HISTORY_SIZE) {
+      this.qualityHistory.shift();
+    }
+  }
+  
+  /**
+   * Establece directamente el estado de detección
+   * Método agregado para componentes externos
+   */
+  public setDetected(isDetected: boolean): void {
+    this.detectionHistory.push(isDetected);
+    if (this.detectionHistory.length > this.HISTORY_SIZE) {
+      this.detectionHistory.shift();
+    }
+  }
 
   /**
    * Actualiza los buffers históricos para análisis
