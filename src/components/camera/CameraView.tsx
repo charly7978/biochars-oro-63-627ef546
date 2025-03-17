@@ -11,8 +11,6 @@ interface CameraViewProps {
   signalQuality?: number;
   calibrationProgress?: number;
   isCalibrating?: boolean;
-  arrhythmiaCalibrationProgress?: number;
-  isArrhythmiaCalibrating?: boolean;
 }
 
 const CameraView = ({ 
@@ -21,9 +19,7 @@ const CameraView = ({
   isFingerDetected = false, 
   signalQuality = 0,
   calibrationProgress = 0,
-  isCalibrating = false,
-  arrhythmiaCalibrationProgress = 0,
-  isArrhythmiaCalibrating = false
+  isCalibrating = false
 }: CameraViewProps) => {
   // Create a state for the stream
   const [stream, setStream] = React.useState<MediaStream | null>(null);
@@ -129,8 +125,6 @@ const CameraView = ({
           signalQuality={signalQuality}
           calibrationProgress={calibrationProgress}
           isCalibrating={isCalibrating}
-          arrhythmiaCalibrationProgress={arrhythmiaCalibrationProgress}
-          isArrhythmiaCalibrating={isArrhythmiaCalibrating}
         />
       )}
     </>
