@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
 import type { VitalSignsResult } from '../types/vital-signs';
+import { ArrhythmiaWindow, ArrhythmiaAnalyzer, ArrhythmiaConfig } from './arrhythmia/arrhythmiaTypes';
+import { updateSignalLog } from '../utils/signalLogUtils';
 
 export const useVitalSignsProcessor = () => {
   // State management
@@ -183,7 +185,7 @@ export const useVitalSignsProcessor = () => {
     // Return current result based on calibration status
     return result;
   }, [addArrhythmiaWindow]);
-
+  
   /**
    * Check if calibration is complete
    */
