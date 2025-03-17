@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -309,13 +310,15 @@ const PPGSignalMeter = memo(({
     const hasMinimumQuality = avgQuality > 35;
     const hasRequiredFrames = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
     
-    const hasSignalVariability = false;
+    // Changed from const to let to allow reassignment
+    let hasSignalVariability = false;
     if (derivativeBufferRef.current.length > 10) {
       const maxDerivative = Math.max(...derivativeBufferRef.current);
       hasSignalVariability = maxDerivative > MIN_DERIVATIVE_THRESHOLD;
     }
     
-    const hasSufficientAmplitude = false;
+    // Changed from const to let to allow reassignment
+    let hasSufficientAmplitude = false;
     if (signalAmplitudeHistoryRef.current.length > 10) {
       const avgAmplitude = signalAmplitudeHistoryRef.current.reduce((sum, a) => sum + a, 0) / 
                           signalAmplitudeHistoryRef.current.length;
