@@ -25,7 +25,6 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
-  peakDetected?: boolean; // Add peak detection flag for synchronization
 }
 
 /**
@@ -51,12 +50,12 @@ export class VitalSignsProcessor {
   /**
    * Constructor that initializes all specialized processors
    */
-  constructor(existingSignalProcessor?: SignalProcessor) {
+  constructor() {
     console.log("VitalSignsProcessor: Initializing new instance with direct measurement");
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
-    this.signalProcessor = existingSignalProcessor || new SignalProcessor();
+    this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
   }
@@ -75,9 +74,8 @@ export class VitalSignsProcessor {
       return this.createEmptyResults();
     }
     
-    // Apply filtering to the PPG signal and detect peaks
+    // Apply filtering to the PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
-    const peakDetected = this.signalProcessor.addValue(filtered);
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
@@ -88,6 +86,7 @@ export class VitalSignsProcessor {
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
+    ppgValues.push(filtered);
     
     // Limit the PPG values buffer
     if (ppgValues.length > 300) {
@@ -100,10 +99,7 @@ export class VitalSignsProcessor {
         have: ppgValues.length,
         need: this.MIN_PPG_VALUES
       });
-      return {
-        ...this.createEmptyResults(),
-        peakDetected // Include peak detection status even with insufficient data
-      };
+      return this.createEmptyResults();
     }
     
     // Verify signal amplitude is sufficient
@@ -116,10 +112,7 @@ export class VitalSignsProcessor {
         amplitude,
         threshold: this.MIN_SIGNAL_AMPLITUDE
       });
-      return {
-        ...this.createEmptyResults(),
-        peakDetected
-      };
+      return this.createEmptyResults();
     }
     
     // Calculate SpO2 using direct approach
@@ -157,8 +150,7 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       signalAmplitude: amplitude,
-      confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD,
-      peakDetected // Log peak detection status
+      confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD
     });
 
     // Prepare result with all metrics - no caching or persistence
@@ -173,8 +165,7 @@ export class VitalSignsProcessor {
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
         overall: overallConfidence
-      },
-      peakDetected // Include peak detection status
+      }
     };
   }
   
@@ -196,8 +187,7 @@ export class VitalSignsProcessor {
         glucose: 0,
         lipids: 0,
         overall: 0
-      },
-      peakDetected: false
+      }
     };
   }
 
@@ -230,19 +220,5 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
-  }
-  
-  /**
-   * Get the signal processor (for sharing)
-   */
-  public getSignalProcessor(): SignalProcessor {
-    return this.signalProcessor;
-  }
-  
-  /**
-   * Set an external signal processor (for synchronization)
-   */
-  public setSignalProcessor(processor: SignalProcessor): void {
-    this.signalProcessor = processor;
   }
 }
