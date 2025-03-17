@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { RRAnalysisResult } from './arrhythmia/types';
+import { SignalProcessor } from '../modules/vital-signs/signal-processor';
 
 interface HeartBeatResult {
   bpm: number;
@@ -16,6 +17,9 @@ interface HeartBeatResult {
     lastPeakTime: number | null;
   };
 }
+
+// Create a shared SignalProcessor instance for peak detection consistency
+const sharedSignalProcessor = new SignalProcessor();
 
 export const useHeartBeatProcessor = () => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -62,6 +66,8 @@ export const useHeartBeatProcessor = () => {
         
         if (typeof window !== 'undefined') {
           (window as any).heartBeatProcessor = processorRef.current;
+          // Also expose the shared signal processor
+          (window as any).sharedSignalProcessor = sharedSignalProcessor;
         }
       }
       
@@ -71,6 +77,10 @@ export const useHeartBeatProcessor = () => {
         processorRef.current.setMonitoring(false);
         isMonitoringRef.current = false;
       }
+      
+      // Reset the shared signal processor
+      sharedSignalProcessor.reset();
+      
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
       toast.error('Error initializing heartbeat processor');
@@ -143,8 +153,8 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  // Only add to queue or play beeps if confidence is high
-  const requestImmediateBeep = useCallback((value: number) => {
+  // Only add to queue or play beeps if confidence is high and a peak was detected
+  const requestImmediateBeep = useCallback((value: number, isPeak: boolean) => {
     if (!isMonitoringRef.current || !processorRef.current) return false;
     
     // Only beep if signal quality is good and we don't have too many weak signals
@@ -152,6 +162,9 @@ export const useHeartBeatProcessor = () => {
         consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
       return false;
     }
+    
+    // IMPORTANT: Only beep if this is a detected peak
+    if (!isPeak) return false;
     
     const now = Date.now();
     
@@ -299,8 +312,29 @@ export const useHeartBeatProcessor = () => {
         };
       }
       
+      // CRITICAL CHANGE: Add value to shared signal processor first and detect peak
+      const isPeak = sharedSignalProcessor.addValue(value);
+      
+      // Use shared signal processor for consistency
+      const heartRate = sharedSignalProcessor.calculateHeartRate();
+      
+      // Process signal through heart beat processor for additional functionality
       const result = processorRef.current.processSignal(value);
-      const rrData = processorRef.current.getRRIntervals();
+      
+      // Use shared signal processor's timing data
+      const lastPeakTime = sharedSignalProcessor.getLastPeakTime();
+      
+      // Update heart rate from shared signal processor
+      result.bpm = heartRate > 0 ? heartRate : result.bpm;
+      
+      // Make sure to correctly mark peak detection
+      result.isPeak = isPeak;
+      
+      const rrData = {
+        intervals: processorRef.current.getRRIntervals().intervals,
+        lastPeakTime: lastPeakTime
+      };
+      
       const now = Date.now();
       
       if (rrData && rrData.intervals.length > 0) {
@@ -308,11 +342,12 @@ export const useHeartBeatProcessor = () => {
       }
       
       // Only process peaks with minimum confidence
-      if (result.isPeak && result.confidence > 0.4) {
+      if (isPeak && result.confidence > 0.4) {
         lastPeakTimeRef.current = now;
         
         if (isMonitoringRef.current && result.confidence > 0.5) {
-          requestImmediateBeep(value);
+          // Pass peak information to beep function
+          requestImmediateBeep(value, true);
         }
         
         if (result.bpm >= 40 && result.bpm <= 200) {
@@ -329,10 +364,7 @@ export const useHeartBeatProcessor = () => {
           confidence: result.confidence,
           isPeak: false,
           arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
-          rrData: {
-            intervals: [],
-            lastPeakTime: null
-          }
+          rrData: rrData
         };
       }
 
@@ -346,7 +378,7 @@ export const useHeartBeatProcessor = () => {
         ...result,
         isArrhythmia: currentBeatIsArrhythmiaRef.current,
         arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
-        rrData
+        rrData: rrData
       };
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);
@@ -377,6 +409,9 @@ export const useHeartBeatProcessor = () => {
       // Then reset the processor
       processorRef.current.reset();
       processorRef.current.initAudio();
+      
+      // Also reset shared signal processor
+      sharedSignalProcessor.reset();
     }
     
     setCurrentBPM(0);
@@ -418,6 +453,9 @@ export const useHeartBeatProcessor = () => {
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
       
+      // Reset shared signal processor
+      sharedSignalProcessor.reset();
+      
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
         beepProcessorTimeoutRef.current = null;
@@ -445,16 +483,21 @@ export const useHeartBeatProcessor = () => {
     // Reset BPM values
     setCurrentBPM(0);
     setConfidence(0);
+    
+    // Reset shared signal processor
+    sharedSignalProcessor.reset();
   }, []);
 
+  // Export sharedSignalProcessor for components that need to access it
   return {
     currentBPM,
     confidence,
     processSignal,
     reset,
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
-    requestBeep: requestImmediateBeep,
+    requestBeep: (value: number) => requestImmediateBeep(value, true),
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    sharedSignalProcessor
   };
 };

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -28,21 +29,25 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
   
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
+  // Get shared signal processor from heart beat processor for consistency
   const { 
     processSignal: processHeartBeat, 
     isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
+    reset: resetHeartBeatProcessor,
+    sharedSignalProcessor // <-- Get the shared signal processor
   } = useHeartBeatProcessor();
+  
+  // Use the shared signal processor for consistency
+  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor(sharedSignalProcessor);
   
   const { 
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
     lastValidResults
-  } = useVitalSignsProcessor();
+  } = useVitalSignsProcessor(sharedSignalProcessor);
 
   const enterFullScreen = async () => {
     try {
@@ -317,6 +322,7 @@ const Index = () => {
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
+              signalProcessor={sharedSignalProcessor} // Pass the shared signal processor
             />
           </div>
 
