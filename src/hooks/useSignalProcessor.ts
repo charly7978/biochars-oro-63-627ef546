@@ -4,6 +4,8 @@ import { PPGSignalProcessor } from '../modules/PPGSignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal-processor';
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Hook for managing PPG signal processing
  */
 export const useSignalProcessor = () => {
@@ -204,11 +206,11 @@ export const useSignalProcessor = () => {
   }, [processor]);
 
   /**
-   * Calibrate the processor for better results
+   * Reset all processing state
    */
-  const calibrate = useCallback(async () => {
+  const resetProcessing = useCallback(async () => {
     try {
-      console.log("useSignalProcessor: Starting calibration");
+      console.log("useSignalProcessor: Resetting all processing state");
       
       // Reset adaptive counters
       qualityHistoryRef.current = [];
@@ -218,12 +220,12 @@ export const useSignalProcessor = () => {
       detectionThresholdRef.current = 0.40;
       adaptiveCounterRef.current = 0;
       
-      await processor.calibrate();
+      processor.reset();
       
-      console.log("useSignalProcessor: Calibration successful");
+      console.log("useSignalProcessor: Reset successful");
       return true;
     } catch (error) {
-      console.error("useSignalProcessor: Calibration error:", error);
+      console.error("useSignalProcessor: Reset error:", error);
       return false;
     }
   }, [processor]);
@@ -249,7 +251,7 @@ export const useSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    calibrate,
+    resetProcessing,
     processFrame
   };
 };

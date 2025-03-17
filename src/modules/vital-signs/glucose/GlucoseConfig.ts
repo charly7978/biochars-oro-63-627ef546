@@ -23,5 +23,8 @@ export const GlucoseConfig = {
   
   // Physiological constraints (mg/dL)
   MIN_GLUCOSE: 80,
-  MAX_GLUCOSE: 140
+  MAX_GLUCOSE: 140,
+  
+  // Base glucose level (mg/dL)
+  GLUCOSE_BASELINE: 100
 };
