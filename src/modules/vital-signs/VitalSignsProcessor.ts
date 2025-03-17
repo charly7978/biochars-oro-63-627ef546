@@ -1,7 +1,6 @@
 
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
-import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
@@ -9,7 +8,6 @@ import { LipidProcessor } from './lipid-processor';
 export interface VitalSignsResult {
   spo2: number;
   pressure: string;
-  arrhythmiaStatus: string;
   glucose: number;
   lipids: {
     totalCholesterol: number;
@@ -20,11 +18,6 @@ export interface VitalSignsResult {
     lipids: number;
     overall: number;
   };
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null;
 }
 
 /**
@@ -35,12 +28,9 @@ export interface VitalSignsResult {
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
-  
-  // No storage of previous results
   
   // Stricter thresholds for more reliable physiological detection
   private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Increased
@@ -54,7 +44,6 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Initializing new instance with direct measurement");
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
-    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
@@ -76,13 +65,6 @@ export class VitalSignsProcessor {
     
     // Apply filtering to the PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
-    
-    // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData && 
-                           rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -145,7 +127,6 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Results with confidence", {
       spo2,
       pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
       glucoseConfidence,
       lipidsConfidence,
@@ -157,8 +138,6 @@ export class VitalSignsProcessor {
     return {
       spo2,
       pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
       glucose: finalGlucose,
       lipids: finalLipids,
       confidence: {
@@ -177,7 +156,6 @@ export class VitalSignsProcessor {
     return {
       spo2: 0,
       pressure: "--/--",
-      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
@@ -198,7 +176,6 @@ export class VitalSignsProcessor {
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
-    this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
