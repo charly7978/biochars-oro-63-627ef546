@@ -20,15 +20,22 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [suspiciousPattern, setSuspiciousPattern] = useState(false);
   const [falsePositiveDetected, setFalsePositiveDetected] = useState(false);
   
+  // Referencias para evitar bucles de actualización infinitos
+  const qualityRef = useRef(quality);
+  const displayQualityRef = useRef(displayQuality);
+  
   // Constantes para mejor detección de calidad desde signos vitales
   const historySize = 10;
   const QUALITY_STABILIZATION_FACTOR = 0.3; // Reducido para actualizaciones más rápidas
   
-  // Console log para debugging
+  // Console log para debugging - usando refs para evitar bucles infinitos
   useEffect(() => {
     console.log("SignalQualityIndicator: Received quality value: ", quality);
     console.log("SignalQualityIndicator: Current display quality: ", displayQuality);
     console.log("SignalQualityIndicator: Monitoring status: ", isMonitoring);
+    
+    // Actualizar las referencias
+    qualityRef.current = quality;
   }, [quality, displayQuality, isMonitoring]);
   
   // Detectar plataforma
@@ -108,6 +115,9 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       const delta = (finalQuality - prev) * QUALITY_STABILIZATION_FACTOR;
       return Math.round(prev + delta);
     });
+    
+    // Actualizar referencia para evitar bucles
+    displayQualityRef.current = displayQuality;
 
     console.log("SignalQualityIndicator: Calculated quality metrics", {
       weightedAverage,

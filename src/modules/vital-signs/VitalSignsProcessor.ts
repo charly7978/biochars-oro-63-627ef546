@@ -40,8 +40,6 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // No storage of previous results
-  
   // EXTREMELY strict thresholds for preventing false positives
   private readonly MIN_SIGNAL_AMPLITUDE = 0.15; // DRAMATICALLY increased from 0.05
   private readonly MIN_CONFIDENCE_THRESHOLD = 0.70; // DRAMATICALLY increased from 0.40
@@ -236,68 +234,99 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // EXTREMELY stricter confidence threshold for showing values
+    // IMPORTANT CHANGE: Only show glucose and lipids if confidence is high
     const finalGlucose = glucoseConfidence > this.MIN_CONFIDENCE_THRESHOLD ? glucose : 0;
     const finalLipids = lipidsConfidence > this.MIN_CONFIDENCE_THRESHOLD ? lipids : {
       totalCholesterol: 0,
       triglycerides: 0
     };
 
-    // NEW: Calculate overall signal quality based on vital sign measurements
+    // CRITICAL CHANGE: Calculate signal quality based on ACTUAL vital sign measurements
+    // This ensures that quality only shows "Excellent" when we have real measurements
     let signalQuality = 0;
+    const hasSpo2 = spo2 > 90;
+    const hasBloodPressure = bp.systolic > 0 && bp.diastolic > 0;
+    const hasGlucose = finalGlucose > 0;
+    const hasLipids = finalLipids.totalCholesterol > 0 && finalLipids.triglycerides > 0;
     
-    // Only calculate quality if we have valid measurements
-    if (spo2 > 0 || finalGlucose > 0 || finalLipids.totalCholesterol > 0) {
-      // Calculate quality components for each vital sign
-      const spo2Quality = spo2 > 0 ? Math.min(100, Math.max(0, (spo2 - 80) * 5)) : 0; // Scale 80-100 to 0-100
-      const pressureQuality = bp.systolic > 0 ? 80 : 0; // Binary quality for blood pressure
-      const glucoseQuality = finalGlucose > 0 ? Math.min(100, glucoseConfidence * 100) : 0;
-      const lipidsQuality = finalLipids.totalCholesterol > 0 ? Math.min(100, lipidsConfidence * 100) : 0;
+    // Count how many vital signs we have valid measurements for
+    const validMeasurementCount = [hasSpo2, hasBloodPressure, hasGlucose, hasLipids].filter(Boolean).length;
+    
+    if (validMeasurementCount === 0) {
+      // No valid measurements at all
+      signalQuality = Math.min(30, Math.round(oscillationScore * 30));
+      console.log("VitalSignsProcessor: No valid measurements, low quality signal", { signalQuality });
+    } else {
+      // Calculate quality components for each vital sign, only when values are actually present
+      const spo2Quality = hasSpo2 ? Math.min(100, Math.max(0, (spo2 - 80) * 5)) : 0;
+      const pressureQuality = hasBloodPressure ? 80 : 0;
+      const glucoseQuality = hasGlucose ? Math.min(100, glucoseConfidence * 100) : 0;
+      const lipidsQuality = hasLipids ? Math.min(100, lipidsConfidence * 100) : 0;
       
-      // Combine qualities with appropriate weights
-      const measurementCount = (spo2 > 0 ? 1 : 0) + 
-                              (bp.systolic > 0 ? 1 : 0) + 
-                              (finalGlucose > 0 ? 1 : 0) + 
-                              (finalLipids.totalCholesterol > 0 ? 1 : 0);
+      // Weighted average where measurements actually exist
+      let weightedSum = 0;
+      let totalWeight = 0;
       
-      if (measurementCount > 0) {
-        // Weight measurements by their importance and reliability
-        signalQuality = Math.round(
-          (spo2Quality * 0.3) + 
-          (pressureQuality * 0.2) + 
-          (glucoseQuality * 0.3) + 
-          (lipidsQuality * 0.2)
-        );
-        
-        // Apply oscillation and variance factors
-        signalQuality = Math.round(signalQuality * oscillationScore);
-        
-        // Penalize for high variance
-        const variancePenalty = Math.max(0.6, 1 - (signalVariance / 40));
-        signalQuality = Math.round(signalQuality * variancePenalty);
-        
-        // Apply confidence threshold
-        if (overallConfidence < this.MIN_CONFIDENCE_THRESHOLD) {
-          signalQuality = Math.round(signalQuality * 0.5);
-        }
+      if (hasSpo2) {
+        weightedSum += spo2Quality * 0.3;
+        totalWeight += 0.3;
+      }
+      
+      if (hasBloodPressure) {
+        weightedSum += pressureQuality * 0.2;
+        totalWeight += 0.2;
+      }
+      
+      if (hasGlucose) {
+        weightedSum += glucoseQuality * 0.3;
+        totalWeight += 0.3;
+      }
+      
+      if (hasLipids) {
+        weightedSum += lipidsQuality * 0.2;
+        totalWeight += 0.2;
+      }
+      
+      // Calculate weighted average, but ensure quality is proportional to measurement count
+      signalQuality = Math.round((weightedSum / totalWeight) * (validMeasurementCount / 4));
+      
+      // Apply oscillation score as a multiplier
+      signalQuality = Math.round(signalQuality * oscillationScore);
+      
+      // Apply penalty for high variance (if present)
+      const variancePenalty = Math.max(0.6, 1 - (signalVariance / 40));
+      signalQuality = Math.round(signalQuality * variancePenalty);
+      
+      // Scale down quality if we don't have enough vital signs
+      // This ensures "Excellent" quality only happens when multiple measurements are valid
+      if (validMeasurementCount < 2) {
+        signalQuality = Math.round(signalQuality * 0.6);
+      } else if (validMeasurementCount < 3) {
+        signalQuality = Math.round(signalQuality * 0.8);
       }
     }
 
-    console.log("VitalSignsProcessor: Results with confidence", {
-      spo2,
-      pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      glucose: finalGlucose,
-      glucoseConfidence,
-      lipidsConfidence,
-      signalAmplitude: amplitude,
-      signalVariance,
-      confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD,
-      oscillationScore,
-      calculatedSignalQuality: signalQuality
+    // Enhanced logging to show exactly which measurements are contributing to quality
+    console.log("VitalSignsProcessor: Signal quality calculation details", {
+      validMeasurements: {
+        spo2: hasSpo2,
+        bloodPressure: hasBloodPressure,
+        glucose: hasGlucose,
+        lipids: hasLipids
+      },
+      validMeasurementCount,
+      spo2Value: spo2,
+      pressureValue: pressure,
+      glucoseValue: finalGlucose,
+      lipidsValues: finalLipids,
+      confidences: {
+        glucose: glucoseConfidence,
+        lipids: lipidsConfidence
+      },
+      resultingSignalQuality: signalQuality
     });
 
-    // Prepare result with all metrics - no caching or persistence
+    // Prepare result with all metrics
     return {
       spo2,
       pressure,
@@ -414,4 +443,3 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }
-
