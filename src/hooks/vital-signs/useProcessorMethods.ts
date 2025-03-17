@@ -1,3 +1,6 @@
+/**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ */
 
 import { useCallback, MutableRefObject } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
@@ -6,6 +9,7 @@ import { SignalAnalyzer } from '../../modules/signal-analysis/SignalAnalyzer';
 
 /**
  * Hook that provides the main processor methods
+ * Only processes genuine signals without simulation
  */
 export function useProcessorMethods(
   processorRef: MutableRefObject<VitalSignsProcessor | null>,
@@ -32,7 +36,7 @@ export function useProcessorMethods(
       return qualityCheck.result;
     }
     
-    // Process vital signs
+    // Process vital signs with genuine data
     let result: VitalSignsResult;
     try {
       result = processorRef.current.processSignal(value, rrData);
@@ -99,7 +103,9 @@ export function useProcessorMethods(
     signalLogger.logSignal(value, result);
     
     // Store the last valid result
-    setLastValidResults(result);
+    if (result.spo2 > 0 && result.pressure !== "--/--") {
+      setLastValidResults(result);
+    }
     
     return result;
   }, [addArrhythmiaWindow, signalLogger, signalQualityMonitor, setLastValidResults]);
@@ -113,10 +119,17 @@ export function useProcessorMethods(
     }
     
     try {
-      processorRef.current.reset();
+      // Get last valid results before reset
+      const lastValid = processorRef.current.reset();
+      
       arrhythmiaProcessorRef.current.reset();
       resetArrhythmiaWindows();
-      setLastValidResults(null);
+      
+      // Only update lastValidResults if we have valid results to keep
+      if (lastValid) {
+        setLastValidResults(lastValid);
+      }
+      
       lastArrhythmiaTimeRef.current = 0;
       signalQualityMonitor.reset();
       

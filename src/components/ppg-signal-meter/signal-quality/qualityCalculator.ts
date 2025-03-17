@@ -1,5 +1,7 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Quality calculation utilities for signal processing
  */
 import { 

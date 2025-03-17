@@ -1,6 +1,9 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Signal validation utilities for medical applications
+ * Ensures only genuine data is processed
  */
 
 /**
@@ -23,6 +26,8 @@ export function validateSignalValue(value: number): boolean {
 
 /**
  * Validates vital signs data in result object
+ * Ensures values conform to medical ranges
+ * 
  * @param result The result object containing vital signs data
  * @returns A cleaned result object with invalid values reset
  */

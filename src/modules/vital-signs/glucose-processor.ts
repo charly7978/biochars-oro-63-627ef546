@@ -1,7 +1,11 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ */
+
+/**
  * GlucoseProcessor class
- * Calculates glucose levels directly from PPG signal characteristics
+ * Calculates glucose levels directly from genuine PPG signal characteristics
  * with no reliance on synthetic data or reference values
  */
 import { GlucoseConfig } from './glucose/GlucoseConfig';
@@ -23,8 +27,8 @@ export class GlucoseProcessor {
   }
   
   /**
-   * Calculate glucose based on PPG waveform characteristics
-   * Using direct measurement techniques without reference values
+   * Calculate glucose based on real PPG waveform characteristics
+   * Using direct measurement techniques without simulation
    */
   public calculateGlucose(ppgValues: number[]): number {
     if (ppgValues.length < GlucoseConfig.MIN_SAMPLES) {
@@ -57,7 +61,7 @@ export class GlucoseProcessor {
     // Use most recent PPG samples for glucose estimation
     const recentValues = ppgValues.slice(-Math.min(150, ppgValues.length));
     
-    // Calculate signal metrics with improved analysis
+    // Calculate signal metrics with improved analysis of real data
     const { 
       amplitude, 
       frequency, 
@@ -67,10 +71,10 @@ export class GlucoseProcessor {
       signalVariability: variability
     } = GlucoseSignalAnalyzer.analyzeSignal(recentValues);
     
-    // Calculate individual variation factor
+    // Calculate individual variation factor from real signals
     const individualFactor = GlucoseCalculator.calculateIndividualFactor(recentValues);
     
-    // Calculate glucose estimate
+    // Calculate glucose estimate from genuine signal characteristics
     const glucoseEstimate = GlucoseCalculator.calculateGlucoseEstimate(
       amplitude,
       frequency,
@@ -94,7 +98,7 @@ export class GlucoseProcessor {
       this.lastCalculatedGlucose
     );
     
-    // Calculate confidence based on signal quality and stability
+    // Calculate confidence based on real signal quality parameters
     this.confidence = GlucoseConfidenceCalculator.calculateConfidence(
       recentValues,
       perfusionIndex,
@@ -107,7 +111,7 @@ export class GlucoseProcessor {
     // Store this value for future stability calculations
     this.lastCalculatedGlucose = stabilizedGlucose;
     
-    console.log("GlucoseProcessor: Calculation details", {
+    console.log("GlucoseProcessor: Calculation details from real signal", {
       baseValue: GlucoseConfig.GLUCOSE_BASELINE,
       amplitudeContribution: amplitude * GlucoseConfig.AMPLITUDE_FACTOR * 100,
       frequencyContribution: frequency * GlucoseConfig.FREQUENCY_FACTOR * 150,

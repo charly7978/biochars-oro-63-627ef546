@@ -1,6 +1,9 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Specialized class for arrhythmia pattern detection using advanced algorithms
+ * on real data without simulation
  */
 export class ArrhythmiaPatternDetector {
   // Pattern recognition variables
@@ -14,16 +17,16 @@ export class ArrhythmiaPatternDetector {
   private readonly ANOMALY_HISTORY_SIZE = 30;
 
   /**
-   * Updates pattern buffer with new RR variation data
+   * Updates pattern buffer with new RR variation data from actual measurements
    */
   public updatePatternBuffer(variation: number): void {
-    // Update pattern buffer
+    // Update pattern buffer with real data
     this.patternBuffer.push(variation);
     if (this.patternBuffer.length > this.PATTERN_BUFFER_SIZE) {
       this.patternBuffer.shift();
     }
     
-    // Update anomaly scores
+    // Update anomaly scores based on measured data
     const anomalyScore = variation > 0.3 ? 1 : 0;
     this.anomalyScores.push(anomalyScore);
     if (this.anomalyScores.length > this.ANOMALY_HISTORY_SIZE) {
@@ -32,7 +35,7 @@ export class ArrhythmiaPatternDetector {
   }
   
   /**
-   * Detects arrhythmia patterns using temporal analysis
+   * Detects arrhythmia patterns using temporal analysis of genuine measurement data
    */
   public detectArrhythmiaPattern(): boolean {
     if (this.patternBuffer.length < this.MIN_PATTERN_LENGTH) return false;

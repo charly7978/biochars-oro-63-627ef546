@@ -1,4 +1,7 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ */
 import { useState, useEffect } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
 
@@ -12,22 +15,30 @@ export function useVitalSignsState() {
   
   // Track state changes for debugging
   useEffect(() => {
-    console.log("DEBUG: useVitalSignsState - lastValidResults updated:", {
-      hasResults: !!lastValidResults,
-      spo2: lastValidResults?.spo2,
-      pressure: lastValidResults?.pressure,
-      arrhythmiaStatus: lastValidResults?.arrhythmiaStatus,
-      timestamp: new Date().toISOString()
-    });
+    if (lastValidResults) {
+      console.log("DEBUG: useVitalSignsState - lastValidResults updated:", {
+        hasResults: true,
+        spo2: lastValidResults.spo2,
+        pressure: lastValidResults.pressure,
+        arrhythmiaStatus: lastValidResults.arrhythmiaStatus,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.log("DEBUG: useVitalSignsState - lastValidResults cleared");
+    }
   }, [lastValidResults]);
   
   const wrappedSetLastValidResults = (results: VitalSignsResult | null) => {
-    console.log("DEBUG: useVitalSignsState - Setting new results:", {
-      hasResults: !!results,
-      spo2: results?.spo2,
-      pressure: results?.pressure,
-      arrhythmiaStatus: results?.arrhythmiaStatus
-    });
+    if (results) {
+      console.log("DEBUG: useVitalSignsState - Setting new results:", {
+        hasResults: true,
+        spo2: results.spo2,
+        pressure: results.pressure,
+        arrhythmiaStatus: results.arrhythmiaStatus
+      });
+    } else {
+      console.log("DEBUG: useVitalSignsState - Clearing results");
+    }
     setLastValidResults(results);
   };
   

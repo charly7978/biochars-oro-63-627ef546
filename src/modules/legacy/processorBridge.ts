@@ -1,5 +1,7 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Bridge adapter to connect the legacy VitalSignsProcessor.js with the new TypeScript architecture
  * This facilitates a smooth transition to the new modular structure
  */

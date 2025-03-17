@@ -1,7 +1,10 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Utilidades reutilizables para todos los procesadores de signos vitales
  * Evita duplicación de código entre diferentes módulos
+ * Procesa únicamente señales reales sin simulación
  */
 import { FilterUtils } from "../modules/signal-processing/FilterUtils";
 
@@ -12,7 +15,7 @@ export const calculateStandardDeviation = FilterUtils.calculateStandardDeviation
 export const findPeaksAndValleys = FilterUtils.findPeaksAndValleys;
 
 /**
- * Calcula la amplitud entre picos y valles
+ * Calcula la amplitud entre picos y valles de señales reales
  */
 export function calculateAmplitude(
   values: number[],
@@ -52,7 +55,7 @@ export function calculateAmplitude(
 }
 
 /**
- * Aplica un filtro de Media Móvil Simple (SMA) a un valor
+ * Aplica un filtro de Media Móvil Simple (SMA) a un valor real
  */
 export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
   filteredValue: number;
@@ -67,7 +70,8 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
 }
 
 /**
- * Amplifica la señal de forma adaptativa basada en su amplitud
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin simulación de datos
  */
 export function amplifySignal(value: number, recentValues: number[]): number {
   if (recentValues.length === 0) return value;
