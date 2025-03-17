@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -152,9 +153,12 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
-    const savedResults = resetVitalSigns();
-    if (savedResults) {
-      setVitalSigns(savedResults);
+    // Call resetVitalSigns without checking its return value
+    resetVitalSigns();
+    
+    // Instead, directly check if lastValidResults is available
+    if (lastValidResults) {
+      setVitalSigns(lastValidResults);
       setShowResults(true);
     }
     
