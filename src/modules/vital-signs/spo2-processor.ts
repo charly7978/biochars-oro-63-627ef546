@@ -1,11 +1,11 @@
 
-import { calculateAC, calculateDC } from './utils';
+import { FilterUtils } from '../signal-processing/FilterUtils';
+import { ProcessorConfig } from './ProcessorConfig';
 
 export class SpO2Processor {
-  private readonly SPO2_CALIBRATION_FACTOR = 1.02;
-  // Adjustment: raise perfusion threshold to discard weak measurements
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // previously: 0.05
-  private readonly SPO2_BUFFER_SIZE = 10;
+  private readonly SPO2_CALIBRATION_FACTOR = ProcessorConfig.SPO2_CALIBRATION_FACTOR;
+  private readonly PERFUSION_INDEX_THRESHOLD = ProcessorConfig.PERFUSION_INDEX_THRESHOLD;
+  private readonly SPO2_BUFFER_SIZE = ProcessorConfig.SPO2_BUFFER_SIZE;
   private spo2Buffer: number[] = [];
 
   /**
@@ -16,12 +16,12 @@ export class SpO2Processor {
       return this.getLastValidSpo2(1);
     }
 
-    const dc = calculateDC(values);
+    const dc = FilterUtils.calculateDC(values);
     if (dc === 0) {
       return this.getLastValidSpo2(1);
     }
 
-    const ac = calculateAC(values);
+    const ac = FilterUtils.calculateAC(values);
     
     const perfusionIndex = ac / dc;
     

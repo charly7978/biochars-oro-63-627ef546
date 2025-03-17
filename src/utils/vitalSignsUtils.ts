@@ -3,72 +3,13 @@
  * Utilidades reutilizables para todos los procesadores de signos vitales
  * Evita duplicación de código entre diferentes módulos
  */
+import { FilterUtils } from "../modules/signal-processing/FilterUtils";
 
-/**
- * Calcula el componente AC (amplitud pico a pico) de una señal
- */
-export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
-
-/**
- * Calcula el componente DC (valor promedio) de una señal
- */
-export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
-}
-
-/**
- * Calcula la desviación estándar de un conjunto de valores
- */
-export function calculateStandardDeviation(values: number[]): number {
-  const n = values.length;
-  if (n === 0) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
-}
-
-/**
- * Encuentra picos y valles en una señal
- */
-export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
-
-  // Algoritmo optimizado para detección de picos y valles usando ventana de 3 puntos
-  // Reducimos los requisitos de altura de pico para más sensibilidad
-  for (let i = 1; i < values.length - 1; i++) {
-    const v = values[i];
-    // Detección de picos (punto más alto en una ventana de 3 puntos)
-    // con una sensibilidad aumentada (95% en lugar de 98%)
-    if (
-      v >= values[i - 1] * 0.95 &&
-      v >= values[i + 1] * 0.95
-    ) {
-      // Agregamos una verificación de altura mínima para evitar ruido
-      const localMin = Math.min(values[i - 1], values[i + 1]);
-      if (v - localMin > 0.02) { // Umbral mínimo para considerar un pico
-        peakIndices.push(i);
-      }
-    }
-    // Detección de valles (punto más bajo en una ventana de 3 puntos)
-    // con una sensibilidad aumentada
-    if (
-      v <= values[i - 1] * 1.05 &&
-      v <= values[i + 1] * 1.05
-    ) {
-      const localMax = Math.max(values[i - 1], values[i + 1]);
-      if (localMax - v > 0.02) { // Umbral mínimo para considerar un valle
-        valleyIndices.push(i);
-      }
-    }
-  }
-  return { peakIndices, valleyIndices };
-}
+// Re-export the functions from FilterUtils for backward compatibility
+export const calculateAC = FilterUtils.calculateAC;
+export const calculateDC = FilterUtils.calculateDC;
+export const calculateStandardDeviation = FilterUtils.calculateStandardDeviation;
+export const findPeaksAndValleys = FilterUtils.findPeaksAndValleys;
 
 /**
  * Calcula la amplitud entre picos y valles

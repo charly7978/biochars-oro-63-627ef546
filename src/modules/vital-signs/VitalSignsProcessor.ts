@@ -6,6 +6,7 @@ import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { SignalAnalyzer } from '../signal-analysis/SignalAnalyzer';
+import { ProcessorConfig } from './ProcessorConfig';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -79,8 +80,8 @@ export class VitalSignsProcessor {
     const ppgValues = this.signalProcessor.getPPGValues();
     ppgValues.push(filtered);
     
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
+    if (ppgValues.length > ProcessorConfig.WINDOW_SIZE) {
+      ppgValues.splice(0, ppgValues.length - ProcessorConfig.WINDOW_SIZE);
     }
     
     if (ppgValues.length < this.MIN_PPG_VALUES) {
@@ -151,21 +152,7 @@ export class VitalSignsProcessor {
   }
   
   private createEmptyResults(): VitalSignsResult {
-    return {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
-      }
-    };
+    return SignalAnalyzer.createEmptyResult();
   }
 
   public reset(): VitalSignsResult | null {

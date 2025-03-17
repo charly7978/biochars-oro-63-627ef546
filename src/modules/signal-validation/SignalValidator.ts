@@ -1,31 +1,19 @@
 
+import { ValidationConfig } from './ValidationConfig';
+
 /**
  * Dedicated module for validating PPG signals using medical-grade standards
  * Provides robust signal validation with strict criteria
  */
 export class SignalValidator {
-  // Validation thresholds
-  private readonly MIN_QUALITY_THRESHOLD = 80; 
-  private readonly CONSECUTIVE_VALID_SAMPLES = 8;
-  private readonly REFRACTORY_PERIOD_MS = 1200;
-  private readonly MAX_NOISE_RATIO = 0.15;
-  private readonly MIN_AMPLITUDE_VARIATION = 0.5;
-  private readonly MIN_AMPLITUDE_THRESHOLD = 1.2;
-  
   // Validation state
   private validSampleCounter: number = 0;
   private lastValidTime: number = 0;
   
   // Tracking buffers
   private signalQualityHistory: number[] = [];
-  private readonly QUALITY_HISTORY_SIZE = 15;
-  private readonly MIN_QUALITY_RATIO = 0.8;
-  
   private amplitudeHistory: number[] = [];
-  private readonly AMPLITUDE_HISTORY_SIZE = 15;
-  
   private noiseBuffer: number[] = [];
-  private readonly NOISE_BUFFER_SIZE = 20;
   
   /**
    * Validates signal quality and determines if it meets medical standards
@@ -41,7 +29,7 @@ export class SignalValidator {
     // Update quality history if provided
     if (signalQuality !== undefined) {
       this.signalQualityHistory.push(signalQuality);
-      if (this.signalQualityHistory.length > this.QUALITY_HISTORY_SIZE) {
+      if (this.signalQualityHistory.length > ValidationConfig.QUALITY_HISTORY_SIZE) {
         this.signalQualityHistory.shift();
       }
     }
@@ -51,13 +39,13 @@ export class SignalValidator {
       this.signalQualityHistory.reduce((sum, q) => sum + q, 0) / this.signalQualityHistory.length : 0;
     
     const goodQualityRatio = this.signalQualityHistory.length > 5 ?
-      this.signalQualityHistory.filter(q => q >= this.MIN_QUALITY_THRESHOLD).length / this.signalQualityHistory.length : 0;
+      this.signalQualityHistory.filter(q => q >= ValidationConfig.MIN_QUALITY_THRESHOLD).length / this.signalQualityHistory.length : 0;
     
-    const hasReliableSignal = avgQuality >= this.MIN_QUALITY_THRESHOLD && 
-                             goodQualityRatio >= this.MIN_QUALITY_RATIO;
+    const hasReliableSignal = avgQuality >= ValidationConfig.MIN_QUALITY_THRESHOLD && 
+                             goodQualityRatio >= ValidationConfig.MIN_QUALITY_RATIO;
     
     // Strict quality validation
-    if (signalQuality !== undefined && (!hasReliableSignal || signalQuality < this.MIN_QUALITY_THRESHOLD)) {
+    if (signalQuality !== undefined && (!hasReliableSignal || signalQuality < ValidationConfig.MIN_QUALITY_THRESHOLD)) {
       this.validSampleCounter = 0;
       return { 
         isValid: false, 
@@ -80,13 +68,13 @@ export class SignalValidator {
     
     // Noise analysis
     this.noiseBuffer.push(ppgValue);
-    if (this.noiseBuffer.length > this.NOISE_BUFFER_SIZE) {
+    if (this.noiseBuffer.length > ValidationConfig.NOISE_BUFFER_SIZE) {
       this.noiseBuffer.shift();
     }
     
     if (this.noiseBuffer.length >= 10) {
       const noiseLevel = this.calculateNoiseLevel(this.noiseBuffer);
-      if (noiseLevel > this.MAX_NOISE_RATIO) {
+      if (noiseLevel > ValidationConfig.MAX_NOISE_RATIO) {
         this.validSampleCounter = Math.max(0, this.validSampleCounter - 2);
         return { 
           isValid: false, 
@@ -98,15 +86,15 @@ export class SignalValidator {
     
     // Amplitude analysis
     this.amplitudeHistory.push(Math.abs(ppgValue));
-    if (this.amplitudeHistory.length > this.AMPLITUDE_HISTORY_SIZE) {
+    if (this.amplitudeHistory.length > ValidationConfig.AMPLITUDE_HISTORY_SIZE) {
       this.amplitudeHistory.shift();
     }
     
     if (this.amplitudeHistory.length >= 10) {
       const amplitudeStats = this.calculateAmplitudeStats(this.amplitudeHistory);
       
-      if (amplitudeStats.max - amplitudeStats.min < this.MIN_AMPLITUDE_VARIATION || 
-          amplitudeStats.max < this.MIN_AMPLITUDE_THRESHOLD) {
+      if (amplitudeStats.max - amplitudeStats.min < ValidationConfig.MIN_AMPLITUDE_VARIATION || 
+          amplitudeStats.max < ValidationConfig.MIN_AMPLITUDE_THRESHOLD) {
         this.validSampleCounter = Math.max(0, this.validSampleCounter - 1);
         return { 
           isValid: false, 
@@ -118,7 +106,7 @@ export class SignalValidator {
     
     // Check refractory period
     const now = Date.now();
-    if (now - this.lastValidTime < this.REFRACTORY_PERIOD_MS) {
+    if (now - this.lastValidTime < ValidationConfig.REFRACTORY_PERIOD_MS) {
       return { 
         isValid: false, 
         validSampleCounter: this.validSampleCounter,
@@ -130,7 +118,7 @@ export class SignalValidator {
     this.validSampleCounter++;
     
     // Ensure we have sufficient consecutive valid samples
-    const isFullyValid = this.validSampleCounter >= this.CONSECUTIVE_VALID_SAMPLES;
+    const isFullyValid = this.validSampleCounter >= ValidationConfig.CONSECUTIVE_VALID_SAMPLES;
     
     if (isFullyValid) {
       this.lastValidTime = now;

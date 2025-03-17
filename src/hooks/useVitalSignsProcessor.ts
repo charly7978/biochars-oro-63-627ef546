@@ -4,6 +4,7 @@ import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/Vi
 import { updateSignalLog } from '../utils/signalLogUtils';
 import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
 import { SignalAnalyzer } from '../modules/signal-analysis/SignalAnalyzer';
+import { ProcessorConfig } from '../modules/vital-signs/ProcessorConfig';
 
 interface ArrhythmiaWindow {
   start: number;
@@ -28,7 +29,7 @@ export const useVitalSignsProcessor = () => {
   
   // Weak signal counter to detect finger removal
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = 0.10;
+  const WEAK_SIGNAL_THRESHOLD = ProcessorConfig.WEAK_SIGNAL_THRESHOLD;
   const MAX_CONSECUTIVE_WEAK_SIGNALS = 3;
   
   // Initialize processor components

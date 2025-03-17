@@ -2,6 +2,7 @@
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 import { SignalValidator } from './signal-validation/SignalValidator';
 import { SignalAnalyzer } from './signal-analysis/SignalAnalyzer';
+import { ProcessorConfig } from './vital-signs/ProcessorConfig';
 
 /**
  * Professional medical-grade wrapper that ensures only real physiological data
@@ -14,19 +15,7 @@ export class VitalSignsProcessor {
   private processor: CoreProcessor;
   private signalValidator: SignalValidator;
   
-  // Strict medical-grade thresholds with zero tolerance for false positives
-  private readonly WINDOW_SIZE = 300;
-  private readonly SPO2_CALIBRATION_FACTOR = 1.0; // No artificial calibration
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
-  private readonly SPO2_WINDOW = 8; 
-  private readonly SMA_WINDOW = 8;
-  private readonly RR_WINDOW_SIZE = 15;
-  private readonly RMSSD_THRESHOLD = 22;
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1200;
-  private readonly PEAK_THRESHOLD = 0.45;
-  
   // System state
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.10;
   private weakSignalCounter: number = 0;
   
   /**
@@ -53,7 +42,7 @@ export class VitalSignsProcessor {
     signalQuality?: number
   ): VitalSignsResult {
     // Weak signal detection and rejection
-    if (Math.abs(ppgValue) < this.WEAK_SIGNAL_THRESHOLD) {
+    if (Math.abs(ppgValue) < ProcessorConfig.WEAK_SIGNAL_THRESHOLD) {
       this.weakSignalCounter++;
       if (this.weakSignalCounter > 3) {
         console.warn("VitalSignsProcessor: Persistent weak signal detected");
