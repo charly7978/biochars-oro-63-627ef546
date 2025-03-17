@@ -15,7 +15,13 @@ const Index = () => {
   const [signalQuality, setSignalQuality] = useState(0);
   const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>({
     spo2: 0,
-    pressure: "--/--"
+    pressure: "--/--",
+    arrhythmiaStatus: "--",
+    glucose: 0,
+    lipids: {
+      totalCholesterol: 0,
+      triglycerides: 0
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -25,6 +31,7 @@ const Index = () => {
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
+    isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
@@ -63,15 +70,20 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Process signal only if we have good quality and finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      if (lastSignal.fingerDetected) {
+      // Only process if the quality is sufficient and the finger is detected
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        if (heartBeatResult.bpm > 0) {
+        // Only update heart rate if confidence is sufficient
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
           setHeartRate(heartBeatResult.bpm);
           
-          const vitals = processVitalSigns(lastSignal.filteredValue);
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
             setVitalSigns(vitals);
           }
@@ -79,12 +91,19 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
+        // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
+        
+        // If finger not detected for a while, reset heart rate to zero
+        if (!lastSignal.fingerDetected && heartRate > 0) {
+          setHeartRate(0);
+        }
       }
     } else if (!isMonitoring) {
+      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -94,10 +113,10 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0);
+      setHeartRate(0); // Reset heart rate explicitly
       
       startProcessing();
-      startHeartBeatMonitoring();
+      startHeartBeatMonitoring(); // Update the processor state
       
       setElapsedTime(0);
       
@@ -126,7 +145,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
+    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -141,7 +160,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0);
+    setHeartRate(0); // Reset heart rate explicitly
   };
 
   const handleReset = () => {
@@ -163,7 +182,13 @@ const Index = () => {
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
-      pressure: "--/--"
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
     });
     setSignalQuality(0);
   };
@@ -175,57 +200,93 @@ const Index = () => {
     const imageCapture = new ImageCapture(videoTrack);
     
     if (videoTrack.getCapabilities()?.torch) {
+      console.log("Activando linterna para mejorar la señal PPG");
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
       }).catch(err => console.error("Error activando linterna:", err));
+    } else {
+      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
     }
     
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30;
+    let frameCount = 0;
+    let lastFpsUpdateTime = Date.now();
+    let processingFps = 0;
+    
     const processImage = async () => {
       if (!isMonitoring) return;
       
-      try {
-        const frame = await imageCapture.grabFrame();
-        tempCanvas.width = frame.width;
-        tempCanvas.height = frame.height;
-        tempCtx.drawImage(frame, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processFrame(imageData);
-        
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
+      
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          const frame = await imageCapture.grabFrame();
+          
+          const targetWidth = Math.min(320, frame.width);
+          const targetHeight = Math.min(240, frame.height);
+          
+          tempCanvas.width = targetWidth;
+          tempCanvas.height = targetHeight;
+          
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, targetWidth, targetHeight
+          );
+          
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          processFrame(imageData);
+          
+          frameCount++;
+          lastProcessTime = now;
+          
+          if (now - lastFpsUpdateTime > 1000) {
+            processingFps = frameCount;
+            frameCount = 0;
+            lastFpsUpdateTime = now;
+            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+          }
+        } catch (error) {
+          console.error("Error capturando frame:", error);
         }
-      } catch (error) {
-        console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
+      }
+      
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
       }
     };
 
     processImage();
   };
 
+  const handleToggleMonitoring = () => {
+    if (isMonitoring) {
+      finalizeMeasurement();
+    } else {
+      startMonitoring();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 flex flex-col bg-black" 
-      style={{ 
-        height: '100%',
-        width: '100%',
-        maxWidth: '100vw',
-        maxHeight: '100vh',
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
-        touchAction: 'none',
-        userSelect: 'none',
-      }}>
+    
+    <div className="fixed inset-0 flex flex-col bg-black" style={{ 
+      height: '100vh',
+      width: '100vw',
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      overflow: 'hidden',
+      paddingTop: 'env(safe-area-inset-top)',
+      paddingBottom: 'env(safe-area-inset-bottom)'
+    }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 
@@ -237,6 +298,15 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
+          <div className="px-4 py-2 flex justify-around items-center bg-black/20">
+            <div className="text-white text-lg">
+              Calidad: {signalQuality}
+            </div>
+            <div className="text-white text-lg">
+              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+            </div>
+          </div>
+
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
@@ -244,50 +314,70 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              preserveResults={showResults}
+              isArrhythmia={isArrhythmia}
             />
           </div>
 
-          <div className="absolute bottom-[200px] left-0 right-0 px-4">
-            <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-3 gap-2">
-                <VitalSign 
-                  label="FRECUENCIA CARDÍACA"
-                  value={heartRate || "--"}
-                  unit="BPM"
-                />
-                <VitalSign 
-                  label="SPO2"
-                  value={vitalSigns.spo2 || "--"}
-                  unit="%"
-                />
-                <VitalSign 
-                  label="PRESIÓN ARTERIAL"
-                  value={vitalSigns.pressure}
-                  unit="mmHg"
-                />
-              </div>
+          <AppTitle />
+
+          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
+              <VitalSign 
+                label="FRECUENCIA CARDÍACA"
+                value={heartRate || "--"}
+                unit="BPM"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="SPO2"
+                value={vitalSigns.spo2 || "--"}
+                unit="%"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="PRESIÓN ARTERIAL"
+                value={vitalSigns.pressure}
+                unit="mmHg"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="GLUCOSA"
+                value={vitalSigns.glucose || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="COLESTEROL"
+                value={vitalSigns.lipids?.totalCholesterol || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="TRIGLICÉRIDOS"
+                value={vitalSigns.lipids?.triglycerides || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
             </div>
           </div>
 
-          {isMonitoring && (
-            <div className="absolute bottom-40 left-0 right-0 text-center">
-              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+          <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleToggleMonitoring} 
+                variant="monitor"
+              />
             </div>
-          )}
-
-          <div className="h-[80px] grid grid-cols-2 gap-px bg-gray-900 mt-auto">
-            <button 
-              onClick={startMonitoring}
-              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
-            >
-              INICIAR
-            </button>
-            <button 
-              onClick={handleReset}
-              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
-            >
-              RESET
-            </button>
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleReset} 
+                variant="reset"
+              />
+            </div>
           </div>
         </div>
       </div>
