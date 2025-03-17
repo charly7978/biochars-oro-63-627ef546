@@ -4,7 +4,7 @@
  * This facilitates a smooth transition from the old implementation to the new modular structure
  */
 
-import { LegacyVitalSignsProcessor } from './VitalSignsProcessor';
+import { LegacyVitalSignsProcessor } from './LegacyVitalSignsProcessor';
 import { VitalSignsResult } from '../vital-signs/VitalSignsProcessor';
 import { SignalValidator } from '../signal-validation/SignalValidator';
 
