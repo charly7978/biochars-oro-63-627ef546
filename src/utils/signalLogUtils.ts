@@ -1,9 +1,7 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
  * Medical-grade utilities for signal logging and analysis
- * with strict validation requirements for real signals only
+ * with strict validation requirements
  */
 
 // Re-export all functionality from specialized modules

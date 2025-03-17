@@ -1,18 +1,12 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { RRAnalysisResult } from './types';
 
 /**
- * Specialized class for direct analysis of genuine RR intervals
- * No simulation or artificial manipulation of results
+ * Specialized class for direct analysis of RR intervals
  */
 export class RRIntervalAnalyzer {
   /**
-   * Analyze RR intervals to detect real arrhythmias
-   * Based purely on actual captured signal data
+   * Analyze RR intervals to detect arrhythmias
    */
   public analyzeIntervals(intervals: number[]): RRAnalysisResult | null {
     if (intervals.length < 8) return null;
@@ -21,19 +15,19 @@ export class RRIntervalAnalyzer {
     const validIntervals = intervals.filter(i => i >= 400 && i <= 1500);
     if (validIntervals.length < intervals.length * 0.75) return null;
     
-    // Calculate key metrics from real data
+    // Calculate key metrics
     const avgRR = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
     const lastRR = validIntervals[validIntervals.length - 1];
     const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
     
-    // Calculate RMSSD from actual intervals
+    // Calculate RMSSD
     let sumSquaredDiff = 0;
     for (let i = 1; i < validIntervals.length; i++) {
       sumSquaredDiff += Math.pow(validIntervals[i] - validIntervals[i-1], 2);
     }
     const rmssd = Math.sqrt(sumSquaredDiff / (validIntervals.length - 1));
     
-    // Detect if this is an arrhythmia based on actual measurements
+    // Detect if this is an arrhythmia
     const isArrhythmia = 
       (rrVariation > 0.2) && // Significant variation
       (rmssd > 30);          // Elevated RMSSD

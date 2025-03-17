@@ -1,18 +1,12 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { RRAnalysisResult } from './types';
 
 /**
  * Specialized class for RR interval data analysis and logging
- * Analyzes only genuine data without simulation
  */
 export class RRDataAnalyzer {
   /**
-   * Logs comprehensive RR interval analysis results for diagnostic purposes
-   * Based only on real measured data
+   * Logs comprehensive RR interval analysis results for diagnostics
    */
   public logRRAnalysis(analysisData: RRAnalysisResult, intervals: number[]): void {
     if (analysisData.isArrhythmia) {
@@ -26,7 +20,7 @@ export class RRDataAnalyzer {
   }
   
   /**
-   * Logs details about possible arrhythmia from real signals
+   * Logs details about possible arrhythmia
    */
   public logPossibleArrhythmia(analysisData: RRAnalysisResult): void {
     console.log("RRDataAnalyzer: Possible arrhythmia detected", {
@@ -37,7 +31,7 @@ export class RRDataAnalyzer {
   }
   
   /**
-   * Logs confirmed arrhythmia with comprehensive metrics from actual data
+   * Logs confirmed arrhythmia with comprehensive metrics
    */
   public logConfirmedArrhythmia(analysisData: RRAnalysisResult, intervals: number[], count: number): void {
     console.log("RRDataAnalyzer: ARRHYTHMIA CONFIRMED", {

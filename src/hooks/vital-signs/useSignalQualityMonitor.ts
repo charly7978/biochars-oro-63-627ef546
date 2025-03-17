@@ -1,7 +1,4 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
 import { useRef } from 'react';
 import { ProcessorConfig } from '../../modules/vital-signs/ProcessorConfig';
 import { SignalAnalyzer } from '../../modules/signal-analysis/SignalAnalyzer';

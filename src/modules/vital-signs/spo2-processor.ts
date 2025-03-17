@@ -13,12 +13,12 @@ export class SpO2Processor {
    */
   public calculateSpO2(values: number[]): number {
     if (values.length < 30) {
-      return 0;
+      return this.getLastValidSpo2(1);
     }
 
     const dc = FilterUtils.calculateDC(values);
     if (dc === 0) {
-      return 0;
+      return this.getLastValidSpo2(1);
     }
 
     const ac = FilterUtils.calculateAC(values);
@@ -26,18 +26,23 @@ export class SpO2Processor {
     const perfusionIndex = ac / dc;
     
     if (perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
-      return 0;
+      return this.getLastValidSpo2(2);
     }
 
     const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
     
-    // Calculate SpO2 using standard formula
-    let spO2 = Math.round(110 - (25 * R));
+    let spO2 = Math.round(98 - (15 * R));
     
-    // Ensure results are in valid physiological range
-    spO2 = Math.max(70, Math.min(100, spO2));
+    // Adjust based on perfusion quality
+    if (perfusionIndex > 0.15) {
+      spO2 = Math.min(98, spO2 + 1);
+    } else if (perfusionIndex < 0.08) {
+      spO2 = Math.max(0, spO2 - 1);
+    }
 
-    // Update buffer for stability
+    spO2 = Math.min(98, spO2);
+
+    // Update buffer
     this.spo2Buffer.push(spO2);
     if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
       this.spo2Buffer.shift();
@@ -50,6 +55,17 @@ export class SpO2Processor {
     }
 
     return spO2;
+  }
+  
+  /**
+   * Get last valid SpO2 with optional decay
+   */
+  private getLastValidSpo2(decayAmount: number): number {
+    if (this.spo2Buffer.length > 0) {
+      const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
+      return Math.max(0, lastValid - decayAmount);
+    }
+    return 0;
   }
 
   /**

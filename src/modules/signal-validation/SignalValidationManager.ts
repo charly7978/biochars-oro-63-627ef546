@@ -1,8 +1,4 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { ValidationResult } from './ValidationResult';
 import { AmplitudeValidator } from './validators/AmplitudeValidator';
 import { NoiseValidator } from './validators/NoiseValidator';
@@ -11,8 +7,7 @@ import { RangeValidator } from './validators/RangeValidator';
 import { RRValidator } from './validators/RRValidator';
 
 /**
- * Central manager for signal validation operations
- * Ensures only genuine data is processed without simulation
+ * Central manager for coordinating all signal validation operations
  */
 export class SignalValidationManager {
   private amplitudeValidator: AmplitudeValidator;
@@ -32,7 +27,7 @@ export class SignalValidationManager {
   }
   
   /**
-   * Validate RR interval data for physiological plausibility
+   * Validate RR interval data
    */
   public validateRRIntervals(rrData?: { intervals: number[]; lastPeakTime: number | null }): boolean {
     return this.rrValidator.validateRRIntervals(rrData);
@@ -40,7 +35,6 @@ export class SignalValidationManager {
   
   /**
    * Validate signal quality through multiple validation stages
-   * Only accepts genuine signals meeting medical-grade criteria
    */
   public validateSignalQuality(
     ppgValue: number,
@@ -94,7 +88,7 @@ export class SignalValidationManager {
     this.validSampleCounter++;
     
     // Determine if we have enough consecutive valid samples
-    const isFullyValid = this.validSampleCounter >= 8;
+    const isFullyValid = this.validSampleCounter >= 8; // Using the CONSECUTIVE_VALID_SAMPLES constant from ValidationConfig
     
     return {
       isValid: isFullyValid,

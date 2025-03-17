@@ -1,8 +1,4 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from '../arrhythmia-processor';
@@ -32,7 +28,6 @@ export interface VitalSignsResult {
 /**
  * Main vital signs processor
  * Integrates different specialized processors to calculate health metrics
- * from real signals only without simulation
  */
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
@@ -40,7 +35,7 @@ export class VitalSignsProcessor {
   private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
-  private lastValidResult: VitalSignsResult | null = null;
+  private measurementStartTime: number = Date.now();
 
   constructor() {
     console.log("VitalSignsProcessor: Initializing new instance");
@@ -51,16 +46,12 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
   }
   
-  /**
-   * Process real PPG signal to calculate vital signs
-   * No data simulation or result manipulation
-   */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     if (Math.abs(ppgValue) < 0.005) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros");
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return this.createEmptyResults();
     }
     
@@ -79,7 +70,10 @@ export class VitalSignsProcessor {
     const ppgValues = this.signalProcessor.getPPGValues();
     
     if (ppgValues.length < ProcessorConfig.MIN_PPG_VALUES) {
-      console.log("VitalSignsProcessor: Insufficient data points");
+      console.log("VitalSignsProcessor: Insufficient data points", {
+        have: ppgValues.length,
+        need: ProcessorConfig.MIN_PPG_VALUES
+      });
       return this.createEmptyResults();
     }
     
@@ -88,77 +82,60 @@ export class VitalSignsProcessor {
     const amplitude = signalMax - signalMin;
     
     if (amplitude < ProcessorConfig.MIN_SIGNAL_AMPLITUDE) {
-      console.log("VitalSignsProcessor: Signal amplitude too low");
+      console.log("VitalSignsProcessor: Signal amplitude too low", {
+        amplitude,
+        threshold: ProcessorConfig.MIN_SIGNAL_AMPLITUDE
+      });
       return this.createEmptyResults();
     }
     
-    // Calculate SpO2 from genuine signal data
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
-    // Calculate blood pressure from real measurements
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
       
-    // Calculate glucose from real signal
+    // Calculate glucose
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues.slice(-150));
 
-    const result = {
+    console.log("VitalSignsProcessor: Results", {
+      spo2,
+      pressure,
+      arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
+      signalAmplitude: amplitude,
+      glucose
+    });
+
+    return {
       spo2,
       pressure,
       arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
       lastArrhythmiaData: formattedArrhythmiaResult.lastArrhythmiaData,
       glucose
     };
-    
-    // Store valid result
-    if (spo2 > 0 && bp.systolic > 0 && bp.diastolic > 0) {
-      this.lastValidResult = result;
-    }
-    
-    return result;
   }
   
-  /**
-   * Create empty results for invalid signals
-   */
   private createEmptyResults(): VitalSignsResult {
-    return {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      lastArrhythmiaData: null,
-      glucose: 0
-    };
+    return SignalAnalyzer.createEmptyResult();
   }
 
-  /**
-   * Reset all processors to initial state
-   */
   public reset(): VitalSignsResult | null {
-    const lastResult = this.lastValidResult;
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
+    this.measurementStartTime = Date.now();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return lastResult;
+    return null;
   }
   
-  /**
-   * Get last valid results if available
-   */
   public getLastValidResults(): VitalSignsResult | null {
-    return this.lastValidResult;
+    return null;
   }
   
-  /**
-   * Full reset of all components
-   */
   public fullReset(): void {
-    this.lastValidResult = null;
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }

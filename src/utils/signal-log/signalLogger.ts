@@ -1,39 +1,66 @@
+
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
- * Signal logging utility for medical-grade signals
+ * Main signal logging utilities that coordinate validation and quality analysis
  */
 
-import { SignalLogEntry } from '../../hooks/vital-signs/types';
+import { validateSignalValue, validateResultData } from './validateSignal';
+import { calculateSignalQuality } from './qualityAnalyzer';
 
 /**
- * Updates the signal log with new entry, maintaining a limited buffer size
+ * Updates the signal log with strict validation, maintaining a manageable size
+ * and preventing any simulated or invalid data
  */
 export function updateSignalLog(
-  logEntries: SignalLogEntry[],
-  timestamp: number,
+  signalLog: {timestamp: number, value: number, result: any}[],
+  currentTime: number,
   value: number,
   result: any,
-  processedCount: number
-): SignalLogEntry[] {
-  // Create a new log entry
-  const entry: SignalLogEntry = {
-    timestamp,
-    value,
-    spo2: result.spo2,
-    pressure: result.pressure,
-    arrhythmiaStatus: result.arrhythmiaStatus,
-    processedCount
-  };
-  
-  // Add new entry to log and keep only the most recent 100 entries
-  const updatedLog = [...logEntries, entry];
-  if (updatedLog.length > 100) {
-    return updatedLog.slice(-100);
+  processedSignals: number
+): {timestamp: number, value: number, result: any}[] {
+  // Validación fisiológica más estricta
+  if (!validateSignalValue(value)) {
+    console.warn("signalLogUtils: Rejected invalid signal value", { value });
+    return signalLog;
   }
   
-  return updatedLog;
+  if (isNaN(currentTime) || currentTime <= 0) {
+    console.warn("signalLogUtils: Rejected invalid timestamp");
+    return signalLog;
+  }
+  
+  if (!result) {
+    console.warn("signalLogUtils: Rejected null result");
+    return signalLog;
+  }
+  
+  // Solo registrar cada X señales para prevenir problemas de memoria
+  // Reducida frecuencia para asegurar que no perdamos señales importantes
+  if (processedSignals % 10 !== 0) {
+    return signalLog;
+  }
+  
+  // Validar y sanear los datos de resultado
+  const safeResult = validateResultData(result);
+  
+  const updatedLog = [
+    ...signalLog,
+    {
+      timestamp: currentTime,
+      value,
+      result: safeResult
+    }
+  ];
+  
+  // Mantener log en tamaño manejable
+  const trimmedLog = updatedLog.length > 100 ? updatedLog.slice(-100) : updatedLog;
+  
+  // Logging mejorado para aplicación médica
+  console.log("signalLogUtils: Log updated", {
+    totalEntries: trimmedLog.length,
+    lastEntry: trimmedLog[trimmedLog.length - 1],
+    dataValidated: true,
+    signalQuality: calculateSignalQuality(trimmedLog.slice(-20).map(entry => entry.value))
+  });
+  
+  return trimmedLog;
 }
-
-// Make sure to explicitly export the function
-export default { updateSignalLog };

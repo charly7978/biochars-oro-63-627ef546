@@ -1,17 +1,11 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
-/**
  * GlucoseSignalAnalyzer
- * Handles genuine PPG signal analysis for glucose estimation
- * No simulation or artificial data manipulation
+ * Handles PPG signal analysis for glucose estimation
  */
 export class GlucoseSignalAnalyzer {
   /**
-   * Analyze genuine PPG signal to extract key metrics with improved algorithms
-   * Only processes real data without simulation
+   * Analyze PPG signal to extract key metrics with improved algorithms
    */
   public static analyzeSignal(values: number[]): { 
     amplitude: number; 
@@ -21,7 +15,7 @@ export class GlucoseSignalAnalyzer {
     areaUnderCurve: number;
     signalVariability: number;
   } {
-    // Calculate amplitude (AC component) with improved peak detection from real data
+    // Calculate amplitude (AC component) with improved peak detection
     const { peakValues, valleyValues } = this.findPeaksAndValleys(values);
     
     let amplitude = 0;
@@ -35,13 +29,13 @@ export class GlucoseSignalAnalyzer {
       amplitude = max - min;
     }
     
-    // Calculate "DC" component (average value) from actual measurements
+    // Calculate "DC" component (average value)
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
     
-    // Calculate perfusion index (AC/DC ratio) from real data
+    // Calculate perfusion index (AC/DC ratio) - key indicator of blood volume
     const perfusionIndex = avg !== 0 ? amplitude / avg : 0;
     
-    // Calculate frequency through zero crossings from actual signal
+    // Calculate frequency through zero crossings with improved algorithm
     let crossings = 0;
     let lastSign = values[0] > avg;
     for (let i = 1; i < values.length; i++) {
@@ -53,7 +47,7 @@ export class GlucoseSignalAnalyzer {
     }
     const frequency = crossings / (2 * values.length);
     
-    // Calculate phase using autocorrelation with genuine signal
+    // Calculate phase using autocorrelation with enhanced algorithm
     let maxCorrelation = 0;
     let phase = 0;
     const halfLength = Math.floor(values.length / 2);
@@ -69,10 +63,10 @@ export class GlucoseSignalAnalyzer {
       }
     }
     
-    // Calculate area under the curve from real measurement
+    // Calculate area under the curve - new metric for glucose correlation
     const areaUnderCurve = this.calculateAreaUnderCurve(values, avg);
     
-    // Calculate signal variability from actual data
+    // Calculate signal variability - helpful for detecting glycemic changes
     const variability = this.calculateVariability(values);
     
     return { 
@@ -86,7 +80,7 @@ export class GlucoseSignalAnalyzer {
   }
   
   /**
-   * Find real peaks and valleys in genuine signal
+   * Find peaks and valleys in the signal for better amplitude calculation
    */
   public static findPeaksAndValleys(values: number[]): { peakValues: number[], valleyValues: number[] } {
     const peakValues: number[] = [];
@@ -111,7 +105,6 @@ export class GlucoseSignalAnalyzer {
   
   /**
    * Calculate area under the curve relative to the baseline
-   * from actual signal values
    */
   public static calculateAreaUnderCurve(values: number[], baseline: number): number {
     let area = 0;
@@ -123,7 +116,7 @@ export class GlucoseSignalAnalyzer {
   }
   
   /**
-   * Calculate signal variability from real measurements
+   * Calculate signal variability
    */
   public static calculateVariability(values: number[]): number {
     if (values.length < 2) return 0;
