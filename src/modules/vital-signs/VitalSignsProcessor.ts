@@ -1,10 +1,10 @@
-
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
+import { applySMAFilter } from '../signal/filtering';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -40,12 +40,9 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // No storage of previous results
-  
-  // Stricter thresholds for more reliable physiological detection
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Increased
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Increased
-  private readonly MIN_PPG_VALUES = 15; // Minimum values required for processing
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15;
+  private readonly MIN_PPG_VALUES = 15;
 
   /**
    * Constructor that initializes all specialized processors
@@ -75,7 +72,7 @@ export class VitalSignsProcessor {
     }
     
     // Apply filtering to the PPG signal
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    const filtered = applySMAFilter(ppgValue, this.signalProcessor.getPPGValues());
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
