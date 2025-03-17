@@ -20,6 +20,7 @@ export class VitalSignsProcessor {
   private readonly RMSSD_THRESHOLD = 12; // Lowered for better arrhythmia detection
   private readonly ARRHYTHMIA_LEARNING_PERIOD = 800; // Shortened learning period
   private readonly PEAK_THRESHOLD = 0.15; // Lowered for greater sensitivity
+  private readonly RENDER_OPTIMIZATION = true; // Enable rendering optimizations
   
   /**
    * Constructor that initializes the internal direct measurement processor
