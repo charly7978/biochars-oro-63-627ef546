@@ -33,7 +33,8 @@ export class ArrhythmiaProcessor {
    * Process RR interval data to detect arrhythmias
    */
   public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
-    arrhythmiaStatus: string;
+    isArrhythmia: boolean;
+    arrhythmiaCounter: number;
     lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
     const currentTime = Date.now();
@@ -48,7 +49,8 @@ export class ArrhythmiaProcessor {
     
     if (this.isCalibrating) {
       return {
-        arrhythmiaStatus: "CALIBRANDO...",
+        isArrhythmia: false,
+        arrhythmiaCounter: 0,
         lastArrhythmiaData: null
       };
     }
@@ -66,9 +68,8 @@ export class ArrhythmiaProcessor {
         
         // Return current status with arrhythmia data if available
         return {
-          arrhythmiaStatus: this.arrhythmiaDetected 
-            ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
-            : `NORMAL|${this.arrhythmiaCount}`,
+          isArrhythmia: this.arrhythmiaDetected,
+          arrhythmiaCounter: this.arrhythmiaCount,
           lastArrhythmiaData: result.lastArrhythmiaData
         };
       }
@@ -76,9 +77,8 @@ export class ArrhythmiaProcessor {
     
     // Provide current status if no new analysis was performed
     return {
-      arrhythmiaStatus: this.arrhythmiaDetected 
-        ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
-        : `NORMAL|${this.arrhythmiaCount}`,
+      isArrhythmia: this.arrhythmiaDetected,
+      arrhythmiaCounter: this.arrhythmiaCount,
       lastArrhythmiaData: null
     };
   }
