@@ -1,4 +1,3 @@
-
 import { useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
@@ -106,7 +105,7 @@ export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
     return result;
   }, [addArrhythmiaWindow, signalLogger, signalQualityMonitor, setLastValidResults]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback((): void => {
     if (!processorRef.current || !arrhythmiaProcessorRef.current) return;
     
     console.log("useVitalSignsProcessor: Reset initiated");
@@ -121,7 +120,7 @@ export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
     console.log("useVitalSignsProcessor: Reset completed");
   }, [resetArrhythmiaWindows, signalQualityMonitor, setLastValidResults]);
   
-  const fullReset = useCallback(() => {
+  const fullReset = useCallback((): void => {
     if (!processorRef.current || !arrhythmiaProcessorRef.current) return;
     
     console.log("useVitalSignsProcessor: Full reset initiated");
