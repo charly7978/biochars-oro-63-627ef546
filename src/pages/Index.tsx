@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -17,6 +16,7 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>({
     spo2: 0,
     pressure: "--/--",
+    arrhythmiaStatus: "--",
     glucose: 0,
     lipids: {
       totalCholesterol: 0,
@@ -31,6 +31,7 @@ const Index = () => {
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
+    isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
@@ -182,6 +183,7 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
+      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
@@ -275,6 +277,7 @@ const Index = () => {
   };
 
   return (
+    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -311,6 +314,9 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              preserveResults={showResults}
+              isArrhythmia={isArrhythmia}
             />
           </div>
 

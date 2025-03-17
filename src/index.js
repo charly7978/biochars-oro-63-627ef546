@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -16,6 +15,7 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
+    arrhythmiaStatus: "--",
     glucose: 0,
     lipids: {
       totalCholesterol: 0,
@@ -23,6 +23,7 @@ const Index = () => {
     }
   });
   const [heartRate, setHeartRate] = useState(0);
+  const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
@@ -153,12 +154,14 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
+      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       }
     });
+    setArrhythmiaCount("--");
     setSignalQuality(0);
     
     if (measurementTimerRef.current) {
@@ -177,12 +180,14 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
+      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       }
     });
+    setArrhythmiaCount("--");
     setSignalQuality(0);
     
     if (measurementTimerRef.current) {
@@ -253,6 +258,7 @@ const Index = () => {
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
       setSignalQuality(lastSignal.quality);
@@ -291,12 +297,14 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
             />
           </div>
 
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
@@ -314,6 +322,11 @@ const Index = () => {
                   value={vitalSigns.pressure}
                   unit="mmHg"
                   calibrationProgress={vitalSigns.calibration?.progress.pressure}
+                />
+                <VitalSign 
+                  label="ARRITMIAS"
+                  value={vitalSigns.arrhythmiaStatus}
+                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
                 />
               </div>
             </div>
