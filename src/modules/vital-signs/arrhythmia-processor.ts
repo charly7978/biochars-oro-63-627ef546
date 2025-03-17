@@ -3,6 +3,10 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+import { ArrhythmiaPatternDetector } from './arrhythmia/pattern-detector';
+import { calculateRMSSD, calculateRRVariation } from './arrhythmia/calculations';
+import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
+
 /**
  * Consolidated arrhythmia detection system
  * Using only real data without simulation
@@ -27,24 +31,14 @@ export class ArrhythmiaProcessor {
   private consecutiveAbnormalBeats = 0;
   private readonly CONSECUTIVE_THRESHOLD = 15;
   
-  // Pattern analysis
-  private patternBuffer: number[] = [];
-  private readonly PATTERN_BUFFER_SIZE = 15;
-  private readonly PATTERN_MATCH_THRESHOLD = 0.65;
-  
-  // Anomaly scoring
-  private anomalyScores: number[] = [];
-  private readonly ANOMALY_HISTORY_SIZE = 30;
-  private readonly MIN_ANOMALY_PATTERN_LENGTH = 5;
+  // Pattern detector
+  private patternDetector = new ArrhythmiaPatternDetector();
 
   /**
    * Process real RR data for arrhythmia detection
    * No simulation is used
    */
-  public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
-    arrhythmiaStatus: string;
-    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
-  } {
+  public processRRData(rrData?: RRIntervalData): ArrhythmiaProcessingResult {
     const currentTime = Date.now();
     
     // Update RR intervals with real data
@@ -68,8 +62,8 @@ export class ArrhythmiaProcessor {
     const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
-          rmssd: this.calculateRMSSD(this.rrIntervals.slice(-8)),
-          rrVariation: this.calculateRRVariation(this.rrIntervals.slice(-8))
+          rmssd: calculateRMSSD(this.rrIntervals.slice(-8)),
+          rrVariation: calculateRRVariation(this.rrIntervals.slice(-8))
         } 
       : null;
     
@@ -110,7 +104,7 @@ export class ArrhythmiaProcessor {
     const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
     
     // Update pattern buffer with real data
-    this.updatePatternBuffer(variation / 100);
+    this.patternDetector.updatePatternBuffer(variation / 100);
     
     // Detect premature beat only if variation meets threshold
     const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
@@ -135,14 +129,14 @@ export class ArrhythmiaProcessor {
     // Check if arrhythmia is confirmed with real data
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
-    const patternDetected = this.detectArrhythmiaPattern();
+    const patternDetected = this.patternDetector.detectArrhythmiaPattern();
     
     if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia && patternDetected) {
       this.arrhythmiaCount++;
       this.arrhythmiaDetected = true;
       this.lastArrhythmiaTime = currentTime;
       this.consecutiveAbnormalBeats = 0;
-      this.resetPatternBuffer();
+      this.patternDetector.resetPatternBuffer();
       
       console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED in real data", {
         arrhythmiaCount: this.arrhythmiaCount,
@@ -150,82 +144,6 @@ export class ArrhythmiaProcessor {
         timestamp: currentTime
       });
     }
-  }
-  
-  /**
-   * Update pattern buffer with real data
-   */
-  private updatePatternBuffer(value: number): void {
-    this.patternBuffer.push(value);
-    if (this.patternBuffer.length > this.PATTERN_BUFFER_SIZE) {
-      this.patternBuffer.shift();
-    }
-    
-    // Update anomaly scores based on real data
-    const anomalyScore = value > 0.3 ? 1 : 0;
-    this.anomalyScores.push(anomalyScore);
-    if (this.anomalyScores.length > this.ANOMALY_HISTORY_SIZE) {
-      this.anomalyScores.shift();
-    }
-  }
-  
-  /**
-   * Reset pattern buffer
-   */
-  private resetPatternBuffer(): void {
-    this.patternBuffer = [];
-    this.anomalyScores = [];
-  }
-  
-  /**
-   * Detect arrhythmia patterns in real data
-   */
-  private detectArrhythmiaPattern(): boolean {
-    if (this.patternBuffer.length < this.MIN_ANOMALY_PATTERN_LENGTH) return false;
-    
-    // Analyze recent real data pattern
-    const recentPattern = this.patternBuffer.slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
-    
-    // Feature 1: Significant variations in real data
-    const significantVariations = recentPattern.filter(v => v > 0.3).length;
-    const variationRatio = significantVariations / recentPattern.length;
-    
-    // Feature 2: Pattern consistency in real data
-    const highAnomalyScores = this.anomalyScores.filter(score => score > 0).length;
-    const anomalyRatio = this.anomalyScores.length > 0 ? 
-                        highAnomalyScores / this.anomalyScores.length : 0;
-    
-    // Combine features with weighted scoring
-    const patternScore = (variationRatio * 0.7) + (anomalyRatio * 0.3);
-    
-    // Return true if pattern score exceeds threshold
-    return patternScore > this.PATTERN_MATCH_THRESHOLD;
-  }
-  
-  /**
-   * Calculate RMSSD from real RR intervals
-   */
-  private calculateRMSSD(intervals: number[]): number {
-    if (intervals.length < 2) return 0;
-    
-    let sumSquaredDiff = 0;
-    for (let i = 1; i < intervals.length; i++) {
-      sumSquaredDiff += Math.pow(intervals[i] - intervals[i-1], 2);
-    }
-    
-    return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
-  }
-  
-  /**
-   * Calculate RR interval variation from real data
-   */
-  private calculateRRVariation(intervals: number[]): number {
-    if (intervals.length < 2) return 0;
-    
-    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    const lastRR = intervals[intervals.length - 1];
-    
-    return Math.abs(lastRR - mean) / mean;
   }
 
   /**
@@ -240,8 +158,7 @@ export class ArrhythmiaProcessor {
     this.lastArrhythmiaTime = 0;
     this.startTime = Date.now();
     this.consecutiveAbnormalBeats = 0;
-    this.patternBuffer = [];
-    this.anomalyScores = [];
+    this.patternDetector.resetPatternBuffer();
     
     console.log("ArrhythmiaProcessor: Processor reset", {
       timestamp: new Date().toISOString()
