@@ -1,5 +1,10 @@
+
 /**
- * Updates the signal log, maintaining a manageable size
+ * Utilidades para el registro y análisis de señales
+ */
+
+/**
+ * Actualiza el registro de señales, manteniendo un tamaño manejable
  */
 export function updateSignalLog(
   signalLog: {timestamp: number, value: number, result: any}[],
@@ -8,7 +13,7 @@ export function updateSignalLog(
   result: any,
   processedSignals: number
 ): {timestamp: number, value: number, result: any}[] {
-  // Only log every X signals to avoid memory overload
+  // Solo registrar cada X señales para no sobrecargar la memoria
   if (processedSignals % 20 !== 0) {
     return signalLog;
   }
@@ -22,13 +27,13 @@ export function updateSignalLog(
     }
   ];
   
-  // Keep the log at a manageable size
+  // Mantener el log a un tamaño manejable
   const trimmedLog = updatedLog.length > 50 ? updatedLog.slice(-50) : updatedLog;
   
-  // Log for debugging
-  console.log("useVitalSignsProcessor: Signal log", {
-    totalEntries: trimmedLog.length,
-    latestEntries: trimmedLog.slice(-3)
+  // Registrar para depuración
+  console.log("useVitalSignsProcessor: Log de señales", {
+    totalEntradas: trimmedLog.length,
+    ultimasEntradas: trimmedLog.slice(-3)
   });
   
   return trimmedLog;

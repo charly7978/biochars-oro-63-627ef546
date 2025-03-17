@@ -16,23 +16,13 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--",
-    glucose: 0,
-    lipids: {
-      totalCholesterol: 0,
-      triglycerides: 0
-    }
+    arrhythmiaStatus: "--" 
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [calibrationComplete, setCalibrationComplete] = useState(false);
-  const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
-  const calibrationTimerRef = useRef(null);
-  const consecutiveFingerDetectionsRef = useRef(0);
-  const fingerDetectedRef = useRef(false);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -118,42 +108,7 @@ const Index = () => {
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
-    setCalibrationComplete(false);
-    setCalibrationProgress(0);
     startProcessing();
-    
-    // Start calibration timer for 8 seconds
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-    }
-    
-    toast.info("Iniciando calibración (8 segundos)", {
-      duration: 3000
-    });
-    
-    calibrationTimerRef.current = window.setInterval(() => {
-      setCalibrationProgress(prev => {
-        const newProgress = prev + (100 / 8); // 8 seconds for 0-100%
-        
-        if (newProgress >= 100) {
-          // When calibration is complete, start the actual measurement
-          clearInterval(calibrationTimerRef.current);
-          calibrationTimerRef.current = null;
-          setCalibrationComplete(true);
-          startMeasurementTimer();
-          
-          toast.success("Calibración completa, iniciando medición", {
-            duration: 3000
-          });
-          
-          return 100;
-        }
-        return newProgress;
-      });
-    }, 1000);
-  };
-
-  const startMeasurementTimer = () => {
     setElapsedTime(0);
     
     if (measurementTimerRef.current) {
@@ -191,32 +146,18 @@ const Index = () => {
     stopProcessing();
     resetVitalSigns();
     setElapsedTime(0);
-    setCalibrationProgress(0);
-    setCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      arrhythmiaStatus: "--" 
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
-    consecutiveFingerDetectionsRef.current = 0;
-    fingerDetectedRef.current = false;
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
-    }
-    
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-      calibrationTimerRef.current = null;
     }
   };
 
@@ -226,32 +167,18 @@ const Index = () => {
     stopProcessing();
     resetVitalSigns();
     setElapsedTime(0);
-    setCalibrationProgress(0);
-    setCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      arrhythmiaStatus: "--" 
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
-    consecutiveFingerDetectionsRef.current = 0;
-    fingerDetectedRef.current = false;
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
-    }
-    
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-      calibrationTimerRef.current = null;
     }
   };
 
@@ -261,9 +188,7 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-    console.log("Main: Camera capabilities:", capabilities);
-    
+    const capabilities = videoTrack.getCapabilities();
     if (capabilities.width && capabilities.height) {
       const maxWidth = capabilities.width.max;
       const maxHeight = capabilities.height.max;
@@ -273,14 +198,14 @@ const Index = () => {
         height: { ideal: maxHeight },
         torch: true
       }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities?.()?.torch) {
+    } else if (videoTrack.getCapabilities()?.torch) {
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
       }).catch(err => console.error("Error activando linterna:", err));
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+    const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
@@ -290,12 +215,6 @@ const Index = () => {
       if (!isMonitoring) return;
       
       try {
-        if (!videoTrack || videoTrack.readyState !== 'live') {
-          console.log("Video track not ready or not live, skipping frame");
-          requestAnimationFrame(processImage);
-          return;
-        }
-        
         const frame = await imageCapture.grabFrame();
         tempCanvas.width = frame.width;
         tempCanvas.height = frame.height;
@@ -309,9 +228,7 @@ const Index = () => {
       } catch (error) {
         console.error("Error capturando frame:", error);
         if (isMonitoring) {
-          setTimeout(() => {
-            requestAnimationFrame(processImage);
-          }, 500); // Add delay before retrying
+          requestAnimationFrame(processImage);
         }
       }
     };
@@ -320,50 +237,19 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      // Process finger detection consistently
-      if (lastSignal.fingerDetected) {
-        consecutiveFingerDetectionsRef.current++;
-        if (consecutiveFingerDetectionsRef.current >= 3) {
-          fingerDetectedRef.current = true;
-        }
-      } else {
-        consecutiveFingerDetectionsRef.current = Math.max(0, consecutiveFingerDetectionsRef.current - 1);
-        if (consecutiveFingerDetectionsRef.current <= 0) {
-          fingerDetectedRef.current = false;
-        }
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
+      
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
-      // Only process signal if finger is detected
-      if (fingerDetectedRef.current) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        setHeartRate(heartBeatResult.bpm);
-        
-        // Only process vital signs if calibration is complete
-        if (calibrationComplete) {
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
-            setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
-          }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      }
+      setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, calibrationComplete]);
-
-  // Get calibration or measurement status
-  const getStatusMessage = () => {
-    if (!isMonitoring) return "";
-    if (!fingerDetectedRef.current) return "Ubique su dedo sobre el lente";
-    
-    if (!calibrationComplete) {
-      return `Calibrando... ${Math.floor(calibrationProgress)}%`;
-    }
-    
-    return `Midiendo: ${elapsedTime}s / 30s`;
-  };
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -384,29 +270,17 @@ const Index = () => {
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
-            isFingerDetected={fingerDetectedRef.current}
+            isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
           />
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
-          <div className="px-4 py-2 flex justify-between items-center bg-black/50">
-            <div className="text-white text-lg">
-              {getStatusMessage()}
-            </div>
-            <div className="text-white text-lg">
-              {fingerDetectedRef.current ? 
-                <span className="text-green-500">Dedo Detectado</span> : 
-                <span className="text-gray-400">Sin Detección</span>
-              }
-            </div>
-          </div>
-
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
               quality={lastSignal?.quality || 0}
-              isFingerDetected={fingerDetectedRef.current}
+              isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
@@ -442,11 +316,7 @@ const Index = () => {
 
           {isMonitoring && (
             <div className="absolute bottom-40 left-0 right-0 text-center">
-              {!calibrationComplete ? (
-                <span className="text-xl font-medium text-blue-300">Calibración: {Math.floor(calibrationProgress)}%</span>
-              ) : (
-                <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
-              )}
+              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
             </div>
           )}
 

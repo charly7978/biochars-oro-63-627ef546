@@ -1,10 +1,19 @@
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
-import type { VitalSignsResult } from '../types/vital-signs';
-import { ArrhythmiaWindow, ArrhythmiaAnalyzer, ArrhythmiaConfig } from './arrhythmia/arrhythmiaTypes';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
+import { ArrhythmiaAnalyzer } from './arrhythmia/ArrhythmiaAnalyzer';
+import { ArrhythmiaConfig } from './arrhythmia/types';
 
+interface ArrhythmiaWindow {
+  start: number;
+  end: number;
+}
+
+/**
+ * Hook for processing vital signs with direct algorithms
+ * Measurements ALWAYS start from zero with NO simulation
+ */
 export const useVitalSignsProcessor = () => {
   // State management
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
@@ -16,8 +25,6 @@ export const useVitalSignsProcessor = () => {
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
-  const calibrationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const calibrationProgressRef = useRef<number>(0);
   
   // Configuration with wider physiological ranges for direct measurement
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
@@ -37,10 +44,6 @@ export const useVitalSignsProcessor = () => {
   const WEAK_SIGNAL_THRESHOLD = 0.10; // Increased threshold
   const MAX_CONSECUTIVE_WEAK_SIGNALS = 3; // Decreased tolerance for weak signals
   
-  // Track when calibration was last checked
-  const calibrationCheckIntervalRef = useRef<number>(0);
-  const CALIBRATION_CHECK_INTERVAL = 50; // ms
-  
   // Initialize processor components - always direct measurement
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT", {
@@ -52,23 +55,7 @@ export const useVitalSignsProcessor = () => {
     processorRef.current = new VitalSignsProcessor();
     arrhythmiaAnalyzerRef.current = new ArrhythmiaAnalyzer(arrhythmiaConfig.current);
     
-    // Set up an interval to continuously check calibration progress
-    const checkInterval = setInterval(() => {
-      if (processorRef.current) {
-        const progress = processorRef.current.getCalibrationProgress();
-        calibrationProgressRef.current = progress;
-        console.log("useVitalSignsProcessor: Continuous calibration check:", progress);
-      }
-    }, 200); // Check every 200ms
-    
-    calibrationIntervalRef.current = checkInterval;
-    
     return () => {
-      if (calibrationIntervalRef.current) {
-        clearInterval(calibrationIntervalRef.current);
-        calibrationIntervalRef.current = null;
-      }
-      
       console.log("useVitalSignsProcessor: Processor cleanup", {
         sessionId: sessionId.current,
         totalArrhythmias: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
@@ -90,7 +77,8 @@ export const useVitalSignsProcessor = () => {
   }, []);
   
   /**
-   * Process PPG signal with improved calibration feedback
+   * Process PPG signal directly without simulation or reference values
+   * ALWAYS uses direct measurement from signal
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) {
@@ -109,36 +97,17 @@ export const useVitalSignsProcessor = () => {
     
     processedSignals.current++;
     
-    // More frequent logging for calibration progress
-    const now = Date.now();
-    if (now - calibrationCheckIntervalRef.current > CALIBRATION_CHECK_INTERVAL) {
-      calibrationCheckIntervalRef.current = now;
-      
-      // Log calibration progress more frequently during early calibration phase
-      if (!processorRef.current.isCalibrationComplete() && processedSignals.current < 100) {
-        const progress = processorRef.current.getCalibrationProgress();
-        calibrationProgressRef.current = progress;
-        console.log("useVitalSignsProcessor: Current calibration progress:", progress);
-      }
-    }
-    
-    // Periodic logging for calibration progress - helps debug stalled calibration
-    if (processedSignals.current % 10 === 0) {
-      const progress = processorRef.current.getCalibrationProgress();
-      calibrationProgressRef.current = progress;
-      console.log("useVitalSignsProcessor: Calibration progress check:", {
-        progress,
-        phase: processorRef.current.isCalibrationComplete() ? 'completed' : 'calibrating',
-        processedSignals: processedSignals.current,
-        value: Math.abs(value)
-      });
-    }
-    
-    // Check for weak signal to detect finger removal
+    // Check for weak signal to detect finger removal - stricter check
     if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
       consecutiveWeakSignalsRef.current++;
       
+      // If too many weak signals, return zeros
       if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
+        console.log("useVitalSignsProcessor: Too many weak signals, returning zeros", {
+          weakSignals: consecutiveWeakSignalsRef.current,
+          threshold: MAX_CONSECUTIVE_WEAK_SIGNALS,
+          value
+        });
         return {
           spo2: 0,
           pressure: "--/--",
@@ -151,39 +120,45 @@ export const useVitalSignsProcessor = () => {
         };
       }
     } else {
+      // Reset weak signal counter
       consecutiveWeakSignalsRef.current = 0;
     }
     
-    // Periodic logging for debugging (reduced frequency)
-    if (processedSignals.current % 100 === 0) {
-      console.log("useVitalSignsProcessor: Processing signal", {
+    // Logging for diagnostics (less frequent)
+    if (processedSignals.current % 45 === 0) {
+      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
         rrDataPresent: !!rrData,
-        calibrationProgress: processorRef.current.getCalibrationProgress()
+        rrIntervals: rrData?.intervals.length || 0,
+        arrhythmiaCount: arrhythmiaAnalyzerRef.current.getArrhythmiaCount(),
+        signalNumber: processedSignals.current,
+        sessionId: sessionId.current,
+        weakSignalCount: consecutiveWeakSignalsRef.current
       });
     }
     
-    // Process signal through the processor
+    // Process signal directly through processor - no simulation
     let result = processorRef.current.processSignal(value, rrData);
     const currentTime = Date.now();
     
     // Process arrhythmias if there is enough data and signal is good
+    // More strict requirements for valid signal
     if (rrData && 
-        rrData.intervals.length >= 4 && 
+        rrData.intervals.length >= 4 && // Increased requirement 
         consecutiveWeakSignalsRef.current === 0) {
       
       // Only process with good RR data quality
       const validRRIntervals = rrData.intervals.filter(interval => 
-        interval > 400 && interval < 1500
+        interval > 400 && interval < 1500 // More strict range: 40-150 BPM
       );
       
-      if (validRRIntervals.length >= 3) {
-        // Analyze data directly
+      if (validRRIntervals.length >= 3) { // Require at least 3 valid intervals
+        // Analyze data directly - no simulation
         const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
         result = arrhythmiaResult;
         
-        // Handle arrhythmia visualization
-        if (result.arrhythmiaStatus.includes("ARRITMIA DETECTADA") && result.lastArrhythmiaData) {
+        // If arrhythmia is detected, register visualization window
+        if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
           const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
           
           // Window based on heart rate
@@ -201,71 +176,55 @@ export const useVitalSignsProcessor = () => {
       }
     }
     
+    // Log processed signals every 100 frames
+    if (processedSignals.current % 100 === 0) {
+      console.log("useVitalSignsProcessor: Processing status", {
+        processed: processedSignals.current,
+        pressure: result.pressure,
+        spo2: result.spo2,
+        glucose: result.glucose,
+        hasValidBP: result.pressure !== "--/--",
+        timeSinceLastBPUpdate: currentTime - lastBPUpdateRef.current,
+        weakSignalCount: consecutiveWeakSignalsRef.current
+      });
+    }
+    
     // Update signal log
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
+    // Always return current result, never cache old ones
+    // This ensures every measurement is coming directly from the signal
     return result;
   }, [addArrhythmiaWindow]);
-  
-  /**
-   * Check if calibration is complete
-   */
-  const isCalibrationComplete = useCallback(() => {
-    if (!processorRef.current) return false;
-    const isComplete = processorRef.current.isCalibrationComplete();
-    console.log("useVitalSignsProcessor: Calibration complete check:", isComplete);
-    return isComplete;
-  }, []);
-  
-  /**
-   * Get current calibration progress percentage
-   */
-  const getCalibrationProgress = useCallback(() => {
-    if (!processorRef.current) {
-      console.log("useVitalSignsProcessor: Processor not initialized for getCalibrationProgress");
-      return 1;
-    }
-    const progress = processorRef.current.getCalibrationProgress();
-    calibrationProgressRef.current = progress;
-    
-    // More frequent logging for debugging early calibration
-    if (progress < 10 || progress % 10 < 1) {
-      console.log("useVitalSignsProcessor: Calibration progress update:", progress);
-    }
-    
-    return progress;
-  }, []);
 
   /**
-   * Reset processors but retain last valid results
+   * Perform complete reset - always start measurements from zero
+   * No simulations or reference values
    */
   const reset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return null;
     
-    console.log("useVitalSignsProcessor: Reset initiated with calibration");
+    console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode");
     
-    const lastResults = processorRef.current.reset();
-    if (lastResults) {
-      setLastValidResults(lastResults);
-    }
-    
+    processorRef.current.reset();
     arrhythmiaAnalyzerRef.current.reset();
     setArrhythmiaWindows([]);
-    lastBPUpdateRef.current = Date.now();
-    consecutiveWeakSignalsRef.current = 0;
-    calibrationProgressRef.current = 1;
+    setLastValidResults(null); // Always clear previous results
+    lastBPUpdateRef.current = Date.now(); // Reset BP update timer
+    consecutiveWeakSignalsRef.current = 0; // Reset weak signal counter
     
-    console.log("useVitalSignsProcessor: Reset completed with calibration retention");
-    return lastResults;
+    console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
+    return null; // Always return null to ensure measurements start from zero
   }, []);
   
   /**
    * Perform full reset - clear all data and reinitialize processors
+   * No simulations or reference values
    */
   const fullReset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return;
     
-    console.log("useVitalSignsProcessor: Full reset initiated");
+    console.log("useVitalSignsProcessor: Full reset initiated - DIRECT MEASUREMENT mode");
     
     processorRef.current.fullReset();
     arrhythmiaAnalyzerRef.current.reset();
@@ -273,26 +232,22 @@ export const useVitalSignsProcessor = () => {
     setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
-    lastBPUpdateRef.current = Date.now();
-    consecutiveWeakSignalsRef.current = 0;
-    calibrationProgressRef.current = 1;
+    lastBPUpdateRef.current = Date.now(); // Reset BP update timer
+    consecutiveWeakSignalsRef.current = 0; // Reset weak signal counter
     
-    console.log("useVitalSignsProcessor: Full reset complete - all data cleared");
+    console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
   }, []);
 
   return {
     processSignal,
     reset,
     fullReset,
-    isCalibrationComplete,
-    getCalibrationProgress,
     arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
-    lastValidResults,
+    lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
     debugInfo: {
       processedSignals: processedSignals.current,
-      signalLog: signalLog.current.slice(-10),
-      calibrationProgress: calibrationProgressRef.current
+      signalLog: signalLog.current.slice(-10)
     }
   };
 };

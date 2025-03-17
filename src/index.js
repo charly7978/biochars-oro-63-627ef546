@@ -25,16 +25,8 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [calibrationComplete, setCalibrationComplete] = useState(false);
-  const [calibrationProgress, setCalibrationProgress] = useState(0);
-  const [arrhythmiaCalibrationProgress, setArrhythmiaCalibrationProgress] = useState(0);
-  const [arrhythmiaCalibrationComplete, setArrhythmiaCalibrationComplete] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  
   const measurementTimerRef = useRef(null);
-  const calibrationTimerRef = useRef(null);
-  const consecutiveFingerDetectionsRef = useRef(0);
-  const fingerDetectedRef = useRef(false);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -51,6 +43,15 @@ const Index = () => {
         await elem.mozRequestFullScreen({ navigationUI: "hide" });
       } else if (elem.msRequestFullscreen) {
         await elem.msRequestFullscreen({ navigationUI: "hide" });
+      }
+      
+      if (window.navigator.userAgent.match(/Android/i)) {
+        if (window.AndroidFullScreen) {
+          window.AndroidFullScreen.immersiveMode(
+            function() { console.log('Immersive mode enabled'); },
+            function() { console.log('Failed to enable immersive mode'); }
+          );
+        }
       }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
@@ -111,40 +112,7 @@ const Index = () => {
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
-    setCalibrationComplete(false);
-    setCalibrationProgress(0);
-    setArrhythmiaCalibrationProgress(0);
-    setArrhythmiaCalibrationComplete(false);
     startProcessing();
-    
-    toast.info("Iniciando calibración (8 segundos)", {
-      duration: 3000
-    });
-    
-    console.log("Starting calibration timer");
-    calibrationTimerRef.current = window.setInterval(() => {
-      setCalibrationProgress(prev => {
-        console.log("Updating calibration progress:", prev);
-        const newProgress = prev + (100 / 8); // 8 seconds for 0-100%
-        
-        if (newProgress >= 100) {
-          clearInterval(calibrationTimerRef.current);
-          calibrationTimerRef.current = null;
-          setCalibrationComplete(true);
-          startMeasurementTimer();
-          
-          toast.success("Calibración completa, iniciando medición", {
-            duration: 3000
-          });
-          
-          return 100;
-        }
-        return newProgress;
-      });
-    }, 1000);
-  };
-
-  const startMeasurementTimer = () => {
     setElapsedTime(0);
     
     if (measurementTimerRef.current) {
@@ -182,8 +150,6 @@ const Index = () => {
     stopProcessing();
     resetVitalSigns();
     setElapsedTime(0);
-    setCalibrationProgress(0);
-    setCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
@@ -201,11 +167,6 @@ const Index = () => {
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
-    }
-    
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-      calibrationTimerRef.current = null;
     }
   };
 
@@ -215,8 +176,6 @@ const Index = () => {
     stopProcessing();
     resetVitalSigns();
     setElapsedTime(0);
-    setCalibrationProgress(0);
-    setCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
@@ -235,11 +194,6 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-      calibrationTimerRef.current = null;
-    }
   };
 
   const handleStreamReady = (stream) => {
@@ -248,89 +202,68 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    try {
-      if (videoTrack.getCapabilities && videoTrack.getCapabilities().torch) {
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).catch(err => console.error("Error activando linterna:", err));
-      }
+    const capabilities = videoTrack.getCapabilities();
+    if (capabilities.width && capabilities.height) {
+      const maxWidth = capabilities.width.max;
+      const maxHeight = capabilities.height.max;
       
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-      if (!tempCtx) {
-        console.error("No se pudo obtener el contexto 2D");
-        return;
-      }
-      
-      const processImage = async () => {
-        if (!isMonitoring) return;
-        
-        try {
-          const frame = await imageCapture.grabFrame();
-          tempCanvas.width = frame.width;
-          tempCanvas.height = frame.height;
-          tempCtx.drawImage(frame, 0, 0);
-          const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-          processFrame(imageData);
-          
-          if (isMonitoring) {
-            requestAnimationFrame(processImage);
-          }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
-          if (isMonitoring) {
-            setTimeout(() => {
-              requestAnimationFrame(processImage);
-            }, 500);
-          }
-        }
-      };
-
-      processImage();
-    } catch (err) {
-      console.error("Error setting up image processing:", err);
+      videoTrack.applyConstraints({
+        width: { ideal: maxWidth },
+        height: { ideal: maxHeight },
+        torch: true
+      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
+    } else if (videoTrack.getCapabilities()?.torch) {
+      videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      }).catch(err => console.error("Error activando linterna:", err));
     }
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) {
+      console.error("No se pudo obtener el contexto 2D");
+      return;
+    }
+    
+    const processImage = async () => {
+      if (!isMonitoring) return;
+      
+      try {
+        const frame = await imageCapture.grabFrame();
+        tempCanvas.width = frame.width;
+        tempCanvas.height = frame.height;
+        tempCtx.drawImage(frame, 0, 0);
+        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+        processFrame(imageData);
+        
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
+      } catch (error) {
+        console.error("Error capturando frame:", error);
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
+      }
+    };
+
+    processImage();
   };
 
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      if (lastSignal.fingerDetected) {
-        consecutiveFingerDetectionsRef.current++;
-        if (consecutiveFingerDetectionsRef.current >= 3) {
-          fingerDetectedRef.current = true;
-        }
-      } else {
-        consecutiveFingerDetectionsRef.current = Math.max(0, consecutiveFingerDetectionsRef.current - 1);
-        if (consecutiveFingerDetectionsRef.current <= 0) {
-          fingerDetectedRef.current = false;
-        }
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
+      
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
-      if (fingerDetectedRef.current) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        setHeartRate(heartBeatResult.bpm);
-        
-        if (calibrationComplete) {
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
-            
-            if (vitals.arrhythmiaStatus.includes('CALIBRANDO')) {
-              setArrhythmiaCalibrationProgress(prev => Math.min(100, prev + 5));
-              setArrhythmiaCalibrationComplete(false);
-            } else {
-              setArrhythmiaCalibrationComplete(true);
-              setArrhythmiaCalibrationProgress(100);
-            }
-            
-            setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
-          }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      }
+      setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, calibrationComplete]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -351,12 +284,8 @@ const Index = () => {
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
-            isFingerDetected={fingerDetectedRef.current}
+            isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
-            calibrationProgress={calibrationProgress}
-            isCalibrating={!calibrationComplete}
-            arrhythmiaCalibrationProgress={arrhythmiaCalibrationProgress}
-            isArrhythmiaCalibrating={calibrationComplete && !arrhythmiaCalibrationComplete}
           />
         </div>
 
@@ -375,37 +304,29 @@ const Index = () => {
 
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
                   unit="BPM"
+                  calibrationProgress={vitalSigns.calibration?.progress.heartRate}
                 />
                 <VitalSign 
                   label="SPO2"
                   value={vitalSigns.spo2 || "--"}
                   unit="%"
+                  calibrationProgress={vitalSigns.calibration?.progress.spo2}
                 />
                 <VitalSign 
                   label="PRESIÓN ARTERIAL"
                   value={vitalSigns.pressure}
                   unit="mmHg"
+                  calibrationProgress={vitalSigns.calibration?.progress.pressure}
                 />
                 <VitalSign 
                   label="ARRITMIAS"
-                  value={vitalSigns.arrhythmiaStatus.includes('|') ? 
-                    vitalSigns.arrhythmiaStatus.split('|')[0] : 
-                    vitalSigns.arrhythmiaStatus}
-                />
-                <VitalSign 
-                  label="GLUCOSA"
-                  value={vitalSigns.glucose || "--"}
-                  unit="mg/dL"
-                />
-                <VitalSign 
-                  label="TRIGLICÉRIDOS"
-                  value={vitalSigns.lipids?.triglycerides || "--"}
-                  unit="mg/dL"
+                  value={vitalSigns.arrhythmiaStatus}
+                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
                 />
               </div>
             </div>
@@ -413,11 +334,7 @@ const Index = () => {
 
           {isMonitoring && (
             <div className="absolute bottom-40 left-0 right-0 text-center">
-              {!calibrationComplete ? (
-                <span className="text-xl font-medium text-blue-300">Calibración: {Math.floor(calibrationProgress)}%</span>
-              ) : (
-                <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
-              )}
+              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
             </div>
           )}
 
