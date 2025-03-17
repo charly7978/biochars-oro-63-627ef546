@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
-import CameraView from "@/components/camera/CameraView";
+import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
@@ -25,8 +25,10 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [calibrationComplete, setCalibrationComplete] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [arrhythmiaCalibrationProgress, setArrhythmiaCalibrationProgress] = useState(0);
+  const [arrhythmiaCalibrationComplete, setArrhythmiaCalibrationComplete] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   
   const measurementTimerRef = useRef(null);
@@ -106,18 +108,18 @@ const Index = () => {
   }, []);
 
   const startMonitoring = () => {
-    console.log("Starting monitoring");
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
     setCalibrationComplete(false);
     setCalibrationProgress(0);
+    setArrhythmiaCalibrationProgress(0);
+    setArrhythmiaCalibrationComplete(false);
     startProcessing();
-    setElapsedTime(0);
     
-    if (calibrationTimerRef.current) {
-      clearInterval(calibrationTimerRef.current);
-    }
+    toast.info("Iniciando calibración (8 segundos)", {
+      duration: 3000
+    });
     
     console.log("Starting calibration timer");
     calibrationTimerRef.current = window.setInterval(() => {
@@ -130,6 +132,11 @@ const Index = () => {
           calibrationTimerRef.current = null;
           setCalibrationComplete(true);
           startMeasurementTimer();
+          
+          toast.success("Calibración completa, iniciando medición", {
+            duration: 3000
+          });
+          
           return 100;
         }
         return newProgress;
@@ -286,23 +293,44 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
-      
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-        
-        // Update arrhythmia counter
-        if (vitals.arrhythmiaStatus.includes('|')) {
-          setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+    if (lastSignal && isMonitoring) {
+      if (lastSignal.fingerDetected) {
+        consecutiveFingerDetectionsRef.current++;
+        if (consecutiveFingerDetectionsRef.current >= 3) {
+          fingerDetectedRef.current = true;
+        }
+      } else {
+        consecutiveFingerDetectionsRef.current = Math.max(0, consecutiveFingerDetectionsRef.current - 1);
+        if (consecutiveFingerDetectionsRef.current <= 0) {
+          fingerDetectedRef.current = false;
         }
       }
       
-      setSignalQuality(lastSignal.quality);
+      if (fingerDetectedRef.current) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        setHeartRate(heartBeatResult.bpm);
+        
+        if (calibrationComplete) {
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
+            
+            if (vitals.arrhythmiaStatus.includes('CALIBRANDO')) {
+              setArrhythmiaCalibrationProgress(prev => Math.min(100, prev + 5));
+              setArrhythmiaCalibrationComplete(false);
+            } else {
+              setArrhythmiaCalibrationComplete(true);
+              setArrhythmiaCalibrationProgress(100);
+            }
+            
+            setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+          }
+        }
+        
+        setSignalQuality(lastSignal.quality);
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, calibrationComplete]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -311,16 +339,24 @@ const Index = () => {
         width: '100%',
         maxWidth: '100vw',
         maxHeight: '100vh',
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+        touchAction: 'none',
+        userSelect: 'none',
       }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
-            isFingerDetected={lastSignal?.fingerDetected}
+            isFingerDetected={fingerDetectedRef.current}
             signalQuality={signalQuality}
             calibrationProgress={calibrationProgress}
             isCalibrating={!calibrationComplete}
+            arrhythmiaCalibrationProgress={arrhythmiaCalibrationProgress}
+            isArrhythmiaCalibrating={calibrationComplete && !arrhythmiaCalibrationComplete}
           />
         </div>
 
