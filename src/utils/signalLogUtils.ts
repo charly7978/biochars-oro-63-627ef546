@@ -14,8 +14,8 @@ export function updateSignalLog(
   processedSignals: number
 ): {timestamp: number, value: number, result: any}[] {
   // Solo registrar cada X señales para no sobrecargar la memoria
-  // Increased sampling interval for more efficient memory usage
-  if (processedSignals % 30 !== 0) {
+  // Further increased sampling interval for more efficient memory usage
+  if (processedSignals % 40 !== 0) {
     return signalLog;
   }
   
@@ -29,14 +29,14 @@ export function updateSignalLog(
   ];
   
   // Mantener el log a un tamaño manejable
-  // Reduced log size to improve performance
-  const trimmedLog = updatedLog.length > 40 ? updatedLog.slice(-40) : updatedLog;
+  // Further reduced log size to improve performance
+  const trimmedLog = updatedLog.length > 30 ? updatedLog.slice(-30) : updatedLog;
   
-  // Enhanced logging with detection information
+  // Enhanced logging with more detailed detection information
   const fingerDetected = result.fingerDetected ? "SI" : "NO";
   const quality = result.quality || 0;
   
-  console.log(`SignalLog: Calidad: ${quality}, Dedo: ${fingerDetected}, Valor: ${Math.round(value)}`);
+  console.log(`SignalLog: Calidad: ${Math.round(quality)}, Dedo: ${fingerDetected}, Valor: ${Math.round(value)}, Amplitud: ${result.amplitude || 'N/A'}`);
   
   return trimmedLog;
 }
@@ -48,9 +48,9 @@ export function updateSignalLog(
  */
 export function analyzeSignalLog(
   signalLog: {timestamp: number, value: number, result: any}[]
-): { falsePositives: number, stability: number } {
+): { falsePositives: number, stability: number, variationIndex: number } {
   if (signalLog.length < 10) {
-    return { falsePositives: 0, stability: 0 };
+    return { falsePositives: 0, stability: 0, variationIndex: 0 };
   }
   
   // Detectar cambios rápidos en la detección (posibles falsos positivos)
@@ -70,10 +70,20 @@ export function analyzeSignalLog(
   const sum = values.reduce((a, b) => a + b, 0);
   const mean = sum / values.length;
   const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-  const stability = Math.max(0, 100 - Math.min(100, variance));
+  const stability = Math.max(0, 100 - Math.min(100, variance / 2));
+  
+  // Nuevo: calcular índice de variación
+  const deltas = [];
+  for (let i = 1; i < values.length; i++) {
+    deltas.push(Math.abs(values[i] - values[i-1]));
+  }
+  
+  const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  const variationIndex = (avgDelta / mean) * 100;
   
   return {
     falsePositives: detectionChanges / 2, // Approximate count
-    stability
+    stability,
+    variationIndex
   };
 }
