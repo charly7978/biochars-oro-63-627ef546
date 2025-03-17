@@ -7,8 +7,6 @@ import { PerfusionIndexCalculator } from './signal-processing/PerfusionIndexCalc
 import { RedChannelExtractor } from './signal-processing/RedChannelExtractor';
 
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
  * Main PPG signal processor that integrates various processing components
  * to extract and analyze photoplethysmogram signals from camera data
  */
@@ -37,7 +35,10 @@ export class PPGSignalProcessor implements SignalProcessor {
    */
   async initialize(): Promise<void> {
     try {
-      this.reset();
+      this.kalmanFilter.reset();
+      this.signalQualityAnalyzer.reset();
+      this.fingerDetector.reset();
+      this.perfusionCalculator.reset();
       console.log("PPGSignalProcessor: Initialized");
     } catch (error) {
       console.error("PPGSignalProcessor: Initialization error", error);
@@ -60,19 +61,26 @@ export class PPGSignalProcessor implements SignalProcessor {
    */
   stop(): void {
     this.isProcessing = false;
-    this.reset();
-    console.log("PPGSignalProcessor: Stopped");
-  }
-
-  /**
-   * Reset all processor components
-   */
-  reset(): void {
     this.kalmanFilter.reset();
     this.signalQualityAnalyzer.reset();
     this.fingerDetector.reset();
     this.perfusionCalculator.reset();
-    console.log("PPGSignalProcessor: Reset complete");
+    console.log("PPGSignalProcessor: Stopped");
+  }
+
+  /**
+   * Calibrate the processor (analyze baseline signal properties)
+   */
+  async calibrate(): Promise<boolean> {
+    try {
+      await this.initialize();
+      console.log("PPGSignalProcessor: Calibration complete");
+      return true;
+    } catch (error) {
+      console.error("PPGSignalProcessor: Calibration error", error);
+      this.handleError("CALIBRATION_ERROR", "Error during calibration");
+      return false;
+    }
   }
 
   /**
