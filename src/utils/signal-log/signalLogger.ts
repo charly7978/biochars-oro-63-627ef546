@@ -1,11 +1,14 @@
 
+// Fix SignalLogEntry type error
+import { SignalValue } from '../../types/signal';
+
 /**
  * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
  */
 
 export interface SignalLogEntry {
   timestamp: number;
-  value: number;
+  value: SignalValue;
   quality: number;
   isFingerDetected: boolean;
   heartRate?: number;

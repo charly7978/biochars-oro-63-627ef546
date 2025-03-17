@@ -1,33 +1,12 @@
-// Update imports to fix build error
-import { signalLogger, SignalLogEntry } from './signal-log/signalLogger';
 
 /**
  * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
+ * Medical-grade utilities for signal logging and analysis
+ * with strict validation requirements for real signals only
  */
 
-export const updateSignalLog = (
-  value: number,
-  quality: number,
-  isFingerDetected: boolean,
-  heartRate?: number,
-  rmssd?: number
-): void => {
-  const entry: SignalLogEntry = {
-    timestamp: Date.now(),
-    value,
-    quality,
-    isFingerDetected,
-    heartRate,
-    rmssd
-  };
-  
-  signalLogger.logSignal(entry);
-};
-
-export const getSignalLogs = (): SignalLogEntry[] => {
-  return signalLogger.getLogs();
-};
-
-export const clearSignalLogs = (): void => {
-  signalLogger.clear();
-};
+// Re-export all functionality from specialized modules
+export { updateSignalLog } from './signal-log/signalLogger';
+export { validateSignalValue } from './signal-log/validateSignal';
+export { calculateSignalQuality, findSignalPeaks } from './signal-log/qualityAnalyzer';
