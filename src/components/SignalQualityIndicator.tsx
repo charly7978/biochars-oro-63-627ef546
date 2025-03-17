@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { fingerDetectionService } from '../core/FingerDetectionService';
 
 interface SignalQualityIndicatorProps {
   quality: number;
@@ -10,7 +9,7 @@ interface SignalQualityIndicatorProps {
 
 /**
  * Componente que muestra la calidad de la señal PPG
- * Usa el servicio centralizado de detección de dedo para consistencia
+ * Incluye detección específica para Android y consejos de ayuda
  */
 const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
   // Estado local
@@ -21,7 +20,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   
   // Constantes de configuración
   const historySize = 5; // Ventana de historial para promedio
-  const QUALITY_THRESHOLD = 50;
+  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
+  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
 
   // Detectar plataforma
   useEffect(() => {
