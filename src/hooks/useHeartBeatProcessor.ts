@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
 
