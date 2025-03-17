@@ -49,9 +49,7 @@ const CameraView = ({
 
   // Log calibration progress changes
   useEffect(() => {
-    if (calibrationProgress > 0) {
-      console.log('CameraView: Calibration progress updated:', calibrationProgress);
-    }
+    console.log('CameraView: Calibration progress updated:', calibrationProgress);
   }, [calibrationProgress]);
 
   const startCamera = async () => {
