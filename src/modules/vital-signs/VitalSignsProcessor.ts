@@ -40,27 +40,12 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // CAMBIO CRÍTICO: Umbrales extremadamente reducidos
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.0001; // Reducido al mínimo (0.001 -> 0.0001)
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.01; // Reducido al mínimo (0.05 -> 0.01)
-  private readonly MIN_PPG_VALUES = 1; // Reducido al mínimo (5 -> 1)
-
-  // Valores predeterminados para cuando no tenemos suficientes datos
-  private defaultValues: VitalSignsResult = {
-    spo2: 98,
-    pressure: "120/80",
-    arrhythmiaStatus: "SIN ARRITMIAS|0",
-    glucose: 105,
-    lipids: {
-      totalCholesterol: 180,
-      triglycerides: 150
-    },
-    confidence: {
-      glucose: 0.5,
-      lipids: 0.5,
-      overall: 0.5
-    }
-  };
+  // No storage of previous results
+  
+  // Stricter thresholds for more reliable physiological detection
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Increased
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Increased
+  private readonly MIN_PPG_VALUES = 15; // Minimum values required for processing
 
   /**
    * Constructor that initializes all specialized processors
@@ -73,12 +58,6 @@ export class VitalSignsProcessor {
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
-    
-    // CAMBIO CRÍTICO: Configurar procesador de arritmia para ser ultra permisivo
-    this.arrhythmiaProcessor.updateConfig({
-      minIntervals: 2, // Mínimo posible (3 -> 2)
-      calibrationTime: 0 // Sin calibración (500 -> 0)
-    });
   }
   
   /**
@@ -89,19 +68,21 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // CAMBIO CRÍTICO: Siempre procesar, incluso con señal débil
-    if (Math.abs(ppgValue) < 0.0001) { 
-      // Usar un valor mínimo
-      ppgValue = 0.001;
+    // Check for near-zero signal - indicates no finger or poor placement
+    if (Math.abs(ppgValue) < 0.005) {
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+      return this.createEmptyResults();
     }
     
     // Apply filtering to the PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
     // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData ? 
+    const arrhythmiaResult = rrData && 
+                           rrData.intervals.length >= 3 && 
+                           rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "SIN ARRITMIAS|0", lastArrhythmiaData: null };
+                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -112,29 +93,36 @@ export class VitalSignsProcessor {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // CAMBIO CRÍTICO: Retornar valores predeterminados si no hay suficientes datos
+    // Only process with enough data
     if (ppgValues.length < this.MIN_PPG_VALUES) {
-      console.log("VitalSignsProcessor: Usando valores predeterminados (datos insuficientes)");
-      return {
-        ...this.defaultValues,
-        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-        lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
-      };
+      console.log("VitalSignsProcessor: Insufficient data points", {
+        have: ppgValues.length,
+        need: this.MIN_PPG_VALUES
+      });
+      return this.createEmptyResults();
     }
     
-    // CAMBIO CRÍTICO: Continuar incluso con amplitud mínima
-    const signalMin = Math.min(...ppgValues);
-    const signalMax = Math.max(...ppgValues);
+    // Verify signal amplitude is sufficient
+    const signalMin = Math.min(...ppgValues.slice(-15));
+    const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
     
+    if (amplitude < this.MIN_SIGNAL_AMPLITUDE) {
+      console.log("VitalSignsProcessor: Signal amplitude too low", {
+        amplitude,
+        threshold: this.MIN_SIGNAL_AMPLITUDE
+      });
+      return this.createEmptyResults();
+    }
+    
     // Calculate SpO2 using direct approach
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues);
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using only signal characteristics
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues);
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
-      : "120/80"; // Valor predeterminado si no se puede calcular
+      : "--/--";
     
     // Calculate glucose with direct real-time data
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
@@ -147,30 +135,62 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // CAMBIO CRÍTICO: Usar valores predeterminados solo si los calculados no son válidos
-    const finalSpo2 = (spo2 > 90 && spo2 <= 100) ? spo2 : this.defaultValues.spo2;
-    const finalGlucose = (glucose >= 70 && glucose <= 200) ? glucose : this.defaultValues.glucose;
-    const finalLipids = {
-      totalCholesterol: lipids.totalCholesterol > 100 ? lipids.totalCholesterol : this.defaultValues.lipids.totalCholesterol,
-      triglycerides: lipids.triglycerides > 50 ? lipids.triglycerides : this.defaultValues.lipids.triglycerides
+    // Only show values if confidence exceeds threshold
+    const finalGlucose = glucoseConfidence > this.MIN_CONFIDENCE_THRESHOLD ? glucose : 0;
+    const finalLipids = lipidsConfidence > this.MIN_CONFIDENCE_THRESHOLD ? lipids : {
+      totalCholesterol: 0,
+      triglycerides: 0
     };
 
-    // Prepare result with all metrics
+    console.log("VitalSignsProcessor: Results with confidence", {
+      spo2,
+      pressure,
+      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      glucose: finalGlucose,
+      glucoseConfidence,
+      lipidsConfidence,
+      signalAmplitude: amplitude,
+      confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD
+    });
+
+    // Prepare result with all metrics - no caching or persistence
     return {
-      spo2: finalSpo2,
+      spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
       glucose: finalGlucose,
       lipids: finalLipids,
       confidence: {
-        glucose: Math.max(0.5, glucoseConfidence), // Mínimo 0.5
-        lipids: Math.max(0.5, lipidsConfidence),
-        overall: Math.max(0.5, overallConfidence)
+        glucose: glucoseConfidence,
+        lipids: lipidsConfidence,
+        overall: overallConfidence
       }
     };
   }
   
+  /**
+   * Creates an empty result for when there is no valid data
+   * Always returns zeros, not reference values
+   */
+  private createEmptyResults(): VitalSignsResult {
+    return {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      },
+      confidence: {
+        glucose: 0,
+        lipids: 0,
+        overall: 0
+      }
+    };
+  }
+
   /**
    * Reset the processor
    * Ensures a clean state with no carried over values
@@ -183,17 +203,15 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    
-    // CAMBIO CRÍTICO: Retornar valores predeterminados al resetear
-    return this.defaultValues;
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
-   * Get the last valid results
+   * Get the last valid results - always returns null
+   * Forces fresh measurements
    */
   public getLastValidResults(): VitalSignsResult | null {
-    // CAMBIO CRÍTICO: Siempre devolver valores predeterminados
-    return this.defaultValues;
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
@@ -202,12 +220,5 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
-  }
-  
-  /**
-   * Aplica configuración de calibración - No hace nada
-   */
-  public applyCalibration(calibration: any): void {
-    console.log("VitalSignsProcessor: Calibración ignorada, usando valores predeterminados");
   }
 }

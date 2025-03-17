@@ -4,18 +4,10 @@ import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/Vi
 import { updateSignalLog } from '../utils/signalLogUtils';
 import { ArrhythmiaAnalyzer } from './arrhythmia/ArrhythmiaAnalyzer';
 import { ArrhythmiaConfig } from './arrhythmia/types';
-import { CalibrationResult } from '../modules/AutoCalibrationSystem';
 
 interface ArrhythmiaWindow {
   start: number;
   end: number;
-}
-
-interface CalibrationData {
-  baselineOffset: number;
-  amplitudeScalingFactor: number;
-  noiseFloor: number;
-  signalQualityThreshold: number;
 }
 
 /**
@@ -26,7 +18,6 @@ export const useVitalSignsProcessor = () => {
   // State management
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
-  const [calibrationData, setCalibrationData] = useState<CalibrationData | null>(null);
   
   // References for internal state
   const processorRef = useRef<VitalSignsProcessor | null>(null);
@@ -53,11 +44,6 @@ export const useVitalSignsProcessor = () => {
   const WEAK_SIGNAL_THRESHOLD = 0.10; // Increased threshold
   const MAX_CONSECUTIVE_WEAK_SIGNALS = 3; // Decreased tolerance for weak signals
   
-  // Control de calibración
-  const isCalibrationAppliedRef = useRef<boolean>(false);
-  const calibrationValuesRef = useRef<number[]>([]);
-  const MIN_CALIBRATION_SAMPLES = 30;
-  
   // Initialize processor components - always direct measurement
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT", {
@@ -77,42 +63,6 @@ export const useVitalSignsProcessor = () => {
         timestamp: new Date().toISOString()
       });
     };
-  }, []);
-  
-  /**
-   * Aplica la calibración del sistema a los procesadores
-   */
-  const applyCalibration = useCallback((calibrationResult: CalibrationResult) => {
-    if (!processorRef.current) return;
-    
-    console.log("useVitalSignsProcessor: Aplicando calibración", calibrationResult);
-    
-    const calibrationData: CalibrationData = {
-      baselineOffset: calibrationResult.baselineOffset,
-      amplitudeScalingFactor: calibrationResult.amplitudeScalingFactor,
-      noiseFloor: calibrationResult.noiseFloor,
-      signalQualityThreshold: calibrationResult.signalQualityThreshold
-    };
-    
-    setCalibrationData(calibrationData);
-    isCalibrationAppliedRef.current = true;
-    
-    // Update arrhythmia configuration safely
-    if (arrhythmiaAnalyzerRef.current) {
-      const newConfig: Partial<ArrhythmiaConfig> = {
-        SIGNAL_QUALITY_THRESHOLD: calibrationResult.confidenceThreshold,
-        SEQUENTIAL_DETECTION_THRESHOLD: Math.max(0.15, calibrationResult.detectionSensitivity - 0.1)
-      };
-      
-      // Check if updateConfig method exists and call it safely
-      const analyzerAny = arrhythmiaAnalyzerRef.current as any;
-      if (typeof analyzerAny.updateConfig === 'function') {
-        analyzerAny.updateConfig(newConfig);
-      } else {
-        // Fallback if method doesn't exist
-        console.log("useVitalSignsProcessor: updateConfig not available, using defaults");
-      }
-    }
   }, []);
   
   /**
@@ -146,16 +96,6 @@ export const useVitalSignsProcessor = () => {
     }
     
     processedSignals.current++;
-    
-    // Recoger muestras para calibración si no ha sido aplicada
-    if (!isCalibrationAppliedRef.current && processedSignals.current < 200) {
-      calibrationValuesRef.current.push(value);
-      
-      // Si tenemos suficientes muestras, realizar una calibración básica
-      if (calibrationValuesRef.current.length === MIN_CALIBRATION_SAMPLES) {
-        performBasicCalibration();
-      }
-    }
     
     // Check for weak signal to detect finger removal - stricter check
     if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
@@ -193,8 +133,7 @@ export const useVitalSignsProcessor = () => {
         arrhythmiaCount: arrhythmiaAnalyzerRef.current.getArrhythmiaCount(),
         signalNumber: processedSignals.current,
         sessionId: sessionId.current,
-        weakSignalCount: consecutiveWeakSignalsRef.current,
-        isCalibrated: isCalibrationAppliedRef.current
+        weakSignalCount: consecutiveWeakSignalsRef.current
       });
     }
     
@@ -246,8 +185,7 @@ export const useVitalSignsProcessor = () => {
         glucose: result.glucose,
         hasValidBP: result.pressure !== "--/--",
         timeSinceLastBPUpdate: currentTime - lastBPUpdateRef.current,
-        weakSignalCount: consecutiveWeakSignalsRef.current,
-        isCalibrated: isCalibrationAppliedRef.current
+        weakSignalCount: consecutiveWeakSignalsRef.current
       });
     }
     
@@ -258,88 +196,6 @@ export const useVitalSignsProcessor = () => {
     // This ensures every measurement is coming directly from the signal
     return result;
   }, [addArrhythmiaWindow]);
-  
-  /**
-   * Perform basic calibration using collected samples
-   */
-  const performBasicCalibration = useCallback(() => {
-    if (isCalibrationAppliedRef.current || calibrationValuesRef.current.length < MIN_CALIBRATION_SAMPLES) return;
-    
-    try {
-      const samples = calibrationValuesRef.current;
-      
-      // Basic statistical analysis
-      const avg = samples.reduce((sum, val) => sum + val, 0) / samples.length;
-      const min = Math.min(...samples);
-      const max = Math.max(...samples);
-      const range = max - min;
-      
-      // Calculate noise estimate
-      let sumDiffSquared = 0;
-      for (let i = 1; i < samples.length; i++) {
-        const diff = samples[i] - samples[i-1];
-        sumDiffSquared += diff * diff;
-      }
-      const noiseEstimate = Math.sqrt(sumDiffSquared / (samples.length - 1));
-      
-      // Calculate scaling factor
-      const targetAmplitude = 1.0;
-      const currentAmplitude = range;
-      const scalingFactor = currentAmplitude > 0 ? 
-        targetAmplitude / currentAmplitude : 1.0;
-      
-      // Calculate quality threshold
-      const signalToNoise = range / (noiseEstimate || 0.001);
-      let qualityThreshold = 45; // Base
-      
-      if (signalToNoise > 15) {
-        qualityThreshold = 35; // Excellent SNR
-      } else if (signalToNoise > 8) {
-        qualityThreshold = 40; // Good SNR
-      } else if (signalToNoise < 4) {
-        qualityThreshold = 55; // Poor SNR
-      }
-      
-      const calibration: CalibrationData = {
-        baselineOffset: avg,
-        amplitudeScalingFactor: Math.max(0.1, Math.min(10.0, scalingFactor)),
-        noiseFloor: noiseEstimate,
-        signalQualityThreshold: qualityThreshold
-      };
-      
-      console.log("useVitalSignsProcessor: Basic calibration complete", {
-        calibration,
-        statistics: {
-          avg, min, max, range, noiseEstimate, signalToNoise
-        },
-        samplesUsed: samples.length
-      });
-      
-      setCalibrationData(calibration);
-      isCalibrationAppliedRef.current = true;
-      
-      // Update arrhythmia configuration
-      if (arrhythmiaAnalyzerRef.current) {
-        const detectionSensitivity = signalToNoise > 10 ? 0.3 : 0.45;
-        
-        const newConfig: Partial<ArrhythmiaConfig> = {
-          SIGNAL_QUALITY_THRESHOLD: Math.max(0.3, (10 / Math.max(1, signalToNoise)) * 0.1),
-          SEQUENTIAL_DETECTION_THRESHOLD: detectionSensitivity
-        };
-        
-        // Check if updateConfig method exists and call it safely
-        const analyzerAny = arrhythmiaAnalyzerRef.current as any;
-        if (typeof analyzerAny.updateConfig === 'function') {
-          analyzerAny.updateConfig(newConfig);
-        } else {
-          // Fallback if method doesn't exist
-          console.log("useVitalSignsProcessor: updateConfig not available in performBasicCalibration");
-        }
-      }
-    } catch (err) {
-      console.error("useVitalSignsProcessor: Error durante calibración básica:", err);
-    }
-  }, []);
 
   /**
    * Perform complete reset - always start measurements from zero
@@ -356,11 +212,6 @@ export const useVitalSignsProcessor = () => {
     setLastValidResults(null); // Always clear previous results
     lastBPUpdateRef.current = Date.now(); // Reset BP update timer
     consecutiveWeakSignalsRef.current = 0; // Reset weak signal counter
-    
-    // Reset calibration
-    isCalibrationAppliedRef.current = false;
-    calibrationValuesRef.current = [];
-    setCalibrationData(null);
     
     console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
     return null; // Always return null to ensure measurements start from zero
@@ -384,11 +235,6 @@ export const useVitalSignsProcessor = () => {
     lastBPUpdateRef.current = Date.now(); // Reset BP update timer
     consecutiveWeakSignalsRef.current = 0; // Reset weak signal counter
     
-    // Reset calibration
-    isCalibrationAppliedRef.current = false;
-    calibrationValuesRef.current = [];
-    setCalibrationData(null);
-    
     console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
   }, []);
 
@@ -396,12 +242,9 @@ export const useVitalSignsProcessor = () => {
     processSignal,
     reset,
     fullReset,
-    applyCalibration,
     arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
     lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
-    calibrationData,
-    isCalibrated: isCalibrationAppliedRef.current,
     debugInfo: {
       processedSignals: processedSignals.current,
       signalLog: signalLog.current.slice(-10)

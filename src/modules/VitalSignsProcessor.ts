@@ -1,57 +1,44 @@
 
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
-import { CalibrationResult } from './AutoCalibrationSystem';
 
 /**
- * Procesador de señales vitales mejorado con calibración avanzada
- * Todas las mediciones provienen EXCLUSIVAMENTE de la señal PPG real
- * Sin ningún tipo de simulación o datos de referencia
+ * Compatibility wrapper that maintains the original interface
+ * while using direct measurement implementation.
+ * 
+ * This file ensures all measurements start from zero and use only real data.
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
-  private calibrationResult: CalibrationResult | null = null;
+  
+  // Set wider thresholds to accommodate more physiological variations
+  private readonly WINDOW_SIZE = 300;
+  private readonly SPO2_CALIBRATION_FACTOR = 1.0; // Neutral calibration factor
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.015; // Lowered threshold for greater sensitivity
+  private readonly SPO2_WINDOW = 3; // Shortened for faster initial response
+  private readonly SMA_WINDOW = 3;
+  private readonly RR_WINDOW_SIZE = 5; // Reduced window size for faster response
+  private readonly RMSSD_THRESHOLD = 12; // Lowered for better arrhythmia detection
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 800; // Shortened learning period
+  private readonly PEAK_THRESHOLD = 0.15; // Lowered for greater sensitivity
   
   /**
-   * Constructor que inicializa el procesador sin simulaciones
+   * Constructor that initializes the internal direct measurement processor
    */
   constructor() {
-    console.log("VitalSignsProcessor wrapper: Inicializando con medición directa pura");
+    console.log("VitalSignsProcessor wrapper: Initializing with direct measurement mode");
     this.processor = new CoreProcessor();
   }
   
   /**
-   * Aplica parámetros de calibración al procesador
-   */
-  public applyCalibration(calibration: CalibrationResult) {
-    console.log("VitalSignsProcessor: Aplicando calibración", calibration);
-    this.calibrationResult = calibration;
-    
-    // Aquí se aplican los parámetros de calibración al procesador interno
-    // El procesador interno puede que no tenga este método, por lo que hacemos
-    // una verificación segura con tipo
-    const processorAny = this.processor as any;
-    if (typeof processorAny.applyCalibration === 'function') {
-      processorAny.applyCalibration(calibration);
-    }
-  }
-  
-  /**
    * Process a PPG signal and RR data to get vital signs
-   * Mantiene exactamente la misma firma de método para compatibilidad
-   * Siempre realiza medición directa sin valores de referencia
+   * Maintains exactly the same method signature for compatibility
+   * Always performs direct measurement with no reference values
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Si hay calibración disponible, aplicar transformación a la señal
-    if (this.calibrationResult) {
-      // Normalizar la señal según la calibración
-      ppgValue = (ppgValue - this.calibrationResult.baselineOffset) * 
-                 this.calibrationResult.amplitudeScalingFactor;
-    }
-    
-    // Procesamiento directo sin ajustes o simulaciones
+    // Direct processing with no adjustments or simulations
     return this.processor.processSignal(ppgValue, rrData);
   }
   
@@ -60,7 +47,7 @@ export class VitalSignsProcessor {
    * Ensures all measurements start from zero
    */
   public reset() {
-    console.log("VitalSignsProcessor wrapper: Reset - todas las mediciones comenzarán desde cero");
+    console.log("VitalSignsProcessor wrapper: Reset - all measurements will start from zero");
     return this.processor.reset();
   }
   
@@ -69,9 +56,8 @@ export class VitalSignsProcessor {
    * Removes any history and ensures fresh start
    */
   public fullReset(): void {
-    console.log("VitalSignsProcessor wrapper: Full reset - eliminando todo historial de datos");
+    console.log("VitalSignsProcessor wrapper: Full reset - removing all data history");
     this.processor.fullReset();
-    this.calibrationResult = null;
   }
 }
 
