@@ -2,6 +2,9 @@
 import { useState, useCallback } from 'react';
 import { ArrhythmiaWindow } from './types';
 
+/**
+ * Hook for managing arrhythmia visualization windows
+ */
 export function useArrhythmiaWindows() {
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   

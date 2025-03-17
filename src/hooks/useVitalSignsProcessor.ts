@@ -1,5 +1,5 @@
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
 import { SignalAnalyzer } from '../modules/signal-analysis/SignalAnalyzer';
@@ -7,13 +7,14 @@ import { useArrhythmiaWindows } from './vital-signs/useArrhythmiaWindows';
 import { useSignalQualityMonitor } from './vital-signs/useSignalQualityMonitor';
 import { useSignalLogger } from './vital-signs/useSignalLogger';
 import { VitalSignsProcessorHookReturn } from './vital-signs/types';
+import { useVitalSignsState } from './vital-signs/useVitalSignsState';
 
 /**
  * Hook for processing vital signs with direct algorithms
  */
 export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
-  // State management
-  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
+  // Get state management
+  const { lastValidResults, setLastValidResults } = useVitalSignsState();
   
   // References for internal state
   const processorRef = useRef<VitalSignsProcessor | null>(null);
@@ -50,7 +51,7 @@ export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
   /**
    * Process PPG signal directly without simulation or reference values
    */
-  const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
+  const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     if (!processorRef.current || !arrhythmiaProcessorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
       return SignalAnalyzer.createEmptyResult();
@@ -99,14 +100,14 @@ export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
     // Log the signal and result
     signalLogger.logSignal(value, result);
     
+    // Store the last valid result
+    setLastValidResults(result);
+    
     return result;
-  }, [addArrhythmiaWindow, signalLogger, signalQualityMonitor]);
+  }, [addArrhythmiaWindow, signalLogger, signalQualityMonitor, setLastValidResults]);
 
-  /**
-   * Perform complete reset - always start measurements from zero
-   */
   const reset = useCallback(() => {
-    if (!processorRef.current || !arrhythmiaProcessorRef.current) return null;
+    if (!processorRef.current || !arrhythmiaProcessorRef.current) return;
     
     console.log("useVitalSignsProcessor: Reset initiated");
     
@@ -118,12 +119,8 @@ export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
     signalQualityMonitor.reset();
     
     console.log("useVitalSignsProcessor: Reset completed");
-    return null;
-  }, [resetArrhythmiaWindows, signalQualityMonitor]);
+  }, [resetArrhythmiaWindows, signalQualityMonitor, setLastValidResults]);
   
-  /**
-   * Perform full reset - clear all data and reinitialize processors
-   */
   const fullReset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaProcessorRef.current) return;
     
@@ -138,11 +135,8 @@ export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
     signalQualityMonitor.reset();
     
     console.log("useVitalSignsProcessor: Full reset complete");
-  }, [resetArrhythmiaWindows, signalLogger, signalQualityMonitor]);
+  }, [resetArrhythmiaWindows, signalLogger, signalQualityMonitor, setLastValidResults]);
 
-  /**
-   * Get the arrhythmia processor instance for external access
-   */
   const getArrhythmiaProcessor = useCallback(() => {
     return arrhythmiaProcessorRef.current;
   }, []);
