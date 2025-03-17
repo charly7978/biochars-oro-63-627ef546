@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,6 +5,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
+import { 
+  calculateWeightedQuality, 
+  getQualityColor, 
+  getQualityText 
+} from '../modules/heart-beat/signal-quality';
 
 /**
  * Hook para gestionar el procesamiento de señales PPG.
@@ -71,15 +75,7 @@ export const useSignalProcessor = () => {
                              Math.max(1, fingerDetectedHistoryRef.current.length);
     
     // Calcular calidad ponderada (más peso a valores recientes)
-    let weightedQualitySum = 0;
-    let weightSum = 0;
-    qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.2, index); // Ponderación exponencial menos agresiva
-      weightedQualitySum += quality * weight;
-      weightSum += weight;
-    });
-    
-    const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
+    const avgQuality = calculateWeightedQuality(qualityHistoryRef.current);
     
     // Lógica adaptativa para ajustar el umbral
     adaptiveCounterRef.current++;

@@ -1,6 +1,8 @@
 
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
+import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
+import { HeartBeatConfig } from '../../modules/heart-beat/config';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -11,8 +13,8 @@ export function useSignalProcessor() {
   
   // Track consecutive zero signals to detect finger removal
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = 0.08; // Threshold to consider a signal weak
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 5; // Number of weak signals to consider finger removed
+  const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
 
   const processSignal = useCallback((
     value: number,
@@ -40,26 +42,29 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
-      // Check for weak signal to detect finger removal
-      if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
-        consecutiveWeakSignalsRef.current++;
-        
-        // If we've had too many weak signals in a row, reset values
-        if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
-          return {
-            bpm: 0,
-            confidence: 0,
-            isPeak: false,
-            arrhythmiaCount: processor.getArrhythmiaCounter() || 0,
-            rrData: {
-              intervals: [],
-              lastPeakTime: null
-            }
-          };
+      // Check for weak signal using the centralized function
+      const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+        value, 
+        consecutiveWeakSignalsRef.current, 
+        {
+          lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
+          maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
         }
-      } else {
-        // Reset consecutive weak signals counter
-        consecutiveWeakSignalsRef.current = 0;
+      );
+      
+      consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
+      
+      if (isWeakSignal) {
+        return {
+          bpm: 0,
+          confidence: 0,
+          isPeak: false,
+          arrhythmiaCount: processor.getArrhythmiaCounter() || 0,
+          rrData: {
+            intervals: [],
+            lastPeakTime: null
+          }
+        };
       }
       
       // Don't process signals that are too small (likely noise)

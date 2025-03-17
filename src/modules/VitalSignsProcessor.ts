@@ -4,6 +4,7 @@
  */
 
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { checkSignalQuality } from './heart-beat/signal-quality';
 
 /**
  * Wrapper that ensures only real data is used.
@@ -27,6 +28,11 @@ export class VitalSignsProcessor {
   private readonly FALSE_POSITIVE_GUARD_PERIOD = 500;
   private lastDetectionTime: number = 0;
   
+  // Signal quality parameters
+  private readonly LOW_SIGNAL_THRESHOLD = 0.05;
+  private readonly MAX_WEAK_SIGNALS = 10;
+  private weakSignalsCount: number = 0;
+  
   /**
    * Constructor that initializes the internal direct measurement processor
    * No simulation is used at any point
@@ -48,8 +54,18 @@ export class VitalSignsProcessor {
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
     
-    // Verify real signal without manipulation
-    const signalVerified = this.verifySignal(ppgValue);
+    // Verify real signal without manipulation using the centralized function
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      ppgValue,
+      this.weakSignalsCount,
+      {
+        lowSignalThreshold: this.LOW_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: this.MAX_WEAK_SIGNALS
+      }
+    );
+    
+    this.weakSignalsCount = updatedWeakSignalsCount;
+    const signalVerified = !isWeakSignal && this.verifySignal(ppgValue);
     
     // Update detection counters based on verification
     if (signalVerified) {
@@ -102,6 +118,7 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Reset - all measurements start from zero");
     this.consecutiveDetections = 0;
     this.lastDetectionTime = 0;
+    this.weakSignalsCount = 0;
     return this.processor.reset();
   }
   
@@ -113,6 +130,7 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Full reset - removing all data history");
     this.consecutiveDetections = 0;
     this.lastDetectionTime = 0;
+    this.weakSignalsCount = 0;
     this.processor.fullReset();
   }
 }

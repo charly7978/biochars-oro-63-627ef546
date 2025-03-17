@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { calculateWeightedQuality } from '../modules/heart-beat/signal-quality';
 
 interface SignalQualityIndicatorProps {
   quality: number;
@@ -55,16 +55,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       return;
     }
 
-    let weightedSum = 0;
-    let totalWeight = 0;
-
-    qualityHistory.forEach((q, index) => {
-      const weight = index + 1; // Valores más recientes tienen más peso
-      weightedSum += q * weight;
-      totalWeight += weight;
-    });
-
-    const averageQuality = Math.round(weightedSum / totalWeight);
+    const averageQuality = Math.round(calculateWeightedQuality(qualityHistory));
     
     // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {

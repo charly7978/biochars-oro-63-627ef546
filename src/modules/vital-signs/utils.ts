@@ -14,13 +14,9 @@ export {
   calculateStandardDeviation,
   findPeaksAndValleys,
   calculateAmplitude,
-  applySMAFilter
+  applySMAFilter,
+  amplifySignal
 } from '../../utils/vitalSignsUtils';
-
-/**
- * Module-specific functions for vital signs that aren't shared
- * All functions process only real data
- */
 
 /**
  * Calculate Exponential Moving Average (EMA) to smooth real signals
