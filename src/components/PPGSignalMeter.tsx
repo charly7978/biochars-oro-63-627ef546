@@ -4,6 +4,7 @@ import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { getSignalColor, isPointInArrhythmiaWindow } from '../utils/displayOptimizer';
+import { fingerDetectionService } from '../core/FingerDetectionService';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -63,6 +64,13 @@ const PPGSignalMeter = memo(({
   const peakVarianceRef = useRef<number[]>([]);
   const lastStableDetectionTimeRef = useRef<number>(0);
   const derivativeBufferRef = useRef<number[]>([]);
+  
+  // Referencias para detección de arritmias integradas directamente
+  const rrIntervalsRef = useRef<number[]>([]);
+  const lastPeakTimeRef = useRef<number | null>(null);
+  const arrhythmiaCountRef = useRef<number>(0);
+  const arrhythmiaDetectedRef = useRef<boolean>(false);
+  const consecutiveAnomaliesRef = useRef<number>(0);
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5000;
@@ -92,6 +100,13 @@ const PPGSignalMeter = memo(({
   const MIN_PEAK_VARIANCE = 1.2;
   const STABILITY_TIMEOUT_MS = 4000;
   const MIN_DERIVATIVE_THRESHOLD = 0.5;
+
+  // Constantes para detección de arritmias
+  const MIN_TIME_BETWEEN_ARRHYTHMIAS = 3500;
+  const MAX_ARRHYTHMIAS_PER_SESSION = 40;
+  const ARRHYTHMIA_THRESHOLD = 0.25;
+  const CONSECUTIVE_ANOMALIES_THRESHOLD = 6;
+  const MIN_RR_INTERVALS = 16;
 
   const USE_OFFSCREEN_CANVAS = true;
   const ARRHYTHMIA_COLOR = '#FF2E2E';
@@ -193,6 +208,10 @@ const PPGSignalMeter = memo(({
     fingerprintConfidenceRef.current = Math.min(1, detectionRatio * 1.3);
     
     lastDetectionStateRef.current = isFingerDetected;
+    
+    // Actualizar servicio de detección de dedo centralizado
+    fingerDetectionService.updateQuality(quality);
+    fingerDetectionService.setDetected(isFingerDetected);
   }, [quality, isFingerDetected, value, calculateDerivative]);
 
   useEffect(() => {
@@ -253,6 +272,154 @@ const PPGSignalMeter = memo(({
     );
   }, [isArrhythmia]);
 
+  // Función simple para analizar intervalos RR y detectar arritmias
+  const analyzeRRIntervals = useCallback((intervals: number[]): boolean => {
+    if (intervals.length < MIN_RR_INTERVALS) return false;
+    
+    // Calcular estadísticas básicas sobre intervalos RR recientes
+    const lastIntervals = intervals.slice(-8);
+    
+    // Calcular la media
+    const meanRR = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+    
+    // Calcular la variación de intervalo RR
+    let sumSquares = 0;
+    for (let i = 1; i < lastIntervals.length; i++) {
+      const diff = lastIntervals[i] - lastIntervals[i-1];
+      sumSquares += diff * diff;
+    }
+    
+    // RMSSD (Root Mean Square of Successive Differences)
+    const rmssd = Math.sqrt(sumSquares / (lastIntervals.length - 1));
+    const rrVariation = rmssd / meanRR;
+    
+    // Detectar arritmia basado en umbral de variación
+    return rrVariation > ARRHYTHMIA_THRESHOLD;
+  }, []);
+  
+  // Función para detectar picos integrada con análisis de arritmias
+  const detectPeaksAndAnalyzeRR = useCallback((points: PPGDataPointExtended[], now: number) => {
+    if (points.length < PEAK_DETECTION_WINDOW) return;
+    
+    const potentialPeaks: {index: number, value: number, time: number, isArrhythmia?: boolean}[] = [];
+    
+    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
+      const currentPoint = points[i];
+      
+      const recentlyProcessed = peaksRef.current.some(
+        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
+      );
+      
+      if (recentlyProcessed) continue;
+      
+      let isPeak = true;
+      
+      for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
+        if (points[j].value >= currentPoint.value) {
+          isPeak = false;
+          break;
+        }
+      }
+      
+      if (isPeak) {
+        for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
+          if (j < points.length && points[j].value > currentPoint.value) {
+            isPeak = false;
+            break;
+          }
+        }
+      }
+      
+      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
+        const isInArrhythmiaSegment = arrhythmiaSegmentsRef.current.some(segment => {
+          const endTime = segment.endTime || now;
+          return currentPoint.time >= segment.startTime && currentPoint.time <= endTime;
+        });
+        
+        potentialPeaks.push({
+          index: i,
+          value: currentPoint.value,
+          time: currentPoint.time,
+          isArrhythmia: isInArrhythmiaSegment
+        });
+      }
+    }
+    
+    for (const peak of potentialPeaks) {
+      const tooClose = peaksRef.current.some(
+        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
+      );
+      
+      if (!tooClose) {
+        peaksRef.current.push({
+          time: peak.time,
+          value: peak.value,
+          isArrhythmia: peak.isArrhythmia
+        });
+        
+        // Calcular intervalo RR si hay un pico previo
+        if (lastPeakTimeRef.current !== null) {
+          const rrInterval = peak.time - lastPeakTimeRef.current;
+          
+          // Solo considerar intervalos fisiológicamente plausibles (entre 400ms y 1500ms)
+          if (rrInterval >= 400 && rrInterval <= 1500) {
+            rrIntervalsRef.current.push(rrInterval);
+            
+            // Mantener solo los últimos 20 intervalos
+            if (rrIntervalsRef.current.length > 20) {
+              rrIntervalsRef.current.shift();
+            }
+            
+            // Detectar arritmias si hay suficientes intervalos
+            const hasArrhythmia = analyzeRRIntervals(rrIntervalsRef.current);
+            
+            if (hasArrhythmia) {
+              consecutiveAnomaliesRef.current++;
+              
+              // Verificar si ha habido suficientes anomalías consecutivas
+              if (consecutiveAnomaliesRef.current >= CONSECUTIVE_ANOMALIES_THRESHOLD) {
+                // Verificar restricciones de tiempo entre arritmias
+                const timeSinceLastArrhythmia = now - lastArrhythmiaTimeRef.current;
+                const canDetectNewArrhythmia = 
+                  timeSinceLastArrhythmia > MIN_TIME_BETWEEN_ARRHYTHMIAS &&
+                  arrhythmiaCountRef.current < MAX_ARRHYTHMIAS_PER_SESSION;
+                
+                // Confirmar arritmia solo si se cumplen todas las condiciones
+                if (canDetectNewArrhythmia) {
+                  arrhythmiaDetectedRef.current = true;
+                  arrhythmiaCountRef.current++;
+                  lastArrhythmiaTimeRef.current = now;
+                  consecutiveAnomaliesRef.current = 0;
+                  
+                  // Marcar el pico como parte de una arritmia
+                  peak.isArrhythmia = true;
+                  
+                  console.log('PPGSignalMeter: Arritmia detectada', {
+                    counter: arrhythmiaCountRef.current,
+                    timestamp: new Date(now).toISOString(),
+                    rrVariation: hasArrhythmia
+                  });
+                }
+              }
+            } else {
+              // Resetear contador si no hay anomalía
+              consecutiveAnomaliesRef.current = 0;
+            }
+          }
+        }
+        
+        lastPeakTimeRef.current = peak.time;
+        requestBeepForPeak(peak.time);
+      }
+    }
+    
+    peaksRef.current.sort((a, b) => a.time - b.time);
+    
+    peaksRef.current = peaksRef.current
+      .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
+      .slice(-MAX_PEAKS_TO_DISPLAY);
+  }, [analyzeRRIntervals, requestBeepForPeak]);
+
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
@@ -310,14 +477,12 @@ const PPGSignalMeter = memo(({
     const hasMinimumQuality = avgQuality > 35;
     const hasRequiredFrames = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
     
-    // Changed from const to let to allow reassignment
     let hasSignalVariability = false;
     if (derivativeBufferRef.current.length > 10) {
       const maxDerivative = Math.max(...derivativeBufferRef.current);
       hasSignalVariability = maxDerivative > MIN_DERIVATIVE_THRESHOLD;
     }
     
-    // Changed from const to let to allow reassignment
     let hasSufficientAmplitude = false;
     if (signalAmplitudeHistoryRef.current.length > 10) {
       const avgAmplitude = signalAmplitudeHistoryRef.current.reduce((sum, a) => sum + a, 0) / 
@@ -418,76 +583,6 @@ const PPGSignalMeter = memo(({
     ctx.setLineDash([]);
   }, []);
 
-  const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
-    if (points.length < PEAK_DETECTION_WINDOW) return;
-    
-    const potentialPeaks: {index: number, value: number, time: number, isArrhythmia?: boolean}[] = [];
-    
-    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
-      const currentPoint = points[i];
-      
-      const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
-      );
-      
-      if (recentlyProcessed) continue;
-      
-      let isPeak = true;
-      
-      for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value) {
-          isPeak = false;
-          break;
-        }
-      }
-      
-      if (isPeak) {
-        for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value) {
-            isPeak = false;
-            break;
-          }
-        }
-      }
-      
-      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
-        const isInArrhythmiaSegment = arrhythmiaSegmentsRef.current.some(segment => {
-          const endTime = segment.endTime || now;
-          return currentPoint.time >= segment.startTime && currentPoint.time <= endTime;
-        });
-        
-        potentialPeaks.push({
-          index: i,
-          value: currentPoint.value,
-          time: currentPoint.time,
-          isArrhythmia: isInArrhythmiaSegment
-        });
-      }
-    }
-    
-    for (const peak of potentialPeaks) {
-      const tooClose = peaksRef.current.some(
-        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
-      );
-      
-      if (!tooClose) {
-        peaksRef.current.push({
-          time: peak.time,
-          value: peak.value,
-          isArrhythmia: peak.isArrhythmia
-        });
-        
-        requestBeepForPeak(peak.time);
-      }
-    }
-    
-    peaksRef.current.sort((a, b) => a.time - b.time);
-    
-    peaksRef.current = peaksRef.current
-      .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
-      .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [requestBeepForPeak]);
-
   const isPointInArrhythmiaSegment = useCallback((pointTime: number, now: number): boolean => {
     const isNearArrhythmicPeak = peaksRef.current.some(peak => 
       peak.isArrhythmia && Math.abs(pointTime - peak.time) < 300
@@ -579,7 +674,8 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
-    const pointIsArrhythmia = isArrhythmia;
+    // Usar el estado interno de arritmias para marcar puntos
+    const pointIsArrhythmia = arrhythmiaDetectedRef.current;
     
     const dataPoint: PPGDataPointExtended = {
       time: now,
@@ -590,7 +686,8 @@ const PPGSignalMeter = memo(({
     dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
-    detectPeaks(points, now);
+    // Usar la función combinada de detección de picos y análisis de intervalos RR
+    detectPeaksAndAnalyzeRR(points, now);
     
     if (points.length > 1) {
       let segmentPoints: {x: number, y: number, isArrhythmia: boolean}[] = [];
@@ -704,6 +801,16 @@ const PPGSignalMeter = memo(({
           }
         });
       }
+      
+      // Mostrar contador de arritmias en la esquina
+      if (arrhythmiaCountRef.current > 0) {
+        renderCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        renderCtx.fillRect(CANVAS_WIDTH - 150, 10, 140, 40);
+        renderCtx.font = 'bold 16px Inter';
+        renderCtx.fillStyle = '#FF2E2E';
+        renderCtx.textAlign = 'right';
+        renderCtx.fillText(`Arritmias: ${arrhythmiaCountRef.current}`, CANVAS_WIDTH - 20, 35);
+      }
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -715,7 +822,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, requestBeepForPeak]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaksAndAnalyzeRR, smoothValue, preserveResults, isPointInArrhythmiaSegment, requestBeepForPeak]);
 
   useEffect(() => {
     renderSignal();
@@ -740,6 +847,14 @@ const PPGSignalMeter = memo(({
     peakVarianceRef.current = [];
     derivativeBufferRef.current = [];
     lastStableDetectionTimeRef.current = 0;
+    
+    // Resetear también las referencias de arritmias
+    rrIntervalsRef.current = [];
+    lastPeakTimeRef.current = null;
+    arrhythmiaCountRef.current = 0;
+    arrhythmiaDetectedRef.current = false;
+    consecutiveAnomaliesRef.current = 0;
+    
     onReset();
   }, [onReset]);
 
@@ -814,6 +929,15 @@ const PPGSignalMeter = memo(({
           RESET
         </button>
       </div>
+      
+      {/* Indicador de arritmias */}
+      {arrhythmiaCountRef.current > 0 && (
+        <div className="absolute top-2 right-2 bg-black/70 px-3 py-1 rounded-full">
+          <span className="text-red-500 font-bold text-sm">
+            Arritmias: {arrhythmiaCountRef.current}
+          </span>
+        </div>
+      )}
     </div>
   );
 });
