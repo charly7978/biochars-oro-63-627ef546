@@ -244,14 +244,24 @@ const Index = () => {
   }, [stopProcessing, stopHeartBeatMonitoring, resetHeartBeatProcessor, fullResetVitalSigns]);
 
   const handleStreamReady = useCallback((stream: MediaStream) => {
-    if (!isMonitoring) return;
+    if (!isMonitoring) {
+      console.log("Not monitoring, ignoring stream ready callback");
+      return;
+    }
     
-    console.log("CameraView: Stream ready callback received");
+    console.log("Stream ready callback received, setting up processing");
     
     try {
       const videoTrack = stream.getVideoTracks()[0];
       if (!videoTrack) {
         console.error("No video track found in stream");
+        toast.error("Error: No se encontró pista de video en la cámara");
+        return;
+      }
+      
+      if (videoTrack.readyState !== 'live') {
+        console.error("Video track is not in live state:", videoTrack.readyState);
+        toast.error("Error: La cámara no está activa");
         return;
       }
       
@@ -260,6 +270,7 @@ const Index = () => {
         imageCapture = new ImageCapture(videoTrack);
       } catch (err) {
         console.error("Error creating ImageCapture:", err);
+        toast.error("Error al inicializar el procesamiento de la cámara");
         return;
       }
       
@@ -274,6 +285,7 @@ const Index = () => {
       const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
       if (!tempCtx) {
         console.error("Could not get 2D context");
+        toast.error("Error al inicializar el procesamiento gráfico");
         return;
       }
       
@@ -290,6 +302,11 @@ const Index = () => {
         
         if (timeSinceLastProcess >= targetFrameInterval) {
           try {
+            if (videoTrack.readyState !== 'live') {
+              console.error("Video track is no longer live:", videoTrack.readyState);
+              return;
+            }
+            
             const frame = await imageCapture.grabFrame();
             
             const targetWidth = Math.min(320, frame.width);
@@ -329,6 +346,7 @@ const Index = () => {
       processImage();
     } catch (err) {
       console.error("Error in handleStreamReady:", err);
+      toast.error("Error al procesar el video de la cámara");
     }
   }, [isMonitoring, processFrame]);
 

@@ -20,98 +20,82 @@ const CameraView = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const retryAttemptsRef = useRef<number>(0);
-  const maxRetryAttempts = 5;
   const streamRef = useRef<MediaStream | null>(null);
   const activeImageCaptureRef = useRef<ImageCapture | null>(null);
-  const cameraStartTimeoutRef = useRef<number | null>(null);
+
+  // Tracking refs for permission and camera state
   const permissionRequestedRef = useRef<boolean>(false);
-  const permissionRequestInProgressRef = useRef<boolean>(false);
-  const cameraStartAttemptedRef = useRef<boolean>(false);
-  const hasCheckedPermissionsRef = useRef<boolean>(false);
+  const permissionCheckInProgressRef = useRef<boolean>(false);
+  const cameraStartTimeoutRef = useRef<number | null>(null);
+  const cameraStartingRef = useRef<boolean>(false);
+  const retryAttemptsRef = useRef<number>(0);
+  const maxRetryAttempts = 5;
 
-  // Request permissions explicitly before accessing the camera
-  const requestCameraPermission = useCallback(async (): Promise<boolean> => {
-    if (permissionRequestInProgressRef.current) {
-      console.log("CameraView: Permission request already in progress");
-      return false;
+  // Use this function to check for camera permissions directly
+  const checkCameraPermission = useCallback(async (): Promise<string> => {
+    console.log("CameraView: Checking camera permission");
+    
+    if (permissionCheckInProgressRef.current) {
+      console.log("CameraView: Permission check already in progress");
+      return "pending";
     }
     
-    permissionRequestInProgressRef.current = true;
-    console.log("CameraView: Starting permission request");
+    permissionCheckInProgressRef.current = true;
     
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError("Tu navegador no soporta acceso a la cámara");
-      permissionRequestInProgressRef.current = false;
-      toast.error("Tu navegador no soporta acceso a la cámara");
-      return false;
-    }
-
     try {
-      console.log("CameraView: Requesting camera permission explicitly");
+      // Use feature detection
+      if (!navigator.mediaDevices) {
+        permissionCheckInProgressRef.current = false;
+        return "unsupported";
+      }
       
-      // Check if we can access permissions API
       if (navigator.permissions && navigator.permissions.query) {
         try {
-          const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
-          console.log("CameraView: Permission status:", permissionStatus.state);
+          const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
+          console.log("CameraView: Permission status:", result.state);
           
-          if (permissionStatus.state === 'denied') {
-            setCameraError("El permiso de cámara fue denegado. Por favor, habilítalo en la configuración de tu navegador.");
-            toast.error("Permiso de cámara denegado");
-            permissionRequestInProgressRef.current = false;
-            return false;
-          }
-        } catch (permErr) {
-          console.log("CameraView: Error checking permission status:", permErr);
-          // Continue even if permissions API fails
+          permissionCheckInProgressRef.current = false;
+          return result.state; // "granted", "denied", or "prompt"
+        } catch (err) {
+          console.log("CameraView: Error checking permissions API:", err);
+          // Fall through to the alternative method
         }
       }
       
-      // Try to get a minimal video stream with just to trigger the permission dialog
-      const permissionConstraints = { 
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 320 },
-          height: { ideal: 240 }
-        }, 
-        audio: false 
-      };
-      
-      console.log("CameraView: Requesting camera with minimal constraints:", JSON.stringify(permissionConstraints));
-      
-      // Set a timeout for permission request
-      const permissionTimeout = setTimeout(() => {
-        console.log("CameraView: Permission request timed out");
-        permissionRequestInProgressRef.current = false;
-        setCameraError("Tiempo de espera de permiso agotado. Por favor intente de nuevo.");
-        toast.error("Tiempo de espera de permiso agotado");
-      }, 10000);
-      
-      const permissionStream = await navigator.mediaDevices.getUserMedia(permissionConstraints);
-      clearTimeout(permissionTimeout);
-      
-      console.log("CameraView: Permission granted, obtained test stream");
-      
-      // Stop the permission test stream immediately
-      permissionStream.getTracks().forEach(track => track.stop());
-      permissionRequestedRef.current = true;
-      hasCheckedPermissionsRef.current = true;
-      permissionRequestInProgressRef.current = false;
-      return true;
+      // Alternative: try to get a minimal stream just to check permission
+      try {
+        console.log("CameraView: Checking permission via minimal getUserMedia");
+        const checkStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 1, height: 1 },
+          audio: false
+        });
+        
+        // We got a stream, so permission is granted
+        checkStream.getTracks().forEach(track => track.stop());
+        permissionCheckInProgressRef.current = false;
+        return "granted";
+      } catch (err) {
+        const error = err as Error;
+        console.log("CameraView: Error in permission check via getUserMedia:", error);
+        
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          permissionCheckInProgressRef.current = false;
+          return "denied";
+        } else {
+          permissionCheckInProgressRef.current = false;
+          return "unknown";
+        }
+      }
     } catch (err) {
-      console.error("Error requesting camera permission:", err);
-      const errorMessage = err instanceof Error ? err.message : "Error desconocido";
-      setCameraError(`No se pudo acceder a la cámara: ${errorMessage}`);
-      toast.error(`Error de cámara: ${errorMessage}`);
-      permissionRequestInProgressRef.current = false;
-      return false;
+      console.error("CameraView: Unexpected error in permission check:", err);
+      permissionCheckInProgressRef.current = false;
+      return "error";
     }
   }, []);
 
-  // Robust camera stopping
-  const stopCamera = useCallback(async () => {
-    console.log("CameraView: Stopping camera stream");
+  // Robust camera stopping function
+  const stopCamera = useCallback(() => {
+    console.log("CameraView: Stopping camera");
     
     // Clear any pending timeouts
     if (cameraStartTimeoutRef.current) {
@@ -119,33 +103,34 @@ const CameraView = ({
       cameraStartTimeoutRef.current = null;
     }
     
-    // Clear the ImageCapture reference first
+    // Clear the ImageCapture reference
     activeImageCaptureRef.current = null;
     
+    // Stop all tracks
     if (streamRef.current) {
-      console.log("CameraView: Stopping stream tracks");
-      streamRef.current.getTracks().forEach(track => {
-        try {
-          if (track.kind === 'video' && track.readyState === 'live') {
-            console.log("CameraView: Stopping video track", track.label);
-            
-            // Try to turn off torch before stopping
-            if ('getCapabilities' in track && track.getCapabilities()?.torch) {
-              try {
-                track.applyConstraints({
-                  advanced: [{ torch: false }]
-                }).catch(err => console.log("Error turning off torch:", err));
-              } catch (err) {
-                console.log("Error with torch constraints:", err);
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          try {
+            if (track.readyState === 'live') {
+              // Turn off torch before stopping if possible
+              if (track.kind === 'video' && 'getCapabilities' in track && track.getCapabilities()?.torch) {
+                try {
+                  track.applyConstraints({
+                    advanced: [{ torch: false }]
+                  }).catch(err => console.log("Error turning off torch:", err));
+                } catch (torchErr) {
+                  console.log("Error with torch constraints:", torchErr);
+                }
               }
+              track.stop();
             }
+          } catch (trackErr) {
+            console.error("Error stopping track:", trackErr);
           }
-          
-          track.stop();
-        } catch (err) {
-          console.error("Error stopping track:", err);
-        }
-      });
+        });
+      } catch (err) {
+        console.error("Error stopping stream tracks:", err);
+      }
       
       streamRef.current = null;
     }
@@ -156,38 +141,23 @@ const CameraView = ({
     
     setStream(null);
     setTorchEnabled(false);
+    cameraStartingRef.current = false;
     retryAttemptsRef.current = 0;
-    cameraStartAttemptedRef.current = false;
     
   }, []);
 
-  // Optimized camera startup with fallbacks
+  // Simplified camera startup that focuses on permissions first
   const startCamera = useCallback(async () => {
-    if (streamRef.current) {
-      console.log("CameraView: Camera already started");
+    // Prevent multiple simultaneous start attempts
+    if (cameraStartingRef.current || streamRef.current) {
+      console.log("CameraView: Camera already starting or started");
       return;
     }
-    
-    if (cameraStartAttemptedRef.current) {
-      console.log("CameraView: Camera start already attempted");
-      return;
-    }
-    
-    cameraStartAttemptedRef.current = true;
-    
+
+    cameraStartingRef.current = true;
     setCameraError(null);
-    console.log("CameraView: Starting camera with optimized settings");
-    
-    // Request permissions first if not already granted
-    if (!permissionRequestedRef.current) {
-      const permissionGranted = await requestCameraPermission();
-      if (!permissionGranted) {
-        toast.error("No se pudo acceder a la cámara. Por favor, verifica los permisos.");
-        cameraStartAttemptedRef.current = false;
-        return;
-      }
-    }
-    
+    console.log("CameraView: Starting camera");
+
     // Set a timeout to prevent hanging
     if (cameraStartTimeoutRef.current) {
       clearTimeout(cameraStartTimeoutRef.current);
@@ -195,183 +165,164 @@ const CameraView = ({
     
     cameraStartTimeoutRef.current = window.setTimeout(() => {
       if (!streamRef.current) {
-        console.error("CameraView: Camera request timed out");
-        setCameraError("Tiempo de espera agotado. Por favor intente de nuevo.");
-        cameraStartAttemptedRef.current = false;
+        console.error("CameraView: Camera start timed out");
+        setCameraError("La cámara tardó demasiado en iniciarse. Por favor, inténtelo de nuevo.");
+        toast.error("Tiempo agotado al abrir la cámara");
+        cameraStartingRef.current = false;
         retryCamera();
       }
     }, 10000) as unknown as number;
-    
+
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("getUserMedia no está soportado en este dispositivo");
+      // First check permission status
+      const permissionStatus = await checkCameraPermission();
+      console.log("CameraView: Permission status:", permissionStatus);
+      
+      if (permissionStatus === "denied") {
+        throw new Error("Permiso de cámara denegado. Por favor, habilítelo en la configuración de su navegador.");
+      } else if (permissionStatus === "unsupported") {
+        throw new Error("Su navegador no soporta acceso a la cámara.");
       }
 
-      // Try different configurations in sequence if needed
-      const configurations = [
-        // First try: Basic configuration with environment camera
-        {
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 320 }, // Lower resolution for better performance
-            height: { ideal: 240 }
-          },
-          audio: false
+      // Permission is either granted or we need to ask for it
+      const constraints = { 
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 320 }, // Lower resolution
+          height: { ideal: 240 }
         },
-        // Second try: User camera (front)
-        {
-          video: {
-            facingMode: 'user',
-            width: { ideal: 320 },
-            height: { ideal: 240 }
-          },
-          audio: false
-        },
-        // Last resort: Just any video
-        {
-          video: true,
-          audio: false
-        }
-      ];
+        audio: false 
+      };
       
-      // Try each configuration until one works
-      let newStream: MediaStream | null = null;
-      let error: Error | null = null;
+      console.log("CameraView: Requesting camera with constraints:", JSON.stringify(constraints));
       
-      for (const config of configurations) {
-        try {
-          console.log("CameraView: Trying camera configuration:", JSON.stringify(config));
-          newStream = await navigator.mediaDevices.getUserMedia(config);
-          console.log("CameraView: Configuration succeeded:", JSON.stringify(config));
-          break;
-        } catch (err) {
-          error = err as Error;
-          console.log("CameraView: Configuration failed:", JSON.stringify(config), err);
-          // Continue to next configuration
-        }
-      }
-      
-      if (!newStream) {
-        throw error || new Error("No se pudo acceder a la cámara con ninguna configuración");
-      }
-      
-      // Clear the timeout as we've succeeded
-      if (cameraStartTimeoutRef.current) {
-        clearTimeout(cameraStartTimeoutRef.current);
-        cameraStartTimeoutRef.current = null;
-      }
-      
-      // Store in both state and ref for consistent access
-      setStream(newStream);
-      streamRef.current = newStream;
-      
-      // Validate that we have video tracks
-      const videoTracks = newStream.getVideoTracks();
-      if (!videoTracks || videoTracks.length === 0) {
-        throw new Error("No se encontró ninguna pista de video");
-      }
-
-      const videoTrack = videoTracks[0];
-      if (!videoTrack) {
-        throw new Error("No se encontró ninguna pista de video");
-      }
-
-      console.log("CameraView: Got video track:", videoTrack.label, "Ready state:", videoTrack.readyState);
-      
-      // Create ImageCapture once and store in ref - with error checking
-      if (videoTrack.readyState === 'live') {
-        try {
-          activeImageCaptureRef.current = new ImageCapture(videoTrack);
-          console.log("CameraView: ImageCapture created successfully");
-        } catch (imageCaptureErr) {
-          console.error("CameraView: Failed to create ImageCapture:", imageCaptureErr);
-          // Continue even if ImageCapture fails
-        }
-      } else {
-        console.warn("CameraView: Video track not in live state, cannot create ImageCapture");
-      }
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Successfully got the stream
         
-        // Add event listeners for video playback
-        videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
-            videoRef.current.play()
-              .catch(err => console.error("Error playing video:", err));
-          }
-        };
-      }
-      
-      // Try to enable torch for better visibility after a short delay
-      setTimeout(() => {
-        if (!streamRef.current) return;
+        // Clear the timeout
+        if (cameraStartTimeoutRef.current) {
+          clearTimeout(cameraStartTimeoutRef.current);
+          cameraStartTimeoutRef.current = null;
+        }
         
-        const currentVideoTrack = streamRef.current.getVideoTracks()[0];
-        if (currentVideoTrack && currentVideoTrack.readyState === 'live' && 
-            'getCapabilities' in currentVideoTrack && 
-            currentVideoTrack.getCapabilities()?.torch) {
-          console.log("CameraView: Enabling torch");
+        // Store stream in state and ref
+        permissionRequestedRef.current = true;
+        setStream(newStream);
+        streamRef.current = newStream;
+        
+        // Verify we have video tracks
+        const videoTracks = newStream.getVideoTracks();
+        if (!videoTracks || videoTracks.length === 0) {
+          throw new Error("No video tracks found in camera stream");
+        }
+        
+        const videoTrack = videoTracks[0];
+        console.log("CameraView: Video track obtained:", videoTrack.label, "Ready state:", videoTrack.readyState);
+        
+        // Set video source
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+          
+          videoRef.current.onloadedmetadata = () => {
+            if (videoRef.current) {
+              videoRef.current.play().catch(err => {
+                console.error("Error playing video:", err);
+              });
+            }
+          };
+        }
+        
+        // Try to create ImageCapture for the track
+        if (videoTrack.readyState === 'live') {
           try {
+            activeImageCaptureRef.current = new ImageCapture(videoTrack);
+            console.log("CameraView: ImageCapture created successfully");
+          } catch (err) {
+            console.error("CameraView: Failed to create ImageCapture:", err);
+            // Continue even if this fails
+          }
+        }
+        
+        // Try to enable torch after a short delay
+        setTimeout(() => {
+          if (!streamRef.current) return;
+          
+          const currentVideoTrack = streamRef.current.getVideoTracks()[0];
+          if (currentVideoTrack && 
+              currentVideoTrack.readyState === 'live' && 
+              'getCapabilities' in currentVideoTrack && 
+              currentVideoTrack.getCapabilities()?.torch) {
+            console.log("CameraView: Enabling torch");
             currentVideoTrack.applyConstraints({
               advanced: [{ torch: true }]
             }).then(() => {
               setTorchEnabled(true);
               console.log("CameraView: Torch enabled successfully");
-            }).catch(torchErr => {
-              console.log("CameraView: Error enabling torch:", torchErr);
+            }).catch(err => {
+              console.log("CameraView: Error enabling torch:", err);
             });
-          } catch (torchErr) {
-            console.log("CameraView: Error enabling torch:", torchErr);
-            // Continue even if torch fails
           }
+        }, 1000);
+        
+        // Notify parent component
+        if (onStreamReady && streamRef.current) {
+          console.log("CameraView: Calling onStreamReady");
+          onStreamReady(streamRef.current);
         }
-      }, 1000);
-      
-      // Notify parent that stream is ready
-      if (onStreamReady && streamRef.current) {
-        console.log("CameraView: Calling onStreamReady callback");
-        onStreamReady(streamRef.current);
+        
+        retryAttemptsRef.current = 0;
+        toast.success("Cámara iniciada correctamente");
+        
+      } catch (streamErr) {
+        const error = streamErr as Error;
+        console.error("CameraView: Error getting camera stream:", error);
+        
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          throw new Error("Permiso de cámara denegado. Por favor, habilítelo en la configuración de su navegador.");
+        } else if (error.name === "NotFoundError") {
+          throw new Error("No se encontró ninguna cámara en su dispositivo.");
+        } else {
+          throw error;
+        }
       }
-      
-      retryAttemptsRef.current = 0;
-      toast.success("Cámara iniciada correctamente");
-      
     } catch (err) {
-      console.error("CameraView: Error starting camera:", err);
+      console.error("CameraView: Camera start error:", err);
       
+      // Clear timeout
       if (cameraStartTimeoutRef.current) {
         clearTimeout(cameraStartTimeoutRef.current);
         cameraStartTimeoutRef.current = null;
       }
       
-      const errorMessage = err instanceof Error ? err.message : "Error de cámara desconocido";
-      setCameraError(`Error de cámara: ${errorMessage}`);
-      toast.error(`Error de cámara: ${errorMessage}`);
+      const errorMessage = err instanceof Error ? err.message : "Error desconocido al iniciar la cámara";
+      setCameraError(errorMessage);
+      toast.error(errorMessage);
       
-      // Set flag to false so we can retry
-      cameraStartAttemptedRef.current = false;
-      
-      // Implement retry logic
+      // Reset for retry
+      cameraStartingRef.current = false;
       retryCamera();
     }
-  }, [onStreamReady, requestCameraPermission]);
-  
-  // Retry camera startup
+  }, [checkCameraPermission, onStreamReady]);
+
+  // Retry logic
   const retryCamera = useCallback(() => {
     retryAttemptsRef.current++;
+    
     if (retryAttemptsRef.current <= maxRetryAttempts) {
       console.log(`CameraView: Retrying camera start (${retryAttemptsRef.current}/${maxRetryAttempts})...`);
       
-      // Reset the permission flag to try requesting permission again
+      // Reset permission flags on retry
       permissionRequestedRef.current = false;
-      cameraStartAttemptedRef.current = false;
-      hasCheckedPermissionsRef.current = false;
+      permissionCheckInProgressRef.current = false;
+      cameraStartingRef.current = false;
       
-      setTimeout(startCamera, 1000);
+      // Try again after a delay
+      setTimeout(startCamera, 1000 * Math.min(retryAttemptsRef.current, 3));
     } else {
       console.error(`CameraView: Failed to start camera after ${maxRetryAttempts} attempts`);
-      toast.error(`No se pudo iniciar la cámara después de ${maxRetryAttempts} intentos`);
+      setCameraError(`No se pudo iniciar la cámara después de ${maxRetryAttempts} intentos. Por favor, recargue la página.`);
+      toast.error(`Fallo al iniciar la cámara después de varios intentos`);
     }
   }, [startCamera, maxRetryAttempts]);
 
@@ -381,10 +332,10 @@ const CameraView = ({
     
     if (isMonitoring && !stream) {
       console.log("CameraView: Starting camera because isMonitoring=true");
-      // Reset flags to try fresh
-      cameraStartAttemptedRef.current = false;
+      // Reset flags before starting
+      cameraStartingRef.current = false;
       permissionRequestedRef.current = false;
-      hasCheckedPermissionsRef.current = false;
+      permissionCheckInProgressRef.current = false;
       startCamera();
     } else if (!isMonitoring && stream) {
       console.log("CameraView: Stopping camera because isMonitoring=false");
@@ -421,9 +372,10 @@ const CameraView = ({
             <button 
               onClick={() => {
                 setCameraError(null);
-                permissionRequestedRef.current = false; // Reset permission flag to try again
-                cameraStartAttemptedRef.current = false; // Reset start attempt flag
-                hasCheckedPermissionsRef.current = false; // Reset permission check flag
+                permissionRequestedRef.current = false;
+                permissionCheckInProgressRef.current = false;
+                cameraStartingRef.current = false;
+                retryAttemptsRef.current = 0;
                 startCamera();
               }}
               className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
