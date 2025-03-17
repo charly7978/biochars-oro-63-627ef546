@@ -8,4 +8,5 @@ export interface RRAnalysisResult {
   timestamp: number;
   heartRate?: number;
   signalQuality?: number;
+  isArrhythmia?: boolean;
 }
