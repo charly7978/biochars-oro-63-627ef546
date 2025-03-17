@@ -20,6 +20,10 @@ const FingerDetector = ({
   arrhythmiaCalibrationProgress = 0,
   isArrhythmiaCalibrating = false
 }: FingerDetectorProps) => {
+  // Ensure progress is always a valid number
+  const validCalibrationProgress = isNaN(calibrationProgress) ? 0 : Math.max(0, Math.min(100, calibrationProgress));
+  const validArrhythmiaProgress = isNaN(arrhythmiaCalibrationProgress) ? 0 : Math.max(0, Math.min(100, arrhythmiaCalibrationProgress));
+  
   return (
     <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
       <Fingerprint
@@ -39,18 +43,18 @@ const FingerDetector = ({
       
       {isCalibrating && isFingerDetected && (
         <div className="mt-2 w-32">
-          <Progress value={calibrationProgress} className="h-1.5" />
+          <Progress value={validCalibrationProgress} className="h-1.5" />
           <span className="text-xs text-center block mt-1 text-white">
-            {Math.round(calibrationProgress)}% calibrado
+            {Math.round(validCalibrationProgress)}% calibrado
           </span>
         </div>
       )}
       
       {isArrhythmiaCalibrating && isFingerDetected && !isCalibrating && (
         <div className="mt-2 w-32">
-          <Progress value={arrhythmiaCalibrationProgress} className="h-1.5 bg-yellow-300/20" />
+          <Progress value={validArrhythmiaProgress} className="h-1.5 bg-yellow-300/20" />
           <span className="text-xs text-center block mt-1 text-yellow-200">
-            {Math.round(arrhythmiaCalibrationProgress)}% calibrando arritmias
+            {Math.round(validArrhythmiaProgress)}% calibrando arritmias
           </span>
         </div>
       )}

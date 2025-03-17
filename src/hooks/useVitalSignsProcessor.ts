@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
 import type { VitalSignsResult } from '../types/vital-signs';
@@ -15,6 +16,7 @@ export const useVitalSignsProcessor = () => {
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
+  const calibrationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Configuration with wider physiological ranges for direct measurement
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
@@ -53,12 +55,17 @@ export const useVitalSignsProcessor = () => {
     const checkInterval = setInterval(() => {
       if (processorRef.current) {
         const progress = processorRef.current.getCalibrationProgress();
-        console.log("Continuous calibration check:", progress);
+        console.log("useVitalSignsProcessor: Continuous calibration check:", progress);
       }
     }, 2000); // Check every 2 seconds
     
+    calibrationIntervalRef.current = checkInterval;
+    
     return () => {
-      clearInterval(checkInterval);
+      if (calibrationIntervalRef.current) {
+        clearInterval(calibrationIntervalRef.current);
+        calibrationIntervalRef.current = null;
+      }
       
       console.log("useVitalSignsProcessor: Processor cleanup", {
         sessionId: sessionId.current,
@@ -105,8 +112,8 @@ export const useVitalSignsProcessor = () => {
     if (now - calibrationCheckIntervalRef.current > CALIBRATION_CHECK_INTERVAL) {
       calibrationCheckIntervalRef.current = now;
       
-      // Log calibration progress more frequently during calibration phase
-      if (!processorRef.current.isCalibrationComplete()) {
+      // Log calibration progress more frequently during early calibration phase
+      if (!processorRef.current.isCalibrationComplete() && processedSignals.current < 100) {
         const progress = processorRef.current.getCalibrationProgress();
         console.log("useVitalSignsProcessor: Current calibration progress:", progress);
       }
@@ -117,7 +124,8 @@ export const useVitalSignsProcessor = () => {
       console.log("useVitalSignsProcessor: Calibration progress check:", {
         progress: processorRef.current.getCalibrationProgress(),
         phase: processorRef.current.isCalibrationComplete() ? 'completed' : 'calibrating',
-        processedSignals: processedSignals.current
+        processedSignals: processedSignals.current,
+        value: Math.abs(value)
       });
     }
     
@@ -214,8 +222,8 @@ export const useVitalSignsProcessor = () => {
     }
     const progress = processorRef.current.getCalibrationProgress();
     
-    // More frequent logging for debugging
-    if (progress > 0) {
+    // More frequent logging for debugging early calibration
+    if (progress < 10 || progress % 10 < 1) {
       console.log("useVitalSignsProcessor: Calibration progress update:", progress);
     }
     

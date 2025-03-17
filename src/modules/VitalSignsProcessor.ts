@@ -19,9 +19,10 @@ export class VitalSignsProcessor {
   private calibrationCompleteTime: number | null = null;
   private actualProcessingStartTime: number | null = null;
   private hasReceivedValidSignal: boolean = false;
+  private validSignalCounter: number = 0;
   
-  // Optimized thresholds for reliable physiological detection
-  private readonly CALIBRATION_DURATION_MS = 6000; // 6 seconds calibration (reduced from 8)
+  // Optimized thresholds for faster calibration
+  private readonly CALIBRATION_DURATION_MS = 3000; // Reduced to 3 seconds calibration (was 6)
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.0;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.01; // More permissive
@@ -32,7 +33,7 @@ export class VitalSignsProcessor {
   private readonly ARRHYTHMIA_LEARNING_PERIOD = 500; // Shorter learning period
   private readonly PEAK_THRESHOLD = 0.12; // More permissive
   private readonly CALIBRATION_SAMPLE_COUNT = 15; // Fewer samples needed
-  private readonly CALIBRATION_UPDATE_INTERVAL = 30; // ms - even faster updates (was 50)
+  private readonly CALIBRATION_UPDATE_INTERVAL = 10; // ms - even faster updates (was 30)
   private readonly MIN_SIGNAL_THRESHOLD = 0.005; // Threshold for valid signal
   
   /**
@@ -44,6 +45,7 @@ export class VitalSignsProcessor {
     this.processor = new CoreProcessor();
     this.actualProcessingStartTime = null;
     this.hasReceivedValidSignal = false;
+    this.calibrationProgress = 1; // Start at 1% instead of 0% to show something immediately
   }
   
   /**
@@ -57,15 +59,20 @@ export class VitalSignsProcessor {
   ): VitalSignsResult {
     try {
       // Check if we have a valid signal
-      if (Math.abs(ppgValue) > this.MIN_SIGNAL_THRESHOLD && !this.hasReceivedValidSignal) {
-        this.hasReceivedValidSignal = true;
-        console.log("VitalSignsProcessor: First valid signal detected:", ppgValue);
+      if (Math.abs(ppgValue) > this.MIN_SIGNAL_THRESHOLD) {
+        this.validSignalCounter++;
+        if (this.validSignalCounter >= 3 && !this.hasReceivedValidSignal) {
+          this.hasReceivedValidSignal = true;
+          console.log("VitalSignsProcessor: First valid signal detected:", ppgValue);
+        }
+      } else {
+        this.validSignalCounter = Math.max(0, this.validSignalCounter - 1);
       }
       
       // Start actual processing time on first valid signal
       if (this.actualProcessingStartTime === null && this.hasReceivedValidSignal) {
         this.actualProcessingStartTime = Date.now();
-        console.log("VitalSignsProcessor: First valid signal received, starting timer");
+        console.log("VitalSignsProcessor: First valid signal confirmed, starting calibration timer");
       }
       
       // Update calibration state
@@ -138,7 +145,7 @@ export class VitalSignsProcessor {
   
   /**
    * Handle the calibration process with progress tracking
-   * Strictly follows an 6-second calibration period
+   * Strictly follows a calibration period
    */
   private handleCalibration(ppgValue: number): void {
     try {
@@ -157,8 +164,7 @@ export class VitalSignsProcessor {
         this.calibrationStartTime = now;
         this.calibrationSamples = [];
         this.baselineValues = [];
-        this.calibrationProgress = 1; // Start at 1% instead of 0%
-        console.log("VitalSignsProcessor: Starting 6-second calibration process with valid signal");
+        console.log("VitalSignsProcessor: Starting calibration process with valid signal");
       }
       
       // In calibration phase, collect samples and update progress
@@ -170,7 +176,8 @@ export class VitalSignsProcessor {
           this.calibrationProgress = Math.min(100, (elapsedMs / this.CALIBRATION_DURATION_MS) * 100);
           
           // Log more frequently during calibration
-          if (Math.floor(this.calibrationProgress / 2) > Math.floor(oldProgress / 2)) {
+          if (Math.floor(this.calibrationProgress / 5) > Math.floor(oldProgress / 5) || 
+              this.calibrationProgress - oldProgress > 2) {
             console.log("VitalSignsProcessor: Calibration progress:", this.calibrationProgress.toFixed(1) + "%", {
               elapsedMs,
               now,
@@ -215,7 +222,7 @@ export class VitalSignsProcessor {
             this.calibrationPhase = 'completed';
             this.calibrationCompleteTime = now;
             this.calibrationProgress = 100;
-            console.log("VitalSignsProcessor: 6-second calibration phase completed, starting measurements");
+            console.log("VitalSignsProcessor: Calibration phase completed, starting measurements");
           }
         }
       }
@@ -231,17 +238,25 @@ export class VitalSignsProcessor {
    * Return the calibration progress as a percentage
    */
   public getCalibrationProgress(): number {
-    // If we haven't started actual processing, return 0
-    if (this.actualProcessingStartTime === null && !this.hasReceivedValidSignal) {
-      return 0;
+    // If we haven't received any valid signal yet, return initial progress
+    if (!this.hasReceivedValidSignal) {
+      return this.calibrationProgress; // Will be at least 1%
     }
     
-    // If calibration is not started but we have valid signal, return at least 1%
-    if (this.calibrationPhase === 'initial' && this.hasReceivedValidSignal) {
-      return 1;
+    // If calibration is completed, return 100%
+    if (this.calibrationPhase === 'completed') {
+      return 100;
     }
     
-    // Return current progress
+    // If calibration has started, calculate progress
+    if (this.calibrationPhase === 'calibrating' && this.calibrationStartTime) {
+      const currentTime = Date.now();
+      const elapsed = currentTime - this.calibrationStartTime;
+      const progress = Math.min(100, (elapsed / this.CALIBRATION_DURATION_MS) * 100);
+      return progress;
+    }
+    
+    // If not yet calibrating but we have signal, return small progress
     return this.calibrationProgress;
   }
   
@@ -272,10 +287,11 @@ export class VitalSignsProcessor {
     this.baselineValues = [];
     this.calibrationStartTime = null;
     this.lastCalibrationUpdate = 0;
-    this.calibrationProgress = 0;
+    this.calibrationProgress = 1; // Start at 1% instead of 0
     this.calibrationCompleteTime = null;
     this.actualProcessingStartTime = null;
     this.hasReceivedValidSignal = false;
+    this.validSignalCounter = 0;
     console.log("VitalSignsProcessor: Reset complete - calibration system reset");
     return lastValidResults;
   }

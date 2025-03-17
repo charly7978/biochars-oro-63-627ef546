@@ -65,38 +65,44 @@ const Index = () => {
   } = useVitalSignsProcessor();
 
   useEffect(() => {
-    if (isMonitoring && !calibrationComplete) {
-      console.log("Setting up calibration check timer");
+    if (isMonitoring) {
+      console.log("Setting up more frequent calibration check timer");
       
-      if (calibrationCheckTimerRef.current === null) {
-        calibrationCheckTimerRef.current = window.setInterval(() => {
-          const progress = getCalibrationProgress();
-          console.log("Regular calibration check:", progress);
-          
-          if (progress > 0) {
-            console.log("Updating calibration progress to:", progress);
-          }
-          
-          setCalibrationProgress(progress);
-          
-          if (progress >= 100) {
-            console.log("Calibration complete from timer check!");
-            setCalibrationComplete(true);
-            clearInterval(calibrationCheckTimerRef.current!);
-            calibrationCheckTimerRef.current = null;
-          }
-        }, 100);
-      }
-    }
-    
-    return () => {
-      if (calibrationCheckTimerRef.current) {
+      if (calibrationCheckTimerRef.current !== null) {
         clearInterval(calibrationCheckTimerRef.current);
-        calibrationCheckTimerRef.current = null;
       }
-    };
-  }, [isMonitoring, calibrationComplete, getCalibrationProgress]);
-
+      
+      calibrationCheckTimerRef.current = window.setInterval(() => {
+        const progress = getCalibrationProgress();
+        
+        if (Math.floor(progress) !== Math.floor(calibrationProgress)) {
+          console.log("Regular calibration check:", progress);
+        }
+        
+        setCalibrationProgress(progress);
+        
+        if (progress >= 100 && !calibrationComplete) {
+          console.log("Calibration complete from timer check!");
+          setCalibrationComplete(true);
+          
+          if (!measurementTimerRef.current) {
+            startMeasurementTimer();
+          }
+          
+          clearInterval(calibrationCheckTimerRef.current!);
+          calibrationCheckTimerRef.current = null;
+        }
+      }, 100);
+      
+      return () => {
+        if (calibrationCheckTimerRef.current !== null) {
+          clearInterval(calibrationCheckTimerRef.current);
+          calibrationCheckTimerRef.current = null;
+        }
+      };
+    }
+  }, [isMonitoring, getCalibrationProgress, calibrationProgress, calibrationComplete]);
+  
   const enterFullScreen = async () => {
     try {
       if (document.documentElement.requestFullscreen) {
@@ -199,32 +205,30 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime, getHeartBeatCalibrationProgress, getCalibrationProgress, calibrationProgress]);
 
-  useEffect(() => {
-    if (calibrationComplete && isMonitoring && !measurementTimerRef.current) {
-      console.log("Calibration complete, starting measurement timer");
-      
-      if (calibrationCheckTimerRef.current) {
-        clearInterval(calibrationCheckTimerRef.current);
-        calibrationCheckTimerRef.current = null;
-      }
-      
-      measurementTimerRef.current = window.setInterval(() => {
-        setElapsedTime(prev => {
-          const newTime = prev + 1;
-          
-          if (newTime >= 30) {
-            finalizeMeasurement();
-            return 30;
-          }
-          return newTime;
-        });
-      }, 1000);
-      
-      toast.success("Calibración completa. Comenzando medición", {
-        duration: 3000
-      });
+  const startMeasurementTimer = useCallback(() => {
+    console.log("Calibration complete, starting measurement timer");
+    
+    if (calibrationCheckTimerRef.current) {
+      clearInterval(calibrationCheckTimerRef.current);
+      calibrationCheckTimerRef.current = null;
     }
-  }, [calibrationComplete, isMonitoring]);
+    
+    measurementTimerRef.current = window.setInterval(() => {
+      setElapsedTime(prev => {
+        const newTime = prev + 1;
+        
+        if (newTime >= 30) {
+          finalizeMeasurement();
+          return 30;
+        }
+        return newTime;
+      });
+    }, 1000);
+    
+    toast.success("Calibración completa. Comenzando medición", {
+      duration: 3000
+    });
+  }, [finalizeMeasurement]);
 
   const startMonitoring = useCallback(() => {
     if (isMonitoring) {
@@ -233,7 +237,7 @@ const Index = () => {
     } 
     
     enterFullScreen().then(() => {
-      console.log("Starting monitoring process");
+      console.log("Starting monitoring process with forced calibration");
       
       setIsMonitoring(true);
       setIsCameraOn(true);
@@ -241,7 +245,7 @@ const Index = () => {
       setHeartRate(0);
       setElapsedTime(0);
       setCalibrationComplete(false);
-      setCalibrationProgress(0);
+      setCalibrationProgress(1);
       setVitalCalibrationComplete(false);
       setArrhythmiaCalibrationProgress(0);
       setArrhythmiaCalibrationComplete(false);
@@ -260,7 +264,7 @@ const Index = () => {
       startProcessing();
       startHeartBeatMonitoring();
       
-      console.log("Camera opened, starting calibration");
+      console.log("Camera opened, starting calibration check");
       toast.info("Ubique su dedo sobre el lente para iniciar calibración", {
         duration: 5000
       });
@@ -268,7 +272,7 @@ const Index = () => {
       console.error("Error starting monitoring:", err);
       toast.error("Error al iniciar. Por favor intente de nuevo.");
     });
-  }, [isMonitoring, startProcessing, startHeartBeatMonitoring]);
+  }, [isMonitoring, enterFullScreen, startProcessing, startHeartBeatMonitoring]);
 
   const finalizeMeasurement = useCallback(() => {
     console.log("Finalizando medición");
