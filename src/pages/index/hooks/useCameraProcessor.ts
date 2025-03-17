@@ -13,7 +13,8 @@ export const useCameraProcessor = ({
   const handleStreamReady = useCallback((stream: MediaStream) => {
     console.log("DEBUG: Stream ready event received", {
       isMonitoring,
-      trackCount: stream.getTracks().length
+      trackCount: stream.getTracks().length,
+      isActive: stream.active
     });
     
     if (!isMonitoring) {
@@ -30,16 +31,27 @@ export const useCameraProcessor = ({
       
       console.log("DEBUG: Video track obtained", {
         label: videoTrack.label,
-        hasTorch: !!videoTrack.getCapabilities()?.torch
+        hasTorch: !!videoTrack.getCapabilities()?.torch,
+        active: videoTrack.enabled,
+        settings: JSON.stringify(videoTrack.getSettings()),
+        constraints: JSON.stringify(videoTrack.getConstraints())
       });
+      
+      // Forzar activación de la pista de video
+      videoTrack.enabled = true;
       
       const imageCapture = new ImageCapture(videoTrack);
       
+      // Intentar activar la linterna para mejor señal PPG
       if (videoTrack.getCapabilities()?.torch) {
         console.log("DEBUG: Activating torch for better PPG signal");
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
-        }).catch(err => console.error("DEBUG: Error activating torch:", err));
+        }).then(() => {
+          console.log("DEBUG: Torch activated successfully");
+        }).catch(err => {
+          console.error("DEBUG: Error activating torch:", err);
+        });
       } else {
         console.warn("DEBUG: This camera doesn't have torch available, measurement may be less accurate");
       }
@@ -52,7 +64,7 @@ export const useCameraProcessor = ({
       }
       
       let lastProcessTime = 0;
-      const targetFrameInterval = 1000/30;
+      const targetFrameInterval = 1000/15; // Reducido a 15 FPS para procesamiento más estable
       let frameCount = 0;
       let lastFpsUpdateTime = Date.now();
       let processingFps = 0;
@@ -70,23 +82,39 @@ export const useCameraProcessor = ({
           try {
             const frame = await imageCapture.grabFrame();
             
+            console.log("DEBUG: Frame captured", { 
+              width: frame.width, 
+              height: frame.height,
+              timestamp: now
+            });
+            
             const targetWidth = Math.min(320, frame.width);
             const targetHeight = Math.min(240, frame.height);
             
             tempCanvas.width = targetWidth;
             tempCanvas.height = targetHeight;
             
-            tempCtx.drawImage(
-              frame, 
-              0, 0, frame.width, frame.height, 
-              0, 0, targetWidth, targetHeight
-            );
-            
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-            
-            frameCount++;
-            lastProcessTime = now;
+            try {
+              tempCtx.drawImage(
+                frame, 
+                0, 0, frame.width, frame.height, 
+                0, 0, targetWidth, targetHeight
+              );
+              
+              const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+              console.log("DEBUG: Image data ready for processing", { 
+                width: imageData.width, 
+                height: imageData.height, 
+                dataSize: imageData.data.length 
+              });
+              
+              processFrame(imageData);
+              
+              frameCount++;
+              lastProcessTime = now;
+            } catch (drawError) {
+              console.error("DEBUG: Error drawing image to canvas:", drawError);
+            }
             
             if (now - lastFpsUpdateTime > 1000) {
               processingFps = frameCount;

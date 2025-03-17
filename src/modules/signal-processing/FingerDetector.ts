@@ -9,9 +9,9 @@ export interface FingerDetectionResult {
 
 export class FingerDetector {
   private readonly HISTORY_SIZE = 10;
-  private readonly MIN_RED_THRESHOLD = 85;
-  private readonly MAX_RED_THRESHOLD = 245;
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.15;
+  private readonly MIN_RED_THRESHOLD = 65; // Reducido para mayor sensibilidad
+  private readonly MAX_RED_THRESHOLD = 250; // Aumentado un poco el límite superior
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.1; // Reducido para mayor sensibilidad
   
   private consecutiveWeakSignals: number = 0;
   private readonly MAX_WEAK_SIGNALS = 3;
@@ -29,11 +29,23 @@ export class FingerDetector {
     processedValue: number,
     signalQuality: number
   ): FingerDetectionResult {
+    console.log("FingerDetector: analyzing values", { 
+      rawValue, 
+      processedValue, 
+      signalQuality, 
+      thresholds: {
+        min: this.MIN_RED_THRESHOLD,
+        max: this.MAX_RED_THRESHOLD,
+        weak: this.WEAK_SIGNAL_THRESHOLD
+      }
+    });
+    
     // Basic range check
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && 
                      rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
+      console.log("FingerDetector: value out of range", { rawValue, isInRange });
       this.updateHistory(false);
       return { 
         isFingerDetected: false, 
@@ -46,14 +58,25 @@ export class FingerDetector {
     
     if (isWeakSignal) {
       this.consecutiveWeakSignals++;
+      console.log("FingerDetector: weak signal detected", { 
+        consecutiveWeakSignals: this.consecutiveWeakSignals, 
+        processedValue 
+      });
     } else {
       this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 1);
     }
     
     // Determine detection based on signal quality and weak signal history
-    const minQualityThreshold = 35;
+    const minQualityThreshold = 30; // Reducido para mayor sensibilidad
     const isDetected = signalQuality >= minQualityThreshold && 
                      this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS;
+    
+    console.log("FingerDetector: detection decision", { 
+      isDetected, 
+      signalQuality, 
+      minQualityThreshold,
+      weakSignals: this.consecutiveWeakSignals
+    });
     
     this.updateHistory(isDetected);
     

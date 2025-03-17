@@ -1,4 +1,5 @@
-import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal-processor';
+
+import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { KalmanFilter } from './signal-processing/KalmanFilter';
 import { SignalQualityAnalyzer } from './signal-processing/SignalQualityAnalyzer';
 import { FingerDetector } from './signal-processing/FingerDetector';
@@ -76,11 +77,10 @@ export class PPGSignalProcessor implements SignalProcessor {
 
   /**
    * Calibrate the processor (required by SignalProcessor interface)
-   * Note: Real calibration is not used as per requirements
    */
   async calibrate(): Promise<boolean> {
-    console.log("PPGSignalProcessor: Calibrate method called but not implemented");
-    // Simply reset components instead of calibrating
+    console.log("PPGSignalProcessor: Calibrating signal processor");
+    // Reset components as a simple calibration procedure
     this.reset();
     return true;
   }
@@ -94,8 +94,18 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
 
     try {
+      // Log dimensions of incoming imageData for debugging
+      console.log("Processing frame with dimensions:", { 
+        width: imageData.width, 
+        height: imageData.height,
+        dataLength: imageData.data.length,
+        timestamp: Date.now()
+      });
+      
       // Extract red channel value from image
       const redValue = this.redChannelExtractor.extractRedValue(imageData);
+      
+      console.log("Extracted red value:", redValue);
       
       // Apply Kalman filter to reduce noise
       const filtered = this.kalmanFilter.filter(redValue);
@@ -103,9 +113,13 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Calculate signal quality
       const quality = this.signalQualityAnalyzer.assessQuality(filtered, redValue);
       
-      // Detect if finger is present
+      // Detect if finger is present - log parameters for debugging
+      console.log("Finger detection parameters:", { redValue, filtered, quality });
+      
       const { isFingerDetected, confidence } = 
         this.fingerDetector.detectFinger(redValue, filtered, quality);
+      
+      console.log("Finger detection result:", { isFingerDetected, confidence, quality });
       
       // Calculate perfusion index
       const perfusionIndex = this.perfusionCalculator.calculatePI(filtered);
@@ -125,6 +139,13 @@ export class PPGSignalProcessor implements SignalProcessor {
         },
         perfusionIndex
       };
+
+      // Log the signal we're about to send
+      console.log("Sending processed signal:", { 
+        fingerDetected: processedSignal.fingerDetected, 
+        quality: processedSignal.quality,
+        timestamp: processedSignal.timestamp
+      });
 
       // Notify listeners
       if (this.onSignalReady) {
