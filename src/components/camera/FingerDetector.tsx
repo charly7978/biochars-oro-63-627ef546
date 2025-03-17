@@ -8,13 +8,17 @@ interface FingerDetectorProps {
   signalQuality: number;
   calibrationProgress?: number;
   isCalibrating?: boolean;
+  arrhythmiaCalibrationProgress?: number;
+  isArrhythmiaCalibrating?: boolean;
 }
 
 const FingerDetector = ({ 
   isFingerDetected, 
   signalQuality, 
   calibrationProgress = 0,
-  isCalibrating = false
+  isCalibrating = false,
+  arrhythmiaCalibrationProgress = 0,
+  isArrhythmiaCalibrating = false
 }: FingerDetectorProps) => {
   return (
     <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
@@ -38,6 +42,16 @@ const FingerDetector = ({
           <Progress value={calibrationProgress} className="h-1.5" />
           <span className="text-xs text-center block mt-1 text-white">
             {Math.round(calibrationProgress)}% calibrado
+          </span>
+        </div>
+      )}
+      
+      {isArrhythmiaCalibrating && isFingerDetected && !isCalibrating && (
+        <div className="mt-2 w-32">
+          <Progress value={arrhythmiaCalibrationProgress} className="h-1.5 bg-yellow-300/20" 
+            indicatorClassName="bg-yellow-400" />
+          <span className="text-xs text-center block mt-1 text-yellow-200">
+            {Math.round(arrhythmiaCalibrationProgress)}% calibrando arritmias
           </span>
         </div>
       )}

@@ -30,6 +30,8 @@ const Index = () => {
   const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [vitalCalibrationComplete, setVitalCalibrationComplete] = useState(false);
+  const [arrhythmiaCalibrationProgress, setArrhythmiaCalibrationProgress] = useState(0);
+  const [arrhythmiaCalibrationComplete, setArrhythmiaCalibrationComplete] = useState(false);
   
   const measurementTimerRef = useRef<number | null>(null);
   const calibrationTimerRef = useRef<number | null>(null);
@@ -42,7 +44,8 @@ const Index = () => {
     isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
+    reset: resetHeartBeatProcessor,
+    getCalibrationProgress: getHeartBeatCalibrationProgress
   } = useHeartBeatProcessor();
   
   const { 
@@ -51,7 +54,9 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults,
     isCalibrationComplete,
-    getCalibrationProgress
+    getCalibrationProgress,
+    arrhythmiaCounter,
+    arrhythmiaWindows
   } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
@@ -111,6 +116,21 @@ const Index = () => {
                 }
               }
             }
+            
+            if (vitals.arrhythmiaStatus.includes("CALIBRANDO")) {
+              const match = vitals.arrhythmiaStatus.match(/(\d+)%/);
+              if (match) {
+                const progress = parseInt(match[1], 10);
+                setArrhythmiaCalibrationProgress(progress);
+              } else {
+                const arrhythmiaProgress = Math.min(100, elapsedTime * 5);
+                setArrhythmiaCalibrationProgress(arrhythmiaProgress);
+              }
+              setArrhythmiaCalibrationComplete(false);
+            } else {
+              setArrhythmiaCalibrationComplete(true);
+              setArrhythmiaCalibrationProgress(100);
+            }
           }
         }
         
@@ -123,7 +143,7 @@ const Index = () => {
       consecutiveFingerDetectionsRef.current = 0;
       fingerDetectedRef.current = false;
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime]);
 
   useEffect(() => {
     if (calibrationComplete && isMonitoring && !measurementTimerRef.current) {
@@ -169,13 +189,20 @@ const Index = () => {
       setCalibrationComplete(false);
       setCalibrationProgress(0);
       setVitalCalibrationComplete(false);
+      setArrhythmiaCalibrationProgress(0);
+      setArrhythmiaCalibrationComplete(false);
       
       startProcessing();
       startHeartBeatMonitoring();
       
-      console.log("Camera opened, starting 8-second calibration");
+      console.log("Camera opened, starting calibration");
       toast.info("Ubique su dedo sobre el lente para iniciar calibración", {
         duration: 5000
+      });
+      
+      toast.info("La aplicación detecta ritmo cardíaco y arritmias usando la cámara", {
+        duration: 8000,
+        id: "app-purpose"
       });
     }).catch(err => {
       console.error("Error starting monitoring:", err);
@@ -211,6 +238,8 @@ const Index = () => {
     setCalibrationComplete(false);
     setCalibrationProgress(0);
     setVitalCalibrationComplete(false);
+    setArrhythmiaCalibrationProgress(0);
+    setArrhythmiaCalibrationComplete(false);
     setSignalQuality(0);
     consecutiveFingerDetectionsRef.current = 0;
     fingerDetectedRef.current = false;
@@ -240,6 +269,8 @@ const Index = () => {
     setCalibrationComplete(false);
     setCalibrationProgress(0);
     setVitalCalibrationComplete(false);
+    setArrhythmiaCalibrationProgress(0);
+    setArrhythmiaCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
@@ -368,11 +399,15 @@ const Index = () => {
     if (!fingerDetectedRef.current) return "Ubique su dedo sobre el lente";
     
     if (!calibrationComplete) {
-      return `Calibrando... ${Math.floor(calibrationProgress)}%`;
+      return `Calibrando dispositivo... ${Math.floor(calibrationProgress)}%`;
+    }
+    
+    if (!arrhythmiaCalibrationComplete) {
+      return `Calibrando detección de arritmias... ${Math.floor(arrhythmiaCalibrationProgress)}%`;
     }
     
     return `Midiendo: ${elapsedTime}s / 30s`;
-  }, [isMonitoring, calibrationComplete, calibrationProgress, elapsedTime]);
+  }, [isMonitoring, calibrationComplete, calibrationProgress, elapsedTime, arrhythmiaCalibrationComplete, arrhythmiaCalibrationProgress]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
@@ -391,8 +426,6 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={fingerDetectedRef.current}
             signalQuality={signalQuality}
-            calibrationProgress={calibrationProgress}
-            isCalibrating={isMonitoring && !calibrationComplete}
           />
         </div>
 
@@ -454,8 +487,8 @@ const Index = () => {
                 label="ARRITMIAS"
                 value={vitalSigns.arrhythmiaStatus}
                 highlighted={showResults || calibrationComplete}
-                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
-                  vitalSigns.calibration.progress.arrhythmia * 100 : undefined}
+                calibrationProgress={!arrhythmiaCalibrationComplete && calibrationComplete ? 
+                  arrhythmiaCalibrationProgress : undefined}
               />
               <VitalSign 
                 label="GLUCOSA"
@@ -495,4 +528,3 @@ const Index = () => {
 };
 
 export default Index;
-

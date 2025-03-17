@@ -1,4 +1,3 @@
-
 /**
  * Ultra-simple algorithm for arrhythmia detection
  * Designed to minimize false positives
@@ -45,8 +44,9 @@ export class ArrhythmiaProcessor {
     
     // During calibration, just report status
     if (this.isCalibrating) {
+      const percentComplete = Math.min(100, Math.round(((currentTime - this.startTime) / this.calibrationTime) * 100));
       return {
-        arrhythmiaStatus: "CALIBRATING...",
+        arrhythmiaStatus: `CALIBRANDO... ${percentComplete}%`,
         lastArrhythmiaData: null
       };
     }
@@ -65,8 +65,8 @@ export class ArrhythmiaProcessor {
     // Build status message
     const arrhythmiaStatusMessage = 
       this.arrhythmiaCount > 0 
-        ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
-        : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
+        ? `ARRHYTHMIA DETECTADA|${this.arrhythmiaCount}` 
+        : `NO ARRITMIAS|${this.arrhythmiaCount}`;
     
     // Additional information only if there's active arrhythmia
     const lastArrhythmiaData = this.arrhythmiaDetected 
@@ -143,7 +143,7 @@ export class ArrhythmiaProcessor {
       this.lastArrhythmiaTime = currentTime;
       this.consecutiveAbnormalBeats = 0;
       
-      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED", {
+      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMADA", {
         arrhythmiaCount: this.arrhythmiaCount,
         timeSinceLast: timeSinceLastArrhythmia,
         timestamp: currentTime
@@ -167,5 +167,23 @@ export class ArrhythmiaProcessor {
     console.log("ArrhythmiaProcessor: Processor reset", {
       timestamp: new Date().toISOString()
     });
+  }
+  
+  /**
+   * Get calibration progress percentage
+   */
+  public getCalibrationProgress(): number {
+    if (!this.isCalibrating) return 100;
+    
+    const currentTime = Date.now();
+    const elapsed = currentTime - this.startTime;
+    return Math.min(100, Math.round((elapsed / this.calibrationTime) * 100));
+  }
+  
+  /**
+   * Check if calibration is complete
+   */
+  public isCalibrationComplete(): boolean {
+    return !this.isCalibrating;
   }
 }
