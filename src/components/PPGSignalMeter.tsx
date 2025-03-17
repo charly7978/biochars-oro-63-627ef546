@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -54,15 +53,6 @@ const PPGSignalMeter = memo(({
   
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
-  
-  const signalAmplitudeHistoryRef = useRef<number[]>([]);
-  const fingerprintConfidenceRef = useRef<number>(0);
-  const detectionStabilityCounterRef = useRef<number>(0);
-  const lastDetectionStateRef = useRef<boolean>(false);
-  const noiseBufferRef = useRef<number[]>([]);
-  const peakVarianceRef = useRef<number[]>([]);
-  const lastStableDetectionTimeRef = useRef<number>(0);
-  const derivativeBufferRef = useRef<number[]>([]);
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5000;
@@ -80,19 +70,8 @@ const PPGSignalMeter = memo(({
   const MIN_PEAK_DISTANCE_MS = 200;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
-  
-  const REQUIRED_FINGER_FRAMES = 12;
-  const QUALITY_HISTORY_SIZE = 20;
-  const AMPLITUDE_HISTORY_SIZE = 20;
-  const MIN_AMPLITUDE_THRESHOLD = 1.5;
-  const REQUIRED_STABILITY_FRAMES = 5;
-  const QUALITY_DECAY_RATE = 0.75;
-  const NOISE_BUFFER_SIZE = 20;
-  const MAX_NOISE_RATIO = 0.2;
-  const MIN_PEAK_VARIANCE = 1.2;
-  const STABILITY_TIMEOUT_MS = 4000;
-  const MIN_DERIVATIVE_THRESHOLD = 0.5;
-
+  const REQUIRED_FINGER_FRAMES = 3;
+  const QUALITY_HISTORY_SIZE = 9;
   const USE_OFFSCREEN_CANVAS = true;
   const ARRHYTHMIA_COLOR = '#FF2E2E';
   const NORMAL_COLOR = '#0EA5E9';
@@ -127,73 +106,18 @@ const PPGSignalMeter = memo(({
     }
   }, [preserveResults, isFingerDetected]);
 
-  const calculateDerivative = useCallback((value: number) => {
-    if (lastValueRef.current === null) return 0;
-    return value - lastValueRef.current;
-  }, []);
-
   useEffect(() => {
-    if (lastValueRef.current !== null) {
-      const derivative = Math.abs(calculateDerivative(value));
-      derivativeBufferRef.current.push(derivative);
-      if (derivativeBufferRef.current.length > NOISE_BUFFER_SIZE) {
-        derivativeBufferRef.current.shift();
-      }
-    }
-    
-    if (isFingerDetected && quality > 5) {
-      qualityHistoryRef.current.push(quality);
-    } else {
-      qualityHistoryRef.current.push(Math.max(0, quality * QUALITY_DECAY_RATE));
-    }
-    
+    qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
     
-    if (lastValueRef.current !== null && baselineRef.current !== null) {
-      const amplitude = Math.abs(lastValueRef.current - baselineRef.current);
-      signalAmplitudeHistoryRef.current.push(amplitude);
-      if (signalAmplitudeHistoryRef.current.length > AMPLITUDE_HISTORY_SIZE) {
-        signalAmplitudeHistoryRef.current.shift();
-      }
-      
-      noiseBufferRef.current.push(value);
-      if (noiseBufferRef.current.length > NOISE_BUFFER_SIZE) {
-        noiseBufferRef.current.shift();
-      }
-    }
-    
-    const now = Date.now();
-    
-    if (now - lastStableDetectionTimeRef.current > STABILITY_TIMEOUT_MS) {
-      detectionStabilityCounterRef.current = 0;
+    if (isFingerDetected) {
+      consecutiveFingerFramesRef.current++;
+    } else {
       consecutiveFingerFramesRef.current = 0;
     }
-    
-    if (isFingerDetected) {
-      if (quality > 55) {
-        consecutiveFingerFramesRef.current++;
-        detectionStabilityCounterRef.current = Math.min(10, detectionStabilityCounterRef.current + 0.5);
-        
-        if (detectionStabilityCounterRef.current >= REQUIRED_STABILITY_FRAMES) {
-          lastStableDetectionTimeRef.current = now;
-        }
-      } else {
-        consecutiveFingerFramesRef.current = Math.max(0, consecutiveFingerFramesRef.current - 0.3);
-        detectionStabilityCounterRef.current = Math.max(0, detectionStabilityCounterRef.current - 0.7);
-      }
-    } else {
-      consecutiveFingerFramesRef.current = Math.max(0, consecutiveFingerFramesRef.current - 1.5);
-      detectionStabilityCounterRef.current = Math.max(0, detectionStabilityCounterRef.current - 1.2);
-    }
-    
-    const highQualityFrames = qualityHistoryRef.current.filter(q => q > 55);
-    const detectionRatio = highQualityFrames.length / Math.max(1, qualityHistoryRef.current.length);
-    fingerprintConfidenceRef.current = Math.min(1, detectionRatio * 1.3);
-    
-    lastDetectionStateRef.current = isFingerDetected;
-  }, [quality, isFingerDetected, value, calculateDerivative]);
+  }, [quality, isFingerDetected]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -260,94 +184,31 @@ const PPGSignalMeter = memo(({
     let weightSum = 0;
     
     qualityHistoryRef.current.forEach((q, index) => {
-      const weight = Math.pow(1.3, index);
+      const weight = index + 1;
       weightedSum += q * weight;
       weightSum += weight;
     });
     
-    let avgQuality = weightSum > 0 ? weightedSum / weightSum : 0;
-    
-    if (signalAmplitudeHistoryRef.current.length > 10) {
-      const avgAmplitude = signalAmplitudeHistoryRef.current.reduce((sum, amp) => sum + amp, 0) / 
-                          signalAmplitudeHistoryRef.current.length;
-      
-      if (avgAmplitude < MIN_AMPLITUDE_THRESHOLD) {
-        avgQuality = Math.max(0, avgQuality * 0.4);
-      }
-    }
-    
-    if (noiseBufferRef.current.length > 10) {
-      const noiseLevel = calculateNoiseLevel(noiseBufferRef.current);
-      if (noiseLevel > MAX_NOISE_RATIO) {
-        avgQuality = Math.max(0, avgQuality * 0.5);
-      }
-    }
-    
-    if (derivativeBufferRef.current.length > 10) {
-      const avgDerivative = derivativeBufferRef.current.reduce((sum, d) => sum + d, 0) / 
-                           derivativeBufferRef.current.length;
-      
-      if (avgDerivative < MIN_DERIVATIVE_THRESHOLD) {
-        avgQuality = Math.max(0, avgQuality * 0.6);
-      }
-    }
-    
-    return avgQuality;
+    return weightSum > 0 ? weightedSum / weightSum : 0;
   }, []);
-
-  const calculateNoiseLevel = useCallback((values: number[]): number => {
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
-    
-    return stdDev / (Math.abs(mean) + 0.001);
-  }, []);
-
-  const getTrueFingerDetection = useCallback(() => {
-    const avgQuality = getAverageQuality();
-    
-    const hasStableDetection = detectionStabilityCounterRef.current >= REQUIRED_STABILITY_FRAMES;
-    const hasMinimumQuality = avgQuality > 35;
-    const hasRequiredFrames = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
-    
-    // Changed from const to let to allow reassignment
-    let hasSignalVariability = false;
-    if (derivativeBufferRef.current.length > 10) {
-      const maxDerivative = Math.max(...derivativeBufferRef.current);
-      hasSignalVariability = maxDerivative > MIN_DERIVATIVE_THRESHOLD;
-    }
-    
-    // Changed from const to let to allow reassignment
-    let hasSufficientAmplitude = false;
-    if (signalAmplitudeHistoryRef.current.length > 10) {
-      const avgAmplitude = signalAmplitudeHistoryRef.current.reduce((sum, a) => sum + a, 0) / 
-                          signalAmplitudeHistoryRef.current.length;
-      hasSufficientAmplitude = avgAmplitude > MIN_AMPLITUDE_THRESHOLD;
-    }
-    
-    return hasStableDetection && hasMinimumQuality && hasRequiredFrames && 
-           (hasSignalVariability || hasSufficientAmplitude);
-  }, [getAverageQuality]);
 
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-    const isFingerDetected = getTrueFingerDetection();
     
-    if (!isFingerDetected) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 70) return 'from-green-500 to-emerald-500';
-    if (avgQuality > 45) return 'from-yellow-500 to-orange-500';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality, getTrueFingerDetection]);
+  }, [getAverageQuality]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-    const isFingerDetected = getTrueFingerDetection();
     
-    if (!isFingerDetected) return 'Sin detección';
-    if (avgQuality > 70) return 'Señal óptima';
-    if (avgQuality > 45) return 'Señal aceptable';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
+    if (avgQuality > 65) return 'Señal óptima';
+    if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality, getTrueFingerDetection]);
+  }, [getAverageQuality]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -731,20 +592,11 @@ const PPGSignalMeter = memo(({
     peaksRef.current = [];
     arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     arrhythmiaSegmentsRef.current = [];
-    signalAmplitudeHistoryRef.current = [];
-    qualityHistoryRef.current = [];
-    fingerprintConfidenceRef.current = 0;
-    detectionStabilityCounterRef.current = 0;
-    consecutiveFingerFramesRef.current = 0;
-    noiseBufferRef.current = [];
-    peakVarianceRef.current = [];
-    derivativeBufferRef.current = [];
-    lastStableDetectionTimeRef.current = 0;
     onReset();
   }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = getTrueFingerDetection();
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -789,10 +641,6 @@ const PPGSignalMeter = memo(({
               'text-red-500'
             }`}
             strokeWidth={1.5}
-            style={{
-              opacity: displayFingerDetected ? 1 : 0.6,
-              filter: displayFingerDetected ? 'none' : 'grayscale(0.5)'
-            }}
           />
           <span className="text-[7px] text-center font-medium text-black/80">
             {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
@@ -821,3 +669,4 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
+

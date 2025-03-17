@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -241,8 +242,10 @@ const Index = () => {
       setHeartRate(heartBeatResult.bpm);
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      setVitalSigns(vitals);
-      setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+      if (vitals) {
+        setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+      }
       
       setSignalQuality(lastSignal.quality);
     }

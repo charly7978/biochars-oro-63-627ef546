@@ -1,103 +1,63 @@
 
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
-import { SignalValidator } from './signal-validation/SignalValidator';
-import { SignalAnalyzer } from './signal-analysis/SignalAnalyzer';
-import { ProcessorConfig } from './vital-signs/ProcessorConfig';
 
 /**
- * Professional medical-grade wrapper that ensures only real physiological data
- * is processed with strict validation requirements.
+ * Compatibility wrapper that maintains the original interface
+ * while using direct measurement implementation.
  * 
- * This implementation enforces strict medical standards with zero simulation
- * and aggressive false positive prevention.
+ * This file ensures all measurements start from zero and use only real data.
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
-  private signalValidator: SignalValidator;
   
-  // System state
-  private weakSignalCounter: number = 0;
+  // Set wider thresholds to accommodate more physiological variations
+  private readonly WINDOW_SIZE = 300;
+  private readonly SPO2_CALIBRATION_FACTOR = 1.0; // Neutral calibration factor
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.015; // Lowered threshold for greater sensitivity
+  private readonly SPO2_WINDOW = 3; // Shortened for faster initial response
+  private readonly SMA_WINDOW = 3;
+  private readonly RR_WINDOW_SIZE = 5; // Reduced window size for faster response
+  private readonly RMSSD_THRESHOLD = 12; // Lowered for better arrhythmia detection
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 800; // Shortened learning period
+  private readonly PEAK_THRESHOLD = 0.15; // Lowered for greater sensitivity
+  private readonly RENDER_OPTIMIZATION = true; // Enable rendering optimizations
   
   /**
    * Constructor that initializes the internal direct measurement processor
-   * with strict medical-grade parameters
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing medical-grade processor with strict validation");
+    console.log("VitalSignsProcessor wrapper: Initializing with direct measurement mode");
     this.processor = new CoreProcessor();
-    this.signalValidator = new SignalValidator();
   }
   
   /**
    * Process a PPG signal and RR data to get vital signs
-   * Uses aggressive validation to prevent false readings
-   * 
-   * @param ppgValue Raw PPG signal value
-   * @param rrData Optional RR interval data
-   * @returns Validated vital signs or null values if data is insufficient
+   * Maintains exactly the same method signature for compatibility
+   * Always performs direct measurement with no reference values
    */
   public processSignal(
     ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null },
-    signalQuality?: number
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Weak signal detection and rejection
-    if (Math.abs(ppgValue) < ProcessorConfig.WEAK_SIGNAL_THRESHOLD) {
-      this.weakSignalCounter++;
-      if (this.weakSignalCounter > 3) {
-        console.warn("VitalSignsProcessor: Persistent weak signal detected");
-        return SignalAnalyzer.createEmptyResult();
-      }
-    } else {
-      this.weakSignalCounter = 0;
-    }
-    
-    // Multi-stage signal validation
-    const validationResult = this.signalValidator.validateSignalQuality(ppgValue, signalQuality);
-    
-    if (!validationResult.isValid) {
-      console.log("VitalSignsProcessor: Signal validation failed", {
-        reason: validationResult.validationMessage,
-        counter: validationResult.validSampleCounter
-      });
-      return SignalAnalyzer.createEmptyResult();
-    }
-    
-    // RR interval validation if provided
-    if (rrData && !this.signalValidator.validateRRIntervals(rrData)) {
-      console.warn("VitalSignsProcessor: Invalid RR intervals");
-      return SignalAnalyzer.createEmptyResult();
-    }
-    
-    // Process validated signals
-    const result = this.processor.processSignal(ppgValue, rrData);
-    
-    console.log("VitalSignsProcessor: Processed valid signal with quality", { 
-      signalQuality, 
-      validSamples: validationResult.validSampleCounter
-    });
-    
-    return result;
+    // Direct processing with no adjustments or simulations
+    return this.processor.processSignal(ppgValue, rrData);
   }
   
   /**
-   * Reset the processor to ensure a clean state
+   * Reset the processor
+   * Ensures all measurements start from zero
    */
   public reset() {
-    console.log("VitalSignsProcessor: Reset - all measurements will start from zero");
-    this.weakSignalCounter = 0;
-    this.signalValidator.reset();
+    console.log("VitalSignsProcessor wrapper: Reset - all measurements will start from zero");
     return this.processor.reset();
   }
   
   /**
    * Completely reset the processor and all its data
-   * Removes any historical influence to prevent data contamination
+   * Removes any history and ensures fresh start
    */
   public fullReset(): void {
-    console.log("VitalSignsProcessor: Full reset - removing all data history");
-    this.weakSignalCounter = 0;
-    this.signalValidator.reset();
+    console.log("VitalSignsProcessor wrapper: Full reset - removing all data history");
     this.processor.fullReset();
   }
 }
