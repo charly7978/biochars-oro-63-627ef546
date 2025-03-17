@@ -33,9 +33,10 @@ export function useHeartBeatProcessor() {
     return () => {
       console.log("useHeartBeatProcessor: Cleanup");
       if (processorRef.current) {
-        // Check if stopMonitoring exists before calling it
-        if (typeof processorRef.current.stopMonitoring === 'function') {
+        try {
           processorRef.current.stopMonitoring();
+        } catch (err) {
+          console.error("Error during cleanup:", err);
         }
       }
     };
@@ -44,33 +45,36 @@ export function useHeartBeatProcessor() {
   const startMonitoring = useCallback(() => {
     console.log("useHeartBeatProcessor: Starting monitoring");
     if (processorRef.current) {
-      // Check if startMonitoring exists before calling it
-      if (typeof processorRef.current.startMonitoring === 'function') {
+      try {
         processorRef.current.startMonitoring();
+        setIsMonitoring(true);
+      } catch (err) {
+        console.error("Error starting monitoring:", err);
       }
-      setIsMonitoring(true);
     }
   }, []);
   
   const stopMonitoring = useCallback(() => {
     console.log("useHeartBeatProcessor: Stopping monitoring");
     if (processorRef.current) {
-      // Check if stopMonitoring exists before calling it
-      if (typeof processorRef.current.stopMonitoring === 'function') {
+      try {
         processorRef.current.stopMonitoring();
+        setIsMonitoring(false);
+      } catch (err) {
+        console.error("Error stopping monitoring:", err);
       }
-      setIsMonitoring(false);
     }
   }, []);
   
   const reset = useCallback(() => {
     console.log("useHeartBeatProcessor: Resetting");
     if (processorRef.current) {
-      // Check if reset exists before calling it
-      if (typeof processorRef.current.reset === 'function') {
+      try {
         processorRef.current.reset();
+        setIsArrhythmia(false);
+      } catch (err) {
+        console.error("Error resetting processor:", err);
       }
-      setIsArrhythmia(false);
     }
   }, []);
   
@@ -80,10 +84,14 @@ export function useHeartBeatProcessor() {
       return { bpm: 0, confidence: 0 };
     }
     
-    const result = processorRef.current.processValue(value);
-    setIsArrhythmia(processorRef.current.isArrhythmiaDetected());
-    
-    return result;
+    try {
+      const result = processorRef.current.processValue(value);
+      setIsArrhythmia(processorRef.current.isArrhythmiaDetected());
+      return result;
+    } catch (err) {
+      console.error("Error processing signal:", err);
+      return { bpm: 0, confidence: 0 };
+    }
   }, []);
   
   return {

@@ -1,56 +1,22 @@
 
 /**
- * Extracts red channel values from camera image data
+ * Enhanced RedChannelExtractor that analyzes the entire image for maximum sensitivity
  */
 export class RedChannelExtractor {
+  private readonly SAMPLE_RATE = 1; // Check every pixel for maximum sensitivity
+  
   /**
-   * Extract average red channel value from the center of the image
-   * @param imageData - Raw image data from camera
-   * @returns Average red channel value
+   * Extract average red channel value from the entire image
    */
   public extractRedValue(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
     let pixelCount = 0;
     
-    // Debug values - more frequent logging
-    console.log("RedChannelExtractor: Processing image", {
-      width: imageData.width,
-      height: imageData.height,
-      dataLength: data.length,
-      timestamp: Date.now()
-    });
-    
-    if (imageData.width === 0 || imageData.height === 0 || data.length === 0) {
-      console.warn("RedChannelExtractor: Invalid image data");
-      return 0;
-    }
-    
-    // Analyze the ENTIRE image area for maximum sensitivity
-    const centerRegionSize = 1.0; // Use 100% of the image
-    const startX = 0;
-    const endX = imageData.width;
-    const startY = 0;
-    const endY = imageData.height;
-    
-    console.log("RedChannelExtractor: Analysis region", {
-      startX, endX, startY, endY,
-      regionWidth: endX - startX,
-      regionHeight: endY - startY
-    });
-    
-    // Extract red channel from each pixel with NO SAMPLING - check every pixel
-    // This ensures we don't miss any signal
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        
-        // Ensure index is within bounds
-        if (i >= 0 && i < data.length) {
-          redSum += data[i]; // Red channel (R in RGBA)
-          pixelCount++;
-        }
-      }
+    // Process the entire image - no sampling regions
+    for (let i = 0; i < data.length; i += 4 * this.SAMPLE_RATE) {
+      redSum += data[i]; // Red channel (R in RGBA)
+      pixelCount++;
     }
     
     if (pixelCount === 0) {
@@ -60,12 +26,16 @@ export class RedChannelExtractor {
     
     const avgRed = redSum / pixelCount;
     
-    // Report values for debugging - much more frequent
-    console.log("RedChannelExtractor: Extracted value", {
-      avgRed,
-      pixelsAnalyzed: pixelCount,
-      timestamp: Date.now()
-    });
+    // Occasional logging to avoid console flooding
+    if (Math.random() < 0.01) {
+      console.log("RedChannelExtractor: Extracted value", {
+        avgRed,
+        pixelsAnalyzed: pixelCount,
+        width: imageData.width,
+        height: imageData.height,
+        timestamp: Date.now()
+      });
+    }
     
     return avgRed;
   }
