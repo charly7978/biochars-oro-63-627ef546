@@ -27,10 +27,6 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  const stableQualityHistoryRef = useRef<number[]>([]);
-  const consecutiveGoodSignalsRef = useRef<number>(0);
-  const REQUIRED_STABLE_FRAMES = 15; // Alto requisito de estabilidad
-  const QUALITY_THRESHOLD_FOR_PROCESSING = 65; // Umbral mucho más alto de calidad
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -74,51 +70,29 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Process signal only if we have good quality and finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Still update basic fingerDetected for the UI
-      if (lastSignal.fingerDetected && lastSignal.quality >= QUALITY_THRESHOLD_FOR_PROCESSING) {
-        // Incrementar contador de señales buenas consecutivas
-        consecutiveGoodSignalsRef.current++;
+      // Only process if the quality is sufficient and the finger is detected
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Solo procesar si tenemos suficientes señales buenas consecutivas
-        if (consecutiveGoodSignalsRef.current >= REQUIRED_STABLE_FRAMES) {
-          const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        // Only update heart rate if confidence is sufficient
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+          setHeartRate(heartBeatResult.bpm);
           
-          // Only update heart rate if confidence is very high
-          if (heartBeatResult.confidence > 0.6) { // Significantly increased confidence threshold
-            setHeartRate(heartBeatResult.bpm);
-            
-            // Validar intervalos RR para verificar plausibilidad fisiológica
-            const hasValidRRData = heartBeatResult.rrData && 
-                                  heartBeatResult.rrData.intervals.length >= 3 &&
-                                  validateRRIntervals(heartBeatResult.rrData.intervals);
-            
-            if (hasValidRRData) {
-              const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-              if (vitals && vitals.spo2 > 0) { // Verificar que los valores sean válidos
-                setVitalSigns(vitals);
-                
-                // Use signal quality directly from vital sign measurements
-                if (vitals.signalQuality !== undefined) {
-                  setSignalQuality(vitals.signalQuality);
-                }
-              }
-            }
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
           }
-          
-          // If no signal quality from measurements, use the default quality from signal processor
-          if (!vitalSigns.signalQuality) {
-            setSignalQuality(lastSignal.quality);
-          }
-        } else {
-          // We're not processing yet, but still show signal quality
-          setSignalQuality(lastSignal.quality);
         }
+        
+        setSignalQuality(lastSignal.quality);
       } else {
         // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
-        consecutiveGoodSignalsRef.current = 0;
         
         // If finger not detected for a while, reset heart rate to zero
         if (!lastSignal.fingerDetected && heartRate > 0) {
@@ -128,39 +102,8 @@ const Index = () => {
     } else if (!isMonitoring) {
       // If not monitoring, maintain zero values
       setSignalQuality(0);
-      consecutiveGoodSignalsRef.current = 0;
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, vitalSigns]);
-
-  const validateRRIntervals = (intervals: number[]): boolean => {
-    if (!intervals || intervals.length < 3) return false;
-    
-    // Verificar valores en rango fisiológico válido (40-180 BPM)
-    const isInRange = intervals.every(i => i >= 333 && i <= 1500);
-    if (!isInRange) return false;
-    
-    // Verificar que no hay cambios súbitos implausibles
-    const maxInterval = Math.max(...intervals);
-    const minInterval = Math.min(...intervals);
-    const ratio = maxInterval / minInterval;
-    
-    // Un cambio de más de 2.5x entre latidos es implausible sin ejercicio
-    if (ratio > 2.5) return false;
-    
-    // Verificar estabilidad
-    const variance = calculateVariance(intervals);
-    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    const variationPercent = (Math.sqrt(variance) / mean) * 100;
-    
-    // Variabilidad natural entre 3-20% en estado de reposo
-    return variationPercent >= 3 && variationPercent <= 20;
-  };
-  
-  const calculateVariance = (values: number[]): number => {
-    if (values.length < 2) return 0;
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  };
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -171,10 +114,6 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0); // Reset heart rate explicitly
-      
-      // Resetear contadores de estabilidad
-      stableQualityHistoryRef.current = [];
-      consecutiveGoodSignalsRef.current = 0;
       
       startProcessing();
       startHeartBeatMonitoring(); // Update the processor state
@@ -222,8 +161,6 @@ const Index = () => {
     setElapsedTime(0);
     setSignalQuality(0);
     setHeartRate(0); // Reset heart rate explicitly
-    stableQualityHistoryRef.current = [];
-    consecutiveGoodSignalsRef.current = 0;
   };
 
   const handleReset = () => {
@@ -254,8 +191,6 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
-    stableQualityHistoryRef.current = [];
-    consecutiveGoodSignalsRef.current = 0;
   };
 
   const handleStreamReady = (stream: MediaStream) => {

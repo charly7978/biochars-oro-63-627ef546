@@ -5,7 +5,7 @@ import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
  * Hook para gestionar el procesamiento de señales PPG.
- * Implementa detección robusta, adaptativa y natural con prevención agresiva de falsos positivos.
+ * Implementa detección robusta, adaptativa y natural.
  */
 export const useSignalProcessor = () => {
   // Instancia del procesador
@@ -33,34 +33,22 @@ export const useSignalProcessor = () => {
   // Referencias para historial y estabilización
   const qualityHistoryRef = useRef<number[]>([]);
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 8; // Aumentado para más muestras
+  const HISTORY_SIZE = 5;
   
-  // Variables para manejo adaptativo con umbrales mucho más estrictos
+  // Variables para manejo adaptativo
   const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.65); // Umbral inicial muy alto
+  const detectionThresholdRef = useRef<number>(0.45); // Umbral inicial menos restrictivo
   const adaptiveCounterRef = useRef<number>(0);
-  const ADAPTIVE_ADJUSTMENT_INTERVAL = 30;
-  const MIN_DETECTION_THRESHOLD = 0.55; // Umbral mínimo significativamente aumentado
+  const ADAPTIVE_ADJUSTMENT_INTERVAL = 40;
+  const MIN_DETECTION_THRESHOLD = 0.30; // Umbral mínimo menos restrictivo
   
   // Contador para evitar pérdidas rápidas de señal
   const signalLockCounterRef = useRef<number>(0);
-  const MAX_SIGNAL_LOCK = 6; // Aumentado para requerir más confirmación
-  const RELEASE_GRACE_PERIOD = 5; // Aumentado para mayor estabilidad
-  
-  // Contadores para validación fisiológica
-  const consecutiveStableFramesRef = useRef<number>(0);
-  const REQUIRED_STABLE_FRAMES = 15; // Requerir muchos frames estables
-  const lastSignalValuesRef = useRef<number[]>([]);
-  const SIGNAL_HISTORY_SIZE = 20;
-  
-  // Variables para detección de falsos positivos
-  const signalVarianceHistoryRef = useRef<number[]>([]);
-  const MIN_ACCEPTABLE_VARIANCE = 0.02; // Señal real debe tener cierta variación
-  const MAX_ACCEPTABLE_VARIANCE = 100; // Evitar señales con ruido excesivo
+  const MAX_SIGNAL_LOCK = 4;
+  const RELEASE_GRACE_PERIOD = 3;
 
   /**
-   * Procesa la detección de dedo con validación extremadamente agresiva
-   * para eliminar falsos positivos
+   * Procesa la detección de dedo de manera robusta y adaptativa
    */
   const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
     // Actualizar historiales
@@ -74,25 +62,7 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Mantener historial de valores de señal para validación fisiológica
-    lastSignalValuesRef.current.push(signal.filteredValue);
-    if (lastSignalValuesRef.current.length > SIGNAL_HISTORY_SIZE) {
-      lastSignalValuesRef.current.shift();
-    }
-    
-    // Calcular varianza de la señal para validación
-    if (lastSignalValuesRef.current.length > 10) {
-      const variance = calculateVariance(lastSignalValuesRef.current);
-      signalVarianceHistoryRef.current.push(variance);
-      if (signalVarianceHistoryRef.current.length > 5) {
-        signalVarianceHistoryRef.current.shift();
-      }
-    }
-    
-    // Verificar si la varianza indica una señal fisiológicamente plausible
-    const isVariancePlausible = validateSignalVariance();
-    
-    // Calcular ratio de detección con mayor exigencia
+    // Calcular ratio de detección
     const rawDetectionRatio = fingerDetectedHistoryRef.current.filter(d => d).length / 
                              Math.max(1, fingerDetectedHistoryRef.current.length);
     
@@ -100,7 +70,7 @@ export const useSignalProcessor = () => {
     let weightedQualitySum = 0;
     let weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.2, index); // Ponderación exponencial
+      const weight = Math.pow(1.2, index); // Ponderación exponencial menos agresiva
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -112,36 +82,28 @@ export const useSignalProcessor = () => {
     if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
       adaptiveCounterRef.current = 0;
       
-      const consistentDetection = rawDetectionRatio > 0.9; // Requerir mucha más consistencia
-      const consistentNonDetection = rawDetectionRatio < 0.1;
+      const consistentDetection = rawDetectionRatio > 0.8;
+      const consistentNonDetection = rawDetectionRatio < 0.2;
       
       if (consistentNonDetection) {
-        // Hacer más fácil la detección pero mantener umbral alto
+        // Hacer más fácil la detección
         detectionThresholdRef.current = Math.max(
           MIN_DETECTION_THRESHOLD,
-          detectionThresholdRef.current - 0.05
+          detectionThresholdRef.current - 0.08
         );
-      } else if (consistentDetection && avgQuality < 60) { // Umbral de calidad mucho mayor
+      } else if (consistentDetection && avgQuality < 35) {
         // Ser más estrictos con detección pero baja calidad
         detectionThresholdRef.current = Math.min(
-          0.85, // Umbral máximo mucho más alto
+          0.6,
           detectionThresholdRef.current + 0.05
         );
       }
     }
     
-    // Lógica de "lock-in" para estabilidad con requisitos más estrictos
+    // Lógica de "lock-in" para estabilidad
     if (signal.fingerDetected) {
       consecutiveNonDetectionRef.current = 0;
-      
-      // Incrementar contador de lock solo si la señal cumple validaciones fisiológicas
-      if (isVariancePlausible && avgQuality > 50) { // Mayor umbral de calidad
-        signalLockCounterRef.current = Math.min(MAX_SIGNAL_LOCK, signalLockCounterRef.current + 1);
-        consecutiveStableFramesRef.current++;
-      } else {
-        signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 0.5);
-        consecutiveStableFramesRef.current = 0;
-      }
+      signalLockCounterRef.current = Math.min(MAX_SIGNAL_LOCK, signalLockCounterRef.current + 1);
     } else {
       if (signalLockCounterRef.current >= MAX_SIGNAL_LOCK) {
         consecutiveNonDetectionRef.current++;
@@ -152,26 +114,16 @@ export const useSignalProcessor = () => {
       } else {
         signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
       }
-      consecutiveStableFramesRef.current = 0;
     }
     
-    // Determinación final con criterios extremadamente estrictos
-    const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1 && 
-                       consecutiveStableFramesRef.current >= REQUIRED_STABLE_FRAMES &&
-                       isVariancePlausible;
-                       
-    const hasConsistentHighQuality = avgQuality > 70 && rawDetectionRatio > 0.8;
+    // Determinación final con criterios más naturales
+    const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
     const currentThreshold = detectionThresholdRef.current;
+    const robustFingerDetected = isLockedIn || rawDetectionRatio >= currentThreshold;
     
-    // Requiere múltiples criterios para confirmar detección de dedo
-    const robustFingerDetected = isLockedIn || 
-                                (rawDetectionRatio >= currentThreshold && 
-                                 hasConsistentHighQuality &&
-                                 isVariancePlausible);
-    
-    // Ajuste de calidad final considerando detección robusta
-    const enhancementFactor = robustFingerDetected ? 1.0 : 0.85; // Factor más conservador
-    const enhancedQuality = Math.min(100, signal.quality * enhancementFactor);
+    // Mejora de calidad para experiencia más suave
+    const enhancementFactor = robustFingerDetected ? 1.08 : 1.0;
+    const enhancedQuality = Math.min(100, avgQuality * enhancementFactor);
     
     return {
       ...signal,
@@ -180,31 +132,6 @@ export const useSignalProcessor = () => {
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
-  }, []);
-  
-  /**
-   * Valida si la varianza de la señal es fisiológicamente plausible
-   */
-  const validateSignalVariance = useCallback((): boolean => {
-    if (signalVarianceHistoryRef.current.length < 3) return false;
-    
-    // Calcular promedio de varianza
-    const avgVariance = signalVarianceHistoryRef.current.reduce((sum, val) => sum + val, 0) / 
-                      signalVarianceHistoryRef.current.length;
-    
-    // Verificar que la varianza sea plausible para una señal fisiológica
-    // Demasiado estable = simulación o sensor fijo
-    // Demasiado inestable = ruido
-    return avgVariance >= MIN_ACCEPTABLE_VARIANCE && avgVariance <= MAX_ACCEPTABLE_VARIANCE;
-  }, []);
-  
-  /**
-   * Calcula la varianza de un array de valores
-   */
-  const calculateVariance = useCallback((values: number[]): number => {
-    if (values.length < 2) return 0;
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
   }, []);
 
   // Configurar callbacks y limpieza
@@ -265,11 +192,8 @@ export const useSignalProcessor = () => {
     fingerDetectedHistoryRef.current = [];
     consecutiveNonDetectionRef.current = 0;
     signalLockCounterRef.current = 0;
-    detectionThresholdRef.current = 0.65; // Umbral inicial más estricto
+    detectionThresholdRef.current = 0.45; // Umbral inicial más permisivo
     adaptiveCounterRef.current = 0;
-    consecutiveStableFramesRef.current = 0;
-    lastSignalValuesRef.current = [];
-    signalVarianceHistoryRef.current = [];
     
     processor.start();
   }, [processor]);
@@ -296,11 +220,8 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current = [];
       consecutiveNonDetectionRef.current = 0;
       signalLockCounterRef.current = 0;
-      detectionThresholdRef.current = 0.60; // Umbral estricto para calibración
+      detectionThresholdRef.current = 0.40; // Umbral más permisivo para calibración
       adaptiveCounterRef.current = 0;
-      consecutiveStableFramesRef.current = 0;
-      lastSignalValuesRef.current = [];
-      signalVarianceHistoryRef.current = [];
       
       await processor.calibrate();
       

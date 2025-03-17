@@ -18,14 +18,6 @@ interface PPGSignalMeterProps {
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
-  vitalSigns?: {
-    spo2?: number;
-    glucose?: number;
-    lipids?: {
-      totalCholesterol?: number;
-      triglycerides?: number;
-    };
-  };
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -40,8 +32,7 @@ const PPGSignalMeter = memo(({
   onReset,
   arrhythmiaStatus,
   preserveResults = false,
-  isArrhythmia = false,
-  vitalSigns
+  isArrhythmia = false
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -62,8 +53,6 @@ const PPGSignalMeter = memo(({
   
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
-
-  const prevVitalSignsRef = useRef<typeof vitalSigns>({});
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5000;
@@ -118,39 +107,7 @@ const PPGSignalMeter = memo(({
   }, [preserveResults, isFingerDetected]);
 
   useEffect(() => {
-    let vitalSignsQualityFactor = 0;
-    
-    if (vitalSigns) {
-      if (vitalSigns.spo2 && vitalSigns.spo2 > 0) {
-        vitalSignsQualityFactor += (vitalSigns.spo2 >= 95) ? 15 : 
-                                  (vitalSigns.spo2 >= 90) ? 10 : 5;
-      }
-      
-      if (vitalSigns.glucose && vitalSigns.glucose > 0) {
-        vitalSignsQualityFactor += 10;
-        
-        if (prevVitalSignsRef.current?.glucose && 
-            Math.abs(vitalSigns.glucose - prevVitalSignsRef.current.glucose) < 20) {
-          vitalSignsQualityFactor += 5;
-        }
-      }
-      
-      if (vitalSigns.lipids) {
-        if (vitalSigns.lipids.totalCholesterol && vitalSigns.lipids.totalCholesterol > 0) {
-          vitalSignsQualityFactor += 10;
-        }
-        
-        if (vitalSigns.lipids.triglycerides && vitalSigns.lipids.triglycerides > 0) {
-          vitalSignsQualityFactor += 10;
-        }
-      }
-      
-      prevVitalSignsRef.current = vitalSigns;
-    }
-    
-    const combinedQuality = Math.min(100, Math.round((quality * 0.7) + (vitalSignsQualityFactor * 0.3)));
-    
-    qualityHistoryRef.current.push(combinedQuality);
+    qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
@@ -160,14 +117,7 @@ const PPGSignalMeter = memo(({
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
-    
-    console.log("PPGSignalMeter: Calidad actualizada con signos vitales", {
-      baseQuality: quality,
-      vitalSignsQualityFactor,
-      combinedQuality,
-      vitalSigns
-    });
-  }, [quality, isFingerDetected, vitalSigns]);
+  }, [quality, isFingerDetected]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -246,11 +196,8 @@ const PPGSignalMeter = memo(({
     const avgQuality = getAverageQuality();
     
     if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
-    
-    if (avgQuality > 75) return 'from-green-500 to-emerald-500';
-    if (avgQuality > 60) return 'from-teal-500 to-green-500';
-    if (avgQuality > 45) return 'from-yellow-500 to-orange-500';
-    if (avgQuality > 30) return 'from-orange-500 to-amber-500';
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
@@ -258,11 +205,8 @@ const PPGSignalMeter = memo(({
     const avgQuality = getAverageQuality();
     
     if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
-    
-    if (avgQuality > 75) return 'Señal óptima';
-    if (avgQuality > 60) return 'Señal muy buena';
-    if (avgQuality > 45) return 'Señal aceptable';
-    if (avgQuality > 30) return 'Señal regular';
+    if (avgQuality > 65) return 'Señal óptima';
+    if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
   }, [getAverageQuality]);
 
@@ -648,7 +592,6 @@ const PPGSignalMeter = memo(({
     peaksRef.current = [];
     arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     arrhythmiaSegmentsRef.current = [];
-    prevVitalSignsRef.current = {};
     onReset();
   }, [onReset]);
 
@@ -726,3 +669,4 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
+

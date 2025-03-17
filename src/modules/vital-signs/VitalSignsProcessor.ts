@@ -1,3 +1,4 @@
+
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -24,7 +25,6 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
-  signalQuality?: number; // Added signal quality metric
 }
 
 /**
@@ -40,22 +40,12 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // EXTREMELY strict thresholds for preventing false positives
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.15; // DRAMATICALLY increased from 0.05
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.70; // DRAMATICALLY increased from 0.40
-  private readonly MIN_PPG_VALUES = 50; // DRAMATICALLY increased from 25
+  // No storage of previous results
   
-  // New validation thresholds
-  private readonly MIN_SIGNAL_VARIANCE = 4.0; // New: Minimum required variance for real signals
-  private readonly MAX_SIGNAL_VARIANCE = 25.0; // New: Maximum allowed variance (too high = noise)
-  private readonly MIN_AMPLITUDE_INCREASE_FACTOR = 2.5; // New: Minimum factor for signal increase with finger
-  private readonly MAX_CONSECUTIVE_SIMILAR_VALUES = 4; // New: Maximum allowed consecutive similar values
-  private readonly MIN_PHYSIOLOGICAL_OSCILLATION = 0.8; // New: Minimum required oscillation for real signal
-  
-  // Tracking baseline for comparison
-  private baselineValues: number[] = [];
-  private readonly BASELINE_SIZE = 10;
-  private hasEstablishedBaseline = false;
+  // Stricter thresholds for more reliable physiological detection
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Increased
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Increased
+  private readonly MIN_PPG_VALUES = 15; // Minimum values required for processing
 
   /**
    * Constructor that initializes all specialized processors
@@ -78,38 +68,19 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // MUCH stricter check for near-zero signal
-    if (Math.abs(ppgValue) < 0.05) { // Increased from 0.02 to 0.05
+    // Check for near-zero signal - indicates no finger or poor placement
+    if (Math.abs(ppgValue) < 0.005) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return this.createEmptyResults();
-    }
-    
-    // Establish baseline for comparison if not yet established
-    if (!this.hasEstablishedBaseline) {
-      this.baselineValues.push(ppgValue);
-      if (this.baselineValues.length > this.BASELINE_SIZE) {
-        this.baselineValues.shift();
-        this.hasEstablishedBaseline = true;
-        console.log("VitalSignsProcessor: Baseline established", { 
-          baselineAvg: this.calculateMean(this.baselineValues),
-          baselineVar: this.calculateVariance(this.baselineValues)
-        });
-      } else {
-        console.log("VitalSignsProcessor: Collecting baseline", { 
-          current: this.baselineValues.length, 
-          needed: this.BASELINE_SIZE 
-        });
-        return this.createEmptyResults();
-      }
     }
     
     // Apply filtering to the PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // MUCH stricter validation for arrhythmia data
+    // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
-                           rrData.intervals.length >= 8 && // Increased from 5 to 8
-                           rrData.intervals.every(i => i > 500 && i < 1500) ? // Even stricter range
+                           rrData.intervals.length >= 3 && 
+                           rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
@@ -122,7 +93,7 @@ export class VitalSignsProcessor {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // EXTREMELY strict requirement for minimum data points
+    // Only process with enough data
     if (ppgValues.length < this.MIN_PPG_VALUES) {
       console.log("VitalSignsProcessor: Insufficient data points", {
         have: ppgValues.length,
@@ -131,77 +102,7 @@ export class VitalSignsProcessor {
       return this.createEmptyResults();
     }
     
-    // NEW: Compare with baseline to detect actual finger placement
-    const baselineAvg = this.calculateMean(this.baselineValues);
-    const signalAvg = this.calculateMean(ppgValues.slice(-20));
-    const amplitudeIncreaseFactor = signalAvg / Math.max(0.1, baselineAvg);
-    
-    if (amplitudeIncreaseFactor < this.MIN_AMPLITUDE_INCREASE_FACTOR) {
-      console.log("VitalSignsProcessor: Signal amplitude not significantly different from baseline", {
-        baselineAvg,
-        signalAvg,
-        factor: amplitudeIncreaseFactor,
-        minFactor: this.MIN_AMPLITUDE_INCREASE_FACTOR
-      });
-      return this.createEmptyResults();
-    }
-    
-    // NEW: Check for suspiciously stable signal (potential false positive)
-    const last20Values = ppgValues.slice(-20);
-    const signalVariance = this.calculateVariance(last20Values);
-    
-    if (signalVariance < this.MIN_SIGNAL_VARIANCE) {
-      console.log("VitalSignsProcessor: Signal variance too low (likely artificial)", {
-        variance: signalVariance,
-        minThreshold: this.MIN_SIGNAL_VARIANCE
-      });
-      return this.createEmptyResults();
-    }
-    
-    if (signalVariance > this.MAX_SIGNAL_VARIANCE) {
-      console.log("VitalSignsProcessor: Signal variance too high (likely noise)", {
-        variance: signalVariance,
-        maxThreshold: this.MAX_SIGNAL_VARIANCE
-      });
-      return this.createEmptyResults();
-    }
-    
-    // NEW: Check for suspiciously similar consecutive values
-    let tooManyConsecutiveSimilar = false;
-    let similarCount = 1;
-    const SIMILARITY_THRESHOLD = 0.01;
-    
-    for (let i = 1; i < last20Values.length; i++) {
-      if (Math.abs(last20Values[i] - last20Values[i-1]) < SIMILARITY_THRESHOLD) {
-        similarCount++;
-        if (similarCount > this.MAX_CONSECUTIVE_SIMILAR_VALUES) {
-          tooManyConsecutiveSimilar = true;
-          break;
-        }
-      } else {
-        similarCount = 1;
-      }
-    }
-    
-    if (tooManyConsecutiveSimilar) {
-      console.log("VitalSignsProcessor: Too many consecutive similar values (likely artificial)", {
-        similarCount,
-        maxAllowed: this.MAX_CONSECUTIVE_SIMILAR_VALUES
-      });
-      return this.createEmptyResults();
-    }
-    
-    // NEW: Check for physiological oscillation pattern
-    const oscillationScore = this.calculateOscillationScore(last20Values);
-    if (oscillationScore < this.MIN_PHYSIOLOGICAL_OSCILLATION) {
-      console.log("VitalSignsProcessor: Signal lacks physiological oscillation pattern", {
-        oscillationScore,
-        minRequired: this.MIN_PHYSIOLOGICAL_OSCILLATION
-      });
-      return this.createEmptyResults();
-    }
-    
-    // Verify signal amplitude is sufficient - MUCH stricter check
+    // Verify signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
@@ -234,99 +135,25 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // IMPORTANT CHANGE: Only show glucose and lipids if confidence is high
+    // Only show values if confidence exceeds threshold
     const finalGlucose = glucoseConfidence > this.MIN_CONFIDENCE_THRESHOLD ? glucose : 0;
     const finalLipids = lipidsConfidence > this.MIN_CONFIDENCE_THRESHOLD ? lipids : {
       totalCholesterol: 0,
       triglycerides: 0
     };
 
-    // CRITICAL CHANGE: Calculate signal quality based on ACTUAL vital sign measurements
-    // This ensures that quality only shows "Excellent" when we have real measurements
-    let signalQuality = 0;
-    const hasSpo2 = spo2 > 90;
-    const hasBloodPressure = bp.systolic > 0 && bp.diastolic > 0;
-    const hasGlucose = finalGlucose > 0;
-    const hasLipids = finalLipids.totalCholesterol > 0 && finalLipids.triglycerides > 0;
-    
-    // Count how many vital signs we have valid measurements for
-    const validMeasurementCount = [hasSpo2, hasBloodPressure, hasGlucose, hasLipids].filter(Boolean).length;
-    
-    if (validMeasurementCount === 0) {
-      // No valid measurements at all
-      signalQuality = Math.min(30, Math.round(oscillationScore * 30));
-      console.log("VitalSignsProcessor: No valid measurements, low quality signal", { signalQuality });
-    } else {
-      // Calculate quality components for each vital sign, only when values are actually present
-      const spo2Quality = hasSpo2 ? Math.min(100, Math.max(0, (spo2 - 80) * 5)) : 0;
-      const pressureQuality = hasBloodPressure ? 80 : 0;
-      const glucoseQuality = hasGlucose ? Math.min(100, glucoseConfidence * 100) : 0;
-      const lipidsQuality = hasLipids ? Math.min(100, lipidsConfidence * 100) : 0;
-      
-      // Weighted average where measurements actually exist
-      let weightedSum = 0;
-      let totalWeight = 0;
-      
-      if (hasSpo2) {
-        weightedSum += spo2Quality * 0.3;
-        totalWeight += 0.3;
-      }
-      
-      if (hasBloodPressure) {
-        weightedSum += pressureQuality * 0.2;
-        totalWeight += 0.2;
-      }
-      
-      if (hasGlucose) {
-        weightedSum += glucoseQuality * 0.3;
-        totalWeight += 0.3;
-      }
-      
-      if (hasLipids) {
-        weightedSum += lipidsQuality * 0.2;
-        totalWeight += 0.2;
-      }
-      
-      // Calculate weighted average, but ensure quality is proportional to measurement count
-      signalQuality = Math.round((weightedSum / totalWeight) * (validMeasurementCount / 4));
-      
-      // Apply oscillation score as a multiplier
-      signalQuality = Math.round(signalQuality * oscillationScore);
-      
-      // Apply penalty for high variance (if present)
-      const variancePenalty = Math.max(0.6, 1 - (signalVariance / 40));
-      signalQuality = Math.round(signalQuality * variancePenalty);
-      
-      // Scale down quality if we don't have enough vital signs
-      // This ensures "Excellent" quality only happens when multiple measurements are valid
-      if (validMeasurementCount < 2) {
-        signalQuality = Math.round(signalQuality * 0.6);
-      } else if (validMeasurementCount < 3) {
-        signalQuality = Math.round(signalQuality * 0.8);
-      }
-    }
-
-    // Enhanced logging to show exactly which measurements are contributing to quality
-    console.log("VitalSignsProcessor: Signal quality calculation details", {
-      validMeasurements: {
-        spo2: hasSpo2,
-        bloodPressure: hasBloodPressure,
-        glucose: hasGlucose,
-        lipids: hasLipids
-      },
-      validMeasurementCount,
-      spo2Value: spo2,
-      pressureValue: pressure,
-      glucoseValue: finalGlucose,
-      lipidsValues: finalLipids,
-      confidences: {
-        glucose: glucoseConfidence,
-        lipids: lipidsConfidence
-      },
-      resultingSignalQuality: signalQuality
+    console.log("VitalSignsProcessor: Results with confidence", {
+      spo2,
+      pressure,
+      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      glucose: finalGlucose,
+      glucoseConfidence,
+      lipidsConfidence,
+      signalAmplitude: amplitude,
+      confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD
     });
 
-    // Prepare result with all metrics
+    // Prepare result with all metrics - no caching or persistence
     return {
       spo2,
       pressure,
@@ -338,8 +165,7 @@ export class VitalSignsProcessor {
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
         overall: overallConfidence
-      },
-      signalQuality
+      }
     };
   }
   
@@ -361,51 +187,8 @@ export class VitalSignsProcessor {
         glucose: 0,
         lipids: 0,
         overall: 0
-      },
-      signalQuality: 0
-    };
-  }
-  
-  /**
-   * Helper method to calculate mean of signal values
-   */
-  private calculateMean(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((sum, val) => sum + val, 0) / values.length;
-  }
-  
-  /**
-   * Helper method to calculate variance of signal values
-   */
-  private calculateVariance(values: number[]): number {
-    if (values.length < 2) return 0;
-    const mean = this.calculateMean(values);
-    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  }
-  
-  /**
-   * NEW: Calculate oscillation score to detect physiological patterns
-   * Real PPG signals have a characteristic oscillatory pattern
-   */
-  private calculateOscillationScore(values: number[]): number {
-    if (values.length < 10) return 0;
-    
-    let directionChanges = 0;
-    let increasing = values[1] > values[0];
-    
-    // Count direction changes (peaks and valleys)
-    for (let i = 2; i < values.length; i++) {
-      const nowIncreasing = values[i] > values[i-1];
-      if (nowIncreasing !== increasing) {
-        directionChanges++;
-        increasing = nowIncreasing;
       }
-    }
-    
-    // Real physiological signals should have regular direction changes
-    // Normalize to a 0-1 scale
-    const expectedChanges = values.length / 4; // Approximately one peak and valley per 4 samples
-    return Math.min(1, directionChanges / expectedChanges);
+    };
   }
 
   /**
@@ -419,8 +202,6 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
-    this.baselineValues = [];
-    this.hasEstablishedBaseline = false;
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null; // Always return null to ensure measurements start from zero
   }
@@ -438,8 +219,6 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
-    this.baselineValues = [];
-    this.hasEstablishedBaseline = false;
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }

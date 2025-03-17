@@ -29,46 +29,41 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 12,
-    MIN_RED_THRESHOLD: 95,  // Increased threshold for stricter finger detection
+    MIN_RED_THRESHOLD: 85,  // Increased threshold for better finger detection
     MAX_RED_THRESHOLD: 245,
-    STABILITY_WINDOW: 6,    // Increased to require more stability
-    MIN_STABILITY_COUNT: 4  // Increased to require more stability
+    STABILITY_WINDOW: 4,
+    MIN_STABILITY_COUNT: 3  // Increased to require more stability
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private readonly BUFFER_SIZE = 12;
-  private readonly MIN_RED_THRESHOLD = 95; // Increased for stricter detection
+  private readonly MIN_RED_THRESHOLD = 85; // Increased
   private readonly MAX_RED_THRESHOLD = 245;
-  private readonly STABILITY_WINDOW = 6;   // Increased
-  private readonly MIN_STABILITY_COUNT = 4; // Increased
+  private readonly STABILITY_WINDOW = 4;
+  private readonly MIN_STABILITY_COUNT = 3; // Increased
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.08; // Increased threshold
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // Increased threshold
 
   // Variables for dynamic threshold adaptation
   private dynamicThreshold: number = 0;
   private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE = 25; // Increased for better analysis
-  private readonly ADAPTATION_RATE = 0.10; // Decreased for more stability
+  private readonly HISTORY_SIZE = 20;
+  private readonly ADAPTATION_RATE = 0.15;
   
   // Signal amplifier for additional improvements
   private signalAmplifier: SignalAmplifier;
   private lastAmplifiedValue: number = 0;
   private signalQuality: number = 0;
   
-  // Variables for improved finger detection
+  // New: Variables for improved finger detection
   private consecutiveWeakSignals: number = 0;
-  private readonly MAX_WEAK_SIGNALS = 2; // More sensitive to weak signals
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.18; // Higher threshold
+  private readonly MAX_WEAK_SIGNALS = 3;
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.15; // Higher threshold
   
   // False positive prevention
   private baselineValues: number[] = [];
-  private readonly BASELINE_SIZE = 12; // Increased
+  private readonly BASELINE_SIZE = 10;
   private hasEstablishedBaseline: boolean = false;
-  
-  // Artificially stable signal detection (likely no finger)
-  private stabilityCounter: number = 0;
-  private readonly MAX_STABLE_FRAMES = 20;
-  private isArtificiallyStable: boolean = false;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -94,8 +89,6 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.consecutiveWeakSignals = 0;
       this.baselineValues = [];
       this.hasEstablishedBaseline = false;
-      this.stabilityCounter = 0;
-      this.isArtificiallyStable = false;
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -124,8 +117,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consecutiveWeakSignals = 0;
     this.baselineValues = [];
     this.hasEstablishedBaseline = false;
-    this.stabilityCounter = 0;
-    this.isArtificiallyStable = false;
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -143,45 +134,6 @@ export class PPGSignalProcessor implements SignalProcessor {
 
     try {
       const redValue = this.extractRedChannel(imageData);
-      
-      // Check if signal is too stable (artificial) - common when no finger is present
-      if (this.lastValues.length > 5) {
-        const recentValues = this.lastValues.slice(-5);
-        const minRecent = Math.min(...recentValues);
-        const maxRecent = Math.max(...recentValues);
-        const rangeRecent = maxRecent - minRecent;
-        
-        // If range is extremely small for several frames in a row, likely no finger
-        if (rangeRecent < 0.05) {
-          this.stabilityCounter++;
-        } else {
-          this.stabilityCounter = Math.max(0, this.stabilityCounter - 1);
-        }
-        
-        this.isArtificiallyStable = this.stabilityCounter > this.MAX_STABLE_FRAMES;
-        
-        if (this.isArtificiallyStable) {
-          console.log("PPGSignalProcessor: Señal artificialmente estable detectada - posible ausencia de dedo", {
-            rangeRecent,
-            stabilityCounter: this.stabilityCounter,
-            recentValues
-          });
-          
-          // Force quality to 0 and no finger detected
-          if (this.onSignalReady) {
-            this.onSignalReady({
-              timestamp: Date.now(),
-              rawValue: redValue,
-              filteredValue: 0,
-              quality: 0,
-              fingerDetected: false,
-              roi: this.detectROI(redValue),
-              perfusionIndex: 0
-            });
-          }
-          return;
-        }
-      }
       
       // Establish baseline for better false positive rejection
       if (!this.hasEstablishedBaseline) {
@@ -250,20 +202,15 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 1);
       }
       
-      // Add additional verification to prevent false positives
-      const suspiciouslyStableSignal = this.detectSuspiciouslyStableSignal();
-      
-      // Override finger detection if we have too many weak signals or signal is suspiciously stable
-      const finalFingerDetected = isFingerDetected && 
-                               (this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS) &&
-                               !suspiciouslyStableSignal;
+      // Override finger detection if we have too many weak signals
+      const finalFingerDetected = isFingerDetected && (this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS);
       
       // Use amplifier quality for better detection
       const perfusionIndex = this.calculatePerfusionIndex();
       const combinedQuality = finalFingerDetected ? 
         Math.round((detectionQuality * 0.7 + this.signalQuality * 100 * 0.3)) : 0;
 
-      console.log("PPGSignalProcessor: Enhanced analysis with stricter validation", {
+      console.log("PPGSignalProcessor: Analysis with improved detection", {
         redValue,
         filtered,
         amplifiedValue,
@@ -276,8 +223,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         dynamicThreshold: this.dynamicThreshold,
         amplifierGain: this.signalAmplifier.getCurrentGain(),
         weakSignalCount: this.consecutiveWeakSignals,
-        isWeakSignal,
-        suspiciouslyStableSignal
+        isWeakSignal
       });
 
       const processedSignal: ProcessedSignal = {
@@ -298,39 +244,13 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
 
-  private detectSuspiciouslyStableSignal(): boolean {
-    if (this.lastValues.length < 10) return false;
-    
-    const recentValues = this.lastValues.slice(-10);
-    const minValue = Math.min(...recentValues);
-    const maxValue = Math.max(...recentValues);
-    const range = maxValue - minValue;
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    
-    // Calculate normalized deviation from the mean
-    const normalizedDeviations = recentValues.map(v => Math.abs(v - mean) / Math.max(0.01, mean));
-    const avgDeviation = normalizedDeviations.reduce((sum, val) => sum + val, 0) / normalizedDeviations.length;
-    
-    const isTooStable = range < 0.08 && avgDeviation < 0.03;
-    
-    if (isTooStable) {
-      console.log("PPGSignalProcessor: Suspiciously stable signal detected", {
-        range,
-        avgDeviation,
-        recentValues
-      });
-    }
-    
-    return isTooStable;
-  }
-
   private updateDynamicThreshold(): void {
     const min = Math.min(...this.signalHistory);
     const max = Math.max(...this.signalHistory);
     const range = max - min;
     
     // Calculate new threshold based on signal range
-    const newThreshold = range * 0.35; // 35% of range as threshold (increased)
+    const newThreshold = range * 0.30; // 30% of range as threshold (increased)
     
     // Update dynamically with smoothing
     if (this.dynamicThreshold === 0) {
@@ -360,11 +280,11 @@ export class PPGSignalProcessor implements SignalProcessor {
     let redSum = 0;
     let count = 0;
     
-    // Only analyze the center of the image (25% central - smaller area for more precision)
-    const startX = Math.floor(imageData.width * 0.375);
-    const endX = Math.floor(imageData.width * 0.625);
-    const startY = Math.floor(imageData.height * 0.375);
-    const endY = Math.floor(imageData.height * 0.625);
+    // Only analyze the center of the image (30% central)
+    const startX = Math.floor(imageData.width * 0.35);
+    const endX = Math.floor(imageData.width * 0.65);
+    const startY = Math.floor(imageData.height * 0.35);
+    const endY = Math.floor(imageData.height * 0.65);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -379,13 +299,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Use dynamic threshold for better adaptation with a higher minimum threshold
+    // Use dynamic threshold for better adaptation with a minimum threshold
     const effectiveThreshold = Math.max(
       this.MIN_RED_THRESHOLD,
       this.dynamicThreshold > 0 ? this.dynamicThreshold : this.MIN_RED_THRESHOLD
     );
                               
-    // Check if the value is in range - stricter range requirements
+    // Check if the value is in range
     const isInRange = rawValue >= effectiveThreshold && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
@@ -409,61 +329,47 @@ export class PPGSignalProcessor implements SignalProcessor {
     });
 
     // Use amplifier quality to adjust thresholds
-    const qualityFactor = 0.8 + (this.signalQuality * 0.3); // 0.8-1.1 adjusted range
+    const qualityFactor = 0.8 + (this.signalQuality * 0.4); // 0.8-1.2
     
     // More sensitive detection of cardiac peaks
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Check if the signal has TOO little variation (may be artificial/no finger)
-    const hasTooLittleVariation = maxVariation < 0.03 && variations.every(v => Math.abs(v) < 0.05);
-    if (hasTooLittleVariation) {
-      console.log("PPGSignalProcessor: Signal has suspiciously little variation", {
-        variations,
-        maxVariation
-      });
-      return { isFingerDetected: false, quality: 0 };
-    }
-    
-    // Adaptive thresholds with amplifier influence - more strict
-    const adaptiveThreshold = Math.max(2.0, avgValue * 0.025 * qualityFactor);
-    const isStable = maxVariation < adaptiveThreshold * 1.8 && 
-                    minVariation > -adaptiveThreshold * 1.8 &&
-                    !hasTooLittleVariation;
+    // Adaptive thresholds with amplifier influence
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.022 * qualityFactor); // Increased threshold
+    const isStable = maxVariation < adaptiveThreshold * 2.0 && 
+                    minVariation > -adaptiveThreshold * 2.0;
 
     if (isStable) {
       this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      // More aggressive reduction for unstable signals
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 1);
+      // More gradual reduction to maintain better detection
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
     }
 
     // Benefit from amplifier quality for detection
-    // Require both stable frames AND good quality signal - stricter requirements
+    // Require both stable frames AND good quality signal
     const isFingerDetected = 
       (this.stableFrameCount >= this.MIN_STABILITY_COUNT) && 
-      (this.signalQuality > 0.6); // Increased quality requirement
+      (this.signalQuality > 0.5); // Increased quality requirement
     
     let quality = 0;
     if (isFingerDetected) {
-      // Improved quality calculation with amplifier and stricter criteria
+      // Improved quality calculation with amplifier
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - effectiveThreshold) / 
                                     (this.MAX_RED_THRESHOLD - effectiveThreshold), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       const amplifierScore = this.signalQuality;
       
-      // If variation is extremely low, penalize the quality score
-      const variationPenalty = maxVariation < 0.05 ? 0.3 : 1.0;
-      
-      // Weighted quality calculation with more weight to stability
+      // Weighted with more weight to amplifier
       quality = Math.round((
-        stabilityScore * 0.35 + 
-        intensityScore * 0.25 + 
-        variationScore * 0.15 + 
-        amplifierScore * 0.25
-      ) * 100 * variationPenalty);
+        stabilityScore * 0.3 + 
+        intensityScore * 0.3 + 
+        variationScore * 0.2 + 
+        amplifierScore * 0.2
+      ) * 100);
     }
 
     return { isFingerDetected, quality };
