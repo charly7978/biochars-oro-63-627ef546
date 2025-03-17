@@ -25,11 +25,16 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const validSignalDetectedRef = useRef<boolean>(false);
   const consecutiveValidSignalsRef = useRef<number>(0);
-  const MIN_CONSECUTIVE_VALID_SIGNALS = 1.5; // Reducido para mayor sensibilidad inicial
+  const MIN_CONSECUTIVE_VALID_SIGNALS = 1.2; // Reducido para mayor sensibilidad inicial
   const lastMeasurementTimeRef = useRef<number>(0);
   const measurementIntervalRef = useRef<number>(100); // Intervalo entre mediciones en ms
   const lastQualityScoreRef = useRef<number>(0);
   const qualityHistoryRef = useRef<{quality: number, stable: boolean, timestamp: number}[]>([]);
+  const updateCountRef = useRef({
+    spo2: 0,
+    pressure: 0,
+    arrhythmia: 0
+  });
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -42,7 +47,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       validSignalDetected: validSignalDetectedRef.current,
       consecutiveValidSignals: consecutiveValidSignalsRef.current,
       lastQualityScore: lastQualityScoreRef.current,
-      qualityHistoryLength: qualityHistoryRef.current.length
+      qualityHistoryLength: qualityHistoryRef.current.length,
+      updateCounts: updateCountRef.current
     });
 
     // Always reset to zero when stopping or not measuring
@@ -66,6 +72,11 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       lastMeasurementTimeRef.current = 0;
       lastQualityScoreRef.current = 0;
       qualityHistoryRef.current = [];
+      updateCountRef.current = {
+        spo2: 0,
+        pressure: 0,
+        arrhythmia: 0
+      };
       return;
     }
 
@@ -128,9 +139,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       
       // Detección más sensible pero también más exigente con la estabilidad
-      if (quality > 50 && avgQuality > 45) {
+      if (quality > 30 && avgQuality > 25) {
         const stabilityBonus = stable ? 0.5 : 0;
-        const qualityFactor = quality > 70 ? 0.4 : 0.3;
+        const qualityFactor = quality > 50 ? 0.4 : 0.3;
         
         // Incremento proporcional a la calidad
         consecutiveValidSignalsRef.current += stabilityBonus + qualityFactor;
@@ -195,6 +206,19 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       // Obtener presión arterial directamente del procesador - SIN NINGÚN VALOR INICIAL
       let pressureValue = processor.getLastBloodPressure ? processor.getLastBloodPressure() : "--/--";
       
+      // Llevar cuenta de actualizaciones de cada métrica
+      if (spo2Value > 0) {
+        updateCountRef.current.spo2++;
+      }
+      
+      if (pressureValue !== "--/--") {
+        updateCountRef.current.pressure++;
+      }
+      
+      if (arrhythmias !== "--") {
+        updateCountRef.current.arrhythmia++;
+      }
+      
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
         processorType: processor ? typeof processor : 'undefined',
@@ -206,7 +230,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         arrhythmias,
         timestamp: new Date().toISOString(),
         validSignalDetected: validSignalDetectedRef.current,
-        lastQualityScore: lastQualityScoreRef.current
+        lastQualityScore: lastQualityScoreRef.current,
+        updatesCount: updateCountRef.current
       });
 
       // Check for arrhythmia windows
@@ -246,7 +271,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         porcentaje: (elapsed / MEASUREMENT_DURATION) * 100,
         timestamp: new Date().toISOString(),
         validSignalDetected: validSignalDetectedRef.current,
-        lastQualityScore: lastQualityScoreRef.current
+        lastQualityScore: lastQualityScoreRef.current,
+        updatesCount: updateCountRef.current
       });
       
       setElapsedTime(elapsed / 1000);
@@ -258,7 +284,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
           duracionTotal: MEASUREMENT_DURATION / 1000,
           resultadosFinal: {...measurements},
           arrhythmiaWindows: arrhythmiaWindows.length,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          updatesCount: updateCountRef.current
         });
         
         clearInterval(interval);
@@ -281,6 +308,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     ...measurements,
     elapsedTime: Math.min(elapsedTime, 30),
     isComplete: elapsedTime >= 30,
-    arrhythmiaWindows
+    arrhythmiaWindows,
+    updateCounts: updateCountRef.current
   };
 };

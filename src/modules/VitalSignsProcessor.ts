@@ -11,29 +11,29 @@ import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
-  // Strict medical-grade thresholds with zero tolerance for false positives
+  // Adjusted thresholds for better signal detection while maintaining rigorous validation
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.0; // No artificial calibration
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.12; // Significantly increased for extreme specificity
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.09; // Moderately relaxed for better detection
   private readonly SPO2_WINDOW = 8; // Longer window for more accurate readings
   private readonly SMA_WINDOW = 8; // Stronger smoothing to reduce noise
-  private readonly RR_WINDOW_SIZE = 14; // Significantly increased for much higher precision
-  private readonly RMSSD_THRESHOLD = 25; // Significantly increased for definitive arrhythmia detection
+  private readonly RR_WINDOW_SIZE = 12; // Adjusted for more responsive readings
+  private readonly RMSSD_THRESHOLD = 25; // Maintained for accurate arrhythmia detection
   private readonly ARRHYTHMIA_LEARNING_PERIOD = 2000; // Extended learning period
-  private readonly PEAK_THRESHOLD = 0.45; // Extremely increased to eliminate false positives
+  private readonly PEAK_THRESHOLD = 0.35; // Moderately relaxed for better peak detection
   
   /**
    * Constructor that initializes the internal direct measurement processor
    * with strict medical-grade parameters
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing medical-grade processor with aggressive validation");
+    console.log("VitalSignsProcessor: Initializing medical-grade processor with balanced validation");
     this.processor = new CoreProcessor();
   }
   
   /**
    * Process a PPG signal and RR data to get vital signs
-   * Uses extremely aggressive validation to prevent false readings
+   * Uses rigorous validation but permits genuine physiological signals
    * 
    * @param ppgValue Raw PPG signal value
    * @param rrData Optional RR interval data
@@ -43,26 +43,26 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Ultra aggressive validation with multiple criteria - reject implausible values
+    // Apply balanced validation - reject clearly implausible values
     
-    // Basic validation with stricter limits
+    // Basic validation with appropriate limits
     if (isNaN(ppgValue) || !isFinite(ppgValue) || ppgValue < 0) {
       console.warn("VitalSignsProcessor: Rejected invalid PPG value");
       return this.getEmptyResult();
     }
     
-    // Additional validation criteria with much tighter constraints
-    if (ppgValue < 0.05 || ppgValue > 250) {
+    // Additional validation criteria with appropriate constraints
+    if (ppgValue < 0.02 || ppgValue > 250) {
       console.warn("VitalSignsProcessor: Rejected physiologically implausible PPG value");
       return this.getEmptyResult();
     }
     
-    // Reject excessively stable signals (likely not physiological)
+    // Check signal stability - less aggressive threshold
     if (this.lastPpgValues.length >= 5) {
       const variance = this.calculateVariance(this.lastPpgValues);
       
       // If variance is extremely low, it's likely not a real signal
-      if (variance < 0.01) {
+      if (variance < 0.005) {
         console.warn("VitalSignsProcessor: Rejected suspiciously stable signal (likely not physiological)");
         return this.getEmptyResult();
       }
@@ -74,8 +74,8 @@ export class VitalSignsProcessor {
       this.lastPpgValues.shift();
     }
     
-    // Validate RR data if provided with much stricter criteria
-    if (rrData) {
+    // Validate RR data if provided with appropriate criteria
+    if (rrData && rrData.intervals.length > 0) {
       // Check for any invalid intervals
       const hasInvalidIntervals = rrData.intervals.some(interval => 
         isNaN(interval) || !isFinite(interval) || interval <= 0 || interval > 2000);
@@ -95,26 +95,26 @@ export class VitalSignsProcessor {
         return this.getEmptyResult();
       }
       
-      // Check for excessive variability in intervals (non-physiological)
+      // Allow more physiological variation in intervals
       if (rrData.intervals.length >= 3) {
         const max = Math.max(...rrData.intervals);
         const min = Math.min(...rrData.intervals);
         const ratio = max / min;
         
-        if (ratio > 2.8) { // More than 2.8x difference between fastest and slowest beats
+        if (ratio > 3.2) { // Increased threshold for physiological variation
           console.warn("VitalSignsProcessor: Rejected RR intervals with excessive non-physiological variation");
           return this.getEmptyResult();
         }
         
         // Calculate RR interval variance to detect unrealistically stable patterns
         const variance = this.calculateVariance(rrData.intervals);
-        if (variance < 0.2) { // Unrealistically stable RR intervals
+        if (variance < 0.1) { // Relaxed threshold for better detection
           console.warn("VitalSignsProcessor: Rejected suspiciously stable RR intervals (likely artificial)");
           return this.getEmptyResult();
         }
       }
       
-      // Validate stability over time - heart rate shouldn't change too rapidly
+      // Validate stability over time with more tolerance for real physiological changes
       if (this.lastValidRRs.length > 0 && rrData.intervals.length > 0) {
         const lastMeanRR = this.lastValidRRs.reduce((sum, rr) => sum + rr, 0) / this.lastValidRRs.length;
         const currentMeanRR = rrData.intervals.reduce((sum, rr) => sum + rr, 0) / rrData.intervals.length;
@@ -122,8 +122,9 @@ export class VitalSignsProcessor {
         // Calculate change percentage
         const changePercent = Math.abs((currentMeanRR - lastMeanRR) / lastMeanRR) * 100;
         
-        // Reject if change is too sudden (more than 25% change is non-physiological)
-        if (changePercent > 25) {
+        // Reject if change is too sudden (more than 35% change is non-physiological)
+        // Increased from 25% to 35% for better sensitivity
+        if (changePercent > 35) {
           console.warn("VitalSignsProcessor: Rejected due to physiologically implausible heart rate change");
           return this.getEmptyResult();
         }
@@ -138,8 +139,28 @@ export class VitalSignsProcessor {
       }
     }
     
+    // Log processing details for debugging
+    console.log("VitalSignsProcessor: Processing signal with values", {
+      ppgValue,
+      hasRRData: !!rrData,
+      rrIntervals: rrData?.intervals.length || 0,
+      lastPpgValues: this.lastPpgValues.length,
+      lastValidRRs: this.lastValidRRs.length
+    });
+    
     // Process with validated data only
-    return this.processor.processSignal(ppgValue, rrData);
+    const result = this.processor.processSignal(ppgValue, rrData);
+    
+    // Log the results
+    console.log("VitalSignsProcessor: Processed result", {
+      spo2: result.spo2,
+      pressure: result.pressure,
+      arrhythmiaStatus: result.arrhythmiaStatus,
+      glucose: result.glucose,
+      hasArrhythmiaData: !!result.lastArrhythmiaData
+    });
+    
+    return result;
   }
   
   // Track PPG values for validation

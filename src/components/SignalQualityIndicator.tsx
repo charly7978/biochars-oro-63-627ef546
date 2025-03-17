@@ -19,12 +19,10 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [showHelpTip, setShowHelpTip] = useState(false);
   
   // Constantes de configuración - ajustadas para mejor representación de la realidad 
-  const historySize = 8; // Ventana para promediar datos
-  const REQUIRED_FINGER_FRAMES = 16; // Requiere más frames consistentes para calidad alta
-  const QUALITY_THRESHOLD = 75; // Umbral para calidad considerada "buena"
-  const MIN_QUALITY_FOR_DETECTION = 45; // Umbral mínimo para detección válida
-  const MIN_CONSECUTIVE_QUALITY = 4; // Requiere calidad consistente
-  const SIGNAL_STABILITY_THRESHOLD = 0.15; // Umbral de estabilidad
+  const historySize = 6; // Ventana más pequeña para respuesta más rápida
+  const QUALITY_THRESHOLD = 65; // Umbral reducido para calidad considerada "buena"
+  const MIN_QUALITY_FOR_DETECTION = 30; // Umbral mínimo reducido para detección válida
+  const SIGNAL_STABILITY_THRESHOLD = 0.2; // Umbral de estabilidad ajustado
 
   // Detectar plataforma
   useEffect(() => {
@@ -59,79 +57,70 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       return;
     }
 
-    // Verificar que haya suficientes muestras de calidad
-    if (qualityHistory.length < MIN_CONSECUTIVE_QUALITY) {
-      setDisplayQuality(Math.min(25, Math.round(quality * 0.4)));
-      return;
-    }
+    // Ponderación con mayor peso a valores más recientes
+    let weightedSum = 0;
+    let totalWeight = 0;
 
-    // Verificar estabilidad de la señal - rechazar señales inestables
+    qualityHistory.forEach((q, index) => {
+      const weight = Math.pow(1.2, index); // Valores más recientes tienen más peso
+      weightedSum += q * weight;
+      totalWeight += weight;
+    });
+
+    // Calcular media ponderada básica
+    let averageQuality = Math.round(weightedSum / totalWeight);
+    
+    // Verificar estabilidad de la señal
     const variance = calculateVariance(qualityHistory);
     
     // Logging para depuración de varianza y estabilidad
     console.log("SignalQualityIndicator: Análisis de estabilidad", {
       variance,
       qualityHistory: qualityHistory.slice(-3),
-      threshold: 180,
-      isStable: variance < 180
+      qualityAvg: averageQuality,
+      threshold: 150
     });
     
-    if (variance > 180) { 
-      // Señal inestable, mostrar calidad reducida
-      setDisplayQuality(Math.min(35, Math.round(quality * 0.5)));
-      return;
+    // Ajustar la calidad según la estabilidad (varianza) de la señal
+    // Señal inestable = calidad reducida
+    if (variance > 150) { 
+      averageQuality = Math.round(averageQuality * 0.7);
+    } else if (variance > 80) {
+      averageQuality = Math.round(averageQuality * 0.85);
     }
-
-    // Verificar que la calidad mínima sea suficiente
-    const minQuality = Math.min(...qualityHistory);
-    if (minQuality < MIN_QUALITY_FOR_DETECTION) {
-      setDisplayQuality(Math.max(5, Math.min(30, minQuality)));
-      return;
-    }
-
-    // Ponderación con mayor peso a valores más recientes
-    let weightedSum = 0;
-    let totalWeight = 0;
-
-    qualityHistory.forEach((q, index) => {
-      const weight = Math.pow(1.3, index); // Valores más recientes tienen más peso
-      weightedSum += q * weight;
-      totalWeight += weight;
-    });
-
-    const averageQuality = Math.round(weightedSum / totalWeight);
     
-    // Ajuste más realista a la calidad, sin reducción agresiva pero fiel a la realidad
-    const qualityReductionFactor = 0.92; // Factor más realista
-    const adjustedQuality = Math.round(averageQuality * qualityReductionFactor);
+    // Si la calidad es muy baja, no la reduzca aún más
+    if (averageQuality < 20 && quality > 25) {
+      averageQuality = 25; // Mantener un mínimo para señales débiles pero presentes
+    }
     
     // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
-      const delta = (adjustedQuality - prev) * 0.3;
+      const delta = (averageQuality - prev) * 0.4; // Más peso a nuevos valores para actualización más rápida
       return Math.round(prev + delta);
     });
 
-    // Emitir evento de señal válida - sólo cuando realmente tenemos buena calidad
-    // y con datos detallados para mejor diagnóstico
-    if (adjustedQuality > QUALITY_THRESHOLD - 15 && variance < 150 && isMonitoring) {
+    // Emitir evento de señal válida cuando tenemos calidad suficiente
+    if (averageQuality > MIN_QUALITY_FOR_DETECTION && isMonitoring) {
       const stabilityScore = 1 - (variance / 200);
       const eventDetail = { 
-        quality: adjustedQuality,
+        quality: averageQuality,
         stable: variance < 150,
         variance,
-        minQuality,
-        averageQuality,
         stabilityScore: Math.max(0, Math.min(1, stabilityScore)),
         qualityHistory: qualityHistory.slice(-3),
         timestamp: Date.now()
       };
       
-      // Emitir evento con datos detallados
-      window.dispatchEvent(new CustomEvent('validSignalDetected', { 
-        detail: eventDetail
-      }));
-      
-      console.log("SignalQualityIndicator: Evento validSignalDetected emitido", eventDetail);
+      // Emitir evento más frecuente cuando la calidad es buena 
+      // para mantener mediciones actualizadas
+      if (averageQuality > QUALITY_THRESHOLD || Math.random() < 0.3) {
+        window.dispatchEvent(new CustomEvent('validSignalDetected', { 
+          detail: eventDetail
+        }));
+        
+        console.log("SignalQualityIndicator: Evento validSignalDetected emitido", eventDetail);
+      }
     }
   }, [qualityHistory, isMonitoring]);
 
@@ -147,8 +136,10 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 75) return '#00ff00';
-    if (q > 50) return '#ffff00';
+    if (q > 70) return '#00ff00';
+    if (q > 50) return '#bfff00';
+    if (q > 30) return '#ffff00';
+    if (q > 15) return '#ffbf00';
     return '#ff0000';
   };
 
@@ -157,9 +148,11 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
-    if (q > 75) return 'Excelente';
+    if (q > 70) return 'Excelente';
     if (q > 50) return 'Buena';
-    return 'Baja';
+    if (q > 30) return 'Regular';
+    if (q > 15) return 'Baja';
+    return 'Muy Baja';
   };
 
   // Efecto de pulso adaptado a la plataforma
