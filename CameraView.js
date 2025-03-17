@@ -1,6 +1,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
+import { ProcessorConfig } from './src/modules/vital-signs/ProcessorConfig';
 
 const CameraView = ({ 
   onStreamReady, 
@@ -14,50 +15,82 @@ const CameraView = ({
   const [brightnessSamples, setBrightnessSamples] = useState([]);
   const [avgBrightness, setAvgBrightness] = useState(0);
   const brightnessSampleLimit = 10;
+  const [torchEnabled, setTorchEnabled] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const retryCountRef = useRef(0);
 
   const stopCamera = async () => {
     if (stream) {
+      console.log("Stopping camera stream and turning off torch");
       stream.getTracks().forEach(track => {
-        track.stop();
+        try {
+          // Try to turn off torch before stopping the track
+          if (track.kind === 'video' && track.getCapabilities()?.torch) {
+            track.applyConstraints({
+              advanced: [{ torch: false }]
+            }).catch(err => console.error("Error desactivando linterna:", err));
+          }
+          track.stop();
+        } catch (err) {
+          console.error("Error stopping track:", err);
+        }
+        
         if (videoRef.current) {
           videoRef.current.srcObject = null;
         }
       });
       setStream(null);
+      setTorchEnabled(false);
     }
   };
 
   const startCamera = async () => {
+    if (isLoading) return;
+    
     try {
+      setIsLoading(true);
+      
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
       const baseVideoConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
-        height: { ideal: 480 }
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       };
 
       if (isAndroid) {
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 25 },
+          frameRate: { ideal: 30 },
           resizeMode: 'crop-and-scale'
+        });
+      } else if (isIOS) {
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30 }
         });
       }
 
       const constraints = {
-        video: baseVideoConstraints
+        video: baseVideoConstraints,
+        audio: false
       };
 
+      console.log("Intentando acceder a la cámara con:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
       const videoTrack = newStream.getVideoTracks()[0];
+      console.log("Cámara activada:", videoTrack.label);
 
-      if (videoTrack && isAndroid) {
+      if (videoTrack && (isAndroid || isIOS)) {
         try {
           const capabilities = videoTrack.getCapabilities();
+          console.log("Camera capabilities:", capabilities);
+          
+          // Aplicar configuraciones especiales para móviles
           const advancedConstraints = [];
           
           if (capabilities.exposureMode) {
@@ -74,7 +107,26 @@ const CameraView = ({
             await videoTrack.applyConstraints({
               advanced: advancedConstraints
             });
+            console.log("Applied advanced camera constraints");
           }
+
+          // Activar la linterna después de un breve retraso
+          setTimeout(async () => {
+            if (videoTrack.getCapabilities()?.torch) {
+              try {
+                console.log("Activando linterna...");
+                await videoTrack.applyConstraints({
+                  advanced: [{ torch: true }]
+                });
+                setTorchEnabled(true);
+                console.log("Linterna activada con éxito");
+              } catch (err) {
+                console.error("No se pudo activar la linterna:", err);
+              }
+            } else {
+              console.log("Este dispositivo no tiene linterna disponible");
+            }
+          }, 500);
 
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
@@ -87,19 +139,36 @@ const CameraView = ({
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        if (isAndroid) {
+        if (isAndroid || isIOS) {
           videoRef.current.style.willChange = 'transform';
           videoRef.current.style.transform = 'translateZ(0)';
         }
       }
 
       setStream(newStream);
+      retryCountRef.current = 0;
       
       if (onStreamReady) {
         onStreamReady(newStream);
       }
+      
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
+      
+      // Implementar reintentos con esperas crecientes
+      retryCountRef.current++;
+      const delayTime = Math.min(2000 * retryCountRef.current, 6000);
+      
+      if (retryCountRef.current <= 3) {
+        console.log(`Reintentando iniciar la cámara en ${delayTime}ms (intento ${retryCountRef.current}/3)...`);
+        setTimeout(() => {
+          startCamera();
+        }, delayTime);
+      } else {
+        console.error("Se alcanzó el máximo de intentos para iniciar la cámara");
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -178,10 +247,29 @@ const CameraView = ({
   }, [isMonitoring]);
 
   // Determine actual finger status using both provided detection and brightness
-  const actualFingerStatus = isFingerDetected && (
-    avgBrightness < 60 || // Dark means finger is likely present
-    signalQuality > 50    // Good quality signal confirms finger
+  // More permissive detection (use a very low brightness threshold)
+  const actualFingerStatus = isFingerDetected || (
+    avgBrightness < 50 || // Much more permissive brightness threshold
+    signalQuality > 20    // More permissive quality threshold
   );
+
+  // Reattach camera if the torch gets disabled unexpectedly
+  useEffect(() => {
+    if (isMonitoring && stream && !torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Reactivando linterna...");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => {
+          setTorchEnabled(true);
+          console.log("Linterna reactivada con éxito");
+        }).catch(err => {
+          console.error("Error reactivando linterna:", err);
+        });
+      }
+    }
+  }, [isMonitoring, stream, torchEnabled]);
 
   return (
     <>
@@ -203,8 +291,8 @@ const CameraView = ({
             size={48}
             className={`transition-colors duration-300 ${
               !actualFingerStatus ? 'text-gray-400' :
-              signalQuality > 75 ? 'text-green-500' :
-              signalQuality > 50 ? 'text-yellow-500' :
+              signalQuality > 50 ? 'text-green-500' :
+              signalQuality > 20 ? 'text-yellow-500' :
               'text-red-500'
             }`}
           />
