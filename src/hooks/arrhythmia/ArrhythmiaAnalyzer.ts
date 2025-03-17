@@ -1,7 +1,5 @@
 
-import { analyzeRRIntervals } from '../../utils/rrAnalysisUtils';
-import { VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
-import { ArrhythmiaConfig } from './types';
+import { ArrhythmiaConfig, RRAnalysisResult } from './types';
 import { ArrhythmiaPatternDetector } from './ArrhythmiaPatternDetector';
 import { RRDataAnalyzer } from './RRDataAnalyzer';
 
@@ -38,43 +36,43 @@ export class ArrhythmiaAnalyzer {
 
   /**
    * Direct analysis of RR intervals for arrhythmia detection
-   * No reference values or simulation used
    */
   public analyzeRRData(
-    rrData: { intervals: number[], lastPeakTime: number | null },
-    result: VitalSignsResult
-  ): VitalSignsResult {
+    rrData: { intervals: number[], lastPeakTime: number | null }
+  ): {
+    isArrhythmia: boolean;
+    arrhythmiaCounter: number;
+    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
+  } {
     const currentTime = Date.now();
     
     // Require sufficient data for analysis, but with lower threshold
-    if (!rrData?.intervals || rrData.intervals.length < 12) { // Reduced from 16
-      return this.getStatePreservingResult(result);
+    if (!rrData?.intervals || rrData.intervals.length < 12) {
+      return {
+        isArrhythmia: this.arrhythmiaDetected,
+        arrhythmiaCounter: this.arrhythmiaCounter,
+        lastArrhythmiaData: null
+      };
     }
     
     // Extract intervals for analysis
     const intervals = rrData.intervals.slice(-16);
     
     // Perform direct analysis without reference values
-    const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
-      analyzeRRIntervals(
-        rrData, 
-        currentTime, 
-        this.lastArrhythmiaTime, 
-        this.arrhythmiaCounter,
-        this.config.MIN_TIME_BETWEEN_ARRHYTHMIAS,
-        this.config.MAX_ARRHYTHMIAS_PER_SESSION
-      );
-    
-    // No analysis data available
+    const analysisData = this.analyzeIntervals(intervals);
     if (!analysisData) {
-      return this.getStatePreservingResult(result);
+      return {
+        isArrhythmia: this.arrhythmiaDetected,
+        arrhythmiaCounter: this.arrhythmiaCounter,
+        lastArrhythmiaData: null
+      };
     }
     
     // Log and analyze RR data
     this.rrAnalyzer.logRRAnalysis(analysisData, intervals);
     
     // If arrhythmia detected, process it
-    if (hasArrhythmia) {
+    if (analysisData.isArrhythmia) {
       this.rrAnalyzer.logPossibleArrhythmia(analysisData);
       
       // Update pattern detector
@@ -94,12 +92,18 @@ export class ArrhythmiaAnalyzer {
         this.consecutiveAnomalies = 0;
       }
       
+      // Check time since last arrhythmia and max count
+      const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
+      const canIncrementCounter = 
+        timeSinceLastArrhythmia >= this.config.MIN_TIME_BETWEEN_ARRHYTHMIAS &&
+        this.arrhythmiaCounter < this.config.MAX_ARRHYTHMIAS_PER_SESSION;
+      
       // Confirm arrhythmia with fewer consecutive anomalies required
-      if (shouldIncrementCounter && this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD) {
-        return this.confirmArrhythmia(result, currentTime, analysisData, intervals);
+      if (canIncrementCounter && this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD) {
+        return this.confirmArrhythmia(currentTime, analysisData, intervals);
       } else {
         this.rrAnalyzer.logIgnoredArrhythmia(
-          currentTime - this.lastArrhythmiaTime,
+          timeSinceLastArrhythmia,
           this.config.MAX_ARRHYTHMIAS_PER_SESSION,
           this.arrhythmiaCounter
         );
@@ -109,18 +113,62 @@ export class ArrhythmiaAnalyzer {
       this.consecutiveAnomalies = 0;
     }
     
-    return this.getStatePreservingResult(result);
+    return {
+      isArrhythmia: this.arrhythmiaDetected,
+      arrhythmiaCounter: this.arrhythmiaCounter,
+      lastArrhythmiaData: null
+    };
+  }
+  
+  /**
+   * Analyze RR intervals to detect arrhythmias
+   */
+  private analyzeIntervals(intervals: number[]): RRAnalysisResult | null {
+    if (intervals.length < 8) return null;
+    
+    // Filter for physiological values
+    const validIntervals = intervals.filter(i => i >= 400 && i <= 1500);
+    if (validIntervals.length < intervals.length * 0.75) return null;
+    
+    // Calculate key metrics
+    const avgRR = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
+    const lastRR = validIntervals[validIntervals.length - 1];
+    const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
+    
+    // Calculate RMSSD
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < validIntervals.length; i++) {
+      sumSquaredDiff += Math.pow(validIntervals[i] - validIntervals[i-1], 2);
+    }
+    const rmssd = Math.sqrt(sumSquaredDiff / (validIntervals.length - 1));
+    
+    // Detect if this is an arrhythmia
+    const isArrhythmia = 
+      (rrVariation > 0.2) && // Significant variation
+      (rmssd > 30);          // Elevated RMSSD
+      
+    return {
+      rmssd,
+      rrVariation,
+      timestamp: Date.now(),
+      isArrhythmia,
+      heartRate: Math.round(60000 / avgRR),
+      signalQuality: 1.0 - (Math.min(0.5, rrVariation))
+    };
   }
   
   /**
    * Register confirmed arrhythmia
    */
   private confirmArrhythmia(
-    result: VitalSignsResult, 
     currentTime: number,
-    analysisData: any,
+    analysisData: RRAnalysisResult,
     intervals: number[]
-  ): VitalSignsResult {
+  ): {
+    isArrhythmia: boolean;
+    arrhythmiaCounter: number;
+    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; };
+  } {
     this.arrhythmiaDetected = true;
     this.arrhythmiaCounter++;
     this.lastArrhythmiaTime = currentTime;
@@ -130,31 +178,13 @@ export class ArrhythmiaAnalyzer {
     this.rrAnalyzer.logConfirmedArrhythmia(analysisData, intervals, this.arrhythmiaCounter);
     
     return {
-      ...result,
-      arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
+      isArrhythmia: true,
+      arrhythmiaCounter: this.arrhythmiaCounter,
       lastArrhythmiaData: {
         timestamp: currentTime,
         rmssd: analysisData.rmssd,
         rrVariation: analysisData.rrVariation
       }
-    };
-  }
-  
-  /**
-   * Get result that preserves current arrhythmia state
-   */
-  private getStatePreservingResult(result: VitalSignsResult): VitalSignsResult {
-    if (this.arrhythmiaDetected) {
-      return {
-        ...result,
-        arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
-        lastArrhythmiaData: null
-      };
-    }
-    
-    return {
-      ...result,
-      arrhythmiaStatus: `NO ARRHYTHMIAS|${this.arrhythmiaCounter}`
     };
   }
 

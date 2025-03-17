@@ -2,8 +2,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
-import { ArrhythmiaAnalyzer } from './arrhythmia/ArrhythmiaAnalyzer';
-import { ArrhythmiaConfig } from './arrhythmia/types';
+import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
 
 interface ArrhythmiaWindow {
   start: number;
@@ -12,7 +11,6 @@ interface ArrhythmiaWindow {
 
 /**
  * Hook for processing vital signs with direct algorithms
- * Measurements ALWAYS start from zero with NO simulation
  */
 export const useVitalSignsProcessor = () => {
   // State management
@@ -21,30 +19,18 @@ export const useVitalSignsProcessor = () => {
   
   // References for internal state
   const processorRef = useRef<VitalSignsProcessor | null>(null);
-  const arrhythmiaAnalyzerRef = useRef<ArrhythmiaAnalyzer | null>(null);
+  const arrhythmiaProcessorRef = useRef<ArrhythmiaProcessor | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
-  
-  // Configuration with wider physiological ranges for direct measurement
-  const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 3500, // 3.5 seconds between arrhythmias
-    MAX_ARRHYTHMIAS_PER_SESSION: 40,    // Maximum arrhythmias per session
-    SIGNAL_QUALITY_THRESHOLD: 0.45,     // Increased for more strict quality requirement
-    SEQUENTIAL_DETECTION_THRESHOLD: 0.25, // Increased
-    SPECTRAL_FREQUENCY_THRESHOLD: 0.15  // Increased
-  });
-  
-  // Track when blood pressure values were last updated
-  const lastBPUpdateRef = useRef<number>(Date.now());
-  const forceBPUpdateInterval = useRef<number>(4000); // Force update every 4 seconds
+  const lastArrhythmiaTimeRef = useRef<number>(0);
   
   // Weak signal counter to detect finger removal
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = 0.10; // Increased threshold
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 3; // Decreased tolerance for weak signals
+  const WEAK_SIGNAL_THRESHOLD = 0.10;
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 3;
   
-  // Initialize processor components - always direct measurement
+  // Initialize processor components
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT", {
       sessionId: sessionId.current,
@@ -53,12 +39,12 @@ export const useVitalSignsProcessor = () => {
     
     // Create new instances to ensure clean state
     processorRef.current = new VitalSignsProcessor();
-    arrhythmiaAnalyzerRef.current = new ArrhythmiaAnalyzer(arrhythmiaConfig.current);
+    arrhythmiaProcessorRef.current = new ArrhythmiaProcessor();
     
     return () => {
       console.log("useVitalSignsProcessor: Processor cleanup", {
         sessionId: sessionId.current,
-        totalArrhythmias: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
+        totalArrhythmias: arrhythmiaProcessorRef.current?.getArrhythmiaCounter() || 0,
         processedSignals: processedSignals.current,
         timestamp: new Date().toISOString()
       });
@@ -78,10 +64,9 @@ export const useVitalSignsProcessor = () => {
   
   /**
    * Process PPG signal directly without simulation or reference values
-   * ALWAYS uses direct measurement from signal
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
-    if (!processorRef.current || !arrhythmiaAnalyzerRef.current) {
+    if (!processorRef.current || !arrhythmiaProcessorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
       return {
         spo2: 0,
@@ -97,7 +82,7 @@ export const useVitalSignsProcessor = () => {
     
     processedSignals.current++;
     
-    // Check for weak signal to detect finger removal - stricter check
+    // Check for weak signal to detect finger removal
     if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
       consecutiveWeakSignalsRef.current++;
       
@@ -124,126 +109,109 @@ export const useVitalSignsProcessor = () => {
       consecutiveWeakSignalsRef.current = 0;
     }
     
-    // Logging for diagnostics (less frequent)
-    if (processedSignals.current % 45 === 0) {
-      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
-        inputValue: value,
-        rrDataPresent: !!rrData,
-        rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: arrhythmiaAnalyzerRef.current.getArrhythmiaCount(),
-        signalNumber: processedSignals.current,
-        sessionId: sessionId.current,
-        weakSignalCount: consecutiveWeakSignalsRef.current
-      });
-    }
-    
-    // Process signal directly through processor - no simulation
+    // Process vital signs
     let result = processorRef.current.processSignal(value, rrData);
-    const currentTime = Date.now();
     
     // Process arrhythmias if there is enough data and signal is good
-    // More strict requirements for valid signal
-    if (rrData && 
-        rrData.intervals.length >= 4 && // Increased requirement 
-        consecutiveWeakSignalsRef.current === 0) {
+    if (rrData && rrData.intervals.length >= 4 && consecutiveWeakSignalsRef.current === 0) {
+      const arrhythmiaResult = arrhythmiaProcessorRef.current.processRRData(rrData);
       
-      // Only process with good RR data quality
-      const validRRIntervals = rrData.intervals.filter(interval => 
-        interval > 400 && interval < 1500 // More strict range: 40-150 BPM
-      );
+      // Add arrhythmia status to result
+      result = {
+        ...result,
+        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus
+      };
       
-      if (validRRIntervals.length >= 3) { // Require at least 3 valid intervals
-        // Analyze data directly - no simulation
-        const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
-        result = arrhythmiaResult;
+      // If new arrhythmia detected, register visualization window
+      if (
+        arrhythmiaResult.lastArrhythmiaData && 
+        arrhythmiaResult.lastArrhythmiaData.timestamp > lastArrhythmiaTimeRef.current
+      ) {
+        lastArrhythmiaTimeRef.current = arrhythmiaResult.lastArrhythmiaData.timestamp;
         
-        // If arrhythmia is detected, register visualization window
-        if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
-          const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+        // Create arrhythmia window
+        const timestamp = arrhythmiaResult.lastArrhythmiaData.timestamp;
+        const avgInterval = rrData.intervals.length > 0 
+          ? rrData.intervals.reduce((sum, val) => sum + val, 0) / rrData.intervals.length
+          : 800;
           
-          // Window based on heart rate
-          let windowWidth = 400; // 400ms default
-          
-          // Adjust based on RR intervals
-          if (rrData.intervals.length > 0) {
-            const lastIntervals = rrData.intervals.slice(-4);
-            const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-            windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-          }
-          
-          addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
-        }
+        const windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.2));
+        addArrhythmiaWindow(timestamp - windowWidth/2, timestamp + windowWidth/2);
       }
     }
     
-    // Log processed signals every 100 frames
+    // Log processed signals less frequently
     if (processedSignals.current % 100 === 0) {
       console.log("useVitalSignsProcessor: Processing status", {
         processed: processedSignals.current,
         pressure: result.pressure,
         spo2: result.spo2,
         glucose: result.glucose,
-        hasValidBP: result.pressure !== "--/--",
-        timeSinceLastBPUpdate: currentTime - lastBPUpdateRef.current,
+        arrhythmiaStatus: result.arrhythmiaStatus,
         weakSignalCount: consecutiveWeakSignalsRef.current
       });
     }
     
     // Update signal log
+    const currentTime = Date.now();
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
-    // Always return current result, never cache old ones
-    // This ensures every measurement is coming directly from the signal
     return result;
   }, [addArrhythmiaWindow]);
 
   /**
    * Perform complete reset - always start measurements from zero
-   * No simulations or reference values
    */
   const reset = useCallback(() => {
-    if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return null;
+    if (!processorRef.current || !arrhythmiaProcessorRef.current) return null;
     
-    console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode");
+    console.log("useVitalSignsProcessor: Reset initiated");
     
     processorRef.current.reset();
-    arrhythmiaAnalyzerRef.current.reset();
+    arrhythmiaProcessorRef.current.reset();
     setArrhythmiaWindows([]);
-    setLastValidResults(null); // Always clear previous results
-    lastBPUpdateRef.current = Date.now(); // Reset BP update timer
-    consecutiveWeakSignalsRef.current = 0; // Reset weak signal counter
+    setLastValidResults(null);
+    lastArrhythmiaTimeRef.current = 0;
+    consecutiveWeakSignalsRef.current = 0;
     
-    console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
-    return null; // Always return null to ensure measurements start from zero
+    console.log("useVitalSignsProcessor: Reset completed");
+    return null;
   }, []);
   
   /**
    * Perform full reset - clear all data and reinitialize processors
-   * No simulations or reference values
    */
   const fullReset = useCallback(() => {
-    if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return;
+    if (!processorRef.current || !arrhythmiaProcessorRef.current) return;
     
-    console.log("useVitalSignsProcessor: Full reset initiated - DIRECT MEASUREMENT mode");
+    console.log("useVitalSignsProcessor: Full reset initiated");
     
     processorRef.current.fullReset();
-    arrhythmiaAnalyzerRef.current.reset();
+    arrhythmiaProcessorRef.current.reset();
     setLastValidResults(null);
     setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
-    lastBPUpdateRef.current = Date.now(); // Reset BP update timer
-    consecutiveWeakSignalsRef.current = 0; // Reset weak signal counter
+    lastArrhythmiaTimeRef.current = 0;
+    consecutiveWeakSignalsRef.current = 0;
     
-    console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
+    console.log("useVitalSignsProcessor: Full reset complete");
+  }, []);
+
+  /**
+   * Get the arrhythmia processor instance for external access
+   */
+  const getArrhythmiaProcessor = useCallback(() => {
+    return arrhythmiaProcessorRef.current;
   }, []);
 
   return {
     processSignal,
     reset,
     fullReset,
-    arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    getArrhythmiaProcessor,
+    arrhythmiaCounter: arrhythmiaProcessorRef.current?.getArrhythmiaCounter() || 0,
+    lastValidResults: null,
     arrhythmiaWindows,
     debugInfo: {
       processedSignals: processedSignals.current,
