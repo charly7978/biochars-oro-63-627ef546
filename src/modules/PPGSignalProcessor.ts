@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal-processor';
 import { KalmanFilter } from './signal-processing/KalmanFilter';
 import { SignalQualityAnalyzer } from './signal-processing/SignalQualityAnalyzer';
@@ -73,6 +72,17 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.fingerDetector.reset();
     this.perfusionCalculator.reset();
     console.log("PPGSignalProcessor: Reset complete");
+  }
+
+  /**
+   * Calibrate the processor (required by SignalProcessor interface)
+   * Note: Real calibration is not used as per requirements
+   */
+  async calibrate(): Promise<boolean> {
+    console.log("PPGSignalProcessor: Calibrate method called but not implemented");
+    // Simply reset components instead of calibrating
+    this.reset();
+    return true;
   }
 
   /**

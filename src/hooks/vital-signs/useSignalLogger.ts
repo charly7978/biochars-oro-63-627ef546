@@ -1,7 +1,6 @@
-
 import { useRef, useCallback } from 'react';
 import { updateSignalLog } from '../../utils/signalLogUtils';
-import { SignalLogEntry } from './types';
+import { SignalLogEntry } from '../../utils/signal-log/signalLogger';
 
 export function useSignalLogger() {
   const processedSignals = useRef<number>(0);
@@ -22,14 +21,28 @@ export function useSignalLogger() {
     }
     
     // Update signal log
-    const currentTime = Date.now();
-    signalLog.current = updateSignalLog(
-      signalLog.current, 
-      currentTime, 
+    updateSignalLog(
       value, 
-      result, 
-      processedSignals.current
+      result.quality || 0, 
+      result.isFingerDetected || false,
+      result.heartRate,
+      result.rmssd
     );
+    
+    // Add to local log
+    signalLog.current.push({
+      timestamp: Date.now(),
+      value,
+      quality: result.quality || 0,
+      isFingerDetected: result.isFingerDetected || false,
+      heartRate: result.heartRate,
+      rmssd: result.rmssd
+    });
+    
+    // Keep log size manageable
+    if (signalLog.current.length > 1000) {
+      signalLog.current.shift();
+    }
   }, []);
   
   const reset = useCallback(() => {
