@@ -1,7 +1,5 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
  * Utilities for finger detection from signal characteristics
  */
 import {

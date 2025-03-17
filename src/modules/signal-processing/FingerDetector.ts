@@ -1,86 +1,92 @@
 
 /**
- * Enhanced FingerDetector for reliable finger detection
+ * Determines if a finger is present on the sensor
  */
+export interface FingerDetectionResult {
+  isFingerDetected: boolean;
+  confidence: number;
+}
+
 export class FingerDetector {
-  private readonly HISTORY_SIZE = 15;
-  private readonly DETECTION_THRESHOLD = 25; // Lower threshold for better sensitivity
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25; 
-  private readonly CONFIDENCE_INCREASE_RATE = 0.15;
-  private readonly CONFIDENCE_DECREASE_RATE = 0.08;
+  private readonly HISTORY_SIZE = 10;
+  private readonly MIN_RED_THRESHOLD = 85;
+  private readonly MAX_RED_THRESHOLD = 245;
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.15;
   
-  private brightnessHistory: number[] = [];
+  private consecutiveWeakSignals: number = 0;
+  private readonly MAX_WEAK_SIGNALS = 3;
   private detectionHistory: boolean[] = [];
-  private consecutiveDetections = 0;
-  private detectionConfidence = 0;
-  private lastDetectionTime = 0;
   
   /**
-   * Detect if a finger is covering the camera
+   * Detects if a finger is present based on signal characteristics
+   * @param rawValue - The raw red channel value
+   * @param processedValue - The processed signal value
+   * @param signalQuality - The calculated signal quality
+   * @returns Detection result with confidence
    */
-  public detectFinger(rawValue: number, filteredValue: number, quality: number): { 
-    isFingerDetected: boolean; 
-    confidence: number;
-  } {
-    const now = Date.now();
+  public detectFinger(
+    rawValue: number, 
+    processedValue: number,
+    signalQuality: number
+  ): FingerDetectionResult {
+    // Basic range check
+    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && 
+                     rawValue <= this.MAX_RED_THRESHOLD;
     
-    // Track brightness history
-    this.brightnessHistory.push(rawValue);
-    if (this.brightnessHistory.length > this.HISTORY_SIZE) {
-      this.brightnessHistory.shift();
+    if (!isInRange) {
+      this.updateHistory(false);
+      return { 
+        isFingerDetected: false, 
+        confidence: 0 
+      };
     }
     
-    // Basic detection - red channel value above threshold
-    const basicDetection = rawValue > this.DETECTION_THRESHOLD;
+    // Check for weak signal
+    const isWeakSignal = Math.abs(processedValue) < this.WEAK_SIGNAL_THRESHOLD;
     
-    // Track detection history
-    this.detectionHistory.push(basicDetection);
-    if (this.detectionHistory.length > this.HISTORY_SIZE) {
-      this.detectionHistory.shift();
-    }
-    
-    // Calculate detection ratio
-    const detectionRatio = this.detectionHistory.filter(d => d).length / Math.max(1, this.detectionHistory.length);
-    
-    // Update confidence with stabilization
-    if (basicDetection) {
-      this.consecutiveDetections = Math.min(this.HISTORY_SIZE, this.consecutiveDetections + 1);
-      this.detectionConfidence = Math.min(1.0, this.detectionConfidence + this.CONFIDENCE_INCREASE_RATE);
+    if (isWeakSignal) {
+      this.consecutiveWeakSignals++;
     } else {
-      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
-      this.detectionConfidence = Math.max(0, this.detectionConfidence - this.CONFIDENCE_DECREASE_RATE);
+      this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 1);
     }
     
-    // Final detection decision with confidence
-    const isFingerDetected = this.detectionConfidence >= this.MIN_CONFIDENCE_THRESHOLD;
+    // Determine detection based on signal quality and weak signal history
+    const minQualityThreshold = 35;
+    const isDetected = signalQuality >= minQualityThreshold && 
+                     this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS;
     
-    // Log periodically to avoid flooding
-    if (now - this.lastDetectionTime > 1000) {  // Log once per second max
-      this.lastDetectionTime = now;
-      console.log("FingerDetector: Detection result", {
-        rawValue,
-        isFingerDetected,
-        confidence: this.detectionConfidence.toFixed(2),
-        threshold: this.DETECTION_THRESHOLD,
-        quality: quality.toFixed(0),
-        timestamp: new Date().toISOString()
-      });
-    }
+    this.updateHistory(isDetected);
+    
+    // Calculate detection confidence
+    const historyConfidence = this.calculateHistoryConfidence();
+    const qualityFactor = signalQuality / 100;
+    const confidence = historyConfidence * 0.7 + qualityFactor * 0.3;
     
     return {
-      isFingerDetected,
-      confidence: this.detectionConfidence
+      isFingerDetected: isDetected,
+      confidence: confidence
     };
   }
   
+  private updateHistory(isDetected: boolean): void {
+    this.detectionHistory.push(isDetected);
+    if (this.detectionHistory.length > this.HISTORY_SIZE) {
+      this.detectionHistory.shift();
+    }
+  }
+  
+  private calculateHistoryConfidence(): number {
+    if (this.detectionHistory.length === 0) return 0;
+    
+    const trueCount = this.detectionHistory.filter(v => v).length;
+    return trueCount / this.detectionHistory.length;
+  }
+  
   /**
-   * Reset the detector
+   * Reset the detector state
    */
   public reset(): void {
-    this.brightnessHistory = [];
     this.detectionHistory = [];
-    this.consecutiveDetections = 0;
-    this.detectionConfidence = 0;
-    console.log("FingerDetector: Reset complete");
+    this.consecutiveWeakSignals = 0;
   }
 }

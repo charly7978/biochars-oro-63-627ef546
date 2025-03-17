@@ -1,65 +1,33 @@
 
 /**
- * Enhanced RedChannelExtractor that analyzes specific regions for maximum sensitivity
+ * Extracts the red channel from camera image data for PPG processing
  */
 export class RedChannelExtractor {
-  private readonly SAMPLE_RATE = 2; // Check every 2 pixels for balanced performance
-  private readonly THRESHOLD = 20; // Minimum threshold for red channel
-  
   /**
-   * Extract average red channel value from central region of the image
+   * Extract average red channel value from the central region of an image
+   * @param imageData - Raw image data from camera
+   * @returns Average red channel value from the central region
    */
   public extractRedValue(imageData: ImageData): number {
-    if (!imageData || !imageData.data || imageData.data.length === 0) {
-      console.warn("RedChannelExtractor: Invalid image data");
-      return 0;
-    }
-    
     const data = imageData.data;
-    const width = imageData.width;
-    const height = imageData.height;
-    
-    // Focus on the center 60% of the image where the finger is likely to be
-    const startX = Math.floor(width * 0.2);
-    const endX = Math.floor(width * 0.8);
-    const startY = Math.floor(height * 0.2);
-    const endY = Math.floor(height * 0.8);
-    
     let redSum = 0;
-    let pixelCount = 0;
+    let count = 0;
     
-    // Process only the central region with sampling for better performance
-    for (let y = startY; y < endY; y += this.SAMPLE_RATE) {
-      const rowOffset = y * width * 4;
-      for (let x = startX; x < endX; x += this.SAMPLE_RATE) {
-        const pixelIndex = rowOffset + x * 4;
-        // Red is the first channel (RGBA)
-        if (pixelIndex < data.length) {
-          redSum += data[pixelIndex];
-          pixelCount++;
-        }
+    // Analyze the center of the image (30% central region)
+    // This focuses on the most relevant part of the finger/sensor
+    const startX = Math.floor(imageData.width * 0.35);
+    const endX = Math.floor(imageData.width * 0.65);
+    const startY = Math.floor(imageData.height * 0.35);
+    const endY = Math.floor(imageData.height * 0.65);
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const i = (y * imageData.width + x) * 4;
+        redSum += data[i];  // Red channel (first component of RGBA)
+        count++;
       }
     }
     
-    if (pixelCount === 0) {
-      console.warn("RedChannelExtractor: No pixels analyzed");
-      return 0;
-    }
-    
-    const avgRed = redSum / pixelCount;
-    
-    // Occasional logging to avoid console flooding
-    if (Math.random() < 0.01) {
-      console.log("RedChannelExtractor: Extracted value", {
-        avgRed,
-        pixelsAnalyzed: pixelCount,
-        width,
-        height,
-        threshold: this.THRESHOLD,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    return avgRed;
+    return count > 0 ? redSum / count : 0;
   }
 }

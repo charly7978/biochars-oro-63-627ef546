@@ -1,7 +1,5 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
  * Utility for analyzing noise levels in PPG signal data.
  * This module provides functions to quantify the amount of noise,
  * which is crucial for determining signal quality and reliability.

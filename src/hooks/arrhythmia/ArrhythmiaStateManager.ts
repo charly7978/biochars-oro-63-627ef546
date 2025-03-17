@@ -1,13 +1,8 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { RRAnalysisResult } from './types';
 
 /**
- * Manages the state of genuine arrhythmia detection
- * No data simulation or result manipulation
+ * Manages the state of arrhythmia detection
  */
 export class ArrhythmiaStateManager {
   private lastArrhythmiaTime: number = 0;
@@ -24,7 +19,7 @@ export class ArrhythmiaStateManager {
   }
   
   /**
-   * Update consecutive anomalies count based on real detection
+   * Update consecutive anomalies count
    */
   public updateConsecutiveAnomalies(isPatternDetected: boolean): void {
     if (isPatternDetected) {
@@ -35,7 +30,7 @@ export class ArrhythmiaStateManager {
   }
   
   /**
-   * Check if we can register a new arrhythmia based on real-time criteria
+   * Check if we can register a new arrhythmia
    */
   public canIncrementCounter(currentTime: number, minTimeBetween: number, maxCount: number): boolean {
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
@@ -50,7 +45,7 @@ export class ArrhythmiaStateManager {
   }
   
   /**
-   * Register confirmed arrhythmia based on actual detection
+   * Register confirmed arrhythmia
    */
   public confirmArrhythmia(currentTime: number): void {
     this.arrhythmiaDetected = true;

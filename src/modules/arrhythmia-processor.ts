@@ -1,10 +1,7 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { ArrhythmiaAnalyzer } from '../hooks/arrhythmia/ArrhythmiaAnalyzer';
 import { ArrhythmiaConfig } from '../hooks/arrhythmia/types';
+import { CalibrationManager } from './arrhythmia/CalibrationManager';
 import { RRDataProcessor } from './arrhythmia/RRDataProcessor';
 
 /**
@@ -15,6 +12,7 @@ export class ArrhythmiaProcessor {
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
   
+  private calibrationManager: CalibrationManager;
   private rrDataProcessor: RRDataProcessor;
   private analyzer: ArrhythmiaAnalyzer;
   
@@ -27,6 +25,7 @@ export class ArrhythmiaProcessor {
       SENSITIVITY_LEVEL: 'medium'
     };
     
+    this.calibrationManager = new CalibrationManager();
     this.rrDataProcessor = new RRDataProcessor();
     this.analyzer = new ArrhythmiaAnalyzer(config);
   }
@@ -39,6 +38,15 @@ export class ArrhythmiaProcessor {
     arrhythmiaCounter: number;
     lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
+    // Handle calibration phase
+    if (this.calibrationManager.checkCalibration()) {
+      return {
+        isArrhythmia: false,
+        arrhythmiaCounter: 0,
+        lastArrhythmiaData: null
+      };
+    }
+    
     // Update RR intervals if data is provided
     const hasSufficientData = this.rrDataProcessor.updateRRData(rrData);
     
@@ -81,6 +89,7 @@ export class ArrhythmiaProcessor {
   public reset(): void {
     this.arrhythmiaDetected = false;
     this.arrhythmiaCount = 0;
+    this.calibrationManager.reset();
     this.rrDataProcessor.reset();
     this.analyzer.reset();
     

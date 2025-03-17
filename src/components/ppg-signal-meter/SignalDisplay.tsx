@@ -1,9 +1,7 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
 import React from 'react';
 import { useSignalRenderer } from './useSignalRenderer';
+import { VERTICAL_SCALE } from './constants';
 
 interface SignalDisplayProps {
   value: number;

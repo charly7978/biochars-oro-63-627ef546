@@ -1,26 +1,20 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { ValidationConfig } from '../ValidationConfig';
 
 /**
- * Specialized validator for genuine signal noise analysis
- * No simulation or artificial data manipulation
+ * Specialized validator for signal noise analysis
  */
 export class NoiseValidator {
   private noiseBuffer: number[] = [];
   
   /**
    * Analyze noise characteristics for signal validation
-   * Only processes real data without simulation
    */
   public validateNoise(ppgValue: number): { 
     isValid: boolean;
     validationMessage?: string;
   } {
-    // Update noise buffer with real signal value
+    // Update noise buffer
     this.noiseBuffer.push(ppgValue);
     if (this.noiseBuffer.length > ValidationConfig.NOISE_BUFFER_SIZE) {
       this.noiseBuffer.shift();
@@ -44,7 +38,6 @@ export class NoiseValidator {
   
   /**
    * Calculate noise level as ratio between standard deviation and mean
-   * in genuine signal data
    */
   private calculateNoiseLevel(values: number[]): number {
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;

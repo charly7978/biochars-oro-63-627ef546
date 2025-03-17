@@ -1,14 +1,10 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { ValidationResult } from './ValidationResult';
 import { SignalValidationManager } from './SignalValidationManager';
 import { RangeValidator } from './validators/RangeValidator';
 
 /**
- * Dedicated module for validating genuine PPG signals using medical-grade standards
+ * Dedicated module for validating PPG signals using medical-grade standards
  * Provides robust signal validation with strict criteria
  * This class serves as a facade for the validation components
  */
@@ -24,7 +20,6 @@ export class SignalValidator {
   /**
    * Validates signal quality and determines if it meets medical standards
    * Fast path validation using the enhanced range validator
-   * Processes only real signals without simulation
    */
   public validateSignalQuality(
     ppgValue: number,
@@ -44,7 +39,6 @@ export class SignalValidator {
   
   /**
    * Validate RR interval data for arrhythmia analysis
-   * Ensures only genuine physiological data is processed
    */
   public validateRRIntervals(rrData?: { intervals: number[]; lastPeakTime: number | null }): boolean {
     return this.validationManager.validateRRIntervals(rrData);

@@ -20,3 +20,9 @@ export interface VitalSignsProcessorHookReturn {
     signalLog: {timestamp: number, value: number, result: any}[];
   };
 }
+
+export interface SignalLogEntry {
+  timestamp: number;
+  value: number;
+  result: any;
+}

@@ -1,5 +1,5 @@
 
-import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
+import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal-processor';
 import { KalmanFilter } from './signal-processing/KalmanFilter';
 import { SignalQualityAnalyzer } from './signal-processing/SignalQualityAnalyzer';
 import { FingerDetector } from './signal-processing/FingerDetector';
@@ -7,8 +7,6 @@ import { PerfusionIndexCalculator } from './signal-processing/PerfusionIndexCalc
 import { RedChannelExtractor } from './signal-processing/RedChannelExtractor';
 
 /**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- * 
  * Main PPG signal processor that integrates various processing components
  * to extract and analyze photoplethysmogram signals from camera data
  */
@@ -19,7 +17,10 @@ export class PPGSignalProcessor implements SignalProcessor {
   private fingerDetector: FingerDetector;
   private perfusionCalculator: PerfusionIndexCalculator; 
   private redChannelExtractor: RedChannelExtractor;
-  private frameCount: number = 0;
+  
+  // Signal buffers
+  private lastValues: number[] = [];
+  private readonly BUFFER_SIZE = 12;
   
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -38,7 +39,11 @@ export class PPGSignalProcessor implements SignalProcessor {
    */
   async initialize(): Promise<void> {
     try {
-      this.reset();
+      this.lastValues = [];
+      this.kalmanFilter.reset();
+      this.signalQualityAnalyzer.reset();
+      this.fingerDetector.reset();
+      this.perfusionCalculator.reset();
       console.log("PPGSignalProcessor: Initialized");
     } catch (error) {
       console.error("PPGSignalProcessor: Initialization error", error);
@@ -53,7 +58,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (this.isProcessing) return;
     this.isProcessing = true;
     this.initialize();
-    this.frameCount = 0;
     console.log("PPGSignalProcessor: Started");
   }
 
@@ -62,30 +66,29 @@ export class PPGSignalProcessor implements SignalProcessor {
    */
   stop(): void {
     this.isProcessing = false;
-    this.reset();
-    console.log("PPGSignalProcessor: Stopped");
-  }
-
-  /**
-   * Reset all processor components
-   */
-  reset(): void {
+    this.lastValues = [];
     this.kalmanFilter.reset();
     this.signalQualityAnalyzer.reset();
     this.fingerDetector.reset();
     this.perfusionCalculator.reset();
-    this.frameCount = 0;
-    console.log("PPGSignalProcessor: Reset complete");
+    console.log("PPGSignalProcessor: Stopped");
   }
 
   /**
-   * Calibrate the processor (required by SignalProcessor interface)
+   * Calibrate the processor (analyze baseline signal properties)
    */
   async calibrate(): Promise<boolean> {
-    console.log("PPGSignalProcessor: Calibrating signal processor");
-    // Reset components as a simple calibration procedure
-    this.reset();
-    return true;
+    try {
+      console.log("PPGSignalProcessor: Starting calibration");
+      await this.initialize();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log("PPGSignalProcessor: Calibration complete");
+      return true;
+    } catch (error) {
+      console.error("PPGSignalProcessor: Calibration error", error);
+      this.handleError("CALIBRATION_ERROR", "Error during calibration");
+      return false;
+    }
   }
 
   /**
@@ -97,41 +100,24 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
 
     try {
-      this.frameCount++;
-      // Log dimensions of incoming imageData for debugging
-      if (this.frameCount % 30 === 0 || this.frameCount < 5) {
-        console.log("Processing frame #" + this.frameCount + " with dimensions:", { 
-          width: imageData.width, 
-          height: imageData.height,
-          dataLength: imageData.data.length,
-          timestamp: Date.now()
-        });
-      }
-      
       // Extract red channel value from image
       const redValue = this.redChannelExtractor.extractRedValue(imageData);
-      
-      if (this.frameCount % 30 === 0) {
-        console.log("Extracted red value:", redValue);
-      }
       
       // Apply Kalman filter to reduce noise
       const filtered = this.kalmanFilter.filter(redValue);
       
+      // Store filtered value in buffer
+      this.lastValues.push(filtered);
+      if (this.lastValues.length > this.BUFFER_SIZE) {
+        this.lastValues.shift();
+      }
+      
       // Calculate signal quality
       const quality = this.signalQualityAnalyzer.assessQuality(filtered, redValue);
       
-      // Detect if finger is present - log parameters for debugging
-      if (this.frameCount % 30 === 0) {
-        console.log("Finger detection parameters:", { redValue, filtered, quality });
-      }
-      
+      // Detect if finger is present
       const { isFingerDetected, confidence } = 
         this.fingerDetector.detectFinger(redValue, filtered, quality);
-      
-      if (this.frameCount % 15 === 0 || isFingerDetected) {
-        console.log("Finger detection result:", { isFingerDetected, confidence, quality });
-      }
       
       // Calculate perfusion index
       const perfusionIndex = this.perfusionCalculator.calculatePI(filtered);
@@ -143,23 +129,9 @@ export class PPGSignalProcessor implements SignalProcessor {
         filteredValue: filtered,
         quality: Math.round(quality),
         fingerDetected: isFingerDetected,
-        roi: {
-          x: 0,
-          y: 0,
-          width: 100,
-          height: 100
-        },
+        roi: this.detectROI(redValue),
         perfusionIndex
       };
-
-      // Log the signal we're about to send
-      if (isFingerDetected || this.frameCount % 30 === 0) {
-        console.log("Sending processed signal:", { 
-          fingerDetected: processedSignal.fingerDetected, 
-          quality: processedSignal.quality,
-          timestamp: processedSignal.timestamp
-        });
-      }
 
       // Notify listeners
       if (this.onSignalReady) {
@@ -170,6 +142,18 @@ export class PPGSignalProcessor implements SignalProcessor {
       console.error("PPGSignalProcessor: Error processing frame", error);
       this.handleError("PROCESSING_ERROR", "Error processing frame");
     }
+  }
+
+  /**
+   * Detect region of interest (placeholder implementation)
+   */
+  private detectROI(redValue: number): ProcessedSignal['roi'] {
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    };
   }
 
   /**

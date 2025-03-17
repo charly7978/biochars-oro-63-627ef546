@@ -1,8 +1,4 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { ArrhythmiaConfig, RRAnalysisResult } from './types';
 import { ArrhythmiaPatternDetector } from './ArrhythmiaPatternDetector';
 import { RRDataAnalyzer } from './RRDataAnalyzer';
@@ -10,7 +6,7 @@ import { RRIntervalAnalyzer } from './RRIntervalAnalyzer';
 import { ArrhythmiaStateManager } from './ArrhythmiaStateManager';
 
 /**
- * Direct arrhythmia analyzer for genuine signal processing
+ * Direct arrhythmia analyzer with natural detection
  * No simulation or reference values used
  */
 export class ArrhythmiaAnalyzer {
@@ -38,8 +34,7 @@ export class ArrhythmiaAnalyzer {
   }
 
   /**
-   * Direct analysis of actual RR intervals for genuine arrhythmia detection
-   * No simulation or artificial data used
+   * Direct analysis of RR intervals for arrhythmia detection
    */
   public analyzeRRData(
     rrData: { intervals: number[], lastPeakTime: number | null }
@@ -63,7 +58,7 @@ export class ArrhythmiaAnalyzer {
     // Extract intervals for analysis
     const intervals = rrData.intervals.slice(-16);
     
-    // Perform direct analysis of real data without reference values
+    // Perform direct analysis without reference values
     const analysisData = this.intervalAnalyzer.analyzeIntervals(intervals);
     if (!analysisData) {
       const state = this.stateManager.getState();
@@ -81,10 +76,10 @@ export class ArrhythmiaAnalyzer {
     if (analysisData.isArrhythmia) {
       this.rrAnalyzer.logPossibleArrhythmia(analysisData);
       
-      // Update pattern detector with real data
+      // Update pattern detector
       this.patternDetector.updatePatternBuffer(analysisData.rrVariation);
       
-      // Check for arrhythmia pattern based on genuine data
+      // Check for arrhythmia pattern
       const isPatternDetected = this.patternDetector.detectArrhythmiaPattern();
       this.stateManager.updateConsecutiveAnomalies(isPatternDetected);
       
@@ -127,7 +122,7 @@ export class ArrhythmiaAnalyzer {
   }
   
   /**
-   * Register confirmed arrhythmia based on actual detection
+   * Register confirmed arrhythmia
    */
   private confirmArrhythmia(
     currentTime: number,

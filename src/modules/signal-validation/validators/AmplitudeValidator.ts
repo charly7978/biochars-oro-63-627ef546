@@ -1,26 +1,20 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
- */
-
 import { ValidationConfig } from '../ValidationConfig';
 
 /**
  * Specialized validator for signal amplitude analysis
- * Only processes genuine signals without simulation
  */
 export class AmplitudeValidator {
   private amplitudeHistory: number[] = [];
   
   /**
    * Analyze amplitude characteristics for signal validation
-   * Only processes real data
    */
   public validateAmplitude(ppgValue: number): { 
     isValid: boolean;
     validationMessage?: string;
   } {
-    // Update amplitude history with actual measurement
+    // Update amplitude history
     this.amplitudeHistory.push(Math.abs(ppgValue));
     if (this.amplitudeHistory.length > ValidationConfig.AMPLITUDE_HISTORY_SIZE) {
       this.amplitudeHistory.shift();
@@ -46,7 +40,6 @@ export class AmplitudeValidator {
   
   /**
    * Calculate amplitude statistics for signal validation
-   * Based on real measurements
    */
   private calculateAmplitudeStats(values: number[]): { min: number, max: number, avg: number } {
     const min = Math.min(...values);
