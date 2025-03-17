@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { SignalAmplifier } from './SignalAmplifier';
 
@@ -8,7 +9,7 @@ class KalmanFilter {
   private X = 0;
   private K = 0;
 
-  filter(measurement) {
+  filter(measurement: number): number {
     this.P = this.P + this.Q;
     this.K = this.P / (this.P + this.R);
     this.X = this.X + this.K * (measurement - this.X);
@@ -16,13 +17,13 @@ class KalmanFilter {
     return this.X;
   }
 
-  reset() {
+  reset(): void {
     this.X = 0;
     this.P = 1;
   }
 }
 
-export class PPGSignalProcessor {
+export class PPGSignalProcessor implements SignalProcessor {
   private readonly ROI_SIZE = 50;
   private readonly HISTORY_SIZE = 25;
   private readonly BASELINE_SIZE = 150;
@@ -56,7 +57,6 @@ export class PPGSignalProcessor {
   private calibrationStartTime: number = 0;
   private calibrationSamplesCollected: number = 0;
   private calibrationTimeoutId: any;
-  private fingerDetected: boolean = false;
   private lastFingerValue: number = 0;
   private lastFingerTimestamp: number = 0;
   private perfusionIndex: number = 0;
@@ -69,8 +69,8 @@ export class PPGSignalProcessor {
   public onError: ((error: ProcessingError) => void) | undefined;
 
   constructor(
-    onSignalReady,
-    onError
+    onSignalReady?: (signal: ProcessedSignal) => void,
+    onError?: (error: ProcessingError) => void
   ) {
     this.onSignalReady = onSignalReady;
     this.onError = onError;
@@ -113,7 +113,6 @@ export class PPGSignalProcessor {
     this.lastAmplifiedValue = 0;
     this.signalQuality = 0;
     this.kalmanFilter.reset();
-    this.fingerDetected = false;
     this.lastFingerValue = 0;
     this.lastFingerTimestamp = 0;
     this.perfusionIndex = 0;
@@ -166,86 +165,67 @@ export class PPGSignalProcessor {
     this.roiX = x;
     this.roiY = y;
 
-    // 2. Detección de dedo
-    const fingerValue = avgColor;
-    const fingerThreshold = this.currentConfig.fingerDetectionThreshold;
-    const fingerLostThreshold = this.currentConfig.fingerLostThreshold;
-    const fingerTimeout = 1000;
+    // 2. Filtrar y amplificar señal
+    const filteredValue = this.kalmanFilter.filter(avgColor);
+    const { amplifiedValue, quality } = this.signalAmplifier.processValue(filteredValue);
+    this.lastAmplifiedValue = amplifiedValue;
+    this.signalQuality = quality * 100;
 
-    if (fingerValue >= fingerThreshold && (now - this.lastFingerTimestamp > fingerTimeout || !this.fingerDetected)) {
-      this.fingerDetected = true;
-      this.lastFingerValue = fingerValue;
-      this.lastFingerTimestamp = now;
-      console.log("PPGSignalProcessor: Dedo detectado", { fingerValue, fingerThreshold });
-    } else if (fingerValue < fingerLostThreshold) {
-      this.fingerDetected = false;
-      console.warn("PPGSignalProcessor: Dedo perdido", { fingerValue, fingerLostThreshold });
+    // 3. Actualizar historial de valores
+    this.lastValues.push(amplifiedValue);
+    if (this.lastValues.length > this.HISTORY_SIZE) {
+      this.lastValues.shift();
     }
 
-    // 3. Procesar señal solo si el dedo está detectado
-    if (this.fingerDetected) {
-      // 4. Filtrar y amplificar señal
-      const filteredValue = this.kalmanFilter.filter(avgColor);
-      const { amplifiedValue, quality } = this.signalAmplifier.processValue(filteredValue);
-      this.lastAmplifiedValue = amplifiedValue;
-      this.signalQuality = quality * 100;
-
-      // 5. Actualizar historial de valores
-      this.lastValues.push(amplifiedValue);
-      if (this.lastValues.length > this.HISTORY_SIZE) {
-        this.lastValues.shift();
+    // 4. Actualizar línea base durante la calibración
+    if (!this.hasEstablishedBaseline) {
+      this.baselineValues.push(amplifiedValue);
+      this.calibrationSamplesCollected++;
+      if (this.baselineValues.length > this.BASELINE_SIZE) {
+        this.baselineValues.shift();
       }
+    }
 
-      // 6. Actualizar línea base durante la calibración
-      if (!this.hasEstablishedBaseline) {
-        this.baselineValues.push(amplifiedValue);
-        this.calibrationSamplesCollected++;
-        if (this.baselineValues.length > this.BASELINE_SIZE) {
-          this.baselineValues.shift();
-        }
+    // 5. Calcular Perfusion Index (PI)
+    const PI = this.calculatePerfusionIndex();
+    this.perfusionIndex = PI;
+
+    // 6. Validar señal
+    const isValidSignal = this.validateSignal(amplifiedValue, PI);
+
+    if (isValidSignal) {
+      const signal: ProcessedSignal = {
+        timestamp: now,
+        rawValue: avgColor,
+        filteredValue: amplifiedValue,
+        quality: this.signalQuality,
+        roi: {
+          x: this.roiX,
+          y: this.roiY,
+          width: this.ROI_SIZE,
+          height: this.ROI_SIZE
+        },
+        perfusionIndex: this.perfusionIndex
+      };
+
+      this.lastSignalTimestamp = now;
+      this.lastSignalValue = amplifiedValue;
+      this.lastSignalRoi = signal.roi;
+
+      if (this.onSignalReady) {
+        this.onSignalReady(signal);
       }
+    } else {
+      const error: ProcessingError = {
+        code: "INVALID_SIGNAL",
+        message: "Señal inválida detectada",
+        timestamp: now
+      };
 
-      // 7. Calcular Perfusion Index (PI)
-      const PI = this.calculatePerfusionIndex();
-      this.perfusionIndex = PI;
+      this.lastError = error;
 
-      // 8. Validar señal
-      const isValidSignal = this.validateSignal(amplifiedValue, PI);
-
-      if (isValidSignal) {
-        const signal: ProcessedSignal = {
-          timestamp: now,
-          rawValue: avgColor,
-          filteredValue: amplifiedValue,
-          quality: this.signalQuality,
-          roi: {
-            x: this.roiX,
-            y: this.roiY,
-            width: this.ROI_SIZE,
-            height: this.ROI_SIZE
-          },
-          perfusionIndex: this.perfusionIndex
-        };
-
-        this.lastSignalTimestamp = now;
-        this.lastSignalValue = amplifiedValue;
-        this.lastSignalRoi = signal.roi;
-
-        if (this.onSignalReady) {
-          this.onSignalReady(signal);
-        }
-      } else {
-        const error: ProcessingError = {
-          code: "INVALID_SIGNAL",
-          message: "Señal inválida detectada",
-          timestamp: now
-        };
-
-        this.lastError = error;
-
-        if (this.onError) {
-          this.onError(error);
-        }
+      if (this.onError) {
+        this.onError(error);
       }
     }
   }
@@ -259,10 +239,6 @@ export class PPGSignalProcessor {
       for (let j = 0; j < this.ROI_SIZE; j++) {
         const pixelIndex = ((y + j) * width + (x + i)) * 4;
         const red = data[pixelIndex];
-        const green = data[pixelIndex + 1];
-        const blue = data[pixelIndex + 2];
-
-        // Use only the red channel for simplicity
         total += red;
       }
     }
@@ -288,10 +264,6 @@ export class PPGSignalProcessor {
   }
 
   private validateSignal(amplifiedValue: number, PI: number): boolean {
-    if (!this.fingerDetected) {
-      return false;
-    }
-
     if (!this.hasEstablishedBaseline && this.calibrationSamplesCollected < this.currentConfig.calibrationSamples) {
       return false;
     }

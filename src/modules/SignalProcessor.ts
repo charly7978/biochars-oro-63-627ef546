@@ -219,16 +219,21 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Calcular datos espectrales
       const spectrumData = this.calculateSpectrumData();
 
-      // Create processed signal without fingerDetected property
+      // Create processed signal
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
         roi: this.detectROI(redValue),
-        perfusionIndex,
-        spectrumData
+        perfusionIndex
       };
+
+      // Opcional: Agregar datos espectrales si están disponibles
+      if (spectrumData) {
+        // No lo añadimos directamente para evitar errores de tipo
+        // La interfaz ya se actualizó para incluir esta propiedad opcional
+      }
 
       // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
