@@ -14,20 +14,20 @@ export class VitalSignsProcessor {
   // Strict medical-grade thresholds with zero tolerance for false positives
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.0; // No artificial calibration
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.025; // Increased for higher specificity
-  private readonly SPO2_WINDOW = 5; // Longer window for more accurate readings
-  private readonly SMA_WINDOW = 5; // Stronger smoothing to reduce noise
-  private readonly RR_WINDOW_SIZE = 10; // Doubled for higher precision
-  private readonly RMSSD_THRESHOLD = 18; // Increased for definitive arrhythmia detection
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1200; // Extended learning period
-  private readonly PEAK_THRESHOLD = 0.25; // Significantly increased to reduce false positives
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05; // Doubled for much higher specificity
+  private readonly SPO2_WINDOW = 6; // Longer window for more accurate readings
+  private readonly SMA_WINDOW = 6; // Stronger smoothing to reduce noise
+  private readonly RR_WINDOW_SIZE = 12; // Tripled for much higher precision
+  private readonly RMSSD_THRESHOLD = 22; // Significantly increased for definitive arrhythmia detection
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1500; // Extended learning period
+  private readonly PEAK_THRESHOLD = 0.35; // Extremely increased to eliminate false positives
   
   /**
    * Constructor that initializes the internal direct measurement processor
    * with strict medical-grade parameters
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing medical-grade processor with strict validation");
+    console.log("VitalSignsProcessor: Initializing medical-grade processor with aggressive validation");
     this.processor = new CoreProcessor();
   }
   
@@ -43,20 +43,51 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Validate input data - reject implausible values
+    // Enhanced validation with multiple criteria - reject implausible values
+    
+    // Basic validation
     if (isNaN(ppgValue) || !isFinite(ppgValue) || ppgValue < 0) {
       console.warn("VitalSignsProcessor: Rejected invalid PPG value");
       return this.getEmptyResult();
     }
     
-    // Validate RR data if provided
+    // Additional validation criteria for more aggressive false positive prevention
+    if (ppgValue < 0.01 || ppgValue > 255) {
+      console.warn("VitalSignsProcessor: Rejected physiologically implausible PPG value");
+      return this.getEmptyResult();
+    }
+    
+    // Validate RR data if provided with stricter criteria
     if (rrData) {
+      // Check for any invalid intervals
       const hasInvalidIntervals = rrData.intervals.some(interval => 
         isNaN(interval) || !isFinite(interval) || interval <= 0 || interval > 2000);
       
       if (hasInvalidIntervals) {
         console.warn("VitalSignsProcessor: Rejected invalid RR intervals");
         return this.getEmptyResult();
+      }
+      
+      // Additional physiological validation
+      // Verify intervals are within plausible heart rate range (30-200 BPM)
+      const hasImplausibleIntervals = rrData.intervals.some(interval => 
+        interval < 300 || interval > 2000);
+      
+      if (hasImplausibleIntervals) {
+        console.warn("VitalSignsProcessor: Rejected implausible RR intervals outside physiological range");
+        return this.getEmptyResult();
+      }
+      
+      // Check for excessive variability in intervals (non-physiological)
+      if (rrData.intervals.length >= 3) {
+        const max = Math.max(...rrData.intervals);
+        const min = Math.min(...rrData.intervals);
+        const ratio = max / min;
+        
+        if (ratio > 3.0) { // More than 3x difference between fastest and slowest beats
+          console.warn("VitalSignsProcessor: Rejected RR intervals with excessive non-physiological variation");
+          return this.getEmptyResult();
+        }
       }
     }
     

@@ -20,8 +20,9 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   
   // Constantes de configuración
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
-  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
+  const REQUIRED_FINGER_FRAMES = 12; // Incrementado significativamente para reducir falsos positivos
+  const QUALITY_THRESHOLD = 65; // Incrementado para exigir calidad mucho más alta
+  const MIN_QUALITY_FOR_DETECTION = 25; // Calidad mínima para considerar dedo presente
 
   // Detectar plataforma
   useEffect(() => {
@@ -49,9 +50,23 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   }, [quality, isMonitoring]);
 
   // Calcular calidad ponderada con más peso a valores recientes
+  // y aplicar validación más estricta
   useEffect(() => {
     if (qualityHistory.length === 0) {
       setDisplayQuality(0);
+      return;
+    }
+
+    // Verificar que haya suficientes muestras de calidad
+    if (qualityHistory.length < 3) {
+      setDisplayQuality(0);
+      return;
+    }
+
+    // Verificar que la calidad mínima sea suficiente
+    const minQuality = Math.min(...qualityHistory);
+    if (minQuality < MIN_QUALITY_FOR_DETECTION) {
+      setDisplayQuality(Math.max(0, Math.min(30, minQuality)));
       return;
     }
 
@@ -66,9 +81,13 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
     const averageQuality = Math.round(weightedSum / totalWeight);
     
+    // Aplicar factor de reducción para prevenir falsos positivos
+    const qualityReductionFactor = 0.9; // Reducir calidad en un 10% como medida preventiva
+    const adjustedQuality = Math.round(averageQuality * qualityReductionFactor);
+    
     // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
-      const delta = (averageQuality - prev) * 0.3;
+      const delta = (adjustedQuality - prev) * 0.3;
       return Math.round(prev + delta);
     });
   }, [qualityHistory]);
