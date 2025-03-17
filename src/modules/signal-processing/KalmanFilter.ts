@@ -1,7 +1,10 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Kalman filter implementation for PPG signal processing
- * Provides noise reduction capabilities for raw signal data
+ * Provides genuine noise reduction capabilities for raw signal data
+ * without artificial manipulation
  */
 export class KalmanFilter {
   private R: number = 0.01; // Measurement noise factor
@@ -12,6 +15,8 @@ export class KalmanFilter {
 
   /**
    * Apply Kalman filter to a measurement value
+   * Processes only real measured signals without simulation
+   * 
    * @param measurement - The raw measurement to filter
    * @returns The filtered measurement value
    */

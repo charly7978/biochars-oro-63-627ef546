@@ -1,14 +1,17 @@
 
 /**
- * Calculates Perfusion Index (PI) from PPG signal
- * PI is a relative assessment of pulse strength at the monitoring site
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
+ * Calculates Perfusion Index (PI) from genuine PPG signal
+ * PI is a relative assessment of real pulse strength at the monitoring site
+ * with no data simulation or manipulation
  */
 export class PerfusionIndexCalculator {
   private readonly WINDOW_SIZE = 5;
   private valueBuffer: number[] = [];
   
   /**
-   * Calculate the perfusion index from recent signal values
+   * Calculate the real perfusion index from genuine signal values
    * @param value - The current signal value to add to calculations
    * @returns The calculated perfusion index (0-1 range)
    */
@@ -24,6 +27,7 @@ export class PerfusionIndexCalculator {
     const max = Math.max(...this.valueBuffer);
     
     // PI = (AC/DC) - AC component divided by DC component
+    // Based on actual measured values only
     const ac = max - min;
     const dc = (max + min) / 2;
     

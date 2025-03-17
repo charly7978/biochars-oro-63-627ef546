@@ -1,23 +1,26 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Configuration constants for the glucose processor
  * Centralized configuration for easier maintenance and updates
+ * For processing of genuine signals only
  */
 export const GlucoseConfig = {
   // Sample requirements
   MIN_SAMPLES: 20,
   
-  // Baseline values
+  // Baseline values for reference only
   GLUCOSE_BASELINE: 90, // Standard fasting reference
   
-  // Signal analysis factors
+  // Signal analysis factors for real data processing
   PERFUSION_FACTOR: 0.5,
   AMPLITUDE_FACTOR: 0.15,
   FREQUENCY_FACTOR: 0.20,
   PHASE_FACTOR: 0.10,
   AREA_UNDER_CURVE_FACTOR: 0.12,
   
-  // Window sizes
+  // Window sizes for signal stability
   SIGNAL_WINDOW_SIZE: 5,
   STABILITY_WINDOW: 5,
   

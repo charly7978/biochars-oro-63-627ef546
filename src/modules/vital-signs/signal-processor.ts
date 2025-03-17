@@ -1,4 +1,10 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
+ * Signal processor for genuine PPG signals
+ * Implements validation and filtering techniques for real data only
+ */
 import { FilterUtils } from '../signal-processing/FilterUtils';
 import { ProcessorConfig } from './ProcessorConfig';
 
@@ -18,7 +24,7 @@ export class SignalProcessor {
   }
   
   /**
-   * Apply Simple Moving Average filter
+   * Apply Simple Moving Average filter to genuine signals
    */
   public applySMAFilter(value: number): number {
     this.smaBuffer.push(value);

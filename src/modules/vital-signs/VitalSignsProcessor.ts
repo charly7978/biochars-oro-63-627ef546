@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ */
+
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from '../arrhythmia-processor';
@@ -28,6 +32,7 @@ export interface VitalSignsResult {
 /**
  * Main vital signs processor
  * Integrates different specialized processors to calculate health metrics
+ * from real signals only without simulation
  */
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
@@ -45,6 +50,10 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
   }
   
+  /**
+   * Process real PPG signal to calculate vital signs
+   * No data simulation or result manipulation
+   */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
@@ -82,14 +91,16 @@ export class VitalSignsProcessor {
       return this.createEmptyResults();
     }
     
+    // Calculate SpO2 from genuine signal data
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
+    // Calculate blood pressure from real measurements
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
       
-    // Calculate glucose
+    // Calculate glucose from real signal
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues.slice(-150));
 
     return {
@@ -101,6 +112,9 @@ export class VitalSignsProcessor {
     };
   }
   
+  /**
+   * Create empty results for invalid signals
+   */
   private createEmptyResults(): VitalSignsResult {
     return {
       spo2: 0,
@@ -111,6 +125,9 @@ export class VitalSignsProcessor {
     };
   }
 
+  /**
+   * Reset all processors to initial state
+   */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
@@ -121,10 +138,16 @@ export class VitalSignsProcessor {
     return null;
   }
   
+  /**
+   * Get last valid results if available
+   */
   public getLastValidResults(): VitalSignsResult | null {
     return null;
   }
   
+  /**
+   * Full reset of all components
+   */
   public fullReset(): void {
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");

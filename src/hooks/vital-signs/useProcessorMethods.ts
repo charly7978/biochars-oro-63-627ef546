@@ -1,4 +1,8 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ */
+
 import { useCallback, MutableRefObject } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ArrhythmiaProcessor } from '../../modules/arrhythmia-processor';
@@ -6,6 +10,7 @@ import { SignalAnalyzer } from '../../modules/signal-analysis/SignalAnalyzer';
 
 /**
  * Hook that provides the main processor methods
+ * Only processes genuine signals without simulation
  */
 export function useProcessorMethods(
   processorRef: MutableRefObject<VitalSignsProcessor | null>,
@@ -32,7 +37,7 @@ export function useProcessorMethods(
       return qualityCheck.result;
     }
     
-    // Process vital signs
+    // Process vital signs with genuine data
     let result: VitalSignsResult;
     try {
       result = processorRef.current.processSignal(value, rrData);

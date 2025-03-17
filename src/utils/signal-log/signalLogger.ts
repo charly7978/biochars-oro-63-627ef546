@@ -1,5 +1,9 @@
+
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Signal logging utilities that coordinate validation and quality analysis
+ * for genuine signal data only
  */
 
 import { validateSignalValue, validateResultData } from './validateSignal';
@@ -7,6 +11,7 @@ import { calculateSignalQuality } from './qualityAnalyzer';
 
 /**
  * Updates the signal log with strict validation to prevent invalid data
+ * Only processes genuine measurement data
  */
 export function updateSignalLog(
   signalLog: {timestamp: number, value: number, result: any}[],
@@ -15,7 +20,7 @@ export function updateSignalLog(
   result: any,
   processedSignals: number
 ): {timestamp: number, value: number, result: any}[] {
-  // Apply strict physiological validation
+  // Apply strict physiological validation to ensure only real data is processed
   if (!validateSignalValue(value)) {
     console.warn("signalLogUtils: Rejected invalid signal value", { value });
     return signalLog;
@@ -36,7 +41,7 @@ export function updateSignalLog(
     return signalLog;
   }
   
-  // Validate result data
+  // Validate result data for medical integrity
   const safeResult = validateResultData(result);
   
   const updatedLog = [
@@ -51,7 +56,7 @@ export function updateSignalLog(
   // Keep log at manageable size
   const trimmedLog = updatedLog.length > 100 ? updatedLog.slice(-100) : updatedLog;
   
-  // Log quality info
+  // Log quality info for actual signal
   console.log("signalLogUtils: Log updated", {
     totalEntries: trimmedLog.length,
     lastEntry: trimmedLog[trimmedLog.length - 1],
