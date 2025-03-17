@@ -1,3 +1,4 @@
+
 import { useRef, useCallback } from 'react';
 import { updateSignalLog } from '../../utils/signalLogUtils';
 import { SignalLogEntry } from '../../utils/signal-log/signalLogger';
@@ -54,6 +55,18 @@ export function useSignalLogger() {
     logSignal,
     reset,
     getProcessedSignals: () => processedSignals.current,
-    getSignalLog: () => signalLog.current
+    getSignalLog: () => {
+      // Map SignalLogEntry[] to the expected format with result property
+      return signalLog.current.map(entry => ({
+        timestamp: entry.timestamp,
+        value: entry.value,
+        result: {
+          quality: entry.quality,
+          isFingerDetected: entry.isFingerDetected,
+          heartRate: entry.heartRate,
+          rmssd: entry.rmssd
+        }
+      }));
+    }
   };
 }
