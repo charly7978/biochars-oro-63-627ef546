@@ -37,15 +37,19 @@ export const useSignalProcessor = () => {
   
   // Variables para manejo adaptativo
   const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.45); // Umbral inicial menos restrictivo
+  const detectionThresholdRef = useRef<number>(0.25); // Umbral inicial extremadamente permisivo (reducido de 0.45)
   const adaptiveCounterRef = useRef<number>(0);
   const ADAPTIVE_ADJUSTMENT_INTERVAL = 40;
-  const MIN_DETECTION_THRESHOLD = 0.30; // Umbral mínimo menos restrictivo
+  const MIN_DETECTION_THRESHOLD = 0.20; // Umbral mínimo extremadamente permisivo (reducido de 0.30)
   
   // Contador para evitar pérdidas rápidas de señal
   const signalLockCounterRef = useRef<number>(0);
   const MAX_SIGNAL_LOCK = 4;
   const RELEASE_GRACE_PERIOD = 3;
+  
+  // Contador de persistencia de señal (nuevo)
+  const signalPresenceCounterRef = useRef<number>(0);
+  const MAX_SIGNAL_PRESENCE = 3;
 
   /**
    * Procesa la detección de dedo de manera robusta y adaptativa
@@ -76,6 +80,17 @@ export const useSignalProcessor = () => {
     });
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
+    
+    // NUEVA detección de presencia de señal basada en amplitud
+    const hasSignalActivity = Math.abs(signal.filteredValue) > 0.002 || signal.quality > 5;
+    
+    if (hasSignalActivity) {
+      signalPresenceCounterRef.current = Math.min(MAX_SIGNAL_PRESENCE, signalPresenceCounterRef.current + 1);
+    } else {
+      signalPresenceCounterRef.current = Math.max(0, signalPresenceCounterRef.current - 1);
+    }
+    
+    const signalPresent = signalPresenceCounterRef.current > 0;
     
     // Lógica adaptativa para ajustar el umbral
     adaptiveCounterRef.current++;
@@ -116,13 +131,19 @@ export const useSignalProcessor = () => {
       }
     }
     
-    // Determinación final con criterios más naturales
+    // Determinación final con criterios más permisivos
     const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
     const currentThreshold = detectionThresholdRef.current;
-    const robustFingerDetected = isLockedIn || rawDetectionRatio >= currentThreshold;
+    
+    // Nueva lógica extremadamente permisiva para detectar dedos
+    const robustFingerDetected = 
+      isLockedIn || 
+      rawDetectionRatio >= currentThreshold ||
+      (signalPresent && avgQuality > 10) || // Umbral de calidad muy bajo
+      signal.fingerDetected; // Si el procesador ya detectó el dedo, mantenemos esa detección
     
     // Mejora de calidad para experiencia más suave
-    const enhancementFactor = robustFingerDetected ? 1.08 : 1.0;
+    const enhancementFactor = robustFingerDetected ? 1.15 : 1.0; // Mayor factor de mejora (de 1.08 a 1.15)
     const enhancedQuality = Math.min(100, avgQuality * enhancementFactor);
     
     return {
@@ -192,7 +213,8 @@ export const useSignalProcessor = () => {
     fingerDetectedHistoryRef.current = [];
     consecutiveNonDetectionRef.current = 0;
     signalLockCounterRef.current = 0;
-    detectionThresholdRef.current = 0.45; // Umbral inicial más permisivo
+    signalPresenceCounterRef.current = 0;
+    detectionThresholdRef.current = 0.25; // Umbral inicial extremadamente permisivo (reducido de 0.45)
     adaptiveCounterRef.current = 0;
     
     processor.start();
@@ -220,7 +242,8 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current = [];
       consecutiveNonDetectionRef.current = 0;
       signalLockCounterRef.current = 0;
-      detectionThresholdRef.current = 0.40; // Umbral más permisivo para calibración
+      signalPresenceCounterRef.current = 0;
+      detectionThresholdRef.current = 0.20; // Umbral inicial extremadamente permisivo para calibración
       adaptiveCounterRef.current = 0;
       
       await processor.calibrate();
