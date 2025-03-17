@@ -3,7 +3,8 @@ import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
   private readonly SPO2_CALIBRATION_FACTOR = 1.02;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06;
+  // Adjustment: raise perfusion threshold to discard weak measurements
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // previously: 0.05
   private readonly SPO2_BUFFER_SIZE = 10;
   private spo2Buffer: number[] = [];
 
