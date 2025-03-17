@@ -1,4 +1,3 @@
-
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 
 /**
@@ -287,7 +286,6 @@ export class VitalSignsProcessor {
     return {
       spo2: 0,
       pressure: "--/--",
-      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,

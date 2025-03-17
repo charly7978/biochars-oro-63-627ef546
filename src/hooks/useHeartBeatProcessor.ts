@@ -1,16 +1,12 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
-import { RRAnalysisResult } from './arrhythmia/types';
 
 interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
   filteredValue?: number;
-  arrhythmiaCount: number;
-  isArrhythmia?: boolean;
   rrData?: {
     intervals: number[];
     lastPeakTime: number | null;
@@ -28,12 +24,6 @@ export const useHeartBeatProcessor = () => {
   const MIN_BEEP_INTERVAL_MS = 250; // Minimum time between beeps
   
   const lastRRIntervalsRef = useRef<number[]>([]);
-  const lastIsArrhythmiaRef = useRef<boolean>(false);
-  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
-  
-  const heartRateVariabilityRef = useRef<number[]>([]);
-  const stabilityCounterRef = useRef<number>(0);
-  
   const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
   
@@ -143,7 +133,6 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  // Only add to queue or play beeps if confidence is high
   const requestImmediateBeep = useCallback((value: number) => {
     if (!isMonitoringRef.current || !processorRef.current) return false;
     
@@ -185,69 +174,12 @@ export const useHeartBeatProcessor = () => {
     return false;
   }, [processBeepQueue]);
 
-  const detectArrhythmia = useCallback((rrIntervals: number[]): RRAnalysisResult => {
-    if (rrIntervals.length < 5) {
-      return {
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: Date.now(),
-        isArrhythmia: false
-      };
-    }
-    
-    const lastIntervals = rrIntervals.slice(-5);
-    const lastInterval = lastIntervals[lastIntervals.length - 1];
-    
-    const sum = lastIntervals.reduce((a, b) => a + b, 0);
-    const mean = sum / lastIntervals.length;
-    
-    let rmssdSum = 0;
-    for (let i = 1; i < lastIntervals.length; i++) {
-      const diff = lastIntervals[i] - lastIntervals[i-1];
-      rmssdSum += diff * diff;
-    }
-    const rmssd = Math.sqrt(rmssdSum / (lastIntervals.length - 1));
-    
-    // More strict threshold
-    let thresholdFactor = 0.25;
-    if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20;
-    } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30;
-    }
-    
-    const variationRatio = Math.abs(lastInterval - mean) / mean;
-    const isIrregular = variationRatio > thresholdFactor;
-    
-    if (!isIrregular) {
-      stabilityCounterRef.current = Math.min(30, stabilityCounterRef.current + 1);
-    } else {
-      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
-    }
-    
-    // Require more stability before reporting arrhythmia
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
-    
-    heartRateVariabilityRef.current.push(variationRatio);
-    if (heartRateVariabilityRef.current.length > 20) {
-      heartRateVariabilityRef.current.shift();
-    }
-    
-    return {
-      rmssd,
-      rrVariation: variationRatio,
-      timestamp: Date.now(),
-      isArrhythmia
-    };
-  }, []);
-
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       return {
         bpm: 0,
         confidence: 0,
         isPeak: false,
-        arrhythmiaCount: 0,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -273,7 +205,6 @@ export const useHeartBeatProcessor = () => {
             bpm: 0,
             confidence: 0,
             isPeak: false,
-            arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
             rrData: {
               intervals: [],
               lastPeakTime: null
@@ -288,10 +219,9 @@ export const useHeartBeatProcessor = () => {
       // Don't process signals that are too small (likely noise)
       if (Math.abs(value) < 0.05) {
         return {
-          bpm: 0,
+          bpm: currentBPM,
           confidence: 0,
           isPeak: false,
-          arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
           rrData: {
             intervals: [],
             lastPeakTime: null
@@ -328,7 +258,6 @@ export const useHeartBeatProcessor = () => {
           bpm: currentBPM,
           confidence: result.confidence,
           isPeak: false,
-          arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
           rrData: {
             intervals: [],
             lastPeakTime: null
@@ -344,8 +273,6 @@ export const useHeartBeatProcessor = () => {
 
       return {
         ...result,
-        isArrhythmia: currentBeatIsArrhythmiaRef.current,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCounter() || 0,
         rrData
       };
     } catch (error) {
@@ -354,7 +281,6 @@ export const useHeartBeatProcessor = () => {
         bpm: currentBPM,
         confidence: 0,
         isPeak: false,
-        arrhythmiaCount: 0,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -404,7 +330,6 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  // Function to start monitoring
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
     if (processorRef.current) {
@@ -425,7 +350,6 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  // Function to stop monitoring
   const stopMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Stopping monitoring');
     if (processorRef.current) {
@@ -452,7 +376,6 @@ export const useHeartBeatProcessor = () => {
     confidence,
     processSignal,
     reset,
-    isArrhythmia: currentBeatIsArrhythmiaRef.current,
     requestBeep: requestImmediateBeep,
     startMonitoring,
     stopMonitoring
