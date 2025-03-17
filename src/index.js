@@ -31,6 +31,8 @@ const Index = () => {
   
   const measurementTimerRef = useRef(null);
   const calibrationTimerRef = useRef(null);
+  const consecutiveFingerDetectionsRef = useRef(0);
+  const fingerDetectedRef = useRef(false);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -117,8 +119,10 @@ const Index = () => {
       clearInterval(calibrationTimerRef.current);
     }
     
+    console.log("Starting calibration timer");
     calibrationTimerRef.current = window.setInterval(() => {
       setCalibrationProgress(prev => {
+        console.log("Updating calibration progress:", prev);
         const newProgress = prev + (100 / 8); // 8 seconds for 0-100%
         
         if (newProgress >= 100) {
