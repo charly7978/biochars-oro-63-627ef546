@@ -64,6 +64,41 @@ const Index = () => {
     arrhythmiaWindows
   } = useVitalSignsProcessor();
 
+  const finalizeMeasurement = useCallback(() => {
+    console.log("Finalizando medición");
+    
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    stopProcessing();
+    stopHeartBeatMonitoring();
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
+    
+    if (calibrationCheckTimerRef.current) {
+      clearInterval(calibrationCheckTimerRef.current);
+      calibrationCheckTimerRef.current = null;
+    }
+    
+    const savedResults = resetVitalSigns();
+    if (savedResults) {
+      setVitalSigns(savedResults);
+      setShowResults(true);
+    }
+    
+    setElapsedTime(0);
+    setCalibrationComplete(false);
+    setCalibrationProgress(0);
+    setVitalCalibrationComplete(false);
+    setArrhythmiaCalibrationProgress(0);
+    setArrhythmiaCalibrationComplete(false);
+    setSignalQuality(0);
+    consecutiveFingerDetectionsRef.current = 0;
+    fingerDetectedRef.current = false;
+  }, [stopProcessing, stopHeartBeatMonitoring, resetVitalSigns]);
+
   useEffect(() => {
     if (isMonitoring) {
       console.log("Setting up more frequent calibration check timer");
@@ -272,42 +307,7 @@ const Index = () => {
       console.error("Error starting monitoring:", err);
       toast.error("Error al iniciar. Por favor intente de nuevo.");
     });
-  }, [isMonitoring, enterFullScreen, startProcessing, startHeartBeatMonitoring]);
-
-  const finalizeMeasurement = useCallback(() => {
-    console.log("Finalizando medición");
-    
-    setIsMonitoring(false);
-    setIsCameraOn(false);
-    stopProcessing();
-    stopHeartBeatMonitoring();
-    
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
-      measurementTimerRef.current = null;
-    }
-    
-    if (calibrationCheckTimerRef.current) {
-      clearInterval(calibrationCheckTimerRef.current);
-      calibrationCheckTimerRef.current = null;
-    }
-    
-    const savedResults = resetVitalSigns();
-    if (savedResults) {
-      setVitalSigns(savedResults);
-      setShowResults(true);
-    }
-    
-    setElapsedTime(0);
-    setCalibrationComplete(false);
-    setCalibrationProgress(0);
-    setVitalCalibrationComplete(false);
-    setArrhythmiaCalibrationProgress(0);
-    setArrhythmiaCalibrationComplete(false);
-    setSignalQuality(0);
-    consecutiveFingerDetectionsRef.current = 0;
-    fingerDetectedRef.current = false;
-  }, [stopProcessing, stopHeartBeatMonitoring, resetVitalSigns]);
+  }, [isMonitoring, enterFullScreen, startProcessing, startHeartBeatMonitoring, finalizeMeasurement]);
 
   const handleReset = useCallback(() => {
     console.log("Reseteando completamente la aplicación");
