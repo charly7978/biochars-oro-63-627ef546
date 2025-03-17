@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/camera/CameraView";
@@ -28,6 +29,9 @@ const Index = () => {
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [arrhythmiaCalibrationProgress, setArrhythmiaCalibrationProgress] = useState(0);
+  const [isArrhythmiaCalibrating, setIsArrhythmiaCalibrating] = useState(false);
+  
   const measurementTimerRef = useRef(null);
   const calibrationTimerRef = useRef(null);
   
@@ -109,6 +113,8 @@ const Index = () => {
     setIsCameraOn(true);
     setCalibrationComplete(false);
     setCalibrationProgress(0);
+    setArrhythmiaCalibrationProgress(0);
+    setIsArrhythmiaCalibrating(false);
     startProcessing();
     setElapsedTime(0);
     
@@ -124,6 +130,7 @@ const Index = () => {
           clearInterval(calibrationTimerRef.current);
           calibrationTimerRef.current = null;
           setCalibrationComplete(true);
+          setIsArrhythmiaCalibrating(true);
           startMeasurementTimer();
           return 100;
         }
@@ -183,6 +190,8 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    setArrhythmiaCalibrationProgress(0);
+    setIsArrhythmiaCalibrating(false);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -216,6 +225,8 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
+    setArrhythmiaCalibrationProgress(0);
+    setIsArrhythmiaCalibrating(false);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -286,12 +297,29 @@ const Index = () => {
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
         setVitalSigns(vitals);
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        
+        // Update arrhythmia counter
+        if (vitals.arrhythmiaStatus.includes('|')) {
+          setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        }
+        
+        // Check if arrhythmia is being calibrated
+        if (vitals.arrhythmiaStatus.includes("CALIBRANDO")) {
+          const match = vitals.arrhythmiaStatus.match(/(\d+)%/);
+          if (match) {
+            setArrhythmiaCalibrationProgress(parseInt(match[1], 10));
+          } else {
+            setArrhythmiaCalibrationProgress(Math.min(100, elapsedTime * 5));
+          }
+        } else if (calibrationComplete && isArrhythmiaCalibrating) {
+          setArrhythmiaCalibrationProgress(100);
+          setIsArrhythmiaCalibrating(false);
+        }
       }
       
       setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime, calibrationComplete, isArrhythmiaCalibrating]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -310,6 +338,8 @@ const Index = () => {
             signalQuality={signalQuality}
             calibrationProgress={calibrationProgress}
             isCalibrating={!calibrationComplete}
+            arrhythmiaCalibrationProgress={arrhythmiaCalibrationProgress}
+            isArrhythmiaCalibrating={calibrationComplete && isArrhythmiaCalibrating}
           />
         </div>
 
@@ -346,7 +376,9 @@ const Index = () => {
                 />
                 <VitalSign 
                   label="ARRITMIAS"
-                  value={vitalSigns.arrhythmiaStatus}
+                  value={vitalSigns.arrhythmiaStatus.includes('|') ? 
+                    vitalSigns.arrhythmiaStatus.split('|')[0] : 
+                    vitalSigns.arrhythmiaStatus}
                 />
                 <VitalSign 
                   label="GLUCOSA"
@@ -366,6 +398,8 @@ const Index = () => {
             <div className="absolute bottom-40 left-0 right-0 text-center">
               {!calibrationComplete ? (
                 <span className="text-xl font-medium text-blue-300">Calibración: {Math.floor(calibrationProgress)}%</span>
+              ) : isArrhythmiaCalibrating ? (
+                <span className="text-xl font-medium text-blue-300">Calibrando arritmias: {Math.floor(arrhythmiaCalibrationProgress)}%</span>
               ) : (
                 <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
               )}

@@ -52,7 +52,7 @@ const CameraView = ({
     
     try {
       const constraints = {
-        video: {
+        video: { 
           facingMode: 'environment',
           width: { ideal: 1280 },
           height: { ideal: 720 }
@@ -66,14 +66,14 @@ const CameraView = ({
       setStream(mediaStream);
       
       // Enable torch if available
-      const videoTrack = mediaStream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().torch) {
-        try {
+      try {
+        const videoTrack = mediaStream.getVideoTracks()[0];
+        if (videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().torch) {
           await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
           console.log('CameraView: Torch enabled');
-        } catch (torchErr) {
-          console.log('CameraView: Failed to enable torch:', torchErr);
         }
+      } catch (torchErr) {
+        console.log('CameraView: Failed to enable torch:', torchErr);
       }
       
       if (onStreamReady) {
