@@ -8,14 +8,17 @@ import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
-  private calibrationPhase: 'initial' | 'adapting' | 'calibrated' = 'initial';
+  private calibrationPhase: 'initial' | 'calibrating' | 'completed' = 'initial';
   private calibrationSamples: number[] = [];
   private baselineValues: number[] = [];
   private calibrationStartTime: number | null = null;
   private lastCalibrationUpdate: number = 0;
   private lastResult: VitalSignsResult | null = null;
+  private calibrationProgress: number = 0;
+  private calibrationCompleteTime: number | null = null;
   
   // Optimized thresholds for reliable physiological detection
+  private readonly CALIBRATION_DURATION_MS = 8000; // 8 seconds calibration
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.0;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.01; // More permissive
@@ -27,30 +30,54 @@ export class VitalSignsProcessor {
   private readonly PEAK_THRESHOLD = 0.12; // More permissive
   private readonly CALIBRATION_SAMPLE_COUNT = 15; // Fewer samples needed
   private readonly CALIBRATION_UPDATE_INTERVAL = 300; // ms - faster updates
-  private readonly CALIBRATION_TIMEOUT = 3000; // ms - shorter timeout
   
   /**
    * Constructor that initializes the internal processor
    * and prepares the calibration system
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing with non-blocking auto-calibration");
+    console.log("VitalSignsProcessor: Initializing with real auto-calibration");
     this.processor = new CoreProcessor();
   }
   
   /**
    * Process a PPG signal and RR data to get vital signs
-   * Always returns results, even during calibration
+   * During calibration, returns placeholder results
+   * After calibration, returns real measurements
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     try {
-      // Handle calibration in parallel without blocking
+      // Update calibration state
       this.handleCalibration(ppgValue);
       
-      // Direct processing for measurements
+      // During calibration phase, return placeholder values
+      if (this.calibrationPhase === 'initial' || this.calibrationPhase === 'calibrating') {
+        // Return placeholder with correct TypeScript structure
+        return {
+          spo2: 0,
+          pressure: "--/--",
+          arrhythmiaStatus: "CALIBRANDO... " + Math.round(this.calibrationProgress) + "%",
+          glucose: 0,
+          lipids: {
+            totalCholesterol: 0,
+            triglycerides: 0
+          },
+          calibration: {
+            phase: this.calibrationPhase,
+            progress: {
+              heartRate: this.calibrationProgress / 100,
+              spo2: this.calibrationProgress / 100,
+              pressure: this.calibrationProgress / 100,
+              arrhythmia: this.calibrationProgress / 100
+            }
+          }
+        };
+      }
+      
+      // Direct processing for measurements after calibration
       const result = this.processor.processSignal(ppgValue, rrData);
       
       // Store last valid result for future use
@@ -58,7 +85,7 @@ export class VitalSignsProcessor {
         this.lastResult = result;
       }
       
-      // Always return a result, even if it's partially calibrated
+      // Return the processed result
       return result;
     } catch (error) {
       console.error("VitalSignsProcessor: Error processing signal:", error);
@@ -67,14 +94,19 @@ export class VitalSignsProcessor {
       return this.lastResult || {
         spo2: 0,
         pressure: "--/--",
-        arrhythmiaStatus: "--"
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
       };
     }
   }
   
   /**
-   * Handle the calibration process in parallel with measurements
-   * Never blocks the UI thread or measurement flow
+   * Handle the calibration process with progress tracking
+   * Strictly follows an 8-second calibration period
    */
   private handleCalibration(ppgValue: number): void {
     try {
@@ -82,11 +114,12 @@ export class VitalSignsProcessor {
       
       // Initialize calibration if it hasn't started
       if (this.calibrationPhase === 'initial') {
-        this.calibrationPhase = 'adapting';
+        this.calibrationPhase = 'calibrating';
         this.calibrationStartTime = now;
         this.calibrationSamples = [];
         this.baselineValues = [];
-        console.log("VitalSignsProcessor: Starting non-blocking calibration process");
+        this.calibrationProgress = 0;
+        console.log("VitalSignsProcessor: Starting 8-second calibration process");
       }
       
       // Only update calibration at specific intervals to avoid oversampling
@@ -96,58 +129,73 @@ export class VitalSignsProcessor {
       
       this.lastCalibrationUpdate = now;
       
-      // In adapting phase, collect samples
-      if (this.calibrationPhase === 'adapting') {
-        // More permissive sample collection
-        if (Math.abs(ppgValue) > 0.005) {
-          this.calibrationSamples.push(ppgValue);
-          console.log("VitalSignsProcessor: Collecting calibration sample", { 
-            value: ppgValue, 
-            count: this.calibrationSamples.length,
-            target: this.CALIBRATION_SAMPLE_COUNT
-          });
-        }
-        
-        // Check if we have enough samples or if we've timed out
-        const timeInCalibration = this.calibrationStartTime ? now - this.calibrationStartTime : 0;
-        
-        if (this.calibrationSamples.length >= this.CALIBRATION_SAMPLE_COUNT || 
-            timeInCalibration > this.CALIBRATION_TIMEOUT) {
+      // In calibration phase, collect samples and update progress
+      if (this.calibrationPhase === 'calibrating') {
+        // Update progress percentage
+        if (this.calibrationStartTime) {
+          const elapsedMs = now - this.calibrationStartTime;
+          this.calibrationProgress = Math.min(100, (elapsedMs / this.CALIBRATION_DURATION_MS) * 100);
           
-          // Calculate baseline values if we have samples
-          if (this.calibrationSamples.length > 0) {
-            // Sort samples to find median value
-            const sortedSamples = [...this.calibrationSamples].sort((a, b) => a - b);
-            const medianIndex = Math.floor(sortedSamples.length / 2);
-            const medianValue = sortedSamples[medianIndex];
-            
-            // Calculate average excluding outliers - more permissive
-            const validSamples = sortedSamples.filter(sample => 
-              Math.abs(sample - medianValue) < medianValue * 0.5 // More permissive outlier detection
-            );
-            
-            if (validSamples.length > 0) {
-              const avgValue = validSamples.reduce((sum, val) => sum + val, 0) / validSamples.length;
-              this.baselineValues.push(avgValue);
-              
-              console.log("VitalSignsProcessor: Calibration completed", {
-                samples: this.calibrationSamples.length,
-                validSamples: validSamples.length,
-                baseline: avgValue,
-                timeInCalibration
-              });
-            }
+          // Collect calibration sample
+          if (Math.abs(ppgValue) > 0.005) {
+            this.calibrationSamples.push(ppgValue);
           }
           
-          // Mark as calibrated and continue processing
-          this.calibrationPhase = 'calibrated';
+          // Check if calibration time has completed
+          if (elapsedMs >= this.CALIBRATION_DURATION_MS) {
+            // Calculate baseline values if we have samples
+            if (this.calibrationSamples.length > 0) {
+              // Sort samples to find median value
+              const sortedSamples = [...this.calibrationSamples].sort((a, b) => a - b);
+              const medianIndex = Math.floor(sortedSamples.length / 2);
+              const medianValue = sortedSamples[medianIndex];
+              
+              // Calculate average excluding outliers
+              const validSamples = sortedSamples.filter(sample => 
+                Math.abs(sample - medianValue) < medianValue * 0.5
+              );
+              
+              if (validSamples.length > 0) {
+                const avgValue = validSamples.reduce((sum, val) => sum + val, 0) / validSamples.length;
+                this.baselineValues.push(avgValue);
+                
+                console.log("VitalSignsProcessor: Calibration completed", {
+                  samples: this.calibrationSamples.length,
+                  validSamples: validSamples.length,
+                  baseline: avgValue,
+                  elapsedMs
+                });
+              }
+            }
+            
+            // Mark as completed and store the completion time
+            this.calibrationPhase = 'completed';
+            this.calibrationCompleteTime = now;
+            this.calibrationProgress = 100;
+            console.log("VitalSignsProcessor: 8-second calibration phase completed, starting measurements");
+          }
         }
       }
     } catch (error) {
       console.error("VitalSignsProcessor: Error in calibration:", error);
-      // Move to calibrated state to avoid blocking on error
-      this.calibrationPhase = 'calibrated';
+      // Move to completed state to avoid blocking on error
+      this.calibrationPhase = 'completed';
+      this.calibrationProgress = 100;
     }
+  }
+  
+  /**
+   * Return the calibration progress as a percentage
+   */
+  public getCalibrationProgress(): number {
+    return this.calibrationProgress;
+  }
+  
+  /**
+   * Check if calibration is complete
+   */
+  public isCalibrationComplete(): boolean {
+    return this.calibrationPhase === 'completed';
   }
   
   /**
@@ -170,6 +218,8 @@ export class VitalSignsProcessor {
     this.baselineValues = [];
     this.calibrationStartTime = null;
     this.lastCalibrationUpdate = 0;
+    this.calibrationProgress = 0;
+    this.calibrationCompleteTime = null;
     console.log("VitalSignsProcessor: Reset complete - calibration system reset");
     return lastValidResults;
   }
