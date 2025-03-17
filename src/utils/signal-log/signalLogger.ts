@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
  * 
@@ -34,3 +35,6 @@ export function updateSignalLog(
   
   return updatedLog;
 }
+
+// Make sure to explicitly export the function
+export default { updateSignalLog };

@@ -1,4 +1,5 @@
 
+// Fix the import to match the export from signalLogger.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/PPGSignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal-processor';
@@ -38,10 +39,10 @@ export const useSignalProcessor = () => {
   
   // Variables for adaptive handling
   const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.45);
+  const detectionThresholdRef = useRef<number>(0.35); // More sensitive threshold (was 0.45)
   const adaptiveCounterRef = useRef<number>(0);
   const ADAPTIVE_ADJUSTMENT_INTERVAL = 40;
-  const MIN_DETECTION_THRESHOLD = 0.30;
+  const MIN_DETECTION_THRESHOLD = 0.25; // More sensitive minimum threshold (was 0.30)
   
   // Counter to avoid rapid signal losses
   const signalLockCounterRef = useRef<number>(0);
@@ -63,15 +64,22 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Calculate detection ratio
-    const rawDetectionRatio = fingerDetectedHistoryRef.current.filter(d => d).length / 
-                             Math.max(1, fingerDetectedHistoryRef.current.length);
+    // Calculate detection ratio with more weight to recent values
+    let weightedDetections = 0;
+    let weightSum = 0;
+    fingerDetectedHistoryRef.current.forEach((detected, idx) => {
+      const weight = Math.pow(1.5, idx); // Higher weight for more recent detections
+      weightedDetections += detected ? weight : 0;
+      weightSum += weight;
+    });
+    
+    const rawDetectionRatio = weightSum > 0 ? weightedDetections / weightSum : 0;
     
     // Calculate weighted quality (more weight to recent values)
     let weightedQualitySum = 0;
-    let weightSum = 0;
+    weightSum = 0;
     qualityHistoryRef.current.forEach((quality, index) => {
-      const weight = Math.pow(1.2, index);
+      const weight = Math.pow(1.3, index); // Slightly increased weight factor
       weightedQualitySum += quality * weight;
       weightSum += weight;
     });
@@ -83,22 +91,31 @@ export const useSignalProcessor = () => {
     if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
       adaptiveCounterRef.current = 0;
       
-      const consistentDetection = rawDetectionRatio > 0.8;
+      const consistentDetection = rawDetectionRatio > 0.7; // More sensitive
       const consistentNonDetection = rawDetectionRatio < 0.2;
       
       if (consistentNonDetection) {
         // Make detection easier
         detectionThresholdRef.current = Math.max(
           MIN_DETECTION_THRESHOLD,
-          detectionThresholdRef.current - 0.08
+          detectionThresholdRef.current - 0.1 // Faster adaptation
         );
       } else if (consistentDetection && avgQuality < 35) {
         // Be more strict with detection but low quality
         detectionThresholdRef.current = Math.min(
-          0.6,
+          0.5, // Lower maximum threshold
           detectionThresholdRef.current + 0.05
         );
       }
+      
+      // Log threshold adjustments for debugging
+      console.log("useSignalProcessor: Adaptive threshold updated", {
+        newThreshold: detectionThresholdRef.current,
+        rawDetectionRatio,
+        avgQuality,
+        consistentDetection,
+        consistentNonDetection
+      });
     }
     
     // "Lock-in" logic for stability
@@ -117,10 +134,48 @@ export const useSignalProcessor = () => {
       }
     }
     
-    // Final determination
+    // Check if values indicate a finger might be present despite not being detected
+    let signalIndicatesFingerPresence = false;
+    
+    if (signalStats.totalValues > 10) {
+      const currentValue = signal.filteredValue;
+      const valueRange = signalStats.maxValue - signalStats.minValue;
+      const normalizedValue = (currentValue - signalStats.minValue) / Math.max(0.1, valueRange);
+      
+      // If signal is changing significantly, it might indicate a finger is present
+      if (valueRange > 5 && normalizedValue > 0.3 && normalizedValue < 0.9) {
+        signalIndicatesFingerPresence = true;
+      }
+    }
+    
+    // Final determination with improved logic
     const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
     const currentThreshold = detectionThresholdRef.current;
-    const robustFingerDetected = isLockedIn || rawDetectionRatio >= currentThreshold;
+    const robustFingerDetected = isLockedIn || 
+                               rawDetectionRatio >= currentThreshold ||
+                               signalIndicatesFingerPresence;
+    
+    // Log detailed detection info occasionally for debugging
+    if (Math.random() < 0.05) {
+      console.log("useSignalProcessor: Finger detection details", {
+        originalDetection: signal.fingerDetected,
+        robustDetection: robustFingerDetected,
+        rawDetectionRatio,
+        threshold: currentThreshold,
+        isLockedIn,
+        signalLockCounter: signalLockCounterRef.current,
+        consecutiveNonDetection: consecutiveNonDetectionRef.current,
+        signalIndicatesFingerPresence,
+        avgQuality,
+        signalQuality: signal.quality,
+        signalValue: signal.filteredValue,
+        valueStats: {
+          min: signalStats.minValue,
+          max: signalStats.maxValue,
+          avg: signalStats.avgValue
+        }
+      });
+    }
     
     return {
       ...signal,
@@ -129,7 +184,7 @@ export const useSignalProcessor = () => {
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
-  }, []);
+  }, [signalStats]);
 
   // Set up callbacks and cleanup
   useEffect(() => {
@@ -189,7 +244,7 @@ export const useSignalProcessor = () => {
     fingerDetectedHistoryRef.current = [];
     consecutiveNonDetectionRef.current = 0;
     signalLockCounterRef.current = 0;
-    detectionThresholdRef.current = 0.45;
+    detectionThresholdRef.current = 0.35; // More sensitive initial threshold
     adaptiveCounterRef.current = 0;
     
     processor.start();
@@ -217,10 +272,11 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current = [];
       consecutiveNonDetectionRef.current = 0;
       signalLockCounterRef.current = 0;
-      detectionThresholdRef.current = 0.40;
+      detectionThresholdRef.current = 0.35; // More sensitive default
       adaptiveCounterRef.current = 0;
       
-      processor.reset();
+      processor.stop();
+      await processor.initialize();
       
       console.log("useSignalProcessor: Reset successful");
       return true;
