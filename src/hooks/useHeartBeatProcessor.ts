@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { RRData } from './arrhythmia/types';
 
@@ -7,6 +8,7 @@ export const useHeartBeatProcessor = () => {
   const processorRef = useRef<any>(null);
   const heartRateHistoryRef = useRef<number[]>([]);
   const arrhythmiaDetectedRef = useRef(false);
+  const isMonitoringRef = useRef(false);
   
   useEffect(() => {
     // Check if the processor is available in the window
@@ -29,8 +31,8 @@ export const useHeartBeatProcessor = () => {
     return false;
   };
 
-  const processSignal = (value: number) => {
-    if (!processorRef.current) {
+  const processSignal = (value: number, isFingerDetected: boolean) => {
+    if (!processorRef.current || !isMonitoringRef.current || !isFingerDetected) {
       return { bpm: 0, confidence: 0, rrData: { intervals: [], lastPeakTime: null } };
     }
 
@@ -68,28 +70,34 @@ export const useHeartBeatProcessor = () => {
   };
 
   const startMonitoring = () => {
+    console.log("Heart Beat Processor: Starting monitoring");
     if (processorRef.current && processorRef.current.reset) {
       processorRef.current.reset();
     }
     heartRateHistoryRef.current = [];
     setIsArrhythmia(false);
     arrhythmiaDetectedRef.current = false;
+    isMonitoringRef.current = true;
   };
 
   const stopMonitoring = () => {
+    console.log("Heart Beat Processor: Stopping monitoring");
     // Clean up any ongoing processing
     heartRateHistoryRef.current = [];
     setIsArrhythmia(false);
     arrhythmiaDetectedRef.current = false;
+    isMonitoringRef.current = false;
   };
 
   const reset = () => {
+    console.log("Heart Beat Processor: Reset");
     if (processorRef.current && processorRef.current.reset) {
       processorRef.current.reset();
     }
     heartRateHistoryRef.current = [];
     setIsArrhythmia(false);
     arrhythmiaDetectedRef.current = false;
+    isMonitoringRef.current = false;
   };
 
   return {
@@ -100,6 +108,7 @@ export const useHeartBeatProcessor = () => {
     isArrhythmia,
     startMonitoring,
     stopMonitoring,
-    reset
+    reset,
+    isMonitoring: isMonitoringRef.current
   };
 };

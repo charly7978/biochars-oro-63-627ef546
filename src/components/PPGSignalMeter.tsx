@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -20,6 +19,7 @@ interface PPGSignalMeterProps {
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
+  isMonitoring?: boolean;
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -34,7 +34,8 @@ const PPGSignalMeter = memo(({
   onReset,
   arrhythmiaStatus,
   preserveResults = false,
-  isArrhythmia = false
+  isArrhythmia = false,
+  isMonitoring = false
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -132,7 +133,7 @@ const PPGSignalMeter = memo(({
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
-    if (preserveResults && !isFingerDetected) {
+    if (!isMonitoring || !isFingerDetected) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
       }
@@ -140,7 +141,7 @@ const PPGSignalMeter = memo(({
       baselineRef.current = null;
       lastValueRef.current = null;
     }
-  }, [preserveResults, isFingerDetected]);
+  }, [preserveResults, isFingerDetected, isMonitoring]);
 
   const calculateDerivative = useCallback((value: number) => {
     if (lastValueRef.current === null) return 0;
@@ -148,6 +149,14 @@ const PPGSignalMeter = memo(({
   }, []);
 
   useEffect(() => {
+    // Only update buffers when monitoring and finger is detected
+    if (!isMonitoring) return;
+
+    // Initialize derivative buffer if needed
+    if (!derivativeBufferRef.current) {
+      derivativeBufferRef.current = [];
+    }
+
     if (lastValueRef.current !== null) {
       const derivative = Math.abs(calculateDerivative(value));
       derivativeBufferRef.current.push(derivative);
@@ -209,10 +218,21 @@ const PPGSignalMeter = memo(({
     
     lastDetectionStateRef.current = isFingerDetected;
     
-    // Actualizar servicio de detección de dedo centralizado
-    fingerDetectionService.updateQuality(quality);
-    fingerDetectionService.setDetected(isFingerDetected);
-  }, [quality, isFingerDetected, value, calculateDerivative]);
+    // Share quality data with finger detection service
+    try {
+      if (fingerDetectionService && typeof fingerDetectionService.processSignal === 'function') {
+        const signal = {
+          fingerDetected: isFingerDetected,
+          quality: quality,
+          filteredValue: value,
+          rawValue: value
+        };
+        fingerDetectionService.processSignal(signal);
+      }
+    } catch (err) {
+      console.error("Error updating finger detection service:", err);
+    }
+  }, [quality, isFingerDetected, value, calculateDerivative, isMonitoring]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -232,6 +252,8 @@ const PPGSignalMeter = memo(({
   }, []);
 
   useEffect(() => {
+    if (!isMonitoring) return;
+    
     const now = Date.now();
     
     if (isArrhythmia && !arrhythmiaTransitionRef.current.active) {
@@ -270,7 +292,7 @@ const PPGSignalMeter = memo(({
     arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(
       segment => now - (segment.endTime || now) < 3000
     );
-  }, [isArrhythmia]);
+  }, [isArrhythmia, isMonitoring]);
 
   // Función simple para analizar intervalos RR y detectar arritmias
   const analyzeRRIntervals = useCallback((intervals: number[]): boolean => {
@@ -648,7 +670,28 @@ const PPGSignalMeter = memo(({
       drawGrid(renderCtx);
     }
     
-    if (preserveResults && !isFingerDetected) {
+    // Only render signal when monitoring is active and finger is detected with good quality
+    const shouldRenderSignal = isMonitoring && isFingerDetected && quality > 20;
+    
+    if (!shouldRenderSignal) {
+      // Clear the data to avoid showing stale data
+      if (dataBufferRef.current) {
+        dataBufferRef.current.clear();
+      }
+      
+      // Display a message when not monitoring or no finger detected
+      if (isMonitoring) {
+        renderCtx.font = 'bold 24px Inter';
+        renderCtx.fillStyle = '#ffffff';
+        renderCtx.textAlign = 'center';
+        renderCtx.fillText("Coloque su dedo en la cámara", canvas.width/2, canvas.height/2);
+      } else {
+        renderCtx.font = 'bold 24px Inter';
+        renderCtx.fillStyle = '#ffffff';
+        renderCtx.textAlign = 'center';
+        renderCtx.fillText("Presione INICIAR para comenzar", canvas.width/2, canvas.height/2);
+      }
+      
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
         const visibleCtx = canvas.getContext('2d', { alpha: false });
         if (visibleCtx) {
@@ -734,214 +777,4 @@ const PPGSignalMeter = memo(({
           currentSegmentIsArrhythmia = !!point.isArrhythmia;
         }
         
-        segmentPoints.push({ x, y, isArrhythmia: !!point.isArrhythmia });
-      }
-      
-      if (segmentPoints.length > 0) {
-        renderCtx.beginPath();
-        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-        renderCtx.lineWidth = 2;
-        renderCtx.lineJoin = 'round';
-        renderCtx.lineCap = 'round';
-        
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
-        }
-        
-        for (let j = 0; j < segmentPoints.length; j++) {
-          const segPoint = segmentPoints[j];
-          if (j === 0) {
-            renderCtx.moveTo(segPoint.x, segPoint.y);
-          } else {
-            renderCtx.lineTo(segPoint.x, segPoint.y);
-          }
-        }
-        
-        renderCtx.stroke();
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0;
-        }
-      }
-      
-      if (peaksRef.current.length > 0) {
-        peaksRef.current.forEach(peak => {
-          const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - peak.value;
-          
-          if (x >= 0 && x <= canvas.width) {
-            const peakColor = getSignalColor(!!peak.isArrhythmia);
-            
-            if (peak.isArrhythmia) {
-              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
-              renderCtx.beginPath();
-              
-              const pulsePhase = (now % 1500) / 1500;
-              const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
-              const pulseSize = ARRHYTHMIA_INDICATOR_SIZE * pulseScale;
-              
-              renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
-              renderCtx.fill();
-              
-              renderCtx.fillStyle = peakColor;
-              renderCtx.beginPath();
-              renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
-              renderCtx.fill();
-            } else {
-              renderCtx.fillStyle = peakColor;
-              renderCtx.beginPath();
-              renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-              renderCtx.fill();
-            }
-            
-            renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = peak.isArrhythmia ? '#ea384c' : '#000000';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-          }
-        });
-      }
-      
-      // Mostrar contador de arritmias en la esquina
-      if (arrhythmiaCountRef.current > 0) {
-        renderCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        renderCtx.fillRect(CANVAS_WIDTH - 150, 10, 140, 40);
-        renderCtx.font = 'bold 16px Inter';
-        renderCtx.fillStyle = '#FF2E2E';
-        renderCtx.textAlign = 'right';
-        renderCtx.fillText(`Arritmias: ${arrhythmiaCountRef.current}`, CANVAS_WIDTH - 20, 35);
-      }
-    }
-    
-    if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-      const visibleCtx = canvas.getContext('2d', { alpha: false });
-      if (visibleCtx) {
-        visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-      }
-    }
-    
-    lastRenderTimeRef.current = currentTime;
-    animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaksAndAnalyzeRR, smoothValue, preserveResults, isPointInArrhythmiaSegment, requestBeepForPeak]);
-
-  useEffect(() => {
-    renderSignal();
-    
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [renderSignal]);
-
-  const handleReset = useCallback(() => {
-    peaksRef.current = [];
-    arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
-    arrhythmiaSegmentsRef.current = [];
-    signalAmplitudeHistoryRef.current = [];
-    qualityHistoryRef.current = [];
-    fingerprintConfidenceRef.current = 0;
-    detectionStabilityCounterRef.current = 0;
-    consecutiveFingerFramesRef.current = 0;
-    noiseBufferRef.current = [];
-    peakVarianceRef.current = [];
-    derivativeBufferRef.current = [];
-    lastStableDetectionTimeRef.current = 0;
-    
-    // Resetear también las referencias de arritmias
-    rrIntervalsRef.current = [];
-    lastPeakTimeRef.current = null;
-    arrhythmiaCountRef.current = 0;
-    arrhythmiaDetectedRef.current = false;
-    consecutiveAnomaliesRef.current = 0;
-    
-    onReset();
-  }, [onReset]);
-
-  const displayQuality = getAverageQuality();
-  const displayFingerDetected = getTrueFingerDetection();
-
-  return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="w-full h-full absolute inset-0 z-0 object-cover performance-boost"
-        style={{
-          transform: 'translate3d(0,0,0)',
-          backfaceVisibility: 'hidden',
-          contain: 'paint layout size',
-          imageRendering: 'crisp-edges'
-        }}
-      />
-
-      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-1">
-        <div className="flex items-center gap-1 ml-2 mt-0" style={{transform: 'translateY(-2mm)'}}>
-          <div className="w-[120px]">
-            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
-              <div
-                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
-              />
-            </div>
-            <span className="text-[7px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
-              {getQualityText(quality)}
-            </span>
-          </div>
-          <div style={{ marginLeft: '2mm' }}>
-            <AppTitle />
-          </div>
-        </div>
-
-        <div className="flex flex-col items-center">
-          <Fingerprint
-            className={`h-7 w-7 transition-colors duration-300 ${
-              !displayFingerDetected ? 'text-gray-400' :
-              displayQuality > 65 ? 'text-green-500' :
-              displayQuality > 40 ? 'text-yellow-500' :
-              'text-red-500'
-            }`}
-            strokeWidth={1.5}
-            style={{
-              opacity: displayFingerDetected ? 1 : 0.6,
-              filter: displayFingerDetected ? 'none' : 'grayscale(0.5)'
-            }}
-          />
-          <span className="text-[7px] text-center font-medium text-black/80">
-            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
-          </span>
-        </div>
-      </div>
-
-      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
-        <button 
-          onClick={onStartMeasurement}
-          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
-        >
-          INICIAR
-        </button>
-        <button 
-          onClick={handleReset}
-          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
-        >
-          RESET
-        </button>
-      </div>
-      
-      {/* Indicador de arritmias */}
-      {arrhythmiaCountRef.current > 0 && (
-        <div className="absolute top-2 right-2 bg-black/70 px-3 py-1 rounded-full">
-          <span className="text-red-500 font-bold text-sm">
-            Arritmias: {arrhythmiaCountRef.current}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-});
-
-PPGSignalMeter.displayName = 'PPGSignalMeter';
-
-export default PPGSignalMeter;
+        segmentPoints.
