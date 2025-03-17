@@ -33,7 +33,10 @@ export function useHeartBeatProcessor() {
     return () => {
       console.log("useHeartBeatProcessor: Cleanup");
       if (processorRef.current) {
-        processorRef.current.stopMonitoring();
+        // Check if stopMonitoring exists before calling it
+        if (typeof processorRef.current.stopMonitoring === 'function') {
+          processorRef.current.stopMonitoring();
+        }
       }
     };
   }, []);
@@ -41,7 +44,10 @@ export function useHeartBeatProcessor() {
   const startMonitoring = useCallback(() => {
     console.log("useHeartBeatProcessor: Starting monitoring");
     if (processorRef.current) {
-      processorRef.current.startMonitoring();
+      // Check if startMonitoring exists before calling it
+      if (typeof processorRef.current.startMonitoring === 'function') {
+        processorRef.current.startMonitoring();
+      }
       setIsMonitoring(true);
     }
   }, []);
@@ -49,7 +55,10 @@ export function useHeartBeatProcessor() {
   const stopMonitoring = useCallback(() => {
     console.log("useHeartBeatProcessor: Stopping monitoring");
     if (processorRef.current) {
-      processorRef.current.stopMonitoring();
+      // Check if stopMonitoring exists before calling it
+      if (typeof processorRef.current.stopMonitoring === 'function') {
+        processorRef.current.stopMonitoring();
+      }
       setIsMonitoring(false);
     }
   }, []);
@@ -57,7 +66,10 @@ export function useHeartBeatProcessor() {
   const reset = useCallback(() => {
     console.log("useHeartBeatProcessor: Resetting");
     if (processorRef.current) {
-      processorRef.current.reset();
+      // Check if reset exists before calling it
+      if (typeof processorRef.current.reset === 'function') {
+        processorRef.current.reset();
+      }
       setIsArrhythmia(false);
     }
   }, []);

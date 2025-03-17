@@ -1,10 +1,9 @@
-
 import { useState, useEffect } from 'react';
 import { useSignalProcessor } from '@/hooks/useSignalProcessor';
 import { useHeartBeatProcessor } from '@/hooks/useHeartBeatProcessor';
 import { useVitalSignsProcessor } from '@/hooks/useVitalSignsProcessor';
 import { VitalSignsResult } from '@/modules/vital-signs/VitalSignsProcessor';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from '@/hooks/use-toast';
 
 export const useSignalProcessing = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);

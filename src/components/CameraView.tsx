@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -38,20 +39,45 @@ const CameraView = ({
     setIsWindows(windowsDetected);
   }, []);
 
+  // Explicitly turn off the torch when component unmounts
+  useEffect(() => {
+    return () => {
+      disableTorch();
+    };
+  }, []);
+
+  const disableTorch = useCallback(() => {
+    if (stream) {
+      try {
+        const videoTracks = stream.getVideoTracks();
+        videoTracks.forEach(track => {
+          if (track.getCapabilities()?.torch) {
+            console.log("Explicitly turning off torch on unmount/reset");
+            track.applyConstraints({
+              advanced: [{ torch: false }]
+            }).catch(err => console.error("Error turning off torch:", err));
+          }
+        });
+        setTorchEnabled(false);
+      } catch (err) {
+        console.error("Error disabling torch:", err);
+      }
+    }
+  }, [stream]);
+
   const stopCamera = async () => {
     if (stream) {
       console.log("Stopping camera stream and turning off torch");
+      
+      // First, explicitly turn off the torch before stopping tracks
+      await disableTorch();
+      
+      // Then stop all tracks
       stream.getTracks().forEach(track => {
         try {
-          if (track.kind === 'video' && track.getCapabilities()?.torch) {
-            track.applyConstraints({
-              advanced: [{ torch: false }]
-            }).catch(err => console.error("Error desactivando linterna:", err));
-          }
-          
           track.stop();
         } catch (err) {
-          console.error("Error al detener track:", err);
+          console.error("Error stopping track:", err);
         }
       });
       
@@ -60,7 +86,6 @@ const CameraView = ({
       }
       
       setStream(null);
-      setTorchEnabled(false);
       retryAttemptsRef.current = 0;
     }
   };
