@@ -5,31 +5,22 @@ interface VitalMeasurements {
   heartRate: number;
   spo2: number;
   pressure: string;
-  arrhythmiaCount: string | number;
-}
-
-interface ArrhythmiaWindow {
-  start: number;
-  end: number;
 }
 
 export const useVitalMeasurement = (isMeasuring: boolean) => {
   const [measurements, setMeasurements] = useState<VitalMeasurements>({
     heartRate: 0,
     spo2: 0,
-    pressure: "--/--",
-    arrhythmiaCount: 0
+    pressure: "--/--"
   });
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
 
   useEffect(() => {
-    console.log('useVitalMeasurement - Estado detallado:', {
+    console.log('useVitalMeasurement - Estado:', {
       isMeasuring,
       currentMeasurements: measurements,
       elapsedTime,
-      arrhythmiaWindows: arrhythmiaWindows.length,
       timestamp: new Date().toISOString(),
       session: sessionId.current
     });
@@ -44,12 +35,10 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       setMeasurements({
         heartRate: 0,
         spo2: 0,
-        pressure: "--/--",
-        arrhythmiaCount: "--"
+        pressure: "--/--"
       });
       
       setElapsedTime(0);
-      setArrhythmiaWindows([]);
       return;
     }
 
@@ -62,8 +51,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     setMeasurements({
       heartRate: 0,
       spo2: 0,
-      pressure: "--/--",
-      arrhythmiaCount: 0
+      pressure: "--/--"
     });
     
     const MEASUREMENT_DURATION = 30000;
@@ -78,35 +66,23 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      // Use direct method to get BPM with no adjustments
+      // Use direct method to get BPM
       const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
       const bpm = Math.round(rawBPM);
-      const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
       
-      console.log('useVitalMeasurement - Actualización detallada:', {
+      console.log('useVitalMeasurement - Actualización:', {
         processor: !!processor,
         processorType: processor ? typeof processor : 'undefined',
-        processorMethods: processor ? Object.getOwnPropertyNames(processor.__proto__) : [],
         rawBPM,
         bpm,
-        arrhythmias,
         timestamp: new Date().toISOString()
       });
 
-      // Check for arrhythmia windows
-      if (processor.getArrhythmiaWindows && typeof processor.getArrhythmiaWindows === 'function') {
-        const windows = processor.getArrhythmiaWindows();
-        if (windows && Array.isArray(windows) && windows.length > 0) {
-          setArrhythmiaWindows(windows);
-        }
-      }
-
-      // Update measurements directly without preserving previous values
+      // Update measurements
       setMeasurements({
         heartRate: bpm,
-        spo2: 0, // These will be updated by the VitalSignsProcessor
-        pressure: "--/--",
-        arrhythmiaCount: arrhythmias
+        spo2: 0,
+        pressure: "--/--"
       });
     };
 
@@ -123,14 +99,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       
       setElapsedTime(elapsed / 1000);
-
       updateMeasurements();
 
       if (elapsed >= MEASUREMENT_DURATION) {
         console.log('useVitalMeasurement - Medición completada', {
           duracionTotal: MEASUREMENT_DURATION / 1000,
           resultadosFinal: {...measurements},
-          arrhythmiaWindows: arrhythmiaWindows.length,
           timestamp: new Date().toISOString()
         });
         
@@ -147,12 +121,11 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
       clearInterval(interval);
     };
-  }, [isMeasuring, measurements, arrhythmiaWindows.length]);
+  }, [isMeasuring, measurements]);
 
   return {
     ...measurements,
     elapsedTime: Math.min(elapsedTime, 30),
-    isComplete: elapsedTime >= 30,
-    arrhythmiaWindows
+    isComplete: elapsedTime >= 30
   };
 };

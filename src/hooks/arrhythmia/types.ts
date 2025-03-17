@@ -1,28 +1,14 @@
 
 /**
- * Advanced configuration for state-of-the-art arrhythmia detection
+ * Basic configuration for heart rate monitoring
  */
-export interface ArrhythmiaConfig {
-  MIN_TIME_BETWEEN_ARRHYTHMIAS: number;
-  MAX_ARRHYTHMIAS_PER_SESSION: number;
-  SIGNAL_QUALITY_THRESHOLD: number;
-  SEQUENTIAL_DETECTION_THRESHOLD?: number;
-  SPECTRAL_FREQUENCY_THRESHOLD?: number;
-  SENSITIVITY_LEVEL?: 'low' | 'medium' | 'high';
-}
-
-export interface ArrhythmiaPattern {
-  score: number;
-  confidence: number;
-  timestamp: number;
-  type?: string;
+export interface HeartRateConfig {
+  MIN_TIME_BETWEEN_BEATS: number;
+  MAX_BEATS_PER_SESSION: number;
 }
 
 export interface RRAnalysisResult {
-  rmssd: number;
   rrVariation: number;
   timestamp: number;
-  isArrhythmia: boolean;
   heartRate?: number;
-  signalQuality?: number;
 }
