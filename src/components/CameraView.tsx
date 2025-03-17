@@ -302,13 +302,12 @@ const CameraView = ({
       autoPlay
       playsInline
       muted
-      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover opacity-90"
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
       style={{
         willChange: 'transform',
         transform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
-        imageRendering: 'crisp-edges',
-        filter: 'brightness(1.1) contrast(1.05)'
+        imageRendering: 'crisp-edges'
       }}
     />
   );
