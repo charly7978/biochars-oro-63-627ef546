@@ -1,23 +1,22 @@
-
 /**
  * Analyzes signal quality based on medical-grade standards
  */
 export class SignalQualityAnalyzer {
-  private readonly QUALITY_BUFFER_SIZE = 25; // Increased buffer size
+  private readonly QUALITY_BUFFER_SIZE = 30; // Increased buffer size
   private qualityHistory: number[] = [];
   private valueHistory: number[] = [];
   
   /**
-   * Calculate signal quality based on various metrics
+   * Calculate signal quality based on various metrics with more permissive thresholds
    * @param filteredValue - The filtered signal value
    * @param rawValue - The raw signal value
    * @returns Quality score from 0-100
    */
   public assessQuality(filteredValue: number, rawValue: number): number {
-    // If signal is too weak, return low quality but not zero
+    // If signal is very weak, return higher minimal quality
     // to improve detection in challenging lighting conditions
     if (Math.abs(filteredValue) < 0.02) {
-      return 15; // Return a minimal quality instead of 0
+      return 20; // Return a higher minimal quality
     }
     
     // Update history buffers
@@ -34,11 +33,11 @@ export class SignalQualityAnalyzer {
     
     // Need enough data points for meaningful analysis
     if (this.qualityHistory.length < 5) {
-      return 25; // Slightly increased minimal quality during initial data collection
+      return 30; // Increased minimal quality during initial data collection
     }
     
     // Calculate metrics with more forgiving thresholds
-    const recent = this.qualityHistory.slice(-7); // Look at more recent values
+    const recent = this.qualityHistory.slice(-8); // Look at more recent values
     const min = Math.min(...recent);
     const max = Math.max(...recent);
     const range = max - min;
@@ -52,26 +51,29 @@ export class SignalQualityAnalyzer {
     const avgVariation = variations.reduce((sum, v) => sum + v, 0) / variations.length;
     
     // Calculate raw value stability
-    const rawRecent = this.valueHistory.slice(-7);
+    const rawRecent = this.valueHistory.slice(-8);
     const rawStdDev = this.calculateStandardDeviation(rawRecent);
     const rawMean = rawRecent.reduce((sum, v) => sum + v, 0) / rawRecent.length;
     const rawCV = rawStdDev / rawMean; // Coefficient of variation
     
-    // More forgiving scores for various metrics
-    const stabilityScore = Math.max(0, 100 - (avgVariation * 600)); // Less penalization
-    const rangeScore = range > 0.01 ? 80 : 40; // More forgiving range requirement
-    const rawStabilityScore = rawCV < 0.1 ? 90 : 
-                            rawCV < 0.2 ? 70 : 
-                            rawCV < 0.3 ? 50 : 30;
+    // Much more forgiving scores for various metrics
+    const stabilityScore = Math.max(0, 100 - (avgVariation * 400)); // Less penalization
+    const rangeScore = range > 0.005 ? 85 : 50; // Much more forgiving range requirement
+    const rawStabilityScore = rawCV < 0.2 ? 90 : 
+                            rawCV < 0.3 ? 70 : 
+                            rawCV < 0.4 ? 50 : 40;
     
     // Detect trending patterns (heart pulse creates specific patterns)
     const patternScore = this.detectPatterns(recent);
     
-    // Combined score with adjusted weights
-    const qualityScore = (stabilityScore * 0.5) + 
-                        (rangeScore * 0.2) + 
-                        (rawStabilityScore * 0.15) +
-                        (patternScore * 0.15);
+    // Combined score with adjusted weights to favor detection
+    const qualityScore = (stabilityScore * 0.3) + 
+                        (rangeScore * 0.3) + 
+                        (rawStabilityScore * 0.2) +
+                        (patternScore * 0.2);
+    
+    // Add a baseline to keep quality from going too low
+    const finalScore = Math.min(100, Math.max(25, qualityScore));
     
     // Occasionally log detailed quality info for debugging
     if (Math.random() < 0.05) {
@@ -85,15 +87,17 @@ export class SignalQualityAnalyzer {
         rangeScore,
         rawStabilityScore,
         patternScore,
-        qualityScore: Math.min(100, Math.max(0, qualityScore))
+        qualityScore,
+        finalScore
       });
     }
     
-    return Math.min(100, Math.max(0, qualityScore));
+    return finalScore;
   }
   
   /**
    * Detect if there are patterns in the signal typical of PPG waveforms
+   * with more permissive pattern detection
    */
   private detectPatterns(values: number[]): number {
     if (values.length < 5) return 0;
@@ -111,18 +115,18 @@ export class SignalQualityAnalyzer {
     }
     
     // A good PPG signal should have both rising and falling sections
-    const hasRising = risingCount >= 2;
-    const hasFalling = fallingCount >= 2;
+    const hasRising = risingCount >= 1; // Lowered from 2
+    const hasFalling = fallingCount >= 1; // Lowered from 2
     
     if (hasRising && hasFalling) {
       // Calculate the alternating pattern factor
       const alterations = this.countAlternations(values);
-      const alterationScore = Math.min(100, alterations * 25);
+      const alterationScore = Math.min(100, alterations * 30); // Increased reward
       
       return alterationScore;
     }
     
-    return 0;
+    return Math.min(50, risingCount * 10 + fallingCount * 10); // Give partial credit
   }
   
   /**

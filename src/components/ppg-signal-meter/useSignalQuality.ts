@@ -27,34 +27,37 @@ export function useSignalQuality() {
     lastValue: number | null, 
     baseline: number | null
   ) => {
-    // Update derivative buffer
+    // Update derivative buffer - more sensitive to changes
     updateDerivativeBuffer(value, lastValue);
     
-    // Update quality history
-    updateQualityHistory(quality, isFingerDetected);
+    // Update quality history with higher weights for good values
+    const adjustedQuality = isFingerDetected ? Math.max(quality, 20) : quality;
+    updateQualityHistory(adjustedQuality, isFingerDetected);
     
-    // Update amplitude history
+    // Update amplitude history with more sensitivity
     updateAmplitudeHistory(value, lastValue, baseline);
     
-    // Update detection stability
+    // Update detection stability with more permissive parameters
     updateDetectionStability(isFingerDetected, quality);
     
-    // Update confidence
+    // Update confidence with more weight on history
     updateConfidence();
   }, [updateDerivativeBuffer, updateQualityHistory, updateAmplitudeHistory, updateDetectionStability, updateConfidence]);
 
   const getAverageQuality = useCallback(() => {
+    // More permissive quality calculation
     return calculateAverageQuality(
       qualityHistoryRef.current,
       signalAmplitudeHistoryRef.current,
       noiseBufferRef.current,
       derivativeBufferRef.current
     );
-  }, []);
+  }, [qualityHistoryRef, signalAmplitudeHistoryRef, noiseBufferRef, derivativeBufferRef]);
 
   const getTrueFingerDetection = useCallback(() => {
     const avgQuality = getAverageQuality();
     
+    // More permissive finger detection
     return detectFingerPresence(
       avgQuality,
       detectionStabilityCounterRef.current,
@@ -62,7 +65,7 @@ export function useSignalQuality() {
       derivativeBufferRef.current,
       signalAmplitudeHistoryRef.current
     );
-  }, [getAverageQuality]);
+  }, [getAverageQuality, detectionStabilityCounterRef, consecutiveFingerFramesRef, derivativeBufferRef, signalAmplitudeHistoryRef]);
 
   const getQualityColorWrapper = useCallback((q: number) => {
     const avgQuality = getAverageQuality();

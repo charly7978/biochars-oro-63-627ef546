@@ -3,8 +3,8 @@
  */
 export class RedChannelExtractor {
   private previousValues: number[] = [];
-  private readonly HISTORY_SIZE = 5;
-  private readonly ANOMALY_THRESHOLD = 30; // For detecting outliers
+  private readonly HISTORY_SIZE = 8;
+  private readonly ANOMALY_THRESHOLD = 40; // More forgiving for detecting outliers
   
   /**
    * Extract the red channel average value from image data
@@ -14,10 +14,10 @@ export class RedChannelExtractor {
   public extractRedValue(imageData: ImageData): number {
     const { data, width, height } = imageData;
     
-    // Get center region of the image with larger ROI
+    // Get center region of the image with much larger ROI
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
-    const regionSize = Math.min(width, height) / 2.5; // Larger region (was /3)
+    const regionSize = Math.min(width, height) / 2; // Much larger region (was /2.5)
     
     const startX = Math.max(0, Math.floor(centerX - regionSize));
     const endX = Math.min(width, Math.floor(centerX + regionSize));
@@ -30,7 +30,7 @@ export class RedChannelExtractor {
     let pixelCount = 0;
     
     // Process center region with optimized sampling for better performance
-    const sampleRate = Math.max(1, Math.floor((endX - startX) / 50)); // Adaptive sampling rate
+    const sampleRate = Math.max(1, Math.floor((endX - startX) / 40)); // Higher sampling rate
     
     for (let y = startY; y < endY; y += sampleRate) {
       for (let x = startX; x < endX; x += sampleRate) {
@@ -47,16 +47,16 @@ export class RedChannelExtractor {
       return 0;
     }
     
-    // Use weighted red value with subtracted green/blue to emphasize blood volume changes
+    // Use weighted red value with very minimal subtraction to preserve more signal
     const avgRed = redSum / pixelCount;
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
     
     // Enhanced red with subtracted green and blue to improve blood volume signal
-    // Low-pass filter - less subtraction to keep more of the red signal
-    const enhancedRed = avgRed - ((avgGreen + avgBlue) / 4);
+    // Very light subtraction to keep more red signal
+    const enhancedRed = avgRed - ((avgGreen + avgBlue) / 6); // Changed from /4 to /6
     
-    // Anomaly detection to prevent spikes
+    // Less aggressive anomaly detection to allow more signal through
     const normalizedValue = this.handleAnomalies(enhancedRed);
     
     // Occasionally log analysis details
@@ -80,7 +80,7 @@ export class RedChannelExtractor {
   }
   
   /**
-   * Handle anomalies and outliers in the extracted values
+   * Handle anomalies and outliers in the extracted values with more permissive settings
    */
   private handleAnomalies(value: number): number {
     if (this.previousValues.length === 0) {
@@ -92,12 +92,12 @@ export class RedChannelExtractor {
     const avgPrevious = this.previousValues.reduce((sum, v) => sum + v, 0) / 
                        this.previousValues.length;
     
-    // Check if current value is an anomaly
+    // Check if current value is an extreme anomaly
     const diff = Math.abs(value - avgPrevious);
     
     if (diff > this.ANOMALY_THRESHOLD && this.previousValues.length >= 3) {
-      // If anomaly detected, use smoothed value instead
-      const smoothedValue = (avgPrevious * 0.7) + (value * 0.3);
+      // If anomaly detected, use less aggressive smoothing
+      const smoothedValue = (avgPrevious * 0.6) + (value * 0.4); // More weight to actual value
       
       // Update history with smoothed value
       this.previousValues.push(smoothedValue);

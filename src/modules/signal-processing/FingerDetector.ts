@@ -8,13 +8,13 @@ export interface FingerDetectionResult {
 }
 
 export class FingerDetector {
-  private readonly HISTORY_SIZE = 15; // Increased history size
-  private readonly MIN_RED_THRESHOLD = 70; // Lowered threshold for better sensitivity
-  private readonly MAX_RED_THRESHOLD = 245;
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.12; // Lowered to be more sensitive
+  private readonly HISTORY_SIZE = 20; // Increased history size
+  private readonly MIN_RED_THRESHOLD = 50; // Lowered threshold for better sensitivity
+  private readonly MAX_RED_THRESHOLD = 255;
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.08; // Significantly lowered to be more sensitive
   
   private consecutiveWeakSignals: number = 0;
-  private readonly MAX_WEAK_SIGNALS = 5; // Increased tolerance
+  private readonly MAX_WEAK_SIGNALS = 8; // Increased tolerance
   private detectionHistory: boolean[] = [];
   private qualityHistory: number[] = [];
   
@@ -45,7 +45,7 @@ export class FingerDetector {
       };
     }
     
-    // Check for weak signal with more forgiving threshold
+    // Check for weak signal with much more forgiving threshold
     const isWeakSignal = Math.abs(processedValue) < this.WEAK_SIGNAL_THRESHOLD;
     
     if (isWeakSignal) {
@@ -57,8 +57,8 @@ export class FingerDetector {
     // Get average quality from history
     const avgQuality = this.getAverageQuality();
     
-    // More forgiving quality threshold
-    const minQualityThreshold = 25; // Lowered from 35
+    // Very forgiving quality threshold
+    const minQualityThreshold = 20; // Significantly lowered from 35
     
     // Consider both immediate and historical quality
     const isDetected = (signalQuality >= minQualityThreshold || avgQuality >= minQualityThreshold) && 
@@ -114,7 +114,7 @@ export class FingerDetector {
     let weightSum = 0;
     
     this.qualityHistory.forEach((quality, index) => {
-      const weight = Math.pow(1.2, index);  // Exponential weight
+      const weight = Math.pow(1.3, index);  // Higher exponential weight for recency
       weightedSum += quality * weight;
       weightSum += weight;
     });
@@ -130,7 +130,7 @@ export class FingerDetector {
     let weightSum = 0;
     
     this.detectionHistory.forEach((isDetected, index) => {
-      const weight = Math.pow(1.15, index);  // Exponential weight
+      const weight = Math.pow(1.25, index);  // Higher exponential weight
       weightedSum += (isDetected ? 1 : 0) * weight;
       weightSum += weight;
     });
