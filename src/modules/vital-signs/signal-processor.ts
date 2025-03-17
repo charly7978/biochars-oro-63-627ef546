@@ -2,24 +2,17 @@
 /**
  * Signal processor for PPG signals
  * Implements various filtering and analysis techniques
- * Enhanced to drastically reduce false positives in finger detection
+ * Enhanced to reduce false positives in finger detection
  */
 export class SignalProcessor {
   private ppgValues: number[] = [];
-  private readonly SMA_WINDOW_SIZE = 7; // Increased window size for better smoothing
-  private readonly MEDIAN_WINDOW_SIZE = 5; // Increased median filter window
-  private readonly LOW_PASS_ALPHA = 0.15; // More aggressive low pass filter (reduced from 0.2)
+  private readonly SMA_WINDOW_SIZE = 5; // Increased window size for better smoothing
+  private readonly MEDIAN_WINDOW_SIZE = 3; // Added median filter window
+  private readonly LOW_PASS_ALPHA = 0.2; // Low pass filter coefficient (lower = stronger filter)
   
   // Noise detection parameters
-  private readonly NOISE_THRESHOLD = 20; // Lowered threshold for more sensitive noise detection
+  private readonly NOISE_THRESHOLD = 25; // Threshold for detecting noisy signals
   private noiseLevel: number = 0;
-  
-  // New parameters for detection reliability
-  private readonly MIN_REQUIRED_AMPLITUDE = 10; // Minimum amplitude for a valid PPG signal
-  private readonly MAX_ALLOWED_AMPLITUDE = 120; // Maximum amplitude for a valid PPG signal
-  private readonly MIN_CROSS_ZERO_RATE = 1.5; // Min zero-crossings per second for real PPG
-  private readonly MAX_CROSS_ZERO_RATE = 8; // Max zero-crossings per second for real PPG
-  private readonly PATTERN_CONSISTENCY_THRESHOLD = 0.6; // Higher pattern consistency requirement
   
   /**
    * Get current PPG values buffer
@@ -56,8 +49,8 @@ export class SignalProcessor {
   }
   
   /**
-   * Apply median filter
-   * Significantly enhanced to remove outliers and impulse noise
+   * Apply median filter (new)
+   * Helps remove outliers and impulse noise
    */
   public applyMedianFilter(value: number): number {
     if (this.ppgValues.length < this.MEDIAN_WINDOW_SIZE) {
@@ -76,30 +69,24 @@ export class SignalProcessor {
    * Uses multiple filters in sequence for better results
    */
   public applyFilters(value: number): { filteredValue: number, quality: number } {
-    // Step 1: Apply outlier rejection (new)
-    const isOutlier = this.detectOutlier(value);
-    const cleanValue = isOutlier ? 
-      (this.ppgValues.length > 0 ? this.ppgValues[this.ppgValues.length - 1] : value) : 
-      value;
+    // Step 1: Median filter to remove outliers
+    const medianFiltered = this.applyMedianFilter(value);
     
-    // Step 2: Median filter to remove remaining outliers
-    const medianFiltered = this.applyMedianFilter(cleanValue);
-    
-    // Step 3: Low pass filter to smooth the signal
+    // Step 2: Low pass filter to smooth the signal
     const lowPassFiltered = this.applyEMAFilter(medianFiltered);
     
-    // Step 4: Moving average for final smoothing
+    // Step 3: Moving average for final smoothing
     const smaFiltered = this.applySMAFilter(lowPassFiltered);
     
     // Calculate noise level - higher values indicate more noise
     this.updateNoiseLevel(value, smaFiltered);
     
-    // Calculate signal quality (0-100) with enhanced criteria
+    // Calculate signal quality (0-100)
     const quality = this.calculateSignalQuality();
     
     // Store the filtered value in the buffer
     this.ppgValues.push(smaFiltered);
-    if (this.ppgValues.length > 40) { // Increased buffer size for better pattern detection
+    if (this.ppgValues.length > 30) {
       this.ppgValues.shift();
     }
     
@@ -107,25 +94,6 @@ export class SignalProcessor {
       filteredValue: smaFiltered,
       quality
     };
-  }
-  
-  /**
-   * New function to detect and reject outliers
-   */
-  private detectOutlier(value: number): boolean {
-    if (this.ppgValues.length < 5) {
-      return false;
-    }
-    
-    const recentValues = this.ppgValues.slice(-5);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    const stdDev = Math.sqrt(
-      recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length
-    );
-    
-    // Reject values that are more than 3 standard deviations from the mean
-    // This is a standard statistical outlier detection method
-    return Math.abs(value - mean) > (stdDev * 3);
   }
   
   /**
@@ -140,92 +108,39 @@ export class SignalProcessor {
   }
   
   /**
-   * Calculate signal quality based on multiple criteria
+   * Calculate signal quality based on noise and stability
    * Returns 0-100 quality score
    */
   private calculateSignalQuality(): number {
     // No quality assessment with insufficient data
-    if (this.ppgValues.length < 15) { // Increased from 10
-      return 30; // Lower default quality
+    if (this.ppgValues.length < 10) {
+      return 50; // Default mid-range quality
     }
     
     // Factor 1: Noise level (lower is better)
-    const noiseScore = Math.max(0, 100 - (this.noiseLevel * 5)); // More strict (was *4)
+    const noiseScore = Math.max(0, 100 - (this.noiseLevel * 4));
     
     // Factor 2: Signal stability
-    const recentValues = this.ppgValues.slice(-15); // Increased window (was 10)
+    const recentValues = this.ppgValues.slice(-10);
     const sum = recentValues.reduce((a, b) => a + b, 0);
     const mean = sum / recentValues.length;
     const variance = recentValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentValues.length;
-    const stabilityScore = Math.max(0, 100 - Math.min(100, variance / 1.5)); // More strict (was /2)
+    const stabilityScore = Math.max(0, 100 - Math.min(100, variance / 2));
     
     // Factor 3: Signal range (look for cardiac-like amplitude)
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
     const range = max - min;
+    const rangeScore = range > 5 && range < 100 ? 100 : Math.max(0, 100 - Math.abs(range - 50));
     
-    let rangeScore = 0;
-    if (range >= this.MIN_REQUIRED_AMPLITUDE && range <= this.MAX_ALLOWED_AMPLITUDE) {
-      // Optimal range
-      rangeScore = 100;
-    } else if (range < this.MIN_REQUIRED_AMPLITUDE) {
-      // Too small - likely no finger
-      rangeScore = Math.max(0, (range / this.MIN_REQUIRED_AMPLITUDE) * 80);
-    } else {
-      // Too large - likely motion artifact
-      rangeScore = Math.max(0, 100 - ((range - this.MAX_ALLOWED_AMPLITUDE) / 20));
-    }
-    
-    // Factor 4: Pattern consistency (new)
-    const patternScore = this.evaluatePatternConsistency(recentValues);
-    
-    // Weighted average of factors with updated weights
+    // Weighted average of factors (weights could be tuned)
     const quality = Math.round(
-      (noiseScore * 0.25) +
-      (stabilityScore * 0.3) +
-      (rangeScore * 0.25) +
-      (patternScore * 0.2)
+      (noiseScore * 0.4) +
+      (stabilityScore * 0.4) +
+      (rangeScore * 0.2)
     );
     
     return Math.min(100, Math.max(0, quality));
-  }
-  
-  /**
-   * New function to evaluate pattern consistency
-   * Real PPG signals have consistent periodic patterns
-   */
-  private evaluatePatternConsistency(values: number[]): number {
-    if (values.length < 10) {
-      return 50;
-    }
-    
-    // Find peaks to analyze pattern
-    const peaks = this.findPeaksEnhanced(values);
-    
-    if (peaks.length < 2) {
-      return 30; // Penalize if we can't find clear peaks
-    }
-    
-    // Calculate intervals between peaks
-    const intervals = [];
-    for (let i = 1; i < peaks.length; i++) {
-      intervals.push(peaks[i] - peaks[i-1]);
-    }
-    
-    // Calculate interval consistency
-    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    const intervalVariation = intervals.reduce((sum, val) => sum + Math.abs(val - avgInterval), 0) / intervals.length;
-    const consistencyRatio = intervalVariation / avgInterval;
-    
-    // Lower ratio = more consistent
-    const consistencyScore = Math.max(0, 100 - (consistencyRatio * 100));
-    
-    // Check for physiologically reasonable rate
-    // Assumes 30 samples/sec and intervals should be between 0.5 and 2 seconds
-    // (for heart rates between 30 and 120 bpm)
-    const isPhysiological = avgInterval >= 15 && avgInterval <= 60;
-    
-    return isPhysiological ? consistencyScore : Math.min(60, consistencyScore);
   }
   
   /**
@@ -240,17 +155,17 @@ export class SignalProcessor {
    * Calculate heart rate from PPG values
    */
   public calculateHeartRate(sampleRate: number = 30): number {
-    if (this.ppgValues.length < sampleRate * 3) { // Need at least 3 seconds (was 2)
-      return 0;
+    if (this.ppgValues.length < sampleRate * 2) {
+      return 0; // Need at least 2 seconds of data
     }
     
-    // Get recent data (last 6 seconds) - was 5
-    const recentData = this.ppgValues.slice(-Math.min(this.ppgValues.length, sampleRate * 6));
+    // Get recent data (last 5 seconds)
+    const recentData = this.ppgValues.slice(-Math.min(this.ppgValues.length, sampleRate * 5));
     
-    // Find peaks with even more strict criteria
+    // Find peaks with more strict criteria
     const peaks = this.findPeaksEnhanced(recentData);
     
-    if (peaks.length < 3) { // Require at least 3 peaks (was 2)
+    if (peaks.length < 2) {
       return 0;
     }
     
@@ -269,11 +184,11 @@ export class SignalProcessor {
   }
   
   /**
-   * Enhanced peak detection with much stricter criteria
+   * Enhanced peak detection with stricter criteria to reduce false positives
    */
   private findPeaksEnhanced(values: number[]): number[] {
     const peaks: number[] = [];
-    const minPeakDistance = 12; // Increased minimum samples between peaks (was 10)
+    const minPeakDistance = 10; // Minimum samples between peaks (avoid duplicates)
     
     // Calculate mean and standard deviation
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
@@ -281,63 +196,42 @@ export class SignalProcessor {
       values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length
     );
     
-    // Dynamic threshold based on signal statistics - more strict
-    const peakThreshold = mean + (stdDev * 0.7); // Increased from 0.5
+    // Dynamic threshold based on signal statistics
+    const peakThreshold = mean + (stdDev * 0.5);
     
-    // First pass: find potential peaks
-    const potentialPeaks = [];
-    for (let i = 3; i < values.length - 3; i++) { // Check wider window (was 2)
+    for (let i = 2; i < values.length - 2; i++) {
       const current = values[i];
       
       // Check if this point is higher than neighbors and above threshold
       if (current > values[i - 1] && 
           current > values[i - 2] &&
-          current > values[i - 3] &&
           current > values[i + 1] && 
           current > values[i + 2] &&
-          current > values[i + 3] &&
           current > peakThreshold) {
         
-        potentialPeaks.push(i);
-      }
-    }
-    
-    // Second pass: filter peaks by prominence and distance
-    for (let i = 0; i < potentialPeaks.length; i++) {
-      const peakIdx = potentialPeaks[i];
-      const peakValue = values[peakIdx];
-      
-      // Find nearest valleys to calculate prominence
-      let leftValley = mean;
-      for (let j = peakIdx - 1; j >= 0; j--) {
-        if (values[j] <= values[j + 1]) {
-          leftValley = values[j];
-          break;
-        }
-      }
-      
-      let rightValley = mean;
-      for (let j = peakIdx + 1; j < values.length; j++) {
-        if (values[j] <= values[j - 1]) {
-          rightValley = values[j];
-          break;
-        }
-      }
-      
-      // Calculate prominence (minimum height above surrounding valleys)
-      const prominence = Math.min(peakValue - leftValley, peakValue - rightValley);
-      
-      // Only accept peaks with sufficient prominence
-      if (prominence > stdDev * 0.5) {
-        // Check distance from other accepted peaks
-        const isFarEnough = peaks.every(p => Math.abs(peakIdx - p) >= minPeakDistance);
-        
-        if (isFarEnough) {
-          peaks.push(peakIdx);
+        // Check if we're far enough from the last detected peak
+        if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minPeakDistance) {
+          peaks.push(i);
         }
       }
     }
     
-    return peaks.sort((a, b) => a - b);
+    return peaks;
+  }
+  
+  /**
+   * Original peak finder (kept for compatibility)
+   */
+  private findPeaks(values: number[]): number[] {
+    const peaks: number[] = [];
+    
+    // Simple peak detector
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
+        peaks.push(i);
+      }
+    }
+    
+    return peaks;
   }
 }
