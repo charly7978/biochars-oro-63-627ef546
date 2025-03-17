@@ -42,10 +42,10 @@ export class VitalSignsProcessor {
   
   // No storage of previous results
   
-  // Stricter thresholds for more reliable physiological detection
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Increased
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.15; // Increased
-  private readonly MIN_PPG_VALUES = 15; // Minimum values required for processing
+  // MUCH stricter thresholds for more reliable physiological detection
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.05; // DRAMATICALLY increased
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.40; // DRAMATICALLY increased
+  private readonly MIN_PPG_VALUES = 25; // DRAMATICALLY increased minimum values required for processing
 
   /**
    * Constructor that initializes all specialized processors
@@ -68,8 +68,8 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal - indicates no finger or poor placement
-    if (Math.abs(ppgValue) < 0.005) {
+    // MUCH stricter check for near-zero signal
+    if (Math.abs(ppgValue) < 0.02) { // Increased from 0.005 to 0.02
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return this.createEmptyResults();
     }
@@ -77,10 +77,10 @@ export class VitalSignsProcessor {
     // Apply filtering to the PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // Process arrhythmia data if available and valid
+    // MUCH stricter validation for arrhythmia data
     const arrhythmiaResult = rrData && 
-                           rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
+                           rrData.intervals.length >= 5 && // Increased from 3 to 5
+                           rrData.intervals.every(i => i > 400 && i < 1800) ? // Stricter range
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
@@ -93,7 +93,7 @@ export class VitalSignsProcessor {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // Only process with enough data
+    // MUCH stricter requirement for minimum data points
     if (ppgValues.length < this.MIN_PPG_VALUES) {
       console.log("VitalSignsProcessor: Insufficient data points", {
         have: ppgValues.length,
@@ -102,7 +102,18 @@ export class VitalSignsProcessor {
       return this.createEmptyResults();
     }
     
-    // Verify signal amplitude is sufficient
+    // New: Check for suspiciously stable signal (potential false positive)
+    const last20Values = ppgValues.slice(-20);
+    const signalVariance = this.calculateVariance(last20Values);
+    if (signalVariance < 0.5) { // Real physiological signals always have variance
+      console.log("VitalSignsProcessor: Signal variance too low (likely artificial)", {
+        variance: signalVariance,
+        minThreshold: 0.5
+      });
+      return this.createEmptyResults();
+    }
+    
+    // Verify signal amplitude is sufficient - MUCH stricter check
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
@@ -135,7 +146,7 @@ export class VitalSignsProcessor {
     // Calculate overall confidence
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Only show values if confidence exceeds threshold
+    // MUCH stricter confidence threshold for showing values
     const finalGlucose = glucoseConfidence > this.MIN_CONFIDENCE_THRESHOLD ? glucose : 0;
     const finalLipids = lipidsConfidence > this.MIN_CONFIDENCE_THRESHOLD ? lipids : {
       totalCholesterol: 0,
@@ -150,6 +161,7 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       signalAmplitude: amplitude,
+      signalVariance,
       confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD
     });
 
@@ -189,6 +201,15 @@ export class VitalSignsProcessor {
         overall: 0
       }
     };
+  }
+  
+  /**
+   * Helper method to calculate variance of signal values
+   */
+  private calculateVariance(values: number[]): number {
+    if (values.length < 2) return 0;
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
   }
 
   /**
