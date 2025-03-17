@@ -34,7 +34,7 @@ export const useHeartBeatProcessor = () => {
     });
 
     processorRef.current = new HeartBeatProcessor();
-    processorRef.current.setMonitoringState(false);
+    processorRef.current.setMonitoring(false);
 
     return () => {
       console.log("useHeartBeatProcessor: Cleanup", {
@@ -52,7 +52,7 @@ export const useHeartBeatProcessor = () => {
         timestamp: new Date().toISOString()
       });
       isMonitoringRef.current = true;
-      processorRef.current.setMonitoringState(true);
+      processorRef.current.setMonitoring(true);
     }
   }, []);
 
@@ -63,7 +63,7 @@ export const useHeartBeatProcessor = () => {
         timestamp: new Date().toISOString()
       });
       isMonitoringRef.current = false;
-      processorRef.current.setMonitoringState(false);
+      processorRef.current.setMonitoring(false);
     }
   }, []);
 
@@ -83,20 +83,18 @@ export const useHeartBeatProcessor = () => {
     processedSignals.current++;
 
     // Process signal
-    processorRef.current.addSignalValue(signalValue);
-    const bpm = processorRef.current.calculateCurrentBPM();
-    const confidence = processorRef.current.getConfidence();
-    const rrIntervals = processorRef.current.getRRIntervals();
+    const result = processorRef.current.processSignal(signalValue);
+    const rrData = processorRef.current.getRRIntervals();
 
     // Limit how many intervals we pass back
-    const limitedIntervals = rrIntervals.slice(-30);
+    const limitedIntervals = rrData.intervals.slice(-30);
 
-    const result: HeartBeatResult = {
-      bpm,
-      confidence,
+    const finalResult: HeartBeatResult = {
+      bpm: result.bpm,
+      confidence: result.confidence,
       rrData: {
         intervals: limitedIntervals,
-        lastPeakTime: processorRef.current.getLastPeakTime()
+        lastPeakTime: rrData.lastPeakTime
       }
     };
 
@@ -104,16 +102,16 @@ export const useHeartBeatProcessor = () => {
     if (processedSignals.current % 100 === 0) {
       console.log("useHeartBeatProcessor: Processing signal", {
         inputValue: signalValue,
-        bpm,
-        confidence,
+        bpm: result.bpm,
+        confidence: result.confidence,
         rrIntervals: limitedIntervals.length,
         signalCount: processedSignals.current,
         isMonitoring: isMonitoringRef.current
       });
     }
 
-    setLastResult(result);
-    return result;
+    setLastResult(finalResult);
+    return finalResult;
   }, []);
 
   const reset = useCallback(() => {
@@ -125,7 +123,7 @@ export const useHeartBeatProcessor = () => {
       
       processorRef.current.reset();
       isMonitoringRef.current = false;
-      processorRef.current.setMonitoringState(false);
+      processorRef.current.setMonitoring(false);
       processedSignals.current = 0;
       
       setLastResult({
