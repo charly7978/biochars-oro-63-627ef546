@@ -210,6 +210,13 @@ export class VitalSignsProcessor {
   }
   
   /**
+   * Get arrhythmia counter
+   */
+  public getArrhythmiaCounter(): number {
+    return this.arrhythmiaProcessor.getArrhythmiaCount();
+  }
+  
+  /**
    * Get the last valid results - always returns null
    * Forces fresh measurements without reference values
    */
