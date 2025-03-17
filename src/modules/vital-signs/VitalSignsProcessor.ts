@@ -1,4 +1,3 @@
-
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -25,6 +24,7 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  signalQuality?: number; // Added signal quality metric
 }
 
 /**
@@ -243,6 +243,46 @@ export class VitalSignsProcessor {
       triglycerides: 0
     };
 
+    // NEW: Calculate overall signal quality based on vital sign measurements
+    let signalQuality = 0;
+    
+    // Only calculate quality if we have valid measurements
+    if (spo2 > 0 || finalGlucose > 0 || finalLipids.totalCholesterol > 0) {
+      // Calculate quality components for each vital sign
+      const spo2Quality = spo2 > 0 ? Math.min(100, Math.max(0, (spo2 - 80) * 5)) : 0; // Scale 80-100 to 0-100
+      const pressureQuality = bp.systolic > 0 ? 80 : 0; // Binary quality for blood pressure
+      const glucoseQuality = finalGlucose > 0 ? Math.min(100, glucoseConfidence * 100) : 0;
+      const lipidsQuality = finalLipids.totalCholesterol > 0 ? Math.min(100, lipidsConfidence * 100) : 0;
+      
+      // Combine qualities with appropriate weights
+      const measurementCount = (spo2 > 0 ? 1 : 0) + 
+                              (bp.systolic > 0 ? 1 : 0) + 
+                              (finalGlucose > 0 ? 1 : 0) + 
+                              (finalLipids.totalCholesterol > 0 ? 1 : 0);
+      
+      if (measurementCount > 0) {
+        // Weight measurements by their importance and reliability
+        signalQuality = Math.round(
+          (spo2Quality * 0.3) + 
+          (pressureQuality * 0.2) + 
+          (glucoseQuality * 0.3) + 
+          (lipidsQuality * 0.2)
+        );
+        
+        // Apply oscillation and variance factors
+        signalQuality = Math.round(signalQuality * oscillationScore);
+        
+        // Penalize for high variance
+        const variancePenalty = Math.max(0.6, 1 - (signalVariance / 40));
+        signalQuality = Math.round(signalQuality * variancePenalty);
+        
+        // Apply confidence threshold
+        if (overallConfidence < this.MIN_CONFIDENCE_THRESHOLD) {
+          signalQuality = Math.round(signalQuality * 0.5);
+        }
+      }
+    }
+
     console.log("VitalSignsProcessor: Results with confidence", {
       spo2,
       pressure,
@@ -253,7 +293,8 @@ export class VitalSignsProcessor {
       signalAmplitude: amplitude,
       signalVariance,
       confidenceThreshold: this.MIN_CONFIDENCE_THRESHOLD,
-      oscillationScore
+      oscillationScore,
+      calculatedSignalQuality: signalQuality
     });
 
     // Prepare result with all metrics - no caching or persistence
@@ -268,7 +309,8 @@ export class VitalSignsProcessor {
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
         overall: overallConfidence
-      }
+      },
+      signalQuality
     };
   }
   
@@ -290,7 +332,8 @@ export class VitalSignsProcessor {
         glucose: 0,
         lipids: 0,
         overall: 0
-      }
+      },
+      signalQuality: 0
     };
   }
   
@@ -371,3 +414,4 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }
+

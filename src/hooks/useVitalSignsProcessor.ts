@@ -91,7 +91,8 @@ export const useVitalSignsProcessor = () => {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
-        }
+        },
+        signalQuality: 0
       };
     }
     
@@ -116,7 +117,8 @@ export const useVitalSignsProcessor = () => {
           lipids: {
             totalCholesterol: 0,
             triglycerides: 0
-          }
+          },
+          signalQuality: 0
         };
       }
     } else {
@@ -185,7 +187,8 @@ export const useVitalSignsProcessor = () => {
         glucose: result.glucose,
         hasValidBP: result.pressure !== "--/--",
         timeSinceLastBPUpdate: currentTime - lastBPUpdateRef.current,
-        weakSignalCount: consecutiveWeakSignalsRef.current
+        weakSignalCount: consecutiveWeakSignalsRef.current,
+        signalQuality: result.signalQuality || 0
       });
     }
     

@@ -157,7 +157,8 @@ export class VitalSignsProcessor {
       pressure: result.pressure,
       arrhythmiaStatus: result.arrhythmiaStatus,
       glucose: result.glucose,
-      hasArrhythmiaData: !!result.lastArrhythmiaData
+      hasArrhythmiaData: !!result.lastArrhythmiaData,
+      signalQuality: result.signalQuality || 0
     });
     
     return result;
@@ -209,7 +210,8 @@ export class VitalSignsProcessor {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      signalQuality: 0
     };
   }
 }
