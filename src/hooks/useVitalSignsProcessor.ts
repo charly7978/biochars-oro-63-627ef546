@@ -1,36 +1,30 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
-import { updateSignalLog } from '../utils/signalLogUtils';
 import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
 import { SignalAnalyzer } from '../modules/signal-analysis/SignalAnalyzer';
-import { ProcessorConfig } from '../modules/vital-signs/ProcessorConfig';
-
-interface ArrhythmiaWindow {
-  start: number;
-  end: number;
-}
+import { useArrhythmiaWindows } from './vital-signs/useArrhythmiaWindows';
+import { useSignalQualityMonitor } from './vital-signs/useSignalQualityMonitor';
+import { useSignalLogger } from './vital-signs/useSignalLogger';
+import { VitalSignsProcessorHookReturn } from './vital-signs/types';
 
 /**
  * Hook for processing vital signs with direct algorithms
  */
-export const useVitalSignsProcessor = () => {
+export const useVitalSignsProcessor = (): VitalSignsProcessorHookReturn => {
   // State management
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
-  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
   // References for internal state
   const processorRef = useRef<VitalSignsProcessor | null>(null);
   const arrhythmiaProcessorRef = useRef<ArrhythmiaProcessor | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  const processedSignals = useRef<number>(0);
-  const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
   
-  // Weak signal counter to detect finger removal
-  const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = ProcessorConfig.WEAK_SIGNAL_THRESHOLD;
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 3;
+  // Compose functionality from smaller hooks
+  const { arrhythmiaWindows, addArrhythmiaWindow, resetArrhythmiaWindows } = useArrhythmiaWindows();
+  const signalQualityMonitor = useSignalQualityMonitor();
+  const signalLogger = useSignalLogger();
   
   // Initialize processor components
   useEffect(() => {
@@ -47,21 +41,10 @@ export const useVitalSignsProcessor = () => {
       console.log("useVitalSignsProcessor: Processor cleanup", {
         sessionId: sessionId.current,
         totalArrhythmias: arrhythmiaProcessorRef.current?.getArrhythmiaCounter() || 0,
-        processedSignals: processedSignals.current,
+        processedSignals: signalLogger.getProcessedSignals(),
         timestamp: new Date().toISOString()
       });
     };
-  }, []);
-  
-  /**
-   * Register a new arrhythmia window for visualization
-   */
-  const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    // Limit to most recent arrhythmia windows for visualization
-    setArrhythmiaWindows(prev => {
-      const newWindows = [...prev, { start, end }];
-      return newWindows.slice(-3); // Keep only the 3 most recent
-    });
   }, []);
   
   /**
@@ -73,31 +56,17 @@ export const useVitalSignsProcessor = () => {
       return SignalAnalyzer.createEmptyResult();
     }
     
-    processedSignals.current++;
-    
-    // Check for weak signal to detect finger removal
-    if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
-      consecutiveWeakSignalsRef.current++;
-      
-      // If too many weak signals, return zeros
-      if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
-        console.log("useVitalSignsProcessor: Too many weak signals, returning zeros", {
-          weakSignals: consecutiveWeakSignalsRef.current,
-          threshold: MAX_CONSECUTIVE_WEAK_SIGNALS,
-          value
-        });
-        return SignalAnalyzer.createEmptyResult();
-      }
-    } else {
-      // Reset weak signal counter
-      consecutiveWeakSignalsRef.current = 0;
+    // Check signal quality
+    const qualityCheck = signalQualityMonitor.checkSignalQuality(value);
+    if (qualityCheck.isWeakSignal) {
+      return qualityCheck.result;
     }
     
     // Process vital signs
     let result = processorRef.current.processSignal(value, rrData);
     
     // Process arrhythmias if there is enough data and signal is good
-    if (rrData && rrData.intervals.length >= 4 && consecutiveWeakSignalsRef.current === 0) {
+    if (rrData && rrData.intervals.length >= 4 && signalQualityMonitor.weakSignalCount() === 0) {
       const arrhythmiaResult = arrhythmiaProcessorRef.current.processRRData(rrData);
       
       // Add arrhythmia status to result
@@ -127,24 +96,11 @@ export const useVitalSignsProcessor = () => {
       }
     }
     
-    // Log processed signals less frequently
-    if (processedSignals.current % 100 === 0) {
-      console.log("useVitalSignsProcessor: Processing status", {
-        processed: processedSignals.current,
-        pressure: result.pressure,
-        spo2: result.spo2,
-        glucose: result.glucose,
-        arrhythmiaStatus: result.arrhythmiaStatus,
-        weakSignalCount: consecutiveWeakSignalsRef.current
-      });
-    }
-    
-    // Update signal log
-    const currentTime = Date.now();
-    signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
+    // Log the signal and result
+    signalLogger.logSignal(value, result);
     
     return result;
-  }, [addArrhythmiaWindow]);
+  }, [addArrhythmiaWindow, signalLogger, signalQualityMonitor]);
 
   /**
    * Perform complete reset - always start measurements from zero
@@ -156,14 +112,14 @@ export const useVitalSignsProcessor = () => {
     
     processorRef.current.reset();
     arrhythmiaProcessorRef.current.reset();
-    setArrhythmiaWindows([]);
+    resetArrhythmiaWindows();
     setLastValidResults(null);
     lastArrhythmiaTimeRef.current = 0;
-    consecutiveWeakSignalsRef.current = 0;
+    signalQualityMonitor.reset();
     
     console.log("useVitalSignsProcessor: Reset completed");
     return null;
-  }, []);
+  }, [resetArrhythmiaWindows, signalQualityMonitor]);
   
   /**
    * Perform full reset - clear all data and reinitialize processors
@@ -176,14 +132,13 @@ export const useVitalSignsProcessor = () => {
     processorRef.current.fullReset();
     arrhythmiaProcessorRef.current.reset();
     setLastValidResults(null);
-    setArrhythmiaWindows([]);
-    processedSignals.current = 0;
-    signalLog.current = [];
+    resetArrhythmiaWindows();
+    signalLogger.reset();
     lastArrhythmiaTimeRef.current = 0;
-    consecutiveWeakSignalsRef.current = 0;
+    signalQualityMonitor.reset();
     
     console.log("useVitalSignsProcessor: Full reset complete");
-  }, []);
+  }, [resetArrhythmiaWindows, signalLogger, signalQualityMonitor]);
 
   /**
    * Get the arrhythmia processor instance for external access
@@ -198,11 +153,11 @@ export const useVitalSignsProcessor = () => {
     fullReset,
     getArrhythmiaProcessor,
     arrhythmiaCounter: arrhythmiaProcessorRef.current?.getArrhythmiaCounter() || 0,
-    lastValidResults: null,
+    lastValidResults,
     arrhythmiaWindows,
     debugInfo: {
-      processedSignals: processedSignals.current,
-      signalLog: signalLog.current.slice(-10)
+      processedSignals: signalLogger.getProcessedSignals(),
+      signalLog: signalLogger.getSignalLog().slice(-10)
     }
   };
 };
