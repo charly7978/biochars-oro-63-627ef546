@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -9,11 +8,8 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { toast } from "@/components/ui/use-toast";
 
 const Index = () => {
-  console.log("DEBUG: Index component - Initialization start");
-  
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -31,15 +27,8 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  const imageProcessingRef = useRef<number | null>(null);
-  const cameraErrorCountRef = useRef<number>(0);
   
-  console.log("DEBUG: Index component - State initialized");
-  
-  console.log("DEBUG: Index component - Initializing hooks");
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  console.log("DEBUG: Index component - useSignalProcessor initialized", { hasLastSignal: !!lastSignal });
-  
   const { 
     processSignal: processHeartBeat, 
     isArrhythmia,
@@ -47,7 +36,6 @@ const Index = () => {
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
-  console.log("DEBUG: Index component - useHeartBeatProcessor initialized", { isArrhythmia });
   
   const { 
     processSignal: processVitalSigns, 
@@ -55,386 +43,232 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
-  console.log("DEBUG: Index component - useVitalSignsProcessor initialized", { hasLastValidResults: !!lastValidResults });
 
   const enterFullScreen = async () => {
-    console.log("DEBUG: Index component - Attempting to enter fullscreen");
     try {
       await document.documentElement.requestFullscreen();
-      console.log("DEBUG: Index component - Fullscreen entered successfully");
     } catch (err) {
-      console.error("DEBUG: Index component - Error entering fullscreen:", err);
+      console.log('Error al entrar en pantalla completa:', err);
     }
   };
 
   useEffect(() => {
-    console.log("DEBUG: Index component - useEffect for scroll prevention setup");
     const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
 
-    console.log("DEBUG: Index component - Scroll prevention listeners attached");
-    
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
-      console.log("DEBUG: Index component - Scroll prevention listeners removed");
     };
   }, []);
 
   useEffect(() => {
-    console.log("DEBUG: Index component - useEffect for lastValidResults tracking", {
-      lastValidResults: !!lastValidResults,
-      isMonitoring,
-      showResults
-    });
-    
     if (lastValidResults && !isMonitoring) {
-      console.log("DEBUG: Index component - Setting vitalSigns from lastValidResults", {
-        spo2: lastValidResults.spo2,
-        pressure: lastValidResults.pressure,
-        arrhythmiaStatus: lastValidResults.arrhythmiaStatus
-      });
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Process signal only if we have good quality and finger detection
   useEffect(() => {
-    console.log("DEBUG: Index component - useEffect for signal processing", {
-      hasLastSignal: !!lastSignal,
-      isMonitoring,
-      signalQuality: lastSignal?.quality
-    });
-    
     if (lastSignal && isMonitoring) {
-      // NEW: Much more permissive quality threshold
-      const minQualityThreshold = 15; // Reduced from 40
+      // Only process if the quality is sufficient and the finger is detected
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
       
-      // NEW: More permissive finger detection
-      // Detect finger if either fingerDetected is true OR quality is at least minimal
-      if ((lastSignal.fingerDetected || lastSignal.quality >= minQualityThreshold)) {
-        console.log("DEBUG: Index component - Processing signal with acceptable quality", {
-          quality: lastSignal.quality,
-          fingerDetected: lastSignal.fingerDetected,
-          value: lastSignal.filteredValue.toFixed(2)
-        });
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        try {
-          const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        // Only update heart rate if confidence is sufficient
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+          setHeartRate(heartBeatResult.bpm);
           
-          // NEW: More permissive confidence threshold
-          if (heartBeatResult.confidence > 0.3) { // Reduced from 0.4
-            console.log("DEBUG: Index component - Heart beat processed with acceptable confidence", {
-              bpm: heartBeatResult.bpm,
-              confidence: heartBeatResult.confidence,
-              rrIntervalsCount: heartBeatResult.rrData?.intervals.length
-            });
-            
-            setHeartRate(heartBeatResult.bpm);
-            
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              console.log("DEBUG: Index component - Vitals processed successfully", {
-                spo2: vitals.spo2,
-                pressure: vitals.pressure,
-                arrhythmiaStatus: vitals.arrhythmiaStatus
-              });
-              setVitalSigns(vitals);
-            }
-          } else {
-            console.log("DEBUG: Index component - Heart beat processed with low confidence", {
-              confidence: heartBeatResult.confidence
-            });
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
           }
-          
-          setSignalQuality(lastSignal.quality);
-        } catch (error) {
-          console.error("DEBUG: Index component - Error during signal processing:", error);
         }
-      } else {
-        console.log("DEBUG: Index component - Low quality signal", {
-          quality: lastSignal.quality,
-          fingerDetected: lastSignal.fingerDetected,
-          threshold: minQualityThreshold
-        });
         
         setSignalQuality(lastSignal.quality);
+      } else {
+        // When no quality signal, update signal quality but not values
+        setSignalQuality(lastSignal.quality);
         
-        // NEW: Only reset heart rate after several frames without finger
-        if (!lastSignal.fingerDetected && heartRate > 0 && lastSignal.quality < 5) {
-          console.log("DEBUG: Index component - Finger removed, resetting heart rate");
+        // If finger not detected for a while, reset heart rate to zero
+        if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
+      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   const startMonitoring = () => {
-    console.log("DEBUG: Index component - startMonitoring called", { currentlyMonitoring: isMonitoring });
-    
     if (isMonitoring) {
-      console.log("DEBUG: Index component - Already monitoring, finalizing measurement");
       finalizeMeasurement();
     } else {
-      console.log("DEBUG: Index component - Starting new monitoring session");
+      enterFullScreen();
+      setIsMonitoring(true);
+      setIsCameraOn(true);
+      setShowResults(false);
+      setHeartRate(0); // Reset heart rate explicitly
       
-      try {
-        enterFullScreen();
-        setIsMonitoring(true);
-        setIsCameraOn(true);
-        setShowResults(false);
-        setHeartRate(0);
-        cameraErrorCountRef.current = 0;
-        
-        startProcessing();
-        startHeartBeatMonitoring();
-        
-        setElapsedTime(0);
-        
-        if (measurementTimerRef.current) {
-          clearInterval(measurementTimerRef.current);
-          console.log("DEBUG: Index component - Cleared existing measurement timer");
-        }
-        
-        measurementTimerRef.current = window.setInterval(() => {
-          setElapsedTime(prev => {
-            const newTime = prev + 1;
-            console.log(`DEBUG: Index component - Measurement time: ${newTime}s`);
-            
-            if (newTime >= 30) {
-              console.log("DEBUG: Index component - Reached maximum measurement time (30s)");
-              finalizeMeasurement();
-              return 30;
-            }
-            return newTime;
-          });
-        }, 1000);
-        
-        console.log("DEBUG: Index component - Monitoring started successfully");
-      } catch (error) {
-        console.error("DEBUG: Index component - Error starting monitoring:", error);
-        toast({
-          title: "Error",
-          description: "No se pudo iniciar la monitorización",
-          variant: "destructive"
-        });
+      startProcessing();
+      startHeartBeatMonitoring(); // Update the processor state
+      
+      setElapsedTime(0);
+      
+      if (measurementTimerRef.current) {
+        clearInterval(measurementTimerRef.current);
       }
+      
+      measurementTimerRef.current = window.setInterval(() => {
+        setElapsedTime(prev => {
+          const newTime = prev + 1;
+          console.log(`Tiempo transcurrido: ${newTime}s`);
+          
+          if (newTime >= 30) {
+            finalizeMeasurement();
+            return 30;
+          }
+          return newTime;
+        });
+      }, 1000);
     }
   };
 
   const finalizeMeasurement = () => {
-    console.log("DEBUG: Index component - Finalizing measurement");
+    console.log("Finalizando medición");
     
-    try {
-      setIsMonitoring(false);
-      setIsCameraOn(false);
-      stopProcessing();
-      stopHeartBeatMonitoring();
-      
-      if (measurementTimerRef.current) {
-        clearInterval(measurementTimerRef.current);
-        measurementTimerRef.current = null;
-        console.log("DEBUG: Index component - Measurement timer cleared");
-      }
-      
-      if (imageProcessingRef.current) {
-        cancelAnimationFrame(imageProcessingRef.current);
-        imageProcessingRef.current = null;
-        console.log("DEBUG: Index component - Image processing animation frame canceled");
-      }
-      
-      resetVitalSigns();
-      console.log("DEBUG: Index component - VitalSigns reset completed");
-      
-      if (lastValidResults) {
-        console.log("DEBUG: Index component - Setting results from lastValidResults", {
-          spo2: lastValidResults.spo2,
-          pressure: lastValidResults.pressure,
-          arrhythmiaStatus: lastValidResults.arrhythmiaStatus
-        });
-        setVitalSigns(lastValidResults);
-        setShowResults(true);
-      } else {
-        console.log("DEBUG: Index component - No valid results available");
-      }
-      
-      setElapsedTime(0);
-      setSignalQuality(0);
-      setHeartRate(0);
-      
-      console.log("DEBUG: Index component - Measurement finalized successfully");
-    } catch (error) {
-      console.error("DEBUG: Index component - Error finalizing measurement:", error);
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    stopProcessing();
+    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
     }
+    
+    const savedResults = resetVitalSigns();
+    if (savedResults) {
+      setVitalSigns(savedResults);
+      setShowResults(true);
+    }
+    
+    setElapsedTime(0);
+    setSignalQuality(0);
+    setHeartRate(0); // Reset heart rate explicitly
   };
 
   const handleReset = () => {
-    console.log("DEBUG: Index component - Full reset initiated");
+    console.log("Reseteando completamente la aplicación");
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    setShowResults(false);
+    stopProcessing();
+    stopHeartBeatMonitoring();
+    resetHeartBeatProcessor();
     
-    try {
-      setIsMonitoring(false);
-      setIsCameraOn(false);
-      setShowResults(false);
-      stopProcessing();
-      stopHeartBeatMonitoring();
-      resetHeartBeatProcessor();
-      
-      if (measurementTimerRef.current) {
-        clearInterval(measurementTimerRef.current);
-        measurementTimerRef.current = null;
-      }
-      
-      if (imageProcessingRef.current) {
-        cancelAnimationFrame(imageProcessingRef.current);
-        imageProcessingRef.current = null;
-      }
-      
-      fullResetVitalSigns();
-      setElapsedTime(0);
-      setHeartRate(0);
-      setVitalSigns({ 
-        spo2: 0, 
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      });
-      setSignalQuality(0);
-      cameraErrorCountRef.current = 0;
-      
-      console.log("DEBUG: Index component - Full reset completed");
-    } catch (error) {
-      console.error("DEBUG: Index component - Error during full reset:", error);
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
     }
+    
+    fullResetVitalSigns();
+    setElapsedTime(0);
+    setHeartRate(0);
+    setVitalSigns({ 
+      spo2: 0, 
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
+    });
+    setSignalQuality(0);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
-    console.log("DEBUG: Index component - Stream ready event received", {
-      isMonitoring,
-      trackCount: stream.getTracks().length
-    });
+    if (!isMonitoring) return;
     
-    if (!isMonitoring) {
-      console.log("DEBUG: Index component - Not monitoring, ignoring stream");
+    const videoTrack = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(videoTrack);
+    
+    if (videoTrack.getCapabilities()?.torch) {
+      console.log("Activando linterna para mejorar la señal PPG");
+      videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      }).catch(err => console.error("Error activando linterna:", err));
+    } else {
+      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
+    }
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+    if (!tempCtx) {
+      console.error("No se pudo obtener el contexto 2D");
       return;
     }
     
-    try {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack) {
-        console.error("DEBUG: Index component - No video track available in stream");
-        return;
-      }
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30;
+    let frameCount = 0;
+    let lastFpsUpdateTime = Date.now();
+    let processingFps = 0;
+    
+    const processImage = async () => {
+      if (!isMonitoring) return;
       
-      console.log("DEBUG: Index component - Video track obtained", {
-        label: videoTrack.label,
-        hasTorch: !!videoTrack.getCapabilities()?.torch
-      });
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
       
-      const imageCapture = new ImageCapture(videoTrack);
-      
-      if (videoTrack.getCapabilities()?.torch) {
-        console.log("DEBUG: Index component - Activating torch for better PPG signal");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).catch(err => console.error("DEBUG: Index component - Error activating torch:", err));
-      } else {
-        console.warn("DEBUG: Index component - This camera doesn't have torch available, measurement may be less accurate");
-      }
-      
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-      if (!tempCtx) {
-        console.error("DEBUG: Index component - Could not get 2D context");
-        return;
-      }
-      
-      let lastProcessTime = 0;
-      const targetFrameInterval = 1000/30;
-      let frameCount = 0;
-      let lastFpsUpdateTime = Date.now();
-      let processingFps = 0;
-      
-      const processImage = async () => {
-        if (!isMonitoring) {
-          console.log("DEBUG: Index component - No longer monitoring, stopping image processing");
-          return;
-        }
-        
-        const now = Date.now();
-        const timeSinceLastProcess = now - lastProcessTime;
-        
-        if (timeSinceLastProcess >= targetFrameInterval) {
-          try {
-            const frame = await imageCapture.grabFrame();
-            
-            const targetWidth = Math.min(320, frame.width);
-            const targetHeight = Math.min(240, frame.height);
-            
-            tempCanvas.width = targetWidth;
-            tempCanvas.height = targetHeight;
-            
-            tempCtx.drawImage(
-              frame, 
-              0, 0, frame.width, frame.height, 
-              0, 0, targetWidth, targetHeight
-            );
-            
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-            
-            // Reset error counter on successful frame
-            cameraErrorCountRef.current = 0;
-            
-            frameCount++;
-            lastProcessTime = now;
-            
-            if (now - lastFpsUpdateTime > 1000) {
-              processingFps = frameCount;
-              frameCount = 0;
-              lastFpsUpdateTime = now;
-              console.log(`DEBUG: Index component - Processing performance: ${processingFps} FPS`);
-            }
-          } catch (error) {
-            console.error("DEBUG: Index component - Error capturing frame:", error);
-            cameraErrorCountRef.current++;
-            
-            // If too many consecutive errors, try to recover
-            if (cameraErrorCountRef.current > 20) {
-              console.log("DEBUG: Index component - Too many camera errors, attempting recovery");
-              
-              // Create a small delay before retrying
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // If still monitoring, try to restart camera
-              if (isMonitoring) {
-                setIsCameraOn(false);
-                await new Promise(resolve => setTimeout(resolve, 200));
-                setIsCameraOn(true);
-                cameraErrorCountRef.current = 0;
-              }
-            }
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          const frame = await imageCapture.grabFrame();
+          
+          const targetWidth = Math.min(320, frame.width);
+          const targetHeight = Math.min(240, frame.height);
+          
+          tempCanvas.width = targetWidth;
+          tempCanvas.height = targetHeight;
+          
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, targetWidth, targetHeight
+          );
+          
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          processFrame(imageData);
+          
+          frameCount++;
+          lastProcessTime = now;
+          
+          if (now - lastFpsUpdateTime > 1000) {
+            processingFps = frameCount;
+            frameCount = 0;
+            lastFpsUpdateTime = now;
+            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
           }
+        } catch (error) {
+          console.error("Error capturando frame:", error);
         }
-        
-        imageProcessingRef.current = requestAnimationFrame(processImage);
-      };
+      }
+      
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
+      }
+    };
 
-      processImage();
-      console.log("DEBUG: Index component - Image processing loop started");
-    } catch (error) {
-      console.error("DEBUG: Index component - Error setting up camera processing:", error);
-    }
+    processImage();
   };
 
   const handleToggleMonitoring = () => {
-    console.log("DEBUG: Index component - Toggle monitoring button pressed", { currentlyMonitoring: isMonitoring });
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
@@ -442,14 +276,8 @@ const Index = () => {
     }
   };
 
-  console.log("DEBUG: Index component - Rendering component", {
-    isMonitoring,
-    isCameraOn,
-    signalQuality,
-    showResults
-  });
-
   return (
+    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
