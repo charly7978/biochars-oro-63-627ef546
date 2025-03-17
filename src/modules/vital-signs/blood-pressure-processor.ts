@@ -1,7 +1,15 @@
 
 import { FilterUtils } from '../signal-processing/FilterUtils';
 import { ProcessorConfig } from './ProcessorConfig';
+import { PTTCalculator } from './bp/ptt-calculator';
+import { AmplitudeCalculator } from './bp/amplitude-calculator';
+import { BPCalculator } from './bp/bp-calculator';
+import { BPSmoother } from './bp/bp-smoother';
 
+/**
+ * Blood Pressure Processor
+ * Coordinates the process of estimating blood pressure from PPG signals
+ */
 export class BloodPressureProcessor {
   private readonly BP_BUFFER_SIZE = ProcessorConfig.BP_BUFFER_SIZE;
   private readonly BP_ALPHA = ProcessorConfig.BP_ALPHA;
@@ -24,113 +32,43 @@ export class BloodPressureProcessor {
       return { systolic: 120, diastolic: 80 };
     }
 
-    const fps = 30;
-    const msPerSample = 1000 / fps;
-
-    const pttValues: number[] = [];
-    for (let i = 1; i < peakIndices.length; i++) {
-      const dt = (peakIndices[i] - peakIndices[i - 1]) * msPerSample;
-      pttValues.push(dt);
-    }
+    // Extract and process PTT values
+    const pttValues = PTTCalculator.extractPTTValues(peakIndices);
+    const weightedPTT = PTTCalculator.calculateWeightedPTT(pttValues);
+    const normalizedPTT = PTTCalculator.normalizePTT(weightedPTT);
     
-    const weightedPTT = this.calculateWeightedPTT(pttValues);
-    const normalizedPTT = Math.max(300, Math.min(1200, weightedPTT));
-    
-    const amplitude = this.calculateAmplitude(values, peakIndices, valleyIndices);
-    const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
+    // Calculate and normalize amplitude
+    const amplitude = AmplitudeCalculator.calculateAmplitude(values, peakIndices, valleyIndices);
+    const normalizedAmplitude = AmplitudeCalculator.normalizeAmplitude(amplitude);
 
-    const pttFactor = (600 - normalizedPTT) * 0.08;
-    const ampFactor = normalizedAmplitude * 0.3;
+    // Calculate initial blood pressure values
+    let { systolic, diastolic } = BPCalculator.calculateBPValues(normalizedPTT, normalizedAmplitude);
     
-    let instantSystolic = 120 + pttFactor + ampFactor;
-    let instantDiastolic = 80 + (pttFactor * 0.5) + (ampFactor * 0.2);
+    // Normalize pressure differential
+    const normalizedBP = BPCalculator.normalizePressureDifferential(systolic, diastolic);
+    systolic = normalizedBP.systolic;
+    diastolic = normalizedBP.diastolic;
 
-    instantSystolic = Math.max(90, Math.min(180, instantSystolic));
-    instantDiastolic = Math.max(60, Math.min(110, instantDiastolic));
-    
-    const differential = instantSystolic - instantDiastolic;
-    if (differential < 20) {
-      instantDiastolic = instantSystolic - 20;
-    } else if (differential > 80) {
-      instantDiastolic = instantSystolic - 80;
-    }
-
-    this.systolicBuffer.push(instantSystolic);
-    this.diastolicBuffer.push(instantDiastolic);
+    // Add to buffer for smoothing
+    this.systolicBuffer.push(systolic);
+    this.diastolicBuffer.push(diastolic);
     
     if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
       this.systolicBuffer.shift();
       this.diastolicBuffer.shift();
     }
 
-    const { finalSystolic, finalDiastolic } = this.calculateSmoothedValues();
+    // Calculate smoothed values
+    const { finalSystolic, finalDiastolic } = BPSmoother.calculateSmoothedValues(
+      this.systolicBuffer, 
+      this.diastolicBuffer, 
+      this.BP_ALPHA
+    );
 
     return {
       systolic: Math.round(finalSystolic),
       diastolic: Math.round(finalDiastolic)
     };
-  }
-  
-  /**
-   * Calculate weighted PTT value
-   */
-  private calculateWeightedPTT(pttValues: number[]): number {
-    if (pttValues.length === 0) return 600; // Default value
-    
-    return pttValues.reduce((acc, val, idx) => {
-      const weight = (idx + 1) / pttValues.length;
-      return acc + val * weight;
-    }, 0) / pttValues.reduce((acc, _, idx) => acc + (idx + 1) / pttValues.length, 0);
-  }
-  
-  /**
-   * Calculate amplitude from peaks and valleys
-   */
-  private calculateAmplitude(
-    values: number[],
-    peaks: number[],
-    valleys: number[]
-  ): number {
-    if (peaks.length === 0 || valleys.length === 0) return 0;
-
-    const amps: number[] = [];
-    const len = Math.min(peaks.length, valleys.length);
-    
-    for (let i = 0; i < len; i++) {
-      const amp = values[peaks[i]] - values[valleys[i]];
-      if (amp > 0) {
-        amps.push(amp);
-      }
-    }
-    
-    if (amps.length === 0) return 0;
-    return amps.reduce((a, b) => a + b, 0) / amps.length;
-  }
-  
-  /**
-   * Calculate smoothed blood pressure values
-   */
-  private calculateSmoothedValues(): { finalSystolic: number; finalDiastolic: number } {
-    let finalSystolic = 0;
-    let finalDiastolic = 0;
-    let weightSum = 0;
-
-    for (let i = 0; i < this.systolicBuffer.length; i++) {
-      const weight = Math.pow(this.BP_ALPHA, this.systolicBuffer.length - 1 - i);
-      finalSystolic += this.systolicBuffer[i] * weight;
-      finalDiastolic += this.diastolicBuffer[i] * weight;
-      weightSum += weight;
-    }
-
-    if (weightSum > 0) {
-      finalSystolic = finalSystolic / weightSum;
-      finalDiastolic = finalDiastolic / weightSum;
-    } else {
-      finalSystolic = 120;
-      finalDiastolic = 80;
-    }
-
-    return { finalSystolic, finalDiastolic };
   }
 
   /**

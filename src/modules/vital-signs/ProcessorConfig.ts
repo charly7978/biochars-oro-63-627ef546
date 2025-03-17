@@ -20,6 +20,7 @@ export const ProcessorConfig = {
   // Signal quality thresholds
   MIN_SIGNAL_AMPLITUDE: 0.01,
   MIN_PPG_VALUES: 15,
+  WEAK_SIGNAL_THRESHOLD: 0.005,
   
   // Buffer sizes
   SPO2_BUFFER_SIZE: 10,
