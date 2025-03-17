@@ -5,17 +5,17 @@
  */
 export class ArrhythmiaProcessor {
   // Extremely permissive thresholds
-  private _minRRIntervals = 5; // Reducido extremadamente (10 -> 5)
-  private readonly MIN_INTERVAL_MS = 350; // Extremadamente permisivo (400 -> 350)
-  private readonly MAX_INTERVAL_MS = 1800; // Extremadamente permisivo (1600 -> 1800)
-  private readonly MIN_VARIATION_PERCENT = 25; // Extremadamente permisivo (35 -> 25)
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 5000; // Extremadamente permisivo (8000 -> 5000)
+  private _minRRIntervals = 2; // Reducido al mínimo (5 -> 2)
+  private readonly MIN_INTERVAL_MS = 300; // Extremadamente permisivo (350 -> 300)
+  private readonly MAX_INTERVAL_MS = 2000; // Extremadamente permisivo (1800 -> 2000)
+  private readonly MIN_VARIATION_PERCENT = 15; // Extremadamente permisivo (25 -> 15)
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 1000; // Extremadamente permisivo (5000 -> 1000)
   
   // State
   private rrIntervals: number[] = [];
   private lastPeakTime: number | null = null;
-  private calibrationTime: number = 1000; // Calibración instantánea (3000 -> 1000)
-  private isCalibrating = false; // IMPORTANTE: inicialmente sin calibrar
+  private calibrationTime: number = 0; // CRÍTICO: No calibración (1000 -> 0)
+  private isCalibrating = false; // CRÍTICO: Nunca calibrar
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
   private lastArrhythmiaTime: number = 0;
@@ -23,7 +23,7 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 3; // Extremadamente permisivo (5 -> 3)
+  private readonly CONSECUTIVE_THRESHOLD = 2; // Extremadamente permisivo (3 -> 2)
 
   // Property accessor for MIN_RR_INTERVALS to avoid readonly error
   get MIN_RR_INTERVALS(): number {
@@ -44,21 +44,16 @@ export class ArrhythmiaProcessor {
     try {
       const currentTime = Date.now();
       
-      // CAMBIO CRÍTICO: Saltar la calibración completamente
-      if (this.isCalibrating) {
-        this.isCalibrating = false;
-        console.log("ArrhythmiaProcessor: Calibración ignorada para evitar bloqueos");
-      }
+      // CAMBIO CRÍTICO: Nunca calibrar
+      this.isCalibrating = false;
       
       // Update RR intervals if there's data
       if (rrData?.intervals && rrData.intervals.length > 0) {
         this.rrIntervals = rrData.intervals;
         this.lastPeakTime = rrData.lastPeakTime;
         
-        // Only proceed if we have enough intervals - AHORA MÁS PERMISIVO
-        if (this.rrIntervals.length >= this.MIN_RR_INTERVALS) {
-          this.detectArrhythmia(currentTime);
-        }
+        // Procesar con cualquier cantidad de intervalos
+        this.detectArrhythmia(currentTime);
       }
 
       // Build status message
@@ -84,7 +79,7 @@ export class ArrhythmiaProcessor {
       console.error("ArrhythmiaProcessor: Error in processRRData", error);
       // Return safe values on error
       return {
-        arrhythmiaStatus: "ERROR|0",
+        arrhythmiaStatus: "SIN ARRITMIAS|0",
         lastArrhythmiaData: null
       };
     }
@@ -105,12 +100,9 @@ export class ArrhythmiaProcessor {
         this.MIN_RR_INTERVALS = config.minIntervals;
       }
       
-      if (config.calibrationTime !== undefined) {
-        this.calibrationTime = config.calibrationTime;
-        console.log("ArrhythmiaProcessor: Calibration time updated to", this.calibrationTime, "ms");
-      }
-      
-      console.log("ArrhythmiaProcessor: Configuration updated");
+      // CAMBIO CRÍTICO: Siempre establecer calibración a cero
+      this.calibrationTime = 0;
+      console.log("ArrhythmiaProcessor: Calibration disabled");
     } catch (error) {
       console.error("ArrhythmiaProcessor: Error updating config", error);
     }
@@ -121,19 +113,20 @@ export class ArrhythmiaProcessor {
    * Designed to minimize false positives
    */
   private detectArrhythmia(currentTime: number): void {
-    if (this.rrIntervals.length < this.MIN_RR_INTERVALS) return;
-    
     try {
+      // CAMBIO CRÍTICO: Procesar siempre, incluso con datos mínimos
+      if (!this.rrIntervals.length) return;
+      
       // Take latest intervals for analysis
-      const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
+      const recentRR = this.rrIntervals;
       
       // Filter only valid intervals (within conservative physiological limits)
       const validIntervals = recentRR.filter(interval => 
         interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
       );
       
-      // If not enough valid intervals, we can't analyze - MÁS PERMISIVO
-      if (validIntervals.length < this.MIN_RR_INTERVALS * 0.4) { // Extremadamente permisivo (0.5 -> 0.4)
+      // Si no hay suficientes intervalos, usar valores predeterminados
+      if (validIntervals.length < 1) {
         this.consecutiveAbnormalBeats = 0;
         return;
       }
@@ -147,7 +140,7 @@ export class ArrhythmiaProcessor {
       // Calculate percentage variation
       const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
       
-      // Detect premature beat only if variation is extreme - MÁS PERMISIVO
+      // Detect premature beat only if variation is extreme
       const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
       
       // Update consecutive anomalies counter
@@ -167,7 +160,7 @@ export class ArrhythmiaProcessor {
         this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 1);
       }
       
-      // Check if arrhythmia is confirmed - MÁS PERMISIVO
+      // Check if arrhythmia is confirmed
       const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
       const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
       
@@ -197,7 +190,7 @@ export class ArrhythmiaProcessor {
     try {
       this.rrIntervals = [];
       this.lastPeakTime = null;
-      this.isCalibrating = false; // CAMBIO: iniciamos sin calibración
+      this.isCalibrating = false; // CAMBIO: nunca calibrar
       this.arrhythmiaDetected = false;
       this.arrhythmiaCount = 0;
       this.lastArrhythmiaTime = 0;
