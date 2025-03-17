@@ -25,9 +25,11 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const validSignalDetectedRef = useRef<boolean>(false);
   const consecutiveValidSignalsRef = useRef<number>(0);
-  const MIN_CONSECUTIVE_VALID_SIGNALS = 2; // Reducido para mayor sensibilidad
+  const MIN_CONSECUTIVE_VALID_SIGNALS = 1.5; // Reducido para mayor sensibilidad inicial
   const lastMeasurementTimeRef = useRef<number>(0);
   const measurementIntervalRef = useRef<number>(100); // Intervalo entre mediciones en ms
+  const lastQualityScoreRef = useRef<number>(0);
+  const qualityHistoryRef = useRef<{quality: number, stable: boolean, timestamp: number}[]>([]);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -38,7 +40,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       timestamp: new Date().toISOString(),
       session: sessionId.current,
       validSignalDetected: validSignalDetectedRef.current,
-      consecutiveValidSignals: consecutiveValidSignalsRef.current
+      consecutiveValidSignals: consecutiveValidSignalsRef.current,
+      lastQualityScore: lastQualityScoreRef.current,
+      qualityHistoryLength: qualityHistoryRef.current.length
     });
 
     // Always reset to zero when stopping or not measuring
@@ -60,6 +64,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       validSignalDetectedRef.current = false;
       consecutiveValidSignalsRef.current = 0;
       lastMeasurementTimeRef.current = 0;
+      lastQualityScoreRef.current = 0;
+      qualityHistoryRef.current = [];
       return;
     }
 
@@ -78,26 +84,68 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     
     const MEASUREMENT_DURATION = 30000;
 
-    // Listener para señales válidas detectadas
+    // Listener mejorado para señales válidas detectadas
     const handleValidSignal = (event: CustomEvent) => {
-      const quality = event.detail?.quality || 0;
-      const stable = event.detail?.stable || false;
+      const detail = event.detail || {};
+      const quality = detail.quality || 0;
+      const stable = detail.stable || false;
+      const variance = detail.variance || 0;
+      const stabilityScore = detail.stabilityScore || 0;
       
-      console.log('useVitalMeasurement - Señal válida detectada', {
+      // Actualizar historial de calidad para análisis
+      qualityHistoryRef.current.push({
         quality,
         stable,
+        timestamp: Date.now()
+      });
+      
+      // Mantener sólo los últimos 10 datos de calidad
+      if (qualityHistoryRef.current.length > 10) {
+        qualityHistoryRef.current.shift();
+      }
+      
+      // Calcular promedio ponderado de calidad reciente
+      let weightedQualitySum = 0;
+      let weightSum = 0;
+      
+      qualityHistoryRef.current.forEach((entry, idx) => {
+        const weight = Math.pow(1.2, idx); // Más peso a entradas recientes
+        weightedQualitySum += entry.quality * weight;
+        weightSum += weight;
+      });
+      
+      const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
+      lastQualityScoreRef.current = avgQuality;
+      
+      console.log('useVitalMeasurement - Análisis de señal detallado', {
+        quality,
+        avgQuality,
+        stable,
+        variance,
+        stabilityScore,
         consecutiveValidSignals: consecutiveValidSignalsRef.current,
         timestamp: new Date().toISOString()
       });
       
-      if (quality > 65) { // Reducido el umbral para permitir más mediciones
-        consecutiveValidSignalsRef.current += stable ? 1.5 : 1;
+      // Detección más sensible pero también más exigente con la estabilidad
+      if (quality > 50 && avgQuality > 45) {
+        const stabilityBonus = stable ? 0.5 : 0;
+        const qualityFactor = quality > 70 ? 0.4 : 0.3;
+        
+        // Incremento proporcional a la calidad
+        consecutiveValidSignalsRef.current += stabilityBonus + qualityFactor;
+        
+        // Limitar el máximo para evitar falsos positivos prolongados
+        consecutiveValidSignalsRef.current = Math.min(5, consecutiveValidSignalsRef.current);
+        
         if (consecutiveValidSignalsRef.current >= MIN_CONSECUTIVE_VALID_SIGNALS) {
           validSignalDetectedRef.current = true;
         }
       } else {
-        // Reducir gradualmente el contador para evitar pérdida inmediata
-        consecutiveValidSignalsRef.current = Math.max(0, consecutiveValidSignalsRef.current - 0.4);
+        // Reducción gradual para evitar pérdida inmediata de señal
+        consecutiveValidSignalsRef.current = Math.max(0, consecutiveValidSignalsRef.current - 0.3);
+        
+        // Si cae demasiado, invalidar la señal
         if (consecutiveValidSignalsRef.current < MIN_CONSECUTIVE_VALID_SIGNALS) {
           validSignalDetectedRef.current = false;
         }
@@ -124,11 +172,13 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      // Solo procesar si hay una señal válida detectada
+      // Solo procesar si hay una señal válida detectada con calidad suficiente
       if (!validSignalDetectedRef.current) {
         console.log('useVitalMeasurement - Esperando señal válida para medir', {
           consecutiveValidSignals: consecutiveValidSignalsRef.current,
           needed: MIN_CONSECUTIVE_VALID_SIGNALS,
+          lastQualityScore: lastQualityScoreRef.current,
+          qualityHistory: qualityHistoryRef.current.length,
           timestamp: new Date().toISOString()
         });
         return;
@@ -155,7 +205,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         pressureValue,
         arrhythmias,
         timestamp: new Date().toISOString(),
-        validSignalDetected: validSignalDetectedRef.current
+        validSignalDetected: validSignalDetectedRef.current,
+        lastQualityScore: lastQualityScoreRef.current
       });
 
       // Check for arrhythmia windows
@@ -168,7 +219,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
 
       // Verificar que el BPM sea fisiológicamente plausible (40-180)
       if (bpm >= 40 && bpm <= 180) {
-        // Update measurements - mantener los valores anteriores si son válidos
+        // Update measurements - priorizar nuevos valores sólo si son válidos
         setMeasurements(prev => ({
           heartRate: bpm,
           spo2: spo2Value > 0 ? spo2Value : prev.spo2, 
@@ -194,7 +245,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         elapsed: elapsed / 1000,
         porcentaje: (elapsed / MEASUREMENT_DURATION) * 100,
         timestamp: new Date().toISOString(),
-        validSignalDetected: validSignalDetectedRef.current
+        validSignalDetected: validSignalDetectedRef.current,
+        lastQualityScore: lastQualityScoreRef.current
       });
       
       setElapsedTime(elapsed / 1000);
