@@ -7,6 +7,12 @@ import { smoothValue } from './canvas-utils/valueSmoothing';
 import { setupOffscreenCanvas, setupGridCanvas } from './canvas-utils/canvasSetup';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants';
 
+/**
+ * Hook that manages canvas elements and drawing functions for the PPG signal meter.
+ * It handles setup of main, grid, and offscreen canvases for optimized rendering.
+ * 
+ * @returns Object containing canvas references and drawing utility functions
+ */
 export function useCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);

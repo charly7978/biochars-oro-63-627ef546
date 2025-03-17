@@ -5,12 +5,28 @@ import { useSignalRenderer } from '../useSignalRenderer';
 import * as useCanvasModule from '../useCanvas';
 import * as useSignalDataModule from '../useSignalData';
 import * as useHeartbeatAudioModule from '../useHeartbeatAudio';
+import { CircularBuffer } from '../../../utils/CircularBuffer';
+import { PPGDataPoint } from '../types';
 
 vi.mock('../useCanvas');
 vi.mock('../useSignalData');
 vi.mock('../useHeartbeatAudio');
 
 describe('useSignalRenderer', () => {
+  // Create a proper mock for CircularBuffer
+  const mockCircularBuffer = {
+    push: vi.fn(),
+    getPoints: vi.fn(() => []),
+    buffer: [],
+    capacity: 100,
+    index: 0,
+    isFull: false,
+    size: 0,
+    clear: vi.fn(),
+    getOldestIndex: vi.fn(),
+    getNewestIndex: vi.fn()
+  } as unknown as CircularBuffer<PPGDataPoint>;
+
   const mockCanvasHook = {
     canvasRef: { current: document.createElement('canvas') },
     gridCanvasRef: { current: document.createElement('canvas') },
@@ -24,7 +40,7 @@ describe('useSignalRenderer', () => {
   };
 
   const mockSignalDataHook = {
-    dataBufferRef: { current: { push: vi.fn(), getPoints: vi.fn(() => []) } },
+    dataBufferRef: { current: mockCircularBuffer },
     baselineRef: { current: 0 },
     lastValueRef: { current: 0 },
     peaksRef: { current: [] },
