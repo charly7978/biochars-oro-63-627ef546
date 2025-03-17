@@ -1,7 +1,7 @@
 
 /**
  * Bridge adapter to connect the legacy VitalSignsProcessor.js with the new TypeScript architecture
- * This facilitates a smooth transition from the old implementation to the new modular structure
+ * This facilitates a smooth transition to the new modular structure
  */
 
 import { LegacyVitalSignsProcessor } from './LegacyVitalSignsProcessor';
@@ -10,8 +10,6 @@ import { SignalValidator } from '../signal-validation/SignalValidator';
 
 /**
  * Factory function that returns an appropriate processor implementation
- * Current implementation returns the TypeScript processor,
- * but could be configured to use either implementation during migration
  */
 export function createVitalSignsProcessor(useLegacy: boolean = false): {
   processSignal: (ppgValue: number, rrData?: { intervals: number[]; lastPeakTime: number | null }) => VitalSignsResult;
@@ -24,8 +22,8 @@ export function createVitalSignsProcessor(useLegacy: boolean = false): {
     processSignal: (ppgValue: number, rrData?: { intervals: number[]; lastPeakTime: number | null }) => {
       // Validate signal before processing
       const validationResult = signalValidator.validateSignalQuality(ppgValue);
-      if (!validationResult.isValid && validationResult.validSampleCounter < 5) {
-        // Return empty result for poor quality signals
+      if (!validationResult.isValid) {
+        // Return empty result for invalid signals
         return {
           spo2: 0,
           pressure: "--/--",

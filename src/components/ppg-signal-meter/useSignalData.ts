@@ -141,7 +141,7 @@ export function useSignalData() {
       
       lastArrhythmiaTimeRef.current = now;
       
-      console.log('PPGSignalMeter: Nueva arritmia detectada en', new Date(now).toISOString());
+      console.log('PPGSignalMeter: Arrhythmia detected at', new Date(now).toISOString());
     } 
     else if (!isArrhythmia && arrhythmiaTransitionRef.current.active) {
       arrhythmiaTransitionRef.current = {
@@ -157,7 +157,7 @@ export function useSignalData() {
         }
       }
       
-      console.log('PPGSignalMeter: Fin de arritmia en', new Date(now).toISOString());
+      console.log('PPGSignalMeter: End of arrhythmia at', new Date(now).toISOString());
     }
     
     arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(

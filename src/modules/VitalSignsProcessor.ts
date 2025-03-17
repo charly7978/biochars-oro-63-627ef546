@@ -7,9 +7,6 @@ import { ProcessorConfig } from './vital-signs/ProcessorConfig';
 /**
  * Professional medical-grade wrapper that ensures only real physiological data
  * is processed with strict validation requirements.
- * 
- * This implementation enforces strict medical standards with zero simulation
- * and aggressive false positive prevention.
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
@@ -19,18 +16,16 @@ export class VitalSignsProcessor {
   private weakSignalCounter: number = 0;
   
   /**
-   * Constructor that initializes the internal direct measurement processor
-   * with strict medical-grade parameters
+   * Constructor that initializes the processor with strict validation
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing medical-grade processor with strict validation");
+    console.log("VitalSignsProcessor: Initializing processor with strict validation");
     this.processor = new CoreProcessor();
     this.signalValidator = new SignalValidator();
   }
   
   /**
-   * Process a PPG signal and RR data to get vital signs
-   * Uses aggressive validation to prevent false readings
+   * Process a PPG signal to get vital signs with strict validation
    * 
    * @param ppgValue Raw PPG signal value
    * @param rrData Optional RR interval data
@@ -41,18 +36,18 @@ export class VitalSignsProcessor {
     rrData?: { intervals: number[]; lastPeakTime: number | null },
     signalQuality?: number
   ): VitalSignsResult {
-    // Weak signal detection and rejection
+    // Validate weak signal
     if (Math.abs(ppgValue) < ProcessorConfig.WEAK_SIGNAL_THRESHOLD) {
       this.weakSignalCounter++;
       if (this.weakSignalCounter > 3) {
-        console.warn("VitalSignsProcessor: Persistent weak signal detected");
+        console.warn("VitalSignsProcessor: Weak signal detected");
         return SignalAnalyzer.createEmptyResult();
       }
     } else {
       this.weakSignalCounter = 0;
     }
     
-    // Multi-stage signal validation
+    // Validate signal quality
     const validationResult = this.signalValidator.validateSignalQuality(ppgValue, signalQuality);
     
     if (!validationResult.isValid) {
@@ -63,16 +58,16 @@ export class VitalSignsProcessor {
       return SignalAnalyzer.createEmptyResult();
     }
     
-    // RR interval validation if provided
+    // Validate RR intervals
     if (rrData && !this.signalValidator.validateRRIntervals(rrData)) {
       console.warn("VitalSignsProcessor: Invalid RR intervals");
       return SignalAnalyzer.createEmptyResult();
     }
     
-    // Process validated signals
+    // Process valid signals only
     const result = this.processor.processSignal(ppgValue, rrData);
     
-    console.log("VitalSignsProcessor: Processed valid signal with quality", { 
+    console.log("VitalSignsProcessor: Processed valid signal", { 
       signalQuality, 
       validSamples: validationResult.validSampleCounter
     });
@@ -81,21 +76,20 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Reset the processor to ensure a clean state
+   * Reset the processor state
    */
   public reset() {
-    console.log("VitalSignsProcessor: Reset - all measurements will start from zero");
+    console.log("VitalSignsProcessor: Reset processor state");
     this.weakSignalCounter = 0;
     this.signalValidator.reset();
     return this.processor.reset();
   }
   
   /**
-   * Completely reset the processor and all its data
-   * Removes any historical influence to prevent data contamination
+   * Complete reset of processor and data
    */
   public fullReset(): void {
-    console.log("VitalSignsProcessor: Full reset - removing all data history");
+    console.log("VitalSignsProcessor: Full reset of all data");
     this.weakSignalCounter = 0;
     this.signalValidator.reset();
     this.processor.fullReset();

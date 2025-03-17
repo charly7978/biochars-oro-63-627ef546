@@ -1,14 +1,12 @@
-
 /**
- * Main signal logging utilities that coordinate validation and quality analysis
+ * Signal logging utilities that coordinate validation and quality analysis
  */
 
 import { validateSignalValue, validateResultData } from './validateSignal';
 import { calculateSignalQuality } from './qualityAnalyzer';
 
 /**
- * Updates the signal log with strict validation, maintaining a manageable size
- * and preventing any simulated or invalid data
+ * Updates the signal log with strict validation to prevent invalid data
  */
 export function updateSignalLog(
   signalLog: {timestamp: number, value: number, result: any}[],
@@ -17,7 +15,7 @@ export function updateSignalLog(
   result: any,
   processedSignals: number
 ): {timestamp: number, value: number, result: any}[] {
-  // Validación fisiológica más estricta
+  // Apply strict physiological validation
   if (!validateSignalValue(value)) {
     console.warn("signalLogUtils: Rejected invalid signal value", { value });
     return signalLog;
@@ -33,13 +31,12 @@ export function updateSignalLog(
     return signalLog;
   }
   
-  // Solo registrar cada X señales para prevenir problemas de memoria
-  // Reducida frecuencia para asegurar que no perdamos señales importantes
+  // Only log every 10th signal to prevent memory issues
   if (processedSignals % 10 !== 0) {
     return signalLog;
   }
   
-  // Validar y sanear los datos de resultado
+  // Validate result data
   const safeResult = validateResultData(result);
   
   const updatedLog = [
@@ -51,14 +48,13 @@ export function updateSignalLog(
     }
   ];
   
-  // Mantener log en tamaño manejable
+  // Keep log at manageable size
   const trimmedLog = updatedLog.length > 100 ? updatedLog.slice(-100) : updatedLog;
   
-  // Logging mejorado para aplicación médica
+  // Log quality info
   console.log("signalLogUtils: Log updated", {
     totalEntries: trimmedLog.length,
     lastEntry: trimmedLog[trimmedLog.length - 1],
-    dataValidated: true,
     signalQuality: calculateSignalQuality(trimmedLog.slice(-20).map(entry => entry.value))
   });
   

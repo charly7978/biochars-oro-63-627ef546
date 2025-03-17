@@ -1,19 +1,16 @@
 
 /**
- * Utility for analyzing noise levels in signal data.
- * This module provides functions to quantify the amount of noise in PPG signal data,
+ * Utility for analyzing noise levels in PPG signal data.
+ * This module provides functions to quantify the amount of noise,
  * which is crucial for determining signal quality and reliability.
  */
 
 /**
- * Calculates the noise level in a signal by measuring the signal's variability
- * relative to its mean value. Higher values indicate more noise.
+ * Calculates the noise level in a signal by measuring variability
+ * relative to its mean value.
  * 
- * The method uses standard deviation normalized by the mean to provide
- * a scale-invariant measure of noise.
- * 
- * @param values - Array of signal values to analyze for noise
- * @returns A normalized noise level indicator (higher values = more noise)
+ * @param values - Array of signal values to analyze
+ * @returns A normalized noise level indicator
  */
 export function calculateNoiseLevel(values: number[]): number {
   if (values.length === 0) return 0;

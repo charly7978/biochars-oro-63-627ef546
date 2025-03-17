@@ -7,7 +7,7 @@ import { RangeValidator } from './validators/RangeValidator';
 import { RRValidator } from './validators/RRValidator';
 
 /**
- * Central manager for coordinating all signal validation operations
+ * Central manager for signal validation operations
  */
 export class SignalValidationManager {
   private amplitudeValidator: AmplitudeValidator;
@@ -88,7 +88,7 @@ export class SignalValidationManager {
     this.validSampleCounter++;
     
     // Determine if we have enough consecutive valid samples
-    const isFullyValid = this.validSampleCounter >= 8; // Using the CONSECUTIVE_VALID_SAMPLES constant from ValidationConfig
+    const isFullyValid = this.validSampleCounter >= 8;
     
     return {
       isValid: isFullyValid,

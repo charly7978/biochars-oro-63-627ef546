@@ -1,20 +1,20 @@
 
 /**
- * Core signal validation utilities for medical-grade applications
+ * Signal validation utilities for medical applications
  */
 
 /**
  * Validates a signal value against physiological limits
- * to prevent false data from being processed
+ * to ensure only real measurement data is processed
  */
 export function validateSignalValue(value: number): boolean {
-  // Verificar NaN o Infinity
+  // Check for NaN or Infinity
   if (isNaN(value) || !isFinite(value)) {
     return false;
   }
   
-  // Verificar límites fisiológicos con mayor precisión
-  if (value < 0 || value > 255 || Math.abs(value) > 300) {
+  // Check strict physiological limits
+  if (value < 0 || value > 255) {
     return false;
   }
   
@@ -22,40 +22,40 @@ export function validateSignalValue(value: number): boolean {
 }
 
 /**
- * Validates specific vital signs data in result object
+ * Validates vital signs data in result object
  * @param result The result object containing vital signs data
  * @returns A cleaned result object with invalid values reset
  */
 export function validateResultData(result: any): any {
-  // Clonar profundamente el resultado para prevenir problemas de referencia
+  // Deep clone the result to prevent reference issues
   const safeResult = {...result};
   
-  // Validar campos específicos de resultado
+  // Validate SpO2 field (must be 0-100%)
   if (safeResult.spo2 !== undefined) {
-    // SpO2 debe estar entre 0-100
     if (safeResult.spo2 < 0 || safeResult.spo2 > 100) {
-      safeResult.spo2 = 0; // Reiniciar valores inválidos
-      console.warn("signalLogUtils: Corrected invalid SpO2 value");
+      safeResult.spo2 = 0; // Reset invalid values
+      console.warn("signalLogUtils: Invalid SpO2 value detected and reset");
     }
   }
   
-  // Validación de glucosa y lípidos
+  // Validate glucose (must be in physiological range)
   if (safeResult.glucose !== undefined && (safeResult.glucose < 0 || safeResult.glucose > 500)) {
     safeResult.glucose = 0;
-    console.warn("signalLogUtils: Corrected invalid glucose value");
+    console.warn("signalLogUtils: Invalid glucose value detected and reset");
   }
   
+  // Validate lipid values
   if (safeResult.lipids) {
     if (safeResult.lipids.totalCholesterol !== undefined && 
         (safeResult.lipids.totalCholesterol < 0 || safeResult.lipids.totalCholesterol > 500)) {
       safeResult.lipids.totalCholesterol = 0;
-      console.warn("signalLogUtils: Corrected invalid cholesterol value");
+      console.warn("signalLogUtils: Invalid cholesterol value detected and reset");
     }
     
     if (safeResult.lipids.triglycerides !== undefined && 
         (safeResult.lipids.triglycerides < 0 || safeResult.lipids.triglycerides > 1000)) {
       safeResult.lipids.triglycerides = 0;
-      console.warn("signalLogUtils: Corrected invalid triglycerides value");
+      console.warn("signalLogUtils: Invalid triglycerides value detected and reset");
     }
   }
   

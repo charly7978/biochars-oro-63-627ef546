@@ -1,6 +1,6 @@
 
 /**
- * Basic signal filtering utilities
+ * Signal filtering utilities
  * Provides common filtering operations for signal processing
  */
 
@@ -33,17 +33,17 @@ export function normalizeValues(values: number[]): number[] {
 }
 
 /**
- * Clase auxiliar para filtrado Kalman
+ * Kalman filter for noise reduction in signals 
  */
 export class KalmanFilter {
-  private R: number = 0.01;
-  private Q: number = 0.1;
-  private P: number = 1;
-  private X: number = 0;
-  private K: number = 0;
+  private R: number = 0.01; // Measurement noise
+  private Q: number = 0.1;  // Process noise
+  private P: number = 1;    // Estimation error covariance
+  private X: number = 0;    // Estimated value
+  private K: number = 0;    // Kalman gain
 
   /**
-   * Aplica el filtro Kalman a una medición
+   * Apply Kalman filter to a measurement
    */
   filter(measurement: number): number {
     this.P = this.P + this.Q;
@@ -54,7 +54,7 @@ export class KalmanFilter {
   }
 
   /**
-   * Reinicia el filtro
+   * Reset the filter state
    */
   reset(): void {
     this.X = 0;
