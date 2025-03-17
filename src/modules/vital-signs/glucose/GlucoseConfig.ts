@@ -10,10 +10,7 @@ export const GlucoseConfig = {
   // Sample requirements
   MIN_SAMPLES: 20,
   
-  // Baseline values for reference only
-  GLUCOSE_BASELINE: 90, // Standard fasting reference
-  
-  // Signal analysis factors for real data processing
+  // Analysis factors for real data processing
   PERFUSION_FACTOR: 0.5,
   AMPLITUDE_FACTOR: 0.15,
   FREQUENCY_FACTOR: 0.20,

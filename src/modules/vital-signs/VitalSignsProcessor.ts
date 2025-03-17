@@ -40,6 +40,7 @@ export class VitalSignsProcessor {
   private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
+  private lastValidResult: VitalSignsResult | null = null;
 
   constructor() {
     console.log("VitalSignsProcessor: Initializing new instance");
@@ -103,13 +104,20 @@ export class VitalSignsProcessor {
     // Calculate glucose from real signal
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues.slice(-150));
 
-    return {
+    const result = {
       spo2,
       pressure,
       arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
       lastArrhythmiaData: formattedArrhythmiaResult.lastArrhythmiaData,
       glucose
     };
+    
+    // Store valid result
+    if (spo2 > 0 && bp.systolic > 0 && bp.diastolic > 0) {
+      this.lastValidResult = result;
+    }
+    
+    return result;
   }
   
   /**
@@ -129,26 +137,28 @@ export class VitalSignsProcessor {
    * Reset all processors to initial state
    */
   public reset(): VitalSignsResult | null {
+    const lastResult = this.lastValidResult;
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null;
+    return lastResult;
   }
   
   /**
    * Get last valid results if available
    */
   public getLastValidResults(): VitalSignsResult | null {
-    return null;
+    return this.lastValidResult;
   }
   
   /**
    * Full reset of all components
    */
   public fullReset(): void {
+    this.lastValidResult = null;
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }

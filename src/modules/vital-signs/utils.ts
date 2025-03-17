@@ -1,5 +1,7 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
+ * 
  * Re-export utilities from the central file to avoid duplication
  * and maintain a single source of truth for these functions.
  */
@@ -11,11 +13,6 @@ export {
   calculateAmplitude,
   applySMAFilter
 } from '../../utils/vitalSignsUtils';
-
-/**
- * Module-specific functions for vital signs that aren't shared
- * with other components can go here
- */
 
 /**
  * Calculate Exponential Moving Average (EMA) to smooth signals

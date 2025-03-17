@@ -5,7 +5,6 @@
  * Signal processor for genuine PPG signals
  * Implements validation and filtering techniques for real data only
  */
-import { FilterUtils } from '../signal-processing/FilterUtils';
 import { ProcessorConfig } from './ProcessorConfig';
 
 /**

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE SIMULACION Y MANIPULACION DE DATOS, APLICACION DE USO REFERENCIAL MEDICA
  */
@@ -104,7 +103,9 @@ export function useProcessorMethods(
     signalLogger.logSignal(value, result);
     
     // Store the last valid result
-    setLastValidResults(result);
+    if (result.spo2 > 0 && result.pressure !== "--/--") {
+      setLastValidResults(result);
+    }
     
     return result;
   }, [addArrhythmiaWindow, signalLogger, signalQualityMonitor, setLastValidResults]);
@@ -118,10 +119,17 @@ export function useProcessorMethods(
     }
     
     try {
-      processorRef.current.reset();
+      // Get last valid results before reset
+      const lastValid = processorRef.current.reset();
+      
       arrhythmiaProcessorRef.current.reset();
       resetArrhythmiaWindows();
-      setLastValidResults(null);
+      
+      // Only update lastValidResults if we have valid results to keep
+      if (lastValid) {
+        setLastValidResults(lastValid);
+      }
+      
       lastArrhythmiaTimeRef.current = 0;
       signalQualityMonitor.reset();
       
