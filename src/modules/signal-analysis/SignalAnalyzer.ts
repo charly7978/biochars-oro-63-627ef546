@@ -33,12 +33,7 @@ export class SignalAnalyzer {
     return {
       spo2: 0,
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      arrhythmiaStatus: "--"
     };
   }
   

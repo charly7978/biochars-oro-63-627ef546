@@ -13,13 +13,6 @@ export class FilterUtils {
   }
   
   /**
-   * Apply Exponential Moving Average filter
-   */
-  public static applyEMAFilter(value: number, previousValue: number, alpha: number): number {
-    return alpha * value + (1 - alpha) * previousValue;
-  }
-  
-  /**
    * Calculate AC component (peak-to-peak amplitude)
    */
   public static calculateAC(values: number[]): number {
@@ -36,6 +29,18 @@ export class FilterUtils {
   }
   
   /**
+   * Calculate standard deviation
+   */
+  public static calculateStandardDeviation(values: number[]): number {
+    const n = values.length;
+    if (n === 0) return 0;
+    const mean = values.reduce((a, b) => a + b, 0) / n;
+    const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+    const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
+    return Math.sqrt(avgSqDiff);
+  }
+  
+  /**
    * Calculate signal variance
    */
   public static calculateVariance(values: number[]): number {
@@ -43,35 +48,6 @@ export class FilterUtils {
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
     const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
     return squaredDiffs.reduce((a, b) => a + b, 0) / values.length;
-  }
-  
-  /**
-   * Calculate standard deviation
-   */
-  public static calculateStandardDeviation(values: number[]): number {
-    return Math.sqrt(this.calculateVariance(values));
-  }
-  
-  /**
-   * Find peaks in signal data
-   */
-  public static findPeaks(values: number[], threshold: number = 0.3): number[] {
-    const peaks: number[] = [];
-    
-    for (let i = 2; i < values.length - 2; i++) {
-      const v = values[i];
-      if (
-        v > values[i - 1] &&
-        v > values[i - 2] &&
-        v > values[i + 1] &&
-        v > values[i + 2] &&
-        v > threshold
-      ) {
-        peaks.push(i);
-      }
-    }
-    
-    return peaks;
   }
   
   /**

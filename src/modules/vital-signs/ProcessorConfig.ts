@@ -6,19 +6,20 @@
 export const ProcessorConfig = {
   // Signal processing configuration
   WINDOW_SIZE: 300,
-  SPO2_CALIBRATION_FACTOR: 1.0, // No artificial calibration
+  SPO2_CALIBRATION_FACTOR: 1.0,
   PERFUSION_INDEX_THRESHOLD: 0.05,
   SPO2_WINDOW: 8,
-  SMA_WINDOW: 8,
-  RR_WINDOW_SIZE: 15,
+  SMA_WINDOW: 3,
   
   // Arrhythmia detection configuration
-  RMSSD_THRESHOLD: 22,
-  ARRHYTHMIA_LEARNING_PERIOD: 1200,
-  PEAK_THRESHOLD: 0.45,
+  RR_WINDOW_SIZE: 5,
+  RMSSD_THRESHOLD: 25,
+  ARRHYTHMIA_LEARNING_PERIOD: 3000,
+  PEAK_THRESHOLD: 0.3,
   
   // Signal quality thresholds
-  WEAK_SIGNAL_THRESHOLD: 0.10,
+  MIN_SIGNAL_AMPLITUDE: 0.01,
+  MIN_PPG_VALUES: 15,
   
   // Buffer sizes
   SPO2_BUFFER_SIZE: 10,
