@@ -599,7 +599,7 @@ const PPGSignalMeter = memo(({
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
+    <div className="fixed inset-0 bg-white/90 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
