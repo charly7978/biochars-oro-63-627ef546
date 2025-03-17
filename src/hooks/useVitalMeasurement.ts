@@ -139,21 +139,11 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       const bpm = Math.round(rawBPM);
       const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
       
-      // Intentar obtener SpO2 directamente del procesador
+      // Obtener SpO2 directamente del procesador - SIN NINGÚN VALOR INICIAL
       let spo2Value = processor.getLastSpO2 ? processor.getLastSpO2() : 0;
-      if (!spo2Value) {
-        // Si no hay valor, generar uno inicial realista
-        spo2Value = Math.max(94, Math.min(99, Math.round(96 + Math.random() * 3)));
-      }
       
-      // Intentar obtener presión arterial directamente del procesador
-      let pressureValue = processor.getLastBloodPressure ? processor.getLastBloodPressure() : "";
-      if (!pressureValue) {
-        // Si no hay valor, generar uno inicial realista
-        const systolic = Math.round(115 + Math.random() * 15);
-        const diastolic = Math.round(75 + Math.random() * 10);
-        pressureValue = `${systolic}/${diastolic}`;
-      }
+      // Obtener presión arterial directamente del procesador - SIN NINGÚN VALOR INICIAL
+      let pressureValue = processor.getLastBloodPressure ? processor.getLastBloodPressure() : "--/--";
       
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
@@ -181,8 +171,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         // Update measurements - mantener los valores anteriores si son válidos
         setMeasurements(prev => ({
           heartRate: bpm,
-          spo2: prev.spo2 > 0 ? prev.spo2 : spo2Value,
-          pressure: prev.pressure !== "--/--" ? prev.pressure : pressureValue,
+          spo2: spo2Value > 0 ? spo2Value : prev.spo2, 
+          pressure: pressureValue !== "--/--" ? pressureValue : prev.pressure,
           arrhythmiaCount: arrhythmias
         }));
       } else {
