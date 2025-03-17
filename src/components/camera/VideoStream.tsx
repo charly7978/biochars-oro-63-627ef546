@@ -10,28 +10,39 @@ const VideoStream = ({ stream }: VideoStreamProps) => {
 
   useEffect(() => {
     if (stream && videoRef.current) {
-      // First remove any existing srcObject to prevent InvalidStateError
+      // First make sure any existing srcObject is removed to prevent InvalidStateError
       if (videoRef.current.srcObject) {
         videoRef.current.srcObject = null;
       }
       
       try {
-        // Set the stream and play
-        videoRef.current.srcObject = stream;
-        
-        videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
-            videoRef.current.play().catch(err => {
-              console.error("Error playing video:", err);
-            });
+        // Set a short timeout to ensure clean state before setting new source
+        setTimeout(() => {
+          if (videoRef.current && stream.active) {
+            videoRef.current.srcObject = stream;
+            
+            videoRef.current.onloadedmetadata = () => {
+              if (videoRef.current) {
+                videoRef.current.play().catch(err => {
+                  console.error("Error playing video:", err);
+                });
+              }
+            };
           }
-        };
+        }, 100);
       } catch (videoErr) {
         console.error("VideoStream: Error setting video source:", videoErr);
       }
     } else if (!stream && videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    
+    // Cleanup function
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
   }, [stream]);
 
   return (

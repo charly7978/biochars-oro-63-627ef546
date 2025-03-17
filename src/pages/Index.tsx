@@ -29,6 +29,7 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [vitalCalibrationComplete, setVitalCalibrationComplete] = useState(false);
   
   const measurementTimerRef = useRef<number | null>(null);
   const calibrationTimerRef = useRef<number | null>(null);
@@ -99,7 +100,16 @@ const Index = () => {
             if (vitals.calibration) {
               const progress = vitals.calibration.progress.heartRate * 100;
               setCalibrationProgress(progress);
-              setCalibrationComplete(progress >= 100);
+              
+              if (progress >= 100) {
+                setCalibrationComplete(true);
+                
+                if (!vitalCalibrationComplete) {
+                  setTimeout(() => {
+                    setVitalCalibrationComplete(true);
+                  }, 2000);
+                }
+              }
             }
           }
         }
@@ -158,6 +168,7 @@ const Index = () => {
       setElapsedTime(0);
       setCalibrationComplete(false);
       setCalibrationProgress(0);
+      setVitalCalibrationComplete(false);
       
       startProcessing();
       startHeartBeatMonitoring();
@@ -199,6 +210,7 @@ const Index = () => {
     setElapsedTime(0);
     setCalibrationComplete(false);
     setCalibrationProgress(0);
+    setVitalCalibrationComplete(false);
     setSignalQuality(0);
     consecutiveFingerDetectionsRef.current = 0;
     fingerDetectedRef.current = false;
@@ -227,6 +239,7 @@ const Index = () => {
     setElapsedTime(0);
     setCalibrationComplete(false);
     setCalibrationProgress(0);
+    setVitalCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
@@ -378,6 +391,8 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={fingerDetectedRef.current}
             signalQuality={signalQuality}
+            calibrationProgress={calibrationProgress}
+            isCalibrating={isMonitoring && !calibrationComplete}
           />
         </div>
 
@@ -416,27 +431,31 @@ const Index = () => {
                 value={heartRate || "--"}
                 unit="BPM"
                 highlighted={showResults || calibrationComplete}
-                calibrationProgress={vitalSigns.calibration?.progress.heartRate}
+                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
+                  vitalSigns.calibration.progress.heartRate * 100 : undefined}
               />
               <VitalSign 
                 label="SPO2"
                 value={vitalSigns.spo2 || "--"}
                 unit="%"
                 highlighted={showResults || calibrationComplete}
-                calibrationProgress={vitalSigns.calibration?.progress.spo2}
+                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
+                  vitalSigns.calibration.progress.spo2 * 100 : undefined}
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
                 value={vitalSigns.pressure}
                 unit="mmHg"
                 highlighted={showResults || calibrationComplete}
-                calibrationProgress={vitalSigns.calibration?.progress.pressure}
+                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
+                  vitalSigns.calibration.progress.pressure * 100 : undefined}
               />
               <VitalSign 
                 label="ARRITMIAS"
                 value={vitalSigns.arrhythmiaStatus}
                 highlighted={showResults || calibrationComplete}
-                calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
+                calibrationProgress={!vitalCalibrationComplete && vitalSigns.calibration ? 
+                  vitalSigns.calibration.progress.arrhythmia * 100 : undefined}
               />
               <VitalSign 
                 label="GLUCOSA"
@@ -476,3 +495,4 @@ const Index = () => {
 };
 
 export default Index;
+
