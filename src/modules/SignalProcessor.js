@@ -1,6 +1,5 @@
-
-import { ProcessedSignal, ProcessingError, SignalProcessor } from './src/types/signal';
-import { SignalAmplifier } from './src/modules/SignalAmplifier';
+import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
+import { SignalAmplifier } from './SignalAmplifier';
 
 class KalmanFilter {
   private R: number = 0.008; // Noise reduction factor

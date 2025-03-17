@@ -11,6 +11,11 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex: number;
+  spectrumData?: {
+    frequencies: number[];
+    amplitudes: number[];
+    dominantFrequency: number;
+  };
 }
 
 export interface ProcessingError {

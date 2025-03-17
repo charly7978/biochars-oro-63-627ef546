@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -132,7 +131,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   /**
    * Calibra el procesador para mejores resultados
    */
-  async calibrate(): Promise<boolean> {
+  async calibrate(): Promise<void> {
     try {
       console.log("PPGSignalProcessor: Iniciando calibración");
       await this.initialize();
@@ -150,11 +149,9 @@ export class PPGSignalProcessor implements SignalProcessor {
       };
 
       console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
-      return true;
     } catch (error) {
       console.error("PPGSignalProcessor: Error de calibración", error);
       this.handleError("CALIBRATION_ERROR", "Error durante la calibración");
-      return false;
     }
   }
 
@@ -221,13 +218,12 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Calcular datos espectrales
       const spectrumData = this.calculateSpectrumData();
 
-      // Crear señal procesada
+      // Create processed signal without fingerDetected property
       const processedSignal: ProcessedSignal = {
-        timestamp: now,
+        timestamp: Date.now(),
         rawValue: redValue,
         filteredValue: filtered,
         quality: quality,
-        fingerDetected: isFingerDetected,
         roi: this.detectROI(redValue),
         perfusionIndex,
         spectrumData
