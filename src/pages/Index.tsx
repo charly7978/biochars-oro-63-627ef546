@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -64,13 +63,11 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal if we have finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       if (lastSignal.fingerDetected) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Only update heart rate if we have a value
         if (heartBeatResult.bpm > 0) {
           setHeartRate(heartBeatResult.bpm);
           
@@ -82,11 +79,9 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
-        // When no finger detected, update signal quality but not values
         setSignalQuality(lastSignal.quality);
       }
     } else if (!isMonitoring) {
-      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
@@ -99,7 +94,7 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0); // Reset heart rate explicitly
+      setHeartRate(0);
       
       startProcessing();
       startHeartBeatMonitoring();
@@ -249,7 +244,6 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              isMonitoring={isMonitoring}
             />
           </div>
 
