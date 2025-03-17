@@ -4,41 +4,40 @@
  */
 
 /**
- * Re-export utilities from the central file to avoid duplication
- * and maintain a single source of truth for these functions.
+ * Re-export utilities from individual files to maintain compatibility
  * All functions process only real data without simulation.
  */
+
+// Re-export signal processing utilities
 export {
   calculateAC,
   calculateDC,
   calculateStandardDeviation,
+  calculateEMA,
+  normalizeValue
+} from './utils/signal-processing-utils';
+
+// Re-export peak detection utilities
+export {
   findPeaksAndValleys,
-  calculateAmplitude,
+  calculateAmplitude
+} from './utils/peak-detection-utils';
+
+// Re-export filter utilities
+export {
   applySMAFilter,
   amplifySignal
+} from './utils/filter-utils';
+
+// Re-export perfusion utilities
+export {
+  calculatePerfusionIndex
+} from './utils/perfusion-utils';
+
+// Re-export from core utils
+export {
+  calculateAC as getAC,
+  calculateDC as getDC,
+  calculateStandardDeviation as getStandardDeviation,
+  amplifySignal as getAmplifiedSignal
 } from '../../utils/vitalSignsUtils';
-
-/**
- * Calculate Exponential Moving Average (EMA) to smooth real signals
- * No simulation is used
- */
-export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
-  return alpha * currentValue + (1 - alpha) * prevEMA;
-}
-
-/**
- * Normalize a real value within a specific range
- * No simulation is used
- */
-export function normalizeValue(value: number, min: number, max: number): number {
-  return (value - min) / (max - min);
-}
-
-/**
- * Calculate perfusion index based on real AC and DC components
- * No simulation is used
- */
-export function calculatePerfusionIndex(ac: number, dc: number): number {
-  if (dc === 0) return 0;
-  return ac / dc;
-}
