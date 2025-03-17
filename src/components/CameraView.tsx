@@ -28,6 +28,7 @@ const CameraView = ({
   const permissionRequestedRef = useRef<boolean>(false);
   const permissionRequestInProgressRef = useRef<boolean>(false);
   const cameraStartAttemptedRef = useRef<boolean>(false);
+  const hasCheckedPermissionsRef = useRef<boolean>(false);
 
   // Request permissions explicitly before accessing the camera
   const requestCameraPermission = useCallback(async (): Promise<boolean> => {
@@ -42,23 +43,60 @@ const CameraView = ({
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError("Tu navegador no soporta acceso a la cámara");
       permissionRequestInProgressRef.current = false;
+      toast.error("Tu navegador no soporta acceso a la cámara");
       return false;
     }
 
     try {
       console.log("CameraView: Requesting camera permission explicitly");
       
-      // Try to get a minimal video stream just to trigger the permission dialog
-      const permissionStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }, 
+      // Check if we can access permissions API
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
+          console.log("CameraView: Permission status:", permissionStatus.state);
+          
+          if (permissionStatus.state === 'denied') {
+            setCameraError("El permiso de cámara fue denegado. Por favor, habilítalo en la configuración de tu navegador.");
+            toast.error("Permiso de cámara denegado");
+            permissionRequestInProgressRef.current = false;
+            return false;
+          }
+        } catch (permErr) {
+          console.log("CameraView: Error checking permission status:", permErr);
+          // Continue even if permissions API fails
+        }
+      }
+      
+      // Try to get a minimal video stream with just to trigger the permission dialog
+      const permissionConstraints = { 
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 320 },
+          height: { ideal: 240 }
+        }, 
         audio: false 
-      });
+      };
+      
+      console.log("CameraView: Requesting camera with minimal constraints:", JSON.stringify(permissionConstraints));
+      
+      // Set a timeout for permission request
+      const permissionTimeout = setTimeout(() => {
+        console.log("CameraView: Permission request timed out");
+        permissionRequestInProgressRef.current = false;
+        setCameraError("Tiempo de espera de permiso agotado. Por favor intente de nuevo.");
+        toast.error("Tiempo de espera de permiso agotado");
+      }, 10000);
+      
+      const permissionStream = await navigator.mediaDevices.getUserMedia(permissionConstraints);
+      clearTimeout(permissionTimeout);
       
       console.log("CameraView: Permission granted, obtained test stream");
       
       // Stop the permission test stream immediately
       permissionStream.getTracks().forEach(track => track.stop());
       permissionRequestedRef.current = true;
+      hasCheckedPermissionsRef.current = true;
       permissionRequestInProgressRef.current = false;
       return true;
     } catch (err) {
@@ -140,7 +178,7 @@ const CameraView = ({
     setCameraError(null);
     console.log("CameraView: Starting camera with optimized settings");
     
-    // Request permissions first if not already requested
+    // Request permissions first if not already granted
     if (!permissionRequestedRef.current) {
       const permissionGranted = await requestCameraPermission();
       if (!permissionGranted) {
@@ -175,26 +213,17 @@ const CameraView = ({
         {
           video: {
             facingMode: 'environment',
-            width: { ideal: 640 },
-            height: { ideal: 480 }
-          },
-          audio: false
-        },
-        // Second try: Environment camera with lower resolution
-        {
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 320 },
+            width: { ideal: 320 }, // Lower resolution for better performance
             height: { ideal: 240 }
           },
           audio: false
         },
-        // Third try: User camera (front)
+        // Second try: User camera (front)
         {
           video: {
             facingMode: 'user',
-            width: { ideal: 640 },
-            height: { ideal: 480 }
+            width: { ideal: 320 },
+            height: { ideal: 240 }
           },
           audio: false
         },
@@ -236,24 +265,30 @@ const CameraView = ({
       setStream(newStream);
       streamRef.current = newStream;
       
-      const videoTrack = newStream.getVideoTracks()[0];
+      // Validate that we have video tracks
+      const videoTracks = newStream.getVideoTracks();
+      if (!videoTracks || videoTracks.length === 0) {
+        throw new Error("No se encontró ninguna pista de video");
+      }
+
+      const videoTrack = videoTracks[0];
       if (!videoTrack) {
         throw new Error("No se encontró ninguna pista de video");
       }
 
-      console.log("CameraView: Got video track:", videoTrack.label);
+      console.log("CameraView: Got video track:", videoTrack.label, "Ready state:", videoTrack.readyState);
       
       // Create ImageCapture once and store in ref - with error checking
-      try {
-        if (videoTrack.readyState === 'live') {
+      if (videoTrack.readyState === 'live') {
+        try {
           activeImageCaptureRef.current = new ImageCapture(videoTrack);
           console.log("CameraView: ImageCapture created successfully");
-        } else {
-          console.warn("CameraView: Video track not in live state, cannot create ImageCapture");
+        } catch (imageCaptureErr) {
+          console.error("CameraView: Failed to create ImageCapture:", imageCaptureErr);
+          // Continue even if ImageCapture fails
         }
-      } catch (imageCaptureErr) {
-        console.error("CameraView: Failed to create ImageCapture:", imageCaptureErr);
-        // Continue even if ImageCapture fails
+      } else {
+        console.warn("CameraView: Video track not in live state, cannot create ImageCapture");
       }
       
       if (videoRef.current) {
@@ -331,6 +366,7 @@ const CameraView = ({
       // Reset the permission flag to try requesting permission again
       permissionRequestedRef.current = false;
       cameraStartAttemptedRef.current = false;
+      hasCheckedPermissionsRef.current = false;
       
       setTimeout(startCamera, 1000);
     } else {
@@ -345,6 +381,10 @@ const CameraView = ({
     
     if (isMonitoring && !stream) {
       console.log("CameraView: Starting camera because isMonitoring=true");
+      // Reset flags to try fresh
+      cameraStartAttemptedRef.current = false;
+      permissionRequestedRef.current = false;
+      hasCheckedPermissionsRef.current = false;
       startCamera();
     } else if (!isMonitoring && stream) {
       console.log("CameraView: Stopping camera because isMonitoring=false");
@@ -383,6 +423,7 @@ const CameraView = ({
                 setCameraError(null);
                 permissionRequestedRef.current = false; // Reset permission flag to try again
                 cameraStartAttemptedRef.current = false; // Reset start attempt flag
+                hasCheckedPermissionsRef.current = false; // Reset permission check flag
                 startCamera();
               }}
               className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
