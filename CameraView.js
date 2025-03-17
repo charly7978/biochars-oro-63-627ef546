@@ -11,101 +11,214 @@ const CameraView = ({
 }) => {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
+  const streamRef = useRef(null); // Add ref to track stream across renders
   const [brightnessSamples, setBrightnessSamples] = useState([]);
   const [avgBrightness, setAvgBrightness] = useState(0);
   const brightnessSampleLimit = 10;
+  const retryAttemptsRef = useRef(0);
+  const maxRetryAttempts = 5;
+  const torchEnabledRef = useRef(false);
 
+  // Enhanced camera stopping with explicit error handling
   const stopCamera = async () => {
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
-        if (videoRef.current) {
-          videoRef.current.srcObject = null;
+    console.log("CameraView: Stopping camera");
+    try {
+      if (streamRef.current) {
+        console.log("CameraView: Stopping stream tracks");
+        
+        const tracks = streamRef.current.getTracks();
+        for (const track of tracks) {
+          try {
+            if (track.readyState === 'live') {
+              console.log(`CameraView: Stopping track: ${track.kind}`);
+              
+              // Disable torch before stopping if available
+              if (track.kind === 'video' && torchEnabledRef.current) {
+                try {
+                  console.log("CameraView: Disabling torch before stopping track");
+                  await track.applyConstraints({
+                    advanced: [{ torch: false }]
+                  });
+                  torchEnabledRef.current = false;
+                } catch (torchErr) {
+                  console.log("CameraView: Error disabling torch:", torchErr);
+                }
+              }
+              
+              track.stop();
+            }
+          } catch (trackErr) {
+            console.error(`CameraView: Error stopping track ${track.kind}:`, trackErr);
+          }
         }
-      });
+        
+        streamRef.current = null;
+      }
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      
       setStream(null);
+      retryAttemptsRef.current = 0;
+    } catch (err) {
+      console.error("CameraView: Error in stopCamera:", err);
     }
   };
 
+  // Enhanced camera startup with platform-specific optimizations
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
 
+      console.log("CameraView: Attempting to start camera");
       const isAndroid = /android/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isWindows = /windows/i.test(navigator.userAgent);
 
-      const baseVideoConstraints = {
+      // Platform-specific configuration
+      let baseVideoConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
+        width: { ideal: 640 }, // Lower default resolution
         height: { ideal: 480 }
       };
 
       if (isAndroid) {
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 25 },
-          resizeMode: 'crop-and-scale'
-        });
+        baseVideoConstraints = {
+          ...baseVideoConstraints,
+          width: { ideal: 640 }, // Lower resolution for Android
+          height: { ideal: 480 },
+          frameRate: { ideal: 15 } // Lower framerate for Android
+        };
+        console.log("CameraView: Using Android configuration");
+      } else if (isIOS) {
+        baseVideoConstraints = {
+          ...baseVideoConstraints,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        };
+        console.log("CameraView: Using iOS configuration");
+      } else if (isWindows) {
+        baseVideoConstraints = {
+          ...baseVideoConstraints,
+          width: { ideal: 640 }, // Lower resolution for Windows
+          height: { ideal: 480 },
+          frameRate: { ideal: 15 } // Lower framerate for Windows
+        };
+        console.log("CameraView: Using Windows configuration");
       }
 
       const constraints = {
-        video: baseVideoConstraints
+        video: baseVideoConstraints,
+        audio: false
       };
 
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const videoTrack = newStream.getVideoTracks()[0];
-
-      if (videoTrack && isAndroid) {
-        try {
-          const capabilities = videoTrack.getCapabilities();
-          const advancedConstraints = [];
-          
-          if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
-          }
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-
-          if (advancedConstraints.length > 0) {
-            await videoTrack.applyConstraints({
-              advanced: advancedConstraints
-            });
-          }
-
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
-          }
-        } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
-        }
-      }
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
-        if (isAndroid) {
-          videoRef.current.style.willChange = 'transform';
-          videoRef.current.style.transform = 'translateZ(0)';
-        }
-      }
-
+      console.log("CameraView: Requesting camera with constraints:", JSON.stringify(constraints));
+      
+      // Try to get the stream with a timeout
+      const streamPromise = navigator.mediaDevices.getUserMedia(constraints);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Camera request timed out")), 10000);
+      });
+      
+      const newStream = await Promise.race([streamPromise, timeoutPromise]);
+      console.log("CameraView: Camera access granted");
+      
+      // Store in both state and ref for consistent access
       setStream(newStream);
+      streamRef.current = newStream;
+      
+      const videoTrack = newStream.getVideoTracks()[0];
+      if (!videoTrack) {
+        throw new Error("No video track available");
+      }
+
+      console.log("CameraView: Got video track:", videoTrack.label);
+      
+      // Apply platform-specific optimizations
+      try {
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+          
+          // Apply GPU acceleration and other optimizations
+          videoRef.current.style.transform = 'translateZ(0)';
+          videoRef.current.style.backfaceVisibility = 'hidden';
+          videoRef.current.style.willChange = 'transform';
+        }
+        
+        // Get track capabilities for optimization
+        const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+        console.log("CameraView: Track capabilities:", capabilities);
+        
+        // Enable torch for better visibility
+        if (capabilities.torch) {
+          console.log("CameraView: Enabling torch");
+          try {
+            await videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            });
+            torchEnabledRef.current = true;
+            console.log("CameraView: Torch enabled successfully");
+          } catch (torchErr) {
+            console.log("CameraView: Error enabling torch:", torchErr);
+          }
+        } else {
+          console.log("CameraView: Torch not available on this device");
+        }
+        
+        // Try to optimize focus and exposure
+        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+          try {
+            await videoTrack.applyConstraints({
+              advanced: [{ focusMode: 'continuous' }]
+            });
+            console.log("CameraView: Continuous focus applied");
+          } catch (focusErr) {
+            console.log("CameraView: Error setting focus mode:", focusErr);
+          }
+        }
+        
+        if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
+          try {
+            await videoTrack.applyConstraints({
+              advanced: [{ exposureMode: 'continuous' }]
+            });
+            console.log("CameraView: Continuous exposure applied");
+          } catch (expErr) {
+            console.log("CameraView: Error setting exposure mode:", expErr);
+          }
+        }
+      } catch (optErr) {
+        console.error("CameraView: Error applying optimizations:", optErr);
+        // Continue even if optimizations fail
+      }
       
       if (onStreamReady) {
+        console.log("CameraView: Calling onStreamReady callback");
         onStreamReady(newStream);
       }
+      
+      retryAttemptsRef.current = 0;
+      
     } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
+      console.error("CameraView: Error starting camera:", err);
+      
+      // Implement retry mechanism
+      retryAttemptsRef.current++;
+      if (retryAttemptsRef.current <= maxRetryAttempts) {
+        console.log(`CameraView: Retrying camera start (${retryAttemptsRef.current}/${maxRetryAttempts})...`);
+        setTimeout(startCamera, 1000);
+      } else {
+        console.error(`CameraView: Failed to start camera after ${maxRetryAttempts} attempts`);
+      }
     }
   };
 
   // Monitor camera brightness to help with finger detection verification
   useEffect(() => {
-    if (!stream || !videoRef.current || !isMonitoring) return;
+    if (!streamRef.current || !videoRef.current || !isMonitoring) return;
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -150,12 +263,19 @@ const CameraView = ({
                             Math.max(1, brightnessSamples.length);
         setAvgBrightness(avgBrightness);
         
-        console.log("CameraView: Brightness check", { 
-          currentBrightness: brightness,
-          avgBrightness,
-          fingerDetected: isFingerDetected,
-          signalQuality
-        });
+        // Ensure torch stays on
+        if (isMonitoring && streamRef.current) {
+          const videoTrack = streamRef.current.getVideoTracks()[0];
+          if (videoTrack && videoTrack.getCapabilities?.()?.torch && !torchEnabledRef.current) {
+            videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            }).then(() => {
+              torchEnabledRef.current = true;
+            }).catch(err => {
+              console.log("Error re-enabling torch:", err);
+            });
+          }
+        }
       } catch (err) {
         console.error("Error checking brightness:", err);
       }
@@ -163,14 +283,19 @@ const CameraView = ({
 
     const interval = setInterval(checkBrightness, 500);
     return () => clearInterval(interval);
-  }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples]);
+  }, [streamRef.current, isMonitoring, isFingerDetected, signalQuality, brightnessSamples]);
 
+  // Start/stop camera based on monitoring state
   useEffect(() => {
+    console.log("CameraView: isMonitoring changed:", isMonitoring);
+    
     if (isMonitoring && !stream) {
       startCamera();
     } else if (!isMonitoring && stream) {
       stopCamera();
     }
+    
+    // Cleanup on unmount
     return () => {
       console.log("CameraView component unmounting, stopping camera");
       stopCamera();
@@ -178,9 +303,8 @@ const CameraView = ({
   }, [isMonitoring]);
 
   // Determine actual finger status using both provided detection and brightness
-  const actualFingerStatus = isFingerDetected && (
-    avgBrightness < 60 || // Dark means finger is likely present
-    signalQuality > 50    // Good quality signal confirms finger
+  const actualFingerStatus = isFingerDetected || (
+    avgBrightness < 60 // Dark means finger is likely present
   );
 
   return (
