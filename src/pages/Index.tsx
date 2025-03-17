@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -9,7 +8,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { toast } from "sonner";
-import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { VitalSignsResult } from "@/types/vital-signs";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -56,7 +55,9 @@ const Index = () => {
 
   const enterFullScreen = async () => {
     try {
-      await document.documentElement.requestFullscreen();
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
     }
@@ -73,10 +74,8 @@ const Index = () => {
     };
   }, []);
 
-  // Process signal only if finger is detected consistently
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Process finger detection
       if (lastSignal.fingerDetected) {
         consecutiveFingerDetectionsRef.current++;
         if (consecutiveFingerDetectionsRef.current >= 3) {
@@ -87,20 +86,16 @@ const Index = () => {
         fingerDetectedRef.current = false;
       }
       
-      // Only process if we have a good quality signal and consistent finger detection
       if (fingerDetectedRef.current && lastSignal.quality >= 35) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Only update heart rate with sufficient confidence
         if (heartBeatResult.confidence > 0.3) {
           setHeartRate(heartBeatResult.bpm);
           
-          // Process vital signs through the calibration system
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
             setVitalSigns(vitals);
             
-            // Check for calibration progress/completion
             if (vitals.calibration) {
               const progress = vitals.calibration.progress.heartRate * 100;
               setCalibrationProgress(progress);
@@ -111,29 +106,24 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
-        // Update signal quality regardless
         setSignalQuality(lastSignal.quality);
       }
     } else if (!isMonitoring) {
-      // Reset values when not monitoring
       setSignalQuality(0);
       consecutiveFingerDetectionsRef.current = 0;
       fingerDetectedRef.current = false;
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
-  // When calibration completes, start the measurement timer
   useEffect(() => {
     if (calibrationComplete && isMonitoring && !measurementTimerRef.current) {
       console.log("Calibration complete, starting measurement timer");
       
-      // Cancel calibration timer if it exists
       if (calibrationTimerRef.current) {
         clearInterval(calibrationTimerRef.current);
         calibrationTimerRef.current = null;
       }
       
-      // Start the measurement timer
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
@@ -146,7 +136,6 @@ const Index = () => {
         });
       }, 1000);
       
-      // Notify the user
       toast.success("Calibración completa. Comenzando medición", {
         duration: 3000
       });
@@ -159,21 +148,27 @@ const Index = () => {
       return;
     } 
     
-    enterFullScreen();
-    setIsMonitoring(true);
-    setIsCameraOn(true);
-    setShowResults(false);
-    setHeartRate(0);
-    setElapsedTime(0);
-    setCalibrationComplete(false);
-    setCalibrationProgress(0);
-    
-    startProcessing();
-    startHeartBeatMonitoring();
-    
-    console.log("Abriendo cámara e iniciando calibración de 8 segundos");
-    toast.info("Ubique su dedo sobre el lente para iniciar calibración", {
-      duration: 5000
+    enterFullScreen().then(() => {
+      console.log("Starting monitoring process");
+      
+      setIsMonitoring(true);
+      setIsCameraOn(true);
+      setShowResults(false);
+      setHeartRate(0);
+      setElapsedTime(0);
+      setCalibrationComplete(false);
+      setCalibrationProgress(0);
+      
+      startProcessing();
+      startHeartBeatMonitoring();
+      
+      console.log("Camera opened, starting 8-second calibration");
+      toast.info("Ubique su dedo sobre el lente para iniciar calibración", {
+        duration: 5000
+      });
+    }).catch(err => {
+      console.error("Error starting monitoring:", err);
+      toast.error("Error al iniciar. Por favor intente de nuevo.");
     });
   }, [isMonitoring, startProcessing, startHeartBeatMonitoring]);
 
@@ -195,14 +190,12 @@ const Index = () => {
       calibrationTimerRef.current = null;
     }
     
-    // Show last valid results
     const savedResults = resetVitalSigns();
     if (savedResults) {
       setVitalSigns(savedResults);
       setShowResults(true);
     }
     
-    // Reset state
     setElapsedTime(0);
     setCalibrationComplete(false);
     setCalibrationProgress(0);
@@ -253,76 +246,92 @@ const Index = () => {
   const handleStreamReady = useCallback((stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
+    console.log("CameraView: Stream ready callback received");
     
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    }
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+        console.error("No video track found in stream");
+        return;
+      }
       
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
+      let imageCapture: ImageCapture;
+      try {
+        imageCapture = new ImageCapture(videoTrack);
+      } catch (err) {
+        console.error("Error creating ImageCapture:", err);
+        return;
+      }
       
-      if (timeSinceLastProcess >= targetFrameInterval) {
-        try {
-          const frame = await imageCapture.grabFrame();
-          
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
-          
-          frameCount++;
-          lastProcessTime = now;
-          
-          if (now - lastFpsUpdateTime > 1000) {
-            const processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+      if ('getCapabilities' in videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Enabling torch for better PPG signal");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error enabling torch:", err));
+      }
+      
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+      if (!tempCtx) {
+        console.error("Could not get 2D context");
+        return;
+      }
+      
+      let lastProcessTime = 0;
+      const targetFrameInterval = 1000/30;
+      let frameCount = 0;
+      let lastFpsUpdateTime = Date.now();
+      
+      const processImage = async () => {
+        if (!isMonitoring) return;
+        
+        const now = Date.now();
+        const timeSinceLastProcess = now - lastProcessTime;
+        
+        if (timeSinceLastProcess >= targetFrameInterval) {
+          try {
+            const frame = await imageCapture.grabFrame();
+            
+            const targetWidth = Math.min(320, frame.width);
+            const targetHeight = Math.min(240, frame.height);
+            
+            tempCanvas.width = targetWidth;
+            tempCanvas.height = targetHeight;
+            
+            tempCtx.drawImage(
+              frame, 
+              0, 0, frame.width, frame.height, 
+              0, 0, targetWidth, targetHeight
+            );
+            
+            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+            processFrame(imageData);
+            
+            frameCount++;
+            lastProcessTime = now;
+            
+            if (now - lastFpsUpdateTime > 1000) {
+              const processingFps = frameCount;
+              frameCount = 0;
+              lastFpsUpdateTime = now;
+              console.log(`Processing performance: ${processingFps} FPS`);
+            }
+          } catch (error) {
+            console.error("Error capturing frame:", error);
           }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
         }
-      }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
-      }
-    };
+        
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
+      };
 
-    processImage();
+      processImage();
+    } catch (err) {
+      console.error("Error in handleStreamReady:", err);
+    }
   }, [isMonitoring, processFrame]);
 
-  // Display the correct status message based on calibration and finger detection
   const getStatusMessage = useCallback(() => {
     if (!isMonitoring) return "";
     if (!fingerDetectedRef.current) return "Ubique su dedo sobre el lente";
