@@ -1,9 +1,8 @@
-
 import { useCallback, useRef, useEffect } from 'react';
 import { useCanvas } from './useCanvas';
 import { useSignalData } from './useSignalData';
 import { useHeartbeatAudio } from './useHeartbeatAudio';
-import { IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS } from './constants';
+import { IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, VERTICAL_SCALE } from './constants';
 
 interface UseSignalRendererProps {
   value: number;
@@ -44,17 +43,14 @@ export function useSignalRenderer({
 
   const { requestBeepForPeak } = useHeartbeatAudio();
 
-  // Initialize buffer on mount
   useEffect(() => {
     initBuffer();
   }, [initBuffer]);
 
-  // Handle arrhythmia state changes
   useEffect(() => {
     updateArrhythmiaState(isArrhythmia);
   }, [isArrhythmia, updateArrhythmiaState]);
 
-  // Handle preserveResults changes
   useEffect(() => {
     if (preserveResults && !isFingerDetected) {
       clearBuffer();
@@ -167,7 +163,6 @@ export function useSignalRenderer({
     peaksRef
   ]);
 
-  // Set up rendering loop
   useEffect(() => {
     renderSignal();
     
