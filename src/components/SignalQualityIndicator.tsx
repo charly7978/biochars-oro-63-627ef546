@@ -20,9 +20,16 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [suspiciousPattern, setSuspiciousPattern] = useState(false);
   const [falsePositiveDetected, setFalsePositiveDetected] = useState(false);
   
-  // Constantes de configuración - específicas para mediciones reales
+  // Constantes para mejor detección de calidad desde signos vitales
   const historySize = 10;
-  const QUALITY_STABILIZATION_FACTOR = 0.4; // Factor para suavizar cambios en calidad
+  const QUALITY_STABILIZATION_FACTOR = 0.3; // Reducido para actualizaciones más rápidas
+  
+  // Console log para debugging
+  useEffect(() => {
+    console.log("SignalQualityIndicator: Received quality value: ", quality);
+    console.log("SignalQualityIndicator: Current display quality: ", displayQuality);
+    console.log("SignalQualityIndicator: Monitoring status: ", isMonitoring);
+  }, [quality, displayQuality, isMonitoring]);
   
   // Detectar plataforma
   useEffect(() => {
@@ -53,6 +60,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         const allPerfect = last3Values.every(q => q > 95);
         
         if ((allIdentical && quality > 0) || allPerfect) {
+          console.log("SignalQualityIndicator: Suspicious pattern detected");
           setSuspiciousPattern(true);
           setFalsePositiveDetected(true);
           setTimeout(() => {
@@ -99,6 +107,13 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     setDisplayQuality(prev => {
       const delta = (finalQuality - prev) * QUALITY_STABILIZATION_FACTOR;
       return Math.round(prev + delta);
+    });
+
+    console.log("SignalQualityIndicator: Calculated quality metrics", {
+      weightedAverage,
+      finalQuality,
+      suspiciousPattern,
+      historyLength: qualityHistory.length
     });
 
   }, [qualityHistory, isMonitoring, suspiciousPattern]);

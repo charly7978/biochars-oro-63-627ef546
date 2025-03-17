@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
@@ -143,6 +142,19 @@ export const useVitalSignsProcessor = () => {
     let result = processorRef.current.processSignal(value, rrData);
     const currentTime = Date.now();
     
+    // Debug logging to verify signal quality
+    if (processedSignals.current % 20 === 0 || result.signalQuality > 0) {
+      console.log("useVitalSignsProcessor: Vital signs quality metrics", {
+        signalQuality: result.signalQuality || 0,
+        spo2: result.spo2,
+        glucose: result.glucose,
+        lipids: result.lipids,
+        heartRateData: !!rrData,
+        rrIntervals: rrData?.intervals.length || 0,
+        processedSignals: processedSignals.current
+      });
+    }
+    
     // Process arrhythmias if there is enough data and signal is good
     // More strict requirements for valid signal
     if (rrData && 
@@ -178,13 +190,14 @@ export const useVitalSignsProcessor = () => {
       }
     }
     
-    // Log processed signals every 100 frames
-    if (processedSignals.current % 100 === 0) {
+    // Log processed signals at a higher frequency for debugging
+    if (processedSignals.current % 25 === 0) {
       console.log("useVitalSignsProcessor: Processing status", {
         processed: processedSignals.current,
         pressure: result.pressure,
         spo2: result.spo2,
         glucose: result.glucose,
+        lipids: result.lipids,
         hasValidBP: result.pressure !== "--/--",
         timeSinceLastBPUpdate: currentTime - lastBPUpdateRef.current,
         weakSignalCount: consecutiveWeakSignalsRef.current,
