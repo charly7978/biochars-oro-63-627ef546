@@ -1,101 +1,171 @@
 
 /**
- * Specialized processor for arrhythmia detection using RR intervals
+ * Ultra-simple algorithm for arrhythmia detection
+ * Designed to minimize false positives
  */
 export class ArrhythmiaProcessor {
-  private rmssdHistory: number[] = [];
+  // Extremely conservative thresholds
+  private readonly MIN_RR_INTERVALS = 20; // Need lots of data to detect
+  private readonly MIN_INTERVAL_MS = 600; // 100 BPM maximum 
+  private readonly MAX_INTERVAL_MS = 1200; // 50 BPM minimum
+  private readonly MIN_VARIATION_PERCENT = 70; // Extreme variation (70%)
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000; // 20 seconds between arrhythmias
+  
+  // State
+  private rrIntervals: number[] = [];
+  private lastPeakTime: number | null = null;
+  private calibrationTime: number = 20000; // 20 seconds of calibration
+  private isCalibrating = true;
+  private arrhythmiaDetected = false;
+  private arrhythmiaCount = 0;
   private lastArrhythmiaTime: number = 0;
-  private arrhythmiaCounter: number = 0;
+  private startTime: number = Date.now();
   
-  private readonly RR_WINDOW_SIZE = 15;
-  private readonly RMSSD_THRESHOLD = 22;
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1200;
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 3500;
-  
-  constructor() {
-    this.reset();
-  }
-  
+  // Arrhythmia confirmation sequence
+  private consecutiveAbnormalBeats = 0;
+  private readonly CONSECUTIVE_THRESHOLD = 15; // Very high to avoid false positives
+
   /**
-   * Process RR interval data to detect arrhythmias
+   * Process RR data for ultra-conservative arrhythmia detection
    */
-  public processRRData(rrData: { intervals: number[]; lastPeakTime: number | null }): { 
-    arrhythmiaStatus: string; 
+  public processRRData(rrData?: { intervals: number[]; lastPeakTime: number | null }): {
+    arrhythmiaStatus: string;
     lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
-    const now = Date.now();
+    const currentTime = Date.now();
     
-    // Return early if not enough data
-    if (!rrData || !rrData.intervals || rrData.intervals.length < 4) {
-      return { 
-        arrhythmiaStatus: "--", 
-        lastArrhythmiaData: null 
+    // Set calibration period
+    if (this.isCalibrating && currentTime - this.startTime >= this.calibrationTime) {
+      this.isCalibrating = false;
+      console.log("ArrhythmiaProcessor: Calibration completed", {
+        elapsedTime: currentTime - this.startTime,
+        threshold: this.calibrationTime
+      });
+    }
+    
+    // During calibration, just report status
+    if (this.isCalibrating) {
+      return {
+        arrhythmiaStatus: "CALIBRATING...",
+        lastArrhythmiaData: null
       };
     }
     
-    // Filter invalid intervals
-    const validIntervals = rrData.intervals.filter(interval => 
-      interval > 400 && interval < 1500
-    );
-    
-    if (validIntervals.length < 3) {
-      return { 
-        arrhythmiaStatus: "Señal de latido normal", 
-        lastArrhythmiaData: null 
-      };
-    }
-    
-    // Calculate statistics on RR intervals
-    const lastIntervals = validIntervals.slice(-8);
-    const meanRR = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-    
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
-    let sumSquares = 0;
-    for (let i = 1; i < lastIntervals.length; i++) {
-      const diff = lastIntervals[i] - lastIntervals[i-1];
-      sumSquares += diff * diff;
-    }
-    
-    const rmssd = Math.sqrt(sumSquares / (lastIntervals.length - 1));
-    const rrVariation = rmssd / meanRR;
-    
-    // Track RMSSD history
-    this.rmssdHistory.push(rmssd);
-    if (this.rmssdHistory.length > this.RR_WINDOW_SIZE) {
-      this.rmssdHistory.shift();
-    }
-    
-    // Detect arrhythmia based on threshold
-    const hasArrhythmia = rrVariation > 0.25;
-    
-    // Check if we can register a new arrhythmia
-    if (hasArrhythmia && 
-        now - this.lastArrhythmiaTime > this.MIN_TIME_BETWEEN_ARRHYTHMIAS) {
+    // Update RR intervals if there's data
+    if (rrData?.intervals && rrData.intervals.length > 0) {
+      this.rrIntervals = rrData.intervals;
+      this.lastPeakTime = rrData.lastPeakTime;
       
-      this.arrhythmiaCounter++;
-      this.lastArrhythmiaTime = now;
-      
-      return { 
-        arrhythmiaStatus: "ARRHYTHMIA DETECTED", 
-        lastArrhythmiaData: {
-          timestamp: now,
-          rmssd,
-          rrVariation
-        }
-      };
+      // Only proceed if we have enough intervals
+      if (this.rrIntervals.length >= this.MIN_RR_INTERVALS) {
+        this.detectArrhythmia(currentTime);
+      }
     }
+
+    // Build status message
+    const arrhythmiaStatusMessage = 
+      this.arrhythmiaCount > 0 
+        ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
+        : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
-    return { 
-      arrhythmiaStatus: hasArrhythmia ? "Variación de ritmo detectada" : "Señal de latido normal", 
-      lastArrhythmiaData: null 
+    // Additional information only if there's active arrhythmia
+    const lastArrhythmiaData = this.arrhythmiaDetected 
+      ? {
+          timestamp: currentTime,
+          rmssd: 0, // Simplified
+          rrVariation: 0 // Simplified
+        } 
+      : null;
+    
+    return {
+      arrhythmiaStatus: arrhythmiaStatusMessage,
+      lastArrhythmiaData
     };
   }
-  
+
+  /**
+   * Ultra-conservative algorithm for arrhythmia detection
+   * Designed to minimize false positives
+   */
+  private detectArrhythmia(currentTime: number): void {
+    if (this.rrIntervals.length < this.MIN_RR_INTERVALS) return;
+    
+    // Take latest intervals for analysis
+    const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
+    
+    // Filter only valid intervals (within conservative physiological limits)
+    const validIntervals = recentRR.filter(interval => 
+      interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
+    );
+    
+    // If not enough valid intervals, we can't analyze
+    if (validIntervals.length < this.MIN_RR_INTERVALS * 0.8) {
+      this.consecutiveAbnormalBeats = 0;
+      return;
+    }
+    
+    // Calculate average of valid intervals
+    const avgRR = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
+    
+    // Get the last interval
+    const lastRR = validIntervals[validIntervals.length - 1];
+    
+    // Calculate percentage variation
+    const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
+    
+    // Detect premature beat only if variation is extreme
+    const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
+    
+    // Update consecutive anomalies counter
+    if (prematureBeat) {
+      this.consecutiveAbnormalBeats++;
+      
+      // Log detection
+      console.log("ArrhythmiaProcessor: Possible premature beat", {
+        percentageVariation: variation,
+        threshold: this.MIN_VARIATION_PERCENT,
+        consecutive: this.consecutiveAbnormalBeats,
+        avgRR,
+        lastRR,
+        timestamp: currentTime
+      });
+    } else {
+      this.consecutiveAbnormalBeats = 0;
+    }
+    
+    // Check if arrhythmia is confirmed
+    const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
+    const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
+    
+    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia) {
+      this.arrhythmiaCount++;
+      this.arrhythmiaDetected = true;
+      this.lastArrhythmiaTime = currentTime;
+      this.consecutiveAbnormalBeats = 0;
+      
+      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED", {
+        arrhythmiaCount: this.arrhythmiaCount,
+        timeSinceLast: timeSinceLastArrhythmia,
+        timestamp: currentTime
+      });
+    }
+  }
+
   /**
    * Reset the processor
    */
   public reset(): void {
-    this.rmssdHistory = [];
+    this.rrIntervals = [];
+    this.lastPeakTime = null;
+    this.isCalibrating = true;
+    this.arrhythmiaDetected = false;
+    this.arrhythmiaCount = 0;
     this.lastArrhythmiaTime = 0;
+    this.startTime = Date.now();
+    this.consecutiveAbnormalBeats = 0;
+    
+    console.log("ArrhythmiaProcessor: Processor reset", {
+      timestamp: new Date().toISOString()
+    });
   }
 }
