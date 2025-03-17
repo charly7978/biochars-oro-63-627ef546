@@ -23,22 +23,23 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   // Referencias para evitar bucles de actualización infinitos
   const qualityRef = useRef(quality);
   const displayQualityRef = useRef(displayQuality);
+  const isMonitoringRef = useRef(isMonitoring);
   
   // Constantes para mejor detección de calidad desde signos vitales
   const historySize = 10;
   const QUALITY_STABILIZATION_FACTOR = 0.3; // Reducido para actualizaciones más rápidas
   
-  // Console log para debugging - usando refs para evitar bucles infinitos
+  // Actualizar las referencias para evitar bucles infinitos
   useEffect(() => {
+    qualityRef.current = quality;
+    isMonitoringRef.current = isMonitoring;
+    
     console.log("SignalQualityIndicator: Received quality value: ", quality);
     console.log("SignalQualityIndicator: Current display quality: ", displayQuality);
     console.log("SignalQualityIndicator: Monitoring status: ", isMonitoring);
-    
-    // Actualizar las referencias
-    qualityRef.current = quality;
-  }, [quality, displayQuality, isMonitoring]);
+  }, [quality, isMonitoring]);
   
-  // Detectar plataforma
+  // Detectar plataforma - solo se ejecuta una vez
   useEffect(() => {
     const androidDetected = /android/i.test(navigator.userAgent);
     setIsAndroid(androidDetected);
@@ -52,12 +53,15 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
   // Mantener historial de calidad para un promedio más estable
   useEffect(() => {
-    if (isMonitoring) {
+    if (isMonitoringRef.current) {
       // Actualizar historial de calidad con el valor que viene directamente
       // de las mediciones de los signos vitales
       setQualityHistory(prev => {
-        const newHistory = [...prev, quality];
-        return newHistory.slice(-historySize);
+        const newHistory = [...prev, qualityRef.current];
+        if (newHistory.length > historySize) {
+          return newHistory.slice(-historySize);
+        }
+        return newHistory;
       });
       
       // Detectar patrones sospechosos (valores idénticos consecutivos)
@@ -66,7 +70,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
         const allIdentical = last3Values.every(q => q === last3Values[0]);
         const allPerfect = last3Values.every(q => q > 95);
         
-        if ((allIdentical && quality > 0) || allPerfect) {
+        if ((allIdentical && qualityRef.current > 0) || allPerfect) {
           console.log("SignalQualityIndicator: Suspicious pattern detected");
           setSuspiciousPattern(true);
           setFalsePositiveDetected(true);
@@ -90,7 +94,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
 
   // Calcular calidad ponderada y suavizada para la visualización
   useEffect(() => {
-    if (qualityHistory.length === 0 || !isMonitoring) {
+    if (qualityHistory.length === 0 || !isMonitoringRef.current) {
       setDisplayQuality(0);
       return;
     }
@@ -116,17 +120,13 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
       return Math.round(prev + delta);
     });
     
-    // Actualizar referencia para evitar bucles
-    displayQualityRef.current = displayQuality;
-
     console.log("SignalQualityIndicator: Calculated quality metrics", {
       weightedAverage,
       finalQuality,
       suspiciousPattern,
       historyLength: qualityHistory.length
     });
-
-  }, [qualityHistory, isMonitoring, suspiciousPattern]);
+  }, [qualityHistory, suspiciousPattern]);
 
   /**
    * Obtiene el color basado en la calidad con niveles intermedios más definidos
