@@ -43,14 +43,14 @@ export function updateSignalLog(
     const variance = calculateVariance(recentValues);
     
     // Extremely low variance is a major red flag for false readings (no finger)
-    // Increased threshold to 0.05
-    if (variance < 0.05) {
+    // Increased threshold to 0.5 - MUCH MORE AGGRESSIVE
+    if (variance < 0.5) {
       console.warn("signalLogUtils: Rejected signal with suspiciously low variance (potential false positive)", variance);
       return signalLog;
     }
     
     // Reject implausibly high variance (likely noise, not physiological)
-    if (variance > 100) {
+    if (variance > 50) {  // Reduced from 100 to be more strict
       console.warn("signalLogUtils: Rejected signal with excessively high variance (likely noise)", variance);
       return signalLog;
     }
@@ -65,14 +65,15 @@ export function updateSignalLog(
     const diffVariance = differences.reduce((sum, v) => sum + Math.pow(v - meanDiff, 2), 0) / differences.length;
     
     // If differences are too consistent, could be artificially generated
-    if (diffVariance < 0.01 && meanDiff > 0) {
+    // Made much more strict (0.1 instead of 0.01)
+    if (diffVariance < 0.1 && meanDiff > 0) {
       console.warn("signalLogUtils: Rejected suspiciously uniform signal pattern", { diffVariance, meanDiff });
       return signalLog;
     }
   }
   
   // Only log each X signals to prevent memory issues
-  if (processedSignals % 15 !== 0) { // Reduced frequency for better performance
+  if (processedSignals % 30 !== 0) { // Reduced frequency even more for better performance
     return signalLog;
   }
   
@@ -90,17 +91,17 @@ export function updateSignalLog(
     // Real SpO2 values from PPG typically don't change more than 2-3% per reading
     if (signalLog.length > 0) {
       const lastSpo2 = signalLog[signalLog.length - 1].result.spo2;
-      if (lastSpo2 > 0 && safeResult.spo2 > 0 && Math.abs(safeResult.spo2 - lastSpo2) > 3) {
+      if (lastSpo2 > 0 && safeResult.spo2 > 0 && Math.abs(safeResult.spo2 - lastSpo2) > 2) { // Reduced from 3 to 2
         console.warn("signalLogUtils: Detected physiologically implausible SpO2 change");
         safeResult.spo2 = 0;
       }
     }
     
-    // Suspicious if SpO2 is exactly 98-100% (too perfect, often in simulations)
-    if (safeResult.spo2 >= 98 && safeResult.spo2 <= 100) {
+    // Suspicious if SpO2 is exactly 97-100% (too perfect, often in simulations)
+    if (safeResult.spo2 >= 97 && safeResult.spo2 <= 100) { // Lowered from 98 to 97
       console.warn("signalLogUtils: Suspiciously perfect SpO2 value detected", safeResult.spo2);
       // We'll be skeptical of this perfect value
-      if (signalLog.length === 0 || signalLog[signalLog.length - 1].result.spo2 < 97) {
+      if (signalLog.length === 0 || signalLog[signalLog.length - 1].result.spo2 < 96) { // Changed from 97 to 96
         safeResult.spo2 = 0; // Reset suspicious first-time perfect values
       }
     }
@@ -117,7 +118,7 @@ export function updateSignalLog(
       const lastGlucose = signalLog[signalLog.length - 1].result.glucose;
       if (lastGlucose > 0 && safeResult.glucose > 0) {
         const changePercent = Math.abs((safeResult.glucose - lastGlucose) / lastGlucose) * 100;
-        if (changePercent > 10) { // Tightened threshold for better reliability
+        if (changePercent > 5) { // Tightened threshold from 10 to 5 for better reliability
           console.warn("signalLogUtils: Detected physiologically implausible glucose change", { 
             prev: lastGlucose, 
             current: safeResult.glucose,
@@ -131,7 +132,7 @@ export function updateSignalLog(
   
   // Check if result has confidence info and validate it
   if (safeResult.confidence) {
-    if (safeResult.confidence.overall < 0.3) {
+    if (safeResult.confidence.overall < 0.5) { // Raised from 0.3 to 0.5
       // Reset all values that rely on confidence if overall confidence is too low
       if (safeResult.glucose !== undefined) safeResult.glucose = 0;
       if (safeResult.lipids !== undefined) {
@@ -153,7 +154,7 @@ export function updateSignalLog(
   ];
   
   // Keep log at manageable size but reduced for better performance
-  const trimmedLog = updatedLog.length > 60 ? updatedLog.slice(-60) : updatedLog;
+  const trimmedLog = updatedLog.length > 40 ? updatedLog.slice(-40) : updatedLog; // Reduced from 60 to 40
   
   // Enhanced logging for medical application
   console.log("signalLogUtils: Log updated", {
@@ -182,7 +183,7 @@ export function validateSignalValue(value: number): boolean {
   }
   
   // Additional validation for implausible values
-  if (value < 0.1) { // Increased minimum threshold
+  if (value < 1.0) { // Drastically increased minimum threshold from 0.1 to 1.0
     return false; // Too weak to be real signal
   }
   
@@ -194,7 +195,7 @@ export function validateSignalValue(value: number): boolean {
  * with much stricter criteria to prevent false positives
  */
 export function calculateSignalQuality(values: number[]): number {
-  if (!values || values.length < 10) { // Increased requirement
+  if (!values || values.length < 15) { // Increased requirement from 10 to 15
     return 0;
   }
   
@@ -203,15 +204,15 @@ export function calculateSignalQuality(values: number[]): number {
   const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
   
   // Check for suspiciously low variance (potential false positive)
-  if (variance < 0.15) { // Increased threshold
-    return Math.min(10, Math.round(variance * 100)); // Severely penalize low variance
+  if (variance < 1.0) { // Drastically increased threshold from 0.15 to 1.0
+    return Math.min(5, Math.round(variance * 10)); // Severely penalize low variance
   }
   
   // Calculate stability (consistent spacing between peaks)
   const peaks = findSignalPeaks(values);
   let stabilityScore = 100;
   
-  if (peaks.length >= 5) { // Increased requirement
+  if (peaks.length >= 6) { // Increased requirement from 5 to 6
     const intervals = [];
     for (let i = 1; i < peaks.length; i++) {
       intervals.push(peaks[i] - peaks[i-1]);
@@ -221,23 +222,23 @@ export function calculateSignalQuality(values: number[]): number {
     const intervalVariance = intervals.reduce((sum, val) => sum + Math.pow(val - intervalMean, 2), 0) / intervals.length;
     
     // Higher variance = lower stability
-    stabilityScore = 100 - Math.min(100, (intervalVariance / intervalMean) * 200); // Much more aggressive penalty
+    stabilityScore = 100 - Math.min(100, (intervalVariance / intervalMean) * 300); // Much more aggressive penalty (300 instead of 200)
   } else {
-    stabilityScore = 10; // Severely penalize insufficient peaks
+    stabilityScore = 5; // Even more severely penalize insufficient peaks (changed from 10 to 5)
   }
   
   // Combine variance and stability for final quality score with more weight on stability
   // Variance should be in a sweet spot - too low or too high is bad
-  const varianceScore = variance < 1.0 ? 5 + (variance * 20) : 
-                        variance > 60 ? 25 :
-                        70 - Math.min(50, Math.abs(variance - 18)); // Adjusted sweet spot range
+  const varianceScore = variance < 5.0 ? 5 + (variance * 5) : // Much stricter curve
+                        variance > 40 ? 25 :
+                        70 - Math.min(50, Math.abs(variance - 20)); // Adjusted sweet spot range
   
   // Apply a much more aggressive weighting that highly favors stability
-  const weightedScore = Math.round((varianceScore * 0.25) + (stabilityScore * 0.75));
+  const weightedScore = Math.round((varianceScore * 0.2) + (stabilityScore * 0.8)); // Increased stability weight to 80%
   
   // Additional penalty for too few peaks (likely not a real signal)
-  const peakPenalty = peaks.length < 4 ? 0.3 : // Severe penalty
-                      peaks.length < 6 ? 0.7 : 1.0;
+  const peakPenalty = peaks.length < 5 ? 0.2 : // Severe penalty (from 0.3 to 0.2)
+                      peaks.length < 7 ? 0.5 : 1.0; // Increased requirement from 6 to 7
   
   return Math.round(weightedScore * peakPenalty);
 }
@@ -246,16 +247,16 @@ export function calculateSignalQuality(values: number[]): number {
  * Find peaks in signal with extremely strict validation criteria
  */
 function findSignalPeaks(values: number[]): number[] {
-  if (values.length < 12) return []; // Significantly increased requirement
+  if (values.length < 16) return []; // Significantly increased requirement from 12 to 16
   
   const peaks = [];
-  const MIN_PEAK_DISTANCE = 8; // Increased for better physiological plausibility
+  const MIN_PEAK_DISTANCE = 10; // Increased for better physiological plausibility
   
   // Calculate adaptive threshold with much higher minimum
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = max - min;
-  const threshold = Math.max(1.0, (max - min) * 0.5); // Drastically increased threshold
+  const threshold = Math.max(2.0, (max - min) * 0.6); // Drastically increased threshold (was 1.0, now 2.0)
   
   for (let i = 4; i < values.length - 4; i++) { // Wider window
     if (values[i] > values[i-1] && 
