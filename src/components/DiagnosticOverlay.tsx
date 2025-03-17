@@ -28,6 +28,11 @@ const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
         HR: {heartRate} BPM | 
         Raw: {lastSignal?.rawValue?.toFixed(2) || 'N/A'}
       </div>
+      <div>
+        Time: {new Date().toLocaleTimeString()} | 
+        Camera: {lastSignal ? 'Active' : 'Inactive'} |
+        Torch: {lastSignal?.torchEnabled ? 'ON' : 'OFF'}
+      </div>
     </div>
   );
 };

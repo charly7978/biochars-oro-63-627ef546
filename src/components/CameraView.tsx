@@ -1,5 +1,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Fingerprint } from 'lucide-react';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -15,102 +16,93 @@ const CameraView: React.FC<CameraViewProps> = ({
   signalQuality = 0,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
-  const [isAndroid, setIsAndroid] = useState(false);
-  const retryAttemptsRef = useRef<number>(0);
-  const maxRetryAttempts = 3;
-
-  // Check platform on mount
-  useEffect(() => {
-    const userAgent = navigator.userAgent.toLowerCase();
-    setIsAndroid(/android/i.test(userAgent));
-    
-    console.log("CameraView: Platform detection", {
-      userAgent,
-      isAndroid: /android/i.test(userAgent),
-      isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
-    });
-  }, []);
-
-  // Disable torch when component unmounts
-  useEffect(() => {
-    return () => {
-      console.log("CameraView: Component unmounting, disabling torch");
-      disableTorch();
-    };
-  }, []);
-
-  // Disable torch function
-  const disableTorch = useCallback(() => {
-    if (!streamRef.current) return;
+  
+  // Function to safely disable torch
+  const disableTorch = useCallback(async () => {
+    if (!stream) return;
     
     try {
-      const videoTracks = streamRef.current.getVideoTracks();
-      videoTracks.forEach(track => {
-        if (track.getCapabilities()?.torch) {
-          console.log("CameraView: Explicitly turning off torch");
-          track.applyConstraints({
+      console.log("CameraView: Attempting to disable torch");
+      const videoTrack = stream.getVideoTracks()[0];
+      
+      if (videoTrack && videoTrack.enabled) {
+        const capabilities = videoTrack.getCapabilities();
+        
+        if (capabilities?.torch) {
+          await videoTrack.applyConstraints({
             advanced: [{ torch: false }]
-          }).catch(err => console.error("Error turning off torch:", err));
+          });
+          console.log("CameraView: Torch disabled successfully");
         }
-      });
-      setTorchEnabled(false);
+        
+        setTorchEnabled(false);
+      }
     } catch (err) {
-      console.error("Error disabling torch:", err);
+      console.error("CameraView: Error disabling torch:", err);
     }
-  }, []);
-
-  // Enable torch function
-  const enableTorch = useCallback(() => {
-    if (!streamRef.current) return;
+  }, [stream]);
+  
+  // Function to enable torch only when needed
+  const enableTorch = useCallback(async () => {
+    if (!stream || !torchAvailable || torchEnabled) return;
     
     try {
-      const videoTracks = streamRef.current.getVideoTracks();
-      videoTracks.forEach(track => {
-        if (track.getCapabilities()?.torch) {
-          console.log("CameraView: Enabling torch");
-          track.applyConstraints({
+      console.log("CameraView: Attempting to enable torch");
+      const videoTrack = stream.getVideoTracks()[0];
+      
+      if (videoTrack && videoTrack.enabled) {
+        const capabilities = videoTrack.getCapabilities();
+        
+        if (capabilities?.torch) {
+          await videoTrack.applyConstraints({
             advanced: [{ torch: true }]
-          }).then(() => {
-            setTorchEnabled(true);
-          }).catch(err => console.error("Error enabling torch:", err));
+          });
+          console.log("CameraView: Torch enabled successfully");
+          setTorchEnabled(true);
         }
-      });
-    } catch (err) {
-      console.error("Error enabling torch:", err);
-    }
-  }, []);
-
-  // Stop camera function
-  const stopCamera = useCallback(async () => {
-    if (!streamRef.current) return;
-    
-    console.log("CameraView: Stopping camera");
-    
-    // First, turn off the torch
-    await disableTorch();
-    
-    // Then stop all tracks
-    streamRef.current.getTracks().forEach(track => {
-      try {
-        track.stop();
-      } catch (err) {
-        console.error("Error stopping track:", err);
       }
-    });
-    
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+    } catch (err) {
+      console.error("CameraView: Error enabling torch:", err);
     }
-    
-    streamRef.current = null;
-    retryAttemptsRef.current = 0;
-  }, [disableTorch]);
-
-  // Start camera function
+  }, [stream, torchAvailable, torchEnabled]);
+  
+  // Stop camera and clean up
+  const stopCamera = useCallback(async () => {
+    try {
+      console.log("CameraView: Stopping camera");
+      
+      // First explicitly disable torch
+      await disableTorch();
+      
+      // Then stop all tracks
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {
+            console.error("CameraView: Error stopping track:", e);
+          }
+        });
+      }
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      
+      setStream(null);
+      setTorchEnabled(false);
+      console.log("CameraView: Camera stopped successfully");
+    } catch (err) {
+      console.error("CameraView: Error stopping camera:", err);
+    }
+  }, [stream, disableTorch]);
+  
+  // Start camera and apply optimizations
   const startCamera = useCallback(async () => {
-    if (streamRef.current) {
+    if (stream) {
       console.log("CameraView: Camera already started");
       return;
     }
@@ -119,135 +111,139 @@ const CameraView: React.FC<CameraViewProps> = ({
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia not supported");
       }
-
+      
       console.log("CameraView: Starting camera");
       
-      // Video constraints
-      const videoConstraints: MediaTrackConstraints = {
-        facingMode: 'environment',
-        width: { ideal: isAndroid ? 1280 : 1920 },
-        height: { ideal: isAndroid ? 720 : 1080 },
-        frameRate: { ideal: isAndroid ? 30 : 60 }
-      };
-
-      // Request camera access
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
+      const constraints = {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        },
         audio: false
-      });
+      };
       
-      // Store stream in ref
-      streamRef.current = newStream;
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("CameraView: Camera access granted");
       
-      // Apply camera optimizations
+      // Check torch capability
       const videoTrack = newStream.getVideoTracks()[0];
       if (videoTrack) {
+        const capabilities = videoTrack.getCapabilities();
+        console.log("CameraView: Camera capabilities", capabilities);
+        
+        if (capabilities?.torch) {
+          setTorchAvailable(true);
+          console.log("CameraView: Torch is available");
+        } else {
+          setTorchAvailable(false);
+          console.log("CameraView: Torch is not available");
+        }
+        
+        // Apply advanced constraints for better image
         try {
-          const capabilities = videoTrack.getCapabilities();
-          console.log("CameraView: Camera capabilities", capabilities);
+          const advancedConstraints: any[] = [];
           
-          // Apply advanced constraints
-          const advancedConstraints = [];
-          
-          if (capabilities.exposureMode) {
+          if (capabilities?.exposureMode) {
             advancedConstraints.push({ exposureMode: 'continuous' });
           }
           
-          if (capabilities.focusMode) {
+          if (capabilities?.focusMode) {
             advancedConstraints.push({ focusMode: 'continuous' });
           }
           
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-          
           if (advancedConstraints.length > 0) {
-            console.log("CameraView: Applying advanced constraints", advancedConstraints);
             await videoTrack.applyConstraints({
               advanced: advancedConstraints
             });
           }
-          
-          // Enable torch for better signal
-          if (capabilities.torch) {
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            setTorchEnabled(true);
-            console.log("CameraView: Torch enabled");
-          } else {
-            console.log("CameraView: Torch not available");
-          }
         } catch (err) {
-          console.warn("CameraView: Error applying optimizations", err);
+          console.warn("CameraView: Error applying camera optimizations:", err);
         }
       }
-
-      // Set video source
+      
+      // Connect video element
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        videoRef.current.style.transform = 'translateZ(0)';
       }
       
-      // Notify parent
+      setStream(newStream);
+      
+      // Notify parent component
       if (onStreamReady) {
         onStreamReady(newStream);
       }
       
       console.log("CameraView: Camera started successfully");
-      retryAttemptsRef.current = 0;
-      
     } catch (err) {
-      console.error("CameraView: Error starting camera", err);
-      
-      // Auto-retry
-      retryAttemptsRef.current++;
-      if (retryAttemptsRef.current <= maxRetryAttempts) {
-        console.log(`CameraView: Retrying (${retryAttemptsRef.current}/${maxRetryAttempts})`);
-        setTimeout(startCamera, 1000);
-      }
+      console.error("CameraView: Error starting camera:", err);
     }
-  }, [isAndroid, onStreamReady]);
-
+  }, [stream, onStreamReady]);
+  
   // Handle monitoring state changes
   useEffect(() => {
-    if (isMonitoring && !streamRef.current) {
+    if (isMonitoring && !stream) {
       startCamera();
-    } else if (!isMonitoring && streamRef.current) {
+    } else if (!isMonitoring && stream) {
       stopCamera();
     }
-    
-    // Clean up on unmount
-    return () => {
-      if (streamRef.current) {
-        stopCamera();
-      }
-    };
-  }, [isMonitoring, startCamera, stopCamera]);
-
+  }, [isMonitoring, stream, startCamera, stopCamera]);
+  
   // Handle finger detection for torch control
   useEffect(() => {
-    if (!streamRef.current) return;
-    
-    if (isFingerDetected && !torchEnabled) {
+    if (isMonitoring && isFingerDetected && torchAvailable && !torchEnabled) {
       enableTorch();
+    } else if ((!isMonitoring || !isFingerDetected) && torchEnabled) {
+      disableTorch();
     }
-  }, [isFingerDetected, torchEnabled, enableTorch]);
-
+  }, [isMonitoring, isFingerDetected, torchAvailable, torchEnabled, enableTorch, disableTorch]);
+  
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      console.log("CameraView: Component unmounting, stopping camera");
+      stopCamera();
+    };
+  }, [stopCamera]);
+  
+  // Determine finger status color
+  const getFingerStatusColor = () => {
+    if (!isFingerDetected) return 'text-gray-400';
+    if (signalQuality > 75) return 'text-green-500';
+    if (signalQuality > 50) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+  
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-      style={{
-        willChange: 'transform',
-        transform: 'translateZ(0)',
-        backfaceVisibility: 'hidden',
-        imageRendering: 'crisp-edges'
-      }}
-    />
+    <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+        style={{
+          willChange: 'transform',
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+          imageRendering: 'crisp-edges'
+        }}
+      />
+      {isMonitoring && (
+        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
+          <Fingerprint
+            size={48}
+            className={`transition-colors duration-300 ${getFingerStatusColor()}`}
+          />
+          <span className={`text-xs mt-2 transition-colors duration-300 ${
+            isFingerDetected ? 'text-green-500' : 'text-gray-400'
+          }`}>
+            {isFingerDetected ? "dedo detectado" : "ubique su dedo en el lente"}
+          </span>
+        </div>
+      )}
+    </>
   );
 };
 

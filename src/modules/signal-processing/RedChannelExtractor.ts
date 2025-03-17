@@ -1,22 +1,44 @@
 
 /**
- * Enhanced RedChannelExtractor that analyzes the entire image for maximum sensitivity
+ * Enhanced RedChannelExtractor that analyzes specific regions for maximum sensitivity
  */
 export class RedChannelExtractor {
-  private readonly SAMPLE_RATE = 1; // Check every pixel for maximum sensitivity
+  private readonly SAMPLE_RATE = 2; // Check every 2 pixels for balanced performance
+  private readonly THRESHOLD = 20; // Minimum threshold for red channel
   
   /**
-   * Extract average red channel value from the entire image
+   * Extract average red channel value from central region of the image
    */
   public extractRedValue(imageData: ImageData): number {
+    if (!imageData || !imageData.data || imageData.data.length === 0) {
+      console.warn("RedChannelExtractor: Invalid image data");
+      return 0;
+    }
+    
     const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    
+    // Focus on the center 60% of the image where the finger is likely to be
+    const startX = Math.floor(width * 0.2);
+    const endX = Math.floor(width * 0.8);
+    const startY = Math.floor(height * 0.2);
+    const endY = Math.floor(height * 0.8);
+    
     let redSum = 0;
     let pixelCount = 0;
     
-    // Process the entire image - no sampling regions
-    for (let i = 0; i < data.length; i += 4 * this.SAMPLE_RATE) {
-      redSum += data[i]; // Red channel (R in RGBA)
-      pixelCount++;
+    // Process only the central region with sampling for better performance
+    for (let y = startY; y < endY; y += this.SAMPLE_RATE) {
+      const rowOffset = y * width * 4;
+      for (let x = startX; x < endX; x += this.SAMPLE_RATE) {
+        const pixelIndex = rowOffset + x * 4;
+        // Red is the first channel (RGBA)
+        if (pixelIndex < data.length) {
+          redSum += data[pixelIndex];
+          pixelCount++;
+        }
+      }
     }
     
     if (pixelCount === 0) {
@@ -31,9 +53,10 @@ export class RedChannelExtractor {
       console.log("RedChannelExtractor: Extracted value", {
         avgRed,
         pixelsAnalyzed: pixelCount,
-        width: imageData.width,
-        height: imageData.height,
-        timestamp: Date.now()
+        width,
+        height,
+        threshold: this.THRESHOLD,
+        timestamp: new Date().toISOString()
       });
     }
     
