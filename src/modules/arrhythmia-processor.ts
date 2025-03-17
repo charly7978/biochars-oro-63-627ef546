@@ -1,20 +1,19 @@
 
 import { ArrhythmiaAnalyzer } from '../hooks/arrhythmia/ArrhythmiaAnalyzer';
 import { ArrhythmiaConfig } from '../hooks/arrhythmia/types';
+import { CalibrationManager } from './arrhythmia/CalibrationManager';
+import { RRDataProcessor } from './arrhythmia/RRDataProcessor';
 
 /**
  * Integrated arrhythmia processor that consolidates all arrhythmia detection logic
  * into a single, optimized implementation
  */
 export class ArrhythmiaProcessor {
-  private rrIntervals: number[] = [];
-  private lastPeakTime: number | null = null;
-  private calibrationTime: number = 10000; // 10 seconds calibration
-  private isCalibrating = true;
   private arrhythmiaDetected = false;
   private arrhythmiaCount = 0;
-  private startTime: number = Date.now();
   
+  private calibrationManager: CalibrationManager;
+  private rrDataProcessor: RRDataProcessor;
   private analyzer: ArrhythmiaAnalyzer;
   
   constructor() {
@@ -26,6 +25,8 @@ export class ArrhythmiaProcessor {
       SENSITIVITY_LEVEL: 'medium'
     };
     
+    this.calibrationManager = new CalibrationManager();
+    this.rrDataProcessor = new RRDataProcessor();
     this.analyzer = new ArrhythmiaAnalyzer(config);
   }
   
@@ -37,17 +38,8 @@ export class ArrhythmiaProcessor {
     arrhythmiaCounter: number;
     lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
   } {
-    const currentTime = Date.now();
-    
     // Handle calibration phase
-    if (this.isCalibrating && currentTime - this.startTime >= this.calibrationTime) {
-      this.isCalibrating = false;
-      console.log("ArrhythmiaProcessor: Calibration completed", {
-        elapsedTime: currentTime - this.startTime
-      });
-    }
-    
-    if (this.isCalibrating) {
+    if (this.calibrationManager.checkCalibration()) {
       return {
         isArrhythmia: false,
         arrhythmiaCounter: 0,
@@ -56,23 +48,24 @@ export class ArrhythmiaProcessor {
     }
     
     // Update RR intervals if data is provided
-    if (rrData?.intervals && rrData.intervals.length > 0) {
-      this.rrIntervals = rrData.intervals;
-      this.lastPeakTime = rrData.lastPeakTime;
+    const hasSufficientData = this.rrDataProcessor.updateRRData(rrData);
+    
+    // Analyze if we have sufficient data
+    if (hasSufficientData) {
+      const result = this.analyzer.analyzeRRData({
+        intervals: this.rrDataProcessor.getRRIntervals(),
+        lastPeakTime: this.rrDataProcessor.getLastPeakTime()
+      });
       
-      // Analyze if we have sufficient data
-      if (this.rrIntervals.length >= 12) {
-        const result = this.analyzer.analyzeRRData(rrData);
-        this.arrhythmiaDetected = result.isArrhythmia;
-        this.arrhythmiaCount = result.arrhythmiaCounter;
-        
-        // Return current status with arrhythmia data if available
-        return {
-          isArrhythmia: this.arrhythmiaDetected,
-          arrhythmiaCounter: this.arrhythmiaCount,
-          lastArrhythmiaData: result.lastArrhythmiaData
-        };
-      }
+      this.arrhythmiaDetected = result.isArrhythmia;
+      this.arrhythmiaCount = result.arrhythmiaCounter;
+      
+      // Return current status with arrhythmia data if available
+      return {
+        isArrhythmia: this.arrhythmiaDetected,
+        arrhythmiaCounter: this.arrhythmiaCount,
+        lastArrhythmiaData: result.lastArrhythmiaData
+      };
     }
     
     // Provide current status if no new analysis was performed
@@ -94,12 +87,10 @@ export class ArrhythmiaProcessor {
    * Reset analyzer state completely
    */
   public reset(): void {
-    this.rrIntervals = [];
-    this.lastPeakTime = null;
-    this.isCalibrating = true;
     this.arrhythmiaDetected = false;
     this.arrhythmiaCount = 0;
-    this.startTime = Date.now();
+    this.calibrationManager.reset();
+    this.rrDataProcessor.reset();
     this.analyzer.reset();
     
     console.log("ArrhythmiaProcessor: Reset complete", {
