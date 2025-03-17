@@ -29,20 +29,20 @@ export class PPGSignalProcessor implements SignalProcessor {
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
     BUFFER_SIZE: 12,
-    MIN_RED_THRESHOLD: 85,  // Increased threshold for better finger detection
-    MAX_RED_THRESHOLD: 245,
+    MIN_RED_THRESHOLD: 25,  // REDUCED for much more permissive detection
+    MAX_RED_THRESHOLD: 255, // Increased to maximum
     STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 3  // Increased to require more stability
+    MIN_STABILITY_COUNT: 2  // Reduced to require less stability
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
   private readonly BUFFER_SIZE = 12;
-  private readonly MIN_RED_THRESHOLD = 85; // Increased
-  private readonly MAX_RED_THRESHOLD = 245;
+  private readonly MIN_RED_THRESHOLD = 25; // REDUCED
+  private readonly MAX_RED_THRESHOLD = 255; // Increased
   private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 3; // Increased
+  private readonly MIN_STABILITY_COUNT = 2; // Reduced
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // Increased threshold
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.03; // Reduced threshold
 
   // Variables for dynamic threshold adaptation
   private dynamicThreshold: number = 0;
@@ -57,13 +57,17 @@ export class PPGSignalProcessor implements SignalProcessor {
   
   // New: Variables for improved finger detection
   private consecutiveWeakSignals: number = 0;
-  private readonly MAX_WEAK_SIGNALS = 3;
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.15; // Higher threshold
+  private readonly MAX_WEAK_SIGNALS = 5; // Increased tolerance
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.08; // Lower threshold
   
   // False positive prevention
   private baselineValues: number[] = [];
   private readonly BASELINE_SIZE = 10;
   private hasEstablishedBaseline: boolean = false;
+  
+  // NEW: Counter for signal presence regardless of quality
+  private signalPresenceCounter: number = 0;
+  private readonly MIN_SIGNAL_PRESENCE = 3;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -89,6 +93,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.consecutiveWeakSignals = 0;
       this.baselineValues = [];
       this.hasEstablishedBaseline = false;
+      this.signalPresenceCounter = 0;
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -117,6 +122,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consecutiveWeakSignals = 0;
     this.baselineValues = [];
     this.hasEstablishedBaseline = false;
+    this.signalPresenceCounter = 0;
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -135,10 +141,18 @@ export class PPGSignalProcessor implements SignalProcessor {
     try {
       const redValue = this.extractRedChannel(imageData);
       
+      // Check if we have any data first
+      if (redValue > 0) {
+        this.signalPresenceCounter = Math.min(10, this.signalPresenceCounter + 1);
+      } else {
+        this.signalPresenceCounter = Math.max(0, this.signalPresenceCounter - 1);
+      }
+      
       // Establish baseline for better false positive rejection
+      // But make it faster and more permissive
       if (!this.hasEstablishedBaseline) {
         this.baselineValues.push(redValue);
-        if (this.baselineValues.length > this.BASELINE_SIZE) {
+        if (this.baselineValues.length > 5) { // Reduced from BASELINE_SIZE
           this.baselineValues.shift();
           this.hasEstablishedBaseline = true;
           
@@ -151,12 +165,15 @@ export class PPGSignalProcessor implements SignalProcessor {
         // Return early with not-detected status during baseline collection
         if (!this.hasEstablishedBaseline) {
           if (this.onSignalReady) {
+            // NEW: Even with no baseline, if we have signal, show some finger detection
+            const hasMinimalSignal = this.signalPresenceCounter >= this.MIN_SIGNAL_PRESENCE;
+            
             this.onSignalReady({
               timestamp: Date.now(),
               rawValue: redValue,
               filteredValue: 0,
-              quality: 0,
-              fingerDetected: false,
+              quality: hasMinimalSignal ? 10 : 0, // Minimal quality if signal present
+              fingerDetected: hasMinimalSignal, // Detect finger with minimal signal
               roi: this.detectROI(redValue),
               perfusionIndex: 0
             });
@@ -190,10 +207,11 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // Analysis with amplified value and strict finger detection
+      // Analysis with amplified value and more permissive finger detection
       const { isFingerDetected, quality: detectionQuality } = this.analyzeSignal(amplifiedValue, redValue);
       
       // Check for weak signal to detect finger removal or poor placement
+      // NEW: More permissive weak signal threshold
       const isWeakSignal = Math.abs(amplifiedValue) < this.WEAK_SIGNAL_THRESHOLD;
       
       if (isWeakSignal) {
@@ -202,13 +220,23 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 1);
       }
       
-      // Override finger detection if we have too many weak signals
-      const finalFingerDetected = isFingerDetected && (this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS);
+      // NEW: More permissive logic - Detect finger even with some weak signals
+      // Only override finger detection if we have MANY consecutive weak signals
+      const finalFingerDetected = isFingerDetected || (this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS && 
+                                                      this.signalPresenceCounter >= this.MIN_SIGNAL_PRESENCE);
       
       // Use amplifier quality for better detection
       const perfusionIndex = this.calculatePerfusionIndex();
-      const combinedQuality = finalFingerDetected ? 
-        Math.round((detectionQuality * 0.7 + this.signalQuality * 100 * 0.3)) : 0;
+      
+      // NEW: More permissive quality calculation
+      let combinedQuality = 0;
+      if (finalFingerDetected) {
+        // Base quality on detection quality, but always provide at least minimal quality
+        combinedQuality = Math.max(10, Math.round((detectionQuality * 0.7 + this.signalQuality * 100 * 0.3)));
+      } else if (this.signalPresenceCounter >= this.MIN_SIGNAL_PRESENCE) {
+        // If signal is present but not strong enough for full detection, still provide minimal quality
+        combinedQuality = 10;
+      }
 
       console.log("PPGSignalProcessor: Analysis with improved detection", {
         redValue,
@@ -223,7 +251,8 @@ export class PPGSignalProcessor implements SignalProcessor {
         dynamicThreshold: this.dynamicThreshold,
         amplifierGain: this.signalAmplifier.getCurrentGain(),
         weakSignalCount: this.consecutiveWeakSignals,
-        isWeakSignal
+        isWeakSignal,
+        signalPresenceCounter: this.signalPresenceCounter
       });
 
       const processedSignal: ProcessedSignal = {
@@ -249,8 +278,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     const max = Math.max(...this.signalHistory);
     const range = max - min;
     
-    // Calculate new threshold based on signal range
-    const newThreshold = range * 0.30; // 30% of range as threshold (increased)
+    // Calculate new threshold based on signal range - MORE PERMISSIVE
+    const newThreshold = range * 0.20; // Reduced from 0.30 to 0.20 
     
     // Update dynamically with smoothing
     if (this.dynamicThreshold === 0) {
@@ -280,11 +309,11 @@ export class PPGSignalProcessor implements SignalProcessor {
     let redSum = 0;
     let count = 0;
     
-    // Only analyze the center of the image (30% central)
-    const startX = Math.floor(imageData.width * 0.35);
-    const endX = Math.floor(imageData.width * 0.65);
-    const startY = Math.floor(imageData.height * 0.35);
-    const endY = Math.floor(imageData.height * 0.65);
+    // Analyze a larger area of the image for better detection (50% central)
+    const startX = Math.floor(imageData.width * 0.25);
+    const endX = Math.floor(imageData.width * 0.75);
+    const startY = Math.floor(imageData.height * 0.25);
+    const endY = Math.floor(imageData.height * 0.75);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -299,77 +328,87 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Use dynamic threshold for better adaptation with a minimum threshold
+    // Use dynamic threshold for better adaptation with a LOWER minimum threshold
     const effectiveThreshold = Math.max(
-      this.MIN_RED_THRESHOLD,
+      this.MIN_RED_THRESHOLD, // Already lowered to 25
       this.dynamicThreshold > 0 ? this.dynamicThreshold : this.MIN_RED_THRESHOLD
     );
                               
     // Check if the value is in range
     const isInRange = rawValue >= effectiveThreshold && rawValue <= this.MAX_RED_THRESHOLD;
     
-    if (!isInRange) {
+    // NEW: More permissive finger detection - even if not perfectly in range
+    // We count permissively if there's at least some signal
+    const isPermissiveInRange = rawValue >= this.MIN_RED_THRESHOLD * 0.8 && rawValue <= this.MAX_RED_THRESHOLD;
+    
+    if (!isPermissiveInRange) {
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
       return { isFingerDetected: false, quality: 0 };
     }
 
-    if (this.lastValues.length < this.STABILITY_WINDOW) {
+    if (this.lastValues.length < 3) { // Reduced from STABILITY_WINDOW
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Enhanced analysis with amplified signal
-    const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
+    // NEW: Use smaller window for faster detection 
+    const recentValues = this.lastValues.slice(-3);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    // Enhanced variation analysis to detect peaks
+    // Enhanced variation analysis to detect peaks - More permissive
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
-    // Use amplifier quality to adjust thresholds
-    const qualityFactor = 0.8 + (this.signalQuality * 0.4); // 0.8-1.2
+    // Use amplifier quality to adjust thresholds - More permissive
+    const qualityFactor = 0.9 + (this.signalQuality * 0.3); // 0.9-1.2
     
     // More sensitive detection of cardiac peaks
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Adaptive thresholds with amplifier influence
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.022 * qualityFactor); // Increased threshold
-    const isStable = maxVariation < adaptiveThreshold * 2.0 && 
-                    minVariation > -adaptiveThreshold * 2.0;
+    // NEW: Much more permissive thresholds
+    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03 * qualityFactor);
+    const isStable = maxVariation < adaptiveThreshold * 3.0 || 
+                    minVariation > -adaptiveThreshold * 3.0; // Changed AND to OR
 
-    if (isStable) {
+    if (isStable || this.signalPresenceCounter >= this.MIN_SIGNAL_PRESENCE) { // Added signal presence check
       this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
       // More gradual reduction to maintain better detection
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.25); // Reduced from 0.5
     }
 
-    // Benefit from amplifier quality for detection
-    // Require both stable frames AND good quality signal
+    // NEW: Much more permissive finger detection logic
+    // Count finger as detected with lower stability count and quality requirements
     const isFingerDetected = 
-      (this.stableFrameCount >= this.MIN_STABILITY_COUNT) && 
-      (this.signalQuality > 0.5); // Increased quality requirement
+      (this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.75) || // Only need 75% of stability
+      (this.signalQuality > 0.3) || // Lower quality threshold
+      (this.signalPresenceCounter >= this.MIN_SIGNAL_PRESENCE); // Or consistent signal presence
     
     let quality = 0;
     if (isFingerDetected) {
-      // Improved quality calculation with amplifier
+      // Improved quality calculation with amplifier - More permissive
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
-      const intensityScore = Math.min((rawValue - effectiveThreshold) / 
-                                    (this.MAX_RED_THRESHOLD - effectiveThreshold), 1);
-      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
+      const intensityScore = Math.min((rawValue - (effectiveThreshold * 0.8)) / 
+                                    (this.MAX_RED_THRESHOLD - (effectiveThreshold * 0.8)), 1);
+      const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
       const amplifierScore = this.signalQuality;
+      const presenceScore = this.signalPresenceCounter / 10;
       
-      // Weighted with more weight to amplifier
+      // NEW: Weighted with more weight to signal presence for stability
       quality = Math.round((
-        stabilityScore * 0.3 + 
-        intensityScore * 0.3 + 
+        stabilityScore * 0.25 + 
+        intensityScore * 0.25 + 
         variationScore * 0.2 + 
-        amplifierScore * 0.2
+        amplifierScore * 0.15 +
+        presenceScore * 0.15
       ) * 100);
+    } else if (this.signalPresenceCounter >= this.MIN_SIGNAL_PRESENCE) {
+      // Minimal quality for signal presence even if not technically "detected"
+      quality = 15;
     }
 
     return { isFingerDetected, quality };

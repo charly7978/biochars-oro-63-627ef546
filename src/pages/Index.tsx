@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -31,6 +31,8 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
+  const imageProcessingRef = useRef<number | null>(null);
+  const cameraErrorCountRef = useRef<number>(0);
   
   console.log("DEBUG: Index component - State initialized");
   
@@ -106,10 +108,13 @@ const Index = () => {
     });
     
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+      // NEW: Much more permissive quality threshold
+      const minQualityThreshold = 15; // Reduced from 40
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        console.log("DEBUG: Index component - Processing signal with good quality", {
+      // NEW: More permissive finger detection
+      // Detect finger if either fingerDetected is true OR quality is at least minimal
+      if ((lastSignal.fingerDetected || lastSignal.quality >= minQualityThreshold)) {
+        console.log("DEBUG: Index component - Processing signal with acceptable quality", {
           quality: lastSignal.quality,
           fingerDetected: lastSignal.fingerDetected,
           value: lastSignal.filteredValue.toFixed(2)
@@ -118,8 +123,9 @@ const Index = () => {
         try {
           const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
           
-          if (heartBeatResult.confidence > 0.4) {
-            console.log("DEBUG: Index component - Heart beat processed with good confidence", {
+          // NEW: More permissive confidence threshold
+          if (heartBeatResult.confidence > 0.3) { // Reduced from 0.4
+            console.log("DEBUG: Index component - Heart beat processed with acceptable confidence", {
               bpm: heartBeatResult.bpm,
               confidence: heartBeatResult.confidence,
               rrIntervalsCount: heartBeatResult.rrData?.intervals.length
@@ -155,7 +161,8 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        // NEW: Only reset heart rate after several frames without finger
+        if (!lastSignal.fingerDetected && heartRate > 0 && lastSignal.quality < 5) {
           console.log("DEBUG: Index component - Finger removed, resetting heart rate");
           setHeartRate(0);
         }
@@ -180,6 +187,7 @@ const Index = () => {
         setIsCameraOn(true);
         setShowResults(false);
         setHeartRate(0);
+        cameraErrorCountRef.current = 0;
         
         startProcessing();
         startHeartBeatMonitoring();
@@ -232,6 +240,12 @@ const Index = () => {
         console.log("DEBUG: Index component - Measurement timer cleared");
       }
       
+      if (imageProcessingRef.current) {
+        cancelAnimationFrame(imageProcessingRef.current);
+        imageProcessingRef.current = null;
+        console.log("DEBUG: Index component - Image processing animation frame canceled");
+      }
+      
       resetVitalSigns();
       console.log("DEBUG: Index component - VitalSigns reset completed");
       
@@ -273,6 +287,11 @@ const Index = () => {
         measurementTimerRef.current = null;
       }
       
+      if (imageProcessingRef.current) {
+        cancelAnimationFrame(imageProcessingRef.current);
+        imageProcessingRef.current = null;
+      }
+      
       fullResetVitalSigns();
       setElapsedTime(0);
       setHeartRate(0);
@@ -287,6 +306,7 @@ const Index = () => {
         }
       });
       setSignalQuality(0);
+      cameraErrorCountRef.current = 0;
       
       console.log("DEBUG: Index component - Full reset completed");
     } catch (error) {
@@ -369,6 +389,9 @@ const Index = () => {
             const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
             processFrame(imageData);
             
+            // Reset error counter on successful frame
+            cameraErrorCountRef.current = 0;
+            
             frameCount++;
             lastProcessTime = now;
             
@@ -380,12 +403,27 @@ const Index = () => {
             }
           } catch (error) {
             console.error("DEBUG: Index component - Error capturing frame:", error);
+            cameraErrorCountRef.current++;
+            
+            // If too many consecutive errors, try to recover
+            if (cameraErrorCountRef.current > 20) {
+              console.log("DEBUG: Index component - Too many camera errors, attempting recovery");
+              
+              // Create a small delay before retrying
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // If still monitoring, try to restart camera
+              if (isMonitoring) {
+                setIsCameraOn(false);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                setIsCameraOn(true);
+                cameraErrorCountRef.current = 0;
+              }
+            }
           }
         }
         
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
+        imageProcessingRef.current = requestAnimationFrame(processImage);
       };
 
       processImage();
