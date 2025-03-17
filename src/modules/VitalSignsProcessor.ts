@@ -1,5 +1,6 @@
 
-import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
+import type { VitalSignsResult } from '../types/vital-signs';
 
 /**
  * Advanced auto-calibration system with progressive adaptation
@@ -80,13 +81,27 @@ export class VitalSignsProcessor {
       // Direct processing for measurements after calibration
       const result = this.processor.processSignal(ppgValue, rrData);
       
+      // Add calibration data to result
+      const resultWithCalibration: VitalSignsResult = {
+        ...result,
+        calibration: {
+          phase: this.calibrationPhase,
+          progress: {
+            heartRate: 1.0,
+            spo2: 1.0,
+            pressure: 1.0,
+            arrhythmia: 1.0
+          }
+        }
+      };
+      
       // Store last valid result for future use
-      if (result && (result.spo2 > 0 || result.pressure !== "--/--")) {
-        this.lastResult = result;
+      if (resultWithCalibration && (resultWithCalibration.spo2 > 0 || resultWithCalibration.pressure !== "--/--")) {
+        this.lastResult = resultWithCalibration;
       }
       
       // Return the processed result
-      return result;
+      return resultWithCalibration;
     } catch (error) {
       console.error("VitalSignsProcessor: Error processing signal:", error);
       
@@ -235,6 +250,3 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Full reset completed - removing all data history");
   }
 }
-
-// Re-export types for compatibility
-export type { VitalSignsResult } from './vital-signs/VitalSignsProcessor';

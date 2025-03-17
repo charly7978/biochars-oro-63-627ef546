@@ -1,18 +1,7 @@
+import { useState, useRef, useCallback } from 'react';
+import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
+import type { VitalSignsResult } from '../types/vital-signs';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { VitalSignsProcessor, VitalSignsResult } from '../modules/VitalSignsProcessor';
-import { updateSignalLog } from '../utils/signalLogUtils';
-import { ArrhythmiaAnalyzer } from './arrhythmia/ArrhythmiaAnalyzer';
-import { ArrhythmiaConfig } from './arrhythmia/types';
-
-interface ArrhythmiaWindow {
-  start: number;
-  end: number;
-}
-
-/**
- * Hook for processing vital signs with real and effective auto-calibration
- */
 export const useVitalSignsProcessor = () => {
   // State management
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);

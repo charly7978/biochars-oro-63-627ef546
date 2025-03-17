@@ -18,6 +18,8 @@ const CameraView = ({
   const retryAttemptsRef = useRef(0);
   const maxRetryAttempts = 5;
   const torchEnabledRef = useRef(false);
+  const [cameraError, setCameraError] = useState(null);
+  const cameraStartedRef = useRef(false);
 
   // Enhanced camera stopping with explicit error handling
   const stopCamera = async () => {
@@ -61,6 +63,7 @@ const CameraView = ({
       
       setStream(null);
       retryAttemptsRef.current = 0;
+      cameraStartedRef.current = false;
     } catch (err) {
       console.error("CameraView: Error in stopCamera:", err);
     }
@@ -69,6 +72,14 @@ const CameraView = ({
   // Enhanced camera startup with platform-specific optimizations
   const startCamera = async () => {
     try {
+      if (cameraStartedRef.current) {
+        console.log("CameraView: Camera already starting/started");
+        return;
+      }
+      
+      cameraStartedRef.current = true;
+      setCameraError(null);
+      
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
@@ -77,6 +88,7 @@ const CameraView = ({
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows/i.test(navigator.userAgent);
+      console.log("CameraView: Detected platform:", { isAndroid, isIOS, isWindows });
 
       // Platform-specific configuration
       let baseVideoConstraints = {
@@ -118,101 +130,122 @@ const CameraView = ({
       console.log("CameraView: Requesting camera with constraints:", JSON.stringify(constraints));
       
       // Try to get the stream with a timeout
-      const streamPromise = navigator.mediaDevices.getUserMedia(constraints);
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Camera request timed out")), 10000);
-      });
+      const timeoutId = setTimeout(() => {
+        if (!streamRef.current) {
+          setCameraError("Camera request timed out. Please check camera permissions and try again.");
+          cameraStartedRef.current = false;
+          retryCamera();
+        }
+      }, 10000);
       
-      const newStream = await Promise.race([streamPromise, timeoutPromise]);
-      console.log("CameraView: Camera access granted");
-      
-      // Store in both state and ref for consistent access
-      setStream(newStream);
-      streamRef.current = newStream;
-      
-      const videoTrack = newStream.getVideoTracks()[0];
-      if (!videoTrack) {
-        throw new Error("No video track available");
-      }
-
-      console.log("CameraView: Got video track:", videoTrack.label);
-      
-      // Apply platform-specific optimizations
       try {
-        if (videoRef.current) {
-          videoRef.current.srcObject = newStream;
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        clearTimeout(timeoutId);
+        
+        console.log("CameraView: Camera access granted");
+        
+        // Store in both state and ref for consistent access
+        setStream(newStream);
+        streamRef.current = newStream;
+        
+        const videoTrack = newStream.getVideoTracks()[0];
+        if (!videoTrack) {
+          throw new Error("No video track available");
+        }
+
+        console.log("CameraView: Got video track:", videoTrack.label);
+        
+        // Apply platform-specific optimizations
+        try {
+          if (videoRef.current) {
+            videoRef.current.srcObject = newStream;
+            
+            // Apply GPU acceleration and other optimizations
+            videoRef.current.style.transform = 'translateZ(0)';
+            videoRef.current.style.backfaceVisibility = 'hidden';
+            videoRef.current.style.willChange = 'transform';
+          }
           
-          // Apply GPU acceleration and other optimizations
-          videoRef.current.style.transform = 'translateZ(0)';
-          videoRef.current.style.backfaceVisibility = 'hidden';
-          videoRef.current.style.willChange = 'transform';
-        }
-        
-        // Get track capabilities for optimization
-        const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-        console.log("CameraView: Track capabilities:", capabilities);
-        
-        // Enable torch for better visibility
-        if (capabilities.torch) {
-          console.log("CameraView: Enabling torch");
-          try {
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            torchEnabledRef.current = true;
-            console.log("CameraView: Torch enabled successfully");
-          } catch (torchErr) {
-            console.log("CameraView: Error enabling torch:", torchErr);
+          // Get track capabilities for optimization
+          const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+          console.log("CameraView: Track capabilities:", capabilities);
+          
+          // Short delay to let camera initialize
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Enable torch for better visibility
+          if (capabilities.torch) {
+            console.log("CameraView: Enabling torch");
+            try {
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              torchEnabledRef.current = true;
+              console.log("CameraView: Torch enabled successfully");
+            } catch (torchErr) {
+              console.log("CameraView: Error enabling torch:", torchErr);
+            }
+          } else {
+            console.log("CameraView: Torch not available on this device");
           }
-        } else {
-          console.log("CameraView: Torch not available on this device");
+          
+          // Try to optimize focus and exposure
+          if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            try {
+              await videoTrack.applyConstraints({
+                advanced: [{ focusMode: 'continuous' }]
+              });
+              console.log("CameraView: Continuous focus applied");
+            } catch (focusErr) {
+              console.log("CameraView: Error setting focus mode:", focusErr);
+            }
+          }
+          
+          if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
+            try {
+              await videoTrack.applyConstraints({
+                advanced: [{ exposureMode: 'continuous' }]
+              });
+              console.log("CameraView: Continuous exposure applied");
+            } catch (expErr) {
+              console.log("CameraView: Error setting exposure mode:", expErr);
+            }
+          }
+        } catch (optErr) {
+          console.error("CameraView: Error applying optimizations:", optErr);
+          // Continue even if optimizations fail
         }
         
-        // Try to optimize focus and exposure
-        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-          try {
-            await videoTrack.applyConstraints({
-              advanced: [{ focusMode: 'continuous' }]
-            });
-            console.log("CameraView: Continuous focus applied");
-          } catch (focusErr) {
-            console.log("CameraView: Error setting focus mode:", focusErr);
-          }
+        if (onStreamReady) {
+          console.log("CameraView: Calling onStreamReady callback");
+          onStreamReady(newStream);
         }
         
-        if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
-          try {
-            await videoTrack.applyConstraints({
-              advanced: [{ exposureMode: 'continuous' }]
-            });
-            console.log("CameraView: Continuous exposure applied");
-          } catch (expErr) {
-            console.log("CameraView: Error setting exposure mode:", expErr);
-          }
-        }
-      } catch (optErr) {
-        console.error("CameraView: Error applying optimizations:", optErr);
-        // Continue even if optimizations fail
+        retryAttemptsRef.current = 0;
+      } catch (streamError) {
+        clearTimeout(timeoutId);
+        throw streamError;
       }
-      
-      if (onStreamReady) {
-        console.log("CameraView: Calling onStreamReady callback");
-        onStreamReady(newStream);
-      }
-      
-      retryAttemptsRef.current = 0;
       
     } catch (err) {
       console.error("CameraView: Error starting camera:", err);
+      const errorMessage = err instanceof Error ? err.message : "Unknown camera error";
+      setCameraError(`Camera error: ${errorMessage}`);
       
-      // Implement retry mechanism
-      retryAttemptsRef.current++;
-      if (retryAttemptsRef.current <= maxRetryAttempts) {
-        console.log(`CameraView: Retrying camera start (${retryAttemptsRef.current}/${maxRetryAttempts})...`);
-        setTimeout(startCamera, 1000);
-      } else {
-        console.error(`CameraView: Failed to start camera after ${maxRetryAttempts} attempts`);
-      }
+      // Implement retry logic
+      retryCamera();
+    }
+  };
+  
+  // Retry camera startup
+  const retryCamera = () => {
+    cameraStartedRef.current = false;
+    retryAttemptsRef.current++;
+    if (retryAttemptsRef.current <= maxRetryAttempts) {
+      console.log(`CameraView: Retrying camera start (${retryAttemptsRef.current}/${maxRetryAttempts})...`);
+      setTimeout(startCamera, 1000);
+    } else {
+      console.error(`CameraView: Failed to start camera after ${maxRetryAttempts} attempts`);
     }
   };
 
@@ -290,8 +323,10 @@ const CameraView = ({
     console.log("CameraView: isMonitoring changed:", isMonitoring);
     
     if (isMonitoring && !stream) {
+      console.log("CameraView: Starting camera because isMonitoring=true");
       startCamera();
     } else if (!isMonitoring && stream) {
+      console.log("CameraView: Stopping camera because isMonitoring=false");
       stopCamera();
     }
     
@@ -321,6 +356,25 @@ const CameraView = ({
           backfaceVisibility: 'hidden'
         }}
       />
+      
+      {cameraError && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center text-white p-4 z-10">
+          <div className="max-w-md text-center">
+            <h3 className="text-xl font-bold mb-2">Error de cámara</h3>
+            <p>{cameraError}</p>
+            <button 
+              onClick={() => {
+                setCameraError(null);
+                startCamera();
+              }}
+              className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
+              Reintentar
+            </button>
+          </div>
+        </div>
+      )}
+      
       {isMonitoring && buttonPosition && (
         <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
           <Fingerprint
