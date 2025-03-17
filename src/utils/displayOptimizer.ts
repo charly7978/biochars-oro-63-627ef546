@@ -329,7 +329,9 @@ export const supportsHighPerformanceRendering = (): boolean => {
   if (!gl) return false;
   
   // Verificar extensiones que indican buen soporte para renderizado
-  const extensions = gl.getSupportedExtensions();
+  const webGLContext = gl as WebGLRenderingContext;
+  const extensions = webGLContext.getSupportedExtensions();
+  
   const hasGoodExtensions = extensions && (
     extensions.includes('WEBGL_compressed_texture_s3tc') ||
     extensions.includes('WEBKIT_WEBGL_compressed_texture_s3tc') ||
