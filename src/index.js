@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
-import CameraView from "@/components/CameraView";
+import CameraView from "@/components/camera/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
@@ -25,8 +25,11 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
+  const calibrationTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -43,15 +46,6 @@ const Index = () => {
         await elem.mozRequestFullScreen({ navigationUI: "hide" });
       } else if (elem.msRequestFullscreen) {
         await elem.msRequestFullscreen({ navigationUI: "hide" });
-      }
-      
-      if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.AndroidFullScreen) {
-          window.AndroidFullScreen.immersiveMode(
-            function() { console.log('Immersive mode enabled'); },
-            function() { console.log('Failed to enable immersive mode'); }
-          );
-        }
       }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
@@ -109,10 +103,36 @@ const Index = () => {
   }, []);
 
   const startMonitoring = () => {
+    console.log("Starting monitoring");
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
+    setCalibrationComplete(false);
+    setCalibrationProgress(0);
     startProcessing();
+    setElapsedTime(0);
+    
+    if (calibrationTimerRef.current) {
+      clearInterval(calibrationTimerRef.current);
+    }
+    
+    calibrationTimerRef.current = window.setInterval(() => {
+      setCalibrationProgress(prev => {
+        const newProgress = prev + (100 / 8); // 8 seconds for 0-100%
+        
+        if (newProgress >= 100) {
+          clearInterval(calibrationTimerRef.current);
+          calibrationTimerRef.current = null;
+          setCalibrationComplete(true);
+          startMeasurementTimer();
+          return 100;
+        }
+        return newProgress;
+      });
+    }, 1000);
+  };
+
+  const startMeasurementTimer = () => {
     setElapsedTime(0);
     
     if (measurementTimerRef.current) {
@@ -168,6 +188,11 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
+    
+    if (calibrationTimerRef.current) {
+      clearInterval(calibrationTimerRef.current);
+      calibrationTimerRef.current = null;
+    }
   };
 
   const stopMonitoring = () => {
@@ -176,6 +201,8 @@ const Index = () => {
     stopProcessing();
     resetVitalSigns();
     setElapsedTime(0);
+    setCalibrationProgress(0);
+    setCalibrationComplete(false);
     setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
@@ -194,6 +221,11 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
+    
+    if (calibrationTimerRef.current) {
+      clearInterval(calibrationTimerRef.current);
+      calibrationTimerRef.current = null;
+    }
   };
 
   const handleStreamReady = (stream) => {
@@ -202,52 +234,48 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    const capabilities = videoTrack.getCapabilities();
-    if (capabilities.width && capabilities.height) {
-      const maxWidth = capabilities.width.max;
-      const maxHeight = capabilities.height.max;
-      
-      videoTrack.applyConstraints({
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
-        torch: true
-      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities()?.torch) {
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    }
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
-      
-      try {
-        const frame = await imageCapture.grabFrame();
-        tempCanvas.width = frame.width;
-        tempCanvas.height = frame.height;
-        tempCtx.drawImage(frame, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processFrame(imageData);
-        
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
-      } catch (error) {
-        console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
+    try {
+      if (videoTrack.getCapabilities && videoTrack.getCapabilities().torch) {
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error activando linterna:", err));
       }
-    };
+      
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      if (!tempCtx) {
+        console.error("No se pudo obtener el contexto 2D");
+        return;
+      }
+      
+      const processImage = async () => {
+        if (!isMonitoring) return;
+        
+        try {
+          const frame = await imageCapture.grabFrame();
+          tempCanvas.width = frame.width;
+          tempCanvas.height = frame.height;
+          tempCtx.drawImage(frame, 0, 0);
+          const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+          processFrame(imageData);
+          
+          if (isMonitoring) {
+            requestAnimationFrame(processImage);
+          }
+        } catch (error) {
+          console.error("Error capturando frame:", error);
+          if (isMonitoring) {
+            setTimeout(() => {
+              requestAnimationFrame(processImage);
+            }, 500);
+          }
+        }
+      };
 
-    processImage();
+      processImage();
+    } catch (err) {
+      console.error("Error setting up image processing:", err);
+    }
   };
 
   useEffect(() => {
@@ -272,12 +300,6 @@ const Index = () => {
         width: '100%',
         maxWidth: '100vw',
         maxHeight: '100vh',
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
-        touchAction: 'none',
-        userSelect: 'none',
       }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
@@ -286,6 +308,8 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
+            calibrationProgress={calibrationProgress}
+            isCalibrating={!calibrationComplete}
           />
         </div>
 
@@ -304,29 +328,35 @@ const Index = () => {
 
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
                   unit="BPM"
-                  calibrationProgress={vitalSigns.calibration?.progress.heartRate}
                 />
                 <VitalSign 
                   label="SPO2"
                   value={vitalSigns.spo2 || "--"}
                   unit="%"
-                  calibrationProgress={vitalSigns.calibration?.progress.spo2}
                 />
                 <VitalSign 
                   label="PRESIÓN ARTERIAL"
                   value={vitalSigns.pressure}
                   unit="mmHg"
-                  calibrationProgress={vitalSigns.calibration?.progress.pressure}
                 />
                 <VitalSign 
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
-                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
+                />
+                <VitalSign 
+                  label="GLUCOSA"
+                  value={vitalSigns.glucose || "--"}
+                  unit="mg/dL"
+                />
+                <VitalSign 
+                  label="TRIGLICÉRIDOS"
+                  value={vitalSigns.lipids?.triglycerides || "--"}
+                  unit="mg/dL"
                 />
               </div>
             </div>
@@ -334,7 +364,11 @@ const Index = () => {
 
           {isMonitoring && (
             <div className="absolute bottom-40 left-0 right-0 text-center">
-              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+              {!calibrationComplete ? (
+                <span className="text-xl font-medium text-blue-300">Calibración: {Math.floor(calibrationProgress)}%</span>
+              ) : (
+                <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+              )}
             </div>
           )}
 
