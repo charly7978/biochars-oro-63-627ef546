@@ -5,6 +5,7 @@ import { ArrhythmiaProcessor } from '../arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { ProcessorConfig } from './ProcessorConfig';
 import { SignalAnalyzer } from '../signal-analysis/SignalAnalyzer';
+import { GlucoseProcessor } from './glucose-processor';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -15,6 +16,13 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  glucose?: number;
+  lipids?: {
+    totalCholesterol?: number;
+    triglycerides?: number;
+    ldl?: number;
+    hdl?: number;
+  };
 }
 
 /**
@@ -26,6 +34,7 @@ export class VitalSignsProcessor {
   private bpProcessor: BloodPressureProcessor;
   private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
+  private glucoseProcessor: GlucoseProcessor;
   private measurementStartTime: number = Date.now();
 
   constructor() {
@@ -34,6 +43,7 @@ export class VitalSignsProcessor {
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
+    this.glucoseProcessor = new GlucoseProcessor();
   }
   
   public processSignal(
@@ -85,19 +95,24 @@ export class VitalSignsProcessor {
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
+      
+    // Calculate glucose
+    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues.slice(-150));
 
     console.log("VitalSignsProcessor: Results", {
       spo2,
       pressure,
       arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
-      signalAmplitude: amplitude
+      signalAmplitude: amplitude,
+      glucose
     });
 
     return {
       spo2,
       pressure,
       arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
-      lastArrhythmiaData: formattedArrhythmiaResult.lastArrhythmiaData
+      lastArrhythmiaData: formattedArrhythmiaResult.lastArrhythmiaData,
+      glucose
     };
   }
   
@@ -110,6 +125,7 @@ export class VitalSignsProcessor {
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
+    this.glucoseProcessor.reset();
     this.measurementStartTime = Date.now();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null;
