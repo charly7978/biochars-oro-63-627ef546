@@ -27,7 +27,7 @@ export class PerfusionIndexCalculator {
     const ac = max - min;
     const dc = (max + min) / 2;
     
-    return dc > 0 ? ac / dc : 0;
+    return dc > 0 ? Math.min(1, ac / dc) : 0;
   }
   
   /**

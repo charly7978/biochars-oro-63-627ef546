@@ -35,7 +35,6 @@ export class VitalSignsProcessor {
   private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
-  private measurementStartTime: number = Date.now();
 
   constructor() {
     console.log("VitalSignsProcessor: Initializing new instance");
@@ -51,7 +50,7 @@ export class VitalSignsProcessor {
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     if (Math.abs(ppgValue) < 0.005) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros");
       return this.createEmptyResults();
     }
     
@@ -70,10 +69,7 @@ export class VitalSignsProcessor {
     const ppgValues = this.signalProcessor.getPPGValues();
     
     if (ppgValues.length < ProcessorConfig.MIN_PPG_VALUES) {
-      console.log("VitalSignsProcessor: Insufficient data points", {
-        have: ppgValues.length,
-        need: ProcessorConfig.MIN_PPG_VALUES
-      });
+      console.log("VitalSignsProcessor: Insufficient data points");
       return this.createEmptyResults();
     }
     
@@ -82,10 +78,7 @@ export class VitalSignsProcessor {
     const amplitude = signalMax - signalMin;
     
     if (amplitude < ProcessorConfig.MIN_SIGNAL_AMPLITUDE) {
-      console.log("VitalSignsProcessor: Signal amplitude too low", {
-        amplitude,
-        threshold: ProcessorConfig.MIN_SIGNAL_AMPLITUDE
-      });
+      console.log("VitalSignsProcessor: Signal amplitude too low");
       return this.createEmptyResults();
     }
     
@@ -99,14 +92,6 @@ export class VitalSignsProcessor {
     // Calculate glucose
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues.slice(-150));
 
-    console.log("VitalSignsProcessor: Results", {
-      spo2,
-      pressure,
-      arrhythmiaStatus: formattedArrhythmiaResult.arrhythmiaStatus,
-      signalAmplitude: amplitude,
-      glucose
-    });
-
     return {
       spo2,
       pressure,
@@ -117,7 +102,13 @@ export class VitalSignsProcessor {
   }
   
   private createEmptyResults(): VitalSignsResult {
-    return SignalAnalyzer.createEmptyResult();
+    return {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      lastArrhythmiaData: null,
+      glucose: 0
+    };
   }
 
   public reset(): VitalSignsResult | null {
@@ -126,7 +117,6 @@ export class VitalSignsProcessor {
     this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
-    this.measurementStartTime = Date.now();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null;
   }

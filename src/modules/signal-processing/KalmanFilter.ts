@@ -4,8 +4,8 @@
  * Provides noise reduction capabilities for raw signal data
  */
 export class KalmanFilter {
-  private R: number = 0.01; // Measurement noise factor - standard value
-  private Q: number = 0.1;  // Process noise - standard value
+  private R: number = 0.01; // Measurement noise factor
+  private Q: number = 0.1;  // Process noise
   private P: number = 1;    // Initial estimation error covariance 
   private X: number = 0;    // Initial state
   private K: number = 0;    // Kalman gain

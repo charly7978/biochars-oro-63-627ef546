@@ -1,33 +1,38 @@
 
 /**
- * Extracts the red channel from camera image data for PPG processing
+ * Extracts the red channel value from image data for PPG analysis
  */
 export class RedChannelExtractor {
   /**
-   * Extract average red channel value from the central region of an image
-   * @param imageData - Raw image data from camera
-   * @returns Average red channel value from the central region
+   * Extract the red channel average value from image data
+   * @param imageData - The raw image data from camera
+   * @returns Average red channel value
    */
   public extractRedValue(imageData: ImageData): number {
-    const data = imageData.data;
+    const { data, width, height } = imageData;
+    
+    // Get center region of the image
+    const centerX = Math.floor(width / 2);
+    const centerY = Math.floor(height / 2);
+    const regionSize = Math.min(width, height) / 3;
+    
+    const startX = Math.max(0, Math.floor(centerX - regionSize));
+    const endX = Math.min(width, Math.floor(centerX + regionSize));
+    const startY = Math.max(0, Math.floor(centerY - regionSize));
+    const endY = Math.min(height, Math.floor(centerY + regionSize));
+    
     let redSum = 0;
-    let count = 0;
+    let pixelCount = 0;
     
-    // Analyze the center of the image (30% central region)
-    // This focuses on the most relevant part of the finger/sensor
-    const startX = Math.floor(imageData.width * 0.35);
-    const endX = Math.floor(imageData.width * 0.65);
-    const startY = Math.floor(imageData.height * 0.35);
-    const endY = Math.floor(imageData.height * 0.65);
-    
+    // Process only center region for efficiency
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Red channel (first component of RGBA)
-        count++;
+        const pixelIndex = (y * width + x) * 4;
+        redSum += data[pixelIndex]; // Red channel is at index 0
+        pixelCount++;
       }
     }
     
-    return count > 0 ? redSum / count : 0;
+    return pixelCount > 0 ? redSum / pixelCount : 0;
   }
 }

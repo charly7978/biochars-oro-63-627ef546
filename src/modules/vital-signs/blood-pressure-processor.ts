@@ -29,7 +29,7 @@ export class BloodPressureProcessor {
 
     const { peakIndices, valleyIndices } = FilterUtils.findPeaksAndValleys(values);
     if (peakIndices.length < 2) {
-      return { systolic: 120, diastolic: 80 };
+      return { systolic: 0, diastolic: 0 };
     }
 
     // Extract and process PTT values
@@ -56,6 +56,10 @@ export class BloodPressureProcessor {
     if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
       this.systolicBuffer.shift();
       this.diastolicBuffer.shift();
+    }
+
+    if (this.systolicBuffer.length === 0) {
+      return { systolic: 0, diastolic: 0 };
     }
 
     // Calculate smoothed values
