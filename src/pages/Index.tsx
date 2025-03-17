@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -27,6 +28,10 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
+  const stableQualityHistoryRef = useRef<number[]>([]);
+  const consecutiveGoodSignalsRef = useRef<number>(0);
+  const REQUIRED_STABLE_FRAMES = 15; // Alto requisito de estabilidad
+  const QUALITY_THRESHOLD_FOR_PROCESSING = 65; // Umbral mucho más alto de calidad
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -70,29 +75,60 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal only if we have good quality and finger detection
+  // Process signal only if we have excellent quality and robust finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      // Actualizar historial de calidad para validación
+      stableQualityHistoryRef.current.push(lastSignal.quality);
+      if (stableQualityHistoryRef.current.length > 8) {
+        stableQualityHistoryRef.current.shift();
+      }
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      // Calcular calidad promedio
+      const avgQuality = stableQualityHistoryRef.current.reduce((sum, q) => sum + q, 0) / 
+                        Math.max(1, stableQualityHistoryRef.current.length);
+      
+      // Verificar varianza para evitar señales falsas
+      const qualityVariance = calculateVariance(stableQualityHistoryRef.current);
+      
+      // Only process if the quality is sufficient, stable, and the finger is robustly detected
+      const hasHighQuality = avgQuality >= QUALITY_THRESHOLD_FOR_PROCESSING;
+      const isQualityStable = qualityVariance < 200; // Permitir cierta variación natural
+      
+      if (lastSignal.fingerDetected && hasHighQuality && isQualityStable) {
+        // Incrementar contador de señales buenas consecutivas
+        consecutiveGoodSignalsRef.current++;
         
-        // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
-          setHeartRate(heartBeatResult.bpm);
+        // Solo procesar si tenemos suficientes señales buenas consecutivas
+        if (consecutiveGoodSignalsRef.current >= REQUIRED_STABLE_FRAMES) {
+          const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
           
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
+          // Only update heart rate if confidence is very high
+          if (heartBeatResult.confidence > 0.6) { // Significantly increased confidence threshold
+            setHeartRate(heartBeatResult.bpm);
+            
+            // Validar intervalos RR para verificar plausibilidad fisiológica
+            const hasValidRRData = heartBeatResult.rrData && 
+                                  heartBeatResult.rrData.intervals.length >= 3 &&
+                                  validateRRIntervals(heartBeatResult.rrData.intervals);
+            
+            if (hasValidRRData) {
+              const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+              if (vitals && vitals.spo2 > 0) { // Verificar que los valores sean válidos
+                setVitalSigns(vitals);
+              }
+            }
           }
+          
+          setSignalQuality(lastSignal.quality);
+        } else {
+          // No procesamos aún, pero mantenemos la calidad
+          setSignalQuality(lastSignal.quality);
         }
-        
-        setSignalQuality(lastSignal.quality);
       } else {
         // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
+        consecutiveGoodSignalsRef.current = 0;
         
         // If finger not detected for a while, reset heart rate to zero
         if (!lastSignal.fingerDetected && heartRate > 0) {
@@ -102,8 +138,41 @@ const Index = () => {
     } else if (!isMonitoring) {
       // If not monitoring, maintain zero values
       setSignalQuality(0);
+      consecutiveGoodSignalsRef.current = 0;
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+
+  // Función para validar intervalos RR para plausibilidad fisiológica
+  const validateRRIntervals = (intervals: number[]): boolean => {
+    if (!intervals || intervals.length < 3) return false;
+    
+    // Verificar valores en rango fisiológico válido (40-180 BPM)
+    const isInRange = intervals.every(i => i >= 333 && i <= 1500);
+    if (!isInRange) return false;
+    
+    // Verificar que no hay cambios súbitos implausibles
+    const maxInterval = Math.max(...intervals);
+    const minInterval = Math.min(...intervals);
+    const ratio = maxInterval / minInterval;
+    
+    // Un cambio de más de 2.5x entre latidos es implausible sin ejercicio
+    if (ratio > 2.5) return false;
+    
+    // Verificar estabilidad
+    const variance = calculateVariance(intervals);
+    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const variationPercent = (Math.sqrt(variance) / mean) * 100;
+    
+    // Variabilidad natural entre 3-20% en estado de reposo
+    return variationPercent >= 3 && variationPercent <= 20;
+  };
+  
+  // Función para calcular varianza
+  const calculateVariance = (values: number[]): number => {
+    if (values.length < 2) return 0;
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+  };
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -114,6 +183,10 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0); // Reset heart rate explicitly
+      
+      // Resetear contadores de estabilidad
+      stableQualityHistoryRef.current = [];
+      consecutiveGoodSignalsRef.current = 0;
       
       startProcessing();
       startHeartBeatMonitoring(); // Update the processor state
@@ -161,6 +234,8 @@ const Index = () => {
     setElapsedTime(0);
     setSignalQuality(0);
     setHeartRate(0); // Reset heart rate explicitly
+    stableQualityHistoryRef.current = [];
+    consecutiveGoodSignalsRef.current = 0;
   };
 
   const handleReset = () => {
@@ -191,6 +266,8 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    stableQualityHistoryRef.current = [];
+    consecutiveGoodSignalsRef.current = 0;
   };
 
   const handleStreamReady = (stream: MediaStream) => {

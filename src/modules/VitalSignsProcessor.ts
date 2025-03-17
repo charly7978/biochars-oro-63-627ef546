@@ -14,13 +14,13 @@ export class VitalSignsProcessor {
   // Strict medical-grade thresholds with zero tolerance for false positives
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.0; // No artificial calibration
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05; // Doubled for much higher specificity
-  private readonly SPO2_WINDOW = 6; // Longer window for more accurate readings
-  private readonly SMA_WINDOW = 6; // Stronger smoothing to reduce noise
-  private readonly RR_WINDOW_SIZE = 12; // Tripled for much higher precision
-  private readonly RMSSD_THRESHOLD = 22; // Significantly increased for definitive arrhythmia detection
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1500; // Extended learning period
-  private readonly PEAK_THRESHOLD = 0.35; // Extremely increased to eliminate false positives
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.12; // Significantly increased for extreme specificity
+  private readonly SPO2_WINDOW = 8; // Longer window for more accurate readings
+  private readonly SMA_WINDOW = 8; // Stronger smoothing to reduce noise
+  private readonly RR_WINDOW_SIZE = 14; // Significantly increased for much higher precision
+  private readonly RMSSD_THRESHOLD = 25; // Significantly increased for definitive arrhythmia detection
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2000; // Extended learning period
+  private readonly PEAK_THRESHOLD = 0.45; // Extremely increased to eliminate false positives
   
   /**
    * Constructor that initializes the internal direct measurement processor
@@ -33,7 +33,7 @@ export class VitalSignsProcessor {
   
   /**
    * Process a PPG signal and RR data to get vital signs
-   * Uses aggressive validation to prevent false readings
+   * Uses extremely aggressive validation to prevent false readings
    * 
    * @param ppgValue Raw PPG signal value
    * @param rrData Optional RR interval data
@@ -43,21 +43,38 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Enhanced validation with multiple criteria - reject implausible values
+    // Ultra aggressive validation with multiple criteria - reject implausible values
     
-    // Basic validation
+    // Basic validation with stricter limits
     if (isNaN(ppgValue) || !isFinite(ppgValue) || ppgValue < 0) {
       console.warn("VitalSignsProcessor: Rejected invalid PPG value");
       return this.getEmptyResult();
     }
     
-    // Additional validation criteria for more aggressive false positive prevention
-    if (ppgValue < 0.01 || ppgValue > 255) {
+    // Additional validation criteria with much tighter constraints
+    if (ppgValue < 0.05 || ppgValue > 250) {
       console.warn("VitalSignsProcessor: Rejected physiologically implausible PPG value");
       return this.getEmptyResult();
     }
     
-    // Validate RR data if provided with stricter criteria
+    // Reject excessively stable signals (likely not physiological)
+    if (this.lastPpgValues.length >= 5) {
+      const variance = this.calculateVariance(this.lastPpgValues);
+      
+      // If variance is extremely low, it's likely not a real signal
+      if (variance < 0.01) {
+        console.warn("VitalSignsProcessor: Rejected suspiciously stable signal (likely not physiological)");
+        return this.getEmptyResult();
+      }
+    }
+    
+    // Record PPG values for validation
+    this.lastPpgValues.push(ppgValue);
+    if (this.lastPpgValues.length > 10) {
+      this.lastPpgValues.shift();
+    }
+    
+    // Validate RR data if provided with much stricter criteria
     if (rrData) {
       // Check for any invalid intervals
       const hasInvalidIntervals = rrData.intervals.some(interval => 
@@ -69,9 +86,9 @@ export class VitalSignsProcessor {
       }
       
       // Additional physiological validation
-      // Verify intervals are within plausible heart rate range (30-200 BPM)
+      // Verify intervals are within plausible heart rate range (35-190 BPM)
       const hasImplausibleIntervals = rrData.intervals.some(interval => 
-        interval < 300 || interval > 2000);
+        interval < 315 || interval > 1700);
       
       if (hasImplausibleIntervals) {
         console.warn("VitalSignsProcessor: Rejected implausible RR intervals outside physiological range");
@@ -84,9 +101,39 @@ export class VitalSignsProcessor {
         const min = Math.min(...rrData.intervals);
         const ratio = max / min;
         
-        if (ratio > 3.0) { // More than 3x difference between fastest and slowest beats
+        if (ratio > 2.8) { // More than 2.8x difference between fastest and slowest beats
           console.warn("VitalSignsProcessor: Rejected RR intervals with excessive non-physiological variation");
           return this.getEmptyResult();
+        }
+        
+        // Calculate RR interval variance to detect unrealistically stable patterns
+        const variance = this.calculateVariance(rrData.intervals);
+        if (variance < 0.2) { // Unrealistically stable RR intervals
+          console.warn("VitalSignsProcessor: Rejected suspiciously stable RR intervals (likely artificial)");
+          return this.getEmptyResult();
+        }
+      }
+      
+      // Validate stability over time - heart rate shouldn't change too rapidly
+      if (this.lastValidRRs.length > 0 && rrData.intervals.length > 0) {
+        const lastMeanRR = this.lastValidRRs.reduce((sum, rr) => sum + rr, 0) / this.lastValidRRs.length;
+        const currentMeanRR = rrData.intervals.reduce((sum, rr) => sum + rr, 0) / rrData.intervals.length;
+        
+        // Calculate change percentage
+        const changePercent = Math.abs((currentMeanRR - lastMeanRR) / lastMeanRR) * 100;
+        
+        // Reject if change is too sudden (more than 25% change is non-physiological)
+        if (changePercent > 25) {
+          console.warn("VitalSignsProcessor: Rejected due to physiologically implausible heart rate change");
+          return this.getEmptyResult();
+        }
+      }
+      
+      // Update last valid RR intervals
+      if (rrData.intervals.length > 0) {
+        this.lastValidRRs = [...rrData.intervals];
+        if (this.lastValidRRs.length > 10) {
+          this.lastValidRRs = this.lastValidRRs.slice(-10);
         }
       }
     }
@@ -95,11 +142,25 @@ export class VitalSignsProcessor {
     return this.processor.processSignal(ppgValue, rrData);
   }
   
+  // Track PPG values for validation
+  private lastPpgValues: number[] = [];
+  private lastValidRRs: number[] = [];
+  
+  /**
+   * Calculate variance of an array of values
+   */
+  private calculateVariance(values: number[]): number {
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+  }
+  
   /**
    * Reset the processor to ensure a clean state
    */
   public reset() {
     console.log("VitalSignsProcessor: Reset - all measurements will start from zero");
+    this.lastPpgValues = [];
+    this.lastValidRRs = [];
     return this.processor.reset();
   }
   
@@ -109,6 +170,8 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     console.log("VitalSignsProcessor: Full reset - removing all data history");
+    this.lastPpgValues = [];
+    this.lastValidRRs = [];
     this.processor.fullReset();
   }
   

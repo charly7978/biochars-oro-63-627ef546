@@ -18,11 +18,13 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   const [isAndroid, setIsAndroid] = useState(false);
   const [showHelpTip, setShowHelpTip] = useState(false);
   
-  // Constantes de configuración
-  const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 12; // Incrementado significativamente para reducir falsos positivos
-  const QUALITY_THRESHOLD = 65; // Incrementado para exigir calidad mucho más alta
-  const MIN_QUALITY_FOR_DETECTION = 25; // Calidad mínima para considerar dedo presente
+  // Constantes de configuración - valores extremadamente estrictos para prevenir falsos positivos
+  const historySize = 8; // Ventana ampliada para promediar más datos
+  const REQUIRED_FINGER_FRAMES = 20; // Drásticamente aumentado para eliminar falsos positivos
+  const QUALITY_THRESHOLD = 80; // Incrementado significativamente para exigir calidad mucho más alta
+  const MIN_QUALITY_FOR_DETECTION = 45; // Calidad mínima mucho mayor para considerar dedo presente
+  const MIN_CONSECUTIVE_QUALITY = 5; // Requiere calidad consistente
+  const SIGNAL_STABILITY_THRESHOLD = 0.1; // Requiere estabilidad de señal
 
   // Detectar plataforma
   useEffect(() => {
@@ -50,7 +52,7 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   }, [quality, isMonitoring]);
 
   // Calcular calidad ponderada con más peso a valores recientes
-  // y aplicar validación más estricta
+  // y aplicar validación extremadamente estricta
   useEffect(() => {
     if (qualityHistory.length === 0) {
       setDisplayQuality(0);
@@ -58,23 +60,31 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     }
 
     // Verificar que haya suficientes muestras de calidad
-    if (qualityHistory.length < 3) {
+    if (qualityHistory.length < MIN_CONSECUTIVE_QUALITY) {
       setDisplayQuality(0);
+      return;
+    }
+
+    // Verificar estabilidad de la señal - rechazar señales inestables
+    const variance = calculateVariance(qualityHistory);
+    if (variance > 300) { // Alta varianza indica inestabilidad
+      setDisplayQuality(Math.min(30, Math.round(quality * 0.5)));
       return;
     }
 
     // Verificar que la calidad mínima sea suficiente
     const minQuality = Math.min(...qualityHistory);
     if (minQuality < MIN_QUALITY_FOR_DETECTION) {
-      setDisplayQuality(Math.max(0, Math.min(30, minQuality)));
+      setDisplayQuality(Math.max(0, Math.min(20, minQuality)));
       return;
     }
 
+    // Ponderación con mayor peso a valores más recientes
     let weightedSum = 0;
     let totalWeight = 0;
 
     qualityHistory.forEach((q, index) => {
-      const weight = index + 1; // Valores más recientes tienen más peso
+      const weight = Math.pow(1.3, index); // Valores más recientes tienen mucho más peso
       weightedSum += q * weight;
       totalWeight += weight;
     });
@@ -82,23 +92,30 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
     const averageQuality = Math.round(weightedSum / totalWeight);
     
     // Aplicar factor de reducción para prevenir falsos positivos
-    const qualityReductionFactor = 0.9; // Reducir calidad en un 10% como medida preventiva
+    const qualityReductionFactor = 0.85; // Reducir calidad en un 15% como medida preventiva
     const adjustedQuality = Math.round(averageQuality * qualityReductionFactor);
     
     // Suavizar cambios para mejor UX
     setDisplayQuality(prev => {
-      const delta = (adjustedQuality - prev) * 0.3;
+      const delta = (adjustedQuality - prev) * 0.2;
       return Math.round(prev + delta);
     });
   }, [qualityHistory]);
+
+  // Calcular varianza para detección de estabilidad
+  const calculateVariance = (values: number[]): number => {
+    if (values.length < 2) return 0;
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+  };
 
   /**
    * Obtiene el color basado en la calidad
    */
   const getQualityColor = (q: number) => {
     if (q === 0) return '#666666';
-    if (q > 65) return '#00ff00';
-    if (q > 40) return '#ffff00';
+    if (q > 80) return '#00ff00';
+    if (q > 60) return '#ffff00';
     return '#ff0000';
   };
 
@@ -107,8 +124,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
    */
   const getQualityText = (q: number) => {
     if (q === 0) return 'Sin Dedo';
-    if (q > 65) return 'Excelente';
-    if (q > 40) return 'Buena';
+    if (q > 80) return 'Excelente';
+    if (q > 60) return 'Buena';
     return 'Baja';
   };
 
