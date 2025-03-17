@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useEffect } from "react";
 import CameraView from "@/components/CameraView";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import AppTitle from "@/components/AppTitle";
@@ -33,7 +33,7 @@ const Index = () => {
     handleToggleMonitoring
   } = useSignalProcessing();
   
-  const { handleStreamReady } = useCameraProcessor({
+  const { handleStreamReady, requestCameraAccess } = useCameraProcessor({
     isMonitoring,
     processFrame
   });
@@ -42,8 +42,16 @@ const Index = () => {
     onMeasurementComplete: finalizeMeasurement
   });
   
+  // Start camera access on component mount
+  useEffect(() => {
+    console.log("DEBUG: Index component - Attempting initial camera access");
+    if (isCameraOn) {
+      requestCameraAccess();
+    }
+  }, [requestCameraAccess, isCameraOn]);
+  
   // Start or stop the timer based on monitoring state
-  React.useEffect(() => {
+  useEffect(() => {
     if (isMonitoring) {
       startTimer();
     } else {
@@ -51,11 +59,31 @@ const Index = () => {
     }
   }, [isMonitoring, startTimer, stopTimer]);
 
+  // Auto-retry camera access if not detecting finger after a while
+  useEffect(() => {
+    let timeoutId: number | null = null;
+    
+    if (isMonitoring && (!lastSignal || !lastSignal.fingerDetected) && isCameraOn) {
+      console.log("DEBUG: Index component - Setting up auto-retry for camera");
+      timeoutId = window.setTimeout(() => {
+        console.log("DEBUG: Index component - Auto-retrying camera access");
+        requestCameraAccess();
+      }, 5000); // Try again after 5 seconds if no finger detected
+    }
+    
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isMonitoring, lastSignal, isCameraOn, requestCameraAccess]);
+
   console.log("DEBUG: Index component - Rendering component", {
     isMonitoring,
     isCameraOn,
     signalQuality,
-    showResults
+    showResults,
+    hasLastSignal: !!lastSignal
   });
 
   return (

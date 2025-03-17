@@ -13,33 +13,33 @@ export class SignalQualityAnalyzer {
    * @returns Quality score from 0-100
    */
   public assessQuality(filteredValue: number, rawValue: number): number {
-    // Si la señal es demasiado débil, devuelve calidad mínima
-    if (Math.abs(filteredValue) < 0.02) { // Reducido el umbral de señal débil
-      console.log("SignalQualityAnalyzer: Signal too weak", { filteredValue });
-      return 10; // En lugar de 0, damos una calidad mínima para ayudar con la detección
+    // For very weak signals, return minimal quality
+    if (Math.abs(filteredValue) < 0.01) { // More sensitive threshold (was 0.02)
+      console.log("SignalQualityAnalyzer: Signal very weak", { filteredValue });
+      return 15; // Slightly increased minimum quality (was 10)
     }
     
-    // Añadir a historial de calidad
+    // Add to quality history
     this.qualityHistory.push(filteredValue);
     if (this.qualityHistory.length > this.QUALITY_BUFFER_SIZE) {
       this.qualityHistory.shift();
     }
     
-    // Necesitamos suficientes puntos de datos para un análisis significativo
+    // Need enough data points for meaningful analysis
     if (this.qualityHistory.length < 5) {
       console.log("SignalQualityAnalyzer: Initial data collection", { 
         historyLength: this.qualityHistory.length 
       });
-      return 30; // Calidad mínima durante la recolección inicial de datos (aumentada)
+      return this.qualityHistory.length * 8; // Higher initial quality (was 30 fixed)
     }
     
-    // Calcular métricas - estabilidad, rango, ruido
+    // Calculate metrics - stability, range, noise
     const recent = this.qualityHistory.slice(-5);
     const min = Math.min(...recent);
     const max = Math.max(...recent);
     const range = max - min;
     
-    // Calcular variaciones entre muestras consecutivas
+    // Calculate variations between consecutive samples
     const variations: number[] = [];
     for (let i = 1; i < recent.length; i++) {
       variations.push(Math.abs(recent[i] - recent[i-1]));
@@ -47,21 +47,23 @@ export class SignalQualityAnalyzer {
     
     const avgVariation = variations.reduce((sum, v) => sum + v, 0) / variations.length;
     
-    // Calcular calidad basada en propiedades de la señal
-    const stabilityScore = Math.max(0, 100 - (avgVariation * 600)); // Menos sensible a la variación
-    const rangeScore = range > 0.01 && range < 0.8 ? 100 : 50; // Rango más amplio aceptable
+    // Calculate quality based on signal properties - less strict criteria
+    const stabilityScore = Math.max(0, 100 - (avgVariation * 500)); // Less sensitive to variation (was 600)
+    const rangeScore = range > 0.005 && range < 1.0 ? 100 : 50; // More permissive range (was 0.01-0.8)
     
-    // Puntaje combinado ponderado por importancia
-    const qualityScore = (stabilityScore * 0.6) + (rangeScore * 0.4);
+    // Weighted combined score
+    const qualityScore = (stabilityScore * 0.55) + (rangeScore * 0.45); // Adjusted weights
     
-    // Reportar para debugging (ocasionalmente)
-    if (Math.random() < 0.05) {
+    // Debug reporting (occasionally)
+    if (Math.random() < 0.1) { // Increased reporting frequency for debugging (was 0.05)
       console.log("SignalQualityAnalyzer: Quality assessment", {
         qualityScore,
         stabilityScore,
         rangeScore,
         avgVariation,
-        range
+        range,
+        rawValue,
+        filteredValue
       });
     }
     
@@ -73,5 +75,6 @@ export class SignalQualityAnalyzer {
    */
   public reset(): void {
     this.qualityHistory = [];
+    console.log("SignalQualityAnalyzer: Reset complete");
   }
 }

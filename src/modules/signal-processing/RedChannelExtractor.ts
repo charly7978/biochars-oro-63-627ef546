@@ -13,7 +13,7 @@ export class RedChannelExtractor {
     let redSum = 0;
     let pixelCount = 0;
     
-    // Valores de debugging
+    // Debug values
     console.log("RedChannelExtractor: Processing image", {
       width: imageData.width,
       height: imageData.height,
@@ -25,8 +25,8 @@ export class RedChannelExtractor {
       return 0;
     }
     
-    // Analizar solo el centro de la imagen (50% central)
-    const centerRegionSize = 0.5; // Usar 50% del centro
+    // Analyze a larger central region (70% of image)
+    const centerRegionSize = 0.7; // Increased from 50% to 70%
     const startX = Math.floor(imageData.width * ((1 - centerRegionSize) / 2));
     const endX = Math.floor(imageData.width * (1 - ((1 - centerRegionSize) / 2)));
     const startY = Math.floor(imageData.height * ((1 - centerRegionSize) / 2));
@@ -38,14 +38,17 @@ export class RedChannelExtractor {
       regionHeight: endY - startY
     });
     
-    // Extraer canal rojo de cada pixel en la región central
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
+    // Extract red channel from each pixel in the central region
+    // Use a sampling approach for larger images to improve performance
+    const skipFactor = (imageData.width > 400) ? 2 : 1;
+    
+    for (let y = startY; y < endY; y += skipFactor) {
+      for (let x = startX; x < endX; x += skipFactor) {
         const i = (y * imageData.width + x) * 4;
         
-        // Asegurarse de que el índice está dentro de los límites
+        // Ensure index is within bounds
         if (i >= 0 && i < data.length) {
-          redSum += data[i]; // Canal rojo (R en RGBA)
+          redSum += data[i]; // Red channel (R in RGBA)
           pixelCount++;
         }
       }
@@ -58,8 +61,8 @@ export class RedChannelExtractor {
     
     const avgRed = redSum / pixelCount;
     
-    // Reportar valores para debugging
-    if (Math.random() < 0.05) { // Solo reportar ocasionalmente para no saturar la consola
+    // Report values for debugging - more frequent reporting
+    if (Math.random() < 0.1) { // Increased from 0.05 to 0.1
       console.log("RedChannelExtractor: Extracted value", {
         avgRed,
         pixelsAnalyzed: pixelCount,
