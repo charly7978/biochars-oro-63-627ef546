@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -285,6 +284,11 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              vitalSigns={{
+                spo2: vitalSigns.spo2,
+                glucose: vitalSigns.glucose,
+                lipids: vitalSigns.lipids
+              }}
             />
           </div>
 
