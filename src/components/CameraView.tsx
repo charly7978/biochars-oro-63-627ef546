@@ -26,24 +26,25 @@ const CameraView = ({
   const activeImageCaptureRef = useRef<ImageCapture | null>(null);
   const cameraStartTimeoutRef = useRef<number | null>(null);
   const permissionRequestedRef = useRef<boolean>(false);
+  const permissionRequestInProgressRef = useRef<boolean>(false);
 
   // Request permissions explicitly before accessing the camera
   const requestCameraPermission = useCallback(async (): Promise<boolean> => {
+    if (permissionRequestInProgressRef.current) {
+      console.log("CameraView: Permission request already in progress");
+      return false;
+    }
+    
+    permissionRequestInProgressRef.current = true;
+    
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError("Tu navegador no soporta acceso a la cámara");
+      permissionRequestInProgressRef.current = false;
       return false;
     }
 
     try {
-      // Check if permission API is available
-      if (navigator.permissions && navigator.permissions.query) {
-        const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
-        
-        if (result.state === 'denied') {
-          setCameraError("Permiso de cámara denegado. Por favor, habilita el acceso a la cámara en la configuración de tu navegador.");
-          return false;
-        }
-      }
+      console.log("CameraView: Requesting camera permission explicitly");
       
       // Try to get a minimal video stream just to trigger the permission dialog
       const permissionStream = await navigator.mediaDevices.getUserMedia({ 
@@ -54,11 +55,13 @@ const CameraView = ({
       // Stop the permission test stream immediately
       permissionStream.getTracks().forEach(track => track.stop());
       permissionRequestedRef.current = true;
+      permissionRequestInProgressRef.current = false;
       return true;
     } catch (err) {
       console.error("Error requesting camera permission:", err);
       const errorMessage = err instanceof Error ? err.message : "Error desconocido";
       setCameraError(`No se pudo acceder a la cámara: ${errorMessage}`);
+      permissionRequestInProgressRef.current = false;
       return false;
     }
   }, []);
@@ -128,6 +131,7 @@ const CameraView = ({
     if (!permissionRequestedRef.current) {
       const permissionGranted = await requestCameraPermission();
       if (!permissionGranted) {
+        toast.error("No se pudo acceder a la cámara. Por favor, verifica los permisos.");
         return;
       }
     }
@@ -294,6 +298,10 @@ const CameraView = ({
     retryAttemptsRef.current++;
     if (retryAttemptsRef.current <= maxRetryAttempts) {
       console.log(`CameraView: Retrying camera start (${retryAttemptsRef.current}/${maxRetryAttempts})...`);
+      
+      // Reset the permission flag to try requesting permission again
+      permissionRequestedRef.current = false;
+      
       setTimeout(startCamera, 1000);
     } else {
       console.error(`CameraView: Failed to start camera after ${maxRetryAttempts} attempts`);
