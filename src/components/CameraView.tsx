@@ -32,6 +32,7 @@ const CameraView = ({
   // Handle starting camera when monitoring changes
   useEffect(() => {
     console.log('CameraView: isMonitoring changed:', isMonitoring);
+    console.log('CameraView: calibrationProgress is:', calibrationProgress);
     
     if (isMonitoring) {
       startCamera();

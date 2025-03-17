@@ -30,7 +30,7 @@ export class VitalSignsProcessor {
   private readonly ARRHYTHMIA_LEARNING_PERIOD = 500; // Shorter learning period
   private readonly PEAK_THRESHOLD = 0.12; // More permissive
   private readonly CALIBRATION_SAMPLE_COUNT = 15; // Fewer samples needed
-  private readonly CALIBRATION_UPDATE_INTERVAL = 300; // ms - faster updates
+  private readonly CALIBRATION_UPDATE_INTERVAL = 100; // ms - faster updates (was 300)
   
   /**
    * Constructor that initializes the internal processor
@@ -150,6 +150,7 @@ export class VitalSignsProcessor {
         if (this.calibrationStartTime) {
           const elapsedMs = now - this.calibrationStartTime;
           this.calibrationProgress = Math.min(100, (elapsedMs / this.CALIBRATION_DURATION_MS) * 100);
+          console.log("VitalSignsProcessor: Calibration progress:", this.calibrationProgress.toFixed(1) + "%");
           
           // Collect calibration sample
           if (Math.abs(ppgValue) > 0.005) {

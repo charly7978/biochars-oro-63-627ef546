@@ -40,6 +40,7 @@ const Index = () => {
   const calibrationTimerRef = useRef<number | null>(null);
   const consecutiveFingerDetectionsRef = useRef<number>(0);
   const fingerDetectedRef = useRef<boolean>(false);
+  const lastCalibrationUpdateRef = useRef<number>(0);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -102,30 +103,32 @@ const Index = () => {
         if (heartBeatResult.confidence > 0.3) {
           setHeartRate(heartBeatResult.bpm);
           
-          const hrCalibProgress = getHeartBeatCalibrationProgress();
-          if (hrCalibProgress < 100) {
-            setCalibrationProgress(hrCalibProgress);
+          // Get and update calibration progress more frequently
+          const now = Date.now();
+          if (now - lastCalibrationUpdateRef.current > 100) { // Update every 100ms
+            lastCalibrationUpdateRef.current = now;
+            
+            // Get calibration progress from VitalSignsProcessor
+            const progress = getCalibrationProgress();
+            console.log("Current calibration progress:", progress);
+            setCalibrationProgress(progress);
+            
+            if (progress >= 100) {
+              setCalibrationComplete(true);
+              
+              if (!vitalCalibrationComplete) {
+                setTimeout(() => {
+                  setVitalCalibrationComplete(true);
+                }, 1000);
+              }
+            }
           }
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
             setVitalSigns(vitals);
             
-            if (vitals.calibration) {
-              const progress = vitals.calibration.progress.heartRate * 100;
-              setCalibrationProgress(progress);
-              
-              if (progress >= 100) {
-                setCalibrationComplete(true);
-                
-                if (!vitalCalibrationComplete) {
-                  setTimeout(() => {
-                    setVitalCalibrationComplete(true);
-                  }, 2000);
-                }
-              }
-            }
-            
+            // Process arrhythmia calibration status
             if (vitals.arrhythmiaStatus.includes("CALIBRANDO")) {
               const match = vitals.arrhythmiaStatus.match(/(\d+)%/);
               if (match) {
@@ -152,7 +155,7 @@ const Index = () => {
       consecutiveFingerDetectionsRef.current = 0;
       fingerDetectedRef.current = false;
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime, getHeartBeatCalibrationProgress]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, elapsedTime, getHeartBeatCalibrationProgress, getCalibrationProgress]);
 
   useEffect(() => {
     if (calibrationComplete && isMonitoring && !measurementTimerRef.current) {
@@ -200,6 +203,7 @@ const Index = () => {
       setVitalCalibrationComplete(false);
       setArrhythmiaCalibrationProgress(0);
       setArrhythmiaCalibrationComplete(false);
+      lastCalibrationUpdateRef.current = 0;
       
       startProcessing();
       startHeartBeatMonitoring();
@@ -208,18 +212,6 @@ const Index = () => {
       toast.info("Ubique su dedo sobre el lente para iniciar calibración", {
         duration: 5000
       });
-      
-      toast.info("La aplicación detecta ritmo cardíaco y arritmias usando la cámara", {
-        duration: 8000,
-        id: "app-purpose"
-      });
-      
-      setTimeout(() => {
-        toast.info("El sistema necesita calibrar antes de mostrar mediciones. Espere 30 segundos.", {
-          duration: 10000,
-          id: "calibration-explanation"
-        });
-      }, 6000);
     }).catch(err => {
       console.error("Error starting monitoring:", err);
       toast.error("Error al iniciar. Por favor intente de nuevo.");
