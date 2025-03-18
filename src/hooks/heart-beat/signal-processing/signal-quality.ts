@@ -1,12 +1,14 @@
 
 /**
  * Functions for checking signal quality and weak signals
+ * Improved to reduce false positives
  */
 import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 /**
  * Checks if the signal is too weak, indicating possible finger removal
  * This is a passthrough to the centralized implementation
+ * Improved with higher thresholds to reduce false positives
  */
 export function checkWeakSignal(
   value: number,
@@ -19,7 +21,13 @@ export function checkWeakSignal(
   isWeakSignal: boolean,
   updatedWeakSignalsCount: number
 } {
-  return checkSignalQuality(value, consecutiveWeakSignalsCount, config);
+  // Use higher thresholds if not specified
+  const finalConfig = {
+    lowSignalThreshold: config.lowSignalThreshold || 0.15, // Increased from default 0.1
+    maxWeakSignalCount: config.maxWeakSignalCount || 4    // Increased from default 3
+  };
+  
+  return checkSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
 }
 
 /**
@@ -35,10 +43,11 @@ export function resetSignalQualityState() {
 /**
  * Determines if a measurement should be processed based on signal strength
  * Simplified passthrough that defers to PPGSignalMeter's implementation
+ * Uses higher threshold to prevent false positives
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Don't process signals that are too small (likely noise)
-  return Math.abs(value) >= 0.05;
+  // Higher threshold to avoid processing weak signals (likely noise)
+  return Math.abs(value) >= 0.15; // Increased from 0.05
 }
 
 /**

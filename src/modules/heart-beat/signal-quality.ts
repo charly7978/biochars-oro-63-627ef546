@@ -4,9 +4,10 @@
  * DIRECT MEASUREMENT ONLY - NO SIMULATION OR MANIPULATION
  */
 
-// Signal quality thresholds
-const GOOD_QUALITY_THRESHOLD = 65;
-const ACCEPTABLE_QUALITY_THRESHOLD = 40;
+// Signal quality thresholds with increased values to reduce false positives
+const GOOD_QUALITY_THRESHOLD = 70; // Increased from 65
+const ACCEPTABLE_QUALITY_THRESHOLD = 45; // Increased from 40
+const MIN_SIGNAL_STRENGTH = 0.15; // Higher threshold for signal detection
 
 /**
  * Get color class based on signal quality
@@ -47,6 +48,7 @@ export const getQualityText = (quality: number, isFingerDetected: boolean): stri
 /**
  * Check signal quality and track consecutive weak signals
  * Works only with direct measured values, no simulation
+ * Improved false positive resistance with higher thresholds
  */
 export const checkSignalQuality = (
   signalValue: number,
@@ -56,18 +58,23 @@ export const checkSignalQuality = (
     maxWeakSignalCount?: number;
   }
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } => {
-  const threshold = options?.lowSignalThreshold || 0.1;
-  const maxWeakSignals = options?.maxWeakSignalCount || 3;
+  // Higher default thresholds to reduce false positives
+  const threshold = options?.lowSignalThreshold || 0.15; // Increased from 0.1
+  const maxWeakSignals = options?.maxWeakSignalCount || 4; // Increased from 3
   
+  // More strict detection to prevent false positives
   const isWeak = Math.abs(signalValue) < threshold;
   let updatedCount = currentWeakSignalsCount;
   
+  // Slower increase, faster decrease for better stability
   if (isWeak) {
     updatedCount = Math.min(maxWeakSignals, updatedCount + 1);
   } else {
-    updatedCount = Math.max(0, updatedCount - 1);
+    // Faster decrease to recover from false weak signals
+    updatedCount = Math.max(0, updatedCount - 2);
   }
   
+  // More strict threshold with higher maxWeakSignals
   return {
     isWeakSignal: updatedCount >= maxWeakSignals,
     updatedWeakSignalsCount: updatedCount
@@ -98,3 +105,29 @@ export const isPointInArrhythmiaWindow = (
     pointTime >= window.start && pointTime <= window.end
   );
 };
+
+/**
+ * Determine if a measurement should be processed based on signal strength
+ * Increased threshold to reduce false positives
+ */
+export function shouldProcessMeasurement(value: number): boolean {
+  // Higher threshold to avoid processing weak signals (likely noise)
+  return Math.abs(value) >= MIN_SIGNAL_STRENGTH;
+}
+
+/**
+ * Creates default signal processing result when signal is too weak
+ * Keeps compatibility with existing code
+ */
+export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
+  return {
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: arrhythmiaCounter || 0,
+    rrData: {
+      intervals: [],
+      lastPeakTime: null
+    }
+  };
+}
