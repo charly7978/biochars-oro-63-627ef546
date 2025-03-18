@@ -1,37 +1,27 @@
 
 /**
- * Functions for peak detection logic
+ * Signal peak detection utilities
+ * Direct measurement of real signals only - no simulation
  */
 
-/**
- * Determines if a measurement should be processed based on signal strength
- */
-export function shouldProcessMeasurement(value: number): boolean {
-  // Don't process signals that are too small (likely noise)
-  return Math.abs(value) >= 0.05;
-}
-
-/**
- * Creates default signal processing result when signal is too weak
- */
-export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
-  return {
-    bpm: 0,
-    confidence: 0,
-    isPeak: false,
-    arrhythmiaCount: arrhythmiaCounter || 0,
-    rrData: {
-      intervals: [],
-      lastPeakTime: null
-    }
-  };
-}
-
-/**
- * Updates the reference to last valid BPM when condition is met
- */
-export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRefObject<number>): void {
-  if (result.bpm >= 40 && result.bpm <= 200) {
-    lastValidBpmRef.current = result.bpm;
+export const handlePeakDetection = (
+  result: any, 
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  requestImmediateBeep: (value: number) => boolean,
+  isMonitoringRef: React.MutableRefObject<boolean>,
+  value: number
+): void => {
+  if (!result || !result.isPeak) {
+    return;
   }
-}
+  
+  const now = Date.now();
+  
+  // Only process peaks from real data
+  if (lastPeakTimeRef.current === null || now - lastPeakTimeRef.current > 300) {
+    lastPeakTimeRef.current = now;
+    
+    // Request beep based on real peak, not simulated
+    requestImmediateBeep(value);
+  }
+};

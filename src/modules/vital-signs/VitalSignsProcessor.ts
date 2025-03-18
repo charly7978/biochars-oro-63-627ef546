@@ -196,6 +196,3 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }
-
-// Re-export the VitalSignsResult type
-export type { VitalSignsResult } from './types/vital-signs-result';

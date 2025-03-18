@@ -4,45 +4,68 @@
  */
 
 /**
- * Calcula el componente AC (amplitud pico a pico) de una señal real
+ * Calculate AC component (pulse amplitude) from real PPG values
+ * Direct measurement only - no simulation
  */
-export function calculateAC(values: number[]): number {
+export const calculateAC = (values: number[]): number => {
+  if (values.length < 3) return 0;
+  
+  // Calculate peak-to-peak amplitude from real data
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  
+  return Math.abs(max - min);
+};
+
+/**
+ * Calculate DC component (baseline) from real PPG values
+ * Direct measurement only - no simulation
+ */
+export const calculateDC = (values: number[]): number => {
   if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
+  
+  // Calculate average value (DC component) from real data
+  const sum = values.reduce((total, val) => total + val, 0);
+  
+  return sum / values.length;
+};
 
 /**
- * Calcula el componente DC (valor promedio) de una señal real
+ * Calculate standard deviation of real PPG values
+ * Direct measurement only - no simulation
  */
-export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
-}
+export const calculateStandardDeviation = (values: number[]): number => {
+  if (values.length < 2) return 0;
+  
+  const mean = calculateDC(values);
+  const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+  const variance = squaredDiffs.reduce((total, val) => total + val, 0) / values.length;
+  
+  return Math.sqrt(variance);
+};
 
 /**
- * Calcula la desviación estándar de un conjunto de valores reales
+ * Calculate Exponential Moving Average for real PPG values
+ * Direct measurement only - no simulation
  */
-export function calculateStandardDeviation(values: number[]): number {
-  const n = values.length;
-  if (n === 0) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
-}
+export const calculateEMA = (values: number[], alpha: number = 0.3): number[] => {
+  if (values.length === 0) return [];
+  
+  const emaValues = [values[0]];
+  
+  for (let i = 1; i < values.length; i++) {
+    emaValues.push(alpha * values[i] + (1 - alpha) * emaValues[i - 1]);
+  }
+  
+  return emaValues;
+};
 
 /**
- * Calcula la Media Móvil Exponencial (EMA) para suavizar señales reales
- * No se utiliza ninguna simulación
+ * Normalize real PPG values to a 0-1 range
+ * Direct measurement only - no simulation
  */
-export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
-  return alpha * currentValue + (1 - alpha) * prevEMA;
-}
-
-/**
- * Normaliza un valor real dentro de un rango específico
- * No se utiliza simulación
- */
-export function normalizeValue(value: number, min: number, max: number): number {
+export const normalizeValue = (value: number, min: number, max: number): number => {
+  if (max === min) return 0.5;
+  
   return (value - min) / (max - min);
-}
+};
