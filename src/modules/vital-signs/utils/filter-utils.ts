@@ -14,18 +14,7 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
   if (updatedBuffer.length > windowSize) {
     updatedBuffer.shift();
   }
-  
-  // Cálculo de media móvil con ponderación para dar más importancia a valores recientes
-  let weightedSum = 0;
-  let totalWeight = 0;
-  
-  for (let i = 0; i < updatedBuffer.length; i++) {
-    const weight = 1 + i * 0.2; // Valores más recientes tienen más peso
-    weightedSum += updatedBuffer[i] * weight;
-    totalWeight += weight;
-  }
-  
-  const filteredValue = totalWeight > 0 ? weightedSum / totalWeight : value;
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
   return { filteredValue, updatedBuffer };
 }
 
@@ -42,13 +31,13 @@ export function amplifySignal(value: number, recentValues: number[]): number {
   const recentRange = recentMax - recentMin;
   
   // Factor de amplificación para señales reales
-  let amplificationFactor = 1.2; // Aumentado ligeramente para mejor visualización
+  let amplificationFactor = 1.0;
   if (recentRange < 0.1) {
-    amplificationFactor = 3.0; // Aumentado para señales débiles
+    amplificationFactor = 2.5;
   } else if (recentRange < 0.3) {
-    amplificationFactor = 2.2; // Aumentado para señales medias
+    amplificationFactor = 1.8;
   } else if (recentRange < 0.5) {
-    amplificationFactor = 1.6; // Aumentado para señales normales
+    amplificationFactor = 1.4;
   }
   
   // Amplificar usando solo datos reales
