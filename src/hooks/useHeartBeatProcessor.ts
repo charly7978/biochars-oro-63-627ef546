@@ -150,8 +150,12 @@ export const useHeartBeatProcessor = () => {
         lastValidBpmRef.current = result.bpm;
       }
       
-      // Check if current beat is arrhythmia
-      const isArrhythmiaResult = heartBeatProcessor.isArrhythmia();
+      // Get arrhythmia status
+      let isArrhythmiaResult = false;
+      // Only call isArrhythmia if it exists on the processor
+      if (typeof heartBeatProcessor.isArrhythmia === 'function') {
+        isArrhythmiaResult = heartBeatProcessor.isArrhythmia();
+      }
       currentBeatIsArrhythmiaRef.current = isArrhythmiaResult;
       
       lastProcessedValueRef.current = value;
@@ -194,8 +198,17 @@ export const useHeartBeatProcessor = () => {
     }
   }, [heartBeatProcessor]);
 
+  // Create a proper isArrhythmia function that safely checks the processor
   const isArrhythmia = useCallback(() => {
-    return heartBeatProcessor?.isArrhythmia() || false;
+    if (!heartBeatProcessor) return false;
+    
+    // Check if the method exists before calling it
+    if (typeof heartBeatProcessor.isArrhythmia === 'function') {
+      return heartBeatProcessor.isArrhythmia();
+    }
+    
+    // Fallback to the stored ref value if method doesn't exist
+    return currentBeatIsArrhythmiaRef.current;
   }, [heartBeatProcessor]);
 
   return {
