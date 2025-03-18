@@ -1,7 +1,9 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
+  onError?: (error: Error) => void;
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
@@ -9,6 +11,7 @@ interface CameraViewProps {
 
 const CameraView = ({ 
   onStreamReady, 
+  onError,
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
@@ -224,12 +227,20 @@ const CameraView = ({
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
       
+      // Call the onError callback if provided
+      if (onError && err instanceof Error) {
+        onError(err);
+      }
+      
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
         console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
         setTimeout(startCamera, 1000);
       } else {
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
+        if (onError) {
+          onError(new Error(`Falló después de ${maxRetryAttempts} intentos`));
+        }
       }
     }
   };
