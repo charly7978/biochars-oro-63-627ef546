@@ -18,7 +18,7 @@ export function useSignalProcessor() {
   const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
   
-  // Track consecutive weak signals for finger detection
+  // Simple reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
   const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
@@ -40,7 +40,7 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
-      // Check for weak real signal
+      // Check for weak signal
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
         value, 
         consecutiveWeakSignalsRef.current, 
@@ -64,13 +64,12 @@ export function useSignalProcessor() {
       // Process real signal
       const result = processor.processSignal(value);
       const rrData = processor.getRRIntervals();
-      const now = Date.now();
       
       if (rrData && rrData.intervals.length > 0) {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection based on real signal
+      // Handle peak detection
       handlePeakDetection(
         result, 
         lastPeakTimeRef, 

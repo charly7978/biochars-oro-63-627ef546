@@ -6,19 +6,14 @@
 import { checkSignalQuality, calculateWeightedQuality } from '../../../modules/heart-beat/signal-quality';
 
 /**
- * Signal quality assessment for real PPG signals
+ * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
  * All methods work with real data only, no simulation
- * 
- * NOTE: This class is maintained for backward compatibility.
- * The main signal quality functionality is now centralized in
- * heart-beat/signal-quality.ts
  */
 export class SignalQuality {
   private noiseLevel: number = 0;
-  private readonly NOISE_THRESHOLD = 25;
   
   /**
-   * Update noise level estimation on real data
+   * Simple noise level update - minimal implementation
    */
   public updateNoiseLevel(rawValue: number, filteredValue: number): void {
     // Noise is estimated as the difference between raw and filtered
@@ -36,8 +31,7 @@ export class SignalQuality {
   }
   
   /**
-   * Calculate signal quality based on real signal characteristics
-   * (Forwards to centralized function for consistency)
+   * Calculate signal quality - forwards to centralized implementation
    */
   public calculateSignalQuality(ppgValues: number[]): number {
     return calculateWeightedQuality(ppgValues);

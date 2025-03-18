@@ -6,16 +6,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
-import { 
-  calculateWeightedQuality, 
-  getQualityColor, 
-  getQualityText,
-  checkSignalQuality
-} from '../modules/heart-beat/signal-quality';
 
 /**
- * Hook for processing PPG signals directly
- * Only uses real data without simulation
+ * Simplified hook that defers to PPGSignalMeter for quality and detection
  */
 export const useSignalProcessor = () => {
   // Create processor instance
@@ -28,7 +21,7 @@ export const useSignalProcessor = () => {
     return new PPGSignalProcessor();
   });
   
-  // Processing state
+  // Basic state
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
   const [error, setError] = useState<ProcessingError | null>(null);
@@ -39,88 +32,22 @@ export const useSignalProcessor = () => {
     avgValue: 0,
     totalValues: 0
   });
-  
-  // Signal quality history
-  const qualityHistoryRef = useRef<number[]>([]);
-  const fingerDetectedHistoryRef = useRef<boolean[]>([]);
-  const HISTORY_SIZE = 5;
-  
-  // Weak signal detection parameters
-  const weakSignalsCountRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = 0.10;
-  const MAX_WEAK_SIGNALS = 3;
-  
-  // Signal lock parameters - real signals only
-  const signalLockCounterRef = useRef<number>(0);
-  const MAX_SIGNAL_LOCK = 4;
-  const RELEASE_GRACE_PERIOD = 3;
-
-  /**
-   * Process finger detection robustly from real signal
-   */
-  const processRobustFingerDetection = useCallback((signal: ProcessedSignal): ProcessedSignal => {
-    // Update signal history
-    qualityHistoryRef.current.push(signal.quality);
-    if (qualityHistoryRef.current.length > HISTORY_SIZE) {
-      qualityHistoryRef.current.shift();
-    }
-    
-    fingerDetectedHistoryRef.current.push(signal.fingerDetected);
-    if (fingerDetectedHistoryRef.current.length > HISTORY_SIZE) {
-      fingerDetectedHistoryRef.current.shift();
-    }
-    
-    // Calculate weighted signal quality using centralized function
-    const avgQuality = calculateWeightedQuality(qualityHistoryRef.current);
-    
-    // Check for weak signal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      signal.filteredValue,
-      weakSignalsCountRef.current,
-      {
-        lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
-      }
-    );
-    
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Signal lock logic for stability
-    if (!isWeakSignal) {
-      signalLockCounterRef.current = Math.min(MAX_SIGNAL_LOCK, signalLockCounterRef.current + 1);
-    } else {
-      signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
-    }
-    
-    // Final detection determination
-    const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
-    const robustFingerDetected = isLockedIn && !isWeakSignal;
-    
-    return {
-      ...signal,
-      fingerDetected: robustFingerDetected,
-      quality: avgQuality,
-      perfusionIndex: signal.perfusionIndex,
-      spectrumData: signal.spectrumData
-    };
-  }, []);
 
   // Set up processor callbacks and cleanup
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      const modifiedSignal = processRobustFingerDetection(signal);
-      
-      setLastSignal(modifiedSignal);
+      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      setLastSignal(signal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
       // Update signal statistics
       setSignalStats(prev => {
         return {
-          minValue: Math.min(prev.minValue, modifiedSignal.filteredValue),
-          maxValue: Math.max(prev.maxValue, modifiedSignal.filteredValue),
-          avgValue: (prev.avgValue * prev.totalValues + modifiedSignal.filteredValue) / (prev.totalValues + 1),
+          minValue: Math.min(prev.minValue, signal.filteredValue),
+          maxValue: Math.max(prev.maxValue, signal.filteredValue),
+          avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
           totalValues: prev.totalValues + 1
         };
       });
@@ -141,7 +68,7 @@ export const useSignalProcessor = () => {
     return () => {
       processor.stop();
     };
-  }, [processor, processRobustFingerDetection]);
+  }, [processor]);
 
   /**
    * Start processing signals
@@ -157,12 +84,6 @@ export const useSignalProcessor = () => {
       avgValue: 0,
       totalValues: 0
     });
-    
-    // Reset signal quality variables
-    qualityHistoryRef.current = [];
-    fingerDetectedHistoryRef.current = [];
-    weakSignalsCountRef.current = 0;
-    signalLockCounterRef.current = 0;
     
     processor.start();
   }, [processor]);
