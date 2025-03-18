@@ -64,8 +64,8 @@ const PPGSignalMeter = memo(({
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5500;
-  const CANVAS_WIDTH = 2560;
-  const CANVAS_HEIGHT = 1440;
+  const CANVAS_WIDTH = 2060;
+  const CANVAS_HEIGHT = 860;
   const GRID_SIZE_X = 30;
   const GRID_SIZE_Y = 5;
   const verticalScale = 65.0;
