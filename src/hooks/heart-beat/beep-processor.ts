@@ -23,7 +23,7 @@ export function useBeepProcessor() {
     
     if (pendingBeepsQueue.current.length === 0) return;
     
-    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE * 0.8) {
+    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE) {
       pendingBeepsQueue.current = [];
       return;
     }
@@ -44,7 +44,7 @@ export function useBeepProcessor() {
         }
         
         if (isMonitoringRef.current) {
-          playBeep(0.8);
+          playBeep(0.7);
           lastBeepTimeRef.current = now;
         }
         pendingBeepsQueue.current.shift();
@@ -68,7 +68,7 @@ export function useBeepProcessor() {
           missedBeepsCounter, 
           playBeep
         ), 
-        Math.max(50, MIN_BEEP_INTERVAL_MS * 0.4)
+        MIN_BEEP_INTERVAL_MS * 0.5
       );
     }
   }, [MIN_BEEP_INTERVAL_MS]);
@@ -84,7 +84,7 @@ export function useBeepProcessor() {
   ): boolean => {
     if (!isMonitoringRef.current) return false;
     
-    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE * 0.8 || 
+    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE || 
         consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
       return false;
     }
@@ -95,7 +95,7 @@ export function useBeepProcessor() {
       try {
         console.log("Requesting immediate beep, time since last:", now - lastBeepTimeRef.current);
         
-        const success = playBeep(0.8);
+        const success = playBeep(0.7);
         
         if (success) {
           lastBeepTimeRef.current = now;
@@ -111,7 +111,7 @@ export function useBeepProcessor() {
       }
     } else {
       if (pendingBeepsQueue.current.length === 0 && 
-          (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.4)) {
+          (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5)) {
         pendingBeepsQueue.current.push({ time: now, value });
       
         if (!beepProcessorTimeoutRef.current) {

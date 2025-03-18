@@ -1,13 +1,14 @@
 
 /**
  * Functions for checking signal quality and weak signals
- * Adjusted to be more responsive while maintaining accuracy
+ * Improved to eliminate false positives
  */
 import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 /**
  * Checks if the signal is too weak, indicating possible finger removal
- * Modified to be more lenient to allow more beeps
+ * This is a passthrough to the centralized implementation
+ * Significantly improved with much higher thresholds to eliminate false positives
  */
 export function checkWeakSignal(
   value: number,
@@ -20,10 +21,10 @@ export function checkWeakSignal(
   isWeakSignal: boolean,
   updatedWeakSignalsCount: number
 } {
-  // Use less strict thresholds
+  // Use significantly higher thresholds if not specified
   const finalConfig = {
-    lowSignalThreshold: config.lowSignalThreshold || 0.25, // Reduced from 0.33
-    maxWeakSignalCount: config.maxWeakSignalCount || 7    // Reduced from 8
+    lowSignalThreshold: config.lowSignalThreshold || 0.33, // Increased from 0.25
+    maxWeakSignalCount: config.maxWeakSignalCount || 8    // Increased from 6
   };
   
   return checkSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
@@ -41,11 +42,11 @@ export function resetSignalQualityState() {
 
 /**
  * Determines if a measurement should be processed based on signal strength
- * Less strict threshold to allow more signals through
+ * Uses much higher threshold to prevent false positives
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Reduced threshold
-  return Math.abs(value) >= 0.25; // Reduced from 0.33
+  // Higher threshold to avoid processing weak signals (likely noise)
+  return Math.abs(value) >= 0.33; // Increased from 0.25
 }
 
 /**
