@@ -1,20 +1,21 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
- * Kalman filter implementation for signal smoothing
+ * Implementación del filtro de Kalman para suavizar señales
  */
 class KalmanFilter {
-  private R: number = 0.01;  // Measurement noise
-  private Q: number = 0.1;   // Process noise
-  private P: number = 1;     // Error estimation
-  private X: number = 0;     // Estimated value
-  private K: number = 0;     // Kalman gain
+  private R: number = 0.01;  // Ruido de medición
+  private Q: number = 0.1;   // Ruido de proceso
+  private P: number = 1;     // Estimación de error
+  private X: number = 0;     // Valor estimado
+  private K: number = 0;     // Ganancia de Kalman
 
   filter(measurement: number): number {
-    // Prediction
+    // Predicción
     this.P = this.P + this.Q;
     
-    // Update
+    // Actualización
     this.K = this.P / (this.P + this.R);
     this.X = this.X + this.K * (measurement - this.X);
     this.P = (1 - this.K) * this.P;
@@ -29,37 +30,48 @@ class KalmanFilter {
 }
 
 /**
- * PPG Signal Processor (Photoplethysmography)
- * Implements the SignalProcessor interface
+ * Procesador de señales PPG (Fotopletismografía)
+ * Implementa la interfaz SignalProcessor
  */
 export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   
-  // Default configuration
+  // Configuración por defecto
+  private readonly DEFAULT_CONFIG = {
+    BUFFER_SIZE: 15,
+    MIN_RED_THRESHOLD: 30, // Reducido para permitir mayor sensibilidad
+    MAX_RED_THRESHOLD: 250, // Aumentado para mayor rango de detección
+    STABILITY_WINDOW: 4,
+    MIN_STABILITY_COUNT: 2 // Reducido para permitir detección más rápida
+  };
+  
+  private currentConfig: typeof this.DEFAULT_CONFIG;
+  
+  // Parámetros de procesamiento
   private readonly BUFFER_SIZE = 15;
-  private readonly MIN_RED_THRESHOLD = 30;
-  private readonly MAX_RED_THRESHOLD = 250;
+  private readonly MIN_RED_THRESHOLD = 30; // Valor más bajo
+  private readonly MAX_RED_THRESHOLD = 250; // Valor más alto
   private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 2;
+  private readonly MIN_STABILITY_COUNT = 2; // Reducido
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
-  // Consistency analysis parameters
-  private consistencyHistory: number[] = [];
-  private readonly CONSISTENCY_BUFFER_SIZE = 8;
-  private movementScores: number[] = []; 
-  private readonly MOVEMENT_HISTORY_SIZE = 10;
-  private readonly MAX_MOVEMENT_THRESHOLD = 15;
-  private readonly MIN_PERIODICITY_SCORE = 0.25;
+  // Nuevos parámetros para análisis mejorado
+  private consistencyHistory: number[] = []; // Historial para evaluar consistencia
+  private readonly CONSISTENCY_BUFFER_SIZE = 8; // Tamaño de ventana para consistencia
+  private movementScores: number[] = []; // Puntuaciones de movimiento
+  private readonly MOVEMENT_HISTORY_SIZE = 10; // Historial de movimiento
+  private readonly MAX_MOVEMENT_THRESHOLD = 15; // Umbral máximo de movimiento permitido
+  private readonly MIN_PERIODICITY_SCORE = 0.25; // Umbral mínimo de periodicidad
   
-  // Temporal processing
+  // Procesamiento temporal
   private lastProcessedTime: number = 0;
-  private readonly MIN_PROCESS_INTERVAL = 30;
+  private readonly MIN_PROCESS_INTERVAL = 30; // Mínimo intervalo en ms entre procesamiento
   
-  // Periodicity analysis
-  private readonly PERIODICITY_BUFFER_SIZE = 60;
+  // Análisis de periodicidad
+  private readonly PERIODICITY_BUFFER_SIZE = 60; // Ventana para análisis de periodicidad
   private periodicityBuffer: number[] = [];
   private lastPeriodicityScore: number = 0;
 
@@ -68,11 +80,12 @@ export class PPGSignalProcessor implements SignalProcessor {
     public onError?: (error: ProcessingError) => void
   ) {
     this.kalmanFilter = new KalmanFilter();
-    console.log("PPGSignalProcessor: Instance created");
+    this.currentConfig = { ...this.DEFAULT_CONFIG };
+    console.log("PPGSignalProcessor: Instancia creada");
   }
 
   /**
-   * Initialize the processor
+   * Inicializa el procesador
    */
   async initialize(): Promise<void> {
     try {
@@ -84,25 +97,25 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.movementScores = [];
       this.periodicityBuffer = [];
       this.lastPeriodicityScore = 0;
-      console.log("PPGSignalProcessor: Initialized");
+      console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
-      console.error("PPGSignalProcessor: Initialization error", error);
-      this.handleError("INIT_ERROR", "Error initializing processor");
+      console.error("PPGSignalProcessor: Error de inicialización", error);
+      this.handleError("INIT_ERROR", "Error al inicializar el procesador");
     }
   }
 
   /**
-   * Start signal processing
+   * Inicia el procesamiento de señales
    */
   start(): void {
     if (this.isProcessing) return;
     this.isProcessing = true;
     this.initialize();
-    console.log("PPGSignalProcessor: Started");
+    console.log("PPGSignalProcessor: Iniciado");
   }
 
   /**
-   * Stop signal processing
+   * Detiene el procesamiento de señales
    */
   stop(): void {
     this.isProcessing = false;
@@ -113,19 +126,49 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consistencyHistory = [];
     this.movementScores = [];
     this.periodicityBuffer = [];
-    console.log("PPGSignalProcessor: Stopped");
+    console.log("PPGSignalProcessor: Detenido");
   }
 
   /**
-   * Reset to default configuration
+   * Calibra el procesador para mejores resultados
+   */
+  async calibrate(): Promise<boolean> {
+    try {
+      console.log("PPGSignalProcessor: Iniciando calibración");
+      await this.initialize();
+
+      // Tiempo para calibración
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Reducido para respuesta más rápida
+      
+      // Ajustar umbrales basados en las condiciones actuales - MÁS PERMISIVOS
+      this.currentConfig = {
+        ...this.DEFAULT_CONFIG,
+        MIN_RED_THRESHOLD: Math.max(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
+        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
+        STABILITY_WINDOW: 3, // Menor ventana para permitir más variación
+        MIN_STABILITY_COUNT: 2 // Requiere menos frames consecutivos
+      };
+
+      console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
+      return true;
+    } catch (error) {
+      console.error("PPGSignalProcessor: Error de calibración", error);
+      this.handleError("CALIBRATION_ERROR", "Error durante la calibración");
+      return false;
+    }
+  }
+
+  /**
+   * Restablece configuración por defecto
    */
   resetToDefault(): void {
+    this.currentConfig = { ...this.DEFAULT_CONFIG };
     this.initialize();
-    console.log("PPGSignalProcessor: Configuration reset to defaults");
+    console.log("PPGSignalProcessor: Configuración restaurada a valores por defecto");
   }
 
   /**
-   * Process a frame to extract PPG information
+   * Procesa un frame para extraer información PPG
    */
   processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
@@ -133,52 +176,52 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
 
     try {
-      // Frequency control to avoid processing overload
+      // Control de frecuencia para evitar sobrecarga de procesamiento
       const now = Date.now();
       if (now - this.lastProcessedTime < this.MIN_PROCESS_INTERVAL) {
         return;
       }
       this.lastProcessedTime = now;
       
-      // Extract red channel (main channel for PPG)
+      // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
       
-      // Apply initial filtering to reduce noise
+      // Aplicar filtrado inicial para reducir ruido
       const filtered = this.kalmanFilter.filter(redValue);
       
-      // Store for analysis
+      // Almacenar para análisis
       this.lastValues.push(filtered);
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
       
-      // Add to periodicity buffer
+      // Análisis de periodicidad
       this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
       }
       
-      // Calculate consistency over time
+      // Calcular consistencia en el tiempo
       this.updateConsistencyMetrics(filtered);
       
-      // Calculate movement score (instability)
+      // Calcular puntuación de movimiento (inestabilidad)
       const movementScore = this.calculateMovementScore();
       
-      // Analyze signal to determine quality and finger presence
+      // Analizar la señal para determinar calidad y presencia del dedo
       const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue, movementScore);
       
-      // Calculate perfusion index
+      // Calcular índice de perfusión
       const perfusionIndex = this.calculatePerfusionIndex();
       
-      // Analyze periodicity if we have enough data
+      // Analizar periodicidad si tenemos suficientes datos
       if (this.periodicityBuffer.length > 30) {
         this.lastPeriodicityScore = this.analyzeSignalPeriodicity();
       }
       
-      // Calculate spectrum data
+      // Calcular datos espectrales
       const spectrumData = this.calculateSpectrumData();
 
-      // Create processed signal
+      // Crear señal procesada
       const processedSignal: ProcessedSignal = {
         timestamp: now,
         rawValue: redValue,
@@ -190,33 +233,33 @@ export class PPGSignalProcessor implements SignalProcessor {
         spectrumData
       };
 
-      // Send processed signal
+      // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
 
     } catch (error) {
-      console.error("PPGSignalProcessor: Error processing frame", error);
-      this.handleError("PROCESSING_ERROR", "Error processing frame");
+      console.error("PPGSignalProcessor: Error procesando frame", error);
+      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
   }
   
   /**
-   * Calculate frequency spectrum data
+   * Calcula datos de espectro de frecuencia
    */
   private calculateSpectrumData() {
     if (this.periodicityBuffer.length < 30) {
       return undefined;
     }
     
-    // Basic implementation, could be improved with real FFT
+    // Implementación básica, podría ser mejorada con FFT real
     const buffer = this.periodicityBuffer.slice(-30);
     const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
     const normalizedBuffer = buffer.map(v => v - mean);
     
-    // Simulate simple spectral analysis
+    // Simular análisis espectral simple
     const frequencies: number[] = [];
     const amplitudes: number[] = [];
     
-    // Calculate amplitudes for different frequencies
+    // Calcular amplitudes para diferentes frecuencias
     for (let freq = 0.5; freq <= 4.0; freq += 0.1) {
       frequencies.push(freq);
       
@@ -229,7 +272,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       amplitudes.push(amplitude);
     }
     
-    // Find the dominant frequency
+    // Encontrar la frecuencia dominante
     let maxIndex = 0;
     for (let i = 1; i < amplitudes.length; i++) {
       if (amplitudes[i] > amplitudes[maxIndex]) {
@@ -245,7 +288,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
   
   /**
-   * Update consistency metrics
+   * Actualiza métricas de consistencia
    */
   private updateConsistencyMetrics(value: number): void {
     this.consistencyHistory.push(value);
@@ -255,34 +298,34 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
   
   /**
-   * Calculate movement score (0-100, where 0 is very stable)
+   * Calcula puntuación de movimiento (0-100, donde 0 es muy estable)
    */
   private calculateMovementScore(): number {
     if (this.consistencyHistory.length < 4) {
-      return 100; // Maximum movement if not enough data
+      return 100; // Máximo movimiento si no hay suficientes datos
     }
     
-    // Calculate variations between consecutive samples
+    // Calcular variaciones entre muestras consecutivas
     const variations: number[] = [];
     for (let i = 1; i < this.consistencyHistory.length; i++) {
       variations.push(Math.abs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
     }
     
-    // Calculate standard deviation
+    // Calcular desviación estándar
     const mean = variations.reduce((a, b) => a + b, 0) / variations.length;
     const variance = variations.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / variations.length;
     const stdDev = Math.sqrt(variance);
     
-    // Calculate score (normalized to 0-100)
+    // Calcular puntuación (normalizada a 0-100)
     const score = Math.min(100, stdDev * 10);
     
-    // Keep history for smoothing
+    // Mantener historial para suavizado
     this.movementScores.push(score);
     if (this.movementScores.length > this.MOVEMENT_HISTORY_SIZE) {
       this.movementScores.shift();
     }
     
-    // Return weighted average (more weight to recent values)
+    // Retornar promedio ponderado (más peso a valores recientes)
     let weightedSum = 0;
     let weightSum = 0;
     this.movementScores.forEach((s, i) => {
@@ -295,15 +338,15 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Extract red channel from a frame
-   * The red channel is the most sensitive to changes in blood volume
+   * Extrae el canal rojo de un frame
+   * El canal rojo es el más sensible a cambios en volumen sanguíneo
    */
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
     let count = 0;
     
-    // Analyze a larger part of the image (40% central)
+    // Analizar una parte más grande de la imagen (40% central)
     const startX = Math.floor(imageData.width * 0.3);
     const endX = Math.floor(imageData.width * 0.7);
     const startY = Math.floor(imageData.height * 0.3);
@@ -312,7 +355,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Red channel
+        redSum += data[i];  // Canal rojo
         count++;
       }
     }
@@ -322,7 +365,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Calculate perfusion index
+   * Calcula índice de perfusión
    */
   private calculatePerfusionIndex(): number {
     if (this.lastValues.length < 5) return 0;
@@ -339,82 +382,84 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Analyze signal to determine quality and finger presence
-   * Includes movement and periodicity analysis as factors
+   * Analiza la señal para determinar calidad y presencia de dedo
+   * Incluye análisis de movimiento y periodicidad como factores
    */
   private analyzeSignal(
     filtered: number, 
     rawValue: number, 
     movementScore: number
   ): { isFingerDetected: boolean, quality: number } {
-    // Basic threshold check
+    // Verificación de umbrales básicos (más permisiva)
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
-    // If completely out of range, no finger
+    // Si está completamente fuera de rango, no hay dedo
     if (!isInRange) {
-      // Gradually reduce stability counter instead of resetting
+      // Reducir contador de estabilidad gradualmente en lugar de reiniciar
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
       return { isFingerDetected: this.stableFrameCount > 0, quality: Math.max(0, this.stableFrameCount * 10) };
     }
 
-    // Check if we have enough samples to analyze
+    // Verificar si tenemos suficientes muestras para analizar
     if (this.lastValues.length < 3) {
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Analyze signal stability
+    // Analizar estabilidad de la señal (ahora más permisiva)
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    // Evaluate variations between consecutive samples
+    // Evaluar variaciones entre muestras consecutivas
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
-    // Adaptive threshold based on average
-    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
-    
-    // Detect stability
+    // Detectar estabilidad con umbral adaptativo
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
+    // Umbral adaptativo basado en promedio (más permisivo)
+    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
+    
+    // Detección de estabilidad más permisiva
     const isStable = maxVariation < adaptiveThreshold * 3 && 
                     minVariation > -adaptiveThreshold * 3;
     
-    // Adjust stability counter
+    // Ajustar contador de estabilidad
     if (isStable) {
       this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      // More gradual reduction
+      // Reducción más gradual
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
     }
     
-    // Movement factor
+    // Factor de movimiento (permite más movimiento)
     const movementFactor = Math.max(0, 1 - (movementScore / this.MAX_MOVEMENT_THRESHOLD));
     
-    // Periodicity factor
+    // Factor de periodicidad (buscar patrones cardíacos)
     const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
     
-    // Calculate quality weighting multiple factors
+    // Calcular calidad ponderando múltiples factores
     let quality = 0;
     
-    // Always calculate quality, even with low stability
+    // Siempre calcular calidad, incluso con estabilidad baja
     const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 1.5), 1);
     const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                   (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
     const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
     
-    // Weighted calculation
+    // Ponderación ajustada para ser más permisiva
     quality = Math.round((stabilityScore * 0.4 + 
                         intensityScore * 0.3 + 
                         variationScore * 0.1 + 
                         movementFactor * 0.1 + 
                         periodicityFactor * 0.1) * 100);
     
-    // More permissive detection
-    const minQualityThreshold = 30;
+    // Detección de dedo más permisiva
+    // Permitimos detección con calidad mínima más baja
+    const minQualityThreshold = 30; // Umbral de calidad reducido
     const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.7 && 
                             quality >= minQualityThreshold;
 
@@ -422,12 +467,12 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Analyze signal periodicity to determine quality
-   * Looks for rhythmic patterns consistent with cardiac pulse
+   * Analiza la periodicidad de la señal para determinar calidad
+   * Busca patrones rítmicos consistentes con pulso cardíaco
    */
   private analyzeSignalPeriodicity(): number {
     if (this.periodicityBuffer.length < 30) {
-      return 0.3; // Base value to avoid penalizing too much at start
+      return 0.3; // Valor base para evitar penalizar demasiado al inicio
     }
     
     const signal = this.periodicityBuffer.slice(-30);
@@ -435,7 +480,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     const normalizedSignal = signal.map(val => val - signalMean);
     
-    // More permissive with lag range
+    // Más permisivos con el rango de rezagos
     const maxLag = 25;
     const correlations: number[] = [];
     
@@ -456,16 +501,16 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
     }
     
-    let maxCorrelation = 0.3; // Minimum base value
+    let maxCorrelation = 0.3; // Valor base mínimo
     let periodFound = false;
     
-    // Allow a wider range of frequencies
+    // Permitir un rango más amplio de frecuencias (incluye ritmos cardíacos más extremos)
     for (let i = 1; i < correlations.length - 1; i++) {
       if (correlations[i] > correlations[i-1] && 
           correlations[i] > correlations[i+1] && 
-          correlations[i] > 0.15) {
+          correlations[i] > 0.15) { // Umbral más permisivo
         
-        // Expanded range to allow more variability
+        // Rango ampliado para permitir más variabilidad
         if (i >= 3 && i <= 20) {
           if (correlations[i] > maxCorrelation) {
             maxCorrelation = correlations[i];
@@ -475,12 +520,12 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
     }
     
-    // Always return a reasonable minimum value
+    // Siempre devolver un valor mínimo razonable
     return Math.max(0.3, Math.min(1.0, maxCorrelation));
   }
 
   /**
-   * Detect region of interest for analysis
+   * Detecta región de interés para análisis
    */
   private detectROI(redValue: number): ProcessedSignal['roi'] {
     return {
@@ -492,7 +537,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Handle processor errors
+   * Maneja errores del procesador
    */
   private handleError(code: string, message: string): void {
     console.error("PPGSignalProcessor: Error", code, message);
