@@ -4,29 +4,38 @@
  */
 
 /**
- * Calculates confidence levels for real measurements
- * No reference values or simulations are used
+ * Calculator for confidence levels of measurements
+ * Works with real data only, no simulation
  */
 export class ConfidenceCalculator {
-  private confidenceThreshold: number;
+  private readonly MIN_CONFIDENCE_THRESHOLD: number;
   
-  constructor(confidenceThreshold: number = 0.15) {
-    this.confidenceThreshold = confidenceThreshold;
+  /**
+   * Create a new confidence calculator
+   */
+  constructor(minConfidenceThreshold: number = 0.15) {
+    this.MIN_CONFIDENCE_THRESHOLD = minConfidenceThreshold;
   }
   
-  public calculateOverallConfidence(
-    glucoseConfidence: number,
-    lipidsConfidence: number
-  ): number {
-    // Weight the confidences appropriately without any reference values
+  /**
+   * Calculate overall confidence from individual metrics
+   */
+  public calculateOverallConfidence(glucoseConfidence: number, lipidsConfidence: number): number {
     return (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
   }
   
+  /**
+   * Check if confidence meets the threshold
+   */
   public meetsThreshold(confidence: number): boolean {
-    return confidence >= this.confidenceThreshold;
+    return confidence > this.MIN_CONFIDENCE_THRESHOLD;
   }
   
+  /**
+   * Get current confidence threshold
+   */
   public getConfidenceThreshold(): number {
-    return this.confidenceThreshold;
+    return this.MIN_CONFIDENCE_THRESHOLD;
   }
 }
+
