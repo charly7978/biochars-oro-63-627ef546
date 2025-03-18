@@ -615,37 +615,34 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Draw circles at peak points - AHORA DIBUJAMOS ARRHYTHMIAS IGUAL QUE LATIDOS NORMALES
+      // Draw circles at peak points
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
           const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
-            // Aquí dibujaremos todos los picos, incluyendo arritmias con visualización mejorada
-            
             // Calcular fase de pulso - usado tanto para normal como arritmia
             const pulsePhase = (now % 1500) / 1500;
             const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
             
             if (peak.isArrhythmia) {
-              // DIBUJO DE ARRITMIA CON CÍRCULO AMARILLO Y ANIMACIÓN
-              // 1. Círculo exterior pulsante (amarillo a rojo)
+              // DIBUJO DE ARRITMIA CON CÍRCULO AMARILLO QUE PULSA A ROJO
               const pulseSize = ARRHYTHMIA_INDICATOR_SIZE * pulseScale;
               
               // Círculo amarillo exterior pulsante
-              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
+              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR; // Amarillo
               renderCtx.beginPath();
               renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
               renderCtx.fill();
               
-              // Círculo interior
-              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR_END;
+              // Círculo interior rojo
+              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR_END; // Rojo
               renderCtx.beginPath();
               renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
               
-              // Dibujamos texto "Latido prematuro" cerca del círculo
+              // Texto "Latido prematuro"
               renderCtx.font = 'bold 12px Inter';
               renderCtx.fillStyle = '#FF2E2E';
               renderCtx.textAlign = 'center';
