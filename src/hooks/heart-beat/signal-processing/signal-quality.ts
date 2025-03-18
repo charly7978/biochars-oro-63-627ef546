@@ -50,8 +50,8 @@ export function checkWeakSignal(
   
   // Use higher thresholds if not specified
   const finalConfig = {
-    lowSignalThreshold: config.lowSignalThreshold || 0.15, // Increased from default 0.1
-    maxWeakSignalCount: config.maxWeakSignalCount || 4    // Increased from default 3
+    lowSignalThreshold: config.lowSignalThreshold || 0.25, // Increased from 0.15
+    maxWeakSignalCount: config.maxWeakSignalCount || 5    // Increased from 4
   };
   
   // If finger detection was previously confirmed but we have many consecutive weak signals,
@@ -106,11 +106,11 @@ export function isFingerDetected(): boolean {
 export function shouldProcessMeasurement(value: number): boolean {
   // If finger detection is confirmed by pattern, allow processing even if signal is slightly weak
   if (fingDetectionConfirmed) {
-    return Math.abs(value) >= 0.1; // Lower threshold for confirmed finger
+    return Math.abs(value) >= 0.15; // Lower threshold for confirmed finger
   }
   
   // Higher threshold to avoid processing weak signals (likely noise)
-  return Math.abs(value) >= 0.15; // Increased from 0.05
+  return Math.abs(value) >= 0.25; // Increased from 0.15
 }
 
 /**

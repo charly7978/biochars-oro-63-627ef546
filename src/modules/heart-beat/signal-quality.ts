@@ -1,4 +1,3 @@
-
 /**
  * Signal quality utility functions for heart beat signals
  * DIRECT MEASUREMENT ONLY - NO SIMULATION OR MANIPULATION
@@ -7,12 +6,12 @@
 // Signal quality thresholds with increased values to reduce false positives
 const GOOD_QUALITY_THRESHOLD = 70; // Increased from 65
 const ACCEPTABLE_QUALITY_THRESHOLD = 45; // Increased from 40
-const MIN_SIGNAL_STRENGTH = 0.15; // Higher threshold for signal detection
+const MIN_SIGNAL_STRENGTH = 0.25; // Higher threshold for signal detection (increased from 0.15)
 
 // Pattern detection constants
 const PATTERN_WINDOW_MS = 3000; // 3-second window for pattern detection
-const MIN_PEAKS_FOR_PATTERN = 3; // Minimum peaks to establish a pattern
-const REQUIRED_PATTERNS = 3; // Required number of consistent patterns to confirm finger
+const MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - minimum peaks to establish a pattern
+const REQUIRED_PATTERNS = 4; // Increased from 3 - required number of consistent patterns to confirm finger
 
 /**
  * Get color class based on signal quality
@@ -64,8 +63,8 @@ export const checkSignalQuality = (
   }
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } => {
   // Higher default thresholds to reduce false positives
-  const threshold = options?.lowSignalThreshold || 0.15; // Increased from 0.1
-  const maxWeakSignals = options?.maxWeakSignalCount || 4; // Increased from 3
+  const threshold = options?.lowSignalThreshold || 0.25; // Increased from 0.15
+  const maxWeakSignals = options?.maxWeakSignalCount || 5; // Increased from 4
   
   // More strict detection to prevent false positives
   const isWeak = Math.abs(signalValue) < threshold;
@@ -102,7 +101,7 @@ export const isFingerDetectedByPattern = (
   const recentSignals = signalHistory
     .filter(point => now - point.time < PATTERN_WINDOW_MS);
   
-  if (recentSignals.length < 10) {
+  if (recentSignals.length < 15) { // Increased minimum required data points
     return { 
       isFingerDetected: previousPatternCount >= REQUIRED_PATTERNS,
       patternCount: previousPatternCount,
@@ -112,7 +111,7 @@ export const isFingerDetectedByPattern = (
   
   // Look for peaks in the recent signal
   const peaks: number[] = [];
-  const peakThreshold = 0.2;
+  const peakThreshold = 0.25; // Increased from 0.2
   
   for (let i = 2; i < recentSignals.length - 2; i++) {
     const current = recentSignals[i];
@@ -121,11 +120,11 @@ export const isFingerDetectedByPattern = (
     const next1 = recentSignals[i + 1];
     const next2 = recentSignals[i + 2];
     
-    // Check if this point is a peak (higher than surrounding points)
-    if (current.value > prev1.value && 
-        current.value > prev2.value &&
-        current.value > next1.value && 
-        current.value > next2.value &&
+    // More strict peak detection criteria
+    if (current.value > prev1.value * 1.2 && // Must be significantly higher than neighbors
+        current.value > prev2.value * 1.2 &&
+        current.value > next1.value * 1.2 && 
+        current.value > next2.value * 1.2 &&
         Math.abs(current.value) > peakThreshold) {
       peaks.push(current.time);
     }
@@ -139,12 +138,26 @@ export const isFingerDetectedByPattern = (
       intervals.push(peaks[i] - peaks[i - 1]);
     }
     
+    // Check for physiologically plausible heart rate (40-180 BPM)
+    const validIntervals = intervals.filter(interval => 
+      interval >= 333 && interval <= 1500 // 40-180 BPM
+    );
+    
+    if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+      // If less than 70% of intervals are physiologically plausible, reject the pattern
+      return {
+        isFingerDetected: previousPatternCount >= REQUIRED_PATTERNS,
+        patternCount: Math.max(0, previousPatternCount - 1), // Decrease counter when intervals aren't valid
+        peakTimes: []
+      };
+    }
+    
     // Check for consistency in intervals (rhythm)
     let consistentIntervals = 0;
-    const maxDeviation = 200; // Allow 200ms deviation between intervals
+    const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
     
-    for (let i = 1; i < intervals.length; i++) {
-      if (Math.abs(intervals[i] - intervals[i - 1]) < maxDeviation) {
+    for (let i = 1; i < validIntervals.length; i++) {
+      if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
         consistentIntervals++;
       }
     }
@@ -154,6 +167,14 @@ export const isFingerDetectedByPattern = (
     
     if (consistentIntervals >= MIN_PEAKS_FOR_PATTERN - 1) {
       updatedPatternCount++;
+      
+      console.log("Consistent rhythm detected", {
+        consistentIntervals,
+        totalValidIntervals: validIntervals.length,
+        peakCount: peaks.length,
+        meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
+        patternCount: updatedPatternCount
+      });
     } else {
       // Reduce the counter if pattern is not consistent
       updatedPatternCount = Math.max(0, updatedPatternCount - 1);
@@ -168,7 +189,7 @@ export const isFingerDetectedByPattern = (
   
   return {
     isFingerDetected: previousPatternCount >= REQUIRED_PATTERNS,
-    patternCount: previousPatternCount,
+    patternCount: Math.max(0, previousPatternCount - 1), // Decrease counter when no peaks found
     peakTimes: []
   };
 };

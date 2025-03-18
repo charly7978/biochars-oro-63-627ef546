@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -18,16 +19,17 @@ export class SignalValidator {
   private detectedPatternCount: number = 0;
   private fingerDetectionConfirmed: boolean = false;
   
-  // Constants for pattern detection
+  // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 3; // Need at least 3 peaks for pattern
-  private readonly REQUIRED_PATTERNS = 3; // Need 3 consistent patterns
+  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
+  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
+  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
   
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
-    minSignalAmplitude: number = 0.01,
+    minSignalAmplitude: number = 0.02, // Increased from 0.01
     minPpgValues: number = 15
   ) {
     this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
@@ -60,7 +62,7 @@ export class SignalValidator {
    * Validate that the signal is strong enough
    */
   public isValidSignal(ppgValue: number): boolean {
-    return Math.abs(ppgValue) >= 0.005;
+    return Math.abs(ppgValue) >= 0.02; // Increased from 0.005
   }
   
   /**
@@ -113,11 +115,22 @@ export class SignalValidator {
       point => now - point.time < this.PATTERN_DETECTION_WINDOW_MS
     );
     
-    if (recentSignals.length < 10) return; // Need sufficient data
+    if (recentSignals.length < 15) return; // Need more data (increased from 10)
+    
+    // Check for minimum signal variance (reject near-constant signals)
+    const values = recentSignals.map(s => s.value);
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    
+    if (variance < this.MIN_SIGNAL_VARIANCE) {
+      // Signal variance too low - likely not a physiological signal
+      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+      return;
+    }
     
     // Look for peaks in the signal
     const peaks: number[] = [];
-    const peakThreshold = 0.2;
+    const peakThreshold = 0.25; // Increased from 0.2
     
     for (let i = 2; i < recentSignals.length - 2; i++) {
       const current = recentSignals[i];
@@ -127,10 +140,11 @@ export class SignalValidator {
       const next2 = recentSignals[i + 2];
       
       // Check if this point is a peak (higher than surrounding points)
-      if (current.value > prev1.value && 
-          current.value > prev2.value &&
-          current.value > next1.value && 
-          current.value > next2.value &&
+      // Also require the peak to be significantly higher (20% higher)
+      if (current.value > prev1.value * 1.2 && 
+          current.value > prev2.value * 1.2 &&
+          current.value > next1.value * 1.2 && 
+          current.value > next2.value * 1.2 &&
           Math.abs(current.value) > peakThreshold) {
         peaks.push(current.time);
       }
@@ -144,12 +158,23 @@ export class SignalValidator {
         intervals.push(peaks[i] - peaks[i - 1]);
       }
       
+      // Check for physiologically plausible heart rate (40-180 BPM)
+      const validIntervals = intervals.filter(interval => 
+        interval >= 333 && interval <= 1500 // 40-180 BPM
+      );
+      
+      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+        // If less than 70% of intervals are physiologically plausible, reject the pattern
+        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        return;
+      }
+      
       // Check for consistency in intervals (rhythm)
       let consistentIntervals = 0;
-      const maxDeviation = 200; // Allow 200ms deviation
+      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
       
-      for (let i = 1; i < intervals.length; i++) {
-        if (Math.abs(intervals[i] - intervals[i - 1]) < maxDeviation) {
+      for (let i = 1; i < validIntervals.length; i++) {
+        if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
           consistentIntervals++;
         }
       }
@@ -163,12 +188,22 @@ export class SignalValidator {
         if (this.detectedPatternCount >= this.REQUIRED_PATTERNS && !this.fingerDetectionConfirmed) {
           this.fingerDetectionConfirmed = true;
           console.log("Finger detection confirmed by consistent heartbeat rhythm!", 
-                     {time: new Date(now).toISOString(), patterns: this.detectedPatternCount});
+                     {
+                       time: new Date(now).toISOString(), 
+                       patterns: this.detectedPatternCount,
+                       consistentIntervals,
+                       peakCount: peaks.length,
+                       meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
+                       variance
+                     });
         }
       } else {
         // Reduce counter if pattern not consistent
         this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
       }
+    } else {
+      // Decrement pattern count if we don't have enough peaks
+      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
     }
   }
   

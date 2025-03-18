@@ -13,7 +13,7 @@ export class ArrhythmiaPatternDetector {
   private readonly PATTERN_BUFFER_SIZE = 15;
   private readonly ANOMALY_HISTORY_SIZE = 30;
   private readonly MIN_ANOMALY_PATTERN_LENGTH = 5;
-  private readonly PATTERN_MATCH_THRESHOLD = 0.65;
+  private readonly PATTERN_MATCH_THRESHOLD = 0.70; // Increased from 0.65
 
   /**
    * Update pattern buffer with real data
@@ -25,7 +25,7 @@ export class ArrhythmiaPatternDetector {
     }
     
     // Update anomaly scores based on real data
-    const anomalyScore = value > 0.3 ? 1 : 0;
+    const anomalyScore = value > 0.4 ? 1 : 0; // Increased threshold from 0.3
     this.anomalyScores.push(anomalyScore);
     if (this.anomalyScores.length > this.ANOMALY_HISTORY_SIZE) {
       this.anomalyScores.shift();
@@ -50,7 +50,7 @@ export class ArrhythmiaPatternDetector {
     const recentPattern = this.patternBuffer.slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
     
     // Feature 1: Significant variations in real data
-    const significantVariations = recentPattern.filter(v => v > 0.3).length;
+    const significantVariations = recentPattern.filter(v => v > 0.4).length; // Increased from 0.3
     const variationRatio = significantVariations / recentPattern.length;
     
     // Feature 2: Pattern consistency in real data
