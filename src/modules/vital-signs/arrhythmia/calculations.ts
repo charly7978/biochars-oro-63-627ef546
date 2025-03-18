@@ -4,46 +4,27 @@
  */
 
 /**
- * Calculate RMSSD (Root Mean Square of Successive Differences)
- * A measure of heart rate variability from real data
+ * Calculate RMSSD from real RR intervals
  */
-export function calculateRMSSD(rrIntervals: number[]): number {
-  if (rrIntervals.length < 2) return 0;
+export function calculateRMSSD(intervals: number[]): number {
+  if (intervals.length < 2) return 0;
   
-  let sumSquares = 0;
-  let count = 0;
-  
-  for (let i = 1; i < rrIntervals.length; i++) {
-    const diff = rrIntervals[i] - rrIntervals[i-1];
-    sumSquares += diff * diff;
-    count++;
+  let sumSquaredDiff = 0;
+  for (let i = 1; i < intervals.length; i++) {
+    sumSquaredDiff += Math.pow(intervals[i] - intervals[i-1], 2);
   }
   
-  if (count === 0) return 0;
-  
-  return Math.sqrt(sumSquares / count);
+  return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
 }
 
 /**
- * Calculate RR variation as a ratio
- * Higher values indicate more irregularity
+ * Calculate RR interval variation from real data
  */
-export function calculateRRVariation(rrIntervals: number[]): number {
-  if (rrIntervals.length < 3) return 0;
+export function calculateRRVariation(intervals: number[]): number {
+  if (intervals.length < 2) return 0;
   
-  const avg = rrIntervals.reduce((sum, val) => sum + val, 0) / rrIntervals.length;
-  if (avg === 0) return 0;
+  const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+  const lastRR = intervals[intervals.length - 1];
   
-  // Calculate absolute variations
-  const variations = [];
-  for (let i = 1; i < rrIntervals.length; i++) {
-    variations.push(Math.abs(rrIntervals[i] - rrIntervals[i-1]));
-  }
-  
-  // Sort variations to find median
-  variations.sort((a, b) => a - b);
-  const medianVariation = variations[Math.floor(variations.length / 2)];
-  
-  // Calculate variation ratio
-  return medianVariation / avg;
+  return Math.abs(lastRR - mean) / mean;
 }
