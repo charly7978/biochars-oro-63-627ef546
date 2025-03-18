@@ -14,4 +14,4 @@ export {
   calculateAC as getACComponent,
   calculateDC as getDCComponent,
   calculateStandardDeviation as getStdDeviation,
-} from '../../utils/vitalSignsUtils';
+} from '../perfusion-utils';
