@@ -9,23 +9,28 @@ import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visuali
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
-import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 
 /**
- * Hook for processing vital signs with direct algorithms only
- * No simulation or reference values are used
+ * Hook for processing vital signs with DIRECT ALGORITHMS ONLY
+ * NO SIMULATION OR REFERENCE VALUES WHATSOEVER
+ * Drastically improved false positive prevention
  */
 export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // State management - only direct measurement, no simulation
+  // State management - only direct measurement, NO SIMULATION WHATSOEVER
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
   // Session tracking
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
-  // Signal quality tracking
+  // Signal quality tracking - drastically improved thresholds
   const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.05;
-  const MAX_WEAK_SIGNALS = 10;
+  const LOW_SIGNAL_THRESHOLD = 0.40; // Drastically increased from 0.05
+  const MAX_WEAK_SIGNALS = 3; // Reduced for faster finger removal detection
+  
+  // Track minimum required signals for physiological validation
+  const validSignalsCountRef = useRef<number>(0);
+  const REQUIRED_VALID_SIGNALS = 30; // Increased from default
+  const signalBufferRef = useRef<number[]>([]);
   
   const { 
     arrhythmiaWindows, 
@@ -48,14 +53,14 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearLog 
   } = useVitalSignsLogging();
   
-  // Initialize processor components - direct measurement only
+  // Initialize processor components - direct measurement only, NO SIMULATION
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
     
-    // Create new instances for direct measurement
+    // Create new instances for direct measurement ONLY
     initializeProcessor();
     
     return () => {
@@ -69,28 +74,65 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
-   * Process PPG signal directly
-   * No simulation or reference values
+   * Process PPG signal directly - NO SIMULATION WHATSOEVER
+   * Drastically improved false positive prevention
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
-    // Check for weak signal to detect finger removal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      value,
-      weakSignalsCountRef.current,
-      {
-        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
-      }
-    );
+    const now = Date.now();
     
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
+    // Add to signal buffer for physiological validation
+    signalBufferRef.current.push(value);
+    if (signalBufferRef.current.length > 20) {
+      signalBufferRef.current.shift();
+    }
     
-    // Process signal directly - no simulation
-    let result = processVitalSignal(value, rrData, isWeakSignal);
-    const currentTime = Date.now();
+    // Perform physiological validation - absolutely critical for false positive prevention
+    const isPhysiologicalSignal = validatePhysiologicalSignal(signalBufferRef.current);
+    
+    if (isPhysiologicalSignal) {
+      validSignalsCountRef.current = Math.min(REQUIRED_VALID_SIGNALS * 2, validSignalsCountRef.current + 1);
+    } else {
+      // Faster decrease to eliminate false positives
+      validSignalsCountRef.current = Math.max(0, validSignalsCountRef.current - 2);
+    }
+    
+    // Only consider signal valid after seeing many consecutive physiological signals
+    const hasValidatedPhysiology = validSignalsCountRef.current >= REQUIRED_VALID_SIGNALS;
+    
+    // Check for weak signal to detect finger removal - much stricter threshold
+    if (Math.abs(value) < LOW_SIGNAL_THRESHOLD) {
+      weakSignalsCountRef.current++;
+    } else {
+      // Faster recovery once we have a strong signal
+      weakSignalsCountRef.current = Math.max(0, weakSignalsCountRef.current - 2);
+    }
+    
+    const isWeakSignal = weakSignalsCountRef.current >= MAX_WEAK_SIGNALS;
+    
+    // Reset physiological validation on weak signal
+    if (isWeakSignal) {
+      validSignalsCountRef.current = 0;
+    }
+    
+    // Process signal directly - NO SIMULATION WHATSOEVER
+    // Only process if we have physiological validation
+    let result = isWeakSignal || !hasValidatedPhysiology ? 
+      { 
+        // Empty result - nothing is simulated
+        bpm: 0,
+        confidence: 0,
+        isPeak: false,
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        fingerDetected: false,
+        glucose: 0,
+        lipids: { totalCholesterol: 0, triglycerides: 0 }
+      } : 
+      processVitalSignal(value, rrData, isWeakSignal);
     
     // If arrhythmia is detected in real data, register visualization window
-    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+    if (result.arrhythmiaStatus && result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
       
       // Window based on real heart rate
@@ -109,8 +151,74 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Log processed signals
     logSignalData(value, result, processedSignals.current);
     
+    // Add physiological validation info
+    const finalResult = {
+      ...result,
+      physiologicalValidation: {
+        isValid: hasValidatedPhysiology,
+        validCount: validSignalsCountRef.current,
+        required: REQUIRED_VALID_SIGNALS
+      }
+    };
+    
+    // Log validation status occasionally
+    if (processedSignals.current % 50 === 0) {
+      console.log("Signal validation status:", {
+        isWeakSignal,
+        hasValidatedPhysiology,
+        validSignalsCount: validSignalsCountRef.current,
+        weakSignalsCount: weakSignalsCountRef.current,
+        signalValue: value,
+        threshold: LOW_SIGNAL_THRESHOLD
+      });
+    }
+    
     // Always return real result
-    return result;
+    return finalResult;
+  };
+  
+  /**
+   * Validate if a signal pattern is physiologically plausible
+   * Critical for false positive prevention
+   */
+  const validatePhysiologicalSignal = (signalBuffer: number[]): boolean => {
+    if (signalBuffer.length < 10) return false;
+    
+    // Get recent values to analyze
+    const values = signalBuffer.slice(-10);
+    
+    // Check amplitude (real fingers have significant amplitude)
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const amplitude = max - min;
+    
+    if (amplitude < 0.20) return false; // Not enough variation for a real finger
+    
+    // Calculate first derivative to check for heartbeat-like patterns
+    const derivatives: number[] = [];
+    for (let i = 1; i < values.length; i++) {
+      derivatives.push(values[i] - values[i-1]);
+    }
+    
+    // Check if derivatives show sign changes (indicating oscillation)
+    let signChanges = 0;
+    for (let i = 1; i < derivatives.length; i++) {
+      if ((derivatives[i] > 0 && derivatives[i-1] < 0) ||
+          (derivatives[i] < 0 && derivatives[i-1] > 0)) {
+        signChanges++;
+      }
+    }
+    
+    // Require minimum sign changes (oscillations) for physiological signals
+    if (signChanges < 3) return false; // Need at least 3 oscillations
+    
+    // Calculate statistical properties to check for physiological patterns
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    const normalizedVariance = variance / (mean * mean);
+    
+    // Physiological signals have characteristic variance range
+    return normalizedVariance > 0.08 && normalizedVariance < 0.40;
   };
 
   /**
@@ -122,6 +230,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearArrhythmiaWindows();
     setLastValidResults(null);
     weakSignalsCountRef.current = 0;
+    validSignalsCountRef.current = 0;
+    signalBufferRef.current = [];
     
     return null;
   };
@@ -135,6 +245,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     setLastValidResults(null);
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
+    validSignalsCountRef.current = 0;
+    signalBufferRef.current = [];
     clearLog();
   };
 
