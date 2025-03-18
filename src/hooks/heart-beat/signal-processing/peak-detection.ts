@@ -45,9 +45,9 @@ export function handlePeakDetection(
     // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
-    // NO activar ningún sonido desde el procesador principal
-    // El beep solo se maneja en PPGSignalMeter cuando dibuja círculos en los picos
-    console.log("Peak-detection: Pico detectado pero SIN solicitar beep - solo gestionado por PPGSignalMeter", {
+    // DESACTIVADO - No solicitar beep aquí
+    // El beep solo se debe manejar en PPGSignalMeter
+    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
       confianza: result.confidence,
       valor: value,
       tiempo: new Date(now).toISOString()

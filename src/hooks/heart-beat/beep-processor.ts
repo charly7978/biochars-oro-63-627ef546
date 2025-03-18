@@ -17,7 +17,7 @@ export function useBeepProcessor() {
     playBeep: (volume: number) => boolean | Promise<boolean>
   ) => {
     // DESACTIVADO: No procesar beeps desde esta cola
-    console.log("BeepProcessor: Cola de beeps completamente desactivada - sonido manejado por PPGSignalMeter");
+    console.log("BeepProcessor: Cola de beeps completamente desactivada - sonido manejado exclusivamente por PPGSignalMeter");
     pendingBeepsQueue.current = []; // Vaciar cola
     return;
   }, []);

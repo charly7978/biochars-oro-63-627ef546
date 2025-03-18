@@ -56,6 +56,7 @@ const PPGSignalMeter = memo(({
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
+  const peakBeepRequestedRef = useRef<boolean>(false);
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5500;
@@ -101,11 +102,11 @@ const PPGSignalMeter = memo(({
             await audioContextRef.current.resume();
           }
           
-          await playBeepDirectly(0.1);
-          console.log("PPGSignalMeter: Audio Context initialized with low latency");
+          await playBeepDirectly(0.01);
+          console.log("PPGSignalMeter: Audio Context inicializado con baja latencia");
         }
       } catch (err) {
-        console.error("PPGSignalMeter: Error initializing audio context:", err);
+        console.error("PPGSignalMeter: Error inicializando audio context:", err);
       }
     };
     
@@ -114,7 +115,7 @@ const PPGSignalMeter = memo(({
     return () => {
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(err => {
-          console.error("PPGSignalMeter: Error closing audio context:", err);
+          console.error("PPGSignalMeter: Error cerrando audio context:", err);
         });
         audioContextRef.current = null;
       }
@@ -136,12 +137,12 @@ const PPGSignalMeter = memo(({
         }
         
         if (audioContextRef.current.state !== 'running') {
-          console.warn("PPGSignalMeter: Couldn't activate audio context");
+          console.warn("PPGSignalMeter: No se pudo activar el contexto de audio");
           return false;
         }
       }
       
-      console.log("PPGSignalMeter: Playing beep directly with volume", volume);
+      console.log("PPGSignalMeter: Reproduciendo beep directamente con volumen", volume);
       
       const primaryOscillator = audioContextRef.current.createOscillator();
       const primaryGain = audioContextRef.current.createGain();
@@ -194,10 +195,10 @@ const PPGSignalMeter = memo(({
       secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
       
       lastBeepTimeRef.current = now;
-      console.log("PPGSignalMeter: Beep played successfully");
+      console.log("PPGSignalMeter: Beep reproducido exitosamente");
       return true;
     } catch (err) {
-      console.error("PPGSignalMeter: Error playing beep:", err);
+      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
     }
   }, []);
@@ -206,13 +207,11 @@ const PPGSignalMeter = memo(({
     const now = Date.now();
     if (now - lastBeepRequestTimeRef.current < 250) return;
     
-    console.log("PPGSignalMeter: Peak detected, playing beep directly");
+    console.log("PPGSignalMeter: Pico detectado y círculo dibujado, reproduciendo beep");
+    
     playBeepDirectly(1.0);
     lastBeepRequestTimeRef.current = now;
-    
-    if (beepRequesterRef.current) {
-      beepRequesterRef.current(timestamp);
-    }
+    peakBeepRequestedRef.current = true;
   }, [playBeepDirectly]);
 
   useEffect(() => {
@@ -439,18 +438,13 @@ const PPGSignalMeter = memo(({
         });
         
         if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-          console.log("PPGSignalMeter: Peak detected, requesting beep", {
+          console.log("PPGSignalMeter: Pico detectado, círculo dibujado y beep solicitado", {
             time: peak.time,
             value: peak.value,
             isArrhythmia: peak.isArrhythmia
           });
           
           requestBeepForPeak(peak.time);
-          
-          setTimeout(() => {
-            playBeepDirectly(1.0);
-            console.log("PPGSignalMeter: Backup beep played");
-          }, 10);
         }
       }
     }
@@ -460,21 +454,10 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [isFingerDetected, requestBeepForPeak, playBeepDirectly]);
+  }, [isFingerDetected, requestBeepForPeak]);
 
   useEffect(() => {
-    const heartBeatProcessor = (window as any).heartBeatProcessor;
-    
-    if (heartBeatProcessor) {
-      beepRequesterRef.current = (timestamp: number) => {
-        try {
-          heartBeatProcessor.playBeep(1.0);
-          console.log("PPGSignalMeter: Beep requested for peak at timestamp", timestamp);
-        } catch (err) {
-          console.error("Error requesting beep:", err);
-        }
-      };
-    }
+    console.log("PPGSignalMeter: Usando SOLO el sistema de beep interno del componente");
     
     return () => {
       beepRequesterRef.current = null;
@@ -768,3 +751,4 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
+
