@@ -1,10 +1,13 @@
 
 /**
- * Functions for peak detection logic
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ *
+ * Functions for peak detection logic, working with real data only
  */
 
 /**
  * Determines if a measurement should be processed based on signal strength
+ * Only processes real measurements
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
@@ -13,6 +16,7 @@ export function shouldProcessMeasurement(value: number): boolean {
 
 /**
  * Creates default signal processing result when signal is too weak
+ * Contains only real data structure with zero values
  */
 export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
   return {
@@ -37,6 +41,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 /**
  * Handle peak detection with improved natural synchronization
  * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
+ * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
   result: any, 

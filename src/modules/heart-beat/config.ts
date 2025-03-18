@@ -14,7 +14,7 @@ export const HeartBeatConfig = {
   MIN_PEAK_TIME_MS: 300,
   WARMUP_TIME_MS: 2000,
 
-  // Filter settings
+  // Filter settings - adjusted for direct measurements only
   MEDIAN_FILTER_WINDOW: 3,
   MOVING_AVERAGE_WINDOW: 5,
   EMA_ALPHA: 0.3,
@@ -27,11 +27,11 @@ export const HeartBeatConfig = {
   BEEP_VOLUME: 0.8,
   MIN_BEEP_INTERVAL_MS: 250,
 
-  // Signal quality settings
+  // Signal quality settings - adjusted for direct measurements
   LOW_SIGNAL_THRESHOLD: 0.05,
   LOW_SIGNAL_FRAMES: 10,
   
-  // Arrhythmia visualization settings
+  // Arrhythmia visualization settings - preserved for real data visualization
   ARRHYTHMIA_INDICATOR_SIZE: 10,
   ARRHYTHMIA_PULSE_COLOR: '#FEF7CD', // Yellow highlight for arrhythmia circles
   ARRHYTHMIA_PULSE_COLOR_END: '#F97316', // Orange text for arrhythmia labels
