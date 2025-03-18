@@ -41,7 +41,7 @@ const PPGSignalMeter = memo(({
   const lastValueRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number>();
   const lastRenderTimeRef = useRef<number>(0);
-  const peaksRef = useRef<{time: number, value: number, isArrhythmia?: boolean}[]>([]);
+  const peaksRef = useRef<{time: number, value: number, isArrhythmia?: boolean, beepPlayed?: boolean}[]>([]);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
@@ -59,8 +59,8 @@ const PPGSignalMeter = memo(({
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  // Nueva bandera para saber si se ha dibujado un círculo y debe sonar un beep
-  const circlePeakDrawnRef = useRef<boolean>(false);
+  // Bandera para controlar que no ocurran beeps duplicados
+  const pendingBeepPeakIdRef = useRef<number | null>(null);
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5500;
@@ -92,7 +92,7 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 250;
+  const MIN_BEEP_INTERVAL_MS = 350; // Aumentado para evitar beeps muy cercanos
 
   // Inicializar el contexto de audio
   useEffect(() => {
@@ -131,6 +131,10 @@ const PPGSignalMeter = memo(({
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+        console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
+          timeSinceLastBeep: now - lastBeepTimeRef.current,
+          minInterval: MIN_BEEP_INTERVAL_MS
+        });
         return false;
       }
       
@@ -201,8 +205,8 @@ const PPGSignalMeter = memo(({
       
       lastBeepTimeRef.current = now;
       
-      // Resetear la bandera de círculo dibujado para evitar beeps duplicados
-      circlePeakDrawnRef.current = false;
+      // Resetear la bandera de pico pendiente
+      pendingBeepPeakIdRef.current = null;
       
       return true;
     } catch (err) {
@@ -378,8 +382,12 @@ const PPGSignalMeter = memo(({
     
     const effectivePeakThreshold = 1.8;
     
+    // Solo analizar puntos positivos (parte superior de la onda)
     for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
+      
+      // Solo considerar picos positivos para evitar detección doble
+      if (currentPoint.value <= 0) continue;
       
       const minPeakDistance = 180;
       
@@ -428,20 +436,25 @@ const PPGSignalMeter = memo(({
       );
       
       if (!tooClose) {
+        // Generar ID único para este pico
+        const peakId = Date.now() + Math.random();
+        
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
-          isArrhythmia: peak.isArrhythmia
+          isArrhythmia: peak.isArrhythmia,
+          beepPlayed: false // Marcar que aún no se ha reproducido beep para este pico
         });
         
-        // Marcar que se ha detectado un pico para dibujar un círculo
-        // El sonido de beep se reproducirá en la fase de renderizado
+        // Marcar este pico como pendiente para beep en la fase de renderizado
         if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-          circlePeakDrawnRef.current = true;
-          console.log("PPGSignalMeter: Pico detectado, círculo será dibujado", {
+          pendingBeepPeakIdRef.current = peakId;
+          
+          console.log("PPGSignalMeter: Pico detectado, programado para beep:", {
             time: peak.time,
             value: peak.value,
-            isArrhythmia: peak.isArrhythmia
+            isArrhythmia: peak.isArrhythmia,
+            peakId
           });
         }
       }
@@ -525,8 +538,8 @@ const PPGSignalMeter = memo(({
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
-    // Bandera para verificar si se dibujó algún círculo en esta renderización
-    let circleDrawnThisFrame = false;
+    // Variable para controlar si se dibujó algún círculo y podemos emitir beep
+    let shouldBeep = false;
     
     if (points.length > 1) {
       let segmentPoints: {x: number, y: number, isArrhythmia: boolean}[] = [];
@@ -603,7 +616,7 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      // Dibujar círculos en los picos detectados
+      // Dibujar círculos en los picos detectados y activar beep solo al dibujar un círculo
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -629,14 +642,22 @@ const PPGSignalMeter = memo(({
               renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
               
-              circleDrawnThisFrame = true;
+              // Activar bandera de beep si no se ha reproducido para este pico
+              if (!peak.beepPlayed) {
+                shouldBeep = true;
+                peak.beepPlayed = true;
+              }
             } else {
               renderCtx.fillStyle = peakColor;
               renderCtx.beginPath();
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
               
-              circleDrawnThisFrame = true;
+              // Activar bandera de beep si no se ha reproducido para este pico
+              if (!peak.beepPlayed) {
+                shouldBeep = true;
+                peak.beepPlayed = true;
+              }
             }
             
             renderCtx.font = 'bold 16px Inter';
@@ -656,12 +677,11 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    // Reproducir beep SOLO si se dibujó un círculo y la bandera está activada
-    if (circlePeakDrawnRef.current && isFingerDetected && 
+    // Reproducir beep SOLO si se dibujó un círculo y hay picos pendientes
+    if (shouldBeep && pendingBeepPeakIdRef.current && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep");
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
       playBeep(1.0);
-      circlePeakDrawnRef.current = false; // Resetear después de reproducir
     }
     
     lastRenderTimeRef.current = currentTime;
@@ -682,7 +702,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = [];
     arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     arrhythmiaSegmentsRef.current = [];
-    circlePeakDrawnRef.current = false;
+    pendingBeepPeakIdRef.current = null;
     onReset();
   }, [onReset]);
 
