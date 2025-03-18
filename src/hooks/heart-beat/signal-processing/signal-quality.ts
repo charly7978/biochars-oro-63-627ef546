@@ -1,4 +1,3 @@
-
 /**
  * Functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection

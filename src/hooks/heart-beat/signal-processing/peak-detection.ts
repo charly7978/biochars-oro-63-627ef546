@@ -7,8 +7,8 @@
  * Determines if a measurement should be processed based on signal strength
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Don't process signals that are too small (likely noise)
-  return Math.abs(value) >= 0.05;
+  // More sensitive threshold to capture real signals while filtering noise
+  return Math.abs(value) >= 0.03;
 }
 
 /**
@@ -28,7 +28,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 }
 
 /**
- * Handle peak detection
+ * Handle peak detection with improved natural synchronization
  */
 export function handlePeakDetection(
   result: any, 
@@ -39,12 +39,17 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Only process peaks with minimum confidence
-  if (result.isPeak && result.confidence > 0.4) {
+  // More sensitive confidence threshold for natural peak detection
+  if (result.isPeak && result.confidence > 0.25) {
+    // Update peak time for timing calculations
     lastPeakTimeRef.current = now;
     
-    if (isMonitoringRef.current && result.confidence > 0.5) {
-      requestBeepCallback(value);
+    // Only trigger beep for higher confidence peaks
+    // Using natural timing with the actual detected peak
+    if (isMonitoringRef.current && result.confidence > 0.3) {
+      // Scale beep volume based on signal strength for more natural feel
+      const beepVolume = Math.min(Math.abs(value * 1.2), 1.0);
+      requestBeepCallback(beepVolume);
     }
   }
 }
