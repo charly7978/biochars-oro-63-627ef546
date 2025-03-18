@@ -56,7 +56,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     try {
       if (!processorRef.current) {
         processorRef.current = new HeartBeatProcessor();
-        console.log('HeartBeatProcessor: New instance created - direct measurement mode only');
+        console.log('HeartBeatProcessor: New instance created - sin beeps activados');
         initializedRef.current = true;
         
         if (typeof window !== 'undefined') {
@@ -66,7 +66,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       
       if (processorRef.current) {
         processorRef.current.setMonitoring(true);
-        console.log('HeartBeatProcessor: Monitoring state set to true, but audio DISABLED');
+        console.log('HeartBeatProcessor: Monitoring state set to true, audio DESACTIVADO');
         isMonitoringRef.current = true;
       }
     } catch (error) {
@@ -92,7 +92,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   }, []);
 
   const requestBeep = useCallback((value: number): boolean => {
-    console.log('useHeartBeatProcessor: BEEP SOLICITADO PERO DESACTIVADO para evitar duplicación', {
+    console.log('useHeartBeatProcessor: Beep principal COMPLETAMENTE DESACTIVADO - solo suena en PPGSignalMeter', {
       value,
       isMonitoring: isMonitoringRef.current,
       processorExists: !!processorRef.current,

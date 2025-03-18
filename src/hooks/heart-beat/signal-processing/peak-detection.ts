@@ -29,7 +29,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función es clave para la sincronización natural del beep con el pico visual
+ * Esta función se ha modificado para NO activar el beep del procesador principal
  */
 export function handlePeakDetection(
   result: any, 
@@ -40,25 +40,17 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Umbral de confianza MUCHO más sensible para detección natural de picos
-  if (result.isPeak && result.confidence > 0.05) { // Umbral significativamente reducido
-    // Actualizar tiempo del pico para cálculos de tiempo
+  // Solo actualizar tiempo del pico para cálculos de tiempo
+  if (result.isPeak && result.confidence > 0.05) {
+    // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
-    // Solo registrar el pico sin activar audio - el beep viene del monitor PPG
-    if (isMonitoringRef.current) {
-      // Escalar volumen del beep basado en fuerza de la señal
-      const beepVolume = Math.min(Math.abs(value * 3.0), 1.0);
-      
-      // Registrar detección de pico pero NO solicitar beep
-      console.log("Peak-detection: Pico detectado, pero NO solicitando beep para evitar duplicación", {
-        confianza: result.confidence,
-        valor: value,
-        tiempo: new Date(now).toISOString()
-      });
-      
-      // NO llamar al beep desde aquí, dejemos que PPGSignalMeter lo maneje
-      // requestBeepCallback(beepVolume);
-    }
+    // NO activar ningún sonido desde el procesador principal
+    // El beep solo se maneja en PPGSignalMeter cuando dibuja círculos en los picos
+    console.log("Peak-detection: Pico detectado pero SIN solicitar beep - solo gestionado por PPGSignalMeter", {
+      confianza: result.confidence,
+      valor: value,
+      tiempo: new Date(now).toISOString()
+    });
   }
 }
