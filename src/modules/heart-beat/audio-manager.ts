@@ -16,14 +16,14 @@ export class HeartbeatAudioManager {
     beepVolume: number,
     minBeepInterval: number
   }) {
-    console.log("HeartbeatAudioManager: CONSTRUCTOR LLAMADO, PERO SISTEMA DE AUDIO CENTRALIZADO EN PPGSignalMeter");
+    // Clase mantenida por compatibilidad
+    // Audio centralizado en PPGSignalMeter para mejor rendimiento
   }
   
   /**
    * Initialize audio context - NOOP as audio is handled in PPGSignalMeter
    */
   public async initAudio(): Promise<boolean> {
-    console.log("HeartbeatAudioManager: initAudio llamado pero sistema de audio centralizado en PPGSignalMeter");
     return false;
   }
   
@@ -31,7 +31,6 @@ export class HeartbeatAudioManager {
    * Play heartbeat sound - NOOP as audio is handled in PPGSignalMeter
    */
   public async playBeep(volume: number = this.config.beepVolume): Promise<boolean> {
-    console.log("HeartbeatAudioManager: playBeep llamado pero sistema de audio centralizado en PPGSignalMeter");
     return false;
   }
 }

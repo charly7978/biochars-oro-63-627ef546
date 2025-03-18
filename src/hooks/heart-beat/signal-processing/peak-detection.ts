@@ -30,6 +30,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 /**
  * Handle peak detection with improved natural synchronization
  * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
+ * Optimizada para bajo uso de CPU
  */
 export function handlePeakDetection(
   result: any, 
@@ -38,19 +39,16 @@ export function handlePeakDetection(
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
 ): void {
-  const now = Date.now();
+  if (!result || !result.isPeak || result.confidence <= 0.05) return;
   
-  // Solo actualizar tiempo del pico para cálculos de tiempo
-  if (result.isPeak && result.confidence > 0.05) {
-    // Actualizar tiempo del pico para cálculos de tempo solamente
-    lastPeakTimeRef.current = now;
-    
-    // TODO EL CÓDIGO DE BEEP HA SIDO ELIMINADO
-    // El beep solo se maneja en PPGSignalMeter cuando se dibuja un círculo
+  // Actualizar tiempo del pico para cálculos de tiempo solamente
+  lastPeakTimeRef.current = Date.now();
+  
+  // El beep solo se maneja en PPGSignalMeter cuando se dibuja un círculo
+  if (process.env.NODE_ENV === 'development') {
     console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
       confianza: result.confidence,
-      valor: value,
-      tiempo: new Date(now).toISOString()
+      valor: value
     });
   }
 }

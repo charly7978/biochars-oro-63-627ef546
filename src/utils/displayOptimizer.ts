@@ -35,9 +35,14 @@ export const optimizeCanvas = (canvas: HTMLCanvasElement, width: number, height:
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   if (ctx) {
     ctx.scale(dpr, dpr);
+    
+    // Optimizaciones adicionales para mejor rendimiento
+    if ('imageSmoothingEnabled' in ctx) {
+      ctx.imageSmoothingEnabled = false;
+    }
   }
 };
 
@@ -50,8 +55,12 @@ export const optimizeElement = (element: HTMLElement): void => {
   element.style.backfaceVisibility = 'hidden';
   element.style.willChange = 'transform';
   
-  // Using standard properties only
+  // Desactivar antialiasing para mejor rendimiento
+  element.style.imageRendering = 'optimizeSpeed';
   element.style.textRendering = 'optimizeSpeed';
+  
+  // Forzar aceleración de hardware
+  element.style.contain = 'layout paint size';
 };
 
 /**
@@ -61,4 +70,48 @@ export const optimizeElement = (element: HTMLElement): void => {
 export const isMobileDevice = (): boolean => {
   const userAgent = navigator.userAgent.toLowerCase();
   return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+};
+
+/**
+ * Función para optimizar el dibujado de trazos en canvas
+ * Mejora significativamente el rendimiento
+ */
+export const optimizeCanvasDrawing = (ctx: CanvasRenderingContext2D): void => {
+  // Deshabilitar antialiasing para mejor rendimiento
+  if ('imageSmoothingEnabled' in ctx) {
+    ctx.imageSmoothingEnabled = false;
+  }
+  
+  // Optimizar trazado
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  
+  // Reducir calidad de las sombras en dispositivos de bajo rendimiento
+  if (isMobileDevice()) {
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+  }
+};
+
+/**
+ * Función para minimizar la sobrecarga de dibujado
+ * @returns true si es momento de dibujar, false si debe saltarse este frame
+ */
+export const shouldSkipFrame = (
+  lastRenderTime: number,
+  targetFPS: number = 30
+): boolean => {
+  const now = performance.now();
+  const minFrameTime = 1000 / targetFPS;
+  
+  return (now - lastRenderTime) < minFrameTime;
+};
+
+/**
+ * Crea un buffer para suavizar el movimiento del gráfico
+ * No manipula los datos, solo optimiza la visualización
+ */
+export const createSmoothBuffer = (value: number, lastValue: number, factor: number = 0.4): number => {
+  if (lastValue === null || lastValue === undefined) return value;
+  return lastValue + factor * (value - lastValue);
 };
