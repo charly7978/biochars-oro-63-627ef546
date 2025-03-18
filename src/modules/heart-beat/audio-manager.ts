@@ -6,6 +6,7 @@
 export class HeartbeatAudioManager {
   private audioContext: AudioContext | null = null;
   private lastBeepTime: number = 0;
+  private audioInitialized: boolean = false;
   
   constructor(private config: {
     primaryFrequency: number,
@@ -39,6 +40,7 @@ export class HeartbeatAudioManager {
         // Prepare system with silent beep
         await this.playBeep(0.01);
         console.log("HeartbeatAudioManager: Audio Context Initialized with low latency");
+        this.audioInitialized = true;
         return true;
       } else {
         console.warn("HeartbeatAudioManager: AudioContext not available in this environment");
@@ -51,23 +53,31 @@ export class HeartbeatAudioManager {
   }
   
   /**
-   * Play heartbeat sound
+   * Play heartbeat sound with immediate execution
    */
   public async playBeep(volume: number = this.config.beepVolume): Promise<boolean> {
-    // Basic interval check
-    const now = Date.now();
-    if (now - this.lastBeepTime < this.config.minBeepInterval) {
-      return false;
-    }
-
     try {
+      // Basic interval check to prevent beep overlap
+      const now = Date.now();
+      if (now - this.lastBeepTime < this.config.minBeepInterval) {
+        return false;
+      }
+
       // Ensure audio context is available and active
       if (!this.audioContext || this.audioContext.state !== 'running') {
-        await this.initAudio();
+        if (!this.audioInitialized) {
+          await this.initAudio();
+        } else if (this.audioContext) {
+          await this.audioContext.resume();
+        }
+        
         if (!this.audioContext || this.audioContext.state !== 'running') {
+          console.warn("HeartbeatAudioManager: No se pudo activar el contexto de audio");
           return false;
         }
       }
+
+      console.log("HeartbeatAudioManager: Reproduciendo beep con volumen", volume);
 
       // Create oscillators for realistic heartbeat sound
       const primaryOscillator = this.audioContext.createOscillator();
@@ -76,25 +86,28 @@ export class HeartbeatAudioManager {
       const secondaryOscillator = this.audioContext.createOscillator();
       const secondaryGain = this.audioContext.createGain();
 
-      // Configure primary tone
+      // Configure primary tone (higher volume for better audibility)
       primaryOscillator.type = "sine";
       primaryOscillator.frequency.setValueAtTime(
         this.config.primaryFrequency,
         this.audioContext.currentTime
       );
 
-      // Configure secondary tone
+      // Configure secondary tone (higher volume for better audibility)
       secondaryOscillator.type = "sine";
       secondaryOscillator.frequency.setValueAtTime(
         this.config.secondaryFrequency,
         this.audioContext.currentTime
       );
 
+      // Aumentar volumen general para mejor audibilidad
+      const adjustedVolume = Math.min(volume * 1.2, 1.0);
+
       // Amplitude envelope for primary tone
       primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       primaryGain.gain.linearRampToValueAtTime(
-        volume,
-        this.audioContext.currentTime + 0.01
+        adjustedVolume,
+        this.audioContext.currentTime + 0.001 // Más rápido ataque
       );
       primaryGain.gain.exponentialRampToValueAtTime(
         0.01,
@@ -104,8 +117,8 @@ export class HeartbeatAudioManager {
       // Amplitude envelope for secondary tone
       secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.4, // Secondary at lower volume
-        this.audioContext.currentTime + 0.01
+        adjustedVolume * 0.5, // Secondary at higher relative volume
+        this.audioContext.currentTime + 0.001 // Más rápido ataque
       );
       secondaryGain.gain.exponentialRampToValueAtTime(
         0.01,
@@ -126,6 +139,7 @@ export class HeartbeatAudioManager {
 
       // Update last beep time
       this.lastBeepTime = now;
+      console.log("HeartbeatAudioManager: Beep reproducido exitosamente");
       return true;
     } catch (err) {
       console.error("HeartbeatAudioManager: Error playing beep", err);

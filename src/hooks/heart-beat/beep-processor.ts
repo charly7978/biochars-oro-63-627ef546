@@ -6,7 +6,7 @@ export function useBeepProcessor() {
   const beepProcessorTimeoutRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  const MIN_BEEP_INTERVAL_MS = 250; // Minimum time between beeps
+  const MIN_BEEP_INTERVAL_MS = 200; // Reducido para más sensibilidad
   
   const processBeepQueue = useCallback((
     isMonitoringRef: React.MutableRefObject<boolean>,
@@ -25,7 +25,7 @@ export function useBeepProcessor() {
     if (pendingBeepsQueue.current.length === 0) return;
     
     // Only process beeps if signal quality is good
-    if (lastSignalQualityRef.current < 0.4) {
+    if (lastSignalQualityRef.current < 0.25) { // Reducido para mayor sensibilidad
       pendingBeepsQueue.current = [];
       return;
     }
@@ -42,7 +42,8 @@ export function useBeepProcessor() {
       try {
         // Attempt to play the beep only if monitoring
         if (isMonitoringRef.current) {
-          playBeep(0.7); // Reduced volume
+          console.log("BeepProcessor: Reproduciendo beep desde cola");
+          playBeep(0.8); // Aumentado volumen
           lastBeepTimeRef.current = now;
         }
         pendingBeepsQueue.current.shift();
@@ -66,7 +67,7 @@ export function useBeepProcessor() {
           missedBeepsCounter, 
           playBeep
         ), 
-        MIN_BEEP_INTERVAL_MS * 0.5
+        MIN_BEEP_INTERVAL_MS * 0.4 // Más frecuente proceso
       );
     }
   }, []);
@@ -82,8 +83,8 @@ export function useBeepProcessor() {
   ): boolean => {
     if (!isMonitoringRef.current) return false;
     
-    // Only beep if signal quality is good and we don't have too many weak signals
-    if (lastSignalQualityRef.current < 0.4 || 
+    // Solo beep si la calidad de señal es suficiente
+    if (lastSignalQualityRef.current < 0.25 || // Reducido para mayor sensibilidad
         consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
       return false;
     }
@@ -92,9 +93,11 @@ export function useBeepProcessor() {
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS) {
       try {
-        const success = playBeep(0.7);
+        console.log("BeepProcessor: Intentando reproducir beep inmediato");
+        const success = playBeep(Math.min(value * 1.2, 1.0)); // Aumentado volumen
         
         if (success) {
+          console.log("BeepProcessor: Beep inmediato reproducido exitosamente");
           lastBeepTimeRef.current = now;
           missedBeepsCounter.current = 0;
           return true;
@@ -121,7 +124,7 @@ export function useBeepProcessor() {
               missedBeepsCounter, 
               playBeep
             ), 
-            MIN_BEEP_INTERVAL_MS * 0.6
+            MIN_BEEP_INTERVAL_MS * 0.4 // Más frecuente proceso
           );
         }
       }

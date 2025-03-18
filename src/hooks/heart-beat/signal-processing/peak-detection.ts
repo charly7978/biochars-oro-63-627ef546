@@ -8,7 +8,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.02; // Reducido de 0.03 para mayor sensibilidad
+  return Math.abs(value) >= 0.01; // Reducido de 0.02 para mayor sensibilidad
 }
 
 /**
@@ -41,18 +41,26 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Umbral de confianza más sensible para detección natural de picos
-  if (result.isPeak && result.confidence > 0.2) { // Reducido de 0.25 para mayor sensibilidad
+  if (result.isPeak && result.confidence > 0.15) { // Reducido para mayor sensibilidad
     // Actualizar tiempo del pico para cálculos de tiempo
     lastPeakTimeRef.current = now;
     
-    // Solo activar beep para picos con mayor confianza
+    // Solo activar beep para picos válidos
     // Usando tiempo natural con el pico detectado real
-    if (isMonitoringRef.current && result.confidence > 0.25) { // Reducido de 0.3
+    if (isMonitoringRef.current) {
       // Escalar volumen del beep basado en fuerza de la señal para una sensación más natural
-      const beepVolume = Math.min(Math.abs(value * 1.5), 1.0); // Aumentado de 1.2 a 1.5
+      const beepVolume = Math.min(Math.abs(value * 2.0), 1.0); // Aumentado para mayor volumen
       
       // Esta es la llamada clave que sincroniza el beep con el pico visual
+      // Llamada directa e inmediata para sincronización natural
       requestBeepCallback(beepVolume);
+      
+      console.log("Peak-detection: Beep solicitado para pico visual", {
+        confianza: result.confidence,
+        valor: value,
+        volumen: beepVolume,
+        tiempo: new Date(now).toISOString()
+      });
     }
   }
 }
