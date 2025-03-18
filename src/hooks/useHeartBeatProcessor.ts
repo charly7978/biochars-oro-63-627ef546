@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -17,8 +16,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const missedBeepsCounter = useRef<number>(0);
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
+  const lastProcessedPeakTimeRef = useRef<number>(0);
   
-  // Import refactored modules
   const { 
     requestImmediateBeep, 
     processBeepQueue, 
@@ -67,7 +66,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       
       if (processorRef.current) {
         processorRef.current.initAudio();
-        // Ensure monitoring is off by default
         processorRef.current.setMonitoring(false);
         console.log('HeartBeatProcessor: Monitoring state set to false');
         isMonitoringRef.current = false;
@@ -84,7 +82,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       });
       
       if (processorRef.current) {
-        // Ensure monitoring is turned off when unmounting
         processorRef.current.setMonitoring(false);
         processorRef.current = null;
       }
@@ -95,9 +92,24 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Helper to request beep with all the necessary refs
   const requestBeep = useCallback((value: number): boolean => {
     if (!processorRef.current) return false;
+    
+    const now = Date.now();
+    if (now - lastProcessedPeakTimeRef.current < 200) {
+      return false;
+    }
+    
+    lastProcessedPeakTimeRef.current = now;
+    
+    if (processorRef.current) {
+      try {
+        processorRef.current.playBeep(value);
+        return true;
+      } catch (err) {
+        console.error("Error al reproducir beep directo:", err);
+      }
+    }
     
     return requestImmediateBeep(
       value, 
@@ -110,7 +122,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     );
   }, [requestImmediateBeep]);
 
-  // Main signal processing function that uses the refactored modules
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       return {
@@ -136,18 +147,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBeatIsArrhythmiaRef
     );
 
-    // Only update BPM and confidence if the values are reasonable
     if (result.bpm > 0 && result.confidence > 0.4) {
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
-    // Analyze RR intervals for arrhythmia detection using only real data
     if (lastRRIntervalsRef.current.length >= 3) {
       const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
       currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
       
-      // Update result with arrhythmia status
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
     }
 
@@ -167,11 +175,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     });
     
     if (processorRef.current) {
-      // Turn off monitoring first
       processorRef.current.setMonitoring(false);
       isMonitoringRef.current = false;
       
-      // Then reset the processor
       processorRef.current.reset();
       processorRef.current.initAudio();
     }
@@ -179,17 +185,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     setCurrentBPM(0);
     setConfidence(0);
     
-    // Reset all submodules
     resetArrhythmiaDetector();
     resetSignalProcessor();
     
     missedBeepsCounter.current = 0;
+    lastProcessedPeakTimeRef.current = 0;
     
-    // Clear any pending beeps
     cleanupBeepProcessor();
   }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);
 
-  // Function to start monitoring
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
     if (processorRef.current) {
@@ -197,9 +201,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current.setMonitoring(true);
       console.log('HeartBeatProcessor: Monitoring state set to true');
       
-      // Reset state counters
       lastPeakTimeRef.current = null;
       lastBeepTimeRef.current = 0;
+      lastProcessedPeakTimeRef.current = 0;
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
       
@@ -210,7 +214,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
   }, []);
 
-  // Function to stop monitoring
   const stopMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Stopping monitoring');
     if (processorRef.current) {
@@ -219,10 +222,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       console.log('HeartBeatProcessor: Monitoring state set to false');
     }
     
-    // Clear any pending beeps
     cleanupBeepProcessor();
     
-    // Reset BPM values
     setCurrentBPM(0);
     setConfidence(0);
   }, [cleanupBeepProcessor]);
