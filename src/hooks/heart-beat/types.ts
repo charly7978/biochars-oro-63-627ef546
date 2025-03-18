@@ -1,28 +1,31 @@
 
-import { RRAnalysisResult } from '../arrhythmia/types';
+/**
+ * Types for heart beat processing
+ */
 
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
-}
-
+/**
+ * Result from heart beat signal processing
+ */
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
-  filteredValue?: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  rrData?: RRIntervalData;
+  rrData: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
 }
 
-export interface UseHeartBeatReturn {
-  currentBPM: number;
-  confidence: number;
-  processSignal: (value: number) => HeartBeatResult;
-  reset: () => void;
-  isArrhythmia: boolean;
-  requestBeep: (value: number) => boolean;
-  startMonitoring: () => void;
-  stopMonitoring: () => void;
+/**
+ * Configuration for beat detector
+ */
+export interface BeatDetectorConfig {
+  sampleRate: number;
+  windowSize: number;
+  minBPM: number;
+  maxBPM: number;
+  signalThreshold: number;
+  minConfidence: number;
 }

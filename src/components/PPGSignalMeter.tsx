@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -440,12 +441,13 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
-    const pointIsArrhythmia = isArrhythmia;
+    // Convert boolean isArrhythmia to number (0 or 1) for isArrhythmia property
+    const pointIsArrhythmia = isArrhythmia ? 1 : 0;
     
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
-      isArrhythmia: pointIsArrhythmia
+      isArrhythmia: isArrhythmia
     };
     
     dataBufferRef.current.push(dataPoint);
@@ -460,7 +462,9 @@ const PPGSignalMeter = memo(({
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
-        point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
+        // Convert the boolean to a number (0 or 1) for the method call
+        const pointIsInArrhythmiaSegment = isPointInArrhythmiaSegment(point.time, now);
+        point.isArrhythmia = point.isArrhythmia || pointIsInArrhythmiaSegment;
         
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
@@ -468,14 +472,14 @@ const PPGSignalMeter = memo(({
         if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
           if (segmentPoints.length > 0) {
             renderCtx.beginPath();
-            renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+            renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia ? 1 : 0);
             renderCtx.lineWidth = 2;
             renderCtx.lineJoin = 'round';
             renderCtx.lineCap = 'round';
             
             if (window.devicePixelRatio > 1) {
               renderCtx.shadowBlur = 0.5;
-              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia ? 1 : 0);
             }
             
             for (let j = 0; j < segmentPoints.length; j++) {
@@ -503,14 +507,14 @@ const PPGSignalMeter = memo(({
       
       if (segmentPoints.length > 0) {
         renderCtx.beginPath();
-        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia ? 1 : 0);
         renderCtx.lineWidth = 2;
         renderCtx.lineJoin = 'round';
         renderCtx.lineCap = 'round';
         
         if (window.devicePixelRatio > 1) {
           renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia ? 1 : 0);
         }
         
         for (let j = 0; j < segmentPoints.length; j++) {
@@ -534,7 +538,8 @@ const PPGSignalMeter = memo(({
           const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
-            const peakColor = getSignalColor(!!peak.isArrhythmia);
+            // Convert boolean to number for getSignalColor
+            const peakColor = getSignalColor(peak.isArrhythmia ? 1 : 0);
             
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
@@ -669,4 +674,3 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
-
