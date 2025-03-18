@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "./components/VitalSign";
 import CameraView from "./components/CameraView";
@@ -8,11 +9,31 @@ import PPGSignalMeter from "./components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "./components/MeasurementConfirmationDialog";
 import { toast } from "sonner";
 
+interface VitalSignsState {
+  spo2: number;
+  pressure: string;
+  arrhythmiaStatus: string;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  lastArrhythmiaData?: any;
+  calibration?: {
+    progress: {
+      heartRate: number;
+      spo2: number;
+      pressure: number;
+      arrhythmia: number;
+    }
+  };
+}
+
 const App = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
-  const [vitalSigns, setVitalSigns] = useState({ 
+  const [vitalSigns, setVitalSigns] = useState<VitalSignsState>({ 
     spo2: 0, 
     pressure: "--/--",
     arrhythmiaStatus: "--",
@@ -26,7 +47,7 @@ const App = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const measurementTimerRef = useRef(null);
+  const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -36,18 +57,18 @@ const App = () => {
     const elem = document.documentElement;
     try {
       if (elem.requestFullscreen) {
-        await elem.requestFullscreen({ navigationUI: "hide" });
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
-      } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen({ navigationUI: "hide" });
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen({ navigationUI: "hide" });
+        await elem.requestFullscreen();
+      } else if ('webkitRequestFullscreen' in elem) {
+        await (elem as any).webkitRequestFullscreen();
+      } else if ('mozRequestFullScreen' in elem) {
+        await (elem as any).mozRequestFullScreen();
+      } else if ('msRequestFullscreen' in elem) {
+        await (elem as any).msRequestFullscreen();
       }
       
       if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.AndroidFullScreen) {
-          window.AndroidFullScreen.immersiveMode(
+        if ('AndroidFullScreen' in window) {
+          (window as any).AndroidFullScreen.immersiveMode(
             function() { console.log('Immersive mode enabled'); },
             function() { console.log('Failed to enable immersive mode'); }
           );
@@ -59,7 +80,7 @@ const App = () => {
   };
 
   useEffect(() => {
-    const preventScroll = (e) => e.preventDefault();
+    const preventScroll = (e: Event) => e.preventDefault();
     
     const lockOrientation = async () => {
       try {
@@ -73,7 +94,7 @@ const App = () => {
     
     const setMaxResolution = () => {
       if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = 1 / window.devicePixelRatio;
+        document.body.style.zoom = `${1 / window.devicePixelRatio}`;
       }
     };
     
@@ -196,7 +217,7 @@ const App = () => {
     }
   };
 
-  const handleStreamReady = (stream) => {
+  const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
