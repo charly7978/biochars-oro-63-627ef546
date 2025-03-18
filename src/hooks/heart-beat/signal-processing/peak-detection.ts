@@ -8,7 +8,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.01; // Reducido de 0.02 para mayor sensibilidad
+  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
 }
 
 /**
@@ -40,27 +40,32 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Umbral de confianza más sensible para detección natural de picos
-  if (result.isPeak && result.confidence > 0.15) { // Reducido para mayor sensibilidad
+  // Umbral de confianza MUCHO más sensible para detección natural de picos
+  if (result.isPeak && result.confidence > 0.05) { // Umbral significativamente reducido
     // Actualizar tiempo del pico para cálculos de tiempo
     lastPeakTimeRef.current = now;
     
-    // Solo activar beep para picos válidos
-    // Usando tiempo natural con el pico detectado real
+    // Solo activar beep para picos válidos cuando se está monitoreando
     if (isMonitoringRef.current) {
-      // Escalar volumen del beep basado en fuerza de la señal para una sensación más natural
-      const beepVolume = Math.min(Math.abs(value * 2.0), 1.0); // Aumentado para mayor volumen
+      // Escalar volumen del beep basado en fuerza de la señal con mayor volumen base
+      const beepVolume = Math.min(Math.abs(value * 3.0), 1.0); // Aumentado significativamente para garantizar volumen audible
       
-      // Esta es la llamada clave que sincroniza el beep con el pico visual
-      // Llamada directa e inmediata para sincronización natural
-      requestBeepCallback(beepVolume);
-      
-      console.log("Peak-detection: Beep solicitado para pico visual", {
+      // FORZAR reproducción inmediata del beep - sin verificaciones adicionales
+      console.log("Peak-detection: FORZANDO beep inmediato para pico visual", {
         confianza: result.confidence,
         valor: value,
         volumen: beepVolume,
         tiempo: new Date(now).toISOString()
       });
+      
+      // Llamada directa e inmediata sin esperar retorno
+      requestBeepCallback(beepVolume);
+      
+      // Intentar segunda llamada con pequeño delay para garantizar que el audio se reproduzca
+      setTimeout(() => {
+        requestBeepCallback(beepVolume);
+        console.log("Peak-detection: Beep secundario de respaldo enviado");
+      }, 10);
     }
   }
 }

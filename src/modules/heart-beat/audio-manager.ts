@@ -38,7 +38,7 @@ export class HeartbeatAudioManager {
         }
         
         // Prepare system with silent beep
-        await this.playBeep(0.01);
+        await this.playBeep(0.1); // Aumentado para mejor inicialización
         console.log("HeartbeatAudioManager: Audio Context Initialized with low latency");
         this.audioInitialized = true;
         return true;
@@ -57,9 +57,9 @@ export class HeartbeatAudioManager {
    */
   public async playBeep(volume: number = this.config.beepVolume): Promise<boolean> {
     try {
-      // Basic interval check to prevent beep overlap
+      // Intervalo mínimo reducido para permitir beeps más frecuentes
       const now = Date.now();
-      if (now - this.lastBeepTime < this.config.minBeepInterval) {
+      if (now - this.lastBeepTime < 200) { // Reducido de this.config.minBeepInterval
         return false;
       }
 
@@ -79,46 +79,46 @@ export class HeartbeatAudioManager {
 
       console.log("HeartbeatAudioManager: Reproduciendo beep con volumen", volume);
 
-      // Create oscillators for realistic heartbeat sound
+      // Create oscillators for realistic heartbeat sound - with increased volume
       const primaryOscillator = this.audioContext.createOscillator();
       const primaryGain = this.audioContext.createGain();
       
       const secondaryOscillator = this.audioContext.createOscillator();
       const secondaryGain = this.audioContext.createGain();
 
-      // Configure primary tone (higher volume for better audibility)
+      // Configure primary tone with higher volume
       primaryOscillator.type = "sine";
       primaryOscillator.frequency.setValueAtTime(
         this.config.primaryFrequency,
         this.audioContext.currentTime
       );
 
-      // Configure secondary tone (higher volume for better audibility)
+      // Configure secondary tone with higher volume
       secondaryOscillator.type = "sine";
       secondaryOscillator.frequency.setValueAtTime(
         this.config.secondaryFrequency,
         this.audioContext.currentTime
       );
 
-      // Aumentar volumen general para mejor audibilidad
-      const adjustedVolume = Math.min(volume * 1.2, 1.0);
+      // Aumentar volumen general significativamente para garantizar audibilidad
+      const adjustedVolume = Math.min(volume * 2.0, 1.0); // Duplicado para mayor volumen
 
-      // Amplitude envelope for primary tone
+      // Amplitude envelope for primary tone - faster attack
       primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       primaryGain.gain.linearRampToValueAtTime(
         adjustedVolume,
-        this.audioContext.currentTime + 0.001 // Más rápido ataque
+        this.audioContext.currentTime + 0.0005 // Ataque más rápido
       );
       primaryGain.gain.exponentialRampToValueAtTime(
         0.01,
         this.audioContext.currentTime + this.config.beepDuration / 1000
       );
 
-      // Amplitude envelope for secondary tone
+      // Amplitude envelope for secondary tone - faster attack
       secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       secondaryGain.gain.linearRampToValueAtTime(
-        adjustedVolume * 0.5, // Secondary at higher relative volume
-        this.audioContext.currentTime + 0.001 // Más rápido ataque
+        adjustedVolume * 0.8, // Secondary at higher relative volume
+        this.audioContext.currentTime + 0.0005 // Ataque más rápido
       );
       secondaryGain.gain.exponentialRampToValueAtTime(
         0.01,

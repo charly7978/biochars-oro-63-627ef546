@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -59,16 +60,18 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         console.log('HeartBeatProcessor: New instance created - direct measurement mode only');
         initializedRef.current = true;
         
+        // Asegurar que el procesador esté siempre disponible globalmente
         if (typeof window !== 'undefined') {
           (window as any).heartBeatProcessor = processorRef.current;
         }
       }
       
       if (processorRef.current) {
+        // Inicializar audio con volumen alto para garantizar respuesta
         processorRef.current.initAudio();
-        processorRef.current.setMonitoring(false);
-        console.log('HeartBeatProcessor: Monitoring state set to false');
-        isMonitoringRef.current = false;
+        processorRef.current.setMonitoring(true); // CAMBIADO: iniciar siempre monitoreando
+        console.log('HeartBeatProcessor: Monitoring state set to true'); // CAMBIADO
+        isMonitoringRef.current = true; // CAMBIADO
       }
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
@@ -93,24 +96,35 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   }, []);
 
   const requestBeep = useCallback((value: number): boolean => {
-    if (!processorRef.current) return false;
-    
+    // Simplified beep request with no time check to ensure immediate response
     const now = Date.now();
-    if (now - lastProcessedPeakTimeRef.current < 200) {
-      return false;
-    }
     
-    lastProcessedPeakTimeRef.current = now;
+    // ALWAYS log this for debugging
+    console.log('useHeartBeatProcessor: BEEP REQUESTED', {
+      value,
+      isMonitoring: isMonitoringRef.current,
+      processorExists: !!processorRef.current,
+      timestamp: new Date(now).toISOString()
+    });
     
+    // Si hay un procesador, reproducir beep directamente
     if (processorRef.current) {
       try {
-        processorRef.current.playBeep(value);
-        return true;
+        // Intentar reproducir con volumen aumentado
+        const beepPlayed = processorRef.current.playBeep(Math.min(value * 1.5, 1.0));
+        console.log('useHeartBeatProcessor: Beep directo intentado', {
+          resultado: beepPlayed ? 'éxito' : 'fallido',
+          timestamp: new Date(now).toISOString()
+        });
+        
+        lastProcessedPeakTimeRef.current = now;
+        return beepPlayed;
       } catch (err) {
         console.error("Error al reproducir beep directo:", err);
       }
     }
     
+    // Si el método directo falló o no hay procesador, intentar con el método alternativo
     return requestImmediateBeep(
       value, 
       isMonitoringRef, 
@@ -118,7 +132,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       consecutiveWeakSignalsRef, 
       MAX_CONSECUTIVE_WEAK_SIGNALS, 
       missedBeepsCounter, 
-      processorRef.current.playBeep.bind(processorRef.current)
+      processorRef.current?.playBeep.bind(processorRef.current) || (() => false)
     );
   }, [requestImmediateBeep]);
 
@@ -206,6 +220,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       lastProcessedPeakTimeRef.current = 0;
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
+      
+      // Reproducir un beep de prueba para asegurar que el audio esté activo
+      console.log('HeartBeatProcessor: Playing test beep');
+      processorRef.current.playBeep(0.5);
       
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
