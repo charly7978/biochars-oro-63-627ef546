@@ -2,6 +2,7 @@
 /**
  * Functions for processing signal results
  */
+import React from 'react';
 
 /**
  * Process signal results with low confidence
@@ -26,6 +27,15 @@ export function processLowConfidenceResult(
   }
   
   return result;
+}
+
+/**
+ * Updates the reference to last valid BPM when condition is met
+ */
+export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRefObject<number>): void {
+  if (result.bpm >= 40 && result.bpm <= 200) {
+    lastValidBpmRef.current = result.bpm;
+  }
 }
 
 /**

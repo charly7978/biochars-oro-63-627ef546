@@ -29,3 +29,27 @@ export function resetSignalQualityState() {
     consecutiveWeakSignals: 0
   };
 }
+
+/**
+ * Determines if a measurement should be processed based on signal strength
+ */
+export function shouldProcessMeasurement(value: number): boolean {
+  // Don't process signals that are too small (likely noise)
+  return Math.abs(value) >= 0.05;
+}
+
+/**
+ * Creates default signal processing result when signal is too weak
+ */
+export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
+  return {
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: arrhythmiaCounter || 0,
+    rrData: {
+      intervals: [],
+      lastPeakTime: null
+    }
+  };
+}

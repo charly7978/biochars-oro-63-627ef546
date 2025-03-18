@@ -28,10 +28,23 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 }
 
 /**
- * Updates the reference to last valid BPM when condition is met
+ * Handle peak detection
  */
-export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRefObject<number>): void {
-  if (result.bpm >= 40 && result.bpm <= 200) {
-    lastValidBpmRef.current = result.bpm;
+export function handlePeakDetection(
+  result: any, 
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  requestBeepCallback: (value: number) => boolean,
+  isMonitoringRef: React.MutableRefObject<boolean>,
+  value: number
+): void {
+  const now = Date.now();
+  
+  // Only process peaks with minimum confidence
+  if (result.isPeak && result.confidence > 0.4) {
+    lastPeakTimeRef.current = now;
+    
+    if (isMonitoringRef.current && result.confidence > 0.5) {
+      requestBeepCallback(value);
+    }
   }
 }
