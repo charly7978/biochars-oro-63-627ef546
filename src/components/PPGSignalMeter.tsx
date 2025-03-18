@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -542,129 +541,79 @@ const PPGSignalMeter = memo(({
     let shouldBeep = false;
     
     if (points.length > 1) {
-      // Procesar todos los puntos juntos primero, agrupados por color
-      const normalPoints: {x: number, y: number}[] = [];
-      const arrhythmiaPoints: {x: number, y: number}[] = [];
-      
-      // Ordenar todos los puntos por sus respectivos grupos
-      for (let i = 0; i < points.length; i++) {
-        const point = points[i];
-        
-        // Determinar si este punto está en una ventana de arritmia
-        point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
-        
+      // Improved approach for continuity:
+      // 1. First prepare all points with coordinates
+      const allPoints = points.map(point => {
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
-        
-        if (point.isArrhythmia) {
-          arrhythmiaPoints.push({ x, y });
-        } else {
-          normalPoints.push({ x, y });
-        }
-      }
+        return {
+          x, 
+          y, 
+          isArrhythmia: point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now),
+          time: point.time,
+          value: point.value
+        };
+      });
       
-      // Dibujar líneas continuas por cada grupo de color
-      // La continuidad es perfecta dentro de cada grupo de color
-      if (normalPoints.length > 0) {
+      // 2. Draw the main line in a single continuous path, changing color as needed
+      if (allPoints.length > 1) {
         renderCtx.beginPath();
-        renderCtx.strokeStyle = NORMAL_COLOR;
         renderCtx.lineWidth = 2.5;
         renderCtx.lineJoin = 'round';
         renderCtx.lineCap = 'round';
         
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = NORMAL_COLOR;
-        }
+        // Move to the first point
+        renderCtx.moveTo(allPoints[0].x, allPoints[0].y);
         
-        renderCtx.moveTo(normalPoints[0].x, normalPoints[0].y);
-        for (let i = 1; i < normalPoints.length; i++) {
-          renderCtx.lineTo(normalPoints[i].x, normalPoints[i].y);
-        }
-        renderCtx.stroke();
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0;
-        }
-      }
-      
-      if (arrhythmiaPoints.length > 0) {
-        renderCtx.beginPath();
-        renderCtx.strokeStyle = ARRHYTHMIA_COLOR;
-        renderCtx.lineWidth = 2.5;
-        renderCtx.lineJoin = 'round';
-        renderCtx.lineCap = 'round';
+        // Draw the line with color changes
+        let currentType = !!allPoints[0].isArrhythmia;
         
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = ARRHYTHMIA_COLOR;
-        }
-        
-        renderCtx.moveTo(arrhythmiaPoints[0].x, arrhythmiaPoints[0].y);
-        for (let i = 1; i < arrhythmiaPoints.length; i++) {
-          renderCtx.lineTo(arrhythmiaPoints[i].x, arrhythmiaPoints[i].y);
-        }
-        renderCtx.stroke();
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0;
-        }
-      }
-      
-      // Dibujamos líneas conectoras entre segmentos de distinto color para garantizar continuidad absoluta
-      if (normalPoints.length > 0 && arrhythmiaPoints.length > 0) {
-        // Encontrar puntos adyacentes de diferentes grupos para conectarlos
-        const connections: {from: {x: number, y: number, isArrhythmia: boolean}, 
-                           to: {x: number, y: number, isArrhythmia: boolean}}[] = [];
-        
-        // Recorrer todos los puntos originales en orden para identificar transiciones
-        for (let i = 0; i < points.length - 1; i++) {
-          const currentPoint = points[i];
-          const nextPoint = points[i + 1];
+        for (let i = 1; i < allPoints.length; i++) {
+          const point = allPoints[i];
+          const prevPoint = allPoints[i-1];
+          const pointType = !!point.isArrhythmia;
           
-          // Si detectamos un cambio de tipo (normal->arritmia o arritmia->normal)
-          if (!!currentPoint.isArrhythmia !== !!nextPoint.isArrhythmia) {
-            const currentX = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-            const currentY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - currentPoint.value;
+          // Check if we're transitioning between types
+          if (pointType !== currentType) {
+            // Complete the current segment
+            renderCtx.lineTo(point.x, point.y);
+            renderCtx.strokeStyle = currentType ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
+            renderCtx.stroke();
             
-            const nextX = canvas.width - ((now - nextPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-            const nextY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - nextPoint.value;
+            // Start a new segment from this point
+            renderCtx.beginPath();
+            renderCtx.moveTo(prevPoint.x, prevPoint.y);
+            renderCtx.lineTo(point.x, point.y);
+            renderCtx.strokeStyle = pointType ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
+            renderCtx.stroke();
             
-            connections.push({
-              from: { x: currentX, y: currentY, isArrhythmia: !!currentPoint.isArrhythmia },
-              to: { x: nextX, y: nextY, isArrhythmia: !!nextPoint.isArrhythmia }
-            });
+            // Now create a gradient connection at the transition point
+            const gradient = renderCtx.createLinearGradient(prevPoint.x, prevPoint.y, point.x, point.y);
+            gradient.addColorStop(0, currentType ? ARRHYTHMIA_COLOR : NORMAL_COLOR);
+            gradient.addColorStop(1, pointType ? ARRHYTHMIA_COLOR : NORMAL_COLOR);
+            
+            renderCtx.beginPath();
+            renderCtx.strokeStyle = gradient;
+            renderCtx.moveTo(prevPoint.x, prevPoint.y);
+            renderCtx.lineTo(point.x, point.y);
+            renderCtx.stroke();
+            
+            // Start a new path
+            renderCtx.beginPath();
+            renderCtx.moveTo(point.x, point.y);
+            currentType = pointType;
+          } else {
+            // Continue the current path
+            renderCtx.lineTo(point.x, point.y);
           }
         }
         
-        // Dibujar conexiones con gradiente para suavizar transiciones
-        connections.forEach(conn => {
-          // Crear gradiente lineal entre los dos puntos
-          const gradient = renderCtx.createLinearGradient(conn.from.x, conn.from.y, conn.to.x, conn.to.y);
-          
-          // Si vamos de normal a arritmia
-          if (!conn.from.isArrhythmia && conn.to.isArrhythmia) {
-            gradient.addColorStop(0, NORMAL_COLOR);
-            gradient.addColorStop(1, ARRHYTHMIA_COLOR);
-          } 
-          // Si vamos de arritmia a normal
-          else {
-            gradient.addColorStop(0, ARRHYTHMIA_COLOR);
-            gradient.addColorStop(1, NORMAL_COLOR);
-          }
-          
-          // Dibujar línea con gradiente
-          renderCtx.beginPath();
-          renderCtx.strokeStyle = gradient;
-          renderCtx.lineWidth = 2.5;
-          renderCtx.lineJoin = 'round';
-          renderCtx.lineCap = 'round';
-          
-          renderCtx.moveTo(conn.from.x, conn.from.y);
-          renderCtx.lineTo(conn.to.x, conn.to.y);
-          renderCtx.stroke();
-        });
+        // Finish the last segment
+        renderCtx.strokeStyle = currentType ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
+        renderCtx.stroke();
       }
       
-      // Dibujar círculos en los picos detectados y activar beep solo al dibujar un círculo
+      // Draw circles at peak points
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -673,7 +622,6 @@ const PPGSignalMeter = memo(({
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
             
-            // DIBUJAR CÍRCULO AQUÍ - Esto es lo que queremos enlazar con el beep
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
