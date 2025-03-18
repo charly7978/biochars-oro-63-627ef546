@@ -1,6 +1,7 @@
 
 /**
  * Signal quality utility functions for heart beat signals
+ * DIRECT MEASUREMENT ONLY - NO SIMULATION OR MANIPULATION
  */
 
 // Signal quality thresholds
@@ -16,6 +17,7 @@ export const getQualityColor = (isArrhythmia: boolean): string => {
 
 /**
  * Calculate weighted quality from an array of quality values
+ * Uses only direct measurements with no manipulation
  */
 export const calculateWeightedQuality = (qualityValues: number[]): number => {
   if (qualityValues.length === 0) return 0;
@@ -44,6 +46,7 @@ export const getQualityText = (quality: number, isFingerDetected: boolean): stri
 
 /**
  * Check signal quality and track consecutive weak signals
+ * Works only with direct measured values, no simulation
  */
 export const checkSignalQuality = (
   signalValue: number,
@@ -74,15 +77,19 @@ export const checkSignalQuality = (
 /**
  * Reset detection states for signal quality detection
  * Used to reset any accumulating detection states
+ * No simulation or calibration data used
  */
 export const resetDetectionStates = (): void => {
   // Reset any internal state if needed
   // This is a placeholder function to satisfy the import
-  console.log("Signal quality detection states reset");
+  console.log("Signal quality detection states reset - direct measurement only");
 };
 
-// Export a simple function to check if a point is in an arrhythmia window
-// Used by PPGSignalMeter for visualization
+/**
+ * Check if a point is in an arrhythmia window
+ * Used by PPGSignalMeter for visualization
+ * Works only with real detected arrhythmias
+ */
 export const isPointInArrhythmiaWindow = (
   pointTime: number, 
   arrhythmiaWindows: {start: number, end: number}[]

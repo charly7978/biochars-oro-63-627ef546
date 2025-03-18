@@ -8,11 +8,7 @@ import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 
 /**
  * Hook to detect weak signals or finger removal
- * No simulation is used
- * 
- * Note: This hook is maintained for backward compatibility,
- * but the main signal quality functionality is now centralized
- * in PPGSignalMeter.tsx and heart-beat/signal-quality.ts
+ * No simulation is used - direct measurement only
  */
 export const useSignalQualityDetector = () => {
   // Weak signal counter to detect finger removal
