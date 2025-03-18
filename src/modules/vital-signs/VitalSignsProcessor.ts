@@ -78,7 +78,7 @@ export class VitalSignsProcessor {
       this.signalValidator.logValidationResults(
         hasValidAmplitude, 
         this.calculateSignalAmplitude(), 
-        this.ppgValues.length
+        this.ppgValues
       );
       return this.createEmptyResult();
     }
@@ -90,7 +90,7 @@ export class VitalSignsProcessor {
     }
     
     // Calculate heart rate from real signal
-    const heartRate = this.signalProcessor.calculateHeartRate(30);
+    const heartRate = this.signalProcessor.calculateHeartRate();
     
     // Calculate SpO2 from real signal
     const spo2 = this.oxygenCalculator.calculateSpO2(this.ppgValues);
@@ -194,4 +194,4 @@ export class VitalSignsProcessor {
 }
 
 // Export VitalSignsResult type for use in other modules
-export type { VitalSignsResult } from './types/vital-signs-result';
+export { VitalSignsResult } from './types/vital-signs-result';
