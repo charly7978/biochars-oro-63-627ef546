@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -47,7 +46,6 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
-  // Safer fullscreen request that continues even if it fails
   const enterFullScreen = async () => {
     try {
       if (document.documentElement.requestFullscreen) {
@@ -63,26 +61,38 @@ const Index = () => {
     }
   };
 
-  // Initialize the app and set up preventions
   useEffect(() => {
-    const preventScroll = (e: Event) => e.preventDefault();
-    
-    // We use passive: false only for essential events
-    document.body.addEventListener('touchmove', preventScroll, { passive: false });
-    document.body.addEventListener('scroll', preventScroll, { passive: false });
-    
-    // Attempt to enter fullscreen but don't block app if it fails
-    enterFullScreen().catch(err => {
-      console.warn("Fullscreen failed but app will continue:", err);
-    });
-    
-    return () => {
-      document.body.removeEventListener('touchmove', preventScroll);
-      document.body.removeEventListener('scroll', preventScroll);
-    };
+    try {
+      const preventScroll = (e: Event) => {
+        try {
+          e.preventDefault();
+        } catch (err) {
+          console.warn('Error preventing scroll:', err);
+        }
+      };
+      
+      // We use passive: false only for essential events
+      document.body.addEventListener('touchmove', preventScroll, { passive: false });
+      document.body.addEventListener('scroll', preventScroll, { passive: false });
+      
+      // Attempt to enter fullscreen but don't block app if it fails
+      enterFullScreen().catch(err => {
+        console.warn("Fullscreen failed but app will continue:", err);
+      });
+      
+      return () => {
+        try {
+          document.body.removeEventListener('touchmove', preventScroll);
+          document.body.removeEventListener('scroll', preventScroll);
+        } catch (err) {
+          console.warn('Error removing event listeners:', err);
+        }
+      };
+    } catch (err) {
+      console.warn('Error in initialization effect:', err);
+    }
   }, []);
 
-  // Show last valid results when available and not monitoring
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       setVitalSigns(lastValidResults);
@@ -90,17 +100,14 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal only if we have good quality and finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      const minQualityThreshold = 40;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+        if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -111,56 +118,60 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
-        // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
         
-        // If finger not detected for a while, reset heart rate to zero
         if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
-      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   const startMonitoring = () => {
-    if (isMonitoring) {
-      finalizeMeasurement();
-    } else {
-      // Reset camera error state when starting again
-      setCameraError(null);
-      
-      // Try to enter fullscreen but don't block if it fails
-      enterFullScreen().catch(err => console.warn("Could not enter fullscreen:", err));
-      
-      setIsMonitoring(true);
-      setIsCameraOn(true);
-      setShowResults(false);
-      setHeartRate(0); // Reset heart rate explicitly
-      
-      startProcessing();
-      startHeartBeatMonitoring(); // Update the processor state
-      
-      setElapsedTime(0);
-      
-      if (measurementTimerRef.current) {
-        clearInterval(measurementTimerRef.current);
+    try {
+      if (isMonitoring) {
+        finalizeMeasurement();
+      } else {
+        setCameraError(null);
+        
+        enterFullScreen().catch(err => console.warn("Could not enter fullscreen:", err));
+        
+        setIsMonitoring(true);
+        setIsCameraOn(true);
+        setShowResults(false);
+        setHeartRate(0);
+        
+        startProcessing();
+        startHeartBeatMonitoring();
+        
+        setElapsedTime(0);
+        
+        if (measurementTimerRef.current) {
+          clearInterval(measurementTimerRef.current);
+        }
+        
+        measurementTimerRef.current = window.setInterval(() => {
+          setElapsedTime(prev => {
+            const newTime = prev + 1;
+            console.log(`Tiempo transcurrido: ${newTime}s`);
+            
+            if (newTime >= 30) {
+              finalizeMeasurement();
+              return 30;
+            }
+            return newTime;
+          });
+        }, 1000);
       }
-      
-      measurementTimerRef.current = window.setInterval(() => {
-        setElapsedTime(prev => {
-          const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
-          
-          if (newTime >= 30) {
-            finalizeMeasurement();
-            return 30;
-          }
-          return newTime;
-        });
-      }, 1000);
+    } catch (err) {
+      console.error("Error starting monitoring:", err);
+      toast({
+        title: "Error",
+        description: "No se pudo iniciar el monitoreo",
+        variant: "destructive"
+      });
     }
   };
 
@@ -170,7 +181,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
+    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -185,7 +196,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0); // Reset heart rate explicitly
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -196,7 +207,7 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
-    setCameraError(null); // Clear any camera errors
+    setCameraError(null);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -226,7 +237,6 @@ const Index = () => {
       const videoTrack = stream.getVideoTracks()[0];
       const imageCapture = new ImageCapture(videoTrack);
       
-      // Try to enable torch but continue if it fails
       if (videoTrack.getCapabilities()?.torch) {
         console.log("Activando linterna para mejorar la señal PPG");
         videoTrack.applyConstraints({
@@ -297,7 +307,7 @@ const Index = () => {
       
     } catch (error) {
       console.error("Error processing camera stream:", error);
-      // Allow the app to continue even if camera processing fails
+      setCameraError("Error procesando la cámara");
     }
   };
 
@@ -305,14 +315,12 @@ const Index = () => {
     console.error("Error al acceder a la cámara:", error);
     setCameraError(error.message);
     
-    // Show a toast notification about the camera error
     toast({
       title: "Error de cámara",
       description: "No se pudo acceder a la cámara. Verifica los permisos.",
       variant: "destructive"
     });
     
-    // Continue with the app in a degraded state
     setIsMonitoring(false);
     setIsCameraOn(false);
   };

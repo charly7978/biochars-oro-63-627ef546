@@ -14,9 +14,14 @@ const applyHighResolution = () => {
   // Apply high-DPI rendering for crisp text and UI
   document.body.style.textRendering = 'geometricPrecision';
   
-  // Apply maximum resolution settings
-  applyMaximumResolution();
-  applyHighResolutionOptimizations();
+  try {
+    // Apply maximum resolution settings
+    applyMaximumResolution();
+    applyHighResolutionOptimizations();
+  } catch (err) {
+    console.warn('Error applying high resolution settings:', err);
+    // Continue app execution even if optimization fails
+  }
   
   // Force device pixel ratio to be respected
   if (window.devicePixelRatio > 1) {
@@ -35,21 +40,26 @@ const applyHighResolution = () => {
   
   // Set optimal rendering settings based on device capabilities
   const setOptimalRendering = () => {
-    // For 8K displays
-    if (window.screen.width >= 7680 || window.screen.height >= 4320) {
-      document.documentElement.classList.add('display-8k');
-    }
-    // For 5K displays
-    else if (window.screen.width >= 5120 || window.screen.height >= 2880) {
-      document.documentElement.classList.add('display-5k');
-    }
-    // For 4K displays
-    else if (window.screen.width >= 3840 || window.screen.height >= 2160) {
-      document.documentElement.classList.add('display-4k');
-    }
-    // For 2K/Retina displays
-    else if (window.screen.width >= 2048 || window.screen.height >= 2048) {
-      document.documentElement.classList.add('display-2k');
+    try {
+      // For 8K displays
+      if (window.screen.width >= 7680 || window.screen.height >= 4320) {
+        document.documentElement.classList.add('display-8k');
+      }
+      // For 5K displays
+      else if (window.screen.width >= 5120 || window.screen.height >= 2880) {
+        document.documentElement.classList.add('display-5k');
+      }
+      // For 4K displays
+      else if (window.screen.width >= 3840 || window.screen.height >= 2160) {
+        document.documentElement.classList.add('display-4k');
+      }
+      // For 2K/Retina displays
+      else if (window.screen.width >= 2048 || window.screen.height >= 2048) {
+        document.documentElement.classList.add('display-2k');
+      }
+    } catch (err) {
+      console.warn('Error setting optimal rendering:', err);
+      // Continue app execution
     }
   };
   
@@ -94,8 +104,12 @@ const requestFullscreenMode = () => {
 };
 
 // Execute immediately BUT don't block app initialization if it fails
-requestFullscreenMode();
-applyHighResolution();
+try {
+  requestFullscreenMode();
+  applyHighResolution();
+} catch (e) {
+  console.warn('Setup failed but continuing with app initialization:', e);
+}
 
 // Ensure we request fullscreen on user interaction - but don't block the app if it fails
 let isFullscreen = false;
@@ -104,79 +118,137 @@ const checkFullscreen = () => {
 };
 
 const handleUserInteraction = () => {
-  isFullscreen = checkFullscreen();
-  if (!isFullscreen) {
-    try {
+  try {
+    isFullscreen = checkFullscreen();
+    if (!isFullscreen) {
       requestFullscreenMode();
-    } catch (e) {
-      console.warn('Could not enter fullscreen on user interaction:', e);
+    } else {
+      // Remove listeners if we're already in fullscreen
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
     }
-  } else {
-    // Remove listeners if we're already in fullscreen
+  } catch (e) {
+    console.warn('Could not handle user interaction:', e);
+    // Remove listeners to prevent repeated errors
     document.removeEventListener('click', handleUserInteraction);
     document.removeEventListener('touchstart', handleUserInteraction);
   }
 };
 
-document.addEventListener('click', handleUserInteraction);
-document.addEventListener('touchstart', handleUserInteraction);
+try {
+  document.addEventListener('click', handleUserInteraction);
+  document.addEventListener('touchstart', handleUserInteraction);
+} catch (e) {
+  console.warn('Could not add event listeners:', e);
+}
 
 // Handle resolution scaling on resize and orientation change
-window.addEventListener('resize', () => {
-  applyHighResolution();
-  applyMaximumResolution();
-});
-window.addEventListener('orientationchange', () => {
-  applyHighResolution();
-  applyMaximumResolution();
-});
+try {
+  window.addEventListener('resize', () => {
+    try {
+      applyHighResolution();
+      applyMaximumResolution();
+    } catch (e) {
+      console.warn('Could not apply high resolution on resize:', e);
+    }
+  });
+  window.addEventListener('orientationchange', () => {
+    try {
+      applyHighResolution();
+      applyMaximumResolution();
+    } catch (e) {
+      console.warn('Could not apply high resolution on orientation change:', e);
+    }
+  });
+} catch (e) {
+  console.warn('Could not add window event listeners:', e);
+}
 
 // Let's improve graph performance with a MutationObserver
 // This will add performance classes to any PPG graph elements that are added to the DOM
 const setupPerformanceObserver = () => {
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.addedNodes.length) {
-        mutation.addedNodes.forEach((node) => {
-          if (node instanceof HTMLElement) {
-            // Find PPG graph elements and apply performance optimizations
-            const graphElements = node.querySelectorAll('.ppg-signal-meter, canvas, svg');
-            graphElements.forEach((el) => {
-              if (el instanceof HTMLElement) {
-                el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized', 'maximum-resolution');
-                if (el instanceof HTMLCanvasElement) {
-                  const ctx = el.getContext('2d');
-                  if (ctx) {
-                    ctx.imageSmoothingEnabled = false;
-                    
-                    // Apply maximum resolution to canvas
-                    const rect = el.getBoundingClientRect();
-                    const dpr = window.devicePixelRatio || 1;
-                    el.width = rect.width * dpr;
-                    el.height = rect.height * dpr;
-                    el.style.width = `${rect.width}px`;
-                    el.style.height = `${rect.height}px`;
-                    ctx.scale(dpr, dpr);
+  try {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.addedNodes.length) {
+          mutation.addedNodes.forEach((node) => {
+            if (node instanceof HTMLElement) {
+              // Find PPG graph elements and apply performance optimizations
+              const graphElements = node.querySelectorAll('.ppg-signal-meter, canvas, svg');
+              graphElements.forEach((el) => {
+                if (el instanceof HTMLElement) {
+                  el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized', 'maximum-resolution');
+                  if (el instanceof HTMLCanvasElement) {
+                    const ctx = el.getContext('2d');
+                    if (ctx) {
+                      ctx.imageSmoothingEnabled = false;
+                      
+                      // Apply maximum resolution to canvas
+                      const rect = el.getBoundingClientRect();
+                      const dpr = window.devicePixelRatio || 1;
+                      el.width = rect.width * dpr;
+                      el.height = rect.height * dpr;
+                      el.style.width = `${rect.width}px`;
+                      el.style.height = `${rect.height}px`;
+                      ctx.scale(dpr, dpr);
+                    }
                   }
                 }
-              }
-            });
-          }
-        });
-      }
+              });
+            }
+          });
+        }
+      });
     });
-  });
-  
-  observer.observe(document.body, { 
-    childList: true, 
-    subtree: true 
-  });
-  
-  return observer;
+    
+    observer.observe(document.body, { 
+      childList: true, 
+      subtree: true 
+    });
+    
+    return observer;
+  } catch (e) {
+    console.warn('Could not setup performance observer:', e);
+    return null;
+  }
 };
 
 // Start the performance observer after render
-window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
+try {
+  window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
+} catch (e) {
+  console.warn('Could not add DOMContentLoaded listener:', e);
+}
 
 // Render the app
-createRoot(document.getElementById("root")!).render(<App />);
+try {
+  const rootElement = document.getElementById("root");
+  if (rootElement) {
+    createRoot(rootElement).render(<App />);
+  } else {
+    console.error("Root element not found");
+    // Try to create a root element if it doesn't exist
+    const newRoot = document.createElement("div");
+    newRoot.id = "root";
+    document.body.appendChild(newRoot);
+    createRoot(newRoot).render(<App />);
+  }
+} catch (e) {
+  console.error("Failed to render app:", e);
+  // Display error to user
+  const errorDiv = document.createElement("div");
+  errorDiv.style.position = "fixed";
+  errorDiv.style.inset = "0";
+  errorDiv.style.backgroundColor = "#000";
+  errorDiv.style.color = "#fff";
+  errorDiv.style.padding = "20px";
+  errorDiv.style.zIndex = "9999";
+  errorDiv.innerHTML = `
+    <h1>Error al iniciar la aplicación</h1>
+    <p>Ha ocurrido un error al iniciar la aplicación. Por favor, intente recargar la página.</p>
+    <button onclick="window.location.reload()" style="padding: 10px; background: #f00; color: white; border: none; border-radius: 5px; margin-top: 20px;">
+      Recargar
+    </button>
+  `;
+  document.body.appendChild(errorDiv);
+}
