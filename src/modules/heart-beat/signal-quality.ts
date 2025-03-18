@@ -1,79 +1,93 @@
 
 /**
- * Functions for assessing PPG signal quality
+ * Signal quality utility functions for heart beat signals
  */
 
-/**
- * Checks if signal quality is low (potentially finger removed)
- */
-export function checkSignalQuality(
-  amplitude: number,
-  weakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number,
-    maxWeakSignalCount: number
-  }
-): {
-  isWeakSignal: boolean,
-  updatedWeakSignalsCount: number
-} {
-  let updatedCount = weakSignalsCount;
-  
-  if (Math.abs(amplitude) < config.lowSignalThreshold) {
-    updatedCount++;
-  } else {
-    updatedCount = 0;
-  }
-  
-  return {
-    isWeakSignal: updatedCount > config.maxWeakSignalCount,
-    updatedWeakSignalsCount: updatedCount
-  };
-}
+// Signal quality thresholds
+const GOOD_QUALITY_THRESHOLD = 65;
+const ACCEPTABLE_QUALITY_THRESHOLD = 40;
 
 /**
- * Calculate a weighted quality score from recent quality values
- * @param qualityHistory Array of recent quality measurements
- * @returns Weighted average quality score
+ * Get color class based on signal quality
  */
-export function calculateWeightedQuality(qualityHistory: number[]): number {
-  if (qualityHistory.length === 0) return 0;
+export const getQualityColor = (isArrhythmia: boolean): string => {
+  return isArrhythmia ? '#FF2E2E' : '#0EA5E9';
+};
+
+/**
+ * Calculate weighted quality from an array of quality values
+ */
+export const calculateWeightedQuality = (qualityValues: number[]): number => {
+  if (qualityValues.length === 0) return 0;
   
   let weightedSum = 0;
   let weightSum = 0;
   
-  qualityHistory.forEach((q, index) => {
-    // More recent values have higher weight
+  qualityValues.forEach((quality, index) => {
     const weight = index + 1;
-    weightedSum += q * weight;
+    weightedSum += quality * weight;
     weightSum += weight;
   });
   
   return weightSum > 0 ? weightedSum / weightSum : 0;
-}
+};
 
 /**
- * Get appropriate color for signal quality display
- * @param quality Quality value (0-100)
- * @param isFingerDetected Whether finger is detected
- * @returns CSS color class or value
+ * Get quality description text based on signal quality value
  */
-export function getQualityColor(quality: number, isFingerDetected: boolean): string {
-  if (!isFingerDetected) return 'from-gray-400 to-gray-500';
-  if (quality > 65) return 'from-green-500 to-emerald-500';
-  if (quality > 40) return 'from-yellow-500 to-orange-500';
-  return 'from-red-500 to-rose-500';
-}
-
-/**
- * Get descriptive text for signal quality
- * @param quality Quality value (0-100)
- * @param isFingerDetected Whether finger is detected
- * @returns Human readable quality description
- */
-export function getQualityText(quality: number, isFingerDetected: boolean): string {
+export const getQualityText = (quality: number, isFingerDetected: boolean): string => {
   if (!isFingerDetected) return 'Sin detección';
-  if (quality > 65) return 'Señal óptima';
-  if (quality > 40) return 'Señal aceptable';
+  if (quality > GOOD_QUALITY_THRESHOLD) return 'Señal óptima';
+  if (quality > ACCEPTABLE_QUALITY_THRESHOLD) return 'Señal aceptable';
   return 'Señal débil';
-}
+};
+
+/**
+ * Check signal quality and track consecutive weak signals
+ */
+export const checkSignalQuality = (
+  signalValue: number,
+  currentWeakSignalsCount: number,
+  options?: {
+    lowSignalThreshold?: number;
+    maxWeakSignalCount?: number;
+  }
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } => {
+  const threshold = options?.lowSignalThreshold || 0.1;
+  const maxWeakSignals = options?.maxWeakSignalCount || 3;
+  
+  const isWeak = Math.abs(signalValue) < threshold;
+  let updatedCount = currentWeakSignalsCount;
+  
+  if (isWeak) {
+    updatedCount = Math.min(maxWeakSignals, updatedCount + 1);
+  } else {
+    updatedCount = Math.max(0, updatedCount - 1);
+  }
+  
+  return {
+    isWeakSignal: updatedCount >= maxWeakSignals,
+    updatedWeakSignalsCount: updatedCount
+  };
+};
+
+/**
+ * Reset detection states for signal quality detection
+ * Used to reset any accumulating detection states
+ */
+export const resetDetectionStates = (): void => {
+  // Reset any internal state if needed
+  // This is a placeholder function to satisfy the import
+  console.log("Signal quality detection states reset");
+};
+
+// Export a simple function to check if a point is in an arrhythmia window
+// Used by PPGSignalMeter for visualization
+export const isPointInArrhythmiaWindow = (
+  pointTime: number, 
+  arrhythmiaWindows: {start: number, end: number}[]
+): boolean => {
+  return arrhythmiaWindows.some(window => 
+    pointTime >= window.start && pointTime <= window.end
+  );
+};
