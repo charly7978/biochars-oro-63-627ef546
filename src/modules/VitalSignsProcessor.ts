@@ -9,37 +9,33 @@ import { checkSignalQuality } from './heart-beat/signal-quality';
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
  * No simulation or data manipulation allowed.
- * Greatly improved resistance to false positives
+ * Improved resistance to false positives
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
   // Signal measurement parameters
   private readonly WINDOW_SIZE = 300;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05; // Increased from 0.035
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.035; // Increased from 0.025
   private readonly SPO2_WINDOW = 5;
   private readonly SMA_WINDOW = 5;
   private readonly RR_WINDOW_SIZE = 6;
   private readonly RMSSD_THRESHOLD = 15;
-  private readonly PEAK_THRESHOLD = 0.35; // Increased from 0.25
+  private readonly PEAK_THRESHOLD = 0.25;
   
-  // Much longer guard period to prevent false positives
-  private readonly FALSE_POSITIVE_GUARD_PERIOD = 1200; // Increased from 800ms
+  // Extended guard period to prevent false positives
+  private readonly FALSE_POSITIVE_GUARD_PERIOD = 800; // Increased from 500ms
   private lastDetectionTime: number = 0;
   
-  // Improved counter for weak signals with much higher thresholds
-  private readonly LOW_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
-  private readonly MAX_WEAK_SIGNALS = 6; // Increased from 5
+  // Improved counter for weak signals with higher thresholds
+  private readonly LOW_SIGNAL_THRESHOLD = 0.15; // Increased from 0.05
+  private readonly MAX_WEAK_SIGNALS = 5; // Increased from 3
   private weakSignalsCount: number = 0;
   
-  // Signal stability tracking to eliminate false positives
+  // Signal stability tracking to reduce false positives
   private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE = 15; // Increased from 10
-  private readonly STABILITY_THRESHOLD = 0.15; // Decreased from 0.2 (stricter)
-  
-  // Added requirements for minimum consecutive strong signals
-  private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3
+  private readonly HISTORY_SIZE = 10;
+  private readonly STABILITY_THRESHOLD = 0.2;
   
   /**
    * Constructor that initializes the processor
@@ -50,13 +46,13 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process a PPG signal with greatly improved false positive detection
+   * Process a PPG signal with improved false positive detection
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Apply enhanced verification
+    // Apply simple verification
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
     
@@ -78,23 +74,8 @@ export class VitalSignsProcessor {
     // Additional stability check to prevent false positives
     const isStable = this.checkSignalStability();
     
-    // Only count as strong signal if signal passes all checks
-    if (!isWeakSignal && Math.abs(ppgValue) > this.PEAK_THRESHOLD && isStable) {
-      this.consecutiveStrongSignals = Math.min(
-        this.MIN_STRONG_SIGNALS_REQUIRED + 3, 
-        this.consecutiveStrongSignals + 1
-      );
-    } else {
-      // Reset counter more quickly for weak signals
-      this.consecutiveStrongSignals = Math.max(0, this.consecutiveStrongSignals - 2);
-    }
-    
-    // Enhanced verification requiring minimum consecutive strong signals
-    const signalVerified = 
-      !isWeakSignal && 
-      Math.abs(ppgValue) > this.PEAK_THRESHOLD && 
-      isStable && 
-      this.consecutiveStrongSignals >= this.MIN_STRONG_SIGNALS_REQUIRED;
+    // Enhanced verification with stability requirement
+    const signalVerified = !isWeakSignal && Math.abs(ppgValue) > 0 && isStable;
     
     if (signalVerified) {
       this.lastDetectionTime = now;
@@ -131,28 +112,20 @@ export class VitalSignsProcessor {
   /**
    * Check signal stability to prevent false positives
    * Returns true if signal is stable enough to process
-   * Enhanced with longer history and stricter thresholds
    */
   private checkSignalStability(): boolean {
     if (this.signalHistory.length < this.HISTORY_SIZE / 2) {
       return false;
     }
     
-    // Calculate signal variation with improved method
-    const values = this.signalHistory.slice(-8); // Use more recent values for stability check
+    // Calculate signal variation
+    const values = this.signalHistory.slice(-5);
     const sum = values.reduce((a, b) => a + b, 0);
     const mean = sum / values.length;
-    
-    // Calculate variance and standard deviation
     const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
-    
-    // Calculate coefficient of variation (normalized standard deviation)
-    const coefficientOfVariation = mean !== 0 ? stdDev / Math.abs(mean) : 999;
     
     // Check if stability is within acceptable range
-    // Using coefficient of variation for better normalization
-    return coefficientOfVariation < this.STABILITY_THRESHOLD;
+    return variance < this.STABILITY_THRESHOLD;
   }
   
   /**
@@ -175,19 +148,17 @@ export class VitalSignsProcessor {
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
     this.signalHistory = [];
-    this.consecutiveStrongSignals = 0;
     return this.processor.reset();
   }
   
   /**
-   * Completely reset the processor
+   * Completely reset the processor and all its data
    */
   public fullReset(): void {
     console.log("VitalSignsProcessor: Full reset - removing all data history");
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
     this.signalHistory = [];
-    this.consecutiveStrongSignals = 0;
     this.processor.fullReset();
   }
   
