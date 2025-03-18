@@ -8,17 +8,17 @@ export const HeartBeatConfig = {
   WINDOW_SIZE: 60,
   MIN_BPM: 40,
   MAX_BPM: 200,
-  SIGNAL_THRESHOLD: 0.55,  // Reducido de 0.60 para mejorar sensibilidad
-  MIN_CONFIDENCE: 0.45,    // Reducido para capturar más señales
+  SIGNAL_THRESHOLD: 0.60,
+  MIN_CONFIDENCE: 0.50,
   DERIVATIVE_THRESHOLD: -0.03,
   MIN_PEAK_TIME_MS: 300,
-  WARMUP_TIME_MS: 1800,    // Reducido para iniciar más rápido
+  WARMUP_TIME_MS: 2000,
 
   // Filter settings
   MEDIAN_FILTER_WINDOW: 3,
-  MOVING_AVERAGE_WINDOW: 7,  // Aumentado para suavizar más la señal
-  EMA_ALPHA: 0.25,          // Ajustado para respuesta más suave
-  BASELINE_FACTOR: 0.992,   // Ajustado para mejor estabilidad de línea base
+  MOVING_AVERAGE_WINDOW: 5,
+  EMA_ALPHA: 0.3,
+  BASELINE_FACTOR: 0.995,
 
   // Audio settings
   BEEP_PRIMARY_FREQUENCY: 880,
@@ -28,6 +28,6 @@ export const HeartBeatConfig = {
   MIN_BEEP_INTERVAL_MS: 250,
 
   // Signal quality settings
-  LOW_SIGNAL_THRESHOLD: 0.04,  // Reducido para detectar señales más débiles
-  LOW_SIGNAL_FRAMES: 8         // Reducido para respuesta más rápida
+  LOW_SIGNAL_THRESHOLD: 0.05,
+  LOW_SIGNAL_FRAMES: 10
 };
