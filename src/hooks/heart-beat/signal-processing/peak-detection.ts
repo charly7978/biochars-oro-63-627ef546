@@ -1,16 +1,16 @@
 
 /**
  * Functions for peak detection logic
- * Severely restricted to prevent false positives
+ * Optimized to prevent false positives while enabling actual measurements
  */
 
 /**
  * Determines if a measurement should be processed based on signal strength
- * Drastically increased thresholds
+ * Higher thresholds to prevent processing noise
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Much higher threshold to prevent processing weak signals (likely noise)
-  return Math.abs(value) >= 0.40; // Drastically increased from 0.05
+  // Higher threshold but not too high to prevent processing noise while allowing real signals
+  return Math.abs(value) >= 0.30; // Balanced threshold
 }
 
 /**
@@ -30,7 +30,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 }
 
 /**
- * Handle peak detection
+ * Handle peak detection with improved validation
  */
 export function handlePeakDetection(
   result: any, 
@@ -41,12 +41,13 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Only process peaks with much higher confidence (prevents false positives)
-  if (result.isPeak && result.confidence > 0.65) { // Drastically increased threshold
+  // Process peaks with higher confidence but not too high
+  if (result.isPeak && result.confidence > 0.50) { // Balanced threshold
     lastPeakTimeRef.current = now;
     
-    if (isMonitoringRef.current && result.confidence > 0.70) { // Higher beep threshold too
+    if (isMonitoringRef.current && result.confidence > 0.55) { // Higher beep threshold
       requestBeepCallback(value);
     }
   }
 }
+
