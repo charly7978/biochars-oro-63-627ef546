@@ -6,15 +6,9 @@ interface GraphGridProps {
 	width?: number;
 	height?: number;
 	cellSize?: number;
-	maximumResolution?: boolean;
 }
 
-const GraphGrid: React.FC<GraphGridProps> = ({ 
-	width = 1200, 
-	height = 1080, 
-	cellSize = 20,
-	maximumResolution = true 
-}) => {
+const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cellSize = 20 }) => {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 
 	useEffect(() => {
@@ -23,14 +17,11 @@ const GraphGrid: React.FC<GraphGridProps> = ({
 			// Optimize the canvas for device pixel ratio with maximum resolution
 			optimizeCanvas(canvas, width, height);
 			
-			const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+			const ctx = canvas.getContext('2d');
 			if (ctx) {
 				// Get the actual drawing size adjusted for device pixel ratio
 				const displayWidth = canvas.width;
 				const displayHeight = canvas.height;
-				
-				// Enable the best possible rendering quality
-				ctx.imageSmoothingEnabled = false;
 				
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
@@ -97,7 +88,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({
 				}
 			}
 		}
-	}, [width, height, cellSize, maximumResolution]);
+	}, [width, height, cellSize]);
 
 	return (
 		<canvas 
@@ -107,13 +98,11 @@ const GraphGrid: React.FC<GraphGridProps> = ({
 				height: 'auto', 
 				display: 'block',
 				borderRadius: '8px',
-				boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-				imageRendering: maximumResolution ? 'pixelated' : 'auto'
+				boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)'
 			}} 
-			className="ppg-graph gpu-accelerated rendering-optimized maximum-resolution"
+			className="ppg-graph gpu-accelerated rendering-optimized"
 		/>
 	);
 };
 
 export default GraphGrid;
-

@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
-  onError?: (error: Error) => void;
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
@@ -10,7 +9,6 @@ interface CameraViewProps {
 
 const CameraView = ({ 
   onStreamReady, 
-  onError,
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
@@ -21,7 +19,6 @@ const CameraView = ({
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
 
@@ -65,17 +62,13 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
-      setCameraError(null);
     }
   };
 
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        const error = new Error("getUserMedia no está soportado en este navegador");
-        setCameraError("La cámara no está soportada en este navegador");
-        if (onError) onError(error);
-        return;
+        throw new Error("getUserMedia no está soportado");
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
@@ -231,33 +224,12 @@ const CameraView = ({
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
       
-      let errorMessage = "Error al acceder a la cámara";
-      if (err instanceof Error) {
-        if (err.name === "NotAllowedError" || err.message.includes("Permission denied")) {
-          errorMessage = "Permiso de cámara denegado. Por favor, permita el acceso a la cámara.";
-        } else if (err.name === "NotFoundError" || err.message.includes("Requested device not found")) {
-          errorMessage = "No se encontró una cámara en el dispositivo.";
-        } else if (err.name === "NotReadableError" || err.message.includes("Could not start video source")) {
-          errorMessage = "La cámara está en uso por otra aplicación.";
-        }
-        
-        setCameraError(errorMessage);
-        
-        if (onError) {
-          onError(err);
-        }
-      }
-      
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
         console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
         setTimeout(startCamera, 1000);
       } else {
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
-        setCameraError(`No se pudo iniciar la cámara después de ${maxRetryAttempts} intentos`);
-        if (onError) {
-          onError(new Error(`Falló después de ${maxRetryAttempts} intentos`));
-        }
       }
     }
   };
@@ -325,39 +297,19 @@ const CameraView = ({
                              signalQuality > 70 ? 1000/30 : 1000/15;
 
   return (
-    <>
-      {cameraError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-10 p-4">
-          <div className="bg-red-900/80 text-white p-4 rounded-lg max-w-md text-center">
-            <p className="text-lg font-bold mb-2">Error de cámara</p>
-            <p>{cameraError}</p>
-            <button 
-              className="mt-4 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg"
-              onClick={() => {
-                setCameraError(null);
-                retryAttemptsRef.current = 0;
-                startCamera();
-              }}
-            >
-              Reintentar
-            </button>
-          </div>
-        </div>
-      )}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-        style={{
-          willChange: 'transform',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden',
-          imageRendering: 'crisp-edges'
-        }}
-      />
-    </>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+      style={{
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        imageRendering: 'crisp-edges'
+      }}
+    />
   );
 };
 
