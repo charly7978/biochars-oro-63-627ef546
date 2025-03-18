@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -240,10 +241,10 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      // Fix: Check for proper state strings
+      // Fix: Check for audioContext state correctly
       if (audioContextRef.current.state === 'suspended' || audioContextRef.current.state === 'closed') {
         await audioContextRef.current.resume();
-        // If still not running, abort
+        // Check state after attempt to resume
         if (audioContextRef.current.state !== 'running') {
           return false;
         }
@@ -787,4 +788,3 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
-
