@@ -309,7 +309,7 @@ const Index = () => {
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
-              isArrhythmia={isArrhythmia}
+              isArrhythmia={isArrhythmia()}
             />
           </div>
 

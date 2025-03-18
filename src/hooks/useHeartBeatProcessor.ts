@@ -52,7 +52,7 @@ export const useHeartBeatProcessor = () => {
       });
       
       if (processor) {
-        processor.setMonitoring(false); // Using setMonitoring instead of stopMonitoring
+        processor.setMonitoring(false);
       }
     };
   }, []);
@@ -63,7 +63,7 @@ export const useHeartBeatProcessor = () => {
   const reset = useCallback(() => {
     if (!heartBeatProcessor) return;
     
-    heartBeatProcessor.reset(); // Using reset instead of resetProcessor
+    heartBeatProcessor.reset();
     setBpm(0);
     setConfidence(0);
     setArrhythmiaCount(0);
@@ -119,8 +119,11 @@ export const useHeartBeatProcessor = () => {
       };
     }
     
-    // Process the signal through the processor using processSignal instead of processValue
+    // Process the signal through the processor
     const result = heartBeatProcessor.processSignal(value);
+    
+    // Get RR intervals from processor
+    const rrData = heartBeatProcessor.getRRIntervals();
     
     // Update state with processed results
     if (result) {
@@ -128,8 +131,8 @@ export const useHeartBeatProcessor = () => {
       setConfidence(result.confidence);
       setArrhythmiaCount(result.arrhythmiaCount);
       
-      if (result.rrData && result.rrData.intervals) {
-        setRrIntervals(result.rrData.intervals);
+      if (rrData && rrData.intervals) {
+        setRrIntervals(rrData.intervals);
       }
       
       if (result.isPeak) {
@@ -147,10 +150,21 @@ export const useHeartBeatProcessor = () => {
         lastValidBpmRef.current = result.bpm;
       }
       
-      currentBeatIsArrhythmiaRef.current = !!result.isArrhythmia;
+      // Check if current beat is arrhythmia
+      const isArrhythmiaResult = heartBeatProcessor.isArrhythmia();
+      currentBeatIsArrhythmiaRef.current = isArrhythmiaResult;
+      
       lastProcessedValueRef.current = value;
       
-      return result;
+      // Return a complete HeartBeatResult
+      return {
+        bpm: result.bpm,
+        confidence: result.confidence,
+        isPeak: result.isPeak,
+        arrhythmiaCount: result.arrhythmiaCount,
+        isArrhythmia: isArrhythmiaResult,
+        rrData: rrData
+      };
     }
     
     return {
@@ -196,8 +210,8 @@ export const useHeartBeatProcessor = () => {
     isMonitoring,
     lastPeakTimeRef,
     currentBeatIsArrhythmiaRef,
-    isArrhythmia, // Added
-    startMonitoring, // Added
-    stopMonitoring, // Added
+    isArrhythmia,
+    startMonitoring,
+    stopMonitoring,
   };
 };

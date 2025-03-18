@@ -22,5 +22,3 @@ export interface VitalSignsResult {
     overall: number;
   };
 }
-
-// Remove the duplicate export to fix conflict
