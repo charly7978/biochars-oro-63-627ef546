@@ -1,23 +1,22 @@
 /**
  * GlucoseProcessor class
- * Calculates glucose levels directly from PPG signal characteristics
- * with no reliance on synthetic data or reference values
+ * Uses PPG signal characteristics for measurement
  */
 export class GlucoseProcessor {
   private confidence: number = 0;
-  private readonly MIN_SAMPLES = 20; // Increased required samples
-  private readonly GLUCOSE_BASELINE = 90; // Standard fasting reference
+  private readonly MIN_SAMPLES = 20;
+  private readonly GLUCOSE_BASELINE = 90;
   
-  // Conservative weight factors to prevent over-estimation
-  private readonly PERFUSION_FACTOR = 0.5; // Reduced from 0.75
-  private readonly AMPLITUDE_FACTOR = 0.15; // Reduced from 0.22
-  private readonly FREQUENCY_FACTOR = 0.20; // Reduced from 0.30
-  private readonly PHASE_FACTOR = 0.10; // Reduced from 0.15
-  private readonly AREA_UNDER_CURVE_FACTOR = 0.12; // Reduced from 0.18
+  // Weight factors for estimation
+  private readonly PERFUSION_FACTOR = 0.5;
+  private readonly AMPLITUDE_FACTOR = 0.15;
+  private readonly FREQUENCY_FACTOR = 0.20;
+  private readonly PHASE_FACTOR = 0.10;
+  private readonly AREA_UNDER_CURVE_FACTOR = 0.12;
   private readonly SIGNAL_WINDOW_SIZE = 5;
   
-  // Tracking of calibration samples and previous values for stability
-  private readonly STABILITY_WINDOW = 5; // Increased stability window
+  // History tracking for stability
+  private readonly STABILITY_WINDOW = 5;
   private previousValues: number[] = [];
   private lastCalculatedGlucose: number = 0;
   
@@ -33,7 +32,6 @@ export class GlucoseProcessor {
   
   /**
    * Calculate glucose based on PPG waveform characteristics
-   * Using direct measurement techniques without reference values
    */
   public calculateGlucose(ppgValues: number[]): number {
     if (ppgValues.length < this.MIN_SAMPLES) {
@@ -43,14 +41,13 @@ export class GlucoseProcessor {
         provided: ppgValues.length, 
         required: this.MIN_SAMPLES 
       });
-      return 0; // Not enough data
+      return 0;
     }
     
     // Validate signal quality
     const signalVariability = this.calculateVariability(ppgValues);
     const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
     
-    // If signal quality is too poor, return 0
     if (signalAmplitude < 0.05 || signalVariability > 0.8) {
       this.confidence = 0;
       this.hasQualityData = false;
@@ -63,10 +60,10 @@ export class GlucoseProcessor {
     
     this.hasQualityData = true;
     
-    // Use most recent PPG samples for glucose estimation
+    // Use recent PPG samples for estimation
     const recentValues = ppgValues.slice(-Math.min(150, ppgValues.length));
     
-    // Calculate signal metrics with improved analysis
+    // Calculate signal metrics
     const { 
       amplitude, 
       frequency, 
@@ -76,10 +73,10 @@ export class GlucoseProcessor {
       signalVariability: variability
     } = this.analyzeSignal(recentValues);
     
-    // Directly calculate glucose from signal characteristics with reduced factors
+    // Calculate glucose estimation
     let glucoseEstimate = this.GLUCOSE_BASELINE;
     
-    // Apply smaller adjustments to prevent extreme values
+    // Apply adjustments
     glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 100;
     glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 150;
     glucoseEstimate += phase * this.PHASE_FACTOR * 50;
@@ -89,24 +86,23 @@ export class GlucoseProcessor {
     const perfusionAdjustment = (perfusionIndex - 0.5) * this.PERFUSION_FACTOR * 40;
     glucoseEstimate += perfusionAdjustment;
     
-    // Add small variability component
+    // Variability component
     glucoseEstimate += (variability - 0.5) * 8;
     
-    // Apply individual variation factor based on signal characteristics
+    // Apply individual variation factor
     const individualFactor = this.calculateIndividualFactor(recentValues);
     glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.15);
     
-    // Apply physiological constraints with narrower range
-    // Normal fasting range: 70-99 mg/dL
+    // Apply physiological constraints
     glucoseEstimate = Math.max(80, Math.min(140, glucoseEstimate));
     
-    // Stabilize readings with temporal smoothing
+    // Stabilize readings
     const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
     
-    // Calculate confidence based on signal quality and stability
+    // Calculate confidence
     this.confidence = this.calculateConfidence(recentValues, perfusionIndex, variability);
     
-    // Store this value for future stability calculations
+    // Store for future stability calculations
     this.lastCalculatedGlucose = stabilizedGlucose;
     
     console.log("GlucoseProcessor: Calculation details", {
@@ -127,12 +123,12 @@ export class GlucoseProcessor {
   }
   
   /**
-   * Calculate individual variation factor based on unique signal characteristics
+   * Calculate individual variation factor based on signal characteristics
    */
   private calculateIndividualFactor(values: number[]): number {
     if (values.length < 30) return 0.5;
     
-    // Calculate signal pattern features that vary between individuals
+    // Calculate signal pattern features
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
     const deviations = values.map(v => Math.abs(v - avg));
     const meanDeviation = deviations.reduce((sum, val) => sum + val, 0) / deviations.length;
@@ -152,7 +148,7 @@ export class GlucoseProcessor {
     // Create individualization factor from combined metrics
     const factor = (meanDeviation * 3 + normalizedCrossings * 2) / 5;
     
-    // Normalize to 0.4-0.6 range (more conservative)
+    // Normalize to 0.4-0.6 range
     return Math.min(0.6, Math.max(0.4, 0.4 + factor * 0.2));
   }
   
@@ -191,16 +187,15 @@ export class GlucoseProcessor {
     
     // If change is consistent, allow faster changes
     if (isConsistentChange) {
-      // Return value closer to current reading
       return stableValue * 0.3 + currentReading * 0.7;
     }
     
     // Otherwise, provide more stable reading
-    return stableValue * 0.8 + currentReading * 0.2; // More stability (0.8 weight)
+    return stableValue * 0.8 + currentReading * 0.2;
   }
   
   /**
-   * Analyze PPG signal to extract key metrics with improved algorithms
+   * Analyze PPG signal to extract key metrics
    */
   private analyzeSignal(values: number[]): { 
     amplitude: number; 
@@ -210,7 +205,7 @@ export class GlucoseProcessor {
     areaUnderCurve: number;
     signalVariability: number;
   } {
-    // Calculate amplitude (AC component) with improved peak detection
+    // Calculate amplitude with peak detection
     const { peakValues, valleyValues } = this.findPeaksAndValleys(values);
     
     let amplitude = 0;
@@ -224,13 +219,13 @@ export class GlucoseProcessor {
       amplitude = max - min;
     }
     
-    // Calculate "DC" component (average value)
+    // Calculate DC component (average value)
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
     
-    // Calculate perfusion index (AC/DC ratio) - key indicator of blood volume
+    // Calculate perfusion index (AC/DC ratio)
     const perfusionIndex = avg !== 0 ? amplitude / avg : 0;
     
-    // Calculate frequency through zero crossings with improved algorithm
+    // Calculate frequency through zero crossings
     let crossings = 0;
     let lastSign = values[0] > avg;
     for (let i = 1; i < values.length; i++) {
@@ -242,7 +237,7 @@ export class GlucoseProcessor {
     }
     const frequency = crossings / (2 * values.length);
     
-    // Calculate phase using autocorrelation with enhanced algorithm
+    // Calculate phase using autocorrelation
     let maxCorrelation = 0;
     let phase = 0;
     const halfLength = Math.floor(values.length / 2);
@@ -258,10 +253,10 @@ export class GlucoseProcessor {
       }
     }
     
-    // Calculate area under the curve - new metric for glucose correlation
+    // Calculate area under the curve
     const areaUnderCurve = this.calculateAreaUnderCurve(values, avg);
     
-    // Calculate signal variability - helpful for detecting glycemic changes
+    // Calculate signal variability
     const variability = this.calculateVariability(values);
     
     return { 
@@ -306,7 +301,6 @@ export class GlucoseProcessor {
     for (const value of values) {
       area += (value - baseline);
     }
-    // Normalize by signal length for consistent scaling
     return Math.abs(area) / values.length;
   }
   
@@ -321,7 +315,6 @@ export class GlucoseProcessor {
       sumDiffs += Math.abs(values[i] - values[i-1]);
     }
     
-    // Normalize and scale to 0-1 range
     const avgDiff = sumDiffs / (values.length - 1);
     const maxPossibleDiff = Math.max(...values) - Math.min(...values);
     
@@ -333,12 +326,11 @@ export class GlucoseProcessor {
    * Calculate confidence based on signal quality
    */
   private calculateConfidence(values: number[], perfusionIndex: number, variability: number): number {
-    // If not enough data, low confidence
     if (values.length < this.MIN_SAMPLES || !this.hasQualityData) {
       return 0;
     }
     
-    // Calculate signal stability using windowed approach
+    // Calculate signal stability
     const windowedValues = [];
     for (let i = 0; i < values.length - this.SIGNAL_WINDOW_SIZE; i += this.SIGNAL_WINDOW_SIZE) {
       const windowSlice = values.slice(i, i + this.SIGNAL_WINDOW_SIZE);
@@ -364,16 +356,16 @@ export class GlucoseProcessor {
     // Data quantity component
     const dataComponent = Math.min(1, values.length / (this.MIN_SAMPLES * 2));
     
-    // Signal variability component (lower variability gives higher confidence)
+    // Signal variability component
     const variabilityComponent = Math.min(1, Math.max(0, 1 - variability));
     
-    // Combined confidence with weighted components
+    // Combined confidence
     const confidence = 0.35 * normalizedStability + 
                        0.35 * perfusionComponent + 
                        0.15 * dataComponent +
                        0.15 * variabilityComponent;
     
-    return Math.min(0.95, Math.max(0, confidence)); // Cap at 0.95 for honesty
+    return Math.min(0.95, Math.max(0, confidence));
   }
   
   /**

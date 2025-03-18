@@ -1,473 +1,390 @@
+
 /**
- * Advanced non-invasive lipid profile estimation using PPG signal analysis
- * Implementation based on research from Johns Hopkins, Harvard Medical School, and Mayo Clinic
- * 
- * References:
- * - "Optical assessment of blood lipid profiles using PPG" (IEEE Biomedical Engineering, 2020)
- * - "Novel approaches to non-invasive lipid measurement" (Mayo Clinic Proceedings, 2019)
- * - "Correlation between hemodynamic parameters and serum lipid profiles" (2018)
+ * Basic lipid profile estimation using PPG signal analysis
  */
 export class LipidProcessor {
-  // Valores de referencia fisiológicamente relevantes
-  private readonly MIN_CHOLESTEROL = 130; // Mínimo fisiológico (mg/dL)
-  private readonly MAX_CHOLESTEROL = 220; // Límite superior más conservador (mg/dL)
-  private readonly MIN_TRIGLYCERIDES = 50; // Mínimo fisiológico (mg/dL)
-  private readonly MAX_TRIGLYCERIDES = 170; // Límite superior más conservador (mg/dL)
+  // Physiologically relevant reference values
+  private readonly MIN_CHOLESTEROL = 130; // Minimum physiological (mg/dL)
+  private readonly MAX_CHOLESTEROL = 220; // Upper limit (mg/dL)
+  private readonly MIN_TRIGLYCERIDES = 50; // Minimum physiological (mg/dL)
+  private readonly MAX_TRIGLYCERIDES = 170; // Upper limit (mg/dL)
   
-  // Parámetros de validación y confianza
-  private readonly CONFIDENCE_THRESHOLD = 0.65; // Umbral mínimo de confianza más exigente
-  private readonly MIN_SAMPLE_SIZE = 200; // Mínimo de muestras para medición válida
+  // Validation and confidence parameters
+  private readonly CONFIDENCE_THRESHOLD = 0.65;
+  private readonly MIN_SAMPLE_SIZE = 200;
   
-  // Parámetros para promedio ponderado y mediana
-  private readonly MEDIAN_WEIGHT = 0.65; // Mayor peso a la mediana para estabilidad
-  private readonly MEAN_WEIGHT = 0.35; // Menor peso al promedio
-  private readonly HISTORY_WEIGHT = 0.7; // Peso para valores históricos
-  private readonly RECENT_WEIGHT = 0.3; // Peso para valores recientes
+  // Weighted average and median parameters
+  private readonly MEDIAN_WEIGHT = 0.65;
+  private readonly MEAN_WEIGHT = 0.35;
+  private readonly HISTORY_WEIGHT = 0.7;
   
-  // Umbrales de validación de señal
-  private readonly MIN_SNR = 0.3; // Relación señal-ruido mínima aceptable
-  private readonly MAX_VARIATION = 0.25; // Máxima variación aceptable entre ciclos
-  
-  // Buffers para mediciones
-  private cholesterolHistory: number[] = [];
-  private triglyceridesHistory: number[] = [];
-  private readonly HISTORY_SIZE = 5;
-  
-  // Estado interno
-  private lastCholesterolEstimate: number = 170; // Valor basal conservador
-  private lastTriglyceridesEstimate: number = 100; // Valor basal conservador
-  private confidenceScore: number = 0;
+  // Recent measurements for stability
+  private recentCholesterolValues: number[] = [];
+  private recentTriglyceridesValues: number[] = [];
+  private readonly MAX_HISTORY_SIZE = 5;
   
   /**
-   * Calcula perfil lipídico basado en características de señal PPG
-   * Utilizando análisis avanzado de forma de onda y parámetros espectrales
+   * Calculate lipid profile from PPG signal characteristics
+   * Uses direct measurement of PPG characteristics
    */
-  public calculateLipids(ppgValues: number[]): { 
+  public calculateLipids(
+    ppgValues: number[], 
+    heartRate: number, 
+    perfusionIndex: number
+  ): { 
     totalCholesterol: number; 
     triglycerides: number;
+    confidence: number;
   } {
-    // Verificar cantidad mínima de datos
-    if (ppgValues.length < this.MIN_SAMPLE_SIZE) {
-      this.confidenceScore = 0;
+    // Check if we have enough data
+    if (ppgValues.length < this.MIN_SAMPLE_SIZE || !heartRate || perfusionIndex < 0.05) {
+      return this.getDefaultWithConfidence(0.1);
+    }
+    
+    // Calculate signal characteristics
+    const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
+    const signalMean = ppgValues.reduce((sum, val) => sum + val, 0) / ppgValues.length;
+    const normalizedAmplitude = signalAmplitude / signalMean;
+    
+    // Calculate spectral features
+    const { 
+      highFrequencyEnergy,
+      lowFrequencyEnergy,
+      frequencyRatio,
+      waveformComplexity
+    } = this.calculateSpectralFeatures(ppgValues);
+    
+    // Signal morphology features
+    const { 
+      risetime, 
+      falltime,
+      risetimeFalltimeRatio,
+      peakWidth
+    } = this.calculateMorphologyFeatures(ppgValues);
+    
+    // Confidence calculation based on signal quality
+    const confidence = this.calculateConfidence(
+      perfusionIndex,
+      normalizedAmplitude,
+      frequencyRatio,
+      ppgValues.length
+    );
+    
+    // If confidence is too low, return with lower confidence
+    if (confidence < this.CONFIDENCE_THRESHOLD / 2) {
+      return this.getDefaultWithConfidence(confidence);
+    }
+    
+    // Base values for estimation
+    const baseCholesterol = 170;
+    const baseTriglycerides = 100;
+    
+    // Cholesterol estimation components
+    let cholesterolEstimate = baseCholesterol;
+    cholesterolEstimate += (perfusionIndex - 0.3) * -40; // Lower PI often correlates with higher cholesterol
+    cholesterolEstimate += (risetimeFalltimeRatio - 0.5) * 15; // Waveform shape factor
+    cholesterolEstimate += (frequencyRatio - 1.0) * 25; // Spectral component
+    cholesterolEstimate += (waveformComplexity - 0.5) * 20; // Waveform complexity factor
+    
+    // Apply heart rate adjustment - higher cholesterol often has heart rate impact
+    cholesterolEstimate += (heartRate > 80 ? 5 : -5);
+    
+    // Apply limits
+    cholesterolEstimate = Math.max(this.MIN_CHOLESTEROL, Math.min(this.MAX_CHOLESTEROL, cholesterolEstimate));
+    
+    // Triglycerides estimation components
+    let triglyceridesEstimate = baseTriglycerides;
+    triglyceridesEstimate += (peakWidth - 0.3) * 50; // Wider peaks correlate with higher triglycerides
+    triglyceridesEstimate += (lowFrequencyEnergy - 0.5) * 35; // Low frequency component
+    triglyceridesEstimate += (perfusionIndex - 0.3) * -30; // Perfusion index component
+    
+    // Apply limits
+    triglyceridesEstimate = Math.max(this.MIN_TRIGLYCERIDES, Math.min(this.MAX_TRIGLYCERIDES, triglyceridesEstimate));
+    
+    // Store values for stability
+    this.addToHistory(cholesterolEstimate, triglyceridesEstimate);
+    
+    // Apply smoothing for stability
+    const stabilizedValues = this.calculateStabilizedValues(cholesterolEstimate, triglyceridesEstimate);
+    
+    return {
+      totalCholesterol: Math.round(stabilizedValues.cholesterol),
+      triglycerides: Math.round(stabilizedValues.triglycerides),
+      confidence
+    };
+  }
+  
+  /**
+   * Add values to history for smoothing
+   */
+  private addToHistory(cholesterol: number, triglycerides: number): void {
+    this.recentCholesterolValues.push(cholesterol);
+    this.recentTriglyceridesValues.push(triglycerides);
+    
+    if (this.recentCholesterolValues.length > this.MAX_HISTORY_SIZE) {
+      this.recentCholesterolValues.shift();
+      this.recentTriglyceridesValues.shift();
+    }
+  }
+  
+  /**
+   * Calculate stabilized values using history
+   */
+  private calculateStabilizedValues(
+    currentCholesterol: number, 
+    currentTriglycerides: number
+  ): { cholesterol: number, triglycerides: number } {
+    // If we don't have history, return current values
+    if (this.recentCholesterolValues.length <= 1) {
       return { 
-        totalCholesterol: 0, 
-        triglycerides: 0 
+        cholesterol: currentCholesterol,
+        triglycerides: currentTriglycerides
       };
     }
     
-    // Usar los datos más recientes para evaluación más estable
-    const recentPPG = ppgValues.slice(-this.MIN_SAMPLE_SIZE);
+    // Calculate medians
+    const sortedCholesterol = [...this.recentCholesterolValues].sort((a, b) => a - b);
+    const sortedTriglycerides = [...this.recentTriglyceridesValues].sort((a, b) => a - b);
     
-    // Extraer características avanzadas de forma de onda vinculadas a viscosidad sanguínea y rigidez arterial
-    // Ambas son correlatos conocidos de perfiles lipídicos según múltiples estudios clínicos
-    const features = this.extractHemodynamicFeatures(recentPPG);
+    const cholesterolMedian = this.calculateMedian(sortedCholesterol);
+    const triglyceridesMedian = this.calculateMedian(sortedTriglycerides);
     
-    // Calcular calidad de señal y confianza de la medición
-    this.confidenceScore = this.calculateConfidence(features, recentPPG);
+    // Calculate means
+    const cholesterolMean = this.recentCholesterolValues.reduce((sum, val) => sum + val, 0) / 
+                          this.recentCholesterolValues.length;
+    const triglyceridesMean = this.recentTriglyceridesValues.reduce((sum, val) => sum + val, 0) / 
+                            this.recentTriglyceridesValues.length;
     
-    // Si la confianza es muy baja, retornar último valor conocido
-    if (this.confidenceScore < 0.3) {
-      return {
-        totalCholesterol: Math.round(this.lastCholesterolEstimate),
-        triglycerides: Math.round(this.lastTriglyceridesEstimate)
-      };
-    }
+    // Weighted combination of median and mean
+    const stabilizedCholesterol = (cholesterolMedian * this.MEDIAN_WEIGHT) + 
+                                (cholesterolMean * this.MEAN_WEIGHT);
+    const stabilizedTriglycerides = (triglyceridesMedian * this.MEDIAN_WEIGHT) + 
+                                  (triglyceridesMean * this.MEAN_WEIGHT);
     
-    // Modelo de regresión multi-parámetro para estimación lipídica con coeficientes conservadores
-    const baseCholesterol = 165; // Base más conservadora
-    const baseTriglycerides = 95; // Base más conservadora
-    
-    // Modelo optimizado con coeficientes más conservadores
-    const cholesterolRaw = baseCholesterol +
-      (features.areaUnderCurve * 40) +         // Reducido de 50 a 40
-      (features.augmentationIndex * 25) -       // Reducido de 34 a 25
-      (features.riseFallRatio * 15) -           // Reducido de 18 a 15
-      (features.dicroticNotchPosition * 10);     // Reducido de 13 a 10
-    
-    const triglyceridesRaw = baseTriglycerides +
-      (features.augmentationIndex * 20) +      // Reducido de 24 a 20
-      (features.areaUnderCurve * 22) -         // Reducido de 27 a 22
-      (features.dicroticNotchHeight * 12);      // Reducido de 16 a 12
-    
-    // Aplicar restricciones fisiológicas a los valores brutos
-    const cholesterolConstrained = Math.max(this.MIN_CHOLESTEROL, Math.min(this.MAX_CHOLESTEROL, cholesterolRaw));
-    const triglyceridesConstrained = Math.max(this.MIN_TRIGLYCERIDES, Math.min(this.MAX_TRIGLYCERIDES, triglyceridesRaw));
-    
-    // Agregar a historia de mediciones
-    this.cholesterolHistory.push(cholesterolConstrained);
-    this.triglyceridesHistory.push(triglyceridesConstrained);
-    
-    // Mantener tamaño de buffer
-    if (this.cholesterolHistory.length > this.HISTORY_SIZE) {
-      this.cholesterolHistory.shift();
-      this.triglyceridesHistory.shift();
-    }
-    
-    // Implementar sistema de mediana y promedio ponderado para cada parámetro
-    let cholesterolMedian = 0;
-    let cholesterolMean = 0;
-    let triglyceridesMedian = 0;
-    let triglycerideMean = 0;
-    
-    if (this.cholesterolHistory.length > 0) {
-      // Calcular medianas
-      const sortedCholesterol = [...this.cholesterolHistory].sort((a, b) => a - b);
-      const sortedTriglycerides = [...this.triglyceridesHistory].sort((a, b) => a - b);
-      
-      const midIndex = Math.floor(sortedCholesterol.length / 2);
-      cholesterolMedian = sortedCholesterol.length % 2 === 0 
-        ? (sortedCholesterol[midIndex - 1] + sortedCholesterol[midIndex]) / 2
-        : sortedCholesterol[midIndex];
-        
-      triglyceridesMedian = sortedTriglycerides.length % 2 === 0
-        ? (sortedTriglycerides[midIndex - 1] + sortedTriglycerides[midIndex]) / 2
-        : sortedTriglycerides[midIndex];
-      
-      // Calcular promedios
-      cholesterolMean = this.cholesterolHistory.reduce((sum, val) => sum + val, 0) / this.cholesterolHistory.length;
-      triglycerideMean = this.triglyceridesHistory.reduce((sum, val) => sum + val, 0) / this.triglyceridesHistory.length;
-    } else {
-      cholesterolMedian = cholesterolConstrained;
-      cholesterolMean = cholesterolConstrained;
-      triglyceridesMedian = triglyceridesConstrained;
-      triglycerideMean = triglyceridesConstrained;
-    }
-    
-    // Aplicar ponderación entre mediana y promedio
-    const weightedCholesterol = (cholesterolMedian * this.MEDIAN_WEIGHT) + (cholesterolMean * this.MEAN_WEIGHT);
-    const weightedTriglycerides = (triglyceridesMedian * this.MEDIAN_WEIGHT) + (triglycerideMean * this.MEAN_WEIGHT);
-    
-    // Aplicar límite de cambio máximo entre medidas consecutivas
-    const maxCholesterolChange = 15 * this.confidenceScore; // Cambio máximo proporcional a confianza
-    const maxTriglyceridesChange = 20 * this.confidenceScore;
-    
-    // Calcular cambios limitados
-    const cholesterolChange = weightedCholesterol - this.lastCholesterolEstimate;
-    const triglyceridesChange = weightedTriglycerides - this.lastTriglyceridesEstimate;
-    
-    const limitedCholesterolChange = Math.sign(cholesterolChange) * Math.min(Math.abs(cholesterolChange), maxCholesterolChange);
-    const limitedTriglyceridesChange = Math.sign(triglyceridesChange) * Math.min(Math.abs(triglyceridesChange), maxTriglyceridesChange);
-    
-    // Actualizar estimaciones con cambios limitados
-    const newCholesterol = this.lastCholesterolEstimate + limitedCholesterolChange;
-    const newTriglycerides = this.lastTriglyceridesEstimate + limitedTriglyceridesChange;
-    
-    // Aplicar ponderación entre valor histórico y nuevo valor
-    const finalCholesterol = (this.lastCholesterolEstimate * this.HISTORY_WEIGHT) + (newCholesterol * this.RECENT_WEIGHT);
-    const finalTriglycerides = (this.lastTriglyceridesEstimate * this.HISTORY_WEIGHT) + (newTriglycerides * this.RECENT_WEIGHT);
-    
-    // Asegurar que los resultados estén dentro de rangos fisiológicamente relevantes
-    const constrainedCholesterol = Math.max(this.MIN_CHOLESTEROL, Math.min(this.MAX_CHOLESTEROL, finalCholesterol));
-    const constrainedTriglycerides = Math.max(this.MIN_TRIGLYCERIDES, Math.min(this.MAX_TRIGLYCERIDES, finalTriglycerides));
-    
-    // Actualizar últimas estimaciones
-    this.lastCholesterolEstimate = constrainedCholesterol;
-    this.lastTriglyceridesEstimate = constrainedTriglycerides;
+    // Blend with current value for responsiveness
+    const finalCholesterol = (stabilizedCholesterol * this.HISTORY_WEIGHT) + 
+                           (currentCholesterol * (1 - this.HISTORY_WEIGHT));
+    const finalTriglycerides = (stabilizedTriglycerides * this.HISTORY_WEIGHT) + 
+                             (currentTriglycerides * (1 - this.HISTORY_WEIGHT));
     
     return {
-      totalCholesterol: Math.round(constrainedCholesterol),
-      triglycerides: Math.round(constrainedTriglycerides)
+      cholesterol: finalCholesterol,
+      triglycerides: finalTriglycerides
     };
   }
   
   /**
-   * Extrae características hemodinámicas correlacionadas con perfiles lipídicos
-   * Basado en múltiples investigaciones sobre biomecánica cardiovascular
+   * Calculate median of array
    */
-  private extractHemodynamicFeatures(ppgValues: number[]): {
-    areaUnderCurve: number;
-    augmentationIndex: number;
-    riseFallRatio: number;
-    dicroticNotchPosition: number;
-    dicroticNotchHeight: number;
-    elasticityIndex: number;
+  private calculateMedian(sortedArray: number[]): number {
+    const mid = Math.floor(sortedArray.length / 2);
+    return sortedArray.length % 2 === 0
+      ? (sortedArray[mid - 1] + sortedArray[mid]) / 2
+      : sortedArray[mid];
+  }
+  
+  /**
+   * Calculate spectral features from PPG signal
+   */
+  private calculateSpectralFeatures(values: number[]): {
+    highFrequencyEnergy: number;
+    lowFrequencyEnergy: number;
+    frequencyRatio: number;
+    waveformComplexity: number;
   } {
-    // Encontrar picos y valles con detección mejorada
-    const { peaks, troughs } = this.findPeaksAndTroughs(ppgValues);
+    // Basic spectral analysis
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const normalized = values.map(v => v - mean);
     
-    if (peaks.length < 2 || troughs.length < 2) {
-      // Retornar características predeterminadas conservadoras si no hay suficientes picos
-      return {
-        areaUnderCurve: 0.4,
-        augmentationIndex: 0.2,
-        riseFallRatio: 1.0,
-        dicroticNotchPosition: 0.6,
-        dicroticNotchHeight: 0.15,
-        elasticityIndex: 0.4
-      };
-    }
+    // Simple frequency band energy approximation
+    let lowFrequencyEnergy = 0;
+    let highFrequencyEnergy = 0;
     
-    // Calcular área bajo la curva (AUC) - normalizada
-    const min = Math.min(...ppgValues);
-    const range = Math.max(...ppgValues) - min;
-    if (range <= 0) {
-      return {
-        areaUnderCurve: 0.4,
-        augmentationIndex: 0.2,
-        riseFallRatio: 1.0,
-        dicroticNotchPosition: 0.6,
-        dicroticNotchHeight: 0.15,
-        elasticityIndex: 0.4
-      };
-    }
-    
-    const normalizedPPG = ppgValues.map(v => (v - min) / range);
-    const auc = normalizedPPG.reduce((sum, val) => sum + val, 0) / normalizedPPG.length;
-    
-    // Encontrar muescas dicroticas (picos/inflexiones secundarios después del pico sistólico principal)
-    const dicroticNotches = this.findDicroticNotches(ppgValues, peaks, troughs);
-    
-    // Calcular tiempos de subida y bajada con validación mejorada
-    let riseTimes = [];
-    let fallTimes = [];
-    
-    for (let i = 0; i < Math.min(peaks.length, troughs.length) - 1; i++) {
-      // Verificar secuencia válida: valle -> pico -> valle
-      if (troughs[i] < peaks[i] && peaks[i] < troughs[i+1]) {
-        // Tiempo de subida: desde valle a pico
-        riseTimes.push(peaks[i] - troughs[i]);
-        // Tiempo de bajada: desde pico a siguiente valle
-        fallTimes.push(troughs[i+1] - peaks[i]);
+    // Calculate autocorrelation at different lags to approximate frequency content
+    for (let lag = 1; lag <= Math.min(30, values.length / 3); lag++) {
+      let correlation = 0;
+      for (let i = 0; i < values.length - lag; i++) {
+        correlation += normalized[i] * normalized[i + lag];
       }
-    }
-    
-    // Filtrar valores atípicos
-    if (riseTimes.length > 3) {
-      riseTimes.sort((a, b) => a - b);
-      riseTimes = riseTimes.slice(1, -1); // Eliminar valores extremos
-    }
-    
-    if (fallTimes.length > 3) {
-      fallTimes.sort((a, b) => a - b);
-      fallTimes = fallTimes.slice(1, -1); // Eliminar valores extremos
-    }
-    
-    // Calcular características clave de la forma de onda correlacionadas con perfiles lipídicos
-    
-    // Promedio de relación subida/bajada - vinculado a rigidez arterial
-    const avgRiseTime = riseTimes.length ? riseTimes.reduce((a, b) => a + b, 0) / riseTimes.length : 10;
-    const avgFallTime = fallTimes.length ? fallTimes.reduce((a, b) => a + b, 0) / fallTimes.length : 20;
-    const riseFallRatio = avgFallTime > 0 ? Math.min(3, avgRiseTime / avgFallTime) : 1;
-    
-    // Índice de aumentación - relación de pico de reflexión a pico principal
-    let augmentationIndex = 0.2; // Valor por defecto conservador
-    let dicroticNotchPosition = 0.6; // Posición relativa por defecto
-    let dicroticNotchHeight = 0.15; // Altura relativa por defecto
-    
-    if (dicroticNotches.length > 0 && peaks.length > 0 && troughs.length > 0) {
-      // Usar primer pico y su correspondiente muesca dicrotica
-      const peakIdx = peaks[0];
-      const notchIdx = dicroticNotches[0];
-      const troughIdx = troughs[0];
+      correlation /= (values.length - lag);
       
-      // Verificar secuencia válida
-      if (troughIdx < peakIdx && peakIdx < notchIdx && notchIdx < (peaks[1] || ppgValues.length)) {
-        const peakValue = ppgValues[peakIdx];
-        const notchValue = ppgValues[notchIdx];
-        const troughValue = ppgValues[troughIdx];
-        
-        // Calcular alturas normalizadas
-        const peakHeight = peakValue - troughValue;
-        if (peakHeight > 0) {
-          const notchHeight = notchValue - troughValue;
-          augmentationIndex = Math.min(0.7, notchHeight / peakHeight);
-          dicroticNotchHeight = Math.min(0.7, notchHeight / peakHeight);
-          
-          const nextPeakIdx = peaks.length > 1 ? peaks[1] : peakIdx + 30;
-          dicroticNotchPosition = (notchIdx - peakIdx) / ((nextPeakIdx - peakIdx) || 30);
-          dicroticNotchPosition = Math.min(0.8, Math.max(0.3, dicroticNotchPosition));
-        }
+      // Lower lags (1-10) represent higher frequencies
+      // Higher lags (11-30) represent lower frequencies
+      if (lag <= 10) {
+        highFrequencyEnergy += Math.abs(correlation);
+      } else {
+        lowFrequencyEnergy += Math.abs(correlation);
       }
     }
     
-    // Índice de elasticidad - basado en características de la curva
-    const elasticityIndex = Math.min(0.8, Math.sqrt(augmentationIndex * riseFallRatio) / 1.5);
+    // Normalize energy values
+    const totalEnergy = highFrequencyEnergy + lowFrequencyEnergy;
+    if (totalEnergy > 0) {
+      highFrequencyEnergy /= totalEnergy;
+      lowFrequencyEnergy /= totalEnergy;
+    } else {
+      highFrequencyEnergy = 0.5;
+      lowFrequencyEnergy = 0.5;
+    }
+    
+    // Calculate ratio (higher values indicate more low frequency content)
+    const frequencyRatio = lowFrequencyEnergy > 0 ? highFrequencyEnergy / lowFrequencyEnergy : 1;
+    
+    // Calculate waveform complexity using approximate entropy concept
+    let complexitySum = 0;
+    for (let i = 1; i < values.length; i++) {
+      complexitySum += Math.abs(values[i] - values[i-1]);
+    }
+    const waveformComplexity = complexitySum / ((values.length - 1) * (Math.max(...values) - Math.min(...values)));
     
     return {
-      areaUnderCurve: Math.min(0.8, Math.max(0.2, auc)),
-      augmentationIndex: Math.min(0.7, Math.max(0.1, augmentationIndex)),
-      riseFallRatio: Math.min(3, Math.max(0.5, riseFallRatio)),
-      dicroticNotchPosition: Math.min(0.8, Math.max(0.3, dicroticNotchPosition)),
-      dicroticNotchHeight: Math.min(0.6, Math.max(0.05, dicroticNotchHeight)),
-      elasticityIndex: Math.min(0.8, Math.max(0.2, elasticityIndex))
+      highFrequencyEnergy,
+      lowFrequencyEnergy,
+      frequencyRatio,
+      waveformComplexity: Math.min(1, waveformComplexity)
     };
   }
   
   /**
-   * Encuentra picos y valles en la señal PPG con detección de ruido mejorada
+   * Calculate morphology features from PPG waveform
    */
-  private findPeaksAndTroughs(signal: number[]): { peaks: number[], troughs: number[] } {
+  private calculateMorphologyFeatures(values: number[]): {
+    risetime: number;
+    falltime: number;
+    risetimeFalltimeRatio: number;
+    peakWidth: number;
+  } {
+    // Find peaks and valleys for morphology analysis
+    const { peaks, valleys } = this.findPeaksAndValleys(values);
+    
+    // Default values
+    let risetime = 0.3;
+    let falltime = 0.5;
+    let peakWidth = 0.3;
+    
+    // Calculate features if we have enough peaks and valleys
+    if (peaks.length > 0 && valleys.length > 0) {
+      const risetimes: number[] = [];
+      const falltimes: number[] = [];
+      const peakWidths: number[] = [];
+      
+      // For each peak, find the preceding and following valleys
+      for (const peak of peaks) {
+        const precedingValleys = valleys.filter(v => v < peak);
+        const followingValleys = valleys.filter(v => v > peak);
+        
+        if (precedingValleys.length > 0 && followingValleys.length > 0) {
+          const prevValley = Math.max(...precedingValleys);
+          const nextValley = Math.min(...followingValleys);
+          
+          risetimes.push(peak - prevValley);
+          falltimes.push(nextValley - peak);
+          peakWidths.push(nextValley - prevValley);
+        }
+      }
+      
+      // Calculate average values if we have data
+      if (risetimes.length > 0 && falltimes.length > 0 && peakWidths.length > 0) {
+        risetime = risetimes.reduce((sum, val) => sum + val, 0) / risetimes.length;
+        falltime = falltimes.reduce((sum, val) => sum + val, 0) / falltimes.length;
+        peakWidth = peakWidths.reduce((sum, val) => sum + val, 0) / peakWidths.length;
+        
+        // Normalize to 0-1 range
+        const totalTime = values.length;
+        risetime /= totalTime;
+        falltime /= totalTime;
+        peakWidth /= totalTime;
+      }
+    }
+    
+    // Calculate ratio
+    const risetimeFalltimeRatio = falltime > 0 ? risetime / falltime : 0.6;
+    
+    return {
+      risetime,
+      falltime,
+      risetimeFalltimeRatio,
+      peakWidth
+    };
+  }
+  
+  /**
+   * Find peaks and valleys in the signal
+   */
+  private findPeaksAndValleys(values: number[]): { peaks: number[], valleys: number[] } {
     const peaks: number[] = [];
-    const troughs: number[] = [];
-    const minDistance = 15; // Mínima distancia entre picos (basado en fisiología)
+    const valleys: number[] = [];
     
-    // Calcular umbral adaptativo basado en la amplitud de la señal
-    const range = Math.max(...signal) - Math.min(...signal);
-    const threshold = 0.3 * range; // Umbral adaptativo más conservador
+    // Need at least 3 points to find peaks and valleys
+    if (values.length < 3) {
+      return { peaks, valleys };
+    }
     
-    // Detección de picos con criterio más estricto (5 puntos)
-    for (let i = 2; i < signal.length - 2; i++) {
-      // Detectar picos (usando comparación de 5 puntos para mayor robustez)
-      if (signal[i] > signal[i-1] && signal[i] > signal[i-2] && 
-          signal[i] > signal[i+1] && signal[i] > signal[i+2] &&
-          signal[i] - Math.min(...signal) > threshold) {
-        
-        // Verificar distancia mínima desde último pico
-        const lastPeak = peaks.length ? peaks[peaks.length - 1] : 0;
-        if (i - lastPeak >= minDistance) {
-          peaks.push(i);
-        } else if (signal[i] > signal[lastPeak]) {
-          // Reemplazar pico anterior si el actual es más alto
-          peaks[peaks.length - 1] = i;
-        }
+    // Find local maxima and minima
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i-1] && values[i] > values[i+1]) {
+        peaks.push(i);
       }
-      
-      // Detectar valles (usando comparación de 5 puntos para mayor robustez)
-      if (signal[i] < signal[i-1] && signal[i] < signal[i-2] && 
-          signal[i] < signal[i+1] && signal[i] < signal[i+2] &&
-          Math.max(...signal) - signal[i] > threshold) {
-        
-        // Verificar distancia mínima desde último valle
-        const lastTrough = troughs.length ? troughs[troughs.length - 1] : 0;
-        if (i - lastTrough >= minDistance) {
-          troughs.push(i);
-        } else if (signal[i] < signal[lastTrough]) {
-          // Reemplazar valle anterior si el actual es más bajo
-          troughs[troughs.length - 1] = i;
-        }
+      if (values[i] < values[i-1] && values[i] < values[i+1]) {
+        valleys.push(i);
       }
     }
     
-    return { peaks, troughs };
+    return { peaks, valleys };
   }
   
   /**
-   * Encuentra muescas dicroticas en la señal PPG
-   * La muesca dicrotica es un punto de inflexión característico después del pico sistólico principal
+   * Calculate confidence based on signal quality parameters
    */
-  private findDicroticNotches(signal: number[], peaks: number[], troughs: number[]): number[] {
-    const notches: number[] = [];
+  private calculateConfidence(
+    perfusionIndex: number,
+    normalizedAmplitude: number,
+    frequencyRatio: number,
+    dataPoints: number
+  ): number {
+    // Perfusion index component (higher is better)
+    const perfusionComponent = Math.min(1, perfusionIndex * 4);
     
-    if (peaks.length < 1) return notches;
+    // Signal amplitude component (higher is better, with diminishing returns)
+    const amplitudeComponent = Math.min(1, normalizedAmplitude * 2);
     
-    // Para cada intervalo pico-a-siguiente-pico
-    for (let i = 0; i < peaks.length - 1; i++) {
-      const startIdx = peaks[i];
-      const endIdx = peaks[i+1];
-      
-      // Encontrar valles entre estos picos
-      const troughsBetween = troughs.filter(t => t > startIdx && t < endIdx);
-      if (troughsBetween.length === 0) continue;
-      
-      // Usar el primer valle después del pico
-      const troughIdx = troughsBetween[0];
-      
-      // Buscar un pequeño pico o punto de inflexión después de este valle
-      let maxVal = signal[troughIdx];
-      let maxIdx = troughIdx;
-      
-      // Limitar la búsqueda a una ventana fisiológicamente relevante
-      const searchWindow = Math.min(Math.floor((endIdx - startIdx) * 0.6), 30);
-      
-      for (let j = troughIdx + 1; j < Math.min(troughIdx + searchWindow, endIdx); j++) {
-        if (signal[j] > maxVal) {
-          maxVal = signal[j];
-          maxIdx = j;
-        }
-      }
-      
-      // Si encontramos un punto más alto que el valle, podría ser una muesca dicrotica
-      if (maxIdx > troughIdx) {
-        // Validar que el punto es significativo (no solo ruido)
-        const valleyValue = signal[troughIdx];
-        const peakValue = signal[startIdx];
-        const notchValue = signal[maxIdx];
-        
-        // La muesca debe estar al menos X% por encima del valle
-        if (notchValue > valleyValue && (notchValue - valleyValue) > 0.1 * (peakValue - valleyValue)) {
-          notches.push(maxIdx);
-        }
-      }
-    }
+    // Frequency balance component (closer to 1.0 is better)
+    const frequencyComponent = Math.max(0, 1 - Math.abs(frequencyRatio - 1.0));
     
-    return notches;
+    // Data quantity component (more is better, up to MIN_SAMPLE_SIZE * 2)
+    const dataComponent = Math.min(1, dataPoints / (this.MIN_SAMPLE_SIZE * 2));
+    
+    // Combined confidence with weighted components
+    const confidence = (
+      perfusionComponent * 0.4 +
+      amplitudeComponent * 0.3 +
+      frequencyComponent * 0.2 +
+      dataComponent * 0.1
+    );
+    
+    return Math.min(0.9, Math.max(0, confidence)); // Cap at 0.9 for honesty
   }
   
   /**
-   * Calcula puntuación de confianza para la estimación lipídica
+   * Get default values with specified confidence
    */
-  private calculateConfidence(features: any, signal: number[]): number {
-    // Validar amplitud mínima de señal para mediciones confiables
-    const range = Math.max(...signal) - Math.min(...signal);
-    if (range < 0.05) {
-      return 0.1; // Señal demasiado débil
-    }
-    
-    // Calcular relación señal-ruido
-    const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-    const variance = signal.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / signal.length;
-    const snr = variance > 0 ? mean / Math.sqrt(variance) : 0;
-    
-    // Verificar valores fisiológicamente implausibles
-    const implausibleFeatures = 
-      features.areaUnderCurve < 0.2 || 
-      features.areaUnderCurve > 0.8 ||
-      features.augmentationIndex < 0.1 ||
-      features.augmentationIndex > 0.7;
-    
-    // Calcular puntuación de confianza final
-    let confidence = 0.7; // Comenzar con confianza moderada
-    
-    // Aplicar factores de reducción basados en indicadores de calidad
-    if (implausibleFeatures) confidence *= 0.5;
-    if (snr < this.MIN_SNR) confidence *= 0.6;
-    
-    // Criterio adicional: consistencia de intervalos de pulso
-    const { peaks } = this.findPeaksAndTroughs(signal);
-    if (peaks.length >= 3) {
-      const intervals = [];
-      for (let i = 1; i < peaks.length; i++) {
-        intervals.push(peaks[i] - peaks[i-1]);
-      }
-      
-      // Calcular desviación estándar de intervalos
-      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      if (avgInterval > 0) {
-        const intervalVariance = intervals.reduce((a, b) => a + Math.pow(b - avgInterval, 2), 0) / intervals.length;
-        const intervalStdDev = Math.sqrt(intervalVariance);
-        const coefficientOfVariation = intervalStdDev / avgInterval;
-        
-        // Alta variabilidad reduce confianza
-        if (coefficientOfVariation > this.MAX_VARIATION) {
-          confidence *= 0.7;
-        }
-      } else {
-        confidence *= 0.6;
-      }
-    } else {
-      // Muy pocos picos detectados
-      confidence *= 0.5;
-    }
-    
-    // Limitar el rango de confianza para evitar valores extremos
-    return Math.max(0.1, Math.min(0.9, confidence));
+  private getDefaultWithConfidence(confidence: number): {
+    totalCholesterol: number;
+    triglycerides: number;
+    confidence: number;
+  } {
+    return {
+      totalCholesterol: 170,
+      triglycerides: 100,
+      confidence
+    };
   }
   
   /**
-   * Reiniciar estado del procesador
+   * Reset the lipid processor
    */
   public reset(): void {
-    this.lastCholesterolEstimate = 170;
-    this.lastTriglyceridesEstimate = 100;
-    this.confidenceScore = 0;
-    this.cholesterolHistory = [];
-    this.triglyceridesHistory = [];
-  }
-  
-  /**
-   * Obtener nivel de confianza para la estimación actual
-   */
-  public getConfidence(): number {
-    return this.confidenceScore;
+    this.recentCholesterolValues = [];
+    this.recentTriglyceridesValues = [];
   }
 }
