@@ -45,27 +45,20 @@ export function handlePeakDetection(
     // Actualizar tiempo del pico para cálculos de tiempo
     lastPeakTimeRef.current = now;
     
-    // Solo activar beep para picos válidos cuando se está monitoreando
+    // Solo registrar el pico sin activar audio - el beep viene del monitor PPG
     if (isMonitoringRef.current) {
-      // Escalar volumen del beep basado en fuerza de la señal con mayor volumen base
-      const beepVolume = Math.min(Math.abs(value * 3.0), 1.0); // Aumentado significativamente para garantizar volumen audible
+      // Escalar volumen del beep basado en fuerza de la señal
+      const beepVolume = Math.min(Math.abs(value * 3.0), 1.0);
       
-      // FORZAR reproducción inmediata del beep - sin verificaciones adicionales
-      console.log("Peak-detection: FORZANDO beep inmediato para pico visual", {
+      // Registrar detección de pico pero NO solicitar beep
+      console.log("Peak-detection: Pico detectado, pero NO solicitando beep para evitar duplicación", {
         confianza: result.confidence,
         valor: value,
-        volumen: beepVolume,
         tiempo: new Date(now).toISOString()
       });
       
-      // Llamada directa e inmediata sin esperar retorno
-      requestBeepCallback(beepVolume);
-      
-      // Intentar segunda llamada con pequeño delay para garantizar que el audio se reproduzca
-      setTimeout(() => {
-        requestBeepCallback(beepVolume);
-        console.log("Peak-detection: Beep secundario de respaldo enviado");
-      }, 10);
+      // NO llamar al beep desde aquí, dejemos que PPGSignalMeter lo maneje
+      // requestBeepCallback(beepVolume);
     }
   }
 }

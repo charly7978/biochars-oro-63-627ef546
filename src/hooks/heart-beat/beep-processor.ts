@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef } from 'react';
 
 export function useBeepProcessor() {
@@ -6,7 +5,7 @@ export function useBeepProcessor() {
   const beepProcessorTimeoutRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  const MIN_BEEP_INTERVAL_MS = 200; // Reducido para más sensibilidad
+  const MIN_BEEP_INTERVAL_MS = 500; // Aumentado para EVITAR sonidos excesivos
   
   const processBeepQueue = useCallback((
     isMonitoringRef: React.MutableRefObject<boolean>,
@@ -16,6 +15,11 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ) => {
+    // DESACTIVADO: No procesar beeps desde esta cola
+    console.log("BeepProcessor: Cola de beeps desactivada para evitar duplicación de sonidos");
+    pendingBeepsQueue.current = []; // Vaciar cola
+    return;
+    
     if (!isMonitoringRef.current) {
       // Clear the queue if not monitoring
       pendingBeepsQueue.current = [];
@@ -81,6 +85,10 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ): boolean => {
+    // DESACTIVADO: No solicitar beeps inmediatos desde este procesador
+    console.log("BeepProcessor: Beep inmediato desactivado para evitar duplicación de sonidos");
+    return false;
+    
     if (!isMonitoringRef.current) return false;
     
     // Solo beep si la calidad de señal es suficiente
