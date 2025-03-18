@@ -16,8 +16,9 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ) => {
-    // DESACTIVADO: No procesar beeps desde esta cola
-    console.log("BeepProcessor: Cola de beeps completamente desactivada - sonido manejado exclusivamente por PPGSignalMeter");
+    // Todo el procesamiento de beeps ha sido eliminado
+    // El sonido es manejado exclusivamente por PPGSignalMeter
+    console.log("BeepProcessor: Completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
     pendingBeepsQueue.current = []; // Vaciar cola
     return;
   }, []);
@@ -31,10 +32,11 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ): boolean => {
-    // DESACTIVADO: No solicitar beeps desde este procesador
-    console.log("BeepProcessor: Beep desactivado - sonido manejado exclusivamente por PPGSignalMeter");
+    // Todo el código de beep ha sido eliminado
+    // El sonido es manejado exclusivamente por PPGSignalMeter
+    console.log("BeepProcessor: Beep completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
     return false;
-  }, [processBeepQueue]);
+  }, []);
 
   const cleanup = useCallback(() => {
     pendingBeepsQueue.current = [];

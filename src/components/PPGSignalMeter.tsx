@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -54,9 +55,12 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
+  // Audio context para beeps
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
-  const peakBeepRequestedRef = useRef<boolean>(false);
+  
+  // Nueva bandera para saber si se ha dibujado un círculo y debe sonar un beep
+  const circlePeakDrawnRef = useRef<boolean>(false);
 
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5500;
@@ -83,27 +87,27 @@ const PPGSignalMeter = memo(({
   const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
   const ARRHYTHMIA_DURATION_MS = 800;
 
+  // Configuración de audio
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 200;
+  const MIN_BEEP_INTERVAL_MS = 250;
 
-  const beepRequesterRef = useRef<((time: number) => void) | null>(null);
-  const lastBeepRequestTimeRef = useRef<number>(0);
-
+  // Inicializar el contexto de audio
   useEffect(() => {
     const initAudio = async () => {
       try {
         if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
+          console.log("PPGSignalMeter: Inicializando Audio Context");
           audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
           
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
           }
           
-          await playBeepDirectly(0.01);
-          console.log("PPGSignalMeter: Audio Context inicializado con baja latencia");
+          // Beep de inicialización silencioso
+          await playBeep(0.01);
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
@@ -122,7 +126,8 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
-  const playBeepDirectly = useCallback(async (volume = BEEP_VOLUME) => {
+  // Función para reproducir beep SOLO cuando se dibuja un círculo
+  const playBeep = useCallback(async (volume = BEEP_VOLUME) => {
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
@@ -142,7 +147,7 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      console.log("PPGSignalMeter: Reproduciendo beep directamente con volumen", volume);
+      console.log("PPGSignalMeter: Reproduciendo beep para círculo dibujado, volumen:", volume);
       
       const primaryOscillator = audioContextRef.current.createOscillator();
       const primaryGain = audioContextRef.current.createGain();
@@ -195,24 +200,16 @@ const PPGSignalMeter = memo(({
       secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
       
       lastBeepTimeRef.current = now;
-      console.log("PPGSignalMeter: Beep reproducido exitosamente");
+      
+      // Resetear la bandera de círculo dibujado para evitar beeps duplicados
+      circlePeakDrawnRef.current = false;
+      
       return true;
     } catch (err) {
       console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
     }
   }, []);
-
-  const requestBeepForPeak = useCallback((timestamp: number) => {
-    const now = Date.now();
-    if (now - lastBeepRequestTimeRef.current < 250) return;
-    
-    console.log("PPGSignalMeter: Pico detectado y círculo dibujado, reproduciendo beep");
-    
-    playBeepDirectly(1.0);
-    lastBeepRequestTimeRef.current = now;
-    peakBeepRequestedRef.current = true;
-  }, [playBeepDirectly]);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -437,14 +434,15 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia
         });
         
+        // Marcar que se ha detectado un pico para dibujar un círculo
+        // El sonido de beep se reproducirá en la fase de renderizado
         if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-          console.log("PPGSignalMeter: Pico detectado, círculo dibujado y beep solicitado", {
+          circlePeakDrawnRef.current = true;
+          console.log("PPGSignalMeter: Pico detectado, círculo será dibujado", {
             time: peak.time,
             value: peak.value,
             isArrhythmia: peak.isArrhythmia
           });
-          
-          requestBeepForPeak(peak.time);
         }
       }
     }
@@ -454,15 +452,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [isFingerDetected, requestBeepForPeak]);
-
-  useEffect(() => {
-    console.log("PPGSignalMeter: Usando SOLO el sistema de beep interno del componente");
-    
-    return () => {
-      beepRequesterRef.current = null;
-    };
-  }, []);
+  }, [isFingerDetected]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -534,6 +524,9 @@ const PPGSignalMeter = memo(({
     
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
+    
+    // Bandera para verificar si se dibujó algún círculo en esta renderización
+    let circleDrawnThisFrame = false;
     
     if (points.length > 1) {
       let segmentPoints: {x: number, y: number, isArrhythmia: boolean}[] = [];
@@ -610,6 +603,7 @@ const PPGSignalMeter = memo(({
         }
       }
       
+      // Dibujar círculos en los picos detectados
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -618,6 +612,7 @@ const PPGSignalMeter = memo(({
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
             
+            // DIBUJAR CÍRCULO AQUÍ - Esto es lo que queremos enlazar con el beep
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
@@ -633,11 +628,15 @@ const PPGSignalMeter = memo(({
               renderCtx.beginPath();
               renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
+              
+              circleDrawnThisFrame = true;
             } else {
               renderCtx.fillStyle = peakColor;
               renderCtx.beginPath();
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
+              
+              circleDrawnThisFrame = true;
             }
             
             renderCtx.font = 'bold 16px Inter';
@@ -649,6 +648,7 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    // Actualizar visibleCanvas desde el offscreen
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
       const visibleCtx = canvas.getContext('2d', { alpha: false });
       if (visibleCtx) {
@@ -656,9 +656,17 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    // Reproducir beep SOLO si se dibujó un círculo y la bandera está activada
+    if (circlePeakDrawnRef.current && isFingerDetected && 
+        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep");
+      playBeep(1.0);
+      circlePeakDrawnRef.current = false; // Resetear después de reproducir
+    }
+    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, playBeep]);
 
   useEffect(() => {
     renderSignal();
@@ -674,6 +682,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = [];
     arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
     arrhythmiaSegmentsRef.current = [];
+    circlePeakDrawnRef.current = false;
     onReset();
   }, [onReset]);
 
@@ -751,4 +760,3 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
-
