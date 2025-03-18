@@ -5,73 +5,11 @@ import { HeartBeatConfig } from '../../modules/heart-beat/config';
 import { 
   checkWeakSignal, 
   shouldProcessMeasurement, 
-  createWeakSignalResult
+  createWeakSignalResult, 
+  handlePeakDetection,
+  updateLastValidBpm,
+  processLowConfidenceResult
 } from './signal-processing';
-
-// New helper function for validation
-function isValidPeak(currentTime: number, lastPeakTime: number | null): boolean {
-  if (!lastPeakTime) return true;
-  
-  // Enforce minimum time between peaks
-  return (currentTime - lastPeakTime) >= HeartBeatConfig.MIN_PEAK_TIME_MS;
-}
-
-// New helper function to handle peak detection with validation
-export function handlePeakDetection(
-  result: any,
-  lastPeakTimeRef: React.MutableRefObject<number | null>,
-  requestImmediateBeep: (value: number) => boolean,
-  isMonitoringRef: React.MutableRefObject<boolean>,
-  value: number
-): void {
-  if (!result.isPeak) return;
-  
-  const now = Date.now();
-  
-  // Validate proper timing between peaks to prevent rapid beeping
-  if (isValidPeak(now, lastPeakTimeRef.current)) {
-    lastPeakTimeRef.current = now;
-    
-    // Only request beep if we're monitoring and have a valid peak
-    if (isMonitoringRef.current && result.confidence > HeartBeatConfig.MIN_CONFIDENCE) {
-      requestImmediateBeep(value);
-    }
-  }
-}
-
-// New helper function for updating last valid BPM
-export function updateLastValidBpm(
-  result: any,
-  lastValidBpmRef: React.MutableRefObject<number>
-): void {
-  // Only update if we have a reasonable BPM value with good confidence
-  if (result.bpm >= HeartBeatConfig.MIN_BPM && 
-      result.bpm <= HeartBeatConfig.MAX_BPM &&
-      result.confidence > HeartBeatConfig.MIN_CONFIDENCE) {
-    lastValidBpmRef.current = result.bpm;
-  }
-}
-
-// New helper function for processing low confidence results
-export function processLowConfidenceResult(
-  result: any,
-  currentBPM: number,
-  arrhythmiaCounter: number
-): HeartBeatResult {
-  // If confidence is too low, don't update BPM value
-  if (result.confidence < HeartBeatConfig.MIN_CONFIDENCE * 0.8) {
-    return {
-      ...result,
-      bpm: currentBPM > 0 ? currentBPM : result.bpm,
-      arrhythmiaCount: arrhythmiaCounter
-    };
-  }
-  
-  return {
-    ...result,
-    arrhythmiaCount: arrhythmiaCounter
-  };
-}
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -80,7 +18,7 @@ export function useSignalProcessor() {
   const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
   
-  // Signal quality detection with higher thresholds
+  // Simple reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
   const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
@@ -90,7 +28,7 @@ export function useSignalProcessor() {
     currentBPM: number,
     confidence: number,
     processor: any,
-    requestBeep: (value: number) => boolean,
+    requestImmediateBeep: (value: number) => boolean,
     isMonitoringRef: React.MutableRefObject<boolean>,
     lastRRIntervalsRef: React.MutableRefObject<number[]>,
     currentBeatIsArrhythmiaRef: React.MutableRefObject<boolean>
@@ -102,7 +40,7 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
-      // Check for weak signal with more stringent criteria
+      // Check for weak signal
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
         value, 
         consecutiveWeakSignalsRef.current, 
@@ -123,23 +61,7 @@ export function useSignalProcessor() {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
-      // Process real signal with maximum peak time enforcement
-      const now = Date.now();
-      if (lastPeakTimeRef.current && (now - lastPeakTimeRef.current) < HeartBeatConfig.MIN_PEAK_TIME_MS) {
-        // Skip processing if too soon after last peak
-        return {
-          bpm: currentBPM,
-          confidence: 0,
-          isPeak: false,
-          arrhythmiaCount: processor.getArrhythmiaCounter(),
-          rrData: {
-            intervals: [],
-            lastPeakTime: lastPeakTimeRef.current
-          }
-        };
-      }
-      
-      // Process signal with stricter validation
+      // Process real signal
       const result = processor.processSignal(value);
       const rrData = processor.getRRIntervals();
       
@@ -147,21 +69,21 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection with proper timing validation
+      // Handle peak detection
       handlePeakDetection(
         result, 
         lastPeakTimeRef, 
-        requestBeep, 
+        requestImmediateBeep, 
         isMonitoringRef,
         value
       );
       
-      // Update last valid BPM if reasonable
+      // Update last valid BPM if it's reasonable
       updateLastValidBpm(result, lastValidBpmRef);
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process low confidence results
+      // Process result
       return processLowConfidenceResult(
         result, 
         currentBPM, 

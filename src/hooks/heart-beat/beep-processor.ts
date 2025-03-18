@@ -1,12 +1,12 @@
+
 import { useState, useCallback, useRef } from 'react';
-import { HeartBeatConfig } from '../../modules/heart-beat/config';
 
 export function useBeepProcessor() {
   const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
   const beepProcessorTimeoutRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  const MIN_BEEP_INTERVAL_MS = HeartBeatConfig.MIN_BEEP_INTERVAL_MS;
+  const MIN_BEEP_INTERVAL_MS = 250; // Minimum time between beeps
   
   const processBeepQueue = useCallback((
     isMonitoringRef: React.MutableRefObject<boolean>,
@@ -17,17 +17,20 @@ export function useBeepProcessor() {
     playBeep: (volume: number) => boolean | Promise<boolean>
   ) => {
     if (!isMonitoringRef.current) {
+      // Clear the queue if not monitoring
       pendingBeepsQueue.current = [];
       return;
     }
     
     if (pendingBeepsQueue.current.length === 0) return;
     
-    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE) {
+    // Only process beeps if signal quality is good
+    if (lastSignalQualityRef.current < 0.4) {
       pendingBeepsQueue.current = [];
       return;
     }
     
+    // Only process beeps if we haven't had too many weak signals
     if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
       pendingBeepsQueue.current = [];
       return;
@@ -37,21 +40,16 @@ export function useBeepProcessor() {
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS) {
       try {
-        pendingBeepsQueue.current.sort((a, b) => a.time - b.time);
-        
-        if (pendingBeepsQueue.current.length > 1) {
-          pendingBeepsQueue.current = [pendingBeepsQueue.current[0]];
-        }
-        
+        // Attempt to play the beep only if monitoring
         if (isMonitoringRef.current) {
-          playBeep(0.7);
+          playBeep(0.7); // Reduced volume
           lastBeepTimeRef.current = now;
         }
         pendingBeepsQueue.current.shift();
-        missedBeepsCounter.current = 0;
+        missedBeepsCounter.current = 0; // Reset missed beeps counter
       } catch (err) {
         console.error('Error playing beep from queue:', err);
-        pendingBeepsQueue.current.shift();
+        pendingBeepsQueue.current.shift(); // Remove failed beep and continue
       }
     }
     
@@ -71,7 +69,7 @@ export function useBeepProcessor() {
         MIN_BEEP_INTERVAL_MS * 0.5
       );
     }
-  }, [MIN_BEEP_INTERVAL_MS]);
+  }, []);
 
   const requestImmediateBeep = useCallback((
     value: number,
@@ -84,7 +82,8 @@ export function useBeepProcessor() {
   ): boolean => {
     if (!isMonitoringRef.current) return false;
     
-    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE || 
+    // Only beep if signal quality is good and we don't have too many weak signals
+    if (lastSignalQualityRef.current < 0.4 || 
         consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
       return false;
     }
@@ -93,8 +92,6 @@ export function useBeepProcessor() {
     
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS) {
       try {
-        console.log("Requesting immediate beep, time since last:", now - lastBeepTimeRef.current);
-        
         const success = playBeep(0.7);
         
         if (success) {
@@ -110,8 +107,8 @@ export function useBeepProcessor() {
         missedBeepsCounter.current++;
       }
     } else {
-      if (pendingBeepsQueue.current.length === 0 && 
-          (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5)) {
+      // Don't add too many beeps to the queue
+      if (pendingBeepsQueue.current.length < 3) {
         pendingBeepsQueue.current.push({ time: now, value });
       
         if (!beepProcessorTimeoutRef.current) {
@@ -124,14 +121,14 @@ export function useBeepProcessor() {
               missedBeepsCounter, 
               playBeep
             ), 
-            MIN_BEEP_INTERVAL_MS - (now - lastBeepTimeRef.current)
+            MIN_BEEP_INTERVAL_MS * 0.6
           );
         }
       }
     }
     
     return false;
-  }, [MIN_BEEP_INTERVAL_MS, processBeepQueue]);
+  }, [processBeepQueue]);
 
   const cleanup = useCallback(() => {
     pendingBeepsQueue.current = [];
