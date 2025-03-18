@@ -56,19 +56,29 @@ const applyHighResolution = () => {
   setOptimalRendering();
 };
 
-// Function to request fullscreen on startup
+// Function to request fullscreen on startup - with fallbacks
 const requestFullscreenMode = () => {
   try {
     if (document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen()
-        .catch(err => console.warn('Error attempting to enable fullscreen:', err));
+        .catch(err => {
+          console.warn('Error attempting to enable fullscreen:', err);
+          // Continue with app initialization even if fullscreen fails
+        });
     }
     
     // Handle screen orientation if available
-    if (window.screen && window.screen.orientation) {
-      // Lock to portrait as the app is designed for it
-      window.screen.orientation.lock('portrait')
-        .catch(err => console.warn('Failed to lock orientation:', err));
+    if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+      try {
+        // Lock to portrait as the app is designed for it
+        window.screen.orientation.lock('portrait')
+          .catch(err => {
+            console.warn('Failed to lock orientation:', err);
+            // Continue with app initialization even if orientation lock fails
+          });
+      } catch (orientErr) {
+        console.warn('Orientation locking not supported:', orientErr);
+      }
     }
     
     // Try to set maximum resolution and prevent scaling
@@ -77,26 +87,17 @@ const requestFullscreenMode = () => {
       metaViewport.setAttribute('content', 
         'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi');
     }
-    
-    // Request fullscreen appropriately
-    const docElem = document.documentElement;
-    if (docElem.requestFullscreen) {
-      docElem.requestFullscreen();
-    } else if ((docElem as any).webkitRequestFullscreen) {
-      (docElem as any).webkitRequestFullscreen();
-    } else if ((docElem as any).msRequestFullscreen) {
-      (docElem as any).msRequestFullscreen();
-    }
   } catch (err) {
     console.error('Fullscreen API not supported:', err);
+    // Continue with app initialization even if fullscreen fails
   }
 };
 
-// Execute immediately AND on first user interaction
+// Execute immediately BUT don't block app initialization if it fails
 requestFullscreenMode();
 applyHighResolution();
 
-// Ensure we request fullscreen on every user interaction until successful
+// Ensure we request fullscreen on user interaction - but don't block the app if it fails
 let isFullscreen = false;
 const checkFullscreen = () => {
   return document.fullscreenElement !== null;
@@ -105,7 +106,11 @@ const checkFullscreen = () => {
 const handleUserInteraction = () => {
   isFullscreen = checkFullscreen();
   if (!isFullscreen) {
-    requestFullscreenMode();
+    try {
+      requestFullscreenMode();
+    } catch (e) {
+      console.warn('Could not enter fullscreen on user interaction:', e);
+    }
   } else {
     // Remove listeners if we're already in fullscreen
     document.removeEventListener('click', handleUserInteraction);
@@ -175,4 +180,3 @@ window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
 // Render the app
 createRoot(document.getElementById("root")!).render(<App />);
-

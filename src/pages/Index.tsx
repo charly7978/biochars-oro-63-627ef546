@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,6 +9,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -26,6 +28,7 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -44,25 +47,42 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
+  // Safer fullscreen request that continues even if it fails
   const enterFullScreen = async () => {
     try {
-      await document.documentElement.requestFullscreen();
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen()
+          .catch(err => {
+            console.log('No se pudo entrar en pantalla completa:', err);
+            // Continue app execution even if fullscreen fails
+          });
+      }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
+      // Continue app execution even if fullscreen fails
     }
   };
 
+  // Initialize the app and set up preventions
   useEffect(() => {
     const preventScroll = (e: Event) => e.preventDefault();
+    
+    // We use passive: false only for essential events
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
-
+    
+    // Attempt to enter fullscreen but don't block app if it fails
+    enterFullScreen().catch(err => {
+      console.warn("Fullscreen failed but app will continue:", err);
+    });
+    
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
     };
   }, []);
 
+  // Show last valid results when available and not monitoring
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       setVitalSigns(lastValidResults);
@@ -109,7 +129,12 @@ const Index = () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
-      enterFullScreen();
+      // Reset camera error state when starting again
+      setCameraError(null);
+      
+      // Try to enter fullscreen but don't block if it fails
+      enterFullScreen().catch(err => console.warn("Could not enter fullscreen:", err));
+      
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
@@ -171,6 +196,7 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
+    setCameraError(null); // Clear any camera errors
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -196,76 +222,99 @@ const Index = () => {
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      const imageCapture = new ImageCapture(videoTrack);
       
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
+      // Try to enable torch but continue if it fails
+      if (videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna para mejorar la señal PPG");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error activando linterna:", err));
+      } else {
+        console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
+      }
       
-      if (timeSinceLastProcess >= targetFrameInterval) {
-        try {
-          const frame = await imageCapture.grabFrame();
-          
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
-          
-          frameCount++;
-          lastProcessTime = now;
-          
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+      if (!tempCtx) {
+        console.error("No se pudo obtener el contexto 2D");
+        return;
+      }
+      
+      let lastProcessTime = 0;
+      const targetFrameInterval = 1000/30;
+      let frameCount = 0;
+      let lastFpsUpdateTime = Date.now();
+      let processingFps = 0;
+      
+      const processImage = async () => {
+        if (!isMonitoring) return;
+        
+        const now = Date.now();
+        const timeSinceLastProcess = now - lastProcessTime;
+        
+        if (timeSinceLastProcess >= targetFrameInterval) {
+          try {
+            const frame = await imageCapture.grabFrame();
+            
+            const targetWidth = Math.min(320, frame.width);
+            const targetHeight = Math.min(240, frame.height);
+            
+            tempCanvas.width = targetWidth;
+            tempCanvas.height = targetHeight;
+            
+            tempCtx.drawImage(
+              frame, 
+              0, 0, frame.width, frame.height, 
+              0, 0, targetWidth, targetHeight
+            );
+            
+            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+            processFrame(imageData);
+            
+            frameCount++;
+            lastProcessTime = now;
+            
+            if (now - lastFpsUpdateTime > 1000) {
+              processingFps = frameCount;
+              frameCount = 0;
+              lastFpsUpdateTime = now;
+              console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+            }
+          } catch (error) {
+            console.error("Error capturando frame:", error);
           }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
         }
-      }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
-      }
-    };
+        
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
+      };
 
-    processImage();
+      processImage();
+      
+    } catch (error) {
+      console.error("Error processing camera stream:", error);
+      // Allow the app to continue even if camera processing fails
+    }
+  };
+
+  const handleCameraError = (error: Error) => {
+    console.error("Error al acceder a la cámara:", error);
+    setCameraError(error.message);
+    
+    // Show a toast notification about the camera error
+    toast({
+      title: "Error de cámara",
+      description: "No se pudo acceder a la cámara. Verifica los permisos.",
+      variant: "destructive"
+    });
+    
+    // Continue with the app in a degraded state
+    setIsMonitoring(false);
+    setIsCameraOn(false);
   };
 
   const handleToggleMonitoring = () => {
@@ -277,7 +326,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -291,6 +339,7 @@ const Index = () => {
         <div className="absolute inset-0">
           <CameraView 
             onStreamReady={handleStreamReady}
+            onError={handleCameraError}
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
@@ -303,7 +352,8 @@ const Index = () => {
               Calidad: {signalQuality}
             </div>
             <div className="text-white text-lg">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+              {cameraError ? "Error de cámara" : 
+               lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
 
@@ -362,6 +412,20 @@ const Index = () => {
               />
             </div>
           </div>
+
+          {cameraError && (
+            <div className="absolute inset-x-0 top-1/3 bg-red-500/80 p-4 text-white text-center rounded-md mx-4">
+              Error de cámara: {cameraError}
+              <div className="mt-2">
+                <button 
+                  className="bg-white text-red-500 px-4 py-2 rounded-md"
+                  onClick={handleReset}
+                >
+                  Reintentar
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
             <div className="w-1/2">
