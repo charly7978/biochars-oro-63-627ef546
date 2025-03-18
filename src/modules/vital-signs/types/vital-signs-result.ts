@@ -16,7 +16,11 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
+  confidence?: {
+    glucose: number;
+    lipids: number;
+    overall: number;
+  };
 }
 
-// Export the type to make it available for other modules
-export type { VitalSignsResult };
+// Remove the duplicate export to fix conflict

@@ -51,7 +51,9 @@ export const useHeartBeatProcessor = () => {
         timestamp: new Date().toISOString()
       });
       
-      processor.stopMonitoring();
+      if (processor) {
+        processor.setMonitoring(false); // Using setMonitoring instead of stopMonitoring
+      }
     };
   }, []);
   
@@ -61,7 +63,7 @@ export const useHeartBeatProcessor = () => {
   const reset = useCallback(() => {
     if (!heartBeatProcessor) return;
     
-    heartBeatProcessor.resetProcessor();
+    heartBeatProcessor.reset(); // Using reset instead of resetProcessor
     setBpm(0);
     setConfidence(0);
     setArrhythmiaCount(0);
@@ -117,8 +119,8 @@ export const useHeartBeatProcessor = () => {
       };
     }
     
-    // Process the signal through the processor
-    const result = heartBeatProcessor.processValue(value);
+    // Process the signal through the processor using processSignal instead of processValue
+    const result = heartBeatProcessor.processSignal(value);
     
     // Update state with processed results
     if (result) {
@@ -163,6 +165,25 @@ export const useHeartBeatProcessor = () => {
     };
   }, [heartBeatProcessor]);
 
+  // Add the missing methods to match what's expected in Index.tsx
+  const startMonitoring = useCallback(() => {
+    if (heartBeatProcessor) {
+      heartBeatProcessor.setMonitoring(true);
+      setIsMonitoring(true);
+    }
+  }, [heartBeatProcessor]);
+
+  const stopMonitoring = useCallback(() => {
+    if (heartBeatProcessor) {
+      heartBeatProcessor.setMonitoring(false);
+      setIsMonitoring(false);
+    }
+  }, [heartBeatProcessor]);
+
+  const isArrhythmia = useCallback(() => {
+    return heartBeatProcessor?.isArrhythmia() || false;
+  }, [heartBeatProcessor]);
+
   return {
     heartBeatProcessor,
     processSignal,
@@ -174,6 +195,9 @@ export const useHeartBeatProcessor = () => {
     peaks,
     isMonitoring,
     lastPeakTimeRef,
-    currentBeatIsArrhythmiaRef
+    currentBeatIsArrhythmiaRef,
+    isArrhythmia, // Added
+    startMonitoring, // Added
+    stopMonitoring, // Added
   };
 };

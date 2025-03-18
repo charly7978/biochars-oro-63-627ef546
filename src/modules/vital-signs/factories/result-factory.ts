@@ -23,11 +23,6 @@ export class ResultFactory {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
       }
     };
   }
@@ -42,18 +37,23 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
-    confidence: { glucose: number; lipids: number; overall: number },
+    confidence?: { glucose: number; lipids: number; overall: number },
     lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
-    return {
+    const result: VitalSignsResult = {
       spo2,
       pressure,
       arrhythmiaStatus,
       glucose,
       lipids,
-      confidence,
       lastArrhythmiaData
     };
+    
+    // Add confidence only if provided
+    if (confidence) {
+      result.confidence = confidence;
+    }
+    
+    return result;
   }
 }
-
