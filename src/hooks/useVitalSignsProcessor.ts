@@ -77,7 +77,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly - NO SIMULATION WHATSOEVER
    * Drastically improved false positive prevention
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     const now = Date.now();
     
     // Add to signal buffer for physiological validation
@@ -116,18 +116,19 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - NO SIMULATION WHATSOEVER
     // Only process if we have physiological validation
-    let result = isWeakSignal || !hasValidatedPhysiology ? 
+    let result: VitalSignsResult = isWeakSignal || !hasValidatedPhysiology ? 
       { 
         // Empty result - nothing is simulated
-        bpm: 0,
-        confidence: 0,
-        isPeak: false,
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
-        fingerDetected: false,
         glucose: 0,
-        lipids: { totalCholesterol: 0, triglycerides: 0 }
+        lipids: { totalCholesterol: 0, triglycerides: 0 },
+        confidence: {
+          glucose: 0,
+          lipids: 0,
+          overall: 0
+        }
       } : 
       processVitalSignal(value, rrData, isWeakSignal);
     
@@ -152,7 +153,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     logSignalData(value, result, processedSignals.current);
     
     // Add physiological validation info
-    const finalResult = {
+    const finalResult: VitalSignsResult = {
       ...result,
       physiologicalValidation: {
         isValid: hasValidatedPhysiology,

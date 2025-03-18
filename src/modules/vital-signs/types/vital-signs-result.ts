@@ -26,5 +26,9 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  physiologicalValidation?: {
+    isValid: boolean;
+    validCount: number;
+    required: number;
+  };
 }
-
