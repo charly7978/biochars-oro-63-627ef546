@@ -26,3 +26,27 @@ export interface UseHeartBeatReturn {
   startMonitoring: () => void;
   stopMonitoring: () => void;
 }
+
+export interface PeakResult {
+  value: number;
+  quality: number;
+  isPeak: boolean;
+}
+
+export interface ProcessedSignal {
+  value: number;
+  filteredValue: number;
+  quality: number;
+  isPeak: boolean;
+  fingerDetected: boolean;
+  isWeakSignal: boolean;
+  calibration: {
+    progress: {
+      fingerDetection: number;
+      signalQuality: number;
+      stability: number;
+    };
+    isCalibrated: boolean;
+    isHighSignalQuality: boolean;
+  }
+}

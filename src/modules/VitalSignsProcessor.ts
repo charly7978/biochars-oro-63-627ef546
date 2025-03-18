@@ -143,5 +143,5 @@ export class VitalSignsProcessor {
   }
 }
 
-// Re-export types for compatibility
+// Re-export VitalSignsResult interface directly
 export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';

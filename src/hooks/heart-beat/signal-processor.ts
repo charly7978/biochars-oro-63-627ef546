@@ -1,6 +1,7 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { checkSignalQuality, processSignalResult } from './signal-processing';
-// Import handlePeakDetection directly from peak-detection.ts instead of index
+// Import handlePeakDetection directly from the correct location
 import { handlePeakDetection } from './signal-processing/peak-detection';
 import { PeakResult, ProcessedSignal } from './types';
 
@@ -15,6 +16,8 @@ export const useSignalProcessor = () => {
   const [isHighSignalQuality, setIsHighSignalQuality] = useState<boolean>(false);
   
   const lastPeakTimeRef = useRef<number | null>(null);
+  const lastValidBpmRef = useRef<number>(0);
+  const lastSignalQualityRef = useRef<number>(0);
   const isMonitoringRef = useRef<boolean>(false);
   const signalValuesRef = useRef<number[]>([]);
   const filteredValuesRef = useRef<number[]>([]);
@@ -58,10 +61,10 @@ export const useSignalProcessor = () => {
   
   // Centralized signal quality parameters
   const LOW_SIGNAL_THRESHOLD = 0.05;
-  const MAX_WEAK_SIGNALS = 10;
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 10;
   
   // Ref to track weak signals
-  const weakSignalsCountRef = useRef<number>(0);
+  const consecutiveWeakSignalsRef = useRef<number>(0);
   
   // Beep sound parameters
   const oscillatorRef = useRef<OscillatorNode | null>(null);
@@ -159,7 +162,7 @@ export const useSignalProcessor = () => {
     qualityValuesRef.current = [];
     lastTenValuesRef.current = [];
     lastTenFilteredValuesRef.current = [];
-    weakSignalsCountRef.current = 0;
+    consecutiveWeakSignalsRef.current = 0;
     
     setCalibrationProgress({
       fingerDetection: 0,
@@ -181,7 +184,7 @@ export const useSignalProcessor = () => {
     qualityValuesRef.current = [];
     lastTenValuesRef.current = [];
     lastTenFilteredValuesRef.current = [];
-    weakSignalsCountRef.current = 0;
+    consecutiveWeakSignalsRef.current = 0;
     
     setCalibrationProgress({
       fingerDetection: 0,
@@ -226,14 +229,14 @@ export const useSignalProcessor = () => {
     // Check for weak signal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       result.value,
-      weakSignalsCountRef.current,
+      consecutiveWeakSignalsRef.current,
       {
         lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
+        maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
       }
     );
     
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
+    consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
     
     // Update finger detection status
     const fingerDetectionProgress = calculateProgress(
@@ -363,6 +366,19 @@ export const useSignalProcessor = () => {
     isCalibrated,
     isHighSignalQuality,
     calibrationProgress,
-    requestImmediateBeep
+    requestImmediateBeep,
+    lastPeakTimeRef,
+    lastValidBpmRef,
+    lastSignalQualityRef,
+    consecutiveWeakSignalsRef,
+    MAX_CONSECUTIVE_WEAK_SIGNALS,
+    reset: stopProcessing,
+    processSignal: (value: number) => ({ 
+      bpm: lastValidBpmRef.current, 
+      confidence: 0.5, 
+      isPeak: false, 
+      arrhythmiaCount: 0,
+      rrData: { intervals: [], lastPeakTime: lastPeakTimeRef.current }
+    })
   };
 };

@@ -60,3 +60,26 @@ export const optimizeElement = (element: HTMLElement): void => {
     element.classList.add('high-dpi');
   }
 };
+
+/**
+ * Get signal color based on signal quality
+ */
+export const getSignalColor = (quality: number): string => {
+  if (quality >= 70) return '#22c55e'; // Green for good quality
+  if (quality >= 40) return '#f59e0b'; // Yellow/orange for medium quality
+  return '#ef4444'; // Red for poor quality
+};
+
+/**
+ * Check if a point is within an arrhythmia window
+ */
+export const isPointInArrhythmiaWindow = (
+  pointTime: number,
+  arrhythmiaWindows: { start: number; end: number }[]
+): boolean => {
+  if (!arrhythmiaWindows || arrhythmiaWindows.length === 0) return false;
+  
+  return arrhythmiaWindows.some(window => 
+    pointTime >= window.start && pointTime <= window.end
+  );
+};

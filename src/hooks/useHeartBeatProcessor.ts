@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
-import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
@@ -17,6 +16,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const missedBeepsCounter = useRef<number>(0);
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
+  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
+  const lastRRIntervalsRef = useRef<number[]>([]);
   
   // Import refactored modules
   const { 
@@ -32,21 +33,18 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     detectArrhythmia,
     heartRateVariabilityRef,
     stabilityCounterRef,
-    lastRRIntervalsRef,
     lastIsArrhythmiaRef,
-    currentBeatIsArrhythmiaRef,
     reset: resetArrhythmiaDetector
   } = useArrhythmiaDetector();
   
-  const {
-    processSignal: processSignalInternal,
-    reset: resetSignalProcessor,
-    lastPeakTimeRef,
-    lastValidBpmRef,
-    lastSignalQualityRef,
-    consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS
-  } = useSignalProcessor();
+  // Create a custom signal processor just for this hook
+  const signalProcessor = useSignalProcessor();
+  
+  const lastPeakTimeRef = useRef<number | null>(null);
+  const lastValidBpmRef = useRef<number>(0);
+  const lastSignalQualityRef = useRef<number>(0);
+  const consecutiveWeakSignalsRef = useRef<number>(0);
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 10;
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -99,18 +97,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const requestBeep = useCallback((value: number): boolean => {
     if (!processorRef.current) return false;
     
-    return requestImmediateBeep(
-      value, 
-      isMonitoringRef, 
-      lastSignalQualityRef, 
-      consecutiveWeakSignalsRef, 
-      MAX_CONSECUTIVE_WEAK_SIGNALS, 
-      missedBeepsCounter, 
-      processorRef.current.playBeep.bind(processorRef.current)
-    );
+    return requestImmediateBeep(value);
   }, [requestImmediateBeep]);
 
-  // Main signal processing function that uses the refactored modules
+  // Main signal processing function
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       return {
@@ -125,40 +115,81 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    const result = processSignalInternal(
-      value, 
-      currentBPM, 
-      confidence, 
-      processorRef.current, 
-      requestBeep, 
-      isMonitoringRef, 
-      lastRRIntervalsRef, 
-      currentBeatIsArrhythmiaRef
-    );
-
-    // Only update BPM and confidence if the values are reasonable
-    if (result.bpm > 0 && result.confidence > 0.4) {
-      setCurrentBPM(result.bpm);
-      setConfidence(result.confidence);
-    }
-
-    // Analyze RR intervals for arrhythmia detection using only real data
-    if (lastRRIntervalsRef.current.length >= 3) {
-      const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
-      currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
+    // Simple signal processing directly (not using the complex refactored modules)
+    try {
+      // Use the processor to analyze the signal
+      const processedValue = processorRef.current.filterSignal(value);
+      const isPeak = processorRef.current.detectPeak(processedValue);
       
-      // Update result with arrhythmia status
-      result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
+      const now = Date.now();
+      
+      // Calculate BPM if a peak is detected
+      if (isPeak && lastPeakTimeRef.current) {
+        const interval = now - lastPeakTimeRef.current;
+        
+        // Only consider reasonable intervals (30 to 240 BPM)
+        if (interval > 250 && interval < 2000) {
+          const instantBpm = 60000 / interval;
+          
+          // Update BPM with moving average
+          const newBpm = currentBPM > 0 
+            ? 0.7 * currentBPM + 0.3 * instantBpm 
+            : instantBpm;
+          
+          setCurrentBPM(Math.round(newBpm));
+          setConfidence(0.8);
+          
+          // Update RR intervals for arrhythmia detection
+          lastRRIntervalsRef.current.push(interval);
+          if (lastRRIntervalsRef.current.length > 10) {
+            lastRRIntervalsRef.current.shift();
+          }
+          
+          // Detect arrhythmia if we have enough intervals
+          if (lastRRIntervalsRef.current.length >= 5) {
+            const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
+            currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
+          }
+          
+          // Request a beep for the heart beat
+          requestBeep(processedValue);
+        }
+      }
+      
+      // Update last peak time
+      if (isPeak) {
+        lastPeakTimeRef.current = now;
+      }
+      
+      // Ensure BPM is within reasonable range
+      const bpm = currentBPM >= 40 && currentBPM <= 200 ? currentBPM : 0;
+      
+      return {
+        bpm,
+        confidence: confidence,
+        isPeak,
+        arrhythmiaCount: 0,
+        filteredValue: processedValue,
+        isArrhythmia: currentBeatIsArrhythmiaRef.current,
+        rrData: {
+          intervals: lastRRIntervalsRef.current,
+          lastPeakTime: lastPeakTimeRef.current
+        }
+      };
+    } catch (error) {
+      console.error('Error processing signal:', error);
+      return {
+        bpm: 0,
+        confidence: 0,
+        isPeak: false,
+        arrhythmiaCount: 0,
+        rrData: {
+          intervals: [],
+          lastPeakTime: null
+        }
+      };
     }
-
-    return result;
-  }, [
-    currentBPM, 
-    confidence, 
-    processSignalInternal, 
-    requestBeep, 
-    detectArrhythmia
-  ]);
+  }, [currentBPM, confidence, detectArrhythmia, requestBeep]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
@@ -181,13 +212,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     // Reset all submodules
     resetArrhythmiaDetector();
-    resetSignalProcessor();
     
     missedBeepsCounter.current = 0;
+    lastPeakTimeRef.current = null;
+    lastRRIntervalsRef.current = [];
+    currentBeatIsArrhythmiaRef.current = false;
     
     // Clear any pending beeps
     cleanupBeepProcessor();
-  }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);
+  }, [resetArrhythmiaDetector, cleanupBeepProcessor]);
 
   // Function to start monitoring
   const startMonitoring = useCallback(() => {
