@@ -2,6 +2,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import { applyMaximumResolution, applyHighResolutionOptimizations } from './utils/highResolutionOptimizer'
 
 // Apply high-resolution interface class to the root element
 const applyHighResolution = () => {
@@ -12,6 +13,10 @@ const applyHighResolution = () => {
   
   // Apply high-DPI rendering for crisp text and UI
   document.body.style.textRendering = 'geometricPrecision';
+  
+  // Apply maximum resolution settings
+  applyMaximumResolution();
+  applyHighResolutionOptimizations();
   
   // Force device pixel ratio to be respected
   if (window.devicePixelRatio > 1) {
@@ -30,8 +35,16 @@ const applyHighResolution = () => {
   
   // Set optimal rendering settings based on device capabilities
   const setOptimalRendering = () => {
-    // For 4K displays and higher
-    if (window.screen.width >= 3840 || window.screen.height >= 3840) {
+    // For 8K displays
+    if (window.screen.width >= 7680 || window.screen.height >= 4320) {
+      document.documentElement.classList.add('display-8k');
+    }
+    // For 5K displays
+    else if (window.screen.width >= 5120 || window.screen.height >= 2880) {
+      document.documentElement.classList.add('display-5k');
+    }
+    // For 4K displays
+    else if (window.screen.width >= 3840 || window.screen.height >= 2160) {
       document.documentElement.classList.add('display-4k');
     }
     // For 2K/Retina displays
@@ -104,8 +117,14 @@ document.addEventListener('click', handleUserInteraction);
 document.addEventListener('touchstart', handleUserInteraction);
 
 // Handle resolution scaling on resize and orientation change
-window.addEventListener('resize', applyHighResolution);
-window.addEventListener('orientationchange', applyHighResolution);
+window.addEventListener('resize', () => {
+  applyHighResolution();
+  applyMaximumResolution();
+});
+window.addEventListener('orientationchange', () => {
+  applyHighResolution();
+  applyMaximumResolution();
+});
 
 // Let's improve graph performance with a MutationObserver
 // This will add performance classes to any PPG graph elements that are added to the DOM
@@ -119,11 +138,20 @@ const setupPerformanceObserver = () => {
             const graphElements = node.querySelectorAll('.ppg-signal-meter, canvas, svg');
             graphElements.forEach((el) => {
               if (el instanceof HTMLElement) {
-                el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized');
+                el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized', 'maximum-resolution');
                 if (el instanceof HTMLCanvasElement) {
                   const ctx = el.getContext('2d');
                   if (ctx) {
                     ctx.imageSmoothingEnabled = false;
+                    
+                    // Apply maximum resolution to canvas
+                    const rect = el.getBoundingClientRect();
+                    const dpr = window.devicePixelRatio || 1;
+                    el.width = rect.width * dpr;
+                    el.height = rect.height * dpr;
+                    el.style.width = `${rect.width}px`;
+                    el.style.height = `${rect.height}px`;
+                    ctx.scale(dpr, dpr);
                   }
                 }
               }
@@ -147,3 +175,4 @@ window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
 // Render the app
 createRoot(document.getElementById("root")!).render(<App />);
+
