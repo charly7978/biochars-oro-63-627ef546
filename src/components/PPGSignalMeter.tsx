@@ -74,13 +74,13 @@ const PPGSignalMeter = memo(({
   const CANVAS_HEIGHT = 860;
   const GRID_SIZE_X = 30;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 65.0;
-  const SMOOTHING_FACTOR = 0.8; // Reducido para mayor fluidez
+  const verticalScale = 150.0; // Increased from 65.0 for better visibility
+  const SMOOTHING_FACTOR = 0.7; // Adjusted from 0.8 for better wave visualization
   const TARGET_FPS = isMobile() ? 30 : 60; // Adaptativo según dispositivo
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 300; // Reducido para menor uso de memoria
   const PEAK_DETECTION_WINDOW = 5; // Optimizado
-  const PEAK_THRESHOLD = 1.8; // Ajustado
+  const PEAK_THRESHOLD = 1.5; // Adjusted from 1.8 for better peak detection
   const MIN_PEAK_DISTANCE_MS = 250;
   const MAX_PEAKS_TO_DISPLAY = 10; // Reducido
   const REQUIRED_FINGER_FRAMES = 3;
@@ -241,11 +241,11 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      // Fix: Check for audioContext state correctly
+      // Fix: Proper check for AudioContext state
       if (audioContextRef.current.state === 'suspended' || audioContextRef.current.state === 'closed') {
         await audioContextRef.current.resume();
-        // Check state after attempt to resume
-        if (audioContextRef.current.state !== 'running') {
+        // Check state after attempt to resume - fixed TypeScript comparison
+        if (audioContextRef.current.state === 'suspended' || audioContextRef.current.state === 'closed') {
           return false;
         }
       }
@@ -555,10 +555,28 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
+    // Add debug info for cardiac wave debugging
+    if (process.env.NODE_ENV === 'development' && renderCountRef.current % 30 === 0) {
+      console.log("Cardiac wave data:", {
+        originalValue: value,
+        smoothedValue,
+        normalizedValue,
+        scaledValue,
+        baselineValue: baselineRef.current,
+        verticalScale
+      });
+    }
+    
+    // Force a minimum visible amplitude when input is very small
+    const minimumVisibleValue = 0.5;
+    const displayValue = Math.abs(scaledValue) < minimumVisibleValue && scaledValue !== 0 
+                       ? Math.sign(scaledValue) * minimumVisibleValue 
+                       : scaledValue;
+    
     // Agregar punto al buffer
     const dataPoint: PPGDataPointExtended = {
       time: now,
-      value: scaledValue,
+      value: displayValue, // Use amplified value for display
       isArrhythmia: isArrhythmia
     };
     
@@ -593,11 +611,11 @@ const PPGSignalMeter = memo(({
           if (segmentPoints.length > 0) {
             ctx.beginPath();
             ctx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 3; // Increased from 2 for better visibility
             
             // Optimización: no usar efectos visuales en dispositivos móviles
             if (!isMobile() && window.devicePixelRatio > 1) {
-              ctx.shadowBlur = 0.5;
+              ctx.shadowBlur = 3; // Increased from 0.5 for better visibility
               ctx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
             }
             
@@ -629,10 +647,10 @@ const PPGSignalMeter = memo(({
       if (segmentPoints.length > 0) {
         ctx.beginPath();
         ctx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3; // Increased from 2 for better visibility
         
         if (!isMobile() && window.devicePixelRatio > 1) {
-          ctx.shadowBlur = 0.5;
+          ctx.shadowBlur = 3; // Increased from 0.5 for better visibility
           ctx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
         }
         
@@ -668,7 +686,7 @@ const PPGSignalMeter = memo(({
           // DIBUJAR CÍRCULO - Esto activará el beep
           ctx.fillStyle = peakColor;
           ctx.beginPath();
-          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.arc(x, y, 7, 0, Math.PI * 2); // Increased from 5 for better visibility
           ctx.fill();
           
           // Activar bandera de beep si no se ha reproducido para este pico

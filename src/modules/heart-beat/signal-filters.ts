@@ -60,22 +60,33 @@ export function applyFilterPipeline(
   updatedMedianBuffer: number[],
   updatedMovingAvgBuffer: number[]
 } {
-  // Apply median filter
+  // Apply median filter with less smoothing to preserve peaks
   const medianFiltered = applyMedianFilter(value, medianBuffer, config.medianWindowSize);
   const updatedMedianBuffer = [...medianBuffer, value];
   if (updatedMedianBuffer.length > config.medianWindowSize) {
     updatedMedianBuffer.shift();
   }
   
-  // Apply moving average filter
+  // Apply moving average filter with reduced window size for sharper peaks
   const movingAvgFiltered = applyMovingAverageFilter(medianFiltered, movingAvgBuffer, config.movingAvgWindowSize);
   const updatedMovingAvgBuffer = [...movingAvgBuffer, medianFiltered];
   if (updatedMovingAvgBuffer.length > config.movingAvgWindowSize) {
     updatedMovingAvgBuffer.shift();
   }
   
-  // Apply EMA filter
-  const filteredValue = applyEMAFilter(movingAvgFiltered, prevSmoothedValue, config.emaAlpha);
+  // Apply EMA filter with higher alpha for more responsive filter
+  const emaAlpha = Math.min(config.emaAlpha * 1.2, 0.5); // Increase alpha but cap at 0.5
+  const filteredValue = applyEMAFilter(movingAvgFiltered, prevSmoothedValue, emaAlpha);
+  
+  // Add debug logging every 50 samples
+  if (process.env.NODE_ENV === 'development' && Math.random() < 0.02) {
+    console.log("Signal filter pipeline:", {
+      rawValue: value,
+      medianFiltered,
+      movingAvgFiltered,
+      finalFiltered: filteredValue
+    });
+  }
   
   return {
     filteredValue,

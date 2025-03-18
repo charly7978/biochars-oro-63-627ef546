@@ -7,8 +7,8 @@
  * Determines if a measurement should be processed based on signal strength
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
+  // Higher sensitivity threshold to capture real signals while filtering noise
+  return Math.abs(value) >= 0.005; // Reduced to improve sensitivity further
 }
 
 /**
@@ -39,7 +39,8 @@ export function handlePeakDetection(
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
 ): void {
-  if (!result || !result.isPeak || result.confidence <= 0.05) return;
+  // Reduced confidence threshold to detect more peaks
+  if (!result || !result.isPeak || result.confidence <= 0.03) return;
   
   // Actualizar tiempo del pico para cálculos de tiempo solamente
   lastPeakTimeRef.current = Date.now();
