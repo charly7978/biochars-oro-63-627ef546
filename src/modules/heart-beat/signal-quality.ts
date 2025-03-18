@@ -32,21 +32,6 @@ export function checkSignalQuality(
 }
 
 /**
- * Resets detection states when signal is lost
- */
-export function resetDetectionStates() {
-  return {
-    lastPeakTime: null,
-    previousPeakTime: null,
-    lastConfirmedPeak: false,
-    peakCandidateIndex: null,
-    peakCandidateValue: 0,
-    peakConfirmationBuffer: [],
-    values: []
-  };
-}
-
-/**
  * Calculate a weighted quality score from recent quality values
  * @param qualityHistory Array of recent quality measurements
  * @returns Weighted average quality score

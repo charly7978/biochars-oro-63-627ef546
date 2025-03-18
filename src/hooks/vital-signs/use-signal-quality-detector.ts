@@ -4,10 +4,15 @@
  */
 
 import { useRef } from 'react';
+import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 
 /**
  * Hook to detect weak signals or finger removal
  * No simulation is used
+ * 
+ * Note: This hook is maintained for backward compatibility,
+ * but the main signal quality functionality is now centralized
+ * in PPGSignalMeter.tsx and heart-beat/signal-quality.ts
  */
 export const useSignalQualityDetector = () => {
   // Weak signal counter to detect finger removal
@@ -16,23 +21,20 @@ export const useSignalQualityDetector = () => {
   const MAX_CONSECUTIVE_WEAK_SIGNALS = 3;
   
   /**
-   * Check for weak signals based on real data amplitude
+   * Check for weak signals based on real data amplitude using centralized function
    */
   const detectWeakSignal = (value: number): boolean => {
-    // Check for weak signal to detect finger removal
-    if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
-      consecutiveWeakSignalsRef.current++;
-      
-      // If too many weak signals, signal is invalid
-      if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
-        return true;
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      value,
+      consecutiveWeakSignalsRef.current,
+      {
+        lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
       }
-    } else {
-      // Reset weak signal counter
-      consecutiveWeakSignalsRef.current = 0;
-    }
+    );
     
-    return false;
+    consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
+    return isWeakSignal;
   };
   
   /**

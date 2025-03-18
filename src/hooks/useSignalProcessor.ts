@@ -9,7 +9,8 @@ import { ProcessedSignal, ProcessingError } from '../types/signal';
 import { 
   calculateWeightedQuality, 
   getQualityColor, 
-  getQualityText 
+  getQualityText,
+  checkSignalQuality
 } from '../modules/heart-beat/signal-quality';
 
 /**
@@ -44,12 +45,10 @@ export const useSignalProcessor = () => {
   const fingerDetectedHistoryRef = useRef<boolean[]>([]);
   const HISTORY_SIZE = 5;
   
-  // Adaptive detection parameters - real signals only
-  const consecutiveNonDetectionRef = useRef<number>(0);
-  const detectionThresholdRef = useRef<number>(0.45);
-  const adaptiveCounterRef = useRef<number>(0);
-  const ADAPTIVE_ADJUSTMENT_INTERVAL = 40;
-  const MIN_DETECTION_THRESHOLD = 0.30;
+  // Weak signal detection parameters
+  const weakSignalsCountRef = useRef<number>(0);
+  const WEAK_SIGNAL_THRESHOLD = 0.10;
+  const MAX_WEAK_SIGNALS = 3;
   
   // Signal lock parameters - real signals only
   const signalLockCounterRef = useRef<number>(0);
@@ -71,65 +70,36 @@ export const useSignalProcessor = () => {
       fingerDetectedHistoryRef.current.shift();
     }
     
-    // Calculate detection ratio from real measurements
-    const rawDetectionRatio = fingerDetectedHistoryRef.current.filter(d => d).length / 
-                             Math.max(1, fingerDetectedHistoryRef.current.length);
-    
-    // Calculate weighted signal quality
+    // Calculate weighted signal quality using centralized function
     const avgQuality = calculateWeightedQuality(qualityHistoryRef.current);
     
-    // Adaptive threshold adjustment based on real detection history
-    adaptiveCounterRef.current++;
-    if (adaptiveCounterRef.current >= ADAPTIVE_ADJUSTMENT_INTERVAL) {
-      adaptiveCounterRef.current = 0;
-      
-      const consistentDetection = rawDetectionRatio > 0.8;
-      const consistentNonDetection = rawDetectionRatio < 0.2;
-      
-      if (consistentNonDetection) {
-        // Make detection easier when consistently not detecting
-        detectionThresholdRef.current = Math.max(
-          MIN_DETECTION_THRESHOLD,
-          detectionThresholdRef.current - 0.08
-        );
-      } else if (consistentDetection && avgQuality < 35) {
-        // Be more strict when consistently detecting but quality is low
-        detectionThresholdRef.current = Math.min(
-          0.6,
-          detectionThresholdRef.current + 0.05
-        );
+    // Check for weak signal using centralized function
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      signal.filteredValue,
+      weakSignalsCountRef.current,
+      {
+        lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: MAX_WEAK_SIGNALS
       }
-    }
+    );
+    
+    weakSignalsCountRef.current = updatedWeakSignalsCount;
     
     // Signal lock logic for stability
-    if (signal.fingerDetected) {
-      consecutiveNonDetectionRef.current = 0;
+    if (!isWeakSignal) {
       signalLockCounterRef.current = Math.min(MAX_SIGNAL_LOCK, signalLockCounterRef.current + 1);
     } else {
-      if (signalLockCounterRef.current >= MAX_SIGNAL_LOCK) {
-        consecutiveNonDetectionRef.current++;
-        
-        if (consecutiveNonDetectionRef.current > RELEASE_GRACE_PERIOD) {
-          signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
-        }
-      } else {
-        signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
-      }
+      signalLockCounterRef.current = Math.max(0, signalLockCounterRef.current - 1);
     }
     
     // Final detection determination
     const isLockedIn = signalLockCounterRef.current >= MAX_SIGNAL_LOCK - 1;
-    const currentThreshold = detectionThresholdRef.current;
-    const robustFingerDetected = isLockedIn || rawDetectionRatio >= currentThreshold;
-    
-    // Quality enhancement factor
-    const enhancementFactor = robustFingerDetected ? 1.08 : 1.0;
-    const enhancedQuality = Math.min(100, avgQuality * enhancementFactor);
+    const robustFingerDetected = isLockedIn && !isWeakSignal;
     
     return {
       ...signal,
       fingerDetected: robustFingerDetected,
-      quality: enhancedQuality,
+      quality: avgQuality,
       perfusionIndex: signal.perfusionIndex,
       spectrumData: signal.spectrumData
     };
@@ -188,13 +158,11 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Reset adaptive variables
+    // Reset signal quality variables
     qualityHistoryRef.current = [];
     fingerDetectedHistoryRef.current = [];
-    consecutiveNonDetectionRef.current = 0;
+    weakSignalsCountRef.current = 0;
     signalLockCounterRef.current = 0;
-    detectionThresholdRef.current = 0.45;
-    adaptiveCounterRef.current = 0;
     
     processor.start();
   }, [processor]);

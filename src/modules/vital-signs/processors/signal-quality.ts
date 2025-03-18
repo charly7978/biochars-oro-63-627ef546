@@ -3,9 +3,15 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+import { checkSignalQuality, calculateWeightedQuality } from '../../../modules/heart-beat/signal-quality';
+
 /**
  * Signal quality assessment for real PPG signals
  * All methods work with real data only, no simulation
+ * 
+ * NOTE: This class is maintained for backward compatibility.
+ * The main signal quality functionality is now centralized in
+ * heart-beat/signal-quality.ts
  */
 export class SignalQuality {
   private noiseLevel: number = 0;
@@ -31,37 +37,10 @@ export class SignalQuality {
   
   /**
    * Calculate signal quality based on real signal characteristics
+   * (Forwards to centralized function for consistency)
    */
   public calculateSignalQuality(ppgValues: number[]): number {
-    // No quality assessment with insufficient data
-    if (ppgValues.length < 10) {
-      return 50;
-    }
-    
-    // Factor 1: Noise level (lower is better)
-    const noiseScore = Math.max(0, 100 - (this.noiseLevel * 4));
-    
-    // Factor 2: Signal stability
-    const recentValues = ppgValues.slice(-10);
-    const sum = recentValues.reduce((a, b) => a + b, 0);
-    const mean = sum / recentValues.length;
-    const variance = recentValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentValues.length;
-    const stabilityScore = Math.max(0, 100 - Math.min(100, variance / 2));
-    
-    // Factor 3: Signal range
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    const range = max - min;
-    const rangeScore = range > 5 && range < 100 ? 100 : Math.max(0, 100 - Math.abs(range - 50));
-    
-    // Weighted average of factors
-    const quality = Math.round(
-      (noiseScore * 0.4) +
-      (stabilityScore * 0.4) +
-      (rangeScore * 0.2)
-    );
-    
-    return Math.min(100, Math.max(0, quality));
+    return calculateWeightedQuality(ppgValues);
   }
   
   /**

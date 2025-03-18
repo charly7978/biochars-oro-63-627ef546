@@ -28,7 +28,7 @@ export class VitalSignsProcessor {
   private readonly FALSE_POSITIVE_GUARD_PERIOD = 500;
   private lastDetectionTime: number = 0;
   
-  // Signal quality parameters
+  // Signal quality parameters - using centralized values
   private readonly LOW_SIGNAL_THRESHOLD = 0.05;
   private readonly MAX_WEAK_SIGNALS = 10;
   private weakSignalsCount: number = 0;
@@ -54,7 +54,7 @@ export class VitalSignsProcessor {
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
     
-    // Verify real signal without manipulation using the centralized function
+    // Verify real signal using centralized signal quality function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       ppgValue,
       this.weakSignalsCount,
