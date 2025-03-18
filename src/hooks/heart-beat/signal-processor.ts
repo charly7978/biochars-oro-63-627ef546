@@ -18,7 +18,7 @@ export function useSignalProcessor() {
   const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
   
-  // Track consecutive zero signals to detect finger removal
+  // Track consecutive weak signals for finger detection
   const consecutiveWeakSignalsRef = useRef<number>(0);
   const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
@@ -40,7 +40,7 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
-      // Check for weak signal
+      // Check for weak real signal
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
         value, 
         consecutiveWeakSignalsRef.current, 
@@ -56,11 +56,12 @@ export function useSignalProcessor() {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
-      // Don't process signals that are too small
+      // Only process signals with sufficient amplitude
       if (!shouldProcessMeasurement(value)) {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
+      // Process real signal
       const result = processor.processSignal(value);
       const rrData = processor.getRRIntervals();
       const now = Date.now();
@@ -69,7 +70,7 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection and beep requests
+      // Handle peak detection based on real signal
       handlePeakDetection(
         result, 
         lastPeakTimeRef, 
@@ -78,12 +79,12 @@ export function useSignalProcessor() {
         value
       );
       
-      // Update last valid BPM if in reasonable range
+      // Update last valid BPM if it's reasonable
       updateLastValidBpm(result, lastValidBpmRef);
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process result for low confidence
+      // Process result
       return processLowConfidenceResult(
         result, 
         currentBPM, 

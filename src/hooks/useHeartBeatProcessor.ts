@@ -57,6 +57,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     try {
       if (!processorRef.current) {
         processorRef.current = new HeartBeatProcessor();
+        console.log('HeartBeatProcessor: New instance created - direct measurement mode only');
         initializedRef.current = true;
         
         if (typeof window !== 'undefined') {
@@ -68,6 +69,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         processorRef.current.initAudio();
         // Ensure monitoring is off by default
         processorRef.current.setMonitoring(false);
+        console.log('HeartBeatProcessor: Monitoring state set to false');
         isMonitoringRef.current = false;
       }
     } catch (error) {
@@ -134,13 +136,13 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBeatIsArrhythmiaRef
     );
 
-    // Update BPM and confidence states
+    // Only update BPM and confidence if the values are reasonable
     if (result.bpm > 0 && result.confidence > 0.4) {
       setCurrentBPM(result.bpm);
       setConfidence(result.confidence);
     }
 
-    // Analyze RR intervals for arrhythmia detection
+    // Analyze RR intervals for arrhythmia detection using only real data
     if (lastRRIntervalsRef.current.length >= 3) {
       const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
       currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;

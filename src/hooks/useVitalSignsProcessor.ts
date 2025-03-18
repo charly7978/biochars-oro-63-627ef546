@@ -16,7 +16,7 @@ import { UseVitalSignsProcessorReturn } from './vital-signs/types';
  * No simulation or reference values are used
  */
 export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // State management
+  // State management - only direct measurement, no simulation
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
   // Session tracking

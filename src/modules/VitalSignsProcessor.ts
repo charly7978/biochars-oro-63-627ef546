@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -131,6 +132,13 @@ export class VitalSignsProcessor {
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
     this.processor.fullReset();
+  }
+  
+  /**
+   * Get arrhythmia counter
+   */
+  public getArrhythmiaCounter(): number {
+    return this.processor.getArrhythmiaCounter();
   }
 }
 

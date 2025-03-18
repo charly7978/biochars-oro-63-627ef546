@@ -199,4 +199,3 @@ export class VitalSignsProcessor {
 
 // Re-export the VitalSignsResult type
 export type { VitalSignsResult } from './types/vital-signs-result';
-
