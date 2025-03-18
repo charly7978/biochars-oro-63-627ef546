@@ -24,12 +24,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Signal quality tracking - drastically improved thresholds
   const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.40; // Drastically increased from 0.05
+  const LOW_SIGNAL_THRESHOLD = 0.45; // Drastically increased from 0.40
   const MAX_WEAK_SIGNALS = 3; // Reduced for faster finger removal detection
   
   // Track minimum required signals for physiological validation
   const validSignalsCountRef = useRef<number>(0);
-  const REQUIRED_VALID_SIGNALS = 30; // Increased from default
+  const REQUIRED_VALID_SIGNALS = 35; // Increased from 30
   const signalBufferRef = useRef<number[]>([]);
   
   const { 
@@ -93,7 +93,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       validSignalsCountRef.current = Math.min(REQUIRED_VALID_SIGNALS * 2, validSignalsCountRef.current + 1);
     } else {
       // Faster decrease to eliminate false positives
-      validSignalsCountRef.current = Math.max(0, validSignalsCountRef.current - 2);
+      validSignalsCountRef.current = Math.max(0, validSignalsCountRef.current - 3);
     }
     
     // Only consider signal valid after seeing many consecutive physiological signals
@@ -111,7 +111,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Reset physiological validation on weak signal
     if (isWeakSignal) {
-      validSignalsCountRef.current = 0;
+      validSignalsCountRef.current = Math.max(0, validSignalsCountRef.current - 5);
     }
     
     // Process signal directly - NO SIMULATION WHATSOEVER
@@ -180,20 +180,20 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   /**
    * Validate if a signal pattern is physiologically plausible
-   * Critical for false positive prevention
+   * Critical for false positive prevention - UMBRALES DRÁSTICAMENTE MEJORADOS
    */
   const validatePhysiologicalSignal = (signalBuffer: number[]): boolean => {
-    if (signalBuffer.length < 10) return false;
+    if (signalBuffer.length < 15) return false; // Increased from 10
     
     // Get recent values to analyze
-    const values = signalBuffer.slice(-10);
+    const values = signalBuffer.slice(-15); // Increased from 10
     
     // Check amplitude (real fingers have significant amplitude)
     const min = Math.min(...values);
     const max = Math.max(...values);
     const amplitude = max - min;
     
-    if (amplitude < 0.20) return false; // Not enough variation for a real finger
+    if (amplitude < 0.35) return false; // Drastically increased from 0.20
     
     // Calculate first derivative to check for heartbeat-like patterns
     const derivatives: number[] = [];
@@ -210,16 +210,25 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       }
     }
     
-    // Require minimum sign changes (oscillations) for physiological signals
-    if (signChanges < 3) return false; // Need at least 3 oscillations
+    // Require more sign changes (oscilaciones) for physiological signals
+    if (signChanges < 4) return false; // Increased from 3 to 4
     
     // Calculate statistical properties to check for physiological patterns
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
     const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
     const normalizedVariance = variance / (mean * mean);
     
-    // Physiological signals have characteristic variance range
-    return normalizedVariance > 0.08 && normalizedVariance < 0.40;
+    // Comprobar la tasa de cambio máxima - los latidos reales tienen cambios graduales
+    let maxRateOfChange = 0;
+    for (let i = 0; i < derivatives.length; i++) {
+      maxRateOfChange = Math.max(maxRateOfChange, Math.abs(derivatives[i]));
+    }
+    
+    // Limitar la tasa máxima de cambio - los falsos positivos suelen tener saltos bruscos
+    if (maxRateOfChange > 0.4) return false; // Los dedos reales tienen cambios más graduales
+    
+    // Physiological signals have characteristic variance range - narrower range for higher precision
+    return normalizedVariance > 0.12 && normalizedVariance < 0.35;
   };
 
   /**
@@ -256,7 +265,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults,
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
