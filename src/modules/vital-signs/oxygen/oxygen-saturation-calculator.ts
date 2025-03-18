@@ -3,7 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateAC, calculateDC } from '../utils/perfusion-utils';
+import { calculateAC, calculateDC, calculateSignalQuality } from '../utils/perfusion-utils';
 
 /**
  * Calculate oxygen saturation from PPG signals
@@ -16,6 +16,7 @@ export class OxygenSaturationCalculator {
   private readonly MIN_AC_THRESHOLD = 0.05;
   private readonly MIN_PI_THRESHOLD = 0.02;
   private readonly MAX_SPO2 = 99;
+  private readonly MIN_SPO2 = 90;
   
   /**
    * Calculate SpO2 from real PPG values
@@ -31,8 +32,8 @@ export class OxygenSaturationCalculator {
     const recentValues = ppgValues.slice(-this.MIN_SIGNAL_LENGTH);
     
     // Calcular componentes AC y DC
-    const ac = this.calculateAC(recentValues);
-    const dc = this.calculateDC(recentValues);
+    const ac = calculateAC(recentValues);
+    const dc = calculateDC(recentValues);
     
     // Verificar calidad de la señal
     if (dc === 0 || ac < this.MIN_AC_THRESHOLD) {
@@ -52,7 +53,7 @@ export class OxygenSaturationCalculator {
     let spo2 = Math.round(110 - (25 * perfusionIndex));
     
     // Limitación a valores realistas
-    spo2 = Math.max(90, Math.min(this.MAX_SPO2, spo2));
+    spo2 = Math.max(this.MIN_SPO2, Math.min(this.MAX_SPO2, spo2));
     
     // Añadir a historial para estabilidad
     this.addToHistory(spo2);
@@ -62,30 +63,14 @@ export class OxygenSaturationCalculator {
   }
   
   /**
-   * Calcular componente AC (alternante) de la señal PPG
-   * Solo medición directa
-   */
-  private calculateAC(values: number[]): number {
-    if (values.length === 0) return 0;
-    return Math.max(...values) - Math.min(...values);
-  }
-  
-  /**
-   * Calcular componente DC (continua) de la señal PPG
-   * Solo medición directa
-   */
-  private calculateDC(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
-  
-  /**
    * Agregar valor al historial con limitación de tamaño
    */
   private addToHistory(value: number): void {
-    this.spo2History.push(value);
-    if (this.spo2History.length > this.HISTORY_SIZE) {
-      this.spo2History.shift();
+    if (value > 0) { // Only add non-zero values
+      this.spo2History.push(value);
+      if (this.spo2History.length > this.HISTORY_SIZE) {
+        this.spo2History.shift();
+      }
     }
   }
   

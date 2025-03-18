@@ -9,7 +9,7 @@
  */
 export function calculatePerfusionIndex(ac: number, dc: number): number {
   if (dc === 0) return 0;
-  return ac / dc;
+  return (ac / dc) * 100; // Multiply by 100 to get a percentage
 }
 
 /**

@@ -58,10 +58,12 @@ export class BloodPressureEstimator {
     // Formatear resultado
     const bpResult = `${systolic}/${diastolic}`;
     
-    // Añadir al historial
-    this.bpHistory.push(bpResult);
-    if (this.bpHistory.length > this.HISTORY_SIZE) {
-      this.bpHistory.shift();
+    // Añadir al historial solo si los valores parecen realistas
+    if (systolic >= 90 && systolic <= 160 && diastolic >= 60 && diastolic <= 100) {
+      this.bpHistory.push(bpResult);
+      if (this.bpHistory.length > this.HISTORY_SIZE) {
+        this.bpHistory.shift();
+      }
     }
     
     return bpResult;
@@ -80,7 +82,7 @@ export class BloodPressureEstimator {
     
     // Ajustar por índice de perfusión (PI = AC/DC)
     const perfusionIndex = dc > 0 ? ac / dc : 0;
-    const perfusionAdjustment = perfusionIndex > 0 ? Math.log(perfusionIndex * 100) * 3 : 0;
+    const perfusionAdjustment = perfusionIndex > 0 ? Math.log(perfusionIndex * 100 + 1) * 3 : 0;
     
     // Ajustar por tiempo entre picos (relacionado con elasticidad)
     const timeAdjustment = ((600 - timeBetweenPeaks) / 10) * 0.3;
@@ -106,7 +108,7 @@ export class BloodPressureEstimator {
     
     // Ajuste por proporción AC/DC (relacionado con resistencia periférica)
     const perfusionIndex = dc > 0 ? ac / dc : 0;
-    const perfusionAdjustment = perfusionIndex > 0 ? Math.log(perfusionIndex * 100) * 2 : 0;
+    const perfusionAdjustment = perfusionIndex > 0 ? Math.log(perfusionIndex * 100 + 1) * 2 : 0;
     
     // Calcular valor final (limitado a rango realista)
     let diastolic = Math.round(systolic - typicalGap + hrAdjustment - perfusionAdjustment);

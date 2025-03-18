@@ -78,7 +78,7 @@ export class VitalSignsProcessor {
       this.signalValidator.logValidationResults(
         hasValidAmplitude, 
         this.calculateSignalAmplitude(), 
-        this.ppgValues
+        this.ppgValues.length
       );
       return this.createEmptyResult();
     }
@@ -90,12 +90,12 @@ export class VitalSignsProcessor {
     }
     
     // Calculate heart rate from real signal
-    const heartRate = this.signalProcessor.calculateHeartRate(this.ppgValues);
+    const heartRate = this.signalProcessor.calculateHeartRate(30);
     
-    // Calculate SpO2 from real signal - CORREGIDO PARA USAR EL CÁLCULO REAL
+    // Calculate SpO2 from real signal
     const spo2 = this.oxygenCalculator.calculateSpO2(this.ppgValues);
     
-    // Estimate blood pressure (no simulation) - CORREGIDO PARA USAR EL CÁLCULO REAL
+    // Estimate blood pressure (no simulation)
     const bloodPressure = this.bloodPressureEstimator.estimateBloodPressure(
       this.ppgValues, 
       heartRate

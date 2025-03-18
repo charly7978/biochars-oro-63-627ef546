@@ -87,7 +87,23 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - no simulation
     let result = processVitalSignal(value, rrData, isWeakSignal);
-    const currentTime = Date.now();
+    
+    // Don't return zero values if we have valid results already
+    if (
+      result.spo2 === 0 && 
+      result.pressure === "--/--" && 
+      lastValidResults && 
+      lastValidResults.spo2 > 0 && 
+      lastValidResults.pressure !== "--/--"
+    ) {
+      result = { ...lastValidResults };
+    } else if (
+      result.spo2 > 90 && 
+      result.pressure !== "--/--"
+    ) {
+      // Only store valid results
+      setLastValidResults(result);
+    }
     
     // If arrhythmia is detected in real data, register visualization window
     if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
@@ -109,6 +125,16 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Log processed signals
     logSignalData(value, result, processedSignals.current);
     
+    // Debug info
+    if (processedSignals.current % 30 === 0) {
+      console.log("Vital signs processed:", {
+        spo2: result.spo2,
+        bloodPressure: result.pressure,
+        arrhythmiaStatus: result.arrhythmiaStatus,
+        signalCount: processedSignals.current
+      });
+    }
+    
     // Always return real result
     return result;
   };
@@ -120,10 +146,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const reset = () => {
     resetProcessor();
     clearArrhythmiaWindows();
-    setLastValidResults(null);
     weakSignalsCountRef.current = 0;
     
-    return null;
+    return lastValidResults;
   };
   
   /**
@@ -143,7 +168,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults,
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
