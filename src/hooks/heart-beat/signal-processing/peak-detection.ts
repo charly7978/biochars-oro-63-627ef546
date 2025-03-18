@@ -52,8 +52,7 @@ export function handlePeakDetection(
     // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
-    // TODO EL CÓDIGO DE BEEP HA SIDO ELIMINADO
-    // El beep solo se maneja en PPGSignalMeter cuando se dibuja un círculo
+    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
     console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
       confianza: result.confidence,
       valor: value,
@@ -63,7 +62,8 @@ export function handlePeakDetection(
         activa: result.transition.active,
         progreso: result.transition.progress,
         direccion: result.transition.direction
-      } : 'no hay transición'
+      } : 'no hay transición',
+      isArrhythmia: result.isArrhythmia || false
     });
   }
 }

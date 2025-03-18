@@ -32,9 +32,9 @@ export const HeartBeatConfig = {
   LOW_SIGNAL_FRAMES: 10,
   
   // Arrhythmia visualization settings
-  ARRHYTHMIA_INDICATOR_SIZE: 8,
-  ARRHYTHMIA_PULSE_COLOR: '#FFDA00', // Yellow pulse start
-  ARRHYTHMIA_PULSE_COLOR_END: '#FF2E2E', // Red pulse end
+  ARRHYTHMIA_INDICATOR_SIZE: 10,
+  ARRHYTHMIA_PULSE_COLOR: '#FEF7CD', // Yellow highlight for arrhythmia circles
+  ARRHYTHMIA_PULSE_COLOR_END: '#F97316', // Orange text for arrhythmia labels
   ARRHYTHMIA_ANIMATION_DURATION_MS: 800,
   ARRHYTHMIA_TRANSITION_DURATION_MS: 180 // Duration for smooth color transition
 };
