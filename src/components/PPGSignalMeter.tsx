@@ -54,6 +54,9 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const lastBeepTimeRef = useRef<number>(0);
+
   const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 2560;
@@ -79,18 +82,138 @@ const PPGSignalMeter = memo(({
   const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
   const ARRHYTHMIA_DURATION_MS = 800;
 
+  const BEEP_PRIMARY_FREQUENCY = 880;
+  const BEEP_SECONDARY_FREQUENCY = 440;
+  const BEEP_DURATION = 80;
+  const BEEP_VOLUME = 0.9;
+  const MIN_BEEP_INTERVAL_MS = 200;
+
   const beepRequesterRef = useRef<((time: number) => void) | null>(null);
   const lastBeepRequestTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
+          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
+          
+          if (audioContextRef.current.state !== 'running') {
+            await audioContextRef.current.resume();
+          }
+          
+          await playBeepDirectly(0.1);
+          console.log("PPGSignalMeter: Audio Context initialized with low latency");
+        }
+      } catch (err) {
+        console.error("PPGSignalMeter: Error initializing audio context:", err);
+      }
+    };
+    
+    initAudio();
+    
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(err => {
+          console.error("PPGSignalMeter: Error closing audio context:", err);
+        });
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
+  const playBeepDirectly = useCallback(async (volume = BEEP_VOLUME) => {
+    try {
+      const now = Date.now();
+      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+        return false;
+      }
+      
+      if (!audioContextRef.current || audioContextRef.current.state !== 'running') {
+        if (audioContextRef.current) {
+          await audioContextRef.current.resume();
+        } else {
+          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
+        }
+        
+        if (audioContextRef.current.state !== 'running') {
+          console.warn("PPGSignalMeter: Couldn't activate audio context");
+          return false;
+        }
+      }
+      
+      console.log("PPGSignalMeter: Playing beep directly with volume", volume);
+      
+      const primaryOscillator = audioContextRef.current.createOscillator();
+      const primaryGain = audioContextRef.current.createGain();
+      
+      const secondaryOscillator = audioContextRef.current.createOscillator();
+      const secondaryGain = audioContextRef.current.createGain();
+      
+      primaryOscillator.type = "sine";
+      primaryOscillator.frequency.setValueAtTime(
+        BEEP_PRIMARY_FREQUENCY,
+        audioContextRef.current.currentTime
+      );
+      
+      secondaryOscillator.type = "sine";
+      secondaryOscillator.frequency.setValueAtTime(
+        BEEP_SECONDARY_FREQUENCY,
+        audioContextRef.current.currentTime
+      );
+      
+      const adjustedVolume = Math.min(volume * 2.0, 1.0);
+      
+      primaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+      primaryGain.gain.linearRampToValueAtTime(
+        adjustedVolume,
+        audioContextRef.current.currentTime + 0.0005
+      );
+      primaryGain.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContextRef.current.currentTime + BEEP_DURATION / 1000
+      );
+      
+      secondaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+      secondaryGain.gain.linearRampToValueAtTime(
+        adjustedVolume * 0.8,
+        audioContextRef.current.currentTime + 0.0005
+      );
+      secondaryGain.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContextRef.current.currentTime + BEEP_DURATION / 1000
+      );
+      
+      primaryOscillator.connect(primaryGain);
+      secondaryOscillator.connect(secondaryGain);
+      primaryGain.connect(audioContextRef.current.destination);
+      secondaryGain.connect(audioContextRef.current.destination);
+      
+      primaryOscillator.start(audioContextRef.current.currentTime);
+      secondaryOscillator.start(audioContextRef.current.currentTime);
+      primaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
+      secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
+      
+      lastBeepTimeRef.current = now;
+      console.log("PPGSignalMeter: Beep played successfully");
+      return true;
+    } catch (err) {
+      console.error("PPGSignalMeter: Error playing beep:", err);
+      return false;
+    }
+  }, []);
 
   const requestBeepForPeak = useCallback((timestamp: number) => {
     const now = Date.now();
     if (now - lastBeepRequestTimeRef.current < 250) return;
     
+    console.log("PPGSignalMeter: Peak detected, playing beep directly");
+    playBeepDirectly(1.0);
+    lastBeepRequestTimeRef.current = now;
+    
     if (beepRequesterRef.current) {
       beepRequesterRef.current(timestamp);
-      lastBeepRequestTimeRef.current = now;
     }
-  }, []);
+  }, [playBeepDirectly]);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -135,47 +258,6 @@ const PPGSignalMeter = memo(({
       gridCanvasRef.current = gridCanvas;
     }
   }, []);
-
-  useEffect(() => {
-    const now = Date.now();
-    
-    if (isArrhythmia && !arrhythmiaTransitionRef.current.active) {
-      arrhythmiaTransitionRef.current = { 
-        active: true, 
-        startTime: now, 
-        endTime: null 
-      };
-      
-      arrhythmiaSegmentsRef.current.push({
-        startTime: now,
-        endTime: null
-      });
-      
-      lastArrhythmiaTimeRef.current = now;
-      
-      console.log('PPGSignalMeter: Nueva arritmia detectada en', new Date(now).toISOString());
-    } 
-    else if (!isArrhythmia && arrhythmiaTransitionRef.current.active) {
-      arrhythmiaTransitionRef.current = {
-        ...arrhythmiaTransitionRef.current,
-        active: false,
-        endTime: now
-      };
-      
-      if (arrhythmiaSegmentsRef.current.length > 0) {
-        const lastIndex = arrhythmiaSegmentsRef.current.length - 1;
-        if (arrhythmiaSegmentsRef.current[lastIndex].endTime === null) {
-          arrhythmiaSegmentsRef.current[lastIndex].endTime = now;
-        }
-      }
-      
-      console.log('PPGSignalMeter: Fin de arritmia en', new Date(now).toISOString());
-    }
-    
-    arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(
-      segment => now - (segment.endTime || now) < 3000
-    );
-  }, [isArrhythmia]);
 
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
@@ -279,16 +361,34 @@ const PPGSignalMeter = memo(({
     ctx.setLineDash([]);
   }, []);
 
+  const isPointInArrhythmiaSegment = useCallback((pointTime: number, now: number): boolean => {
+    const isNearArrhythmicPeak = peaksRef.current.some(peak => 
+      peak.isArrhythmia && Math.abs(pointTime - peak.time) < 300
+    );
+    
+    if (isNearArrhythmicPeak) return true;
+    
+    return arrhythmiaSegmentsRef.current.some(segment => {
+      const endTime = segment.endTime || now;
+      const segmentAge = now - endTime;
+      return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
+    });
+  }, []);
+
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia?: boolean}[] = [];
     
+    const effectivePeakThreshold = 1.8;
+    
     for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
       
+      const minPeakDistance = 180;
+      
       const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
+        peak => Math.abs(peak.time - currentPoint.time) < minPeakDistance
       );
       
       if (recentlyProcessed) continue;
@@ -311,7 +411,7 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
+      if (isPeak && Math.abs(currentPoint.value) > effectivePeakThreshold) {
         const isInArrhythmiaSegment = arrhythmiaSegmentsRef.current.some(segment => {
           const endTime = segment.endTime || now;
           return currentPoint.time >= segment.startTime && currentPoint.time <= endTime;
@@ -338,7 +438,20 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia
         });
         
-        requestBeepForPeak(peak.time);
+        if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+          console.log("PPGSignalMeter: Peak detected, requesting beep", {
+            time: peak.time,
+            value: peak.value,
+            isArrhythmia: peak.isArrhythmia
+          });
+          
+          requestBeepForPeak(peak.time);
+          
+          setTimeout(() => {
+            playBeepDirectly(1.0);
+            console.log("PPGSignalMeter: Backup beep played");
+          }, 10);
+        }
       }
     }
     
@@ -347,21 +460,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [requestBeepForPeak]);
-
-  const isPointInArrhythmiaSegment = useCallback((pointTime: number, now: number): boolean => {
-    const isNearArrhythmicPeak = peaksRef.current.some(peak => 
-      peak.isArrhythmia && Math.abs(pointTime - peak.time) < 300
-    );
-    
-    if (isNearArrhythmicPeak) return true;
-    
-    return arrhythmiaSegmentsRef.current.some(segment => {
-      const endTime = segment.endTime || now;
-      const segmentAge = now - endTime;
-      return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
-    });
-  }, []);
+  }, [isFingerDetected, requestBeepForPeak, playBeepDirectly]);
 
   useEffect(() => {
     const heartBeatProcessor = (window as any).heartBeatProcessor;
@@ -576,7 +675,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, requestBeepForPeak]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment]);
 
   useEffect(() => {
     renderSignal();
@@ -669,4 +768,3 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
-
