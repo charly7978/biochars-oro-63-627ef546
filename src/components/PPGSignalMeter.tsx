@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -85,7 +84,7 @@ const PPGSignalMeter = memo(({
   const MAX_PEAKS_TO_DISPLAY = 10; // Reducido
   const REQUIRED_FINGER_FRAMES = 3;
   const QUALITY_HISTORY_SIZE = 7; // Reducido
-  const USE_OFFSCREEN_CANVAS = !isMobile(); // Desactivar en móviles
+  const USE_OFFSCREEN_CANVAS = false; // Desactivado completamente para evitar problemas de tipado
   const NORMAL_COLOR = '#0EA5E9';
   const ARRHYTHMIA_COLOR = '#FF2E2E';
   
@@ -125,9 +124,11 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    // Inicializar canvas offscreen para mejor rendimiento
+    // Desactivado para evitar problemas de tipado con OffscreenCanvas
     if (USE_OFFSCREEN_CANVAS && !offscreenCanvasRef.current) {
-      const offscreen = new OffscreenCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+      const offscreen = document.createElement('canvas');
+      offscreen.width = CANVAS_WIDTH;
+      offscreen.height = CANVAS_HEIGHT;
       offscreenCanvasRef.current = offscreen;
     }
     
@@ -239,8 +240,10 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      if (audioContextRef.current.state !== 'running') {
+      // Fix: Check for proper state strings
+      if (audioContextRef.current.state === 'suspended' || audioContextRef.current.state === 'closed') {
         await audioContextRef.current.resume();
+        // If still not running, abort
         if (audioContextRef.current.state !== 'running') {
           return false;
         }
@@ -509,36 +512,27 @@ const PPGSignalMeter = memo(({
     }
     
     // Seleccionar contexto apropiado
-    const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
-      offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
-      canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', { alpha: false });
     
-    if (!renderCtx) {
+    if (!ctx) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
     
     // Optimizar contexto
-    optimizeCanvasDrawing(renderCtx);
+    optimizeCanvasDrawing(ctx);
     
     const now = Date.now();
     
     // Dibujar fondo (grid)
     if (gridCanvasRef.current) {
-      renderCtx.drawImage(gridCanvasRef.current, 0, 0);
+      ctx.drawImage(gridCanvasRef.current, 0, 0);
     } else {
-      drawGrid(renderCtx);
+      drawGrid(ctx);
     }
     
     // Preservar resultados si es necesario
     if (preserveResults && !isFingerDetected) {
-      if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-        const visibleCtx = canvas.getContext('2d', { alpha: false });
-        if (visibleCtx) {
-          visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-        }
-      }
-      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -596,29 +590,29 @@ const PPGSignalMeter = memo(({
         // Si cambia el estado de arritmia, dibujar el segmento anterior
         if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
           if (segmentPoints.length > 0) {
-            renderCtx.beginPath();
-            renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-            renderCtx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+            ctx.lineWidth = 2;
             
             // Optimización: no usar efectos visuales en dispositivos móviles
             if (!isMobile() && window.devicePixelRatio > 1) {
-              renderCtx.shadowBlur = 0.5;
-              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+              ctx.shadowBlur = 0.5;
+              ctx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
             }
             
             // Dibujar línea con optimización para muchos puntos
-            renderCtx.moveTo(segmentPoints[0].x, segmentPoints[0].y);
+            ctx.moveTo(segmentPoints[0].x, segmentPoints[0].y);
             
             // En dispositivos móviles, usar menos puntos intermedios
             const linePointStride = isMobile() ? 2 : 1;
             
             for (let j = linePointStride; j < segmentPoints.length; j += linePointStride) {
-              renderCtx.lineTo(segmentPoints[j].x, segmentPoints[j].y);
+              ctx.lineTo(segmentPoints[j].x, segmentPoints[j].y);
             }
             
-            renderCtx.stroke();
+            ctx.stroke();
             if (!isMobile() && window.devicePixelRatio > 1) {
-              renderCtx.shadowBlur = 0;
+              ctx.shadowBlur = 0;
             }
             
             segmentPoints = [];
@@ -632,25 +626,25 @@ const PPGSignalMeter = memo(({
       
       // Dibujar el último segmento
       if (segmentPoints.length > 0) {
-        renderCtx.beginPath();
-        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-        renderCtx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+        ctx.lineWidth = 2;
         
         if (!isMobile() && window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+          ctx.shadowBlur = 0.5;
+          ctx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
         }
         
-        renderCtx.moveTo(segmentPoints[0].x, segmentPoints[0].y);
+        ctx.moveTo(segmentPoints[0].x, segmentPoints[0].y);
         
         const linePointStride = isMobile() ? 2 : 1;
         for (let j = linePointStride; j < segmentPoints.length; j += linePointStride) {
-          renderCtx.lineTo(segmentPoints[j].x, segmentPoints[j].y);
+          ctx.lineTo(segmentPoints[j].x, segmentPoints[j].y);
         }
         
-        renderCtx.stroke();
+        ctx.stroke();
         if (!isMobile() && window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0;
+          ctx.shadowBlur = 0;
         }
       }
       
@@ -671,10 +665,10 @@ const PPGSignalMeter = memo(({
           const peakColor = getSignalColor(!!peak.isArrhythmia);
           
           // DIBUJAR CÍRCULO - Esto activará el beep
-          renderCtx.fillStyle = peakColor;
-          renderCtx.beginPath();
-          renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-          renderCtx.fill();
+          ctx.fillStyle = peakColor;
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fill();
           
           // Activar bandera de beep si no se ha reproducido para este pico
           if (!peak.beepPlayed) {
@@ -682,14 +676,6 @@ const PPGSignalMeter = memo(({
             peak.beepPlayed = true;
           }
         });
-      }
-    }
-    
-    // Actualizar visibleCanvas desde el offscreen
-    if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-      const visibleCtx = canvas.getContext('2d', { alpha: false });
-      if (visibleCtx) {
-        visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
       }
     }
     
@@ -801,3 +787,4 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
+
