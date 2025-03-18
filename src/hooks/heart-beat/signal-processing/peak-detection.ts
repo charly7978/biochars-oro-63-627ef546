@@ -23,6 +23,12 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
     rrData: {
       intervals: [],
       lastPeakTime: null
+    },
+    // Adding transition state to ensure continuous color rendering
+    transition: {
+      active: false,
+      progress: 0,
+      direction: 'none'
     }
   };
 }
@@ -50,7 +56,13 @@ export function handlePeakDetection(
     console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
       confianza: result.confidence,
       valor: value,
-      tiempo: new Date(now).toISOString()
+      tiempo: new Date(now).toISOString(),
+      // Log transition state if present
+      transicion: result.transition ? {
+        activa: result.transition.active,
+        progreso: result.transition.progress,
+        direccion: result.transition.direction
+      } : 'no hay transición'
     });
   }
 }

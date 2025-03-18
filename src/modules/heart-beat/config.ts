@@ -29,5 +29,12 @@ export const HeartBeatConfig = {
 
   // Signal quality settings
   LOW_SIGNAL_THRESHOLD: 0.05,
-  LOW_SIGNAL_FRAMES: 10
+  LOW_SIGNAL_FRAMES: 10,
+  
+  // Arrhythmia visualization settings
+  ARRHYTHMIA_INDICATOR_SIZE: 8,
+  ARRHYTHMIA_PULSE_COLOR: '#FFDA00', // Yellow pulse start
+  ARRHYTHMIA_PULSE_COLOR_END: '#FF2E2E', // Red pulse end
+  ARRHYTHMIA_ANIMATION_DURATION_MS: 800,
+  ARRHYTHMIA_TRANSITION_DURATION_MS: 180 // Duration for smooth color transition
 };

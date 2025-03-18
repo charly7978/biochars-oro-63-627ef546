@@ -12,6 +12,48 @@ export const getSignalColor = (isArrhythmia: boolean): string => {
 };
 
 /**
+ * Get colors for arrhythmia pulse animation
+ * Direct visualization only - no simulation or manipulation
+ */
+export const getArrhythmiaPulseColors = (): { start: string, end: string } => {
+  return {
+    start: '#FFDA00',
+    end: '#FF2E2E'
+  };
+};
+
+/**
+ * Smoothly interpolate between normal and arrhythmia colors for continuous transition
+ * @param isArrhythmia Current arrhythmia state
+ * @param transitionProgress Value between 0-1 for transition phase
+ * @returns Interpolated color string
+ */
+export const getTransitionColor = (isArrhythmia: boolean, transitionProgress: number = 0): string => {
+  const normalColor = { r: 14, g: 165, b: 233 }; // #0EA5E9
+  const arrhythmiaColor = { r: 255, g: 46, b: 46 }; // #FF2E2E
+  
+  // If not in transition, return the standard color
+  if (transitionProgress <= 0) return getSignalColor(isArrhythmia);
+  if (transitionProgress >= 1) return getSignalColor(!isArrhythmia);
+  
+  // Interpolate between colors
+  let r, g, b;
+  if (isArrhythmia) {
+    // Transitioning from normal to arrhythmia
+    r = Math.round(normalColor.r + (arrhythmiaColor.r - normalColor.r) * transitionProgress);
+    g = Math.round(normalColor.g + (arrhythmiaColor.g - normalColor.g) * transitionProgress);
+    b = Math.round(normalColor.b + (arrhythmiaColor.b - normalColor.b) * transitionProgress);
+  } else {
+    // Transitioning from arrhythmia to normal
+    r = Math.round(arrhythmiaColor.r + (normalColor.r - arrhythmiaColor.r) * transitionProgress);
+    g = Math.round(arrhythmiaColor.g + (normalColor.g - arrhythmiaColor.g) * transitionProgress);
+    b = Math.round(arrhythmiaColor.b + (normalColor.b - arrhythmiaColor.b) * transitionProgress);
+  }
+  
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+/**
  * Check if a time point is within an arrhythmia window
  * Direct visualization only - no simulation or manipulation
  */
