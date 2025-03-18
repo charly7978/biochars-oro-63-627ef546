@@ -3,13 +3,7 @@
  * Utilidades de optimización específicas para pantallas de alta resolución
  */
 
-// Fix import by using locally defined function instead of importing from displayOptimizer
-const isMobileDevice = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent
-  );
-};
+import { isMobileDevice } from './displayOptimizer';
 
 /**
  * Detecta si el dispositivo tiene una pantalla de alta resolución

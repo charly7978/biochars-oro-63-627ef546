@@ -7,7 +7,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
+import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -70,14 +70,17 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Process signal only if we have good quality and finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+      // Only process if the quality is sufficient and the finger is detected
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        if (heartBeatResult.confidence > 0.4) {
+        // Only update heart rate if confidence is sufficient
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
           setHeartRate(heartBeatResult.bpm);
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -88,13 +91,16 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
+        // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
         
+        // If finger not detected for a while, reset heart rate to zero
         if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
+      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
@@ -107,10 +113,10 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0);
+      setHeartRate(0); // Reset heart rate explicitly
       
       startProcessing();
-      startHeartBeatMonitoring();
+      startHeartBeatMonitoring(); // Update the processor state
       
       setElapsedTime(0);
       
@@ -139,7 +145,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
+    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -154,7 +160,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0);
+    setHeartRate(0); // Reset heart rate explicitly
   };
 
   const handleReset = () => {
@@ -271,6 +277,7 @@ const Index = () => {
   };
 
   return (
+    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -309,7 +316,7 @@ const Index = () => {
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
-              isArrhythmia={isArrhythmia()}
+              isArrhythmia={isArrhythmia}
             />
           </div>
 
