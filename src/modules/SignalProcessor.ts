@@ -125,6 +125,15 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
+   * Required by SignalProcessor interface
+   * Direct measurement only - no simulation
+   */
+  calibrate(): Promise<void> {
+    console.log("PPGSignalProcessor: Calibration requested - NO SIMULATION PERFORMED");
+    return Promise.resolve();
+  }
+
+  /**
    * Process a frame to extract PPG information
    */
   processFrame(imageData: ImageData): void {

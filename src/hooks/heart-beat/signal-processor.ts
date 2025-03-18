@@ -22,6 +22,11 @@ export function useSignalProcessor() {
   const consecutiveWeakSignalsRef = useRef<number>(0);
   const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
+  
+  // Add buffer for peak detection to reduce false positives
+  const recentPeaksRef = useRef<{time: number, value: number}[]>([]);
+  const MAX_PEAKS_BUFFER = 10;
+  const MIN_PEAK_INTERVAL_MS = 600; // Increased from default to reduce false positives
 
   const processSignal = useCallback((
     value: number,
@@ -40,7 +45,7 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
-      // Check for weak real signal
+      // Check for weak real signal with enhanced criteria
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
         value, 
         consecutiveWeakSignalsRef.current, 
@@ -56,8 +61,8 @@ export function useSignalProcessor() {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
-      // Only process signals with sufficient amplitude
-      if (!shouldProcessMeasurement(value)) {
+      // Add amplitude check to further reduce false positives
+      if (!shouldProcessMeasurement(value) || Math.abs(value) < 0.08) {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
@@ -70,7 +75,27 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection based on real signal
+      // Add peak validation to reduce false positives
+      if (result.isPeak) {
+        // Check if this peak is too close to previous peaks (false positive check)
+        const tooCloseToExistingPeak = recentPeaksRef.current.some(
+          peak => now - peak.time < MIN_PEAK_INTERVAL_MS
+        );
+        
+        if (tooCloseToExistingPeak) {
+          // Likely a false positive, suppress this peak
+          result.isPeak = false;
+          result.confidence = Math.max(0, result.confidence - 0.3);
+        } else {
+          // Valid peak, add to our buffer
+          recentPeaksRef.current.push({ time: now, value });
+          if (recentPeaksRef.current.length > MAX_PEAKS_BUFFER) {
+            recentPeaksRef.current.shift();
+          }
+        }
+      }
+      
+      // Handle peak detection based on real signal with validated peaks
       handlePeakDetection(
         result, 
         lastPeakTimeRef, 
@@ -84,11 +109,12 @@ export function useSignalProcessor() {
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process result
+      // Process result with enhanced confidence criteria
       return processLowConfidenceResult(
         result, 
         currentBPM, 
-        processor.getArrhythmiaCounter()
+        processor.getArrhythmiaCounter(),
+        0.65 // Increased confidence threshold for more reliable detection
       );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);
@@ -112,6 +138,7 @@ export function useSignalProcessor() {
     calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
+    recentPeaksRef.current = [];
   }, []);
 
   return {
