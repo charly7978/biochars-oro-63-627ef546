@@ -9,7 +9,7 @@ export function useMonitoringControls(
   lastBeepTimeRef: React.MutableRefObject<number>,
   pendingBeepsQueue: React.MutableRefObject<any[]>,
   consecutiveWeakSignalsRef: React.MutableRefObject<number>,
-  beepProcessorTimeoutRef: React.MutableRefObject<number | null>,
+  beepProcessorTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>,
   cleanupBeepProcessor: () => void,
   setCurrentBPM: React.Dispatch<React.SetStateAction<number>>,
   setConfidence: React.Dispatch<React.SetStateAction<number>>

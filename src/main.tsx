@@ -1,6 +1,6 @@
 
 import { createRoot } from 'react-dom/client'
-import App from './App'
+import App from './App.tsx'
 import './index.css'
 
 // Apply high-resolution interface class to the root element
@@ -108,6 +108,7 @@ window.addEventListener('resize', applyHighResolution);
 window.addEventListener('orientationchange', applyHighResolution);
 
 // Let's improve graph performance with a MutationObserver
+// This will add performance classes to any PPG graph elements that are added to the DOM
 const setupPerformanceObserver = () => {
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
