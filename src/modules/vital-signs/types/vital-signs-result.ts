@@ -23,12 +23,4 @@ export interface VitalSignsResult {
     lipids: number;
     overall: number;
   };
-  calibration?: {
-    progress: {
-      heartRate: number;
-      spo2: number;
-      pressure: number;
-      arrhythmia: number;
-    };
-  };
 }
