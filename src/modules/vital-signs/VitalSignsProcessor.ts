@@ -192,3 +192,6 @@ export class VitalSignsProcessor {
     };
   }
 }
+
+// Export VitalSignsResult type for use in other modules
+export { VitalSignsResult } from './types/vital-signs-result';

@@ -128,9 +128,9 @@ export class PPGSignalProcessor implements SignalProcessor {
    * Required by SignalProcessor interface
    * Direct measurement only - no simulation
    */
-  calibrate(): Promise<void> {
+  async calibrate(): Promise<boolean> {
     console.log("PPGSignalProcessor: Calibration requested - NO SIMULATION PERFORMED");
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   /**
