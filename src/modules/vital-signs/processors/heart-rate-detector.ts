@@ -12,7 +12,7 @@ export class HeartRateDetector {
    * Calculate heart rate from real PPG values
    */
   public calculateHeartRate(ppgValues: number[], sampleRate: number = 30): number {
-    if (ppgValues.length < sampleRate * 3) {
+    if (ppgValues.length < sampleRate * 2) {
       return 0;
     }
     
@@ -22,7 +22,7 @@ export class HeartRateDetector {
     // Find peaks in real data
     const peaks = this.findPeaksEnhanced(recentData);
     
-    if (peaks.length < 3) {
+    if (peaks.length < 2) {
       return 0;
     }
     
@@ -43,7 +43,7 @@ export class HeartRateDetector {
    */
   public findPeaksEnhanced(values: number[]): number[] {
     const peaks: number[] = [];
-    const minPeakDistance = 15; // Increased from 10
+    const minPeakDistance = 10;
     
     // Calculate statistics from real data
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
@@ -52,18 +52,16 @@ export class HeartRateDetector {
     );
     
     // Dynamic threshold based on real signal statistics
-    const peakThreshold = mean + (stdDev * 0.7); // Increased from 0.5
+    const peakThreshold = mean + (stdDev * 0.5);
     
-    for (let i = 3; i < values.length - 3; i++) {
+    for (let i = 2; i < values.length - 2; i++) {
       const current = values[i];
       
-      // Check if this point is a peak in real data with stricter requirements
+      // Check if this point is a peak in real data
       if (current > values[i - 1] && 
           current > values[i - 2] &&
-          current > values[i - 3] &&
           current > values[i + 1] && 
           current > values[i + 2] &&
-          current > values[i + 3] &&
           current > peakThreshold) {
         
         // Check if we're far enough from the last detected peak
@@ -83,11 +81,8 @@ export class HeartRateDetector {
     const peaks: number[] = [];
     
     // Simple peak detector for real data
-    for (let i = 2; i < values.length - 2; i++) {
-      if (values[i] > values[i - 1] && 
-          values[i] > values[i - 2] && 
-          values[i] > values[i + 1] &&
-          values[i] > values[i + 2]) {
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
         peaks.push(i);
       }
     }

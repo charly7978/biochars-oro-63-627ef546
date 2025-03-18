@@ -9,37 +9,37 @@ import { checkSignalQuality } from './heart-beat/signal-quality';
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
  * No simulation or data manipulation allowed.
- * Dramatically improved resistance to false positives
+ * Greatly improved resistance to false positives
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
   // Signal measurement parameters
   private readonly WINDOW_SIZE = 300;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.08; // Significantly increased from 0.05
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05; // Increased from 0.035
   private readonly SPO2_WINDOW = 5;
   private readonly SMA_WINDOW = 5;
   private readonly RR_WINDOW_SIZE = 6;
   private readonly RMSSD_THRESHOLD = 15;
-  private readonly PEAK_THRESHOLD = 0.45; // Significantly increased from 0.35
+  private readonly PEAK_THRESHOLD = 0.35; // Increased from 0.25
   
   // Much longer guard period to prevent false positives
-  private readonly FALSE_POSITIVE_GUARD_PERIOD = 2000; // Significantly increased from 1200ms
+  private readonly FALSE_POSITIVE_GUARD_PERIOD = 1200; // Increased from 800ms
   private lastDetectionTime: number = 0;
   
   // Improved counter for weak signals with much higher thresholds
-  private readonly LOW_SIGNAL_THRESHOLD = 0.35; // Significantly increased from 0.25
-  private readonly MAX_WEAK_SIGNALS = 9; // Significantly increased from 6
+  private readonly LOW_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
+  private readonly MAX_WEAK_SIGNALS = 6; // Increased from 5
   private weakSignalsCount: number = 0;
   
   // Signal stability tracking to eliminate false positives
   private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE = 20; // Significantly increased from 15
-  private readonly STABILITY_THRESHOLD = 0.12; // Decreased from 0.15 (stricter)
+  private readonly HISTORY_SIZE = 15; // Increased from 10
+  private readonly STABILITY_THRESHOLD = 0.15; // Decreased from 0.2 (stricter)
   
   // Added requirements for minimum consecutive strong signals
   private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 8; // Significantly increased from 5
+  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3
   
   /**
    * Constructor that initializes the processor
@@ -50,7 +50,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process a PPG signal with dramatically improved false positive detection
+   * Process a PPG signal with greatly improved false positive detection
    */
   public processSignal(
     ppgValue: number,
@@ -81,12 +81,12 @@ export class VitalSignsProcessor {
     // Only count as strong signal if signal passes all checks
     if (!isWeakSignal && Math.abs(ppgValue) > this.PEAK_THRESHOLD && isStable) {
       this.consecutiveStrongSignals = Math.min(
-        this.MIN_STRONG_SIGNALS_REQUIRED + 5, 
+        this.MIN_STRONG_SIGNALS_REQUIRED + 3, 
         this.consecutiveStrongSignals + 1
       );
     } else {
       // Reset counter more quickly for weak signals
-      this.consecutiveStrongSignals = Math.max(0, this.consecutiveStrongSignals - 3);
+      this.consecutiveStrongSignals = Math.max(0, this.consecutiveStrongSignals - 2);
     }
     
     // Enhanced verification requiring minimum consecutive strong signals
@@ -139,7 +139,7 @@ export class VitalSignsProcessor {
     }
     
     // Calculate signal variation with improved method
-    const values = this.signalHistory.slice(-10); // Use more recent values for stability check
+    const values = this.signalHistory.slice(-8); // Use more recent values for stability check
     const sum = values.reduce((a, b) => a + b, 0);
     const mean = sum / values.length;
     

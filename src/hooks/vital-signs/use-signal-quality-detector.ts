@@ -9,26 +9,26 @@ import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 /**
  * Simplified hook that defers to PPGSignalMeter's implementation
  * Only maintains the API for compatibility
- * Extremely improved to eliminate false positives with much higher thresholds
+ * Improved to reduce false positives with significantly higher thresholds
  */
 export const useSignalQualityDetector = () => {
   // Reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
-  // Dramatically increased thresholds to virtually eliminate false positives
-  const WEAK_SIGNAL_THRESHOLD = 0.35; // Significantly increased from 0.25
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 9; // Significantly increased from 6
+  // Significantly increased thresholds to eliminate false positives
+  const WEAK_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 6; // Increased from 4
   
   /**
    * Enhanced detection function with extreme false positive resistance
    */
   const detectWeakSignal = (value: number): boolean => {
-    // Defer to improved implementation with much higher thresholds
+    // Defer to improved implementation with higher thresholds
     if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
       consecutiveWeakSignalsRef.current++;
     } else {
-      // Much faster recovery from false positives by reducing count more aggressively
-      consecutiveWeakSignalsRef.current = Math.max(0, consecutiveWeakSignalsRef.current - 4);
+      // Faster recovery from false positives by reducing count more quickly
+      consecutiveWeakSignalsRef.current = Math.max(0, consecutiveWeakSignalsRef.current - 3);
     }
     
     return consecutiveWeakSignalsRef.current >= MAX_CONSECUTIVE_WEAK_SIGNALS;
