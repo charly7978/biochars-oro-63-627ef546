@@ -415,7 +415,7 @@ const PPGSignalMeter = memo(({
           index: i,
           value: currentPoint.value,
           time: currentPoint.time,
-          isArrhythmia: isInArrhythmiaSegment
+          isArrhythmia: isInArrhythmiaSegment || currentPoint.isArrhythmia
         });
       }
     }
@@ -504,12 +504,10 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
-    const pointIsArrhythmia = isArrhythmia;
-    
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
-      isArrhythmia: pointIsArrhythmia
+      isArrhythmia: isArrhythmia
     };
     
     dataBufferRef.current.push(dataPoint);
@@ -534,40 +532,67 @@ const PPGSignalMeter = memo(({
       const firstY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - firstPoint.value;
       renderCtx.moveTo(firstX, firstY);
       
-      let lastArrhythmiaState = !!firstPoint.isArrhythmia;
+      let currentPathColor = getSignalColor(!!firstPoint.isArrhythmia);
+      let lastDrawnPoint = { x: firstX, y: firstY };
+      let pathStarted = true;
       
       for (let i = 1; i < points.length; i++) {
         const point = points[i];
         
         point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
-        const currentIsArrhythmia = !!point.isArrhythmia;
         
-        if (currentIsArrhythmia !== lastArrhythmiaState) {
-          const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
+        const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
+        
+        renderCtx.lineTo(x, y);
+        lastDrawnPoint = { x, y };
+      }
+      
+      renderCtx.strokeStyle = NORMAL_COLOR;
+      if (window.devicePixelRatio > 1) {
+        renderCtx.shadowColor = NORMAL_COLOR;
+      }
+      renderCtx.stroke();
+      
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        
+        if (point.isArrhythmia) {
+          let startIdx = i;
+          let endIdx = i;
           
-          renderCtx.lineTo(x, y);
-          renderCtx.strokeStyle = getSignalColor(lastArrhythmiaState);
-          if (window.devicePixelRatio > 1) {
-            renderCtx.shadowColor = getSignalColor(lastArrhythmiaState);
+          while (endIdx < points.length - 1 && points[endIdx + 1].isArrhythmia) {
+            endIdx++;
           }
-          renderCtx.stroke();
           
-          renderCtx.beginPath();
-          renderCtx.moveTo(x, y);
-          lastArrhythmiaState = currentIsArrhythmia;
-        } else {
-          const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
-          renderCtx.lineTo(x, y);
+          if (endIdx > startIdx) {
+            renderCtx.beginPath();
+            renderCtx.lineWidth = 2.5;
+            
+            const startPoint = points[startIdx];
+            const startX = canvas.width - ((now - startPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+            const startY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - startPoint.value;
+            
+            renderCtx.moveTo(startX, startY);
+            
+            for (let j = startIdx + 1; j <= endIdx; j++) {
+              const segPoint = points[j];
+              const segX = canvas.width - ((now - segPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+              const segY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - segPoint.value;
+              renderCtx.lineTo(segX, segY);
+            }
+            
+            renderCtx.strokeStyle = ARRHYTHMIA_COLOR;
+            if (window.devicePixelRatio > 1) {
+              renderCtx.shadowColor = ARRHYTHMIA_COLOR;
+            }
+            renderCtx.stroke();
+            
+            i = endIdx;
+          }
         }
       }
       
-      renderCtx.strokeStyle = getSignalColor(lastArrhythmiaState);
-      if (window.devicePixelRatio > 1) {
-        renderCtx.shadowColor = getSignalColor(lastArrhythmiaState);
-      }
-      renderCtx.stroke();
       renderCtx.shadowBlur = 0;
       
       if (peaksRef.current.length > 0) {
@@ -579,20 +604,29 @@ const PPGSignalMeter = memo(({
             const peakColor = getSignalColor(!!peak.isArrhythmia);
             
             if (peak.isArrhythmia) {
-              renderCtx.fillStyle = '#FFDA00';
+              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
               
               const pulsePhase = (now % 1500) / 1500;
               const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
-              const pulseSize = 8 * pulseScale;
+              const pulseSize = ARRHYTHMIA_INDICATOR_SIZE * pulseScale;
               
               renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
               renderCtx.fill();
               
               renderCtx.fillStyle = peakColor;
               renderCtx.beginPath();
-              renderCtx.arc(x, y, 4.8, 0, Math.PI * 2);
+              renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
+              
+              renderCtx.font = 'bold 14px Inter';
+              renderCtx.fillStyle = peakColor;
+              renderCtx.textAlign = 'center';
+              const valueText = Math.abs(peak.value / verticalScale).toFixed(2);
+              renderCtx.fillText(valueText, x, y - 18);
+              
+              renderCtx.font = 'bold 11px Inter';
+              renderCtx.fillText("ARRITMIA", x, y - 32);
               
               if (!peak.beepPlayed) {
                 shouldBeep = true;
@@ -604,16 +638,17 @@ const PPGSignalMeter = memo(({
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
               
+              renderCtx.font = 'bold 14px Inter';
+              renderCtx.fillStyle = peakColor;
+              renderCtx.textAlign = 'center';
+              const valueText = Math.abs(peak.value / verticalScale).toFixed(2);
+              renderCtx.fillText(valueText, x, y - 18);
+              
               if (!peak.beepPlayed) {
                 shouldBeep = true;
                 peak.beepPlayed = true;
               }
             }
-            
-            renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = peak.isArrhythmia ? '#ea384c' : '#000000';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
           }
         });
       }

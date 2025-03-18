@@ -24,6 +24,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
       intervals: [],
       lastPeakTime: null
     },
+    isArrhythmia: false,
     // Adding transition state to ensure continuous color rendering
     transition: {
       active: false,
