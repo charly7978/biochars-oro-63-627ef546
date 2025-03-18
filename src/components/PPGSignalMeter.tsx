@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { getSignalColor, isPointInArrhythmiaWindow } from '../utils/displayOptimizer';
+import { getSignalColor, isPointInArrhythmiaWindow, getArrhythmiaPulseColors } from '../utils/displayOptimizer';
+import { HeartBeatConfig } from '../modules/heart-beat/config';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -82,9 +83,10 @@ const PPGSignalMeter = memo(({
   const USE_OFFSCREEN_CANVAS = true;
   const ARRHYTHMIA_COLOR = '#FF2E2E';
   const NORMAL_COLOR = '#0EA5E9';
-  const ARRHYTHMIA_INDICATOR_SIZE = 8;
-  const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
-  const ARRHYTHMIA_DURATION_MS = 800;
+  const ARRHYTHMIA_INDICATOR_SIZE = HeartBeatConfig.ARRHYTHMIA_INDICATOR_SIZE;
+  const ARRHYTHMIA_PULSE_COLOR = HeartBeatConfig.ARRHYTHMIA_PULSE_COLOR;
+  const ARRHYTHMIA_PULSE_COLOR_END = HeartBeatConfig.ARRHYTHMIA_PULSE_COLOR_END;
+  const ARRHYTHMIA_DURATION_MS = HeartBeatConfig.ARRHYTHMIA_ANIMATION_DURATION_MS;
 
   // Configuración de audio
   const BEEP_PRIMARY_FREQUENCY = 880;
@@ -613,30 +615,46 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Draw circles at peak points
+      // Draw circles at peak points - AHORA DIBUJAMOS ARRHYTHMIAS IGUAL QUE LATIDOS NORMALES
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
           const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
-            const peakColor = getSignalColor(!!peak.isArrhythmia);
+            // Aquí dibujaremos todos los picos, incluyendo arritmias con visualización mejorada
+            
+            // Calcular fase de pulso - usado tanto para normal como arritmia
+            const pulsePhase = (now % 1500) / 1500;
+            const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
             
             if (peak.isArrhythmia) {
-              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
-              renderCtx.beginPath();
-              
-              const pulsePhase = (now % 1500) / 1500;
-              const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
+              // DIBUJO DE ARRITMIA CON CÍRCULO AMARILLO Y ANIMACIÓN
+              // 1. Círculo exterior pulsante (amarillo a rojo)
               const pulseSize = ARRHYTHMIA_INDICATOR_SIZE * pulseScale;
               
+              // Círculo amarillo exterior pulsante
+              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
+              renderCtx.beginPath();
               renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
               renderCtx.fill();
               
-              renderCtx.fillStyle = peakColor;
+              // Círculo interior
+              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR_END;
               renderCtx.beginPath();
               renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
+              
+              // Dibujamos texto "Latido prematuro" cerca del círculo
+              renderCtx.font = 'bold 12px Inter';
+              renderCtx.fillStyle = '#FF2E2E';
+              renderCtx.textAlign = 'center';
+              renderCtx.fillText('Latido prematuro', x, y - 20);
+              
+              // Valor numérico debajo
+              renderCtx.font = 'bold 10px Inter';
+              renderCtx.fillStyle = '#FF5252';
+              renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y + 16);
               
               // Activar bandera de beep si no se ha reproducido para este pico
               if (!peak.beepPlayed) {
@@ -644,10 +662,17 @@ const PPGSignalMeter = memo(({
                 peak.beepPlayed = true;
               }
             } else {
-              renderCtx.fillStyle = peakColor;
+              // DIBUJO NORMAL
+              renderCtx.fillStyle = NORMAL_COLOR;
               renderCtx.beginPath();
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
+              
+              // Valor numérico
+              renderCtx.font = '10px Inter';
+              renderCtx.fillStyle = '#000000';
+              renderCtx.textAlign = 'center';
+              renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 10);
               
               // Activar bandera de beep si no se ha reproducido para este pico
               if (!peak.beepPlayed) {
@@ -655,11 +680,6 @@ const PPGSignalMeter = memo(({
                 peak.beepPlayed = true;
               }
             }
-            
-            renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = peak.isArrhythmia ? '#ea384c' : '#000000';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
           }
         });
       }

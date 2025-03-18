@@ -29,5 +29,11 @@ export const HeartBeatConfig = {
 
   // Signal quality settings
   LOW_SIGNAL_THRESHOLD: 0.05,
-  LOW_SIGNAL_FRAMES: 10
+  LOW_SIGNAL_FRAMES: 10,
+  
+  // Arrhythmia display settings
+  ARRHYTHMIA_PULSE_COLOR: '#FFDA00',       // Color amarillo para el círculo inicial
+  ARRHYTHMIA_PULSE_COLOR_END: '#FF2E2E',   // Color rojo para la animación final
+  ARRHYTHMIA_INDICATOR_SIZE: 8,            // Tamaño del indicador de arritmia
+  ARRHYTHMIA_ANIMATION_DURATION_MS: 800    // Duración de la animación pulsante
 };

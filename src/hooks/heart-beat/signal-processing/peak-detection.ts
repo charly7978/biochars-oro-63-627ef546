@@ -50,7 +50,8 @@ export function handlePeakDetection(
     console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
       confianza: result.confidence,
       valor: value,
-      tiempo: new Date(now).toISOString()
+      tiempo: new Date(now).toISOString(),
+      esArritmia: result.isArrhythmia || false
     });
   }
 }

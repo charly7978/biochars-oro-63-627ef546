@@ -12,6 +12,17 @@ export const getSignalColor = (isArrhythmia: boolean): string => {
 };
 
 /**
+ * Get pulse animation colors for arrhythmia
+ * Direct visualization only - no simulation or manipulation
+ */
+export const getArrhythmiaPulseColors = (): {start: string, end: string} => {
+  return {
+    start: '#FFDA00', // Amarillo
+    end: '#FF2E2E'    // Rojo
+  };
+};
+
+/**
  * Check if a time point is within an arrhythmia window
  * Direct visualization only - no simulation or manipulation
  */
