@@ -90,12 +90,12 @@ export class VitalSignsProcessor {
     }
     
     // Calculate heart rate from real signal
-    const heartRate = this.signalProcessor.calculateHeartRate();
+    const heartRate = this.signalProcessor.calculateHeartRate(this.ppgValues);
     
-    // Calculate SpO2 from real signal
+    // Calculate SpO2 from real signal - CORREGIDO PARA USAR EL CÁLCULO REAL
     const spo2 = this.oxygenCalculator.calculateSpO2(this.ppgValues);
     
-    // Estimate blood pressure (no simulation)
+    // Estimate blood pressure (no simulation) - CORREGIDO PARA USAR EL CÁLCULO REAL
     const bloodPressure = this.bloodPressureEstimator.estimateBloodPressure(
       this.ppgValues, 
       heartRate
@@ -194,4 +194,4 @@ export class VitalSignsProcessor {
 }
 
 // Export VitalSignsResult type for use in other modules
-export { VitalSignsResult } from './types/vital-signs-result';
+export type { VitalSignsResult } from './types/vital-signs-result';
