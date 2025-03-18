@@ -8,13 +8,13 @@ import { checkSignalQuality, calculateWeightedQuality } from '../../../modules/h
 /**
  * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
  * All methods work with real data only, no simulation
- * Greatly improved to eliminate false positives
+ * Dramatically improved to eliminate false positives
  */
 export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3
-  private readonly AMPLITUDE_THRESHOLD = 0.05; // Increased from 0.02
+  private readonly MIN_STRONG_SIGNALS_REQUIRED = 8; // Significantly increased from 5
+  private readonly AMPLITUDE_THRESHOLD = 0.08; // Significantly increased from 0.05
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
@@ -25,7 +25,7 @@ export class SignalQuality {
     
     // Update noise level with exponential smoothing
     // Even slower adaptation to reduce impact of transient noise
-    this.noiseLevel = 0.05 * instantNoise + 0.95 * this.noiseLevel; // More smoothing (0.08/0.92 previously)
+    this.noiseLevel = 0.03 * instantNoise + 0.97 * this.noiseLevel; // More smoothing (0.05/0.95 previously)
   }
   
   /**
@@ -40,11 +40,11 @@ export class SignalQuality {
    * Adds validation to reduce false positives
    */
   public calculateSignalQuality(ppgValues: number[]): number {
-    if (ppgValues.length < 8) return 0; // Increased from 5
+    if (ppgValues.length < 12) return 0; // Significantly increased from 8
     
     // Calculate amplitude and standard deviation
-    const min = Math.min(...ppgValues.slice(-15)); // Use more data points
-    const max = Math.max(...ppgValues.slice(-15));
+    const min = Math.min(...ppgValues.slice(-20)); // Use more data points
+    const max = Math.max(...ppgValues.slice(-20));
     const amplitude = max - min;
     
     // Only consider valid signals with sufficient amplitude
@@ -53,7 +53,7 @@ export class SignalQuality {
       return 0;
     } else {
       this.consecutiveStrongSignals = Math.min(
-        this.MIN_STRONG_SIGNALS_REQUIRED + 3, 
+        this.MIN_STRONG_SIGNALS_REQUIRED + 5, 
         this.consecutiveStrongSignals + 1
       );
     }
@@ -64,7 +64,7 @@ export class SignalQuality {
     }
     
     // Calculate stability (coefficient of variation)
-    const values = ppgValues.slice(-10);
+    const values = ppgValues.slice(-15);
     const sum = values.reduce((a, b) => a + b, 0);
     const mean = sum / values.length;
     const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
@@ -72,8 +72,8 @@ export class SignalQuality {
     const cv = mean !== 0 ? stdDev / Math.abs(mean) : 999;
     
     // If signal is unstable, return lower quality
-    if (cv > 0.3) {
-      return Math.min(40, calculateWeightedQuality(ppgValues));
+    if (cv > 0.2) {
+      return Math.min(30, calculateWeightedQuality(ppgValues));
     }
     
     return calculateWeightedQuality(ppgValues);
