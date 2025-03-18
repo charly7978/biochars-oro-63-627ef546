@@ -31,10 +31,6 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
-  
-  // Signal history storage
-  private ppgSignalHistory: number[] = [];
-  private lastProcessTime: number = 0;
 
   /**
    * Constructor that initializes all specialized processors
@@ -51,9 +47,9 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    // Initialize validators and calculators - more balanced thresholds
-    this.signalValidator = new SignalValidator(0.02, 10);
-    this.confidenceCalculator = new ConfidenceCalculator(0.20);
+    // Initialize validators and calculators
+    this.signalValidator = new SignalValidator(0.01, 15);
+    this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
   /**
@@ -64,24 +60,8 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Track processing time for consistency check
-    const now = Date.now();
-    const timeSinceLastProcess = now - this.lastProcessTime;
-    this.lastProcessTime = now;
-    
-    // Reset if we've had a large processing gap (finger likely removed)
-    if (timeSinceLastProcess > 150) {
-      this.ppgSignalHistory = [];
-    }
-    
-    // Track PPG history for processing
-    this.ppgSignalHistory.push(ppgValue);
-    if (this.ppgSignalHistory.length > 300) {
-      this.ppgSignalHistory.splice(0, this.ppgSignalHistory.length - 300);
-    }
-    
-    // Check for near-zero signal with a moderate threshold
-    if (Math.abs(ppgValue) < 0.15) {
+    // Check for near-zero signal
+    if (!this.signalValidator.isValidSignal(ppgValue)) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
@@ -91,7 +71,7 @@ export class VitalSignsProcessor {
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
-                           rrData.intervals.length >= 2 && // Reduced from 3
+                           rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
@@ -105,23 +85,18 @@ export class VitalSignsProcessor {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // Check if we have enough data points with moderate threshold
-    if (ppgValues.length < 25) { // Reduced from higher values
+    // Check if we have enough data points
+    if (!this.signalValidator.hasEnoughData(ppgValues)) {
       return ResultFactory.createEmptyResults();
     }
     
-    // Verify real signal amplitude is sufficient with balanced threshold
+    // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
     
-    const minimumRequiredAmplitude = 0.20; // Balanced threshold
-    
-    if (amplitude < minimumRequiredAmplitude) {
-      console.log("VitalSignsProcessor: Signal amplitude too low", { 
-        amplitude, 
-        required: minimumRequiredAmplitude 
-      });
+    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
+      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
       return ResultFactory.createEmptyResults();
     }
     
@@ -193,8 +168,6 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
-    this.ppgSignalHistory = [];
-    this.lastProcessTime = 0;
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null; // Always return null to ensure measurements start from zero
   }
@@ -220,8 +193,6 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
-    this.ppgSignalHistory = [];
-    this.lastProcessTime = 0;
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }

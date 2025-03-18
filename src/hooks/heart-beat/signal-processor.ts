@@ -1,3 +1,4 @@
+
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
@@ -6,7 +7,8 @@ import {
   shouldProcessMeasurement, 
   createWeakSignalResult, 
   handlePeakDetection,
-  isFingerDetected
+  updateLastValidBpm,
+  processLowConfidenceResult
 } from './signal-processing';
 
 export function useSignalProcessor() {
@@ -76,58 +78,17 @@ export function useSignalProcessor() {
         value
       );
       
-      // Update last valid BPM if confidence is reasonable
-      if (result.confidence > 0.4 && result.bpm > 40 && result.bpm < 200) {
-        lastValidBpmRef.current = result.bpm;
-      }
+      // Update last valid BPM if it's reasonable
+      updateLastValidBpm(result, lastValidBpmRef);
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process result with more logical fallbacks
-      const isFingerPresent = isFingerDetected();
-      
-      if (!isFingerPresent) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
-      }
-      
-      if (result.confidence < 0.3) {
-        // Use last known BPM with reduced confidence if current is too low
-        if (lastValidBpmRef.current > 0) {
-          return {
-            bpm: lastValidBpmRef.current,
-            confidence: result.confidence,
-            isPeak: result.isPeak,
-            arrhythmiaCount: processor.getArrhythmiaCounter(),
-            rrData: {
-              intervals: lastRRIntervalsRef.current,
-              lastPeakTime: lastPeakTimeRef.current
-            }
-          };
-        }
-        
-        // Otherwise just return low confidence result
-        return {
-          bpm: result.bpm,
-          confidence: result.confidence,
-          isPeak: result.isPeak,
-          arrhythmiaCount: processor.getArrhythmiaCounter(),
-          rrData: {
-            intervals: lastRRIntervalsRef.current,
-            lastPeakTime: lastPeakTimeRef.current
-          }
-        };
-      }
-      
-      return {
-        bpm: result.bpm,
-        confidence: result.confidence,
-        isPeak: result.isPeak,
-        arrhythmiaCount: processor.getArrhythmiaCounter(),
-        rrData: {
-          intervals: lastRRIntervalsRef.current,
-          lastPeakTime: lastPeakTimeRef.current
-        }
-      };
+      // Process result
+      return processLowConfidenceResult(
+        result, 
+        currentBPM, 
+        processor.getArrhythmiaCounter()
+      );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);
       return {

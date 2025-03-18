@@ -1,7 +1,7 @@
 
 /**
  * Functions for checking signal quality and weak signals
- * Optimized implementation to reduce false positives while enabling measurements
+ * Improved to reduce false positives and add rhythmic pattern detection
  */
 import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
@@ -10,23 +10,20 @@ let signalHistory: Array<{time: number, value: number}> = [];
 let patternDetectionCount = 0;
 let fingDetectionConfirmed = false;
 
-// Track signal statistics to detect non-physiological patterns
+// New: Track signal statistics to detect non-physiological patterns
 let signalMean = 0;
 let signalVariance = 0;
 let consecutiveStableFrames = 0;
-const REQUIRED_STABLE_FRAMES = 20; // Balanced (was 30)
+const REQUIRED_STABLE_FRAMES = 15; // Must have physiologically stable signal for this many frames
 
-// Track time-based consistency
+// New: Track time-based consistency
 let lastProcessTime = 0;
-const MAX_ALLOWED_GAP_MS = 100; // Reduced from 150 - more strict
-
-// Require sufficient amount of time with valid signal
-let validSignalStartTime = 0;
-const MINIMUM_VALID_TIME_MS = 1000; // Requires 1 second of consistent signal (was 1.5s)
+const MAX_ALLOWED_GAP_MS = 150; // Maximum time gap allowed between processing
 
 /**
- * Verifies if the signal is too weak to be a real finger
- * Balanced thresholds to prevent false positives while enabling measurements
+ * Checks if the signal is too weak, indicating possible finger removal
+ * Now incorporates rhythmic pattern detection for more accurate finger detection
+ * Improved with higher thresholds to reduce false positives
  */
 export function checkWeakSignal(
   value: number,
@@ -51,101 +48,51 @@ export function checkWeakSignal(
       patternDetectionCount = 0;
       fingDetectionConfirmed = false;
       consecutiveStableFrames = 0;
-      validSignalStartTime = 0;
     }
   }
   lastProcessTime = now;
   
   signalHistory.push({ time: now, value });
   
-  // Keep only recent signals (last 4 seconds)
-  signalHistory = signalHistory.filter(point => now - point.time < 4000);
+  // Keep only recent signals (last 6 seconds)
+  signalHistory = signalHistory.filter(point => now - point.time < 6000);
   
   // Calculate signal statistics for physiological validation
-  if (signalHistory.length > 15) {
-    const values = signalHistory.slice(-15).map(p => p.value);
+  if (signalHistory.length > 10) {
+    const values = signalHistory.slice(-10).map(p => p.value);
     signalMean = values.reduce((sum, val) => sum + val, 0) / values.length;
     signalVariance = values.reduce((sum, val) => sum + Math.pow(val - signalMean, 2), 0) / values.length;
     
-    // Physiological validation with moderate strictness
-    const minValue = Math.min(...values);
-    const maxValue = Math.max(...values);
-    const range = maxValue - minValue;
-    
-    // Requires a minimum range to be physiologically valid (real heart)
-    const hasValidRange = range > 0.25; // Requires significant amplitude (was 0.35)
-    
-    // Calculate derivatives to detect cardiac oscillations
-    const derivatives = [];
-    for (let i = 1; i < values.length; i++) {
-      derivatives.push(values[i] - values[i-1]);
-    }
-    
-    // Count sign changes (oscillations)
-    let signChanges = 0;
-    for (let i = 1; i < derivatives.length; i++) {
-      if ((derivatives[i] > 0 && derivatives[i-1] < 0) ||
-          (derivatives[i] < 0 && derivatives[i-1] > 0)) {
-        signChanges++;
-      }
-    }
-    
-    // Requires oscillations like a real heartbeat
-    const hasValidOscillations = signChanges >= 3; // More realistic (was 4)
-    
-    // Variance range validation for physiological signal
-    // A real heart has a characteristic variance
-    const hasValidVariance = signalVariance > 0.020 && signalVariance < 0.7; // More permissive
-    
-    // Only increment counter if ALL verifications pass
-    const isPhysiological = hasValidRange && hasValidOscillations && hasValidVariance;
+    // Check if variance is within physiological range
+    const isPhysiological = signalVariance > 0.01 && signalVariance < 0.5;
     
     if (isPhysiological) {
       consecutiveStableFrames++;
-      
-      // Start minimum time timer if it's the first stable frame
-      if (consecutiveStableFrames === 1) {
-        validSignalStartTime = now;
-      }
-      
     } else {
       consecutiveStableFrames = 0;
-      validSignalStartTime = 0;
       
       // If we had confirmed detection but signal is no longer physiological, reset
       if (fingDetectionConfirmed) {
-        console.log("Non-physiological signal detected - resetting finger detection", { 
-          variance: signalVariance,
-          range: range,
-          oscillations: signChanges
-        });
+        console.log("Non-physiological signal detected - resetting finger detection", { variance: signalVariance });
         fingDetectionConfirmed = false;
         patternDetectionCount = 0;
       }
     }
   }
   
-  // Check if enough time has passed with stable signals
-  const hasMinimumValidTime = validSignalStartTime > 0 && (now - validSignalStartTime) >= MINIMUM_VALID_TIME_MS;
-  
-  // Check rhythmic patterns only if we have enough stable frames AND minimum time
-  // This prevents false detections of random noise
-  if (consecutiveStableFrames >= REQUIRED_STABLE_FRAMES && 
-      hasMinimumValidTime && 
-      !fingDetectionConfirmed) {
-    
+  // Check for rhythmic patterns only if we have enough stable frames
+  // This prevents false detections from random noise
+  if (consecutiveStableFrames >= REQUIRED_STABLE_FRAMES && !fingDetectionConfirmed) {
     const patternResult = isFingerDetectedByPattern(signalHistory, patternDetectionCount);
     patternDetectionCount = patternResult.patternCount;
     
-    // Confirm finger detection only if we've consistently detected patterns
+    // Only confirm finger if we have consistently detected patterns
     if (patternResult.isFingerDetected) {
       fingDetectionConfirmed = true;
       console.log("Finger detected by rhythmic pattern after physiological validation!", {
         time: new Date(now).toISOString(),
         variance: signalVariance,
-        stableFrames: consecutiveStableFrames,
-        validTime: now - validSignalStartTime,
-        oscillations: "verified"
+        stableFrames: consecutiveStableFrames
       });
       
       return {
@@ -155,29 +102,28 @@ export function checkWeakSignal(
     }
   }
   
-  // Use moderate thresholds if not specified
+  // Use higher thresholds if not specified
   const finalConfig = {
-    lowSignalThreshold: config.lowSignalThreshold || 0.35, // Balanced (was 0.45)
-    maxWeakSignalCount: config.maxWeakSignalCount || 4    
+    lowSignalThreshold: config.lowSignalThreshold || 0.30, // Increased from 0.25
+    maxWeakSignalCount: config.maxWeakSignalCount || 6    // Increased from 5
   };
   
-  // If finger detection was previously confirmed but we have many weak signals,
-  // we should reset the finger detection state
-  if (fingDetectionConfirmed && consecutiveWeakSignalsCount > finalConfig.maxWeakSignalCount * 1.5) {
+  // If finger detection was previously confirmed but we have many consecutive weak signals,
+  // we should reset the finger detection status
+  if (fingDetectionConfirmed && consecutiveWeakSignalsCount > finalConfig.maxWeakSignalCount * 2) {
     fingDetectionConfirmed = false;
     patternDetectionCount = 0;
     consecutiveStableFrames = 0;
-    validSignalStartTime = 0;
     console.log("Finger detection lost due to consecutive weak signals:", consecutiveWeakSignalsCount);
   }
   
   const result = checkSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
   
-  // If finger confirmed but signal is weak, give benefit of doubt for longer
+  // If finger is confirmed but signal is weak, give benefit of doubt for longer
   if (fingDetectionConfirmed && result.isWeakSignal) {
-    // Greater tolerance for confirmed finger detection
+    // Higher tolerance for confirmed finger detection
     return {
-      isWeakSignal: result.updatedWeakSignalsCount >= finalConfig.maxWeakSignalCount * 1.5,
+      isWeakSignal: result.updatedWeakSignalsCount >= finalConfig.maxWeakSignalCount * 1.8, // Increased multiplier
       updatedWeakSignalsCount: result.updatedWeakSignalsCount
     };
   }
@@ -197,7 +143,6 @@ export function resetSignalQualityState() {
   signalVariance = 0;
   consecutiveStableFrames = 0;
   lastProcessTime = 0;
-  validSignalStartTime = 0;
   console.log("Signal quality state reset, including pattern detection");
   
   return {
@@ -207,26 +152,24 @@ export function resetSignalQualityState() {
 
 /**
  * Check if finger is detected based on rhythmic patterns
- * Uses balanced thresholds
  */
 export function isFingerDetected(): boolean {
-  // Requires explicit confirmation and good number of stable frames
-  return fingDetectionConfirmed && (consecutiveStableFrames >= REQUIRED_STABLE_FRAMES);
+  return fingDetectionConfirmed || (patternDetectionCount >= 3 && consecutiveStableFrames >= REQUIRED_STABLE_FRAMES);
 }
 
 /**
  * Determines if a measurement should be processed based on signal strength
  * Uses rhythmic pattern detection alongside amplitude thresholds
- * Uses balanced threshold
+ * Uses higher threshold to prevent false positives
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // If finger detection is confirmed by pattern, allow processing even if signal is slightly weak
   if (fingDetectionConfirmed && consecutiveStableFrames >= REQUIRED_STABLE_FRAMES) {
-    return Math.abs(value) >= 0.23; // Lower threshold with confirmed finger
+    return Math.abs(value) >= 0.18; // Lower threshold for confirmed finger
   }
   
   // Higher threshold to avoid processing weak signals (likely noise)
-  return Math.abs(value) >= 0.30; // Balanced threshold (was 0.45)
+  return Math.abs(value) >= 0.30; // Increased from 0.25
 }
 
 /**
@@ -245,4 +188,3 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
     }
   };
 }
-
