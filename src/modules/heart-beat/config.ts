@@ -8,17 +8,17 @@ export const HeartBeatConfig = {
   WINDOW_SIZE: 60,
   MIN_BPM: 40,
   MAX_BPM: 200,
-  SIGNAL_THRESHOLD: 0.60,
-  MIN_CONFIDENCE: 0.50,
-  DERIVATIVE_THRESHOLD: -0.03,
-  MIN_PEAK_TIME_MS: 300,
+  SIGNAL_THRESHOLD: 0.55,    // Slightly reduced for better sensitivity
+  MIN_CONFIDENCE: 0.45,      // Slightly reduced for better detection
+  DERIVATIVE_THRESHOLD: -0.025,  // Adjusted for smoother transitions
+  MIN_PEAK_TIME_MS: 280,     // Slightly reduced for better responsiveness
   WARMUP_TIME_MS: 2000,
 
   // Filter settings
   MEDIAN_FILTER_WINDOW: 3,
   MOVING_AVERAGE_WINDOW: 5,
-  EMA_ALPHA: 0.3,
-  BASELINE_FACTOR: 0.995,
+  EMA_ALPHA: 0.35,           // Increased for better response to changes
+  BASELINE_FACTOR: 0.997,    // Increased for better baseline stability
 
   // Audio settings
   BEEP_PRIMARY_FREQUENCY: 880,

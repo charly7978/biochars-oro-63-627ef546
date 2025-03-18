@@ -38,6 +38,11 @@ export const optimizeCanvas = (canvas: HTMLCanvasElement, width: number, height:
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.scale(dpr, dpr);
+    // Mejora de renderizado para líneas suaves
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
   }
 };
 
@@ -61,4 +66,23 @@ export const optimizeElement = (element: HTMLElement): void => {
 export const isMobileDevice = (): boolean => {
   const userAgent = navigator.userAgent.toLowerCase();
   return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+};
+
+/**
+ * Crea un gradiente de color entre dos colores para transiciones suaves
+ * Solo para visualización - sin manipulación de datos
+ */
+export const createColorGradient = (
+  ctx: CanvasRenderingContext2D, 
+  startX: number, 
+  startY: number, 
+  endX: number, 
+  endY: number, 
+  startColor: string, 
+  endColor: string
+): CanvasGradient => {
+  const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+  gradient.addColorStop(0, startColor);
+  gradient.addColorStop(1, endColor);
+  return gradient;
 };

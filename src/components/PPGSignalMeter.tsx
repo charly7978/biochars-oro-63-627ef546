@@ -102,7 +102,7 @@ const PPGSignalMeter = memo(({
           console.log("PPGSignalMeter: Inicializando Audio Context");
           audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
           
-          if (audioContextRef.current.state !== 'running') {
+          if (audioContextRef.current.state === 'suspended' || audioContextRef.current.state === 'closed') {
             await audioContextRef.current.resume();
           }
           
@@ -138,7 +138,7 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      if (!audioContextRef.current || audioContextRef.current.state !== 'running') {
+      if (!audioContextRef.current || audioContextRef.current.state === 'suspended' || audioContextRef.current.state === 'closed') {
         if (audioContextRef.current) {
           await audioContextRef.current.resume();
         } else {
@@ -542,78 +542,126 @@ const PPGSignalMeter = memo(({
     let shouldBeep = false;
     
     if (points.length > 1) {
-      let segmentPoints: {x: number, y: number, isArrhythmia: boolean}[] = [];
-      let currentSegmentIsArrhythmia = false;
+      // Procesar todos los puntos juntos primero, agrupados por color
+      const normalPoints: {x: number, y: number}[] = [];
+      const arrhythmiaPoints: {x: number, y: number}[] = [];
       
+      // Ordenar todos los puntos por sus respectivos grupos
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
+        // Determinar si este punto está en una ventana de arritmia
         point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
         
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
         
-        if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
-          if (segmentPoints.length > 0) {
-            renderCtx.beginPath();
-            renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-            renderCtx.lineWidth = 2;
-            renderCtx.lineJoin = 'round';
-            renderCtx.lineCap = 'round';
-            
-            if (window.devicePixelRatio > 1) {
-              renderCtx.shadowBlur = 0.5;
-              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
-            }
-            
-            for (let j = 0; j < segmentPoints.length; j++) {
-              const segPoint = segmentPoints[j];
-              if (j === 0) {
-                renderCtx.moveTo(segPoint.x, segPoint.y);
-              } else {
-                renderCtx.lineTo(segPoint.x, segPoint.y);
-              }
-            }
-            
-            renderCtx.stroke();
-            if (window.devicePixelRatio > 1) {
-              renderCtx.shadowBlur = 0;
-            }
-            
-            segmentPoints = [];
-          }
-          
-          currentSegmentIsArrhythmia = !!point.isArrhythmia;
+        if (point.isArrhythmia) {
+          arrhythmiaPoints.push({ x, y });
+        } else {
+          normalPoints.push({ x, y });
         }
-        
-        segmentPoints.push({ x, y, isArrhythmia: !!point.isArrhythmia });
       }
       
-      if (segmentPoints.length > 0) {
+      // Dibujar líneas continuas por cada grupo de color
+      // La continuidad es perfecta dentro de cada grupo de color
+      if (normalPoints.length > 0) {
         renderCtx.beginPath();
-        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
-        renderCtx.lineWidth = 2;
+        renderCtx.strokeStyle = NORMAL_COLOR;
+        renderCtx.lineWidth = 2.5;
         renderCtx.lineJoin = 'round';
         renderCtx.lineCap = 'round';
         
         if (window.devicePixelRatio > 1) {
           renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+          renderCtx.shadowColor = NORMAL_COLOR;
         }
         
-        for (let j = 0; j < segmentPoints.length; j++) {
-          const segPoint = segmentPoints[j];
-          if (j === 0) {
-            renderCtx.moveTo(segPoint.x, segPoint.y);
-          } else {
-            renderCtx.lineTo(segPoint.x, segPoint.y);
-          }
+        renderCtx.moveTo(normalPoints[0].x, normalPoints[0].y);
+        for (let i = 1; i < normalPoints.length; i++) {
+          renderCtx.lineTo(normalPoints[i].x, normalPoints[i].y);
         }
-        
         renderCtx.stroke();
         if (window.devicePixelRatio > 1) {
           renderCtx.shadowBlur = 0;
         }
+      }
+      
+      if (arrhythmiaPoints.length > 0) {
+        renderCtx.beginPath();
+        renderCtx.strokeStyle = ARRHYTHMIA_COLOR;
+        renderCtx.lineWidth = 2.5;
+        renderCtx.lineJoin = 'round';
+        renderCtx.lineCap = 'round';
+        
+        if (window.devicePixelRatio > 1) {
+          renderCtx.shadowBlur = 0.5;
+          renderCtx.shadowColor = ARRHYTHMIA_COLOR;
+        }
+        
+        renderCtx.moveTo(arrhythmiaPoints[0].x, arrhythmiaPoints[0].y);
+        for (let i = 1; i < arrhythmiaPoints.length; i++) {
+          renderCtx.lineTo(arrhythmiaPoints[i].x, arrhythmiaPoints[i].y);
+        }
+        renderCtx.stroke();
+        if (window.devicePixelRatio > 1) {
+          renderCtx.shadowBlur = 0;
+        }
+      }
+      
+      // Dibujamos líneas conectoras entre segmentos de distinto color para garantizar continuidad absoluta
+      if (normalPoints.length > 0 && arrhythmiaPoints.length > 0) {
+        // Encontrar puntos adyacentes de diferentes grupos para conectarlos
+        const connections: {from: {x: number, y: number, isArrhythmia: boolean}, 
+                           to: {x: number, y: number, isArrhythmia: boolean}}[] = [];
+        
+        // Recorrer todos los puntos originales en orden para identificar transiciones
+        for (let i = 0; i < points.length - 1; i++) {
+          const currentPoint = points[i];
+          const nextPoint = points[i + 1];
+          
+          // Si detectamos un cambio de tipo (normal->arritmia o arritmia->normal)
+          if (!!currentPoint.isArrhythmia !== !!nextPoint.isArrhythmia) {
+            const currentX = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+            const currentY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - currentPoint.value;
+            
+            const nextX = canvas.width - ((now - nextPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+            const nextY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - nextPoint.value;
+            
+            connections.push({
+              from: { x: currentX, y: currentY, isArrhythmia: !!currentPoint.isArrhythmia },
+              to: { x: nextX, y: nextY, isArrhythmia: !!nextPoint.isArrhythmia }
+            });
+          }
+        }
+        
+        // Dibujar conexiones con gradiente para suavizar transiciones
+        connections.forEach(conn => {
+          // Crear gradiente lineal entre los dos puntos
+          const gradient = renderCtx.createLinearGradient(conn.from.x, conn.from.y, conn.to.x, conn.to.y);
+          
+          // Si vamos de normal a arritmia
+          if (!conn.from.isArrhythmia && conn.to.isArrhythmia) {
+            gradient.addColorStop(0, NORMAL_COLOR);
+            gradient.addColorStop(1, ARRHYTHMIA_COLOR);
+          } 
+          // Si vamos de arritmia a normal
+          else {
+            gradient.addColorStop(0, ARRHYTHMIA_COLOR);
+            gradient.addColorStop(1, NORMAL_COLOR);
+          }
+          
+          // Dibujar línea con gradiente
+          renderCtx.beginPath();
+          renderCtx.strokeStyle = gradient;
+          renderCtx.lineWidth = 2.5;
+          renderCtx.lineJoin = 'round';
+          renderCtx.lineCap = 'round';
+          
+          renderCtx.moveTo(conn.from.x, conn.from.y);
+          renderCtx.lineTo(conn.to.x, conn.to.y);
+          renderCtx.stroke();
+        });
       }
       
       // Dibujar círculos en los picos detectados y activar beep solo al dibujar un círculo
