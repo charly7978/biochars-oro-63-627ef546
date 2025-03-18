@@ -1,11 +1,13 @@
 
 /**
  * Audio management for heartbeat sounds
+ * Optimized for reliable real-time beep response
  */
 
 export class HeartbeatAudioManager {
   private audioContext: AudioContext | null = null;
   private lastBeepTime: number = 0;
+  private audioInitialized: boolean = false;
   
   constructor(private config: {
     primaryFrequency: number,
@@ -16,7 +18,7 @@ export class HeartbeatAudioManager {
   }) {}
   
   /**
-   * Initialize audio context
+   * Initialize audio context with high priority
    */
   public async initAudio(): Promise<boolean> {
     try {
@@ -27,7 +29,7 @@ export class HeartbeatAudioManager {
         });
       }
       
-      // Create new context with low latency settings
+      // Create new context with interactive latency hint for better responsiveness
       if (typeof AudioContext !== 'undefined') {
         this.audioContext = new AudioContext({ latencyHint: 'interactive' });
         
@@ -39,6 +41,7 @@ export class HeartbeatAudioManager {
         // Prepare system with silent beep
         await this.playBeep(0.01);
         console.log("HeartbeatAudioManager: Audio Context Initialized with low latency");
+        this.audioInitialized = true;
         return true;
       } else {
         console.warn("HeartbeatAudioManager: AudioContext not available in this environment");
@@ -51,22 +54,30 @@ export class HeartbeatAudioManager {
   }
   
   /**
-   * Play heartbeat sound
+   * Ensure audio is initialized
+   */
+  private async ensureAudioInitialized(): Promise<boolean> {
+    if (!this.audioInitialized || !this.audioContext || this.audioContext.state !== 'running') {
+      return await this.initAudio();
+    }
+    return true;
+  }
+  
+  /**
+   * Play heartbeat sound with optimized performance
    */
   public async playBeep(volume: number = this.config.beepVolume): Promise<boolean> {
-    // Basic interval check
+    // Basic interval check (less strict)
     const now = Date.now();
-    if (now - this.lastBeepTime < this.config.minBeepInterval) {
+    if (now - this.lastBeepTime < this.config.minBeepInterval * 0.8) {
       return false;
     }
 
     try {
-      // Ensure audio context is available and active
+      // Make sure audio is ready
+      await this.ensureAudioInitialized();
       if (!this.audioContext || this.audioContext.state !== 'running') {
-        await this.initAudio();
-        if (!this.audioContext || this.audioContext.state !== 'running') {
-          return false;
-        }
+        return false;
       }
 
       // Create oscillators for realistic heartbeat sound
@@ -90,11 +101,11 @@ export class HeartbeatAudioManager {
         this.audioContext.currentTime
       );
 
-      // Amplitude envelope for primary tone
+      // Amplitude envelope for primary tone (faster attack for better responsiveness)
       primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       primaryGain.gain.linearRampToValueAtTime(
         volume,
-        this.audioContext.currentTime + 0.01
+        this.audioContext.currentTime + 0.005 // Faster attack
       );
       primaryGain.gain.exponentialRampToValueAtTime(
         0.01,
@@ -104,8 +115,8 @@ export class HeartbeatAudioManager {
       // Amplitude envelope for secondary tone
       secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
       secondaryGain.gain.linearRampToValueAtTime(
-        volume * 0.4, // Secondary at lower volume
-        this.audioContext.currentTime + 0.01
+        volume * 0.5, // Slightly higher secondary volume for better audibility
+        this.audioContext.currentTime + 0.005
       );
       secondaryGain.gain.exponentialRampToValueAtTime(
         0.01,

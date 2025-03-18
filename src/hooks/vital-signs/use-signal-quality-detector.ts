@@ -8,23 +8,21 @@ import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 
 /**
  * Improved hook for detecting PPG signal quality
- * Significantly increased thresholds to prevent false positive heartbeat detection
+ * Adjusted to be more responsive while maintaining accuracy
  */
 export const useSignalQualityDetector = () => {
   // Reference counter for consecutive weak signals
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
-  // Much more stringent thresholds to eliminate false positives
-  // These values have been carefully calibrated to ensure one real heartbeat = one peak = one beep
-  const WEAK_SIGNAL_THRESHOLD = 0.33; // Significantly increased from 0.25
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 8; // Increased from 6
+  // Less strict thresholds for better responsiveness
+  const WEAK_SIGNAL_THRESHOLD = 0.25; // Reduced from 0.33
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 7; // Reduced from 8
   
   /**
-   * Enhanced detection function with strict false positive resistance
-   * Implements asymmetric counting - requires sustained strong signal
+   * Enhanced detection function with better responsiveness
    */
   const detectWeakSignal = (value: number): boolean => {
-    // Use centralized implementation with higher thresholds
+    // Use centralized implementation with less strict thresholds
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value, 
       consecutiveWeakSignalsRef.current,

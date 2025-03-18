@@ -13,6 +13,9 @@
     <meta name="screen-orientation" content="portrait">
     <!-- High DPI display support -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
+    <!-- Force maximum resolution rendering -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="viewport" content="initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>healthpulse-captain</title>
     <style>
       :root {
@@ -20,6 +23,7 @@
         --sar: env(safe-area-inset-right);
         --sab: env(safe-area-inset-bottom);
         --sal: env(safe-area-inset-left);
+        --device-pixel-ratio: 1;
       }
       
       * {
@@ -85,6 +89,7 @@
         -webkit-font-smoothing: subpixel-antialiased;
       }
       
+      /* Maximum resolution scaling for different screens */
       @media screen and (min-width: 1024px) {
         .high-res-interface {
           transform: scale(1);
@@ -107,6 +112,15 @@
         }
       }
       
+      /* 8K display support (Ultra HD) */
+      @media screen and (min-width: 7680px) {
+        .high-res-interface {
+          transform: scale(0.125);
+          width: 800%;
+          height: 800%;
+        }
+      }
+      
       /* Improve text rendering */
       h1, h2, h3, h4, h5, h6, p, span, button {
         text-rendering: geometricPrecision;
@@ -116,6 +130,22 @@
       svg, img, canvas {
         image-rendering: crisp-edges;
         shape-rendering: crispEdges;
+      }
+      
+      /* Ultra high resolution class */
+      .ultra-high-resolution canvas,
+      .ultra-high-resolution .ppg-graph,
+      .ultra-high-resolution video {
+        image-rendering: pixelated !important;
+        transform: translateZ(0);
+      }
+      
+      /* Maximum resolution class */
+      .maximum-resolution {
+        backface-visibility: hidden;
+        transform: translateZ(0);
+        will-change: transform;
+        image-rendering: -webkit-optimize-contrast;
       }
       
       /* High density display optimizations */
@@ -135,6 +165,17 @@
           transform: translate3d(0, 0, 0);
         }
       }
+      
+      /* For ultra-high DPI screens (e.g., 4K, 5K, etc.) */
+      @media (-webkit-min-device-pixel-ratio: 3), (min-resolution: 288dpi) {
+        .display-4k, .display-5k, .display-8k {
+          text-rendering: geometricPrecision;
+        }
+        
+        .ppg-graph, canvas, svg {
+          image-rendering: pixelated;
+        }
+      }
     </style>
   </head>
   <body>
@@ -143,3 +184,4 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
