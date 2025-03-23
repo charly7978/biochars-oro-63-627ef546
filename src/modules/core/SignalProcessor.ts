@@ -1,4 +1,3 @@
-
 /**
  * NOTA IMPORTANTE: Este es un módulo de procesamiento de señales.
  * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
@@ -116,8 +115,8 @@ export class SignalProcessor {
   }
 }
 
-// Create the SignalProcessor interface based on our existing implementation
-export interface SignalProcessor {
+// Define the SignalProcessor interface that will be implemented by PPGSignalProcessor
+export interface ISignalProcessor {
   initialize(): Promise<void>;
   start(): void;
   stop(): void;
@@ -128,8 +127,7 @@ export interface SignalProcessor {
 }
 
 // Add this export to make the module compatible with existing imports
-export class PPGSignalProcessor implements SignalProcessor {
-  private processor: SignalProcessor;
+export class PPGSignalProcessor implements ISignalProcessor {
   public onSignalReady?: (signal: ProcessedSignal) => void;
   public onError?: (error: ProcessingError) => void;
   private isProcessing: boolean = false;
