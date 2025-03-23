@@ -5,7 +5,7 @@
  */
 
 import { calculatePerfusionIndex, findPeaksAndValleys, calculateAmplitude } from '../../utils/vitalSignsUtils';
-import type { ProcessingError } from '../../types/signal';
+import type { ProcessingError, ISignalProcessor } from '../../types/signal';
 
 // Interfaz unificada para señales procesadas
 export interface ProcessedSignal {
@@ -36,16 +36,8 @@ export interface ProcessedSignal {
   };
 }
 
-// Define la interfaz que será implementada por PPGSignalProcessor
-export interface ISignalProcessor {
-  initialize(): Promise<void>;
-  start(): void;
-  stop(): void;
-  calibrate(): Promise<boolean>;
-  processFrame?(imageData: ImageData): void;
-  onSignalReady?: (signal: ProcessedSignal) => void;
-  onError?: (error: ProcessingError) => void;
-}
+// Re-exportación de la interfaz desde types/signal
+export type { ISignalProcessor };
 
 /**
  * Procesador optimizado de señales con filtrado multi-canal y adaptación bidireccional
