@@ -1,5 +1,4 @@
-
-import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
+import { ProcessedSignal, ProcessingError, ISignalProcessor } from '../types/signal';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -33,7 +32,7 @@ class KalmanFilter {
  * Procesador de señales PPG (Fotopletismografía)
  * Implementa la interfaz SignalProcessor
  */
-export class PPGSignalProcessor implements SignalProcessor {
+export class PPGSignalProcessor implements ISignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
