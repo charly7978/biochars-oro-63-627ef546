@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PPGSignalProcessor } from '../modules/SignalProcessor';
+import { PPGSignalProcessor } from '../modules/core/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**

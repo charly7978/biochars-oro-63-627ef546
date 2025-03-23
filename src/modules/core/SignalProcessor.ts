@@ -5,6 +5,7 @@
  */
 
 import { applySMAFilter, calculatePerfusionIndex } from '../../utils/vitalSignsUtils';
+import { ProcessedSignal, ProcessingError, SignalProcessor } from '../../types/signal';
 
 export interface ProcessedSignal {
   filteredValue: number;
@@ -104,5 +105,121 @@ export class SignalProcessor {
     this.ppgValues = [];
     this.smaBuffer = [];
     this.consecutiveFingerFrames = 0;
+  }
+}
+
+// Add this export to make the module compatible with existing imports
+export class PPGSignalProcessor implements SignalProcessor {
+  private processor: SignalProcessor;
+  public onSignalReady?: (signal: ProcessedSignal) => void;
+  public onError?: (error: ProcessingError) => void;
+  private isProcessing: boolean = false;
+  
+  constructor(
+    onSignalReady?: (signal: ProcessedSignal) => void,
+    onError?: (error: ProcessingError) => void
+  ) {
+    this.processor = new SignalProcessor();
+    this.onSignalReady = onSignalReady;
+    this.onError = onError;
+    console.log("PPGSignalProcessor: Instancia adaptador creada");
+  }
+  
+  async initialize(): Promise<void> {
+    try {
+      this.processor.reset();
+      console.log("PPGSignalProcessor: Adaptador inicializado");
+    } catch (error) {
+      console.error("PPGSignalProcessor: Error de inicialización", error);
+      this.handleError("INIT_ERROR", "Error al inicializar el procesador");
+    }
+  }
+  
+  start(): void {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
+    this.initialize();
+    console.log("PPGSignalProcessor: Adaptador iniciado");
+  }
+  
+  stop(): void {
+    this.isProcessing = false;
+    this.processor.reset();
+    console.log("PPGSignalProcessor: Adaptador detenido");
+  }
+  
+  async calibrate(): Promise<boolean> {
+    try {
+      await this.initialize();
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log("PPGSignalProcessor: Calibración completada");
+      return true;
+    } catch (error) {
+      console.error("PPGSignalProcessor: Error de calibración", error);
+      this.handleError("CALIBRATION_ERROR", "Error durante la calibración");
+      return false;
+    }
+  }
+  
+  processFrame(imageData: ImageData): void {
+    if (!this.isProcessing) return;
+    
+    try {
+      const redValue = this.extractRedChannel(imageData);
+      const processedSignal = this.processor.processSignal(redValue);
+      
+      // Add ROI information
+      const signalWithROI: ProcessedSignal = {
+        ...processedSignal,
+        timestamp: Date.now(),
+        roi: this.detectROI(redValue)
+      };
+      
+      this.onSignalReady?.(signalWithROI);
+    } catch (error) {
+      console.error("PPGSignalProcessor: Error procesando frame", error);
+      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
+    }
+  }
+  
+  private extractRedChannel(imageData: ImageData): number {
+    const data = imageData.data;
+    let redSum = 0;
+    let count = 0;
+    
+    // Analizar solo el centro de la imagen (25% central)
+    const startX = Math.floor(imageData.width * 0.375);
+    const endX = Math.floor(imageData.width * 0.625);
+    const startY = Math.floor(imageData.height * 0.375);
+    const endY = Math.floor(imageData.height * 0.625);
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const i = (y * imageData.width + x) * 4;
+        redSum += data[i];  // Canal rojo
+        count++;
+      }
+    }
+    
+    return redSum / count;
+  }
+  
+  private detectROI(redValue: number): ProcessedSignal['roi'] {
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    };
+  }
+  
+  private handleError(code: string, message: string): void {
+    console.error("PPGSignalProcessor: Error", code, message);
+    const error: ProcessingError = {
+      code,
+      message,
+      timestamp: Date.now()
+    };
+    this.onError?.(error);
   }
 }

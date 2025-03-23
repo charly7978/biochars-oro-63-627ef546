@@ -9,7 +9,7 @@ export { VitalSignsProcessor } from './compat/VitalSignsProcessorAdapter';
 export type { VitalSignsResult, RRData } from './vital-signs/VitalSignsProcessor';
 
 // Exportar procesadores principales para uso directo si es necesario
-export { SignalProcessor } from './core/SignalProcessor';
+export { SignalProcessor, PPGSignalProcessor } from './core/SignalProcessor';
 export type { ProcessedSignal } from './core/SignalProcessor';
 export { SpO2Processor } from './core/SpO2Processor';
 export { BloodPressureProcessor } from './core/BloodPressureProcessor';
