@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -13,6 +14,10 @@ interface HeartBeatResult {
   };
 }
 
+/**
+ * Hook para interactuar con el procesador de latidos cardíacos
+ * que trabaja en conjunto con el optimizador de señal central.
+ */
 export const useHeartBeatProcessor = () => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const [currentBPM, setCurrentBPM] = useState<number>(0);
@@ -74,30 +79,8 @@ export const useHeartBeatProcessor = () => {
       };
     }
 
-    console.log('useHeartBeatProcessor - processSignal detallado:', {
-      inputValue: value,
-      normalizadoValue: value.toFixed(2),
-      currentProcessor: !!processorRef.current,
-      processorMethods: processorRef.current ? Object.getOwnPropertyNames(Object.getPrototypeOf(processorRef.current)) : [],
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-
     const result = processorRef.current.processSignal(value);
     const rrData = processorRef.current.getRRIntervals();
-
-    console.log('useHeartBeatProcessor - resultado detallado:', {
-      bpm: result.bpm,
-      confidence: result.confidence,
-      isPeak: result.isPeak,
-      arrhythmiaCount: result.arrhythmiaCount,
-      rrIntervals: JSON.stringify(rrData.intervals),
-      ultimosIntervalos: rrData.intervals.slice(-5),
-      ultimoPico: rrData.lastPeakTime,
-      tiempoDesdeUltimoPico: rrData.lastPeakTime ? Date.now() - rrData.lastPeakTime : null,
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
     
     if (result.confidence < 0.7) {
       console.log('useHeartBeatProcessor: Confianza insuficiente, ignorando pico', { confidence: result.confidence });

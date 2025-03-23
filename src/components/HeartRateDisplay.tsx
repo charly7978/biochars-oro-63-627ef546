@@ -7,6 +7,10 @@ interface HeartRateDisplayProps {
   confidence: number;
 }
 
+/**
+ * Componente para mostrar la frecuencia cardíaca 
+ * procesada por el optimizador de señales principal
+ */
 const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const isReliable = confidence > 0.5;
