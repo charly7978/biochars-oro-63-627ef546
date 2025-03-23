@@ -1,11 +1,10 @@
-
 /**
  * NOTA IMPORTANTE: Este es el módulo central de procesamiento y optimización de señales.
  * Encargado de extracción, validación, detección de dedo, señalización de calidad,
  * procesamiento integral de señales PPG/cardiacas con optimización de 6 canales y feedback bidireccional.
  */
 
-import { calculatePerfusionIndex } from '../../utils/vitalSignsUtils';
+import { calculatePerfusionIndex, findPeaksAndValleys, calculateAmplitude } from '../../utils/vitalSignsUtils';
 import type { ProcessingError } from '../../types/signal';
 
 // Interfaz unificada para señales procesadas
@@ -35,6 +34,17 @@ export interface ProcessedSignal {
     blue: number;
     infrared?: number;
   };
+}
+
+// Define la interfaz que será implementada por PPGSignalProcessor
+export interface ISignalProcessor {
+  initialize(): Promise<void>;
+  start(): void;
+  stop(): void;
+  calibrate(): Promise<boolean>;
+  processFrame?(imageData: ImageData): void;
+  onSignalReady?: (signal: ProcessedSignal) => void;
+  onError?: (error: ProcessingError) => void;
 }
 
 /**
@@ -392,18 +402,9 @@ export class SignalProcessor {
   }
 }
 
-// Define la interfaz que será implementada por PPGSignalProcessor
-export interface ISignalProcessor {
-  initialize(): Promise<void>;
-  start(): void;
-  stop(): void;
-  calibrate(): Promise<boolean>;
-  processFrame?(imageData: ImageData): void;
-  onSignalReady?: (signal: ProcessedSignal) => void;
-  onError?: (error: ProcessingError) => void;
-}
-
-// Implementación completa para mantener compatibilidad con código existente
+/**
+ * Implementación completa para mantener compatibilidad con código existente
+ */
 export class PPGSignalProcessor implements ISignalProcessor {
   public onSignalReady?: (signal: ProcessedSignal) => void;
   public onError?: (error: ProcessingError) => void;
