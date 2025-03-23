@@ -8,13 +8,12 @@
 // Exportar el procesador principal de señales desde el ubicación central
 export { 
   SignalProcessor,
-  PPGSignalProcessor, 
-  ISignalProcessor
+  PPGSignalProcessor
 } from './core/SignalProcessor';
 
 // Re-exportación de tipos para compatibilidad
 export type { ProcessedSignal } from './core/SignalProcessor';
-export type { ProcessingError } from '../types/signal';
+export type { ProcessingError, ISignalProcessor } from '../types/signal';
 
 // Exportamos la implementación del procesador existente para retrocompatibilidad
 export { VitalSignsProcessor } from './compat/VitalSignsProcessorAdapter';
