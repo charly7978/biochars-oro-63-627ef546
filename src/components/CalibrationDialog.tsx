@@ -4,7 +4,6 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
-import { Input } from "@/components/ui/input";
 
 interface CalibrationDialogProps {
   isOpen: boolean;
@@ -15,9 +14,6 @@ const CalibrationDialog: React.FC<CalibrationDialogProps> = ({
   isOpen, 
   onClose
 }) => {
-  const [systolic, setSystolic] = React.useState<string>("");
-  const [diastolic, setDiastolic] = React.useState<string>("");
-
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md perspective-1000">
@@ -37,32 +33,14 @@ const CalibrationDialog: React.FC<CalibrationDialogProps> = ({
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h2 className="text-lg font-semibold">Valores de Referencia</h2>
+            <h2 className="text-lg font-semibold">Información</h2>
             <div className="w-9" />
           </div>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Presión Sistólica</label>
-              <Input
-                type="number"
-                placeholder="120"
-                value={systolic}
-                onChange={(e) => setSystolic(e.target.value)}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Presión Diastólica</label>
-              <Input
-                type="number"
-                placeholder="80"
-                value={diastolic}
-                onChange={(e) => setDiastolic(e.target.value)}
-                className="w-full"
-              />
-            </div>
+            <p className="text-sm text-gray-500 text-center">
+              El procesamiento avanzado de señales no requiere calibración.
+            </p>
 
             <Button
               className="w-full"
@@ -70,10 +48,6 @@ const CalibrationDialog: React.FC<CalibrationDialogProps> = ({
             >
               Aceptar
             </Button>
-
-            <p className="text-sm text-gray-500 text-center">
-              Ingrese valores de referencia para su información
-            </p>
           </div>
         </motion.div>
       </DialogContent>

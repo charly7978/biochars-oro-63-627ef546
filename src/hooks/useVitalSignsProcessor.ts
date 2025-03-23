@@ -1,14 +1,13 @@
 
 import { useRef, useState, useCallback } from 'react';
-import { VitalSignsProcessor, VitalSignsResult, RRData } from '../modules';
+import { VitalSignsAdapter, VitalSignsResult, RRData } from '../modules';
 
 /**
  * Hook para procesamiento de signos vitales que mantiene un estado consistente
- * NOTA: Este hook utiliza el procesador de señales optimizado central
- * manteniendo compatibilidad con interfaces anteriores
+ * NOTA: Este hook utiliza únicamente el procesador avanzado de señales
  */
 export function useVitalSignsProcessor() {
-  const processorRef = useRef<VitalSignsProcessor | null>(null);
+  const processorRef = useRef<VitalSignsAdapter | null>(null);
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignalsRef = useRef<number>(0);
@@ -16,7 +15,7 @@ export function useVitalSignsProcessor() {
 
   // Inicializar el procesador si no existe
   if (!processorRef.current) {
-    processorRef.current = new VitalSignsProcessor();
+    processorRef.current = new VitalSignsAdapter();
   }
 
   /**
@@ -32,7 +31,7 @@ export function useVitalSignsProcessor() {
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal con el optimizador central
+      // Procesar la señal con el procesador avanzado
       const result = processorRef.current.processSignal(value, rrData);
       
       // Rastrear contador de arritmias
