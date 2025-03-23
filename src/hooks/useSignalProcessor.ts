@@ -62,16 +62,16 @@ export const useSignalProcessor = () => {
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // Calcular ratio de detección
+    // Calcular ratio de detección (make more sensitive - now 0.4 instead of 0.6)
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Usar un umbral más exigente (3 de 5 = 0.6)
-    const robustFingerDetected = detectionRatio >= 0.6;
+    // Use a more sensitive threshold (2 of 5 = 0.4 instead of 0.6)
+    const robustFingerDetected = detectionRatio >= 0.4;
     
     // Mejora ligera de calidad para mejor UX
-    const enhancedQuality = Math.min(100, avgQuality * 1.1);
+    const enhancedQuality = Math.min(100, avgQuality * 1.2);
     
     // Devolver señal modificada
     return {

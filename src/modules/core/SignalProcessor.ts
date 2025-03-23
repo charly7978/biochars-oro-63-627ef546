@@ -16,14 +16,14 @@ export interface ProcessedSignal {
 export class SignalProcessor {
   private readonly BUFFER_SIZE = 300;
   private readonly SMA_WINDOW_SIZE = 5;
-  private readonly QUALITY_THRESHOLD = 0.05;
-  private readonly FINGER_DETECTION_THRESHOLD = 30;
+  private readonly QUALITY_THRESHOLD = 0.03; // Lowered from 0.05 to increase sensitivity
+  private readonly FINGER_DETECTION_THRESHOLD = 25; // Lowered from 30 to detect more easily
   
   private ppgValues: number[] = [];
   private smaBuffer: number[] = [];
   private lastProcessedTime: number = 0;
   private consecutiveFingerFrames: number = 0;
-  private readonly MIN_FINGER_FRAMES = 3;
+  private readonly MIN_FINGER_FRAMES = 2; // Reduced from 3 for faster detection
   
   /**
    * Procesa una señal PPG (fotopletismografía) y devuelve valores filtrados y análisis
@@ -42,15 +42,16 @@ export class SignalProcessor {
     // Calcular calidad de la señal
     const quality = this.calculateSignalQuality(filteredValue);
     
-    // Detección de dedo en el sensor
+    // Detección de dedo en el sensor mejorada
     let fingerDetected = false;
-    if (quality > this.QUALITY_THRESHOLD) {
+    if (quality > this.QUALITY_THRESHOLD || value > this.FINGER_DETECTION_THRESHOLD) {
       this.consecutiveFingerFrames++;
       if (this.consecutiveFingerFrames >= this.MIN_FINGER_FRAMES) {
         fingerDetected = true;
       }
     } else {
-      this.consecutiveFingerFrames = 0;
+      // Improved debouncing to avoid quick toggling of detection state
+      this.consecutiveFingerFrames = Math.max(0, this.consecutiveFingerFrames - 1);
     }
     
     // Actualizar tiempo de procesamiento
@@ -83,7 +84,8 @@ export class SignalProcessor {
     const perfusionIndex = calculatePerfusionIndex(ac, dc);
     
     // Normalizar a un rango [0,1] donde valores mayores indican mejor calidad
-    const normalizedQuality = Math.min(1, perfusionIndex * 12);
+    // Use a less stringent normalization to improve detection:
+    const normalizedQuality = Math.min(1, perfusionIndex * 15);
     
     return normalizedQuality;
   }
