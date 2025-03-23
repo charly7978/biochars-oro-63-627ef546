@@ -1,4 +1,3 @@
-
 import { useRef, useState, useCallback } from 'react';
 import { VitalSignsProcessor, VitalSignsResult, RRData } from '../modules';
 
@@ -46,12 +45,9 @@ export function useVitalSignsProcessor() {
         }
       }
       
-      // Actualizar resultados válidos si hay sustancia
-      if (
-        result.spo2 > 0 && 
-        result.pressure !== "--/--" && 
-        result.pressure !== "0/0"
-      ) {
+      // Actualizar resultados válidos solo si los valores son significativos
+      if (typeof result.spo2 === 'number' && result.spo2 > 0 && 
+          result.pressure !== "--/--" && result.pressure !== "0/0") {
         setLastValidResults(result);
       }
       

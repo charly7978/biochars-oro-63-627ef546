@@ -5,8 +5,8 @@
  */
 
 import { VitalSignsProcessor as CoreVitalSignsProcessor } from '../core/VitalSignsProcessor';
-import type { VitalSignsResult } from '../core/VitalSignsProcessor';
-import type { RRData } from '../core/ArrhythmiaProcessor';
+import type { VitalSignsResult } from '../vital-signs/VitalSignsProcessor';
+import type { RRData } from '../vital-signs/VitalSignsProcessor';
 import { AdvancedSignalProcessor } from '../advanced/AdvancedSignalProcessor';
 
 /**
@@ -144,5 +144,5 @@ export class VitalSignsProcessor {
 }
 
 // Re-exportamos los tipos para compatibilidad
-export type { VitalSignsResult } from '../core/VitalSignsProcessor';
-export type { RRData } from '../core/ArrhythmiaProcessor';
+export type { VitalSignsResult } from '../vital-signs/VitalSignsProcessor';
+export type { RRData } from '../vital-signs/VitalSignsProcessor';

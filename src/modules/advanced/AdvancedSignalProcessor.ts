@@ -1,4 +1,3 @@
-
 /**
  * Procesador avanzado de señales PPG que implementa técnicas de vanguardia
  * para análisis y procesamiento de fotopletismografía.
@@ -7,8 +6,8 @@
  * principales que están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
  */
 
-import type { VitalSignsResult } from '../core/VitalSignsProcessor';
-import type { RRData } from '../core/ArrhythmiaProcessor';
+import type { VitalSignsResult } from '../vital-signs/VitalSignsProcessor';
+import type { RRData } from '../vital-signs/VitalSignsProcessor';
 import { WaveletDenoiser } from './signal/WaveletDenoiser';
 import { HilbertHuangTransform } from './signal/HilbertHuangTransform';
 import { PeakDetector } from './signal/PeakDetector';
@@ -152,18 +151,23 @@ export class AdvancedSignalProcessor {
           : `SIN ARRITMIAS|${afibResults.count}`,
         calibration: {
           isCalibrating: this.calibrating,
-          progress: this.calibrationProgress
+          progress: { 
+            heartRate: 0,
+            spo2: 0,
+            pressure: 0,
+            arrhythmia: 0,
+            glucose: 0,
+            lipids: 0,
+            hemoglobin: 0
+          }
         },
         // Métricas adicionales manteniendo compatibilidad
-        glucose: {
-          value: Math.round(90 + 10 * Math.sin(Date.now() / 10000)),
-          trend: "stable"
-        },
+        glucose: 0,
         lipids: {
-          totalCholesterol: Math.round(180 + 10 * Math.sin(Date.now() / 15000)),
-          triglycerides: Math.round(120 + 15 * Math.sin(Date.now() / 20000))
+          totalCholesterol: 0,
+          triglycerides: 0
         },
-        hemoglobin: Math.round(14 + Math.sin(Date.now() / 25000)),
+        hemoglobin: 0,
         // Métricas avanzadas
         advanced: {
           perfusionIndex: this.perfusionIndex,
@@ -185,12 +189,17 @@ export class AdvancedSignalProcessor {
       arrhythmiaStatus: "CALIBRANDO...",
       calibration: {
         isCalibrating: this.calibrating,
-        progress: this.calibrationProgress
+        progress: { 
+          heartRate: 0,
+          spo2: 0,
+          pressure: 0,
+          arrhythmia: 0,
+          glucose: 0,
+          lipids: 0,
+          hemoglobin: 0
+        }
       },
-      glucose: {
-        value: 0,
-        trend: "unknown"
-      },
+      glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0

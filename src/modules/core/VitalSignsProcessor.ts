@@ -1,4 +1,3 @@
-
 /**
  * NOTA IMPORTANTE: Este es el módulo principal de procesamiento de signos vitales.
  * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
@@ -14,7 +13,7 @@ export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
-  glucose: number;
+  glucose: number | { value: number; trend: string };
   lipids: {
     totalCholesterol: number;
     triglycerides: number;
@@ -37,6 +36,7 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  advanced?: any; // Para extensibilidad futura
 }
 
 /**
@@ -219,7 +219,7 @@ export class VitalSignsProcessor {
       return this.getLastValidResults() || {
         spo2: 0,
         pressure: "--/--",
-        arrhythmiaStatus: "--",
+        arrhythmiaStatus: "CALIBRANDO...",
         glucose: 0,
         lipids: {
           totalCholesterol: 0,
@@ -248,7 +248,7 @@ export class VitalSignsProcessor {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      glucose,
+      glucose: { value: glucose, trend: "stable" },
       lipids: {
         totalCholesterol,
         triglycerides

@@ -11,7 +11,7 @@ export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
-  glucose: number;
+  glucose: number | { value: number; trend: string };
   lipids: {
     totalCholesterol: number;
     triglycerides: number;
@@ -34,4 +34,13 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  advanced?: any; // Para datos avanzados extensibles
+}
+
+/**
+ * Datos de intervalos RR para análisis de arritmias
+ */
+export interface RRData {
+  intervals: number[];
+  lastPeakTime: number | null;
 }

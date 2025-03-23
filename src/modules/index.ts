@@ -6,7 +6,7 @@
 
 // Exportar adaptadores de compatibilidad para uso desde código existente
 export { VitalSignsProcessor } from './compat/VitalSignsProcessorAdapter';
-export type { VitalSignsResult, RRData } from './compat/VitalSignsProcessorAdapter';
+export type { VitalSignsResult, RRData } from './vital-signs/VitalSignsProcessor';
 
 // Exportar procesadores principales para uso directo si es necesario
 export { SignalProcessor } from './core/SignalProcessor';
