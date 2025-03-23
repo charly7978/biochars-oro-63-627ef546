@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules';
 import type { ProcessedSignal, ProcessingError } from '../modules';
@@ -176,33 +177,6 @@ export const useSignalProcessor = () => {
   }, [processor, isProcessing, framesProcessed]);
 
   /**
-   * Calibra el procesador para mejores resultados
-   */
-  const calibrate = useCallback(async () => {
-    try {
-      console.log("useSignalProcessor: Iniciando calibración", {
-        timestamp: new Date().toISOString()
-      });
-      
-      await processor.calibrate();
-      
-      console.log("useSignalProcessor: Calibración exitosa", {
-        timestamp: new Date().toISOString()
-      });
-      
-      return true;
-    } catch (error) {
-      console.error("useSignalProcessor: Error de calibración detallado:", {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString()
-      });
-      
-      return false;
-    }
-  }, [processor]);
-
-  /**
    * Procesa un frame de imagen
    */
   const processFrame = useCallback((imageData: ImageData) => {
@@ -225,7 +199,6 @@ export const useSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    calibrate,
     processFrame
   };
 };

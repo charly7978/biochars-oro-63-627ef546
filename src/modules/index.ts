@@ -22,6 +22,3 @@ export type { VitalSignsResult, RRData } from './vital-signs/VitalSignsProcessor
 // Exportar utilidades relacionadas con procesamiento de señales
 export { BloodPressureProcessor } from './core/BloodPressureProcessor';
 export { HeartBeatProcessor } from './HeartBeatProcessor';
-
-// Nota: Se mantiene compatibilidad con implementaciones anteriores
-// pero se recomienda usar el optimizador de señales diferencial.

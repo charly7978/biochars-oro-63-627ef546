@@ -9,15 +9,13 @@ interface VitalSignProps {
   value: string | number;
   unit?: string;
   highlighted?: boolean;
-  calibrationProgress?: number;
 }
 
 const VitalSign = ({ 
   label, 
   value, 
   unit, 
-  highlighted = false,
-  calibrationProgress 
+  highlighted = false
 }: VitalSignProps) => {
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
@@ -305,20 +303,6 @@ const VitalSign = ({
           )}
           
           {isArrhytmia && getArrhythmiaDisplay(value)}
-          
-          {calibrationProgress !== undefined && (
-            <div className="absolute inset-0 bg-transparent overflow-hidden pointer-events-none border-0">
-              <div 
-                className="h-full bg-blue-500/5 transition-all duration-300 ease-out"
-                style={{ width: `${calibrationProgress}%` }}
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs text-white/80">
-                  {calibrationProgress < 100 ? `${Math.round(calibrationProgress)}%` : '✓'}
-                </span>
-              </div>
-            </div>
-          )}
           
           <div className="absolute bottom-0 left-0 right-0 flex justify-center">
             <ChevronUp size={16} className="text-gray-400" />

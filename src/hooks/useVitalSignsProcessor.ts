@@ -93,38 +93,10 @@ export function useVitalSignsProcessor() {
     }
   }, []);
 
-  /**
-   * Inicia el proceso de calibración
-   */
-  const startCalibration = useCallback((): void => {
-    if (!processorRef.current) return;
-    
-    try {
-      processorRef.current.startCalibration();
-    } catch (error) {
-      console.error("Error iniciando calibración:", error);
-    }
-  }, []);
-
-  /**
-   * Fuerza la finalización del proceso de calibración
-   */
-  const forceCalibrationCompletion = useCallback((): void => {
-    if (!processorRef.current) return;
-    
-    try {
-      processorRef.current.forceCalibrationCompletion();
-    } catch (error) {
-      console.error("Error forzando finalización de calibración:", error);
-    }
-  }, []);
-
   return {
     processSignal,
     reset,
     fullReset,
-    lastValidResults,
-    startCalibration,
-    forceCalibrationCompletion
+    lastValidResults
   };
 }
