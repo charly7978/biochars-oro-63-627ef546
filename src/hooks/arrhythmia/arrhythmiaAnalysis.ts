@@ -146,8 +146,8 @@ export class ArrhythmiaAnalyzer {
             arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
             lastArrhythmiaData: {
               timestamp: currentTime,
-              type: "Irregular Rhythm",
-              confidence: 0.9
+              rmssd: analysisData.rmssd,
+              rrVariation: analysisData.rrVariation
             }
           };
         } else {
@@ -183,7 +183,7 @@ export class ArrhythmiaAnalyzer {
   /**
    * Update pattern buffer for temporal analysis
    */
-  public updatePatternBuffer(value: number): void {
+  private updatePatternBuffer(value: number): void {
     this.patternBuffer.push(value);
     if (this.patternBuffer.length > this.PATTERN_BUFFER_SIZE) {
       this.patternBuffer.shift();
@@ -200,7 +200,7 @@ export class ArrhythmiaAnalyzer {
   /**
    * Reset pattern buffer after arrhythmia detection
    */
-  public resetPatternBuffer(): void {
+  private resetPatternBuffer(): void {
     this.patternBuffer = [];
     this.anomalyScores = [];
   }
@@ -208,7 +208,7 @@ export class ArrhythmiaAnalyzer {
   /**
    * Detect arrhythmia patterns using temporal analysis
    */
-  public detectArrhythmiaPattern(): boolean {
+  private detectArrhythmiaPattern(): boolean {
     if (this.patternBuffer.length < this.MIN_ANOMALY_PATTERN_LENGTH) return false;
     
     // Analyze recent pattern for arrhythmia characteristics

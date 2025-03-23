@@ -136,26 +136,20 @@ export const useVitalSignsProcessor = () => {
   }, [addArrhythmiaWindow]);
 
   /**
-   * Perform reset and finalize glucose measurement
-   * This ensures weighted median and average are applied at the end
+   * Perform complete reset - always start measurements from zero
    */
   const reset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return null;
     
-    console.log("useVitalSignsProcessor: Reset initiated with final glucose calculation");
+    console.log("useVitalSignsProcessor: Reset initiated - starting from zero");
     
-    // This will trigger the final glucose calculation with weighted median and average
-    const finalResults = processorRef.current.reset();
+    processorRef.current.reset();
     arrhythmiaAnalyzerRef.current.reset();
     setArrhythmiaWindows([]);
+    setLastValidResults(null); // Always clear previous results
     
-    if (finalResults) {
-      console.log("Final glucose value (with weighted median and average):", finalResults.glucose);
-      setLastValidResults(finalResults);
-      return finalResults;
-    }
-    
-    return null;
+    console.log("Reset completed - all values at zero");
+    return null; // Always return null to ensure measurements start from zero
   }, []);
   
   /**
@@ -180,7 +174,7 @@ export const useVitalSignsProcessor = () => {
     reset,
     fullReset,
     arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
-    lastValidResults,
+    lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
     debugInfo: {
       processedSignals: processedSignals.current,

@@ -8,7 +8,6 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -97,7 +96,7 @@ const Index = () => {
   };
 
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición: aplicando cálculo final de glucosa");
+    console.log("Finalizando medición: manteniendo resultados");
     
     setIsMonitoring(false);
     setIsCameraOn(false);
@@ -110,10 +109,8 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      console.log("Resultados finales aplicando mediana y promedio ponderado:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
-      toast.success("Medición finalizada. Resultado de glucosa calculado con mediana y promedio ponderado.");
     }
     
     setElapsedTime(0);
