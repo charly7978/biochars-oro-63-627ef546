@@ -5,13 +5,20 @@
  */
 
 import { applySMAFilter, calculatePerfusionIndex } from '../../utils/vitalSignsUtils';
-import { ProcessedSignal, ProcessingError, SignalProcessor } from '../../types/signal';
+import type { ProcessingError } from '../../types/signal';
 
 export interface ProcessedSignal {
   filteredValue: number;
   quality: number;
   fingerDetected: boolean;
   rawValue?: number;
+  timestamp?: number;
+  roi?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 export class SignalProcessor {
@@ -62,7 +69,8 @@ export class SignalProcessor {
       filteredValue,
       quality: quality * 100, // Normalizar a porcentaje
       fingerDetected,
-      rawValue: value
+      rawValue: value,
+      timestamp: Date.now()
     };
   }
   
@@ -108,18 +116,30 @@ export class SignalProcessor {
   }
 }
 
+// Create the SignalProcessor interface based on our existing implementation
+export interface SignalProcessor {
+  initialize(): Promise<void>;
+  start(): void;
+  stop(): void;
+  calibrate(): Promise<boolean>;
+  processFrame?(imageData: ImageData): void;
+  onSignalReady?: (signal: ProcessedSignal) => void;
+  onError?: (error: ProcessingError) => void;
+}
+
 // Add this export to make the module compatible with existing imports
 export class PPGSignalProcessor implements SignalProcessor {
   private processor: SignalProcessor;
   public onSignalReady?: (signal: ProcessedSignal) => void;
   public onError?: (error: ProcessingError) => void;
   private isProcessing: boolean = false;
+  private signalProcessor: SignalProcessor;
   
   constructor(
     onSignalReady?: (signal: ProcessedSignal) => void,
     onError?: (error: ProcessingError) => void
   ) {
-    this.processor = new SignalProcessor();
+    this.signalProcessor = new SignalProcessor();
     this.onSignalReady = onSignalReady;
     this.onError = onError;
     console.log("PPGSignalProcessor: Instancia adaptador creada");
@@ -127,7 +147,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   
   async initialize(): Promise<void> {
     try {
-      this.processor.reset();
+      this.signalProcessor.reset();
       console.log("PPGSignalProcessor: Adaptador inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -144,7 +164,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   
   stop(): void {
     this.isProcessing = false;
-    this.processor.reset();
+    this.signalProcessor.reset();
     console.log("PPGSignalProcessor: Adaptador detenido");
   }
   
@@ -166,7 +186,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     try {
       const redValue = this.extractRedChannel(imageData);
-      const processedSignal = this.processor.processSignal(redValue);
+      const processedSignal = this.signalProcessor.processSignal(redValue);
       
       // Add ROI information
       const signalWithROI: ProcessedSignal = {
