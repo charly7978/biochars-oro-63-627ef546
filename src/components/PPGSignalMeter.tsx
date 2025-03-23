@@ -54,7 +54,6 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
-  const CANVAS_CENTER_OFFSET = 60;
   const WINDOW_WIDTH_MS = 5000;
   const CANVAS_WIDTH = 1080;
   const CANVAS_HEIGHT = 720;
@@ -65,9 +64,9 @@ const PPGSignalMeter = memo(({
   const TARGET_FPS = 180;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 6;
-  const PEAK_THRESHOLD = 2.0;
-  const MIN_PEAK_DISTANCE_MS = 200;
+  const PEAK_DETECTION_WINDOW = 8;
+  const PEAK_THRESHOLD = 2.5;
+  const MIN_PEAK_DISTANCE_MS = 220;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
@@ -78,19 +77,6 @@ const PPGSignalMeter = memo(({
   const ARRHYTHMIA_INDICATOR_SIZE = 8;
   const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
   const ARRHYTHMIA_DURATION_MS = 800;
-
-  const beepRequesterRef = useRef<((time: number) => void) | null>(null);
-  const lastBeepRequestTimeRef = useRef<number>(0);
-
-  const requestBeepForPeak = useCallback((timestamp: number) => {
-    const now = Date.now();
-    if (now - lastBeepRequestTimeRef.current < 250) return;
-    
-    if (beepRequesterRef.current) {
-      beepRequesterRef.current(timestamp);
-      lastBeepRequestTimeRef.current = now;
-    }
-  }, []);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -268,7 +254,7 @@ const PPGSignalMeter = memo(({
     }
     ctx.stroke();
     
-    const centerLineY = (CANVAS_HEIGHT / 2) - CANVAS_CENTER_OFFSET;
+    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
     ctx.lineWidth = 1.5;
@@ -337,8 +323,6 @@ const PPGSignalMeter = memo(({
           value: peak.value,
           isArrhythmia: peak.isArrhythmia
         });
-        
-        requestBeepForPeak(peak.time);
       }
     }
     
@@ -347,7 +331,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [requestBeepForPeak]);
+  }, []);
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number, now: number): boolean => {
     const isNearArrhythmicPeak = peaksRef.current.some(peak => 
@@ -361,25 +345,6 @@ const PPGSignalMeter = memo(({
       const segmentAge = now - endTime;
       return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
     });
-  }, []);
-
-  useEffect(() => {
-    const heartBeatProcessor = (window as any).heartBeatProcessor;
-    
-    if (heartBeatProcessor) {
-      beepRequesterRef.current = (timestamp: number) => {
-        try {
-          heartBeatProcessor.playBeep(1.0);
-          console.log("PPGSignalMeter: Beep requested for peak at timestamp", timestamp);
-        } catch (err) {
-          console.error("Error requesting beep:", err);
-        }
-      };
-    }
-    
-    return () => {
-      beepRequesterRef.current = null;
-    };
   }, []);
 
   const renderSignal = useCallback(() => {
@@ -463,7 +428,7 @@ const PPGSignalMeter = memo(({
         point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
         
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
+        const y = (canvas.height / 2) - 40 - point.value;
         
         if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
           if (segmentPoints.length > 0) {
@@ -472,11 +437,6 @@ const PPGSignalMeter = memo(({
             renderCtx.lineWidth = 2;
             renderCtx.lineJoin = 'round';
             renderCtx.lineCap = 'round';
-            
-            if (window.devicePixelRatio > 1) {
-              renderCtx.shadowBlur = 0.5;
-              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
-            }
             
             for (let j = 0; j < segmentPoints.length; j++) {
               const segPoint = segmentPoints[j];
@@ -488,10 +448,6 @@ const PPGSignalMeter = memo(({
             }
             
             renderCtx.stroke();
-            if (window.devicePixelRatio > 1) {
-              renderCtx.shadowBlur = 0;
-            }
-            
             segmentPoints = [];
           }
           
@@ -508,11 +464,6 @@ const PPGSignalMeter = memo(({
         renderCtx.lineJoin = 'round';
         renderCtx.lineCap = 'round';
         
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0.5;
-          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
-        }
-        
         for (let j = 0; j < segmentPoints.length; j++) {
           const segPoint = segmentPoints[j];
           if (j === 0) {
@@ -523,15 +474,12 @@ const PPGSignalMeter = memo(({
         }
         
         renderCtx.stroke();
-        if (window.devicePixelRatio > 1) {
-          renderCtx.shadowBlur = 0;
-        }
       }
       
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - peak.value;
+          const y = (canvas.height / 2) - 40 - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
@@ -576,7 +524,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment, requestBeepForPeak]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment]);
 
   useEffect(() => {
     renderSignal();
@@ -608,8 +556,7 @@ const PPGSignalMeter = memo(({
         style={{
           transform: 'translate3d(0,0,0)',
           backfaceVisibility: 'hidden',
-          contain: 'paint layout size',
-          imageRendering: 'crisp-edges'
+          contain: 'paint layout size'
         }}
       />
 
@@ -669,4 +616,3 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
-

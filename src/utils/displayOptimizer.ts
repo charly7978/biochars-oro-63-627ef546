@@ -189,6 +189,68 @@ export const isPointInArrhythmiaWindow = (
 };
 
 /**
+ * Auto-calibrates heartbeat processor settings based on device capabilities and signal quality
+ * @param processor The HeartBeatProcessor instance to calibrate
+ * @returns Configuration object with optimal settings
+ */
+export const autoCalibrate = (processor: any): any => {
+  if (!processor) return null;
+  
+  try {
+    // Get device information for calibration
+    const isMobile = isMobileDevice();
+    const isLowPowerDevice = isMobile && isLowPerformanceDevice();
+    const isHighEnd = !isMobile && isHighPerformanceDevice();
+    
+    // Establish base values based on device
+    const baseConfig = {
+      SIGNAL_THRESHOLD: isMobile ? 0.15 : 0.18,
+      DERIVATIVE_THRESHOLD: isMobile ? -0.015 : -0.02,
+      MIN_PEAK_TIME_MS: isLowPowerDevice ? 400 : 350,
+      MEDIAN_FILTER_WINDOW: isLowPowerDevice ? 3 : 5,
+      MOVING_AVERAGE_WINDOW: isLowPowerDevice ? 3 : 5,
+      EMA_ALPHA: isHighEnd ? 0.2 : 0.15,
+      BASELINE_FACTOR: isHighEnd ? 0.998 : 0.997,
+      MIN_BEEP_INTERVAL_MS: 300 // Natural minimum time between heartbeats
+    };
+    
+    // Try to detect current signal patterns if we have data
+    if (processor.signalBuffer && processor.signalBuffer.length > 10) {
+      // Analyze current signal for guidance
+      const values = processor.signalBuffer;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min;
+      
+      // Adjust thresholds based on actual signal
+      if (range > 0) {
+        baseConfig.SIGNAL_THRESHOLD = Math.max(0.1, Math.min(0.25, range * 0.3));
+        
+        // Calculate noise level and adjust filter settings
+        const noiseLevel = calculateNoiseLevel(values);
+        if (noiseLevel > 0.2) {
+          // High noise = more filtering
+          baseConfig.MEDIAN_FILTER_WINDOW = Math.min(7, baseConfig.MEDIAN_FILTER_WINDOW + 2);
+          baseConfig.MOVING_AVERAGE_WINDOW = Math.min(7, baseConfig.MOVING_AVERAGE_WINDOW + 2);
+          baseConfig.EMA_ALPHA = Math.max(0.1, baseConfig.EMA_ALPHA - 0.05);
+        } else if (noiseLevel < 0.05) {
+          // Low noise = less filtering for better response
+          baseConfig.MEDIAN_FILTER_WINDOW = Math.max(3, baseConfig.MEDIAN_FILTER_WINDOW - 1);
+          baseConfig.MOVING_AVERAGE_WINDOW = Math.max(3, baseConfig.MOVING_AVERAGE_WINDOW - 1);
+          baseConfig.EMA_ALPHA = Math.min(0.25, baseConfig.EMA_ALPHA + 0.05);
+        }
+      }
+    }
+    
+    console.log('HeartBeatProcessor auto-calibration completed', baseConfig);
+    return baseConfig;
+  } catch (error) {
+    console.error('Error during auto-calibration:', error);
+    return null;
+  }
+};
+
+/**
  * Checks if the device is a low performance device
  * @returns Whether the device is a low performance device
  */
@@ -258,4 +320,33 @@ export const calculateNoiseLevel = (values: number[]): number => {
   const range = max - min;
   
   return range > 0 ? (averageDifference / range) : 0;
+};
+
+/**
+ * Adapts processor settings based on real-time signal quality
+ * @param processor The HeartBeatProcessor instance
+ * @param signalQuality Signal quality between 0 and 1
+ */
+export const adaptProcessorToSignalQuality = (processor: any, signalQuality: number): void => {
+  if (!processor) return;
+  
+  try {
+    // Scale thresholds based on quality (lower quality = more tolerant thresholds)
+    if (signalQuality < 0.3) {
+      // Low quality - make detection more tolerant but add stronger filtering
+      processor.SIGNAL_THRESHOLD = Math.max(0.12, processor.SIGNAL_THRESHOLD * 0.9);
+      processor.MEDIAN_FILTER_WINDOW = Math.min(7, processor.MEDIAN_FILTER_WINDOW + 1);
+      processor.EMA_ALPHA = Math.max(0.1, processor.EMA_ALPHA - 0.02);
+    } else if (signalQuality > 0.7) {
+      // High quality - make detection more precise with less filtering
+      processor.SIGNAL_THRESHOLD = Math.min(0.25, processor.SIGNAL_THRESHOLD * 1.05);
+      processor.MEDIAN_FILTER_WINDOW = Math.max(3, processor.MEDIAN_FILTER_WINDOW - 1);
+      processor.EMA_ALPHA = Math.min(0.25, processor.EMA_ALPHA + 0.02);
+    }
+    
+    // Adjust minimum peak time threshold based on quality
+    processor.MIN_PEAK_TIME_MS = signalQuality > 0.6 ? 350 : 400;
+  } catch (error) {
+    console.error('Error adapting processor settings:', error);
+  }
 };
