@@ -9,11 +9,11 @@
 export { 
   SignalProcessor,
   PPGSignalProcessor, 
-  ISignalProcessor,
-  ProcessedSignal
+  ISignalProcessor
 } from './core/SignalProcessor';
 
 // Re-exportación de tipos para compatibilidad
+export type { ProcessedSignal } from './core/SignalProcessor';
 export type { ProcessingError } from '../types/signal';
 
 // Exportamos la implementación del procesador existente para retrocompatibilidad
