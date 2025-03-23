@@ -17,18 +17,6 @@ export interface VitalSignsResult {
     triglycerides: number;
   };
   hemoglobin: number;
-  calibration?: {
-    isCalibrating: boolean;
-    progress: {
-      heartRate: number;
-      spo2: number;
-      pressure: number;
-      arrhythmia: number;
-      glucose: number;
-      lipids: number;
-      hemoglobin: number;
-    };
-  };
   lastArrhythmiaData?: {
     timestamp: number;
     rmssd: number;
