@@ -15,7 +15,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 		const canvas = canvasRef.current;
 		if (canvas) {
 			// Optimize the canvas for device pixel ratio with maximum resolution
-			optimizeCanvas(canvas, width, height);
+			optimizeCanvas(canvas);
 			
 			const ctx = canvas.getContext('2d');
 			if (ctx) {
