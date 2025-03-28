@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -155,6 +154,46 @@ export class VitalSignsProcessor {
       },
       arrhythmiaResult.lastArrhythmiaData
     );
+  }
+
+  /**
+   * Calculates SpO2 level using real signal data
+   */
+  public calculateSpo2(ppgValue: number): number {
+    return this.spo2Processor.calculateSpO2([ppgValue]);
+  }
+  
+  /**
+   * Calculates blood pressure using real signal data
+   */
+  public calculateBloodPressure(ppgValue: number, rrIntervals: number[] = []): string {
+    const bp = this.bpProcessor.calculateBloodPressure([ppgValue]);
+    return bp.systolic > 0 && bp.diastolic > 0 
+      ? `${bp.systolic}/${bp.diastolic}` 
+      : "--/--";
+  }
+  
+  /**
+   * Calculates glucose level using real signal data
+   */
+  public calculateGlucose(ppgValue: number): number {
+    return this.glucoseProcessor.calculateGlucose([ppgValue]);
+  }
+  
+  /**
+   * Calculates total cholesterol level using real signal data
+   */
+  public calculateTotalCholesterol(ppgValue: number): number {
+    const lipids = this.lipidProcessor.calculateLipids([ppgValue]);
+    return lipids.totalCholesterol;
+  }
+  
+  /**
+   * Calculates triglycerides level using real signal data
+   */
+  public calculateTriglycerides(ppgValue: number): number {
+    const lipids = this.lipidProcessor.calculateLipids([ppgValue]);
+    return lipids.triglycerides;
   }
 
   /**

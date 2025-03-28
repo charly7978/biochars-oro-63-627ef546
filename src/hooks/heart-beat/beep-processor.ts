@@ -10,8 +10,13 @@ export class BeepProcessor {
   private gainNode: GainNode | null = null;
   private isBeeping: boolean = false;
   private beepTimeout: number | null = null;
+  private frequency: number;
+  private duration: number;
   
-  constructor(private readonly frequency: number = 667, private readonly duration: number = 70) {}
+  constructor(frequency: number = 667, duration: number = 70) {
+    this.frequency = frequency;
+    this.duration = duration;
+  }
   
   /**
    * Inicializa el contexto de audio (debe ser llamado después de interacción del usuario)
