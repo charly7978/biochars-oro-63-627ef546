@@ -59,3 +59,29 @@ export interface FeedbackData {
   confidence?: number;
   additionalData?: any;
 }
+
+/**
+ * Interfaz para optimizador de señales
+ */
+export interface SignalOptimizer {
+  optimizeSignal(signal: ProcessedPPGSignal): Record<VitalSignChannel, OptimizedSignal | null>;
+  processFeedback(feedback: FeedbackData): void;
+  reset(): void;
+}
+
+/**
+ * Interfaz para optimizador de canal específico
+ */
+export interface ChannelOptimizer {
+  optimize(signal: ProcessedPPGSignal): OptimizedSignal;
+  processFeedback(feedback: FeedbackData): void;
+  reset(): void;
+}
+
+/**
+ * Configuración para optimizador de canal
+ */
+export interface ChannelOptimizerConfig {
+  initialParameters: Partial<OptimizationParameters>;
+  adaptiveTuning?: boolean;
+}

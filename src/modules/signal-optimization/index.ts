@@ -1,19 +1,21 @@
 
 /**
- * Módulo de optimización de señales PPG
- * Punto de entrada para todas las funcionalidades de optimización
+ * Exportaciones para el módulo de optimización de señales
  */
 
+// Tipos
 export * from './types';
-export * from './signal-optimizer';
-export * from './base-channel-optimizer';
 
-// Exportación de función principal
-import { createSignalOptimizer } from './signal-optimizer';
+// Optimizador de señal
+export { SignalOptimizer, createOptimizer } from './signal-optimizer';
 
-/**
- * Crea una nueva instancia del optimizador de señal
- */
-export function createOptimizer() {
-  return createSignalOptimizer();
-}
+// Optimizador base de canal
+export { BaseChannelOptimizer } from './base-channel-optimizer';
+
+// Canales específicos
+export { HeartRateOptimizer } from './channels/heart-rate-optimizer';
+export { SPO2Optimizer } from './channels/spo2-optimizer';
+export { BloodPressureOptimizer } from './channels/blood-pressure-optimizer';
+export { GlucoseOptimizer } from './channels/glucose-optimizer';
+export { CholesterolOptimizer } from './channels/cholesterol-optimizer';
+export { TriglyceridesOptimizer } from './channels/triglycerides-optimizer';

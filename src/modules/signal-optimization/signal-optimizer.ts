@@ -1,110 +1,121 @@
 
 /**
- * Optimizador central de señales
- * Gestiona todos los canales de optimización y coordina el procesamiento
+ * Implementación del optimizador de señal multicanal
  */
 
 import { ProcessedPPGSignal } from '../signal-processing/types';
+import { 
+  OptimizedSignal, 
+  VitalSignChannel,
+  FeedbackData,
+  SignalOptimizer as ISignalOptimizer,
+  ChannelOptimizer
+} from './types';
+
 import { HeartRateOptimizer } from './channels/heart-rate-optimizer';
 import { SPO2Optimizer } from './channels/spo2-optimizer';
 import { BloodPressureOptimizer } from './channels/blood-pressure-optimizer';
 import { GlucoseOptimizer } from './channels/glucose-optimizer';
 import { CholesterolOptimizer } from './channels/cholesterol-optimizer';
 import { TriglyceridesOptimizer } from './channels/triglycerides-optimizer';
-import { 
-  SignalOptimizer,
-  ChannelOptimizer,
-  VitalSignChannel,
-  OptimizedSignal,
-  FeedbackData,
-  ChannelOptimizerConfig
-} from './types';
 
 /**
- * Optimizador central que distribuye la señal a optimizadores especializados
- * y coordina feedback bidireccional desde los calculadores
+ * Optimizador de señal multicanal
+ * Distribuye la señal PPG a varios optimizadores especializados
  */
-export class CentralSignalOptimizer implements SignalOptimizer {
-  // Optimizadores especializados por canal
-  private optimizers: Map<VitalSignChannel, ChannelOptimizer> = new Map();
+export class SignalOptimizer implements ISignalOptimizer {
+  private readonly channels: Map<VitalSignChannel, ChannelOptimizer>;
+  private lastOptimizedValues: Record<VitalSignChannel, OptimizedSignal | null>;
   
-  /**
-   * Inicializa optimizadores para todos los canales
-   */
   constructor() {
-    this.initializeOptimizers();
-    console.log("SignalOptimizer: Inicializado con 6 canales especializados y sistemas adaptativos avanzados");
-  }
-  
-  /**
-   * Crea optimizadores específicos para cada canal
-   */
-  private initializeOptimizers(): void {
-    // Crear optimizadores especializados
-    this.optimizers.set('heartRate', new HeartRateOptimizer());
-    this.optimizers.set('spo2', new SPO2Optimizer());
-    this.optimizers.set('bloodPressure', new BloodPressureOptimizer());
-    this.optimizers.set('glucose', new GlucoseOptimizer());
-    this.optimizers.set('cholesterol', new CholesterolOptimizer());
-    this.optimizers.set('triglycerides', new TriglyceridesOptimizer());
-  }
-  
-  /**
-   * Optimiza la señal PPG para todos los canales
-   */
-  public optimizeSignal(signal: ProcessedPPGSignal): Record<VitalSignChannel, OptimizedSignal> {
-    const results: Record<VitalSignChannel, OptimizedSignal> = {} as Record<VitalSignChannel, OptimizedSignal>;
+    // Inicializar canales
+    this.channels = new Map();
+    this.channels.set('heartRate', new HeartRateOptimizer());
+    this.channels.set('spo2', new SPO2Optimizer());
+    this.channels.set('bloodPressure', new BloodPressureOptimizer());
+    this.channels.set('glucose', new GlucoseOptimizer());
+    this.channels.set('cholesterol', new CholesterolOptimizer());
+    this.channels.set('triglycerides', new TriglyceridesOptimizer());
     
-    // Procesar cada canal independientemente
-    this.optimizers.forEach((optimizer, channel) => {
-      // Optimizar señal para canal específico
-      results[channel] = optimizer.optimize(signal);
-    });
-    
-    return results;
+    // Inicializar valores
+    this.lastOptimizedValues = {
+      heartRate: null,
+      spo2: null,
+      bloodPressure: null,
+      glucose: null,
+      cholesterol: null,
+      triglycerides: null
+    };
   }
   
   /**
-   * Procesa feedback desde sistema de cálculo
-   * Implementa comunicación bidireccional entre optimizador y calculador
+   * Optimiza la señal a través de todos los canales
+   */
+  public optimizeSignal(signal: ProcessedPPGSignal): Record<VitalSignChannel, OptimizedSignal | null> {
+    if (!signal) return this.lastOptimizedValues;
+    
+    // Procesar cada canal
+    for (const [channel, optimizer] of this.channels.entries()) {
+      try {
+        const optimizedSignal = optimizer.optimize(signal);
+        this.lastOptimizedValues[channel] = optimizedSignal;
+      } catch (error) {
+        console.error(`Error optimizando canal ${channel}:`, error);
+      }
+    }
+    
+    return this.lastOptimizedValues;
+  }
+  
+  /**
+   * Procesa retroalimentación para un canal específico
    */
   public processFeedback(feedback: FeedbackData): void {
-    // Obtener optimizador correspondiente al canal
-    const optimizer = this.optimizers.get(feedback.channel);
-    if (!optimizer) return;
+    if (!feedback || !feedback.channel) return;
     
-    // Enviar feedback al optimizador específico
-    optimizer.processFeedback(feedback);
-  }
-  
-  /**
-   * Obtiene optimizador específico por canal
-   */
-  public getOptimizer(channel: VitalSignChannel): ChannelOptimizer | null {
-    return this.optimizers.get(channel) || null;
-  }
-  
-  /**
-   * Configura un canal específico
-   */
-  public setChannelConfig(config: ChannelOptimizerConfig): void {
-    const optimizer = this.optimizers.get(config.channel);
-    if (!optimizer) return;
+    // Encontrar canal correspondiente
+    const channel = feedback.channel as VitalSignChannel;
+    const optimizer = this.channels.get(channel);
     
-    optimizer.setParameters(config.parameters);
+    if (optimizer) {
+      optimizer.processFeedback(feedback);
+    }
   }
   
   /**
    * Reinicia todos los optimizadores
    */
   public reset(): void {
-    this.optimizers.forEach(optimizer => optimizer.reset());
+    // Reiniciar cada canal
+    for (const optimizer of this.channels.values()) {
+      optimizer.reset();
+    }
+    
+    // Reiniciar valores
+    this.lastOptimizedValues = {
+      heartRate: null,
+      spo2: null,
+      bloodPressure: null,
+      glucose: null,
+      cholesterol: null,
+      triglycerides: null
+    };
+  }
+  
+  /**
+   * Obtiene un optimizador de canal específico
+   */
+  public getChannelOptimizer(channel: VitalSignChannel): ChannelOptimizer | null {
+    return this.channels.get(channel) || null;
   }
 }
 
 /**
- * Crea una nueva instancia del optimizador de señal
+ * Crea una nueva instancia de optimizador de señal
  */
-export function createSignalOptimizer(): SignalOptimizer {
-  return new CentralSignalOptimizer();
+export function createOptimizer(): ISignalOptimizer {
+  return new SignalOptimizer();
 }
+
+// Exportación explícita para uso en otros módulos
+export { SignalOptimizer };

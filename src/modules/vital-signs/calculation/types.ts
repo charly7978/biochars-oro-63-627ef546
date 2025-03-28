@@ -64,6 +64,6 @@ export interface FeedbackData {
   additionalData?: any;
 }
 
-// Exportar explícitamente VitalSignCalculation y BaseVitalSignCalculator para otros módulos
-export { VitalSignCalculation };
-export { BaseCalculator as BaseVitalSignCalculator };
+// Exportar explícitamente usando 'export type' para los tipos
+export type { VitalSignCalculation };
+export type { BaseCalculator as BaseVitalSignCalculator };
