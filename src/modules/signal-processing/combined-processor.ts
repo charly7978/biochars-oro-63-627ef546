@@ -1,71 +1,141 @@
-
 /**
- * Procesador combinado de señales
- * Integra procesamiento PPG y cardíaco en un único flujo de trabajo
+ * Procesador combinado de señal PPG y latidos cardíacos
  */
 
+import { SignalProcessor, SignalProcessorConfig } from './types';
 import { PPGProcessor } from './ppg-processor';
 import { HeartbeatProcessor } from './heartbeat-processor';
-import { ProcessedPPGSignal, PPGProcessingOptions } from './types';
+import { ProcessedPPGSignal } from './types';
 
-export class CombinedSignalProcessor {
+/**
+ * Procesador que integra el procesamiento de PPG y latidos cardíacos
+ */
+export class CombinedProcessor implements SignalProcessor {
   private ppgProcessor: PPGProcessor;
   private heartbeatProcessor: HeartbeatProcessor;
-  private lastProcessedSignal: ProcessedPPGSignal | null = null;
+  private lastRawValue: number = 0;
+  private isInitialized: boolean = false;
+  private config: SignalProcessorConfig = {
+    mode: 'standard',
+    filterWindowSize: 10,
+    amplificationFactor: 1.5
+  };
   
-  constructor(options: PPGProcessingOptions = {}) {
-    this.ppgProcessor = new PPGProcessor(options);
-    this.heartbeatProcessor = new HeartbeatProcessor(options);
-    
-    console.log("CombinedSignalProcessor: Inicializado con procesadores específicos");
+  /**
+   * Crea un nuevo procesador combinado
+   */
+  constructor() {
+    this.ppgProcessor = new PPGProcessor();
+    this.heartbeatProcessor = new HeartbeatProcessor();
   }
   
   /**
-   * Procesa un valor único y obtiene señal procesada completa
+   * Inicializa el procesador combinado
    */
-  public processValue(value: number): ProcessedPPGSignal {
-    // Primero procesamos la señal PPG
-    const ppgResult = this.ppgProcessor.processValue(value);
-    
-    // Solo procesamos los latidos si hay dedo detectado
-    if (ppgResult.fingerDetected && ppgResult.quality > 30) {
-      // Procesamos la señal para obtener información de latidos
-      const heartbeatResult = this.heartbeatProcessor.processSignal(ppgResult.filteredValue);
+  public async initialize(): Promise<void> {
+    try {
+      // Inicializar procesadores
+      this.ppgProcessor.initialize();
+      await this.heartbeatProcessor.initialize();
       
-      // Integramos la información de latidos en el resultado PPG
-      ppgResult.isPeak = heartbeatResult.isPeak;
-      ppgResult.lastPeakTime = heartbeatResult.lastPeakTime;
-      ppgResult.rrIntervals = heartbeatResult.rrIntervals;
+      // Aplicar configuración inicial
+      this.ppgProcessor.configure(this.config);
+      
+      // Configurar heartbeatProcessor (si tiene método de configuración)
+      if ('configure' in this.heartbeatProcessor) {
+        (this.heartbeatProcessor as any).configure(this.config);
+      }
+      
+      this.isInitialized = true;
+      console.log("CombinedProcessor: Inicializado correctamente");
+    } catch (error) {
+      console.error("Error inicializando CombinedProcessor:", error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Configura el procesador combinado
+   */
+  public configure(config: Partial<SignalProcessorConfig>): void {
+    this.config = { ...this.config, ...config };
+    
+    // Aplicar a ambos procesadores si están disponibles
+    if (this.ppgProcessor) {
+      this.ppgProcessor.configure(this.config);
     }
     
-    this.lastProcessedSignal = ppgResult;
-    return ppgResult;
+    // Configurar heartbeatProcessor (si tiene método de configuración)
+    if (this.heartbeatProcessor && 'configure' in this.heartbeatProcessor) {
+      (this.heartbeatProcessor as any).configure(this.config);
+    }
   }
   
   /**
-   * Reinicia todos los procesadores
+   * Procesa una señal PPG
+   */
+  public processSignal(input: number): ProcessedPPGSignal {
+    if (!this.isInitialized) {
+      console.warn("CombinedProcessor: No inicializado, devolviendo señal por defecto");
+      return {
+        rawValue: input,
+        filteredValue: input,
+        timestamp: Date.now(),
+        quality: 0,
+        fingerDetected: false
+      };
+    }
+    
+    // Procesar con PPGProcessor
+    const ppgSignal = this.ppgProcessor.processSignal(input);
+    
+    // Procesar con HeartbeatProcessor
+    const enrichedSignal = this.heartbeatProcessor.processSignal(ppgSignal);
+    
+    this.lastRawValue = input;
+    return enrichedSignal;
+  }
+  
+  /**
+   * Reinicia ambos procesadores
    */
   public reset(): void {
     this.ppgProcessor.reset();
     this.heartbeatProcessor.reset();
-    this.lastProcessedSignal = null;
+    this.isInitialized = false;
+    console.log("CombinedProcessor: Reiniciado");
   }
   
   /**
-   * Configura parámetros de los procesadores
+   * Inicia el procesamiento
    */
-  public configure(options: PPGProcessingOptions): void {
-    this.ppgProcessor.configure(options);
-    // Configurar el procesador de latidos con los mismos parámetros
-    if (options.peakDetectionThreshold) {
-      this.heartbeatProcessor.configure(options);
+  public start(): void {
+    this.ppgProcessor.start();
+    this.heartbeatProcessor.start();
+    console.log("CombinedProcessor: Iniciado");
+  }
+  
+  /**
+   * Detiene el procesamiento
+   */
+  public stop(): void {
+    this.ppgProcessor.stop();
+    this.heartbeatProcessor.stop();
+    console.log("CombinedProcessor: Detenido");
+  }
+  
+  /**
+   * Calibra ambos procesadores
+   */
+  public async calibrate(): Promise<boolean> {
+    try {
+      const ppgCalibrated = await this.ppgProcessor.calibrate();
+      const heartBeatCalibrated = await this.heartbeatProcessor.calibrate();
+      
+      return ppgCalibrated && heartBeatCalibrated;
+    } catch (error) {
+      console.error("Error durante la calibración:", error);
+      return false;
     }
-  }
-  
-  /**
-   * Obtiene el último resultado procesado
-   */
-  public getLastResult(): ProcessedPPGSignal | null {
-    return this.lastProcessedSignal;
   }
 }

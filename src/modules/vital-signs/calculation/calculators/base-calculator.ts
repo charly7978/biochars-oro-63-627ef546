@@ -1,89 +1,52 @@
 
 /**
- * Calculador base para todos los signos vitales
- * Proporciona funcionalidad común para todos los calculadores
+ * Calculador base para todos los calculadores específicos
  */
 
-import { CalculationResultItem, BaseCalculator } from '../types';
 import { OptimizedSignal } from '../../../signal-optimization/types';
+import { CalculationResultItem } from '../types';
 
-export abstract class BaseVitalSignCalculator implements BaseCalculator {
+/**
+ * Clase base para todos los calculadores
+ * Proporciona funcionalidad común y estado compartido
+ */
+export abstract class BaseCalculator {
   protected valueBuffer: number[] = [];
-  protected readonly _maxBufferSize: number = 100;
-  protected suggestedParameters: Record<string, any> = {};
+  protected _maxBufferSize: number = 30;
+  protected lastCalculatedValue: number = 0;
+  protected lastConfidence: number = 0;
+  protected suggestedParameters: Record<string, number> = {};
   
   /**
-   * Calcula el resultado del signo vital a partir de la señal optimizada
+   * Calcula resultado a partir de señal optimizada
    */
   public abstract calculate(signal: OptimizedSignal): CalculationResultItem;
   
   /**
-   * Reinicia el calculador
+   * Reinicia estado interno
    */
   public reset(): void {
     this.valueBuffer = [];
+    this.lastCalculatedValue = 0;
+    this.lastConfidence = 0;
     this.suggestedParameters = {};
   }
   
   /**
-   * Obtiene el nombre del canal para este calculador
-   */
-  public abstract getChannelName(): string;
-  
-  /**
-   * Obtiene el nivel de confianza actual
-   */
-  public abstract getConfidenceLevel(): number;
-  
-  /**
-   * Evalúa la calidad de señal
+   * Calcula calidad de la señal basada en buffer de valores
    */
   protected calculateSignalQuality(values: number[]): number {
-    if (values.length < 10) return 30;
+    if (values.length < 5) return 50;
     
-    // Calcular estadísticas de señal
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
-    const cv = stdDev / (Math.abs(mean) || 0.001);
+    // Calcular varianza como indicador de calidad
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
     
-    // Criterios de calidad
-    let quality = 50;
+    // Coeficiente de variación como porcentaje
+    const cv = Math.sqrt(variance) / mean * 100;
     
-    // Penalizar señales de muy baja variabilidad
-    if (cv < 0.05) {
-      quality -= 20;
-    }
-    // Recompensar variabilidad moderada
-    else if (cv >= 0.05 && cv < 0.4) {
-      quality += 20;
-    }
-    // Penalizar alta variabilidad (señal ruidosa)
-    else if (cv >= 0.8) {
-      quality -= 30;
-    }
-    
-    // Ajustar basado en rango
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min;
-    
-    if (range < 0.05) {
-      quality -= 30;
-    } else if (range >= 0.1 && range < 0.5) {
-      quality += 15;
-    }
-    
-    return Math.max(0, Math.min(100, quality));
-  }
-  
-  /**
-   * Añade un valor al buffer
-   */
-  protected addValue(value: number): void {
-    this.valueBuffer.push(value);
-    if (this.valueBuffer.length > this._maxBufferSize) {
-      this.valueBuffer.shift();
-    }
+    // Calidad inversa a variabilidad (menos variación = mayor calidad)
+    // Limitar a 0-100
+    return Math.max(0, Math.min(100, 100 - cv));
   }
 }

@@ -6,9 +6,10 @@
 
 export * from './types';
 export * from './SignalOptimizer';
-export * from './optimizers/HeartRateOptimizer';
-export * from './optimizers/SpO2Optimizer';
-export * from './optimizers/BloodPressureOptimizer';
-export * from './optimizers/GlucoseOptimizer';
-export * from './optimizers/CholesterolOptimizer';
-export * from './optimizers/TriglyceridesOptimizer';
+export * from './channels/heart-rate-optimizer';
+export * from './channels/spo2-optimizer';
+export * from './channels/blood-pressure-optimizer';
+export * from './channels/glucose-optimizer';
+export * from './channels/cholesterol-optimizer';
+export * from './channels/triglycerides-optimizer';
+export * from './base-channel-optimizer';

@@ -11,12 +11,12 @@ import {
   FeedbackData
 } from './types';
 import { ProcessedPPGSignal } from '../signal-processing/types';
-import { HeartRateOptimizer } from './optimizers/HeartRateOptimizer';
-import { SpO2Optimizer } from './optimizers/SpO2Optimizer';
-import { BloodPressureOptimizer } from './optimizers/BloodPressureOptimizer';
-import { GlucoseOptimizer } from './optimizers/GlucoseOptimizer';
-import { CholesterolOptimizer } from './optimizers/CholesterolOptimizer';
-import { TriglyceridesOptimizer } from './optimizers/TriglyceridesOptimizer';
+import { HeartRateOptimizer } from './channels/heart-rate-optimizer';
+import { SPO2Optimizer } from './channels/spo2-optimizer';
+import { BloodPressureOptimizer } from './channels/blood-pressure-optimizer';
+import { GlucoseOptimizer } from './channels/glucose-optimizer';
+import { CholesterolOptimizer } from './channels/cholesterol-optimizer';
+import { TriglyceridesOptimizer } from './channels/triglycerides-optimizer';
 
 /**
  * Optimizador de señal central que gestiona múltiples canales
@@ -44,7 +44,7 @@ export class SignalOptimizerImpl implements SignalOptimizer {
     // Inicializar optimizadores específicos
     this.optimizers = {
       heartRate: new HeartRateOptimizer(),
-      spo2: new SpO2Optimizer(),
+      spo2: new SPO2Optimizer(),
       bloodPressure: new BloodPressureOptimizer(),
       glucose: new GlucoseOptimizer(),
       cholesterol: new CholesterolOptimizer(),

@@ -1,4 +1,3 @@
-
 /**
  * Hook para cálculo de signos vitales
  * 
@@ -27,7 +26,7 @@ export const useVitalSignsCalculator = () => {
   
   // Integración con optimizador
   const { 
-    optimizedValues, 
+    optimizedSignals, 
     sendFeedback
   } = useSignalOptimizer();
   
@@ -53,7 +52,7 @@ export const useVitalSignsCalculator = () => {
     
     try {
       // Realizar cálculos con señales optimizadas
-      const result = calculatorRef.current.processOptimizedSignals(optimizedValues);
+      const result = calculatorRef.current.processOptimizedSignals(optimizedSignals);
       
       // Actualizar estado
       setLastCalculation(result);
@@ -74,7 +73,7 @@ export const useVitalSignsCalculator = () => {
       console.error("Error calculando signos vitales:", error);
       return null;
     }
-  }, [optimizedValues, sendFeedback]);
+  }, [optimizedSignals, sendFeedback]);
   
   /**
    * Obtiene datos de visualización para gráficos
