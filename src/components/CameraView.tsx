@@ -11,6 +11,7 @@ interface CameraViewProps {
     x?: number;
     y?: number;
   };
+  enableAudio?: boolean; // Agregamos una prop para controlar el audio
 }
 
 const CameraView: React.FC<CameraViewProps> = ({ 
@@ -18,10 +19,61 @@ const CameraView: React.FC<CameraViewProps> = ({
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
-  buttonPosition 
+  buttonPosition,
+  enableAudio = true // Por defecto, habilitamos el audio
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  /**
+   * Inicializa el contexto de audio al cargar el componente
+   */
+  useEffect(() => {
+    if (enableAudio) {
+      try {
+        const audioContext = new AudioContext();
+        audioContextRef.current = audioContext;
+        
+        // Aseguramos que el audio esté desbloqueado en dispositivos móviles
+        const unblockAudio = () => {
+          if (audioContextRef.current) {
+            if (audioContextRef.current.state === 'suspended') {
+              audioContextRef.current.resume();
+            }
+            
+            // Reproducir un sonido silencioso para desbloquear el audio
+            const oscillator = audioContextRef.current.createOscillator();
+            const gainNode = audioContextRef.current.createGain();
+            gainNode.gain.value = 0.01;
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContextRef.current.destination);
+            oscillator.start(0);
+            oscillator.stop(0.1);
+          }
+          
+          // Eliminar los event listeners una vez desbloqueado
+          document.removeEventListener('touchstart', unblockAudio);
+          document.removeEventListener('mousedown', unblockAudio);
+        };
+        
+        document.addEventListener('touchstart', unblockAudio);
+        document.addEventListener('mousedown', unblockAudio);
+        
+        return () => {
+          document.removeEventListener('touchstart', unblockAudio);
+          document.removeEventListener('mousedown', unblockAudio);
+          if (audioContextRef.current) {
+            audioContextRef.current.close().catch(err => 
+              console.error('Error al cerrar el contexto de audio:', err)
+            );
+          }
+        };
+      } catch (err) {
+        console.error('Error al inicializar el contexto de audio:', err);
+      }
+    }
+  }, [enableAudio]);
 
   /**
    * Stop all camera tracks and clean up
@@ -111,6 +163,16 @@ const CameraView: React.FC<CameraViewProps> = ({
       
       if (onStreamReady) {
         onStreamReady(newStream);
+      }
+      
+      // Desbloquear el contexto de audio si existe
+      if (enableAudio && audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        try {
+          await audioContextRef.current.resume();
+          console.log("Audio context resumed successfully");
+        } catch (err) {
+          console.error("Failed to resume audio context:", err);
+        }
       }
     } catch (err) {
       console.error("Error starting camera:", err);
