@@ -1,211 +1,159 @@
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  useCallback
+} from 'react';
+import { EventType, eventBus, useEventSubscription } from '../modules/events/EventBus';
+import { CameraConfig } from '../modules/types/signal';
 
 /**
- * Vital Signs Context
- * Provides state and actions for vital signs monitoring
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { toast } from "sonner";
-import { EventType, eventBus, useEventSubscription } from "@/modules/events/EventBus";
-import { PPGSignal, VitalSignsResult } from "@/modules/types/signal";
-import { measurementManager } from "@/modules/results/MeasurementManager";
-
-interface VitalSignsContextType {
-  // State
-  isMonitoring: boolean;
-  isCameraOn: boolean;
-  signalQuality: number;
-  vitalSigns: VitalSignsResult;
-  heartRate: number;
-  elapsedTime: number;
-  showResults: boolean;
-  lastSignal: {
-    fingerDetected: boolean;
-    filteredValue: number;
-    quality: number;
-  } | null;
-  isArrhythmia: boolean;
-  
-  // Actions
+interface VitalSignsContextProps {
+  heartbeatData: {
+    lastHeartbeat: number | null;
+    bpm: number | null;
+  };
+  setHeartbeatData: React.Dispatch<React.SetStateAction<{
+    lastHeartbeat: number | null;
+    bpm: number | null;
+  }>>;
+  cameraConfig: CameraConfig;
+  setCameraConfig: React.Dispatch<React.SetStateAction<CameraConfig>>;
+  isCameraActive: boolean;
+  setIsCameraActive: React.Dispatch<React.SetStateAction<boolean>>;
+  isProcessing: boolean;
+  setIsProcessing: React.Dispatch<React.SetStateAction<boolean>>;
   startMonitoring: () => void;
   stopMonitoring: () => void;
-  resetAll: () => void;
-  handleStreamReady: (stream: MediaStream) => void;
 }
 
-const initialVitalSigns: VitalSignsResult = {
-  timestamp: Date.now(),
-  heartRate: 0,
-  spo2: 0,
-  pressure: "--/--",
-  arrhythmiaStatus: "--",
-  reliability: 0
-};
+const VitalSignsContext = createContext<VitalSignsContextProps>({
+  heartbeatData: {
+    lastHeartbeat: null,
+    bpm: null,
+  },
+  setHeartbeatData: () => {},
+  cameraConfig: {
+    width: 640,
+    height: 480,
+    fps: 30,
+    facingMode: 'user',
+  },
+  setCameraConfig: () => {},
+  isCameraActive: false,
+  setIsCameraActive: () => {},
+  isProcessing: false,
+  setIsProcessing: () => {},
+  startMonitoring: () => {},
+  stopMonitoring: () => {},
+});
 
-const VitalSignsContext = createContext<VitalSignsContextType | undefined>(undefined);
+interface VitalSignsProviderProps {
+  children: React.ReactNode;
+}
 
-export const useVitalSigns = () => {
-  const context = useContext(VitalSignsContext);
-  if (!context) {
-    throw new Error("useVitalSigns must be used within a VitalSignsProvider");
-  }
-  return context;
-};
+export const VitalSignsProvider: React.FC<VitalSignsProviderProps> = ({ children }) => {
+  const [heartbeatData, setHeartbeatData] = useState({
+    lastHeartbeat: null,
+    bpm: null,
+  });
+  const [cameraConfig, setCameraConfig] = useState<CameraConfig>({
+    width: 640,
+    height: 480,
+    fps: 30,
+    facingMode: 'user',
+  });
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-export const VitalSignsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // State tracking
-  const [isMonitoring, setIsMonitoring] = useState(false);
-  const [isCameraOn, setIsCameraOn] = useState(false);
-  const [signalQuality, setSignalQuality] = useState(0);
-  const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>(initialVitalSigns);
-  const [heartRate, setHeartRate] = useState(0);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [showResults, setShowResults] = useState(false);
-  const [lastSignal, setLastSignal] = useState<{
-    fingerDetected: boolean;
-    filteredValue: number;
-    quality: number;
-  } | null>(null);
-  const [isArrhythmia, setIsArrhythmia] = useState(false);
-  
-  // Subscribe to heart beat events
-  useEventSubscription(EventType.HEARTBEAT_DETECTED, () => {
-    // Audio feedback handled by other modules
-  });
-  
-  // Subscribe to monitoring state events
-  useEventSubscription(EventType.MONITORING_STARTED, () => {
-    setIsMonitoring(true);
-    setIsCameraOn(true);
-    setShowResults(false);
-    setElapsedTime(0);
-    
-    // Enter fullscreen if available
-    const enterFullScreen = async () => {
-      try {
-        await document.documentElement.requestFullscreen();
-      } catch (err) {
-        console.log('Error entering fullscreen:', err);
-      }
-    };
-    
-    enterFullScreen();
-  });
-  
-  useEventSubscription(EventType.MONITORING_STOPPED, (data: { duration: number }) => {
-    setIsMonitoring(false);
-    setIsCameraOn(false);
-    setElapsedTime(data.duration);
-    setShowResults(true);
-  });
-  
-  useEventSubscription(EventType.MONITORING_RESET, () => {
-    setIsMonitoring(false);
-    setIsCameraOn(false);
-    setElapsedTime(0);
-    setSignalQuality(0);
-    setHeartRate(0);
-    setShowResults(false);
-    setVitalSigns(initialVitalSigns);
-    setLastSignal(null);
-    setIsArrhythmia(false);
-  });
-  
-  // Subscribe to vital signs events
-  useEventSubscription(EventType.VITAL_SIGNS_UPDATED, (data: VitalSignsResult) => {
-    setVitalSigns(data);
-  });
-  
-  useEventSubscription(EventType.VITAL_SIGNS_FINAL, (data: VitalSignsResult) => {
-    setVitalSigns(data);
-    setShowResults(true);
-  });
-  
-  // Subscribe to heart rate events
-  useEventSubscription(EventType.HEARTBEAT_RATE_CHANGED, (data: { heartRate: number }) => {
-    setHeartRate(data.heartRate);
-  });
-  
-  // Subscribe to signal events
-  useEventSubscription(EventType.SIGNAL_EXTRACTED, (data: PPGSignal) => {
-    setLastSignal({
-      fingerDetected: data.fingerDetected,
-      filteredValue: data.filteredValue,
-      quality: data.quality
-    });
-    
-    setSignalQuality(data.quality);
-  });
-  
-  // Subscribe to arrhythmia events
-  useEventSubscription(EventType.ARRHYTHMIA_DETECTED, () => {
-    setIsArrhythmia(true);
-    
-    toast.warning('Posible arritmia detectada', {
-      description: 'Se ha detectado un ritmo cardíaco irregular',
-    });
-  });
-  
-  // Subscribe to error events
-  useEventSubscription(EventType.ERROR_OCCURRED, (error: { message: string }) => {
-    toast.error('Error', {
-      description: error.message,
-    });
-  });
-  
-  // Sync with measurement manager on mount
   useEffect(() => {
-    const state = measurementManager.getState();
-    setIsMonitoring(state.isMonitoring);
-    setIsCameraOn(state.isCameraOn);
-    setSignalQuality(state.signalQuality);
-    setHeartRate(state.heartRate);
-    setElapsedTime(state.elapsedTime);
-    setShowResults(state.showResults);
-    setLastSignal(state.lastSignal);
-    
-    const vs = measurementManager.getVitalSigns();
-    if (vs) {
-      setVitalSigns(vs);
-    }
+    console.log("VitalSignsContext: Inicializado", {
+      configuraciónInicial: cameraConfig,
+      timestamp: new Date().toISOString()
+    });
+
+    return () => {
+      console.log("VitalSignsContext: Desmontado", {
+        estadoFinal: {
+          cámaraActiva: isCameraActive,
+          procesando: isProcessing
+        },
+        timestamp: new Date().toISOString()
+      });
+    };
+  }, [cameraConfig, isCameraActive, isProcessing]);
+
+  useEventSubscription(EventType.HEARTBEAT_PEAK_DETECTED, (data: any) => {
+    setHeartbeatData(prev => {
+      const newData = {
+        ...prev,
+        lastHeartbeat: Date.now(),
+        bpm: data.bpm || prev.bpm
+      };
+      return newData;
+    });
+  });
+
+  const startMonitoring = useCallback(() => {
+    setIsProcessing(true);
+    eventBus.publish(EventType.MONITORING_STARTED, {
+      timestamp: Date.now(),
+      configuración: cameraConfig
+    });
+    console.log("VitalSignsContext: Monitoreo iniciado", {
+      configuración: cameraConfig,
+      timestamp: new Date().toISOString()
+    });
+  }, [cameraConfig]);
+
+  const stopMonitoring = useCallback(() => {
+    setIsProcessing(false);
+    eventBus.publish(EventType.MONITORING_STOPPED, {
+      timestamp: Date.now()
+    });
+    console.log("VitalSignsContext: Monitoreo detenido", {
+      timestamp: new Date().toISOString()
+    });
   }, []);
-  
-  // Action handlers
-  const startMonitoring = () => {
-    measurementManager.startMonitoring();
-  };
-  
-  const stopMonitoring = () => {
-    measurementManager.stopMonitoring();
-  };
-  
-  const resetAll = () => {
-    measurementManager.reset();
-  };
-  
-  const handleStreamReady = (stream: MediaStream) => {
-    measurementManager.handleStreamReady(stream);
-  };
-  
-  const value = {
-    isMonitoring,
-    isCameraOn,
-    signalQuality,
-    vitalSigns,
-    heartRate,
-    elapsedTime,
-    showResults,
-    lastSignal,
-    isArrhythmia,
+
+  const value: VitalSignsContextProps = {
+    heartbeatData,
+    setHeartbeatData,
+    cameraConfig,
+    setCameraConfig,
+    isCameraActive,
+    setIsCameraActive,
+    isProcessing,
+    setIsProcessing,
     startMonitoring,
     stopMonitoring,
-    resetAll,
-    handleStreamReady
   };
-  
+
   return (
     <VitalSignsContext.Provider value={value}>
       {children}
     </VitalSignsContext.Provider>
   );
 };
+
+export const useVitalSigns = () => {
+  return useContext(VitalSignsContext);
+};
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */

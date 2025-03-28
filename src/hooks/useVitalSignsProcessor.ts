@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -85,8 +84,8 @@ export const useVitalSignsProcessor = () => {
     setLastValidResults(result);
     
     // Actualizar ventanas de arritmia si hay datos
-    if (result.lastArrhythmiaData?.windows) {
-      setArrhythmiaWindows(result.lastArrhythmiaData.windows);
+    if (result.arrhythmiaData?.windows) {
+      setArrhythmiaWindows(result.arrhythmiaData.windows);
     }
     
     // Actualizar log
