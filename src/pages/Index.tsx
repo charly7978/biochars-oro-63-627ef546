@@ -371,6 +371,7 @@ const Index = () => {
                 label="ARRITMIAS"
                 value={vitalSigns.arrhythmiaStatus?.split('|')[0] || "--"}
                 highlighted={vitalSigns.arrhythmiaStatus?.includes('Arritmia')}
+                arrhythmiaData={vitalSigns.lastArrhythmiaData}
               />
               <VitalSign 
                 label="COLESTEROL"

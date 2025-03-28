@@ -1,4 +1,3 @@
-
 /**
  * Calculador de arritmias
  */
@@ -61,16 +60,28 @@ export class ArrhythmiaCalculator {
       
       console.log(`ARRITMIA DETECTADA #${this.arrhythmiaCount} - RMSSD: ${rmssd.toFixed(2)}`);
       
+      const arrhythmiaStatus = `Arritmia|${this.arrhythmiaCount}`;
+      const arrhythmiaData = {
+        timestamp: currentTime,
+        rmssd: rmssd,
+        rrVariation: this.calculateVariation(intervals),
+        intervals: intervals.slice(-5),
+        severity: rmssd > 100 ? 'alta' : 'media',
+        visualWindow: {start: windowStart, end: windowEnd}
+      };
+      
+      if (arrhythmiaStatus.includes('Arritmia')) {
+        // Add visual window data for PPG graph
+        const now = Date.now();
+        arrhythmiaData.visualWindow = {
+          start: now - 1500, // 1.5 seconds before
+          end: now           // current time
+        };
+      }
+      
       return {
-        status: `Arritmia|${this.arrhythmiaCount}`,
-        data: {
-          timestamp: currentTime,
-          rmssd: rmssd,
-          rrVariation: this.calculateVariation(intervals),
-          intervals: intervals.slice(-5),
-          severity: rmssd > 100 ? 'alta' : 'media',
-          visualWindow: {start: windowStart, end: windowEnd}
-        },
+        status: arrhythmiaStatus,
+        data: arrhythmiaData,
         count: this.arrhythmiaCount
       };
     }

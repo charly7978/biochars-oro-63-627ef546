@@ -35,7 +35,13 @@ export const useArrhythmiaVisualization = () => {
     
     // Dispatch custom event for PPG graph to listen to
     const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
-      detail: { start, end, timestamp: Date.now() }
+      detail: { 
+        start, 
+        end, 
+        timestamp: Date.now(),
+        severity: 'alta',  // Include severity for PPG graph coloring
+        type: 'irregular'
+      }
     });
     document.dispatchEvent(arrhythmiaEvent);
   }, []);
@@ -54,7 +60,7 @@ export const useArrhythmiaVisualization = () => {
   // Listen for external arrhythmia signals from the processor
   useEffect(() => {
     const handleExternalArrhythmia = (event: CustomEvent) => {
-      const { timestamp, window } = event.detail;
+      const { timestamp, window, severity } = event.detail;
       if (window && window.start && window.end) {
         addArrhythmiaWindow(window.start, window.end);
       }
