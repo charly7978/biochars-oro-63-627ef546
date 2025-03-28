@@ -52,14 +52,6 @@ export const useVitalSignsCalculator = () => {
     if (!calculatorRef.current) return null;
     
     try {
-      // Comprobar que hay señales optimizadas
-      const hasOptimizedSignals = Object.values(optimizedSignals).some(signal => signal !== null);
-      
-      if (!hasOptimizedSignals) {
-        console.log("VitalSignsCalculator: No hay señales optimizadas disponibles");
-        return null;
-      }
-      
       // Realizar cálculos con señales optimizadas
       const result = calculatorRef.current.processOptimizedSignals(optimizedSignals);
       

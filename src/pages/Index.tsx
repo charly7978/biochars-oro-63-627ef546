@@ -89,6 +89,15 @@ const Index = () => {
           if (vitals) {
             console.log("Index: Nuevos signos vitales procesados", vitals);
             setVitalSigns(vitals);
+            
+            // Mostrar notificación de arritmia si se detecta
+            if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('Arritmia')) {
+              toast({
+                title: "¡Arritmia detectada!",
+                description: "Se ha detectado una irregularidad en el ritmo cardíaco.",
+                variant: "destructive"
+              });
+            }
           }
         }
         
@@ -136,6 +145,12 @@ const Index = () => {
           return newTime;
         });
       }, 1000);
+      
+      toast({
+        title: "Medición iniciada",
+        description: "Coloque su dedo sobre la cámara",
+        variant: "default"
+      });
     }
   };
 
@@ -156,6 +171,12 @@ const Index = () => {
     if (savedResults) {
       setVitalSigns(savedResults);
       setShowResults(true);
+      
+      toast({
+        title: "Medición completada",
+        description: "Resultados disponibles",
+        variant: "success"
+      });
     }
     
     setElapsedTime(0);
@@ -191,6 +212,12 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    
+    toast({
+      title: "Aplicación reiniciada",
+      description: "Todos los datos han sido restablecidos",
+      variant: "default"
+    });
   };
 
   const handleStreamReady = (stream: MediaStream) => {
