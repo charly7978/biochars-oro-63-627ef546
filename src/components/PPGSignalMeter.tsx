@@ -280,13 +280,13 @@ const PPGSignalMeter = memo(({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     
-    gradient.addColorStop(0.00, 'rgba(255, 0, 0, 0.9)');     // Red
-    gradient.addColorStop(0.17, 'rgba(255, 127, 0, 0.9)');   // Orange
-    gradient.addColorStop(0.33, 'rgba(255, 255, 0, 0.9)');   // Yellow
-    gradient.addColorStop(0.50, 'rgba(0, 255, 0, 0.9)');     // Green
-    gradient.addColorStop(0.67, 'rgba(0, 0, 255, 0.9)');     // Blue
-    gradient.addColorStop(0.83, 'rgba(75, 0, 130, 0.9)');    // Indigo
-    gradient.addColorStop(1.00, 'rgba(143, 0, 255, 0.9)');   // Violet
+    gradient.addColorStop(0.00, 'rgba(141, 203, 247, 0.3)');   // Soft Sky Blue (top)
+    gradient.addColorStop(0.17, 'rgba(174, 218, 255, 0.3)');   // Light Blue
+    gradient.addColorStop(0.33, 'rgba(200, 230, 255, 0.3)');   // Pale Blue
+    gradient.addColorStop(0.50, 'rgba(220, 240, 255, 0.3)');   // Very Light Blue
+    gradient.addColorStop(0.67, 'rgba(230, 245, 255, 0.3)');   // Ultra Light Blue
+    gradient.addColorStop(0.83, 'rgba(240, 250, 255, 0.3)');   // Almost White Blue
+    gradient.addColorStop(1.00, 'rgba(250, 253, 255, 0.3)');   // Barely Tinted White (bottom)
   
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
