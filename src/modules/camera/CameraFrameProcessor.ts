@@ -1,158 +1,165 @@
 
 /**
- * Procesador avanzado de frames de cámara
- * Optimizado para extraer señales PPG con alta precisión
+ * Procesador de frames de cámara
+ * Extrae datos PPG de frames de video
  */
 
-import { ImageData } from '../../types/signal';
-
-export interface FrameProcessingResult {
-  redChannel: number;
-  greenChannel: number;
-  blueChannel: number;
-  combinedSignal: number;
-  brightness: number;
-  frameQuality: number;
-}
+import { ProcessedPPGSignal } from '../signal-processing/types';
+import { CombinedExtractor } from '../extraction/CombinedExtractor';
 
 export class CameraFrameProcessor {
-  private lastResults: FrameProcessingResult[] = [];
-  private readonly maxHistorySize = 20;
-  private readonly redWeight = 1.5;
-  private readonly greenWeight = 2.0;
-  private readonly blueWeight = 0.8;
+  private extractor: CombinedExtractor;
+  private lastProcessedTime: number = 0;
+  private processingInterval: number = 30; // ms entre procesamiento
+  private frameCount: number = 0;
   
-  /**
-   * Procesa un frame de la cámara para extraer datos de señal PPG
-   */
-  public processFrame(imageData: ImageData): FrameProcessingResult {
-    // Extraer canales RGB y calcular señal combinada
-    const result = this.extractChannelData(imageData);
-    
-    // Almacenar resultado para análisis histórico
-    this.addToHistory(result);
-    
-    return result;
+  constructor() {
+    this.extractor = new CombinedExtractor();
+    console.log("CameraFrameProcessor: Inicializado con extractor combinado");
   }
   
   /**
-   * Extrae datos RGB y calcula señal combinada optimizada
+   * Procesa un frame de la cámara y extrae datos PPG
    */
-  private extractChannelData(imageData: ImageData): FrameProcessingResult {
-    const data = imageData.data;
-    const width = imageData.width;
-    const height = imageData.height;
+  public processFrame(imageData: ImageData): { 
+    ppgSignal: ProcessedPPGSignal,
+    heartBeatData: { isPeak: boolean, intervals: number[], lastPeakTime: number | null }
+  } | null {
+    try {
+      const now = Date.now();
+      
+      // Limitar frecuencia de procesamiento
+      if (now - this.lastProcessedTime < this.processingInterval) {
+        return null;
+      }
+      
+      this.lastProcessedTime = now;
+      this.frameCount++;
+      
+      // Extraer valor PPG del frame (R-G)
+      const ppgValue = this.extractPPGValue(imageData);
+      
+      // Procesar a través del extractor combinado
+      const result = this.extractor.processValue(ppgValue);
+      
+      // Registro periódico
+      if (this.frameCount % 30 === 0) {
+        console.log("CameraFrameProcessor: Frame procesado", {
+          frameCount: this.frameCount,
+          ppgValue,
+          signalStrength: result.ppg.signalStrength,
+          fingerDetected: result.ppg.fingerDetected,
+          isPeak: result.heartbeat.isPeak,
+          rrIntervals: result.heartbeat.intervals.length
+        });
+      }
+      
+      // Construir objeto de señal PPG procesada
+      const ppgSignal: ProcessedPPGSignal = {
+        rawValue: ppgValue,
+        filteredValue: result.combined.value,
+        timestamp: now,
+        quality: result.quality || 0,
+        fingerDetected: result.ppg.fingerDetected,
+        isPeak: result.heartbeat.isPeak,
+        lastPeakTime: result.heartbeat.lastPeakTime,
+        rrIntervals: result.heartbeat.intervals,
+        signalStrength: result.ppg.signalStrength
+      };
+      
+      return {
+        ppgSignal,
+        heartBeatData: {
+          isPeak: result.heartbeat.isPeak,
+          intervals: result.heartbeat.intervals,
+          lastPeakTime: result.heartbeat.lastPeakTime
+        }
+      };
+    } catch (error) {
+      console.error("Error procesando frame:", error);
+      return null;
+    }
+  }
+  
+  /**
+   * Extrae valor PPG de un frame de imagen
+   * Utiliza diferencia R-G como señal PPG primaria
+   */
+  private extractPPGValue(imageData: ImageData): number {
+    const { data, width, height } = imageData;
     
-    // Optimización: analizar solo una región central
-    const centerRegionX = Math.floor(width * 0.3);
-    const centerRegionY = Math.floor(height * 0.3);
-    const centerWidth = Math.floor(width * 0.4);
-    const centerHeight = Math.floor(height * 0.4);
+    // Region de interés (centro de la imagen)
+    const roiSize = Math.min(width, height) / 3;
+    const centerX = Math.floor(width / 2);
+    const centerY = Math.floor(height / 2);
+    const startX = Math.max(0, centerX - Math.floor(roiSize / 2));
+    const startY = Math.max(0, centerY - Math.floor(roiSize / 2));
+    const endX = Math.min(width, centerX + Math.floor(roiSize / 2));
+    const endY = Math.min(height, centerY + Math.floor(roiSize / 2));
     
+    // Acumuladores para componentes RGB
     let redSum = 0;
     let greenSum = 0;
     let blueSum = 0;
     let pixelCount = 0;
     
-    // Procesar solo región central para mejor rendimiento y precisión
-    for (let y = centerRegionY; y < centerRegionY + centerHeight; y += 2) {
-      const rowOffset = y * width * 4;
-      
-      for (let x = centerRegionX; x < centerRegionX + centerWidth; x += 2) {
-        const idx = rowOffset + x * 4;
-        
+    // Muestrear cada 4 píxeles para rendimiento
+    const sampleStep = 4;
+    
+    // Procesar región de interés
+    for (let y = startY; y < endY; y += sampleStep) {
+      for (let x = startX; x < endX; x += sampleStep) {
+        const idx = (y * width + x) * 4;
         redSum += data[idx];
         greenSum += data[idx + 1];
         blueSum += data[idx + 2];
-        
         pixelCount++;
       }
     }
+    
+    // Evitar división por cero
+    if (pixelCount === 0) return 0;
     
     // Calcular promedios
     const redAvg = redSum / pixelCount;
     const greenAvg = greenSum / pixelCount;
     const blueAvg = blueSum / pixelCount;
     
-    // Calcular brillo promedio
-    const brightness = (redAvg + greenAvg + blueAvg) / 3;
+    // Calcular señal PPG como diferencia normalizada
+    // La señal principal es R-G (sensible a cambios en la sangre)
+    const signal = (redAvg - greenAvg) / (redAvg + greenAvg + 1);
     
-    // Calcular señal combinada con pesos optimizados para PPG
-    const combinedSignal = (
-      redAvg * this.redWeight + 
-      greenAvg * this.greenWeight + 
-      blueAvg * this.blueWeight
-    ) / (this.redWeight + this.greenWeight + this.blueWeight);
-    
-    // Evaluar calidad del frame
-    const frameQuality = this.calculateFrameQuality(redAvg, greenAvg, blueAvg, brightness);
-    
-    return {
-      redChannel: redAvg,
-      greenChannel: greenAvg,
-      blueChannel: blueAvg,
-      combinedSignal,
-      brightness,
-      frameQuality
+    return signal;
+  }
+  
+  /**
+   * Configura el extractor combinado
+   */
+  public configure(config: {
+    heartbeat?: {
+      peakThreshold?: number;
+      minPeakDistance?: number;
     };
+    ppg?: {
+      minSignalThreshold?: number;
+    };
+  }): void {
+    this.extractor.configure(config);
   }
   
   /**
-   * Calcula la calidad estimada del frame para detección PPG
-   */
-  private calculateFrameQuality(red: number, green: number, blue: number, brightness: number): number {
-    // Calidad base
-    let quality = 70;
-    
-    // Factor 1: Brillo adecuado (ni muy oscuro ni muy brillante)
-    if (brightness < 50) {
-      // Penalizar frames muy oscuros
-      quality -= (50 - brightness) / 2;
-    } else if (brightness > 200) {
-      // Penalizar frames muy brillantes (saturados)
-      quality -= (brightness - 200) / 2;
-    } else if (brightness > 80 && brightness < 180) {
-      // Bonificar rango óptimo de brillo
-      quality += 10;
-    }
-    
-    // Factor 2: Dominancia del canal verde (indica mejor señal PPG)
-    const isGreenDominant = green > red && green > blue;
-    if (isGreenDominant) {
-      quality += 15;
-    }
-    
-    // Factor 3: Proporción entre canales (estimador de presencia de dedo)
-    const redToBlueRatio = red / Math.max(1, blue);
-    if (redToBlueRatio > 1.3 && redToBlueRatio < 2.5) {
-      quality += 10; // Proporciones típicas con dedo sobre cámara
-    }
-    
-    // Limitamos calidad a rango 0-100
-    return Math.max(0, Math.min(100, quality));
-  }
-  
-  /**
-   * Añade un resultado al historial
-   */
-  private addToHistory(result: FrameProcessingResult): void {
-    this.lastResults.push(result);
-    if (this.lastResults.length > this.maxHistorySize) {
-      this.lastResults.shift();
-    }
-  }
-  
-  /**
-   * Obtiene los últimos resultados de procesamiento
-   */
-  public getHistory(): FrameProcessingResult[] {
-    return [...this.lastResults];
-  }
-  
-  /**
-   * Resetea el procesador
+   * Reinicia el procesador y el extractor
    */
   public reset(): void {
-    this.lastResults = [];
+    this.extractor.reset();
+    this.frameCount = 0;
+    this.lastProcessedTime = 0;
+  }
+  
+  /**
+   * Establece intervalo entre procesamiento de frames
+   */
+  public setProcessingInterval(interval: number): void {
+    this.processingInterval = Math.max(10, interval);
   }
 }

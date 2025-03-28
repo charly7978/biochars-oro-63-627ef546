@@ -1,15 +1,10 @@
 
 /**
- * Módulo de cálculo y resultados para signos vitales
- * 
- * Implementa algoritmos avanzados de cálculo real basados en señales optimizadas
- * con feedback bidireccional hacia el optimizador
+ * Módulo de cálculo de signos vitales
+ * Punto de entrada para todos los calculadores de signos vitales
  */
 
-// Exportar tipos principales
 export * from './types';
-
-// Exportar procesadores principales
 export * from './vital-signs-calculator';
 export * from './feedback-manager';
 
@@ -21,12 +16,11 @@ export * from './calculators/glucose-calculator';
 export * from './calculators/lipids-calculator';
 export * from './calculators/arrhythmia-calculator';
 
-// Factory para crear instancias
-import { createVitalSignsCalculator } from './vital-signs-calculator';
+import { VitalSignsCalculatorManager } from './vital-signs-calculator';
 
 /**
- * Crea y configura una nueva instancia del calculador
+ * Crea una nueva instancia del calculador de signos vitales
  */
-export function createCalculator() {
-  return createVitalSignsCalculator();
+export function createCalculator(): VitalSignsCalculatorManager {
+  return new VitalSignsCalculatorManager();
 }

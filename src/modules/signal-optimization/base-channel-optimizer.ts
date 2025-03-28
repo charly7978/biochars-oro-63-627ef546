@@ -5,30 +5,68 @@
  */
 
 import { ProcessedPPGSignal } from '../signal-processing/types';
-import { OptimizedSignal, ChannelOptimizerConfig, FeedbackData } from './types';
+import { 
+  OptimizedSignal, 
+  ChannelOptimizerConfig, 
+  FeedbackData, 
+  ChannelOptimizer, 
+  VitalSignChannel,
+  OptimizationParameters, 
+  FilteringLevel 
+} from './types';
 
-export abstract class BaseChannelOptimizer {
-  protected readonly channelId: string;
-  protected config: ChannelOptimizerConfig;
+export abstract class BaseChannelOptimizer implements ChannelOptimizer {
+  protected readonly channelId: VitalSignChannel;
+  protected parameters: OptimizationParameters;
   protected signalBuffer: ProcessedPPGSignal[] = [];
   protected readonly maxBufferSize: number = 100;
   
-  constructor(channelId: string, config: ChannelOptimizerConfig = {}) {
+  constructor(channelId: VitalSignChannel, config: Partial<OptimizationParameters> = {}) {
     this.channelId = channelId;
-    this.config = {
-      amplificationFactor: 1.0,
-      filteringLevel: 'medium',
-      ...config
+    this.parameters = {
+      amplificationFactor: config.amplificationFactor || 1.0,
+      filteringLevel: config.filteringLevel || 'medium',
+      channelSpecific: config.channelSpecific || {}
+    };
+  }
+  
+  /**
+   * Devuelve el canal asociado a este optimizador
+   */
+  public getChannel(): VitalSignChannel {
+    return this.channelId;
+  }
+  
+  /**
+   * Obtiene los parámetros actuales
+   */
+  public getParameters(): OptimizationParameters {
+    return { ...this.parameters };
+  }
+  
+  /**
+   * Establece parámetros
+   */
+  public setParameters(params: Partial<OptimizationParameters>): void {
+    this.parameters = {
+      ...this.parameters,
+      ...params,
+      channelSpecific: {
+        ...this.parameters.channelSpecific,
+        ...params.channelSpecific
+      }
     };
   }
   
   /**
    * Optimiza una señal PPG para este canal específico
+   * Implementación abstracta que debe ser proporcionada por clases derivadas
    */
-  public abstract optimizeSignal(signal: ProcessedPPGSignal): OptimizedSignal | null;
+  public abstract optimize(signal: ProcessedPPGSignal): OptimizedSignal;
   
   /**
    * Procesa retroalimentación desde el módulo de cálculo
+   * Implementación abstracta que debe ser proporcionada por clases derivadas
    */
   public abstract processFeedback(feedback: FeedbackData): void;
   
@@ -62,7 +100,7 @@ export abstract class BaseChannelOptimizer {
    * Obtiene el factor alpha para filtrado adaptativo basado en configuración
    */
   protected getAlpha(): number {
-    switch (this.config.filteringLevel) {
+    switch (this.parameters.filteringLevel) {
       case 'low': return 0.7;
       case 'medium': return 0.5;
       case 'high': return 0.3;
@@ -91,7 +129,7 @@ export abstract class BaseChannelOptimizer {
    * Amplifica una señal según el factor configurado
    */
   protected amplifySignal(value: number): number {
-    return value * (this.config.amplificationFactor || 1.0);
+    return value * (this.parameters.amplificationFactor || 1.0);
   }
   
   /**
@@ -107,5 +145,45 @@ export abstract class BaseChannelOptimizer {
     if (range === 0) return values.map(() => 0.5);
     
     return values.map(v => (v - min) / range);
+  }
+  
+  /**
+   * Adapta parámetros según retroalimentación
+   */
+  protected adaptToFeedback(feedback: FeedbackData): void {
+    if (feedback.parameter === 'amplificationFactor') {
+      if (feedback.adjustment === 'increase') {
+        this.parameters.amplificationFactor = Math.min(
+          5.0, 
+          this.parameters.amplificationFactor * (1 + feedback.magnitude)
+        );
+      } else if (feedback.adjustment === 'decrease') {
+        this.parameters.amplificationFactor = Math.max(
+          0.2, 
+          this.parameters.amplificationFactor * (1 - feedback.magnitude)
+        );
+      } else if (feedback.adjustment === 'reset') {
+        this.parameters.amplificationFactor = 1.0;
+      }
+    } else if (feedback.parameter === 'filteringLevel') {
+      if (feedback.magnitude > 0.7) {
+        this.parameters.filteringLevel = 'high';
+      } else if (feedback.magnitude > 0.3) {
+        this.parameters.filteringLevel = 'medium';
+      } else {
+        this.parameters.filteringLevel = 'low';
+      }
+    }
+  }
+  
+  /**
+   * Reinicia los parámetros a valores por defecto
+   */
+  protected resetChannelParameters(): void {
+    this.parameters = {
+      amplificationFactor: 1.0,
+      filteringLevel: 'medium',
+      channelSpecific: {}
+    };
   }
 }
