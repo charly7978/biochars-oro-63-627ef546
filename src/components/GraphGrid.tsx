@@ -29,15 +29,15 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				// Rainbow gradient background with glassmorphism effect
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
 				
-				// Rainbow colors from top to bottom (soft at top, more intense at bottom)
-				gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');        // White at top
-				gradient.addColorStop(0.15, 'rgba(200, 230, 255, 0.7)');     // Light blue
-				gradient.addColorStop(0.3, 'rgba(170, 200, 255, 0.7)');      // Blue
-				gradient.addColorStop(0.45, 'rgba(160, 220, 180, 0.7)');     // Green
-				gradient.addColorStop(0.6, 'rgba(255, 255, 150, 0.7)');      // Yellow
-				gradient.addColorStop(0.75, 'rgba(255, 180, 140, 0.7)');     // Orange
-				gradient.addColorStop(0.9, 'rgba(240, 140, 140, 0.7)');      // Red
-				gradient.addColorStop(1, 'rgba(220, 120, 240, 0.7)');        // Purple at bottom
+				// Rainbow colors with progressive intensity
+				gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');        // Pure white at top
+				gradient.addColorStop(0.1, 'rgba(220, 240, 255, 0.8)');     // Soft white-blue
+				gradient.addColorStop(0.2, 'rgba(180, 220, 255, 0.7)');     // Light blue
+				gradient.addColorStop(0.35, 'rgba(150, 220, 180, 0.7)');    // Soft green
+				gradient.addColorStop(0.5, 'rgba(255, 255, 130, 0.7)');     // Soft yellow
+				gradient.addColorStop(0.65, 'rgba(255, 180, 120, 0.7)');    // Light orange
+				gradient.addColorStop(0.8, 'rgba(255, 120, 120, 0.7)');     // Soft red
+				gradient.addColorStop(1, 'rgba(220, 120, 240, 0.7)');       // Purple at bottom
 				
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
