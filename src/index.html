@@ -4,17 +4,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
-    <meta name="viewport" content="width=2160, height=1080, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="fullscreen" content="yes">
     <meta name="screen-orientation" content="portrait">
-    <!-- Force immersive mode for Android -->
-    <meta name="immersive" content="full">
-    <!-- Force target resolution -->
-    <meta name="target-resolution" content="2160x1080">
     <title>healthpulse-captain</title>
     <style>
       :root {
@@ -22,8 +18,6 @@
         --sar: env(safe-area-inset-right);
         --sab: env(safe-area-inset-bottom);
         --sal: env(safe-area-inset-left);
-        --app-width: 2160px;
-        --app-height: 1080px;
       }
       
       * {
@@ -62,14 +56,22 @@
       }
       
       #root {
-        width: var(--app-width);
-        height: var(--app-height);
+        width: 100%;
+        height: 100%;
+        height: 100vh;
+        height: 100dvh;
+        height: -webkit-fill-available;
         display: flex;
         flex-direction: column;
         background: #000;
         overflow: hidden;
         touch-action: none;
-        transform-origin: top left;
+      }
+
+      @supports (height: 100dvh) {
+        #root {
+          height: 100dvh;
+        }
       }
       
       /* High resolution interface settings */
