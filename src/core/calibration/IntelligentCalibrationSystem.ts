@@ -840,3 +840,93 @@ export class IntelligentCalibrationSystem {
     this.correctionFactors.diastolic = this.constrainValue(this.correctionFactors.diastolic, 0.85, 1.15);
     this.correctionFactors.glucose = this.constrainValue(this.correctionFactors.glucose, 0.8, 1.2);
   }
+  
+  /**
+   * Carga perfil de calibración desde almacenamiento
+   */
+  private async loadCalibrationProfile(): Promise<void> {
+    try {
+      // Intentar cargar desde localStorage primero (más rápido)
+      const localProfile = localStorage.getItem('calibrationProfile');
+      if (localProfile) {
+        this.userProfile = JSON.parse(localProfile);
+        this.applyUserProfile();
+        console.log('Perfil de calibración cargado desde localStorage');
+      }
+      
+      // Intentar sincronizar con Supabase si está disponible
+      const { data, error } = await supabase
+        .from('calibration_settings')
+        .select('*')
+        .eq('is_active', true)
+        .single();
+      
+      if (data && !error) {
+        // Convertir formato de base de datos a perfil de usuario
+        this.userProfile = {
+          userId: data.user_id,
+          createdAt: new Date(data.created_at),
+          lastUpdated: new Date(data.updated_at),
+          correctionFactors: {
+            heartRate: 1.0,
+            spo2: 1.0,
+            systolic: 1.0,
+            diastolic: 1.0,
+            glucose: 1.0
+          },
+          referenceValues: {
+            heartRate: data.heart_rate_reference || 75,
+            spo2: data.spo2_reference || 97,
+            systolic: data.systolic_reference || 120,
+            diastolic: data.diastolic_reference || 80,
+            glucose: data.glucose_reference || 100
+          },
+          config: {
+            autoCalibrationEnabled: true,
+            continuousLearningEnabled: true,
+            syncWithReferenceDevices: false,
+            adaptToEnvironment: true,
+            adaptToUserActivity: true,
+            aggressiveness: data.quality_threshold ? data.quality_threshold / 100 : 0.5,
+            minimumQualityThreshold: data.quality_threshold || 70
+          }
+        };
+        
+        this.applyUserProfile();
+        console.log('Perfil de calibración sincronizado con Supabase');
+      }
+    } catch (error) {
+      console.error('Error al cargar perfil de calibración:', error);
+      // Usar valores por defecto
+      this.correctionFactors = this.getDefaultCorrectionFactors();
+      this.referenceValues = this.getDefaultReferences();
+    }
+  }
+  
+  /**
+   * Guarda perfil de calibración en almacenamiento
+   */
+  private saveCalibrationProfile(): void {
+    if (this.userProfile) {
+      localStorage.setItem('calibrationProfile', JSON.stringify(this.userProfile));
+    }
+  }
+  
+  /**
+   * Aplica perfil de calibración al sistema
+   */
+  private applyUserProfile(): void {
+    if (this.userProfile) {
+      this.correctionFactors = this.userProfile.correctionFactors;
+      this.referenceValues = this.userProfile.referenceValues;
+      this.config = this.userProfile.config;
+    }
+  }
+}
+
+/**
+ * Función de utilidad para acceso rápido al sistema de calibración
+ */
+export function getCalibrationSystem(): IntelligentCalibrationSystem {
+  return IntelligentCalibrationSystem.getInstance();
+}
