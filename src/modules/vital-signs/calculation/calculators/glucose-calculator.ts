@@ -1,3 +1,4 @@
+
 /**
  * Calculador especializado para glucosa
  */
@@ -10,6 +11,11 @@ export class GlucoseCalculator extends BaseCalculator {
   private absorptionRatio: number = 1.0;
   private baselineVariation: number = 0;
   private trendData: number[] = [];
+  
+  // Add missing properties
+  private decayTime: number = 0;
+  private peakAmplitude: number = 0;
+  private areaUnderCurve: number = 0;
   
   constructor() {
     super('glucose');
@@ -230,7 +236,7 @@ export class GlucoseCalculator extends BaseCalculator {
     this.areaUnderCurve = 0;
   }
 
-    private calculateTrendConsistency(): number {
-        return 0.8;
-    }
+  private calculateTrendConsistency(): number {
+    return 0.8;
+  }
 }

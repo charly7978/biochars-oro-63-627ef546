@@ -12,6 +12,16 @@ export class LipidsCalculator extends BaseCalculator {
   private waveformDistortion: number = 0;
   private baselineTrend: number[] = [];
   
+  private waveformFeatures: {
+    symmetry: number;
+    areaUnderCurve: number;
+    peakWidth: number;
+  } = {
+    symmetry: 0,
+    areaUnderCurve: 0,
+    peakWidth: 0
+  };
+  
   constructor(channel: VitalSignChannel) {
     super(channel);
     this._maxBufferSize = 180; // Mayor buffer para análisis de lípidos
