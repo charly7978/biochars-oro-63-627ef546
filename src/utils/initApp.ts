@@ -12,11 +12,24 @@ import { initializeServices } from '../services/initializeServices';
 export const initializeApp = async () => {
   console.log("Initializing application...");
   
-  // Inicializar todos los servicios
-  await initializeServices();
-  
-  console.log("Application initialized successfully");
-  return true;
+  try {
+    // Inicializar todos los servicios
+    await initializeServices();
+    
+    // Agregar evento para asegurar inicialización después de que el documento esté completamente cargado
+    window.addEventListener('DOMContentLoaded', () => {
+      console.log("DOM fully loaded, re-checking services");
+      initializeServices().catch(err => {
+        console.error("Error re-initializing services after DOMContentLoaded:", err);
+      });
+    });
+    
+    console.log("Application initialized successfully");
+    return true;
+  } catch (error) {
+    console.error("Failed to initialize application:", error);
+    return false;
+  }
 };
 
 // Llamar a la inicialización inmediatamente

@@ -9,9 +9,12 @@ class HeartbeatSoundService {
   private static instance: HeartbeatSoundService;
   private audioContext: AudioContext | null = null;
   private isInitialized: boolean = false;
+  private lastPlayTime: number = 0;
+  private readonly MIN_PLAY_INTERVAL = 300; // Mínimo intervalo entre sonidos en ms
 
   private constructor() {
     // Constructor privado para singleton
+    console.log("HeartbeatSoundService: Constructor called");
   }
 
   /**
@@ -29,18 +32,58 @@ class HeartbeatSoundService {
    */
   public async initialize(): Promise<boolean> {
     try {
+      console.log("HeartbeatSoundService: Initializing audio context");
+      
       if (!this.audioContext) {
-        this.audioContext = new AudioContext();
-        await this.audioContext.resume();
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        // Intentar reanudar el contexto inmediatamente
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
+          console.log("HeartbeatSoundService: Audio context resumed from suspended state");
+        }
+        
         // Beep de prueba con volumen muy bajo para inicializar
-        await this.playBeep(0.01);
-        console.log("HeartbeatSoundService: Audio Context Initialized");
-        this.isInitialized = true;
+        await this.playTestBeep();
+        console.log("HeartbeatSoundService: Audio Context Initialized, state:", this.audioContext.state);
+      } else if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+        console.log("HeartbeatSoundService: Existing audio context resumed from suspended state");
       }
+      
+      this.isInitialized = true;
       return true;
     } catch (err) {
       console.error("HeartbeatSoundService: Error initializing audio", err);
+      this.isInitialized = false;
       return false;
+    }
+  }
+  
+  /**
+   * Reproduce un beep de prueba con volumen muy bajo para inicializar
+   */
+  private async playTestBeep(): Promise<void> {
+    if (!this.audioContext) return;
+    
+    try {
+      const testOscillator = this.audioContext.createOscillator();
+      const testGain = this.audioContext.createGain();
+      
+      testOscillator.type = "sine";
+      testOscillator.frequency.setValueAtTime(440, this.audioContext.currentTime);
+      
+      testGain.gain.setValueAtTime(0.01, this.audioContext.currentTime); // Volumen muy bajo
+      
+      testOscillator.connect(testGain);
+      testGain.connect(this.audioContext.destination);
+      
+      testOscillator.start();
+      testOscillator.stop(this.audioContext.currentTime + 0.1);
+      
+      console.log("HeartbeatSoundService: Test beep played");
+    } catch (e) {
+      console.error("HeartbeatSoundService: Error playing test beep", e);
     }
   }
 
@@ -48,12 +91,39 @@ class HeartbeatSoundService {
    * Reproduce un beep para el latido cardíaco
    */
   public async playBeep(volume = 0.7): Promise<void> {
-    if (!this.isInitialized) {
+    const now = Date.now();
+    
+    // Limitar la frecuencia de reproducción
+    if (now - this.lastPlayTime < this.MIN_PLAY_INTERVAL) {
+      console.log("HeartbeatSoundService: Ignoring beep, too soon after last one");
+      return;
+    }
+    
+    this.lastPlayTime = now;
+    
+    if (!this.isInitialized || !this.audioContext) {
+      console.log("HeartbeatSoundService: Attempting to initialize before playing");
       const success = await this.initialize();
-      if (!success || !this.audioContext) return;
+      if (!success || !this.audioContext) {
+        console.error("HeartbeatSoundService: Failed to initialize audio context");
+        return;
+      }
+    }
+    
+    // Si el contexto está suspendido, intentar reanudarlo
+    if (this.audioContext.state === 'suspended') {
+      try {
+        console.log("HeartbeatSoundService: Resuming suspended audio context");
+        await this.audioContext.resume();
+      } catch (e) {
+        console.error("HeartbeatSoundService: Failed to resume audio context", e);
+        return;
+      }
     }
 
     try {
+      console.log("HeartbeatSoundService: Playing heartbeat sound with volume:", volume);
+      
       const ctx = this.audioContext;
       
       const primaryOscillator = ctx.createOscillator();
@@ -113,6 +183,33 @@ class HeartbeatSoundService {
       console.error("HeartbeatSoundService: Error playing beep", err);
     }
   }
+  
+  /**
+   * Verificar el estado del audio y reproducir un sonido de prueba
+   */
+  public async checkAndFixAudio(): Promise<boolean> {
+    console.log("HeartbeatSoundService: Checking and fixing audio state");
+    
+    try {
+      if (!this.audioContext) {
+        return await this.initialize();
+      }
+      
+      if (this.audioContext.state === 'suspended') {
+        console.log("HeartbeatSoundService: Trying to resume audio context");
+        await this.audioContext.resume();
+      }
+      
+      // Intentar reproducir un sonido de prueba para confirmar
+      await this.playTestBeep();
+      
+      this.isInitialized = true;
+      return true;
+    } catch (e) {
+      console.error("HeartbeatSoundService: Error checking audio", e);
+      return false;
+    }
+  }
 }
 
 // Exponer un singleton global para acceder desde cualquier parte
@@ -129,9 +226,12 @@ declare global {
   }
 }
 
-// Inicializar la función global
+// Inicializar la función global con mensajes de diagnóstico
 window.playHeartbeatSound = () => {
-  heartbeatSound.playBeep(0.7);
+  console.log("Global playHeartbeatSound function called");
+  heartbeatSound.playBeep(0.7).then(() => {
+    console.log("Heartbeat sound play attempt completed");
+  });
 };
 
 export { heartbeatSound };

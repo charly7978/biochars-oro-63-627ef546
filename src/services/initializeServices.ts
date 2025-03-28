@@ -16,24 +16,29 @@ export const initializeServices = async () => {
   // Inicializar servicio de sonido
   await heartbeatSound.initialize();
   
-  // Monitorear el evento de clic para inicializar audio en respuesta a interacción del usuario
+  // Monitorear eventos de interacción para inicializar audio (necesario en algunos navegadores)
   document.addEventListener('click', async () => {
-    await heartbeatSound.initialize();
+    console.log("User interaction detected, ensuring audio is enabled");
+    await heartbeatSound.checkAndFixAudio();
   }, { once: true });
   
-  // Instalar parche para conectar con los picos del gráfico en PPGSignalMeter
+  document.addEventListener('touchstart', async () => {
+    console.log("Touch interaction detected, ensuring audio is enabled");
+    await heartbeatSound.checkAndFixAudio();
+  }, { once: true });
+  
+  // Instalar parche mejorado para conectar con los picos del gráfico en PPGSignalMeter
   installPeakDetectionPatch();
   
   console.log("All services initialized");
 };
 
 /**
- * Instala un parche que conecta la detección de picos con el sonido
+ * Instala un parche mejorado que conecta la detección de picos con el sonido
  * sin modificar el código existente en PPGSignalMeter
  */
 const installPeakDetectionPatch = () => {
-  // Guardar la función original para no perder funcionalidad
-  const originalFn = window.requestAnimationFrame;
+  console.log("Installing improved peak detection patch");
   
   // Monitorear cuando se dibuja un círculo en el canvas (indicador de pico)
   const originalArc = CanvasRenderingContext2D.prototype.arc;
@@ -45,12 +50,12 @@ const installPeakDetectionPatch = () => {
       // Solo nos interesan los círculos pequeños (picos)
       const radius = args[2]; // El tercer argumento es el radio
       
-      // Si es un círculo de tamaño apropiado para ser un pico y no estamos en modo limpieza
+      // Si es un círculo de tamaño apropiado para ser un pico y es de color azul (color normal de los picos)
       if (radius >= 4 && radius <= 6 && this.fillStyle === '#0EA5E9') {
-        // Reproducir sonido de latido si existe la función global
-        if (window.playHeartbeatSound) {
+        // Reproducir sonido de latido con manejo especial
+        if (typeof window.playHeartbeatSound === 'function') {
+          console.log("Peak detected! Playing heartbeat sound, fillStyle:", this.fillStyle);
           window.playHeartbeatSound();
-          console.log("Peak detected! Playing heartbeat sound");
         } else {
           console.warn("playHeartbeatSound function not found on window object");
         }
@@ -64,6 +69,17 @@ const installPeakDetectionPatch = () => {
   };
   
   console.log("Peak detection patch installed");
+  
+  // Verificar periódicamente que el audio esté disponible
+  setInterval(() => {
+    heartbeatSound.checkAndFixAudio().then(success => {
+      if (success) {
+        console.log("Periodic audio check: Audio is ready");
+      } else {
+        console.warn("Periodic audio check: Audio is not ready");
+      }
+    });
+  }, 30000); // Verificar cada 30 segundos
 };
 
 // Exportar también el heartbeatSound para uso directo
