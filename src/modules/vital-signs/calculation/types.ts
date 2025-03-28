@@ -10,6 +10,8 @@ export interface CalculationResultItem<T = number | string> {
   value: T;
   confidence: number;
   metadata?: Record<string, any>;
+  status?: string;
+  data?: any;
 }
 
 // Resultado de arrhythmia

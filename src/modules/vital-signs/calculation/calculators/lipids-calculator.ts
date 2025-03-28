@@ -1,4 +1,3 @@
-
 /**
  * Calculador de lípidos sanguíneos
  */
@@ -12,6 +11,7 @@ import { BaseCalculator } from './base-calculator';
  * Estima colesterol total y triglicéridos basado en características PPG
  */
 export class LipidsCalculator extends BaseCalculator {
+  private readonly lipidType: 'cholesterol' | 'triglycerides';
   private readonly baseCholesterol = 170; // mg/dL
   private readonly baseTriglycerides = 120; // mg/dL
   private readonly lipidVariationRange = 40; // ±40 mg/dL
@@ -21,8 +21,9 @@ export class LipidsCalculator extends BaseCalculator {
   private lastCholesterolValue = 0;
   private lastTriglyceridesValue = 0;
   
-  constructor() {
+  constructor(lipidType: 'cholesterol' | 'triglycerides') {
     super();
+    this.lipidType = lipidType;
     // Buffer más grande para análisis
     this._maxBufferSize = 100;
   }
@@ -30,7 +31,7 @@ export class LipidsCalculator extends BaseCalculator {
   /**
    * Calcula niveles de lípidos basado en características de la señal
    */
-  public calculate(signal: OptimizedSignal): CalculationResultItem {
+  public calculate(signal: OptimizedSignal): CalculationResultItem<number> {
     if (!signal) {
       return { value: 0, confidence: 0, status: 'error', data: null };
     }
@@ -43,11 +44,11 @@ export class LipidsCalculator extends BaseCalculator {
     
     // Requerir suficientes muestras
     if (this.valueBuffer.length < 50) {
+      // Determinar valor base según tipo de lípido
+      const baseValue = this.lipidType === 'cholesterol' ? this.baseCholesterol : this.baseTriglycerides;
+      
       return { 
-        value: {
-          cholesterol: this.baseCholesterol,
-          triglycerides: this.baseTriglycerides
-        },
+        value: baseValue,
         confidence: 0.3, 
         status: 'calibrating', 
         data: null 
@@ -62,6 +63,9 @@ export class LipidsCalculator extends BaseCalculator {
     
     // Calcular niveles de lípidos
     const { cholesterol, triglycerides } = this.calculateLipidLevels(features);
+    
+    // Determinar valor según tipo de lípido
+    const value = this.lipidType === 'cholesterol' ? cholesterol : triglycerides;
     
     // Actualizar valores
     this.lastCholesterolValue = cholesterol;
@@ -78,7 +82,7 @@ export class LipidsCalculator extends BaseCalculator {
     this.lastConfidence = confidence;
     
     return {
-      value: { cholesterol, triglycerides },
+      value,
       confidence,
       status: 'ok',
       data: features
