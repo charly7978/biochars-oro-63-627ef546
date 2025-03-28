@@ -27,9 +27,14 @@ export interface UseVitalSignsProcessorReturn {
   fullReset: () => void;
   arrhythmiaCounter: number;
   lastValidResults: VitalSignsResult | null;
-  arrhythmiaWindows: Array<{start: number, end: number}>;
+  arrhythmiaWindows: Array<ArrhythmiaWindow>;
   debugInfo: {
     processedSignals: number;
     signalLog: Array<{timestamp: number, value: number, result: any}>;
   };
+}
+
+export interface ArrhythmiaWindow {
+  start: number;
+  end: number;
 }

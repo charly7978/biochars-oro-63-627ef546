@@ -1,11 +1,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '@/modules/HeartBeatProcessor';
+import { toast } from 'sonner';
+import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './beep-processor';
 import { useArrhythmiaDetector } from './arrhythmia-detector';
 import { useSignalProcessor } from './signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './types';
-import { toast } from 'sonner';
 
 /**
  * Hook optimizado para el procesamiento de frecuencia cardíaca
@@ -142,16 +143,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    // Procesar señal con toda la integración de componentes
+    // Process the signal with fixed parameters for processSignalInternal
     const result = processSignalInternal(
-      value, 
-      currentBPM, 
-      confidence, 
-      processorRef.current, 
-      requestBeep, 
-      isMonitoringRef, 
-      lastRRIntervalsRef, 
-      currentBeatIsArrhythmiaRef
+      value,
+      currentBPM,
+      confidence,
+      processorRef.current,
+      requestBeep,
+      isMonitoringRef,
+      lastRRIntervalsRef
     );
 
     // Actualizar estado solo si tenemos valores confiables
@@ -175,9 +175,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
           const currentCount = processorRef.current.getArrhythmiaCounter ? 
             processorRef.current.getArrhythmiaCounter() : 0;
           
-          // Check if there's a method to handle arrhythmia count increments
-          if (typeof processorRef.current.incrementArrhythmiaCounter === 'function') {
-            processorRef.current.incrementArrhythmiaCounter();
+          // Check if there's a method to handle arrhythmia count
+          if (processorRef.current.getArrhythmiaCounter) {
+            // Since there's no increment method, we can't directly modify the counter
+            // Just log the event for now
+            console.log("Arrhythmia detected at count:", currentCount);
           }
         } catch (err) {
           console.error("Error handling arrhythmia counter:", err);
