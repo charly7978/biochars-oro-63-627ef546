@@ -3,7 +3,7 @@
  * Implementación simplificada de filtro basado en wavelets para denoising de señales PPG
  */
 export class WaveletDenoiser {
-  private readonly THRESHOLD: number = 0.025;
+  private THRESHOLD: number = 0.025;
   private buffer: number[] = [];
   private readonly BUFFER_SIZE: number = 16; // Potencia de 2 para transformadas
 

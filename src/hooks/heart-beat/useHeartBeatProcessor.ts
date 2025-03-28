@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -127,7 +126,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current, 
       requestBeep, 
       isMonitoringRef.current, 
-      lastRRIntervalsRef.current
+      lastRRIntervalsRef.current,
+      currentBeatIsArrhythmiaRef.current
     );
 
     if (result.bpm > 0 && result.confidence > 0.4) {
