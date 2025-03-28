@@ -13,6 +13,7 @@ import {
   CalculationResult
 } from '../modules/vital-signs/calculation';
 import { useSignalOptimizer } from './useSignalOptimizer';
+import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
 
 /**
  * Hook que conecta optimización y cálculo de signos vitales
@@ -30,6 +31,12 @@ export const useVitalSignsCalculator = () => {
     optimizedSignals, 
     sendFeedback
   } = useSignalOptimizer();
+  
+  // Integración con visualizador de arritmias
+  const { 
+    arrhythmiaWindows, 
+    addArrhythmiaWindow 
+  } = useArrhythmiaVisualization();
   
   // Inicializar calculador
   useEffect(() => {
@@ -69,6 +76,13 @@ export const useVitalSignsCalculator = () => {
         sendFeedback(feedback);
       }
       
+      // Registrar ventana de arritmia si hay un evento
+      if (result.arrhythmia.status?.includes('Arritmia') && result.arrhythmia.data?.visualWindow) {
+        const window = result.arrhythmia.data.visualWindow;
+        addArrhythmiaWindow(window.start, window.end);
+        console.log("Ventana de arritmia registrada para visualización:", window);
+      }
+      
       console.log("VitalSignsCalculator: Cálculo realizado con éxito", { 
         heartRate: result.heartRate.value,
         spo2: result.spo2.value,
@@ -81,14 +95,17 @@ export const useVitalSignsCalculator = () => {
       console.error("Error calculando signos vitales:", error);
       return null;
     }
-  }, [optimizedSignals, sendFeedback]);
+  }, [optimizedSignals, sendFeedback, addArrhythmiaWindow]);
   
   /**
    * Obtiene datos de visualización para gráficos
    */
   const getVisualizationData = useCallback(() => {
-    return calculatorRef.current?.getVisualizationData() || null;
-  }, []);
+    return {
+      ...calculatorRef.current?.getVisualizationData() || null,
+      arrhythmiaWindows
+    };
+  }, [arrhythmiaWindows]);
   
   /**
    * Reinicia el calculador
@@ -106,6 +123,7 @@ export const useVitalSignsCalculator = () => {
     lastCalculation,
     visualizationData,
     getVisualizationData,
+    arrhythmiaWindows,
     reset
   };
 };

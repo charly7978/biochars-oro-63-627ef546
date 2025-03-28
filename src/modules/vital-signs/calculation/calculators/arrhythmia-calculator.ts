@@ -16,6 +16,7 @@ export class ArrhythmiaCalculator {
   private detectionWindowStart: number = Date.now();
   private lastDetectionTime: number = 0;
   private minDetectionIntervalMs: number = 5000; // Mínimo tiempo entre detecciones
+  private arrhythmiaWindows: {start: number, end: number}[] = [];
   
   /**
    * Calcula estado de arritmia basado en señal
@@ -48,6 +49,16 @@ export class ArrhythmiaCalculator {
       this.arrhythmiaCount++;
       this.lastDetectionTime = currentTime;
       
+      // Registrar ventana de arritmia para visualización
+      const windowEnd = currentTime;
+      const windowStart = windowEnd - 3000; // 3 segundos antes
+      this.arrhythmiaWindows.push({start: windowStart, end: windowEnd});
+      
+      // Limitar a las 3 últimas detecciones para visualización
+      if (this.arrhythmiaWindows.length > 3) {
+        this.arrhythmiaWindows.shift();
+      }
+      
       console.log(`ARRITMIA DETECTADA #${this.arrhythmiaCount} - RMSSD: ${rmssd.toFixed(2)}`);
       
       return {
@@ -57,7 +68,8 @@ export class ArrhythmiaCalculator {
           rmssd: rmssd,
           rrVariation: this.calculateVariation(intervals),
           intervals: intervals.slice(-5),
-          severity: rmssd > 100 ? 'alta' : 'media'
+          severity: rmssd > 100 ? 'alta' : 'media',
+          visualWindow: {start: windowStart, end: windowEnd}
         },
         count: this.arrhythmiaCount
       };
@@ -117,6 +129,7 @@ export class ArrhythmiaCalculator {
     this.rmssd = 0;
     this.detectionWindowStart = Date.now();
     this.lastDetectionTime = 0;
+    this.arrhythmiaWindows = [];
   }
   
   /**
@@ -124,5 +137,12 @@ export class ArrhythmiaCalculator {
    */
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
+  }
+  
+  /**
+   * Obtiene las ventanas de arritmia para visualización
+   */
+  public getArrhythmiaWindows(): {start: number, end: number}[] {
+    return [...this.arrhythmiaWindows];
   }
 }

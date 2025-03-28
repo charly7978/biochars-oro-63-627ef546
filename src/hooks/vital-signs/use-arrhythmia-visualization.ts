@@ -1,10 +1,14 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Hook para visualización de arritmias en el PPG
  */
 
 import { useState, useCallback } from 'react';
-import { ArrhythmiaWindow } from './types';
+
+export interface ArrhythmiaWindow {
+  start: number;
+  end: number;
+}
 
 /**
  * Hook to manage arrhythmia visualization windows
@@ -21,8 +25,13 @@ export const useArrhythmiaVisualization = () => {
     // Limit to most recent arrhythmia windows for visualization
     setArrhythmiaWindows(prev => {
       const newWindows = [...prev, { start, end }];
-      return newWindows.slice(-3);
+      if (newWindows.length > 3) {
+        return newWindows.slice(-3);
+      }
+      return newWindows;
     });
+    
+    console.log(`Nueva ventana de arritmia registrada: ${start} - ${end}`);
   }, []);
   
   /**
