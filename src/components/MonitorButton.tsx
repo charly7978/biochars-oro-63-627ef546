@@ -29,7 +29,7 @@ const MonitorButton: React.FC<MonitorButtonProps> = ({
   return (
     <Button 
       onClick={onToggle} 
-      variant={buttonVariant}
+      variant={buttonVariant as any}
       disabled={disabled}
       className={`w-full font-bold ${extraClasses}`}
     >

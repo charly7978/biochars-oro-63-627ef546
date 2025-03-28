@@ -15,7 +15,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { EventType, eventBus, useEventSubscription } from '../modules/events/EventBus';
-import { VitalSignsResult } from '../modules/types/signal';
+import { VitalSignsResult } from '../modules/types/optimized-data';
 import { cameraFrameReader } from '../modules/camera/CameraFrameReader';
 import { heartBeatExtractor } from '../modules/extraction/HeartBeatExtractor';
 import { ppgSignalExtractor } from '../modules/extraction/PPGSignalExtractor';
@@ -47,6 +47,8 @@ export const useVitalSignsProcessor = () => {
   // Estado
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Referencias para estado interno
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
@@ -62,13 +64,7 @@ export const useVitalSignsProcessor = () => {
     
     return () => {
       // Detener todos los módulos al desmontar
-      cameraFrameReader.stopFrameReading();
-      cameraFrameReader.stopCamera();
-      heartBeatExtractor.stopExtraction();
-      ppgSignalExtractor.stopExtraction();
-      combinedSignalProvider.stop();
-      signalProcessor.stopProcessing();
-      signalOptimizer.stop();
+      stopProcessing();
       
       console.log("useVitalSignsProcessor: Hook destruido", {
         sessionId: sessionId.current,
@@ -140,9 +136,12 @@ export const useVitalSignsProcessor = () => {
    */
   const startProcessing = useCallback(async () => {
     try {
+      setIsProcessing(true);
+      
       // Iniciar cámara
       const cameraStarted = await cameraFrameReader.startCamera();
       if (!cameraStarted) {
+        setIsProcessing(false);
         throw new Error("No se pudo iniciar la cámara");
       }
       
@@ -160,9 +159,11 @@ export const useVitalSignsProcessor = () => {
       // Comenzar lectura de frames
       cameraFrameReader.startFrameReading();
       
+      setIsInitialized(true);
       console.log("useVitalSignsProcessor: Sistema completo iniciado");
       return true;
     } catch (error) {
+      setIsProcessing(false);
       console.error("useVitalSignsProcessor: Error iniciando sistema", error);
       return false;
     }
@@ -180,6 +181,7 @@ export const useVitalSignsProcessor = () => {
     heartBeatExtractor.stopExtraction();
     cameraFrameReader.stopFrameReading();
     
+    setIsProcessing(false);
     console.log("useVitalSignsProcessor: Sistema completo detenido");
   }, []);
 
@@ -227,6 +229,7 @@ export const useVitalSignsProcessor = () => {
     setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
+    setIsInitialized(false);
     
     console.log("Reseteo completo finalizado - borrando todos los resultados");
   }, [stopProcessing, lastValidResults]);
@@ -239,6 +242,8 @@ export const useVitalSignsProcessor = () => {
     fullReset,
     lastValidResults,
     arrhythmiaWindows,
+    isProcessing,
+    isInitialized,
     debugInfo: {
       processedSignals: processedSignals.current,
       signalLog: signalLog.current.slice(-10)

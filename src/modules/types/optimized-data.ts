@@ -41,4 +41,26 @@ export interface OptimizedArrhythmia {
   rmssd: number;
   rrVariation: number;
   detectionProbability: number;
+  windows?: [number, number][];
+  detected?: boolean;
+}
+
+export interface VitalSignsResult {
+  timestamp: number;
+  heartRate: number;
+  spo2: number;
+  pressure?: string;
+  bloodPressure?: {
+    systolic: number;
+    diastolic: number;
+    display: string;
+  };
+  glucose?: number;
+  lipids?: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  reliability: number;
+  arrhythmiaStatus?: string;
+  arrhythmiaData?: OptimizedArrhythmia;
 }

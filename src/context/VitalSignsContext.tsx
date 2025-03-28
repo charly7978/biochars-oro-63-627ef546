@@ -1,10 +1,5 @@
-import React, {
-  createContext,
-  useState,
-  useEffect,
-  useContext,
-  useCallback
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
 import { EventType, eventBus, useEventSubscription } from '../modules/events/EventBus';
 import { CameraConfig } from '../modules/types/signal';
 
@@ -92,7 +87,7 @@ export const VitalSignsProvider: React.FC<VitalSignsProviderProps> = ({ children
     };
   }, [cameraConfig, isCameraActive, isProcessing]);
 
-  useEventSubscription(EventType.HEARTBEAT_PEAK_DETECTED, (data: any) => {
+  useEventSubscription(EventType.HEARTBEAT_DETECTED, (data) => {
     setHeartbeatData(prev => {
       const newData = {
         ...prev,

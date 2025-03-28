@@ -9,7 +9,7 @@
  */
 
 import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
-import { VitalSignsResult } from './types/signal';
+import { VitalSignsResult } from './types/optimized-data';
 
 /**
  * Wrapper de compatibilidad que mantiene la interfaz original 

@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -9,7 +8,7 @@
  */
 
 import { EventType, eventBus } from '../events/EventBus';
-import { VitalSignsResult } from '../results/VitalSignsCalculator';
+import { VitalSignsResult } from '../types/optimized-data';
 
 export class VitalSignsProcessor {
   private readonly WINDOW_SIZE = 300;

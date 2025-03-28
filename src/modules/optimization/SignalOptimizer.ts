@@ -1,3 +1,4 @@
+
 /**
  * Optimizador de Señal PPG
  * Mejora la calidad de señales PPG para cálculos precisos
@@ -6,6 +7,7 @@
 import { EventType, eventBus } from '../events/EventBus';
 import { ProcessedPPGData } from '../types/signal';
 import { 
+  SignalProcessingFilters,
   applySimpleMovingAverage, 
   applyLowPassFilter, 
   removeLinearTrend,
