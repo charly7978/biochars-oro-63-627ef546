@@ -1,199 +1,140 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
-interface HeartBeatResult {
+export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
-  filteredValue?: number;
-  arrhythmiaCount: number;
-  isArrhythmia?: boolean;
-  rrData?: {
+  filteredValue: number;
+  rrData: {
     intervals: number[];
     lastPeakTime: number | null;
   };
 }
 
 export const useHeartBeatProcessor = () => {
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
+  const [lastRRInterval, setLastRRInterval] = useState(0);
+  const [rmssd, setRmssd] = useState(0);
   const processorRef = useRef<HeartBeatProcessor | null>(null);
-  const [currentBPM, setCurrentBPM] = useState<number>(0);
-  const [confidence, setConfidence] = useState<number>(0);
-  const [isArrhythmia, setIsArrhythmia] = useState<boolean>(false);
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  const lastPeakTimeRef = useRef<number | null>(null);
-  const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 300; // Minimum time between beeps
-  const lastRRIntervalsRef = useRef<number[]>([]);
+  const rrIntervalsRef = useRef<number[]>([]);
   const arrhythmiaCounterRef = useRef<number>(0);
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  
+  // Error threshold based on clinical standards for arrhythmia detection
+  const RMSSD_THRESHOLD = 25;  // ms
+  const DETECTION_WINDOW_SIZE = 8;
+  const ARRHYTHMIA_COUNTER_RESET_MS = 5000;
+  const lastArrhythmiaTimeRef = useRef<number>(0);
   
   useEffect(() => {
-    console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
     processorRef.current = new HeartBeatProcessor();
     
-    if (typeof window !== 'undefined') {
-      (window as any).heartBeatProcessor = processorRef.current;
-      console.log('useHeartBeatProcessor: Processor registrado en window', {
-        processorRegistrado: !!(window as any).heartBeatProcessor,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    return () => {
-      console.log('useHeartBeatProcessor: Limpiando processor', {
-        sessionId: sessionId.current,
-        timestamp: new Date().toISOString()
-      });
-      
-      if (processorRef.current) {
-        processorRef.current = null;
-      }
-      
-      if (typeof window !== 'undefined') {
-        (window as any).heartBeatProcessor = undefined;
-        console.log('useHeartBeatProcessor: Processor eliminado de window', {
-          processorExiste: !!(window as any).heartBeatProcessor,
-          timestamp: new Date().toISOString()
-        });
-      }
-    };
-  }, []);
-
-  const playBeepSound = useCallback(() => {
-    if (!processorRef.current) return;
-    
-    const now = Date.now();
-    if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) return;
-    
-    try {
-      processorRef.current.playBeep();
-      lastBeepTimeRef.current = now;
-      console.log('useHeartBeatProcessor: Beep manual reproducido en', new Date().toISOString());
-    } catch (err) {
-      console.error('useHeartBeatProcessor: Error al reproducir beep manual', err);
-    }
-  }, []);
-
-  const processSignal = useCallback((value: number): HeartBeatResult => {
-    if (!processorRef.current) {
-      console.warn('useHeartBeatProcessor: Processor no inicializado', {
-        sessionId: sessionId.current,
-        timestamp: new Date().toISOString()
-      });
-      
-      return {
-        bpm: 0,
-        confidence: 0,
-        isPeak: false,
-        arrhythmiaCount: 0,
-        isArrhythmia: false,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
-      };
-    }
-
-    const result = processorRef.current.processSignal(value);
-    const rrData = processorRef.current.getRRIntervals();
-    const now = Date.now();
-    
-    if (rrData && rrData.intervals.length > 0) {
-      lastRRIntervalsRef.current = [...rrData.intervals];
-    }
-
-    // Determinar si es un latido arrítmico
-    let beatIsArrhythmic = false;
-    
-    if (rrData && rrData.intervals.length >= 5) {
-      const recentIntervals = rrData.intervals.slice(-5);
-      const avgRR = recentIntervals.reduce((a, b) => a + b, 0) / recentIntervals.length;
-      const lastRR = recentIntervals[recentIntervals.length - 1];
-      
-      // Un latido es arrítmico si varía más del 30% del promedio
-      const variation = Math.abs(lastRR - avgRR) / avgRR;
-      beatIsArrhythmic = variation > 0.3 || lastRR < 0.7 * avgRR || lastRR > 1.3 * avgRR;
-      
-      // Actualizar estado de arritmia
-      setIsArrhythmia(beatIsArrhythmic);
-      
-      if (beatIsArrhythmic && result.isPeak) {
-        arrhythmiaCounterRef.current++;
-      }
-    }
-
-    if (result.isPeak && 
-        (!lastPeakTimeRef.current || 
-         now - lastPeakTimeRef.current >= MIN_BEEP_INTERVAL_MS)) {
-      
-      lastPeakTimeRef.current = now;
-      playBeepSound();
-    }
-
-    if (result.confidence < 0.8) {
-      return {
-        bpm: currentBPM,
-        confidence: result.confidence,
-        isPeak: false,
-        arrhythmiaCount: arrhythmiaCounterRef.current,
-        isArrhythmia: beatIsArrhythmic,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
-      };
-    }
-
-    if (result.bpm > 0) {
-      setCurrentBPM(result.bpm);
-      setConfidence(result.confidence);
-    }
-
-    return {
-      ...result,
-      arrhythmiaCount: arrhythmiaCounterRef.current,
-      isArrhythmia: beatIsArrhythmic,
-      rrData
-    };
-  }, [currentBPM, confidence, playBeepSound]);
-
-  const reset = useCallback(() => {
-    console.log('useHeartBeatProcessor: Reseteando processor', {
+    console.log("useHeartBeatProcessor: hook initialized", {
       sessionId: sessionId.current,
-      prevBPM: currentBPM,
-      prevConfidence: confidence,
       timestamp: new Date().toISOString()
     });
     
-    if (processorRef.current) {
-      processorRef.current.reset();
-      console.log('useHeartBeatProcessor: Processor reseteado correctamente', {
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      console.warn('useHeartBeatProcessor: No se pudo resetear - processor no existe', {
-        timestamp: new Date().toISOString()
-      });
+    return () => {
+      if (processorRef.current) {
+        processorRef.current.reset();
+      }
+    };
+  }, []);
+  
+  const calculateRMSSD = useCallback((intervals: number[]): number => {
+    if (intervals.length < 2) return 0;
+    
+    // Calculate successive differences
+    const successiveDiffs: number[] = [];
+    for (let i = 1; i < intervals.length; i++) {
+      const diff = Math.abs(intervals[i] - intervals[i - 1]);
+      successiveDiffs.push(diff);
     }
     
-    setCurrentBPM(0);
-    setConfidence(0);
-    setIsArrhythmia(false);
-    lastPeakTimeRef.current = null;
-    lastBeepTimeRef.current = 0;
-    lastRRIntervalsRef.current = [];
+    // Square the differences
+    const squaredDiffs = successiveDiffs.map(diff => diff * diff);
+    
+    // Calculate mean of squared differences
+    const meanSquared = squaredDiffs.reduce((sum, sq) => sum + sq, 0) / squaredDiffs.length;
+    
+    // Take the square root
+    return Math.sqrt(meanSquared);
+  }, []);
+  
+  const detectArrhythmia = useCallback((rmssdValue: number, intervals: number[]): boolean => {
+    if (intervals.length < DETECTION_WINDOW_SIZE) return false;
+    
+    const rrVariability = Math.abs(rmssdValue);
+    const isArrhythmic = rrVariability > RMSSD_THRESHOLD;
+    
+    // Incrementar/resetear contador de arritmias
+    const now = Date.now();
+    if (isArrhythmic) {
+      arrhythmiaCounterRef.current += 1;
+      lastArrhythmiaTimeRef.current = now;
+    } else if (now - lastArrhythmiaTimeRef.current > ARRHYTHMIA_COUNTER_RESET_MS) {
+      // Reset counter after some time without arrhythmias
+      arrhythmiaCounterRef.current = 0;
+    }
+    
+    return isArrhythmic;
+  }, []);
+  
+  const processSignal = useCallback((value: number): HeartBeatResult => {
+    if (!processorRef.current) {
+      throw new Error("Heart beat processor not initialized");
+    }
+    
+    const result = processorRef.current.processSignal(value);
+    const rrData = processorRef.current.getRRIntervals();
+    
+    // Actualizar intervalos RR
+    if (rrData && rrData.intervals.length > 0) {
+      rrIntervalsRef.current = [...rrData.intervals];
+      
+      if (rrIntervalsRef.current.length > 1) {
+        const currentRmssd = calculateRMSSD(rrIntervalsRef.current.slice(-DETECTION_WINDOW_SIZE));
+        setRmssd(currentRmssd);
+        
+        // Detectar arritmia usando el RMSSD
+        const isArrhythmicBeat = detectArrhythmia(currentRmssd, rrIntervalsRef.current);
+        setIsArrhythmia(isArrhythmicBeat);
+        
+        if (rrIntervalsRef.current.length >= 2) {
+          const lastInterval = rrIntervalsRef.current[rrIntervalsRef.current.length - 1];
+          setLastRRInterval(lastInterval);
+        }
+      }
+    }
+    
+    return {
+      ...result,
+      rrData: {
+        intervals: rrIntervalsRef.current,
+        lastPeakTime: rrData.lastPeakTime
+      }
+    };
+  }, [calculateRMSSD, detectArrhythmia]);
+  
+  const reset = useCallback(() => {
+    if (processorRef.current) {
+      processorRef.current.reset();
+    }
+    rrIntervalsRef.current = [];
     arrhythmiaCounterRef.current = 0;
-  }, [currentBPM, confidence]);
-
+    setRmssd(0);
+    setIsArrhythmia(false);
+    setLastRRInterval(0);
+  }, []);
+  
   return {
-    currentBPM,
-    confidence,
     processSignal,
     reset,
-    isArrhythmia
+    rmssd,
+    isArrhythmia,
+    lastRRInterval,
+    arrhythmiaCounter: arrhythmiaCounterRef.current
   };
 };
