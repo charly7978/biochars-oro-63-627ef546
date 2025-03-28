@@ -18,7 +18,7 @@ const CameraView: React.FC<CameraViewProps> = ({
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
-  buttonPosition 
+  buttonPosition = { x: 0, y: 0 }
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -129,6 +129,32 @@ const CameraView: React.FC<CameraViewProps> = ({
     };
   }, [isMonitoring]);
 
+  // Calculate button position styles
+  const getFingerButtonStyle = () => {
+    const defaultStyle = "absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center";
+    
+    if (!buttonPosition || (buttonPosition.x === undefined && buttonPosition.y === undefined)) {
+      return defaultStyle;
+    }
+    
+    // If custom position is provided, use it instead of default styling
+    let customStyle = "absolute z-20 flex flex-col items-center";
+    
+    if (buttonPosition.x !== undefined) {
+      customStyle += ` left-[${buttonPosition.x}px]`;
+    } else {
+      customStyle += " left-1/2 transform -translate-x-1/2";
+    }
+    
+    if (buttonPosition.y !== undefined) {
+      customStyle += ` bottom-[${buttonPosition.y}px]`;
+    } else {
+      customStyle += " bottom-24";
+    }
+    
+    return customStyle;
+  };
+
   return (
     <>
       <video
@@ -143,8 +169,8 @@ const CameraView: React.FC<CameraViewProps> = ({
           backfaceVisibility: 'hidden'
         }}
       />
-      {isMonitoring && buttonPosition && (
-        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
+      {isMonitoring && (
+        <div className={getFingerButtonStyle()}>
           <Fingerprint
             size={48}
             className={`transition-colors duration-300 ${
