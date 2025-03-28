@@ -1,3 +1,4 @@
+
 /**
  * Vital Signs Processor
  * Central processing module that combines signal data to calculate vital signs
@@ -304,12 +305,20 @@ export class VitalSignsProcessor {
    * Detect arrhythmia from heart beat intervals
    */
   private detectArrhythmia(heartbeats: HeartBeatResult[]): {
+    timestamp: number;
     rmssd: number;
-    windows: {start: number; end: number}[];
-    detected: boolean;
+    rrVariation: number;
+    windows?: {start: number; end: number}[];
+    detected?: boolean;
   } {
     if (heartbeats.length < 5) {
-      return { rmssd: 0, windows: [], detected: false };
+      return { 
+        timestamp: Date.now(),
+        rmssd: 0, 
+        rrVariation: 0,
+        windows: [], 
+        detected: false 
+      };
     }
     
     // Get RR intervals from recent heartbeats
@@ -324,7 +333,13 @@ export class VitalSignsProcessor {
     }
     
     if (intervals.length < 4) {
-      return { rmssd: 0, windows: [], detected: false };
+      return { 
+        timestamp: Date.now(),
+        rmssd: 0, 
+        rrVariation: 0,
+        windows: [], 
+        detected: false 
+      };
     }
     
     // Calculate RMSSD (Root Mean Square of Successive Differences)
@@ -343,6 +358,11 @@ export class VitalSignsProcessor {
     
     // RMSSD
     const rmssd = Math.sqrt(meanSquared);
+    
+    // Calculate average RR interval for rrVariation
+    const avgRR = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+    const lastRR = intervals[intervals.length - 1];
+    const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
     
     // Detect arrhythmia based on RMSSD threshold
     const isArrhythmia = rmssd > this.RMSSD_THRESHOLD;
@@ -367,7 +387,9 @@ export class VitalSignsProcessor {
     }
     
     return {
+      timestamp: Date.now(),
       rmssd,
+      rrVariation,
       windows: [...this.arrhythmiaWindows],
       detected: isArrhythmia
     };
