@@ -1,4 +1,3 @@
-
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -318,7 +317,7 @@ export class HeartBeatProcessor {
     
     // Retornar resultados
     return {
-      bpm: Math.round(this.getSmoothBPM()),
+      bpm: Math.round(this.getFinalBPM()),
       confidence,
       isPeak: confirmedPeak && !this.isInWarmup(),
       filteredValue: smoothed,
@@ -408,52 +407,87 @@ export class HeartBeatProcessor {
     return false;
   }
 
-  updateBPM() {
-    if (!this.lastPeakTime || !this.previousPeakTime) return;
-    const interval = this.lastPeakTime - this.previousPeakTime;
-    if (interval <= 0) return;
-
-    const instantBPM = 60000 / interval;
-    if (instantBPM >= this.MIN_BPM && instantBPM <= this.MAX_BPM) {
-      this.bpmHistory.push(instantBPM);
-      if (this.bpmHistory.length > 12) {
-        this.bpmHistory.shift();
-      }
+  private updateBPM(): void {
+    // Verificar si hay suficientes datos para calcular
+    if (this.isInWarmup() || this.lastPeakTime === null || this.previousPeakTime === null) {
+      return;
     }
+
+    // Calcular el intervalo actual en ms entre los dos últimos picos
+    const currentInterval = this.lastPeakTime - this.previousPeakTime;
+    
+    // Filtrar intervalos fisiológicamente improbables
+    if (currentInterval < 250 || currentInterval > 1500) {
+      return; // Ignorar intervalos fuera del rango fisiológico (40-240 BPM)
+    }
+    
+    // Calcular el BPM instantáneo a partir del intervalo
+    const instantBPM = 60000 / currentInterval;
+    
+    // Añadir al histórico para promediado
+    this.bpmHistory.push(instantBPM);
+    
+    // Mantener solo los últimos 5 valores para un promedio móvil
+    if (this.bpmHistory.length > 5) {
+      this.bpmHistory.shift();
+    }
+    
+    // Actualizar BPM suavizado usando promedio ponderado
+    this.smoothBPM = this.getSmoothBPM();
   }
 
-  getSmoothBPM() {
-    const rawBPM = this.calculateCurrentBPM();
-    if (this.smoothBPM === 0) {
-      this.smoothBPM = rawBPM;
-      return rawBPM;
+  private getSmoothBPM(): number {
+    if (this.bpmHistory.length === 0) {
+      return 75; // Valor por defecto si no hay datos
     }
-    this.smoothBPM =
-      this.BPM_ALPHA * rawBPM + (1 - this.BPM_ALPHA) * this.smoothBPM;
-    return this.smoothBPM;
+    
+    // Ordenar valores para identificar posibles outliers
+    const sortedBPMs = [...this.bpmHistory].sort((a, b) => a - b);
+    
+    // Si hay suficientes valores, descartar el más alto y el más bajo para reducir ruido
+    let validBPMs = this.bpmHistory;
+    if (sortedBPMs.length >= 5) {
+      validBPMs = sortedBPMs.slice(1, -1); // Excluir valores extremos
+    }
+    
+    // Calcular media de los valores válidos
+    const sum = validBPMs.reduce((acc, val) => acc + val, 0);
+    const averageBPM = sum / validBPMs.length;
+    
+    // Asegurar que está en rango fisiológico
+    return Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, averageBPM));
   }
 
-  calculateCurrentBPM() {
+  private calculateCurrentBPM(): number {
+    // Si no hay suficientes datos, usar valor suavizado actual
     if (this.bpmHistory.length < 2) {
-      return 0;
+      return this.smoothBPM > 0 ? this.smoothBPM : 75;
     }
-    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    const trimmed = sorted.slice(1, -1);
-    if (!trimmed.length) return 0;
-    const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
-    return avg;
+    
+    // Aplicar EMA al BPM actual (suaviza aún más los cambios)
+    this.smoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + 
+                   this.getSmoothBPM() * this.BPM_ALPHA;
+    
+    // Asegurar valor fisiológico razonable
+    return Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, this.smoothBPM));
   }
 
-  getFinalBPM() {
-    if (this.bpmHistory.length < 5) {
-      return 0;
+  public getFinalBPM(): number {
+    if (this.isInWarmup() || this.bpmHistory.length < 3) {
+      // Durante el período de calentamiento, mostrar un valor promedio base
+      return 75;
     }
-    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-    const cut = Math.round(sorted.length * 0.1);
-    const finalSet = sorted.slice(cut, sorted.length - cut);
-    if (!finalSet.length) return 0;
-    const sum = finalSet.reduce((acc, val) => acc + val, 0);
-    return Math.round(sum / finalSet.length);
+    
+    // Verificar si ha pasado demasiado tiempo desde el último pico
+    const timeSinceLastPeak = this.lastPeakTime ? (Date.now() - this.lastPeakTime) : 0;
+    
+    // Si no hay picos recientes (>3 segundos), reducir gradualmente la confianza
+    if (timeSinceLastPeak > 3000) {
+      const degradationFactor = Math.min(1, 3000 / timeSinceLastPeak);
+      return this.calculateCurrentBPM() * degradationFactor + 75 * (1 - degradationFactor);
+    }
+    
+    return this.calculateCurrentBPM();
   }
 
   reset() {
