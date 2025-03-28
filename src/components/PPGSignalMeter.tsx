@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -281,21 +280,20 @@ const PPGSignalMeter = memo(({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     
-    // Subtle rainbow gradient that intensifies from top to bottom
-    gradient.addColorStop(0, 'rgba(255, 230, 230, 0.3)');      // Soft red (very light)
-    gradient.addColorStop(0.15, 'rgba(255, 240, 210, 0.32)');  // Soft orange (very light)
-    gradient.addColorStop(0.3, 'rgba(245, 255, 220, 0.35)');   // Soft yellow-green (light)
-    gradient.addColorStop(0.45, 'rgba(220, 255, 220, 0.4)');   // Soft green (medium light)
-    gradient.addColorStop(0.6, 'rgba(220, 240, 255, 0.5)');    // Soft blue (medium)
-    gradient.addColorStop(0.75, 'rgba(230, 220, 255, 0.6)');   // Soft purple (medium-strong)
-    gradient.addColorStop(0.9, 'rgba(180, 180, 220, 0.7)');    // Deeper blue-purple (strong)
-    gradient.addColorStop(1, 'rgba(100, 120, 180, 0.75)');     // Dark blue (strongest)
+    gradient.addColorStop(0, 'rgba(255, 200, 200, 0.15)');
+    gradient.addColorStop(0.1, 'rgba(255, 230, 190, 0.18)');
+    gradient.addColorStop(0.2, 'rgba(255, 255, 200, 0.22)');
+    gradient.addColorStop(0.35, 'rgba(210, 255, 210, 0.28)');
+    gradient.addColorStop(0.5, 'rgba(200, 230, 255, 0.35)');
+    gradient.addColorStop(0.65, 'rgba(180, 200, 255, 0.45)');
+    gradient.addColorStop(0.8, 'rgba(210, 180, 240, 0.55)');
+    gradient.addColorStop(0.9, 'rgba(120, 140, 180, 0.65)');
+    gradient.addColorStop(1, 'rgba(60, 80, 120, 0.7)');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Add subtle checkerboard texture
-    ctx.globalAlpha = 0.04; // Very subtle texture
+    ctx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
         ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
@@ -304,7 +302,6 @@ const PPGSignalMeter = memo(({
     }
     ctx.globalAlpha = 1.0;
     
-    // Draw grid lines
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(60, 60, 60, 0.15)';
     ctx.lineWidth = 0.5;
@@ -332,7 +329,6 @@ const PPGSignalMeter = memo(({
     }
     ctx.stroke();
     
-    // Center line
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.3)';
     ctx.lineWidth = 1.5;
