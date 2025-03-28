@@ -43,7 +43,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
   const showArrhythmiaIndicator = React.useMemo(() => {
     return label === "ARRITMIAS" && 
            arrhythmiaData && 
-           String(displayValue).includes("Arritmia");
+           String(displayValue).includes("ARRITMIA");
   }, [label, displayValue, arrhythmiaData]);
 
   // Determinar severidad de arritmia para coloración

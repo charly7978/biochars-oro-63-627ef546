@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -55,8 +54,8 @@ export class ArrhythmiaProcessor {
     // Build status message
     const arrhythmiaStatusMessage = 
       this.arrhythmiaCount > 0 
-        ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
-        : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
+        ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
+        : `NO ARRITMIAS|${this.arrhythmiaCount}`;
     
     // Define visualization window for arrhythmia
     const windowStart = this.lastArrhythmiaTime > 0 ? 

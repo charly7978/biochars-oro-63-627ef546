@@ -77,7 +77,7 @@ export const useVitalSignsCalculator = () => {
       }
       
       // Registrar ventana de arritmia si hay un evento
-      if (result.arrhythmia.status?.includes('Arritmia') && result.arrhythmia.data?.visualWindow) {
+      if (result.arrhythmia.status?.includes('ARRITMIA') && result.arrhythmia.data?.visualWindow) {
         const window = result.arrhythmia.data.visualWindow;
         const severity = result.arrhythmia.data.severity || 'media';
         const type = result.arrhythmia.data.type || 'irregular';
