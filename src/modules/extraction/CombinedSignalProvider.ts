@@ -14,8 +14,8 @@
  */
 
 import { EventType, eventBus } from '../events/EventBus';
-import { HeartBeatData } from './HeartBeatExtractor';
-import { PPGSignalData } from './PPGSignalExtractor';
+import { HeartBeatData } from '../types/signal';
+import { PPGSignalData } from '../types/signal';
 
 export interface CombinedSignalData {
   timestamp: number;
