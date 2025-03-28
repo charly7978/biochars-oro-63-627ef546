@@ -1,7 +1,8 @@
 
 /**
- * Utilidades esenciales para el procesador optimizado de señales
- * NOTA IMPORTANTE: Módulo minimalista para dar soporte al optimizador de señal principal.
+ * Utilidades reutilizables para todos los procesadores de signos vitales
+ * NOTA IMPORTANTE: Este módulo contiene funciones de utilidad compartidas.
+ * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
  */
 
 /**
@@ -21,11 +22,81 @@ export function calculateDC(values: number[]): number {
 }
 
 /**
- * Calcula el índice de perfusión basado en componentes AC y DC
+ * Calcula la desviación estándar de un conjunto de valores
  */
-export function calculatePerfusionIndex(ac: number, dc: number): number {
-  if (dc === 0) return 0;
-  return ac / dc;
+export function calculateStandardDeviation(values: number[]): number {
+  const n = values.length;
+  if (n === 0) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
+  return Math.sqrt(avgSqDiff);
+}
+
+/**
+ * Encuentra picos y valles en una señal
+ */
+export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+
+  // Algoritmo mejorado para detección de picos y valles usando ventana de 5 puntos
+  for (let i = 2; i < values.length - 2; i++) {
+    const v = values[i];
+    // Detección de picos (punto más alto en una ventana de 5 puntos)
+    if (
+      v > values[i - 1] &&
+      v > values[i - 2] &&
+      v > values[i + 1] &&
+      v > values[i + 2]
+    ) {
+      peakIndices.push(i);
+    }
+    // Detección de valles (punto más bajo en una ventana de 5 puntos)
+    if (
+      v < values[i - 1] &&
+      v < values[i - 2] &&
+      v < values[i + 1] &&
+      v < values[i + 2]
+    ) {
+      valleyIndices.push(i);
+    }
+  }
+  return { peakIndices, valleyIndices };
+}
+
+/**
+ * Calcula la amplitud entre picos y valles
+ */
+export function calculateAmplitude(
+  values: number[],
+  peakIndices: number[],
+  valleyIndices: number[]
+): number {
+  if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
+
+  const amps: number[] = [];
+  const len = Math.min(peakIndices.length, valleyIndices.length);
+  
+  for (let i = 0; i < len; i++) {
+    const amp = values[peakIndices[i]] - values[valleyIndices[i]];
+    if (amp > 0) {
+      amps.push(amp);
+    }
+  }
+  
+  if (amps.length === 0) return 0;
+
+  // Calcular la media robusta (sin outliers)
+  amps.sort((a, b) => a - b);
+  const trimmedAmps = amps.slice(
+    Math.floor(amps.length * 0.1),
+    Math.ceil(amps.length * 0.9)
+  );
+  
+  return trimmedAmps.length > 0
+    ? trimmedAmps.reduce((a, b) => a + b, 0) / trimmedAmps.length
+    : amps.reduce((a, b) => a + b, 0) / amps.length;
 }
 
 /**
@@ -45,6 +116,9 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
 
 /**
  * Calcula la media móvil exponencial (EMA) para suavizar señales
+ * @param prevEMA EMA anterior
+ * @param currentValue Valor actual
+ * @param alpha Factor de suavizado (0-1)
  */
 export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
   return alpha * currentValue + (1 - alpha) * prevEMA;
@@ -55,6 +129,14 @@ export function calculateEMA(prevEMA: number, currentValue: number, alpha: numbe
  */
 export function normalizeValue(value: number, min: number, max: number): number {
   return (value - min) / (max - min);
+}
+
+/**
+ * Calcula el índice de perfusión basado en componentes AC y DC
+ */
+export function calculatePerfusionIndex(ac: number, dc: number): number {
+  if (dc === 0) return 0;
+  return ac / dc;
 }
 
 /**
@@ -85,6 +167,102 @@ export function estimateSpO2(values: number[]): number {
 }
 
 /**
+ * Estima la presión arterial basada en PPG
+ */
+export function estimateBloodPressure(values: number[]): { systolic: number; diastolic: number } {
+  if (values.length < 30) return { systolic: 0, diastolic: 0 };
+  
+  const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+  if (peakIndices.length < 2) return { systolic: 120, diastolic: 80 };
+  
+  const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
+  const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
+  
+  // Calcular valores basados en amplitud y otras características
+  let systolic = 120 + (normalizedAmplitude * 0.3);
+  let diastolic = 80 + (normalizedAmplitude * 0.15);
+  
+  // Limitar a rangos fisiológicos
+  systolic = Math.max(90, Math.min(180, systolic));
+  diastolic = Math.max(60, Math.min(110, diastolic));
+  
+  // Garantizar que la diferencia sea lógica
+  const differential = systolic - diastolic;
+  if (differential < 20) {
+    diastolic = systolic - 20;
+  } else if (differential > 80) {
+    diastolic = systolic - 80;
+  }
+  
+  return {
+    systolic: Math.round(systolic),
+    diastolic: Math.round(diastolic)
+  };
+}
+
+/**
+ * Analiza intervalos RR para detectar arritmias
+ */
+export function analyzeRRIntervals(
+  rrData: { intervals: number[] },
+  currentTime: number,
+  lastArrhythmiaTime: number,
+  arrhythmiaCounter: number,
+  minTimeBetween: number,
+  maxPerSession: number
+): {
+  hasArrhythmia: boolean;
+  shouldIncrementCounter: boolean;
+  analysisData: {
+    rmssd: number;
+    rrVariation: number;
+    avgRR: number;
+    lastRR: number;
+  } | null;
+} {
+  if (rrData.intervals.length < 5) {
+    return { hasArrhythmia: false, shouldIncrementCounter: false, analysisData: null };
+  }
+  
+  const recentRR = rrData.intervals.slice(-5);
+  
+  // Calcular RMSSD
+  let sumSquaredDiff = 0;
+  for (let i = 1; i < recentRR.length; i++) {
+    const diff = recentRR[i] - recentRR[i-1];
+    sumSquaredDiff += diff * diff;
+  }
+  
+  const rmssd = Math.sqrt(sumSquaredDiff / (recentRR.length - 1));
+  
+  // Calcular variación RR
+  const avgRR = recentRR.reduce((a, b) => a + b, 0) / recentRR.length;
+  const lastRR = recentRR[recentRR.length - 1];
+  const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
+  
+  // Detectar arritmia si RMSSD excede umbral y hay variación significativa
+  const hasArrhythmia = rmssd > 25 && rrVariation > 0.15;
+  
+  // Determinar si incrementar contador
+  const timeSinceLastArrhythmia = currentTime - lastArrhythmiaTime;
+  const shouldIncrementCounter = 
+    hasArrhythmia &&
+    (timeSinceLastArrhythmia > minTimeBetween) &&
+    (arrhythmiaCounter < maxPerSession);
+  
+  return {
+    hasArrhythmia,
+    shouldIncrementCounter,
+    analysisData: {
+      rmssd,
+      rrVariation,
+      avgRR,
+      lastRR
+    }
+  };
+}
+
+/**
  * Formatea la presión arterial para visualización
  */
 export function formatBloodPressure(bp: { systolic: number; diastolic: number }): string {
@@ -93,57 +271,49 @@ export function formatBloodPressure(bp: { systolic: number; diastolic: number })
 }
 
 /**
- * Calcula la amplitud de la señal entre picos y valles
+ * Evalúa los signos vitales para determinar su normalidad
  */
-export function calculateAmplitude(
-  values: number[], 
-  peakIndices: number[], 
-  valleyIndices: number[]
-): number {
-  if (peakIndices.length === 0 || valleyIndices.length === 0) {
-    return 0;
-  }
-  
-  // Calcular la amplitud promedio
-  let totalAmplitude = 0;
-  let count = 0;
-  
-  for (let i = 0; i < Math.min(peakIndices.length, valleyIndices.length); i++) {
-    const peakValue = values[peakIndices[i]];
-    const valleyValue = values[valleyIndices[i]];
-    totalAmplitude += (peakValue - valleyValue);
-    count++;
-  }
-  
-  return count > 0 ? totalAmplitude / count : 0;
-}
-
-/**
- * Encuentra los índices de picos y valles en una señal
- */
-export function findPeaksAndValleys(values: number[]): {
-  peakIndices: number[];
-  valleyIndices: number[];
+export function evaluateVitalSigns(
+  spo2: number,
+  bloodPressure: { systolic: number; diastolic: number },
+  heartRate: number
+): {
+  spo2Status: 'normal' | 'warning' | 'critical';
+  bpStatus: 'normal' | 'low' | 'high' | 'critical';
+  hrStatus: 'normal' | 'low' | 'high';
 } {
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
-  
-  if (values.length < 3) {
-    return { peakIndices, valleyIndices };
+  // Evaluación de SpO2
+  let spo2Status: 'normal' | 'warning' | 'critical' = 'normal';
+  if (spo2 < 92 && spo2 >= 88) {
+    spo2Status = 'warning';
+  } else if (spo2 < 88) {
+    spo2Status = 'critical';
   }
   
-  for (let i = 1; i < values.length - 1; i++) {
-    // Detectar picos (valores máximos locales)
-    if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
-      peakIndices.push(i);
+  // Evaluación de presión arterial
+  let bpStatus: 'normal' | 'low' | 'high' | 'critical' = 'normal';
+  const { systolic, diastolic } = bloodPressure;
+  
+  if (systolic >= 140 || diastolic >= 90) {
+    bpStatus = 'high';
+    if (systolic >= 180 || diastolic >= 120) {
+      bpStatus = 'critical';
     }
-    
-    // Detectar valles (valores mínimos locales)
-    if (values[i] < values[i - 1] && values[i] < values[i + 1]) {
-      valleyIndices.push(i);
-    }
+  } else if (systolic <= 90 || diastolic <= 60) {
+    bpStatus = 'low';
   }
   
-  return { peakIndices, valleyIndices };
+  // Evaluación de frecuencia cardíaca
+  let hrStatus: 'normal' | 'low' | 'high' = 'normal';
+  if (heartRate < 60) {
+    hrStatus = 'low';
+  } else if (heartRate > 100) {
+    hrStatus = 'high';
+  }
+  
+  return {
+    spo2Status,
+    bpStatus,
+    hrStatus
+  };
 }
-

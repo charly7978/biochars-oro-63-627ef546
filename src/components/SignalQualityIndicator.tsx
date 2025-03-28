@@ -8,7 +8,7 @@ interface SignalQualityIndicatorProps {
 }
 
 /**
- * Componente que muestra la calidad de la señal PPG desde el procesador optimizado
+ * Componente que muestra la calidad de la señal PPG
  * Incluye detección específica para Android y consejos de ayuda
  */
 const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQualityIndicatorProps) => {
@@ -20,8 +20,8 @@ const SignalQualityIndicator = ({ quality, isMonitoring = false }: SignalQuality
   
   // Constantes de configuración
   const historySize = 5; // Ventana de historial para promedio
-  const REQUIRED_FINGER_FRAMES = 8; // Para reducir falsos positivos
-  const QUALITY_THRESHOLD = 50; // Para exigir calidad más alta
+  const REQUIRED_FINGER_FRAMES = 8; // Aumentado de 6 a 8 para reducir falsos positivos
+  const QUALITY_THRESHOLD = 50; // Aumentado de 40 a 50 para exigir calidad más alta
 
   // Detectar plataforma
   useEffect(() => {

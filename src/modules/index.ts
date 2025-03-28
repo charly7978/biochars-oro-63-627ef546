@@ -1,28 +1,20 @@
 
 /**
- * NOTA IMPORTANTE: Este es el punto de entrada para el procesador central de señales.
- * Este módulo se encarga de la exportación del optimizador de señal de 6 canales
- * con feedback bidireccional y toda la funcionalidad integrada.
+ * NOTA IMPORTANTE: Este es el punto de entrada para todos los módulos de procesamiento.
+ * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
  */
 
-// Exportar el procesador principal de señales desde el ubicación central
-export { 
-  SignalProcessor,
-  PPGSignalProcessor, 
-  ISignalProcessor
-} from './core/SignalProcessor';
-
-// Re-exportación de tipos para compatibilidad
-export type { ProcessedSignal } from './core/SignalProcessor';
-export type { ProcessingError } from '../types/signal';
-
-// Exportamos la implementación del procesador existente para retrocompatibilidad
+// Exportar adaptadores de compatibilidad para uso desde código existente
 export { VitalSignsProcessor } from './compat/VitalSignsProcessorAdapter';
 export type { VitalSignsResult, RRData } from './vital-signs/VitalSignsProcessor';
 
-// Exportar utilidades relacionadas con procesamiento de señales
+// Exportar procesadores principales para uso directo si es necesario
+export { SignalProcessor, PPGSignalProcessor } from './core/SignalProcessor';
+export type { ProcessedSignal } from './core/SignalProcessor';
+export { SpO2Processor } from './core/SpO2Processor';
 export { BloodPressureProcessor } from './core/BloodPressureProcessor';
-export { HeartBeatProcessor } from './HeartBeatProcessor';
+export { ArrhythmiaProcessor } from './core/ArrhythmiaProcessor';
+export { VitalSignsProcessor as CoreVitalSignsProcessor } from './core/VitalSignsProcessor';
 
-// Nota: Se mantiene compatibilidad con implementaciones anteriores
-// pero se recomienda usar el optimizador de señales diferencial.
+// Nota: La estructura es modular, cada procesador se encarga solo de su tarea específica
+// y se comunica a través de interfaces bien definidas.

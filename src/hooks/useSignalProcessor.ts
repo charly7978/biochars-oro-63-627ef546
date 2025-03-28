@@ -1,10 +1,11 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PPGSignalProcessor } from '../modules';
-import type { ProcessedSignal, ProcessingError } from '../modules';
+import { PPGSignalProcessor } from '../modules/core/SignalProcessor';
+import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
- * Hook para gestionar el procesamiento optimizado de señales PPG.
- * Proporciona acceso al procesador de 6 canales con feedback bidireccional.
+ * Hook para gestionar el procesamiento de señales PPG.
+ * Esta versión limpia mantiene la misma funcionalidad pero con código más limpio.
  */
 export const useSignalProcessor = () => {
   // Creamos una única instancia del procesador
@@ -61,12 +62,12 @@ export const useSignalProcessor = () => {
     
     const avgQuality = weightSum > 0 ? weightedQualitySum / weightSum : 0;
     
-    // Calcular ratio de detección (more sensitive threshold)
+    // Calcular ratio de detección (make more sensitive - now 0.4 instead of 0.6)
     const trueCount = fingerDetectedHistoryRef.current.filter(detected => detected).length;
     const detectionRatio = fingerDetectedHistoryRef.current.length > 0 ? 
       trueCount / fingerDetectedHistoryRef.current.length : 0;
     
-    // Umbral sensible pero robusto
+    // Use a more sensitive threshold (2 of 5 = 0.4 instead of 0.6)
     const robustFingerDetected = detectionRatio >= 0.4;
     
     // Mejora ligera de calidad para mejor UX
@@ -216,7 +217,7 @@ export const useSignalProcessor = () => {
     }
   }, [isProcessing, processor]);
 
-  // Devolver la interfaz pública
+  // Devolver la misma interfaz pública que antes
   return {
     isProcessing,
     lastSignal,

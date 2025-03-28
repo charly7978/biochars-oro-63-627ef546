@@ -1,11 +1,10 @@
-
 import { useRef, useState, useCallback } from 'react';
 import { VitalSignsProcessor, VitalSignsResult, RRData } from '../modules';
 
 /**
  * Hook para procesamiento de signos vitales que mantiene un estado consistente
- * NOTA: Este hook utiliza el procesador de señales optimizado central
- * manteniendo compatibilidad con interfaces anteriores
+ * NOTA: Este hook utiliza los procesadores modulares refactorizados pero mantiene
+ * la interfaz original para compatibilidad con index.tsx y PPGSignalMeter.tsx
  */
 export function useVitalSignsProcessor() {
   const processorRef = useRef<VitalSignsProcessor | null>(null);
@@ -32,7 +31,7 @@ export function useVitalSignsProcessor() {
     processedSignalsRef.current++;
     
     try {
-      // Procesar la señal con el optimizador central
+      // Procesar la señal
       const result = processorRef.current.processSignal(value, rrData);
       
       // Rastrear contador de arritmias
