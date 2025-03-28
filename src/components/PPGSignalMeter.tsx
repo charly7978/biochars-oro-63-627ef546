@@ -279,16 +279,15 @@ const PPGSignalMeter = memo(({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0.00, 'rgba(230, 210, 255, 0.9)');  // Púrpura más claro arriba
-    gradient.addColorStop(0.14, 'rgba(215, 200, 250, 0.9)');  // Púrpura lavanda
-    gradient.addColorStop(0.28, 'rgba(200, 190, 245, 0.9)');  // Azul-púrpura
-    gradient.addColorStop(0.42, 'rgba(180, 200, 240, 0.9)');  // Azul celeste
-    gradient.addColorStop(0.56, 'rgba(160, 210, 235, 0.9)');  // Azul claro
-    gradient.addColorStop(0.70, 'rgba(140, 220, 230, 0.9)');  // Turquesa
-    gradient.addColorStop(0.84, 'rgba(130, 230, 220, 0.9)');  // Verde agua
-    gradient.addColorStop(0.92, 'rgba(120, 240, 210, 0.9)');  // Verde menta
-    gradient.addColorStop(1.00, 'rgba(110, 245, 200, 0.9)');  // Verde menta más oscuro abajo
     
+    gradient.addColorStop(0.00, 'rgba(255, 0, 0, 0.9)');     // Red
+    gradient.addColorStop(0.17, 'rgba(255, 127, 0, 0.9)');   // Orange
+    gradient.addColorStop(0.33, 'rgba(255, 255, 0, 0.9)');   // Yellow
+    gradient.addColorStop(0.50, 'rgba(0, 255, 0, 0.9)');     // Green
+    gradient.addColorStop(0.67, 'rgba(0, 0, 255, 0.9)');     // Blue
+    gradient.addColorStop(0.83, 'rgba(75, 0, 130, 0.9)');    // Indigo
+    gradient.addColorStop(1.00, 'rgba(143, 0, 255, 0.9)');   // Violet
+  
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
