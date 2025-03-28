@@ -1,43 +1,47 @@
 
 /**
- * Tipos para procesamiento de señal
+ * Tipos para el módulo de procesamiento de señal
  */
 
 export interface ProcessedPPGSignal {
-  timestamp: number;
+  // Valor raw original
   rawValue: number;
+  
+  // Valor filtrado
   filteredValue: number;
-  normalizedValue: number;
-  amplifiedValue: number;
+  
+  // Marca de tiempo
+  timestamp: number;
+  
+  // Calidad de señal (0-100)
   quality: number;
+  
+  // Detección de dedo
   fingerDetected: boolean;
-  signalStrength: number;
-  metadata?: {
-    rrIntervals?: number[];
-    lastPeakTime?: number | null;
-    isPeak?: boolean;
-    [key: string]: any;
-  };
+  
+  // Metadata de procesamiento
+  isPeak?: boolean;
+  lastPeakTime?: number | null;
+  rrIntervals?: number[];
 }
 
-export interface SignalProcessorConfig {
-  filterParams?: {
-    lowPassCutoff?: number;
-    highPassCutoff?: number;
-    smoothingFactor?: number;
-  };
-  amplification?: {
-    gain?: number;
-    adaptiveGain?: boolean;
-  };
-  fingerDetection?: {
-    threshold?: number;
-    stabilityThreshold?: number;
-  };
-}
+// Modos de procesamiento de señal
+export type SignalProcessingMode = 'standard' | 'adaptive' | 'highSensitivity' | 'lowNoise';
 
-export interface SignalProcessor {
-  processSignal(value: number, timestamp?: number): ProcessedPPGSignal;
-  setConfig(config: SignalProcessorConfig): void;
-  reset(): void;
+// Opciones de configuración para procesador
+export interface PPGProcessingOptions {
+  // Umbral para detección de dedo
+  fingerDetectionThreshold?: number;
+  
+  // Umbral para detección de picos
+  peakDetectionThreshold?: number;
+  
+  // Tamaño de ventana para filtros
+  filterWindowSize?: number;
+  
+  // Modo de procesamiento
+  mode?: SignalProcessingMode;
+  
+  // Factor de amplificación
+  amplificationFactor?: number;
 }

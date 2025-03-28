@@ -52,3 +52,6 @@ export function detectFinger(
 
   return { detected: isDetected, updatedCounter };
 }
+
+// Alias para compatibilidad con código existente
+export const detectFingerContact = detectFinger;

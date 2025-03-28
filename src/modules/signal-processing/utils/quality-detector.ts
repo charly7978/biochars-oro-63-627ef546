@@ -65,3 +65,6 @@ export function assessSignalQuality(
 
   return Math.round(Math.min(100, Math.max(0, quality)));
 }
+
+// Alias para compatibilidad con código existente
+export const evaluateSignalQuality = assessSignalQuality;
