@@ -1,6 +1,4 @@
 
-import { RRAnalysisResult } from './types';
-
 /**
  * Specialized class for RR interval data analysis and logging
  */
@@ -8,7 +6,7 @@ export class RRDataAnalyzer {
   /**
    * Logs comprehensive RR interval analysis results for diagnostics
    */
-  public logRRAnalysis(analysisData: RRAnalysisResult, intervals: number[]): void {
+  public logRRAnalysis(analysisData: any, intervals: number[]): void {
     if (analysisData.isArrhythmia) {
       console.log("RRDataAnalyzer: Abnormal RR intervals detected", {
         rmssd: analysisData.rmssd,
@@ -22,7 +20,7 @@ export class RRDataAnalyzer {
   /**
    * Logs details about possible arrhythmia
    */
-  public logPossibleArrhythmia(analysisData: RRAnalysisResult): void {
+  public logPossibleArrhythmia(analysisData: any): void {
     console.log("RRDataAnalyzer: Possible arrhythmia detected", {
       rmssd: analysisData.rmssd,
       rrVariation: analysisData.rrVariation,
@@ -33,7 +31,7 @@ export class RRDataAnalyzer {
   /**
    * Logs confirmed arrhythmia with comprehensive metrics
    */
-  public logConfirmedArrhythmia(analysisData: RRAnalysisResult, intervals: number[], count: number): void {
+  public logConfirmedArrhythmia(analysisData: any, intervals: number[], count: number): void {
     console.log("RRDataAnalyzer: ARRHYTHMIA CONFIRMED", {
       arrhythmiaCount: count,
       rmssd: analysisData.rmssd,

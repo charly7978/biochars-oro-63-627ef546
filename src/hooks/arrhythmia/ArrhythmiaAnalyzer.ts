@@ -1,29 +1,32 @@
 
-import { ArrhythmiaConfig, RRAnalysisResult } from './types';
+import { analyzeRRIntervals } from '../../utils/rrAnalysisUtils';
+import { VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
+import { ArrhythmiaConfig } from './types';
 import { ArrhythmiaPatternDetector } from './ArrhythmiaPatternDetector';
 import { RRDataAnalyzer } from './RRDataAnalyzer';
-import { RRIntervalAnalyzer } from './RRIntervalAnalyzer';
-import { ArrhythmiaStateManager } from './ArrhythmiaStateManager';
 
 /**
  * Direct arrhythmia analyzer with natural detection
  * No simulation or reference values used
  */
 export class ArrhythmiaAnalyzer {
+  private lastArrhythmiaTime: number = 0;
+  private arrhythmiaDetected: boolean = false;
+  private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
   
-  // Component managers
+  // Pattern detection
   private patternDetector: ArrhythmiaPatternDetector;
   private rrAnalyzer: RRDataAnalyzer;
-  private intervalAnalyzer: RRIntervalAnalyzer;
-  private stateManager: ArrhythmiaStateManager;
+  
+  // Consecutive anomalies tracking
+  private consecutiveAnomalies: number = 0;
+  private readonly CONSECUTIVE_THRESHOLD = 6; // Reduced from 8 for faster detection
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
     this.patternDetector = new ArrhythmiaPatternDetector();
     this.rrAnalyzer = new RRDataAnalyzer();
-    this.intervalAnalyzer = new RRIntervalAnalyzer();
-    this.stateManager = new ArrhythmiaStateManager();
     
     console.log("ArrhythmiaAnalyzer: Initialized with config:", {
       minTimeBetween: this.config.MIN_TIME_BETWEEN_ARRHYTHMIAS,
@@ -35,116 +38,100 @@ export class ArrhythmiaAnalyzer {
 
   /**
    * Direct analysis of RR intervals for arrhythmia detection
+   * No reference values or simulation used
    */
   public analyzeRRData(
-    rrData: { intervals: number[], lastPeakTime: number | null }
-  ): {
-    isArrhythmia: boolean;
-    arrhythmiaCounter: number;
-    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; } | null;
-  } {
+    rrData: { intervals: number[], lastPeakTime: number | null },
+    result: VitalSignsResult
+  ): VitalSignsResult {
     const currentTime = Date.now();
     
     // Require sufficient data for analysis, but with lower threshold
-    if (!rrData?.intervals || rrData.intervals.length < 12) {
-      const state = this.stateManager.getState();
-      return {
-        isArrhythmia: state.isArrhythmia,
-        arrhythmiaCounter: state.arrhythmiaCounter,
-        lastArrhythmiaData: null
-      };
+    if (!rrData?.intervals || rrData.intervals.length < 12) { // Reduced from 16
+      return this.getStatePreservingResult(result);
     }
     
     // Extract intervals for analysis
     const intervals = rrData.intervals.slice(-16);
     
     // Perform direct analysis without reference values
-    const analysisData = this.intervalAnalyzer.analyzeIntervals(intervals);
+    const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
+      analyzeRRIntervals(
+        rrData, 
+        currentTime, 
+        this.lastArrhythmiaTime, 
+        this.arrhythmiaCounter,
+        this.config.MIN_TIME_BETWEEN_ARRHYTHMIAS,
+        this.config.MAX_ARRHYTHMIAS_PER_SESSION
+      );
+    
+    // No analysis data available
     if (!analysisData) {
-      const state = this.stateManager.getState();
-      return {
-        isArrhythmia: state.isArrhythmia,
-        arrhythmiaCounter: state.arrhythmiaCounter,
-        lastArrhythmiaData: null
-      };
+      return this.getStatePreservingResult(result);
     }
     
     // Log and analyze RR data
     this.rrAnalyzer.logRRAnalysis(analysisData, intervals);
     
     // If arrhythmia detected, process it
-    if (analysisData.isArrhythmia) {
+    if (hasArrhythmia) {
       this.rrAnalyzer.logPossibleArrhythmia(analysisData);
       
       // Update pattern detector
       this.patternDetector.updatePatternBuffer(analysisData.rrVariation);
       
       // Check for arrhythmia pattern
-      const isPatternDetected = this.patternDetector.detectArrhythmiaPattern();
-      this.stateManager.updateConsecutiveAnomalies(isPatternDetected);
-      
-      if (isPatternDetected) {
+      if (this.patternDetector.detectArrhythmiaPattern()) {
+        this.consecutiveAnomalies++;
+        
         console.log("ArrhythmiaAnalyzer: Pattern detected", {
-          consecutiveAnomalies: this.stateManager.getConsecutiveAnomalies(),
+          consecutiveAnomalies: this.consecutiveAnomalies,
+          threshold: this.CONSECUTIVE_THRESHOLD,
           variation: analysisData.rrVariation,
           timestamp: currentTime
         });
+      } else {
+        this.consecutiveAnomalies = 0;
       }
       
-      // Check time since last arrhythmia and max count
-      const canIncrementCounter = this.stateManager.canIncrementCounter(
-        currentTime, 
-        this.config.MIN_TIME_BETWEEN_ARRHYTHMIAS,
-        this.config.MAX_ARRHYTHMIAS_PER_SESSION
-      );
-      
       // Confirm arrhythmia with fewer consecutive anomalies required
-      if (canIncrementCounter && this.stateManager.isThresholdReached()) {
-        return this.confirmArrhythmia(currentTime, analysisData, intervals);
+      if (shouldIncrementCounter && this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD) {
+        return this.confirmArrhythmia(result, currentTime, analysisData, intervals);
       } else {
         this.rrAnalyzer.logIgnoredArrhythmia(
-          currentTime - this.stateManager.getState().lastArrhythmiaTime,
+          currentTime - this.lastArrhythmiaTime,
           this.config.MAX_ARRHYTHMIAS_PER_SESSION,
-          this.stateManager.getState().arrhythmiaCounter
+          this.arrhythmiaCounter
         );
       }
     } else {
       // Reset consecutive anomalies for clear negatives
-      this.stateManager.updateConsecutiveAnomalies(false);
+      this.consecutiveAnomalies = 0;
     }
     
-    const state = this.stateManager.getState();
-    return {
-      isArrhythmia: state.isArrhythmia,
-      arrhythmiaCounter: state.arrhythmiaCounter,
-      lastArrhythmiaData: null
-    };
+    return this.getStatePreservingResult(result);
   }
   
   /**
    * Register confirmed arrhythmia
    */
   private confirmArrhythmia(
+    result: VitalSignsResult, 
     currentTime: number,
-    analysisData: RRAnalysisResult,
+    analysisData: any,
     intervals: number[]
-  ): {
-    isArrhythmia: boolean;
-    arrhythmiaCounter: number;
-    lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number; };
-  } {
-    this.stateManager.confirmArrhythmia(currentTime);
+  ): VitalSignsResult {
+    this.arrhythmiaDetected = true;
+    this.arrhythmiaCounter++;
+    this.lastArrhythmiaTime = currentTime;
+    this.consecutiveAnomalies = 0;
     this.patternDetector.resetPatternBuffer();
     
-    this.rrAnalyzer.logConfirmedArrhythmia(
-      analysisData, 
-      intervals, 
-      this.stateManager.getState().arrhythmiaCounter
-    );
+    this.rrAnalyzer.logConfirmedArrhythmia(analysisData, intervals, this.arrhythmiaCounter);
     
     return {
-      isArrhythmia: true,
-      arrhythmiaCounter: this.stateManager.getState().arrhythmiaCounter,
+      ...result,
+      arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
       lastArrhythmiaData: {
         timestamp: currentTime,
         rmssd: analysisData.rmssd,
@@ -152,19 +139,40 @@ export class ArrhythmiaAnalyzer {
       }
     };
   }
+  
+  /**
+   * Get result that preserves current arrhythmia state
+   */
+  private getStatePreservingResult(result: VitalSignsResult): VitalSignsResult {
+    if (this.arrhythmiaDetected) {
+      return {
+        ...result,
+        arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
+        lastArrhythmiaData: null
+      };
+    }
+    
+    return {
+      ...result,
+      arrhythmiaStatus: `NO ARRHYTHMIAS|${this.arrhythmiaCounter}`
+    };
+  }
 
   /**
    * Get current arrhythmia counter
    */
   public getArrhythmiaCount(): number {
-    return this.stateManager.getState().arrhythmiaCounter;
+    return this.arrhythmiaCounter;
   }
 
   /**
    * Reset analyzer state completely
    */
   public reset(): void {
-    this.stateManager.reset();
+    this.lastArrhythmiaTime = 0;
+    this.arrhythmiaDetected = false;
+    this.arrhythmiaCounter = 0;
+    this.consecutiveAnomalies = 0;
     this.patternDetector.resetPatternBuffer();
     
     console.log("ArrhythmiaAnalyzer: Reset complete - all values at zero", {
