@@ -82,6 +82,12 @@ export const useVitalSignsCalculator = () => {
         const severity = result.arrhythmia.data.severity || 'media';
         const type = result.arrhythmia.data.type || 'irregular';
         
+        console.log("VitalSignsCalculator: Detectada arritmia, registrando ventana:", {
+          window,
+          severity,
+          type
+        });
+        
         // Añadir ventana al visualizador
         addArrhythmiaWindow(window.start, window.end, severity, type);
         
@@ -89,21 +95,21 @@ export const useVitalSignsCalculator = () => {
         const arrhythmiaEvent = new CustomEvent('external-arrhythmia-detected', {
           detail: {
             timestamp: Date.now(),
-            window: window,
+            start: window.start,
+            end: window.end,
             severity: severity,
             type: type
           }
         });
         document.dispatchEvent(arrhythmiaEvent);
-        
-        console.log("Ventana de arritmia registrada para visualización en gráfico PPG:", window, "severidad:", severity);
       }
       
       console.log("VitalSignsCalculator: Cálculo realizado con éxito", { 
         heartRate: result.heartRate.value,
         spo2: result.spo2.value,
         pressure: result.bloodPressure.value,
-        arrhythmia: result.arrhythmia.status
+        arrhythmia: result.arrhythmia.status,
+        arrhythmiaData: result.arrhythmia.data
       });
       
       return result;

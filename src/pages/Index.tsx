@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -80,6 +79,11 @@ const Index = () => {
         const window = lastValidResults.lastArrhythmiaData.visualWindow;
         const severity = lastValidResults.lastArrhythmiaData.severity || 'media';
         
+        console.log("Index: Dispatching arrhythmia event from lastValidResults:", {
+          window,
+          severity
+        });
+        
         const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
           detail: { 
             start: window.start, 
@@ -106,7 +110,16 @@ const Index = () => {
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
-            console.log("Index: Nuevos signos vitales procesados", vitals);
+            console.log("Index: Nuevos signos vitales procesados", {
+              spo2: vitals.spo2,
+              pressure: vitals.pressure,
+              arrhythmiaStatus: vitals.arrhythmiaStatus,
+              glucoseValue: vitals.glucose, 
+              cholesterol: vitals.lipids?.totalCholesterol,
+              triglycerides: vitals.lipids?.triglycerides,
+              lastArrhythmiaData: vitals.lastArrhythmiaData
+            });
+            
             setVitalSigns(vitals);
             
             if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('Arritmia')) {
@@ -120,6 +133,11 @@ const Index = () => {
               if (vitals.lastArrhythmiaData && vitals.lastArrhythmiaData.visualWindow) {
                 const window = vitals.lastArrhythmiaData.visualWindow;
                 const severity = vitals.lastArrhythmiaData.severity || 'media';
+                
+                console.log("Index: Dispatching arrhythmia event from real-time vitals:", {
+                  window,
+                  severity
+                });
                 
                 const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
                   detail: { 
@@ -212,6 +230,8 @@ const Index = () => {
         description: "Resultados disponibles",
         variant: "default"
       });
+      
+      console.log("Index: Dispatching final arrhythmia visualization for saved results", savedResults);
       
       // Trigger arrhythmia visualization again for the saved results
       if (savedResults.arrhythmiaStatus?.includes('Arritmia') && 

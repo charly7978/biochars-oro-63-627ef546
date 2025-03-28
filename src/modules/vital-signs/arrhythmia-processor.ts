@@ -58,14 +58,30 @@ export class ArrhythmiaProcessor {
         ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
         : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
+    // Define visualization window for arrhythmia
+    const windowStart = this.lastArrhythmiaTime > 0 ? 
+      this.lastArrhythmiaTime - 3000 : currentTime - 3000;
+    const windowEnd = this.lastArrhythmiaTime > 0 ? 
+      this.lastArrhythmiaTime + 3000 : currentTime;
+      
     // Additional information only if there's active arrhythmia
     const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
           rmssd: calculateRMSSD(this.rrIntervals.slice(-8)),
-          rrVariation: calculateRRVariation(this.rrIntervals.slice(-8))
+          rrVariation: calculateRRVariation(this.rrIntervals.slice(-8)),
+          visualWindow: {
+            start: windowStart,
+            end: windowEnd
+          },
+          severity: 'media',
+          type: 'irregular'
         } 
       : null;
+    
+    if (this.arrhythmiaDetected && lastArrhythmiaData) {
+      console.log("ArrhythmiaProcessor: Returning arrhythmia data with visualization window", lastArrhythmiaData);
+    }
     
     return {
       arrhythmiaStatus: arrhythmiaStatusMessage,

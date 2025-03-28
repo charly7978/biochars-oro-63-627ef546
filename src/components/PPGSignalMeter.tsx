@@ -623,6 +623,7 @@ const PPGSignalMeter = memo(({
   }, [onReset]);
 
   const handleArrhythmiaDetected = (event: CustomEvent) => {
+    console.log("PPGSignalMeter: Received arrhythmia event:", event.detail);
     const { start, end, severity, timestamp } = event.detail;
     
     arrhythmiaSegmentsRef.current.push({
@@ -641,7 +642,9 @@ const PPGSignalMeter = memo(({
     }
     
     console.log("PPGSignalMeter: Arritmia detectada y marcada en gráfico", { 
-      start, end, severity, timestamp 
+      start, end, severity, timestamp,
+      totalPoints: dataBufferRef.current?.getPoints().length,
+      arrhythmiaPointsCount: dataBufferRef.current?.getPoints().filter(p => p.isArrhythmia).length
     });
     
     setShowArrhythmiaAlert(true);
@@ -654,14 +657,25 @@ const PPGSignalMeter = memo(({
     document.addEventListener('external-arrhythmia-detected', 
       handleArrhythmiaDetected as EventListener);
     
+    document.addEventListener('refresh-ppg-visualization', () => {
+      console.log("PPGSignalMeter: Refresh visualization event received");
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      animationFrameRef.current = requestAnimationFrame(renderSignal);
+    });
+    
     return () => {
       document.removeEventListener('arrhythmia-detected', 
         handleArrhythmiaDetected as EventListener);
       
       document.removeEventListener('external-arrhythmia-detected', 
         handleArrhythmiaDetected as EventListener);
+      
+      document.removeEventListener('refresh-ppg-visualization', 
+        () => console.log("PPGSignalMeter: Removed refresh event listener"));
     };
-  }, []);
+  }, [renderSignal]);
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;

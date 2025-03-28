@@ -72,24 +72,32 @@ export const useArrhythmiaVisualization = () => {
   
   // Listen for external arrhythmia signals from the processor
   useEffect(() => {
-    const handleExternalArrhythmia = (event: CustomEvent) => {
-      const { timestamp, window, severity, type } = event.detail;
-      if (window && window.start && window.end) {
+    const handleArrhythmiaDetected = (event: CustomEvent) => {
+      console.log("ArrhythmiaVisualization: arrhythmia-detected event received", event.detail);
+      const { start, end, severity, type, timestamp } = event.detail;
+      
+      if (start && end) {
         addArrhythmiaWindow(
-          window.start, 
-          window.end, 
+          start, 
+          end, 
           severity || 'alta',
           type || 'irregular'
         );
       }
     };
     
+    document.addEventListener('arrhythmia-detected', 
+      handleArrhythmiaDetected as EventListener);
+    
     document.addEventListener('external-arrhythmia-detected', 
-      handleExternalArrhythmia as EventListener);
+      handleArrhythmiaDetected as EventListener);
       
     return () => {
+      document.removeEventListener('arrhythmia-detected', 
+        handleArrhythmiaDetected as EventListener);
+      
       document.removeEventListener('external-arrhythmia-detected', 
-        handleExternalArrhythmia as EventListener);
+        handleArrhythmiaDetected as EventListener);
     };
   }, [addArrhythmiaWindow]);
   
