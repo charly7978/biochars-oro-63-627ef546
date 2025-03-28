@@ -1,7 +1,6 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
-import { toast } from 'sonner';
 
 interface HeartBeatResult {
   bpm: number;
@@ -22,9 +21,6 @@ export const useHeartBeatProcessor = () => {
   const [arrhythmiaData, setArrhythmiaData] = useState<any>(null);
   const processorRef = useRef<HeartBeatProcessor>(new HeartBeatProcessor());
   const audioContextRef = useRef<AudioContext | null>(null);
-  const audioInitializedRef = useRef<boolean>(false);
-  const lastPeakRef = useRef<number | null>(null);
-  const pendingPeakRef = useRef<boolean>(false);
 
   // Inicializar el contexto de audio para asegurar que el sonido funcione
   useEffect(() => {
@@ -56,13 +52,6 @@ export const useHeartBeatProcessor = () => {
           state: audioContextRef.current.state,
           sampleRate: audioContextRef.current.sampleRate
         });
-        
-        // Pasar el contexto de audio al procesador
-        if (processorRef.current) {
-          processorRef.current.setAudioContext(audioContextRef.current);
-          audioInitializedRef.current = true;
-          console.log("Audio context passed to HeartBeatProcessor");
-        }
       } catch (err) {
         console.error("Error initializing audio context:", err);
       }
@@ -75,12 +64,7 @@ export const useHeartBeatProcessor = () => {
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         try {
           await audioContextRef.current.resume();
-          
-          // Volver a pasar el contexto de audio al procesador
-          if (processorRef.current && audioContextRef.current) {
-            processorRef.current.setAudioContext(audioContextRef.current);
-            console.log("Audio context resumed and passed to HeartBeatProcessor after user interaction");
-          }
+          console.log("Audio context resumed after user interaction");
         } catch (err) {
           console.error("Error resuming audio context:", err);
         }
@@ -119,13 +103,6 @@ export const useHeartBeatProcessor = () => {
       };
     }
     
-    // Aseguramos que el procesador tenga el contexto de audio
-    if (audioContextRef.current && !audioInitializedRef.current) {
-      processor.setAudioContext(audioContextRef.current);
-      audioInitializedRef.current = true;
-      console.log("Audio context passed to HeartBeatProcessor during signal processing");
-    }
-    
     // Procesamos la señal
     const result = processor.processSignal(ppgValue);
     
@@ -134,48 +111,9 @@ export const useHeartBeatProcessor = () => {
       setBpm(result.bpm);
     }
     
-    // Mejoramos la sincronización del beep con el pico visual
-    // Agregamos un pequeño adelanto para compensar las latencias
-    if (result.isPeak && audioContextRef.current && audioInitializedRef.current) {
-      const now = Date.now();
-      
-      // Verificamos que no hayamos reproducido un beep recientemente
-      if (!lastPeakRef.current || (now - lastPeakRef.current) > 300) {
-        // Marcamos que hay un pico pendiente para reproducción inmediata
-        pendingPeakRef.current = true;
-        
-        // Reproducimos el beep con prioridad alta (sin demora)
-        try {
-          if (processor.isReady()) {
-            // Aumentamos ligeramente el volumen para mayor claridad
-            processor.playBeep(0.45);
-            lastPeakRef.current = now;
-            pendingPeakRef.current = false;
-            console.log("Beep played EXACTLY at peak detection", { 
-              timestamp: now,
-              isPeak: result.isPeak,
-              filteredValue: result.filteredValue
-            });
-          }
-        } catch (err) {
-          console.error("Error playing synchronized beep at peak:", err);
-          pendingPeakRef.current = false;
-        }
-      }
-    }
-    
-    // Actualizar estado de arritmia si está presente en el resultado
-    if (result.arrhythmiaCount > 0 && !isArrhythmia) {
-      setIsArrhythmia(true);
-      setArrhythmiaData(result.rrData);
-      toast.warning("Se ha detectado una posible arritmia cardíaca", {
-        duration: 3000,
-      });
-    }
-    
     // Devolvemos el resultado completo
     return result;
-  }, [isArrhythmia]);
+  }, []);
 
   // Exponer métodos adicionales
   const reset = useCallback(() => {
@@ -185,33 +123,12 @@ export const useHeartBeatProcessor = () => {
       setBpm(0);
       setIsArrhythmia(false);
       setArrhythmiaData(null);
-      lastPeakRef.current = null;
-      pendingPeakRef.current = false;
-      
-      // Reiniciar conexión de audio
-      if (audioContextRef.current) {
-        processor.setAudioContext(audioContextRef.current);
-        console.log("Audio context reconnected after reset");
-      }
     }
   }, []);
 
   const startProcessing = useCallback(() => {
     setIsProcessing(true);
     reset();
-    lastPeakRef.current = null;
-    pendingPeakRef.current = false;
-    
-    // Asegurar que el audio esté habilitado al comenzar
-    if (audioContextRef.current && processorRef.current) {
-      audioContextRef.current.resume().then(() => {
-        processorRef.current.setAudioContext(audioContextRef.current!);
-        processorRef.current.setManualBeepMode(true); // Aseguramos que estamos en modo manual
-        console.log("Audio context resumed at start processing");
-      }).catch(err => {
-        console.error("Error resuming audio context at start:", err);
-      });
-    }
   }, [reset]);
 
   const stopProcessing = useCallback(() => {
