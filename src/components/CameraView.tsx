@@ -23,6 +23,9 @@ const CameraView: React.FC<CameraViewProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
 
+  /**
+   * Stop all camera tracks and clean up
+   */
   const stopCamera = async () => {
     if (stream) {
       stream.getTracks().forEach(track => {
@@ -35,10 +38,13 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   };
 
+  /**
+   * Start camera with optimal settings for PPG
+   */
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("getUserMedia no está soportado");
+        throw new Error("getUserMedia is not supported");
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
@@ -89,7 +95,7 @@ const CameraView: React.FC<CameraViewProps> = ({
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.log("Could not apply some optimizations:", err);
         }
       }
 
@@ -107,10 +113,11 @@ const CameraView: React.FC<CameraViewProps> = ({
         onStreamReady(newStream);
       }
     } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
+      console.error("Error starting camera:", err);
     }
   };
 
+  // Start/stop camera based on isMonitoring prop
   useEffect(() => {
     if (isMonitoring && !stream) {
       startCamera();
@@ -150,7 +157,7 @@ const CameraView: React.FC<CameraViewProps> = ({
           <span className={`text-xs mt-2 transition-colors duration-300 ${
             isFingerDetected ? 'text-green-500' : 'text-gray-400'
           }`}>
-            {isFingerDetected ? "dedo detectado" : "ubique su dedo en el lente"}
+            {isFingerDetected ? "finger detected" : "place your finger on the lens"}
           </span>
         </div>
       )}
