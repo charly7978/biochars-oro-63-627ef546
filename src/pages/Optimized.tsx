@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
-import { useSignalProcessor } from "@/hooks/useSignalProcessor";
+import { useSignalProcessor } from "@/hooks/processing/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
@@ -242,7 +242,6 @@ const Optimized = () => {
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={measurement.vitalSigns.arrhythmiaStatus}
-              rawArrhythmiaData={measurement.vitalSigns.lastArrhythmiaData}
             />
           </div>
 
