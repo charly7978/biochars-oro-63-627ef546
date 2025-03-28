@@ -1,23 +1,38 @@
+
 import React from 'react';
+import { Button } from './ui/button';
 
 interface MonitorButtonProps {
   isMonitoring: boolean;
   onToggle: () => void;
   variant?: "monitor" | "reset";
+  disabled?: boolean;
 }
 
-const MonitorButton: React.FC<MonitorButtonProps> = ({ isMonitoring, onToggle, variant = "monitor" }) => {
-  // Para "monitor": azul menos vivo; para "reset": gris
-  const baseClass = "px-4 py-2 rounded transition-colors duration-300 w-full text-white";
-  const classes =
-    variant === "monitor"
-      ? `${baseClass} ${isMonitoring ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'}`
-      : `${baseClass} bg-gray-500 hover:bg-gray-600`;
-      
+const MonitorButton: React.FC<MonitorButtonProps> = ({ 
+  isMonitoring, 
+  onToggle, 
+  variant = "monitor",
+  disabled = false
+}) => {
+  // Determine text and color based on variant and state
+  const buttonText = variant === "monitor" 
+    ? (isMonitoring ? 'Detener' : 'Iniciar') 
+    : 'Reset';
+  
+  const buttonVariant = variant === "monitor"
+    ? (isMonitoring ? "destructive" : "default")
+    : "secondary";
+
   return (
-    <button onClick={onToggle} className={classes}>
-      {variant === "monitor" ? (isMonitoring ? 'Detener' : 'Iniciar') : 'Reset'}
-    </button>
+    <Button 
+      onClick={onToggle} 
+      variant={buttonVariant}
+      disabled={disabled}
+      className="w-full font-bold"
+    >
+      {buttonText}
+    </Button>
   );
 };
 

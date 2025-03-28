@@ -4,7 +4,7 @@
  * Displays vital signs monitor with camera and results
  */
 
-import React from "react";
+import React, { useState, useCallback } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
@@ -12,7 +12,9 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { useVitalSigns } from "@/context/VitalSignsContext";
 import { measurementManager } from "@/modules/results/MeasurementManager";
+import { vitalSignsProcessor } from "@/modules/vital-signs/VitalSignsProcessor";
 import { VitalSignsResult } from "@/modules/types/signal";
+import { toast } from "@/hooks/use-toast";
 
 // Component that uses the context
 const VitalSignsMonitor = () => {
@@ -23,6 +25,8 @@ const VitalSignsMonitor = () => {
     startMonitoring,
     stopMonitoring
   } = useVitalSigns();
+  
+  const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   
   // Get measurement state directly from manager
   const {
@@ -41,21 +45,65 @@ const VitalSignsMonitor = () => {
   // Flag for arrhythmia detection
   const isArrhythmia = vitalSigns.arrhythmiaStatus?.includes("ARRITMIA DETECTADA") || false;
 
-  const handleToggleMonitoring = () => {
-    if (isMonitoring) {
-      stopMonitoring();
-    } else {
-      startMonitoring();
+  const handleToggleMonitoring = useCallback(() => {
+    setIsButtonDisabled(true);
+    
+    try {
+      if (isMonitoring) {
+        stopMonitoring();
+        toast({
+          title: "Monitoreo detenido",
+          description: "El monitoreo de signos vitales ha sido detenido",
+          variant: "default",
+        });
+      } else {
+        // Inicializar el procesador antes de iniciar el monitoreo
+        vitalSignsProcessor.initialize();
+        startMonitoring();
+        toast({
+          title: "Monitoreo iniciado",
+          description: "Coloque su dedo sobre la cámara para comenzar la medición",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error("Error al cambiar estado de monitoreo:", error);
+      toast({
+        title: "Error",
+        description: "Ocurrió un error al cambiar el estado de monitoreo",
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => setIsButtonDisabled(false), 500);
     }
-  };
+  }, [isMonitoring, startMonitoring, stopMonitoring]);
   
-  const resetAll = () => {
-    measurementManager.reset();
-  };
+  const resetAll = useCallback(() => {
+    setIsButtonDisabled(true);
+    
+    try {
+      measurementManager.reset();
+      vitalSignsProcessor.fullReset();
+      toast({
+        title: "Reiniciado",
+        description: "Todos los datos han sido reiniciados",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Error al reiniciar:", error);
+      toast({
+        title: "Error",
+        description: "Ocurrió un error al reiniciar",
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => setIsButtonDisabled(false), 500);
+    }
+  }, []);
   
-  const handleStreamReady = (stream: MediaStream) => {
+  const handleStreamReady = useCallback((stream: MediaStream) => {
     measurementManager.handleStreamReady(stream);
-  };
+  }, []);
 
   // Transform arrhythmia data to match expected format if needed
   const getArrhythmiaData = () => {
@@ -163,6 +211,7 @@ const VitalSignsMonitor = () => {
                 isMonitoring={isMonitoring} 
                 onToggle={handleToggleMonitoring} 
                 variant="monitor"
+                disabled={isButtonDisabled}
               />
             </div>
             <div className="w-1/2">
@@ -170,6 +219,7 @@ const VitalSignsMonitor = () => {
                 isMonitoring={isMonitoring} 
                 onToggle={resetAll} 
                 variant="reset"
+                disabled={isButtonDisabled}
               />
             </div>
           </div>

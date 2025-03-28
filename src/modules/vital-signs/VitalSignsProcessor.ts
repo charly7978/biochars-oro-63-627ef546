@@ -11,17 +11,34 @@
 import { ProcessedPPGData, VitalSignsResult } from '../types/signal';
 import { signalOptimizer } from '../optimization/SignalOptimizer';
 import { VitalSignsCalculator } from '../results/VitalSignsCalculator';
+import { eventBus, EventType } from '../events/EventBus';
 
 /**
  * Clase principal que procesa los signos vitales y genera resultados
  */
 export class VitalSignsProcessor {
   private vitalSignsCalculator: VitalSignsCalculator;
+  private optimizerInitialized: boolean = false;
   
   constructor() {
     this.vitalSignsCalculator = new VitalSignsCalculator();
-    // Iniciamos el optimizador al crear el procesador
-    signalOptimizer.start();
+    // No iniciamos el optimizador automáticamente para evitar problemas
+    this.optimizerInitialized = false;
+  }
+
+  /**
+   * Inicializa el procesador y sus dependencias
+   */
+  public initialize(): void {
+    if (!this.optimizerInitialized) {
+      try {
+        signalOptimizer.start();
+        this.optimizerInitialized = true;
+        console.log('VitalSignsProcessor: Optimizador iniciado correctamente');
+      } catch (error) {
+        console.error('VitalSignsProcessor: Error al iniciar el optimizador', error);
+      }
+    }
   }
 
   /**
@@ -34,6 +51,11 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
+    // Asegurarse de que el optimizador esté iniciado
+    if (!this.optimizerInitialized) {
+      this.initialize();
+    }
+
     // Crear un objeto ProcessedPPGData básico con el valor ppg
     const data: ProcessedPPGData = {
       timestamp: Date.now(),
@@ -66,8 +88,8 @@ export class VitalSignsProcessor {
     // Calcular la fiabilidad
     const reliability = Math.floor(Math.random() * (100 - 70 + 1) + 70);
 
-    // Devolver los resultados
-    return {
+    // Crear objeto de resultado
+    const result: VitalSignsResult = {
       timestamp: data.timestamp,
       heartRate: Math.round(heartRate),
       spo2: spo2,
@@ -82,26 +104,46 @@ export class VitalSignsProcessor {
       },
       reliability: reliability
     };
+    
+    // Notificar resultados a través del bus de eventos
+    eventBus.publish(EventType.VITAL_SIGNS_UPDATED, result);
+    
+    return result;
   }
   
   /**
    * Reinicia el procesador
    */
   public reset(): VitalSignsResult | undefined {
-    // Reiniciar el optimizador también
-    signalOptimizer.reset();
-    return undefined;
+    try {
+      // Reiniciar el optimizador si está inicializado
+      if (this.optimizerInitialized) {
+        signalOptimizer.reset();
+      }
+      console.log('VitalSignsProcessor: Procesador reiniciado correctamente');
+      return undefined;
+    } catch (error) {
+      console.error('VitalSignsProcessor: Error al reiniciar', error);
+      return undefined;
+    }
   }
   
   /**
    * Reinicio completo del procesador
    */
   public fullReset(): void {
-    // Reiniciar el optimizador
-    signalOptimizer.reset();
-    // Detener el optimizador
-    signalOptimizer.stop();
-    // Lógica adicional de reinicio si es necesario
+    try {
+      // Reiniciar el optimizador
+      if (this.optimizerInitialized) {
+        signalOptimizer.reset();
+        // Detener el optimizador
+        signalOptimizer.stop();
+        this.optimizerInitialized = false;
+      }
+      console.log('VitalSignsProcessor: Procesador completamente reiniciado');
+    } catch (error) {
+      console.error('VitalSignsProcessor: Error en reinicio completo', error);
+    }
   }
 }
 
