@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -9,18 +8,18 @@
  */
 
 import { EventType, eventBus } from '../events/EventBus';
-import { VitalSignsResult } from '../types/signal';
+import { VitalSignsResult } from '../results/VitalSignsCalculator';
 
 export class VitalSignsProcessor {
   private readonly WINDOW_SIZE = 300;
-  private readonly SPO2_CALIBRATION_FACTOR = 1.05; // Aumentado de 1.02 a 1.05 para mejor calibración
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Reducido de 0.05 a 0.045 para mayor sensibilidad
-  private readonly SPO2_WINDOW = 8; // Reducido de 10 a 8 para respuesta más rápida
+  private readonly SPO2_CALIBRATION_FACTOR = 1.05;
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045;
+  private readonly SPO2_WINDOW = 8;
   private readonly SMA_WINDOW = 3;
   private readonly RR_WINDOW_SIZE = 5;
-  private readonly RMSSD_THRESHOLD = 22; // Reducido de 25 a 22 para mejor detección de arritmias
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2500; // Reducido de 3000 a 2500 ms
-  private readonly PEAK_THRESHOLD = 0.28; // Reducido de 0.3 a 0.28 para mayor sensibilidad
+  private readonly RMSSD_THRESHOLD = 22;
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2500;
+  private readonly PEAK_THRESHOLD = 0.28;
   
   private ppgValues: number[] = [];
   private lastValue = 0;
@@ -56,9 +55,7 @@ export class VitalSignsProcessor {
     // Process RR data for arrhythmia detection
     let arrhythmiaData = {
       rmssd: 0,
-      rrVariation: 0,
-      detected: false,
-      timestamp: Date.now()
+      rrVariation: 0
     };
     
     let arrhythmiaStatus = "--";
@@ -67,22 +64,39 @@ export class VitalSignsProcessor {
       this.rrIntervals = [...rrData.intervals];
       this.lastPeakTime = rrData.lastPeakTime;
       
-      const arrhythmiaAnalysis = this.detectArrhythmia(this.rrIntervals);
-      arrhythmiaStatus = arrhythmiaAnalysis.rmssd > this.RMSSD_THRESHOLD ? "ARRITMIA DETECTADA" : "SIN ARRITMIAS";
-      
-      arrhythmiaData = {
-        rmssd: arrhythmiaAnalysis.rmssd,
-        rrVariation: arrhythmiaAnalysis.rrVariation,
-        detected: arrhythmiaAnalysis.rmssd > this.RMSSD_THRESHOLD,
-        timestamp: Date.now()
-      };
+      arrhythmiaData = this.detectArrhythmia(this.rrIntervals);
+      arrhythmiaStatus = arrhythmiaData.rmssd > this.RMSSD_THRESHOLD ? "ARRITMIA DETECTADA" : "SIN ARRITMIAS";
     }
 
     const spo2 = this.calculateSpO2(this.ppgValues.slice(-60));
     const bp = this.calculateBloodPressure(this.ppgValues.slice(-60));
     const pressureString = `${bp.systolic}/${bp.diastolic}`;
-    
-    const result: VitalSignsResult = {
+
+    // Publicar resultados a través del bus de eventos
+    eventBus.publish(EventType.VITAL_SIGNS_UPDATED, {
+      timestamp: Date.now(),
+      heartRate: this.calculateHeartRate(),
+      spo2,
+      bloodPressure: { 
+        systolic: bp.systolic, 
+        diastolic: bp.diastolic, 
+        display: pressureString 
+      },
+      pressure: pressureString,
+      glucose: 0, // Será calculado por el módulo específico
+      lipids: { totalCholesterol: 0, triglycerides: 0 }, // Será calculado por el módulo específico
+      reliability: 70,
+      arrhythmiaStatus,
+      arrhythmiaData: {
+        timestamp: Date.now(),
+        rmssd: arrhythmiaData.rmssd,
+        rrVariation: arrhythmiaData.rrVariation,
+        windows: [],
+        detected: arrhythmiaData.rmssd > this.RMSSD_THRESHOLD
+      }
+    });
+
+    return {
       timestamp: Date.now(),
       heartRate: this.calculateHeartRate(),
       spo2,
@@ -92,23 +106,11 @@ export class VitalSignsProcessor {
         diastolic: bp.diastolic, 
         display: pressureString 
       },
-      glucose: 0, // Será calculado por el módulo específico
-      lipids: { 
-        totalCholesterol: 0, 
-        triglycerides: 0 
-      }, // Será calculado por el módulo específico
-      arrhythmiaStatus,
-      arrhythmiaData: {
-        ...arrhythmiaData,
-        windows: []
-      },
-      reliability: 70
+      glucose: 0,
+      lipids: { totalCholesterol: 0, triglycerides: 0 },
+      reliability: 70,
+      arrhythmiaStatus
     };
-
-    // Publicar resultados a través del bus de eventos
-    eventBus.publish(EventType.VITAL_SIGNS_UPDATED, result);
-
-    return result;
   }
 
   private calculateHeartRate(): number {
@@ -205,8 +207,8 @@ export class VitalSignsProcessor {
   }
 }
 
-// Export types for compatibility
-export { VitalSignsResult };
+// Re-export the type using 'export type' syntax
+export type { VitalSignsResult };
 
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 

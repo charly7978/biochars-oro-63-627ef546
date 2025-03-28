@@ -1,4 +1,3 @@
-
 /**
  * Measurement Manager
  * Manages the measurement process and results
@@ -154,7 +153,13 @@ export class MeasurementManager {
   /**
    * Handle vital signs update
    */
-  private handleVitalSignsUpdate(vitalSigns: VitalSignsResult): void {
+  private handleVitalSignsUpdate(data: any): void {
+    // Update the vitalSigns state with the new data
+    this.vitalSigns = {
+      ...data,
+      pressure: data.pressure || (data.bloodPressure ? data.bloodPressure.display : "--")
+    };
+    
     // Nothing to do here - these are already being published on the event bus
   }
   

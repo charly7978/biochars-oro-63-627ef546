@@ -147,4 +147,4 @@ const CameraView = ({
   );
 };
 
-export default CameraView; 
+export default CameraView;
