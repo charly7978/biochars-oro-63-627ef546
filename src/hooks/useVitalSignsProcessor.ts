@@ -69,16 +69,9 @@ export const useVitalSignsProcessor = () => {
     const currentTime = Date.now();
     
     // Si se detectó arritmia y tenemos datos de ventana visual, actualizar ventanas de arritmia
-    if (result.visualWindow) {
+    if (result.arrhythmiaData?.windows && result.arrhythmiaData.windows.length > 0) {
       // Actualizar ventanas de arritmia para visualización
-      setArrhythmiaWindows(prev => {
-        const newWindows = [...prev, { 
-          start: result.visualWindow!.start, 
-          end: result.visualWindow!.end 
-        }];
-        // Solo mantenemos las 3 ventanas más recientes
-        return newWindows.slice(-3);
-      });
+      setArrhythmiaWindows(result.arrhythmiaData.windows);
     }
     
     // Actualizar log de señales

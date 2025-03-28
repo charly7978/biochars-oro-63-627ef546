@@ -1,4 +1,3 @@
-
 /**
  * Vital Signs Processor
  * Central processing module that combines signal data to calculate vital signs
@@ -6,6 +5,11 @@
 
 import { EventType, eventBus } from '../events/EventBus';
 import { HeartBeatResult, PPGSignal, VitalSignsResult } from '../types/signal';
+import { SpO2Processor } from '../vital-signs/spo2-processor';
+import { BloodPressureProcessor } from '../vital-signs/blood-pressure-processor';
+import { GlucoseProcessor } from '../vital-signs/glucose-processor'; 
+import { LipidProcessor } from '../vital-signs/lipid-processor';
+import { ArrhythmiaDetector } from '../vital-signs/ArrhythmiaDetector';
 
 export class VitalSignsProcessor {
   // Buffers for signal analysis
@@ -27,10 +31,22 @@ export class VitalSignsProcessor {
   private readonly BUFFER_SIZE = 300;
   private readonly RESULT_INTERVAL_MS = 1000;
   private readonly MIN_MEASUREMENT_TIME_MS = 15000;
-  private readonly SPO2_CALIBRATION_FACTOR = 1.05;
-  private readonly RMSSD_THRESHOLD = 22;
+  
+  // Specialized processors
+  private spo2Processor: SpO2Processor;
+  private bpProcessor: BloodPressureProcessor;
+  private glucoseProcessor: GlucoseProcessor;
+  private lipidProcessor: LipidProcessor;
+  private arrhythmiaDetector: ArrhythmiaDetector;
   
   constructor() {
+    // Initialize specialized processors
+    this.spo2Processor = new SpO2Processor();
+    this.bpProcessor = new BloodPressureProcessor();
+    this.glucoseProcessor = new GlucoseProcessor();
+    this.lipidProcessor = new LipidProcessor();
+    this.arrhythmiaDetector = new ArrhythmiaDetector();
+  
     // Subscribe to signal events
     eventBus.subscribe(EventType.SIGNAL_EXTRACTED, this.onPPGSignal.bind(this));
     eventBus.subscribe(EventType.HEARTBEAT_DETECTED, this.onHeartBeat.bind(this));
@@ -154,18 +170,19 @@ export class VitalSignsProcessor {
       // Calculate heart rate
       const heartRate = this.calculateHeartRate(recentHeartbeats);
       
-      // Calculate SpO2
-      const spo2 = this.calculateSpO2(recentPPG);
+      // Extract raw values for processing
+      const ppgValues = recentPPG.map(s => s.filteredValue);
       
-      // Calculate blood pressure
-      const pressure = this.calculateBloodPressure(heartRate, recentPPG);
+      // Use specialized processors for each vital sign
+      const spo2 = this.spo2Processor.calculateSpO2(ppgValues);
+      const pressure = this.bpProcessor.calculateBloodPressure(heartRate, ppgValues);
       
-      // Check for arrhythmia
+      // Check for arrhythmia using the specialized detector
       const arrhythmiaData = this.detectArrhythmia(recentHeartbeats);
       
-      // Create glucose and lipids estimates (these would need real calibration)
-      const glucose = this.simulateGlucoseEstimate();
-      const lipids = this.simulateLipidsEstimate();
+      // Create glucose and lipids estimates using specialized processors
+      const glucose = this.glucoseProcessor.estimateGlucose(spo2, heartRate, ppgValues);
+      const lipids = this.lipidProcessor.estimateLipids(spo2, heartRate, ppgValues);
       
       // Calculate reliability score based on measurement quality
       const reliability = this.calculateReliabilityScore(
@@ -224,84 +241,6 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Calculate SpO2 from PPG signals
-   */
-  private calculateSpO2(ppgSignals: PPGSignal[]): number {
-    if (ppgSignals.length < 30) return 0;
-    
-    // This is a simulated calculation - a real implementation would use:
-    // - Red and infrared PPG signals
-    // - Ratio of ratios method (AC/DC ratio of red vs infrared)
-    
-    // Calculate average perfusion index
-    const avgPI = ppgSignals
-      .filter(s => s.perfusionIndex !== undefined)
-      .map(s => s.perfusionIndex!)
-      .reduce((acc, pi) => acc + pi, 0) / ppgSignals.length;
-    
-    // Calculate amplitude ratios
-    const values = ppgSignals.map(s => s.filteredValue);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const amplitude = max - min;
-    
-    // Calculate baseline using low-pass filter
-    const baseline = values.reduce((acc, val) => acc + val, 0) / values.length;
-    
-    // Calculate simulated ratio of ratios
-    const r = (amplitude / baseline) * this.SPO2_CALIBRATION_FACTOR;
-    
-    // Apply standard SpO2 formula (simplified approximation)
-    let spo2 = Math.round(110 - 25 * r);
-    
-    // Ensure realistic SpO2 range
-    spo2 = Math.min(100, Math.max(90, spo2));
-    
-    // Adjust based on signal quality
-    const avgQuality = ppgSignals.reduce((acc, s) => acc + s.quality, 0) / ppgSignals.length;
-    if (avgQuality < 50) {
-      // Lower confidence - adjust toward normal range
-      spo2 = Math.round(0.7 * spo2 + 0.3 * 97);
-    }
-    
-    return spo2;
-  }
-  
-  /**
-   * Calculate blood pressure estimate
-   */
-  private calculateBloodPressure(heartRate: number, ppgSignals: PPGSignal[]): string {
-    if (heartRate === 0 || ppgSignals.length < 30) return "--/--";
-    
-    // This is a simulated calculation - a real implementation would use:
-    // - Pulse transit time
-    // - Pulse wave morphology analysis
-    // - Personalized calibration
-    
-    // Calculate pulse wave features
-    const values = ppgSignals.map(s => s.filteredValue);
-    
-    // Simulate systolic based on heart rate and signal variance
-    const variance = this.calculateVariance(values);
-    const normalizedVariance = Math.min(1, Math.max(0.1, variance / 0.5));
-    
-    // Base systolic on heart rate relationship (higher HR often means higher BP)
-    let systolic = 100 + (heartRate - 60) * 0.5 + normalizedVariance * 20;
-    
-    // Adjust toward normal range
-    systolic = 0.7 * systolic + 0.3 * 120;
-    
-    // Diastolic typically follows systolic
-    let diastolic = systolic * 0.65 + 10;
-    
-    // Round to nearest integers
-    const systolicRounded = Math.round(systolic);
-    const diastolicRounded = Math.round(diastolic);
-    
-    return `${systolicRounded}/${diastolicRounded}`;
-  }
-  
-  /**
    * Detect arrhythmia from heart beat intervals
    */
   private detectArrhythmia(heartbeats: HeartBeatResult[]): {
@@ -321,18 +260,10 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Get RR intervals from recent heartbeats
-    const intervals: number[] = [];
-    for (let i = 1; i < heartbeats.length; i++) {
-      if (heartbeats[i].lastPeakTime && heartbeats[i-1].lastPeakTime) {
-        const interval = heartbeats[i].lastPeakTime - heartbeats[i-1].lastPeakTime;
-        if (interval > 300 && interval < 1500) {  // Valid interval range (40-200 BPM)
-          intervals.push(interval);
-        }
-      }
-    }
+    // Use the arrhythmia detector to analyze the heartbeats
+    const heartbeatIntervals = this.extractRRIntervals(heartbeats);
     
-    if (intervals.length < 4) {
+    if (heartbeatIntervals.length < 4) {
       return { 
         timestamp: Date.now(),
         rmssd: 0, 
@@ -342,33 +273,17 @@ export class VitalSignsProcessor {
       };
     }
     
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
-    // Key HRV metric for arrhythmia detection
-    const successiveDiffs: number[] = [];
-    for (let i = 1; i < intervals.length; i++) {
-      const diff = Math.abs(intervals[i] - intervals[i - 1]);
-      successiveDiffs.push(diff);
-    }
+    // Analyze RR intervals using the arrhythmia detector
+    const currentTime = Date.now();
+    const signalQuality = this.calculateSignalQuality(this.ppgBuffer.slice(-30));
+    const result = this.arrhythmiaDetector.analyzeRRIntervals(
+      heartbeatIntervals,
+      currentTime,
+      signalQuality
+    );
     
-    // Square the differences
-    const squaredDiffs = successiveDiffs.map(diff => diff * diff);
-    
-    // Calculate mean of squared differences
-    const meanSquared = squaredDiffs.reduce((sum, sq) => sum + sq, 0) / squaredDiffs.length;
-    
-    // RMSSD
-    const rmssd = Math.sqrt(meanSquared);
-    
-    // Calculate average RR interval for rrVariation
-    const avgRR = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
-    const lastRR = intervals[intervals.length - 1];
-    const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
-    
-    // Detect arrhythmia based on RMSSD threshold
-    const isArrhythmia = rmssd > this.RMSSD_THRESHOLD;
-    
-    // Create visual window for arrhythmia section
-    if (isArrhythmia && heartbeats.length > 0) {
+    // If arrhythmia is detected, update the windows
+    if (result.isArrhythmia && heartbeats.length > 0) {
       const lastBeat = heartbeats[heartbeats.length - 1];
       if (lastBeat.timestamp) {
         const window = {
@@ -387,43 +302,46 @@ export class VitalSignsProcessor {
     }
     
     return {
-      timestamp: Date.now(),
-      rmssd,
-      rrVariation,
+      timestamp: currentTime,
+      rmssd: result.rmssd || 0,
+      rrVariation: result.rrVariation || 0,
       windows: [...this.arrhythmiaWindows],
-      detected: isArrhythmia
+      detected: result.isArrhythmia
     };
   }
   
   /**
-   * Simulate glucose estimate
+   * Extract RR intervals from heartbeats
    */
-  private simulateGlucoseEstimate(): number {
-    // This is purely a simulation - PPG cannot directly measure glucose
-    // Would require calibration with actual glucose measurements
+  private extractRRIntervals(heartbeats: HeartBeatResult[]): number[] {
+    const intervals: number[] = [];
     
-    // Generate value in normal range (70-120 mg/dL)
-    return Math.round(85 + Math.random() * 20);
+    for (let i = 1; i < heartbeats.length; i++) {
+      if (heartbeats[i].lastPeakTime && heartbeats[i-1].lastPeakTime) {
+        const interval = heartbeats[i].lastPeakTime - heartbeats[i-1].lastPeakTime;
+        if (interval > 300 && interval < 1500) {  // Valid interval range (40-200 BPM)
+          intervals.push(interval);
+        }
+      }
+    }
+    
+    return intervals;
   }
   
   /**
-   * Simulate lipids estimate
+   * Calculate signal quality for reliability assessment
    */
-  private simulateLipidsEstimate(): {
-    totalCholesterol: number;
-    triglycerides: number;
-  } {
-    // This is purely a simulation - PPG cannot directly measure lipids
-    // Would require calibration with actual blood tests
+  private calculateSignalQuality(signals: PPGSignal[]): number {
+    if (signals.length === 0) return 0;
     
-    // Generate values in normal ranges
-    const totalCholesterol = Math.round(150 + Math.random() * 40);
-    const triglycerides = Math.round(100 + Math.random() * 50);
+    // Average the quality values from the signals
+    const avgQuality = signals.reduce((sum, signal) => sum + signal.quality, 0) / signals.length;
     
-    return {
-      totalCholesterol,
-      triglycerides
-    };
+    // Check finger detection consistency
+    const fingerDetectionRatio = signals.filter(s => s.fingerDetected).length / signals.length;
+    
+    // Combined quality score
+    return Math.round(avgQuality * 0.7 + fingerDetectionRatio * 100 * 0.3);
   }
   
   /**
@@ -453,17 +371,6 @@ export class VitalSignsProcessor {
     );
     
     return Math.min(100, Math.max(0, reliability));
-  }
-  
-  /**
-   * Calculate variance of an array of values
-   */
-  private calculateVariance(values: number[]): number {
-    if (values.length === 0) return 0;
-    
-    const mean = values.reduce((acc, val) => acc + val, 0) / values.length;
-    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-    return squaredDiffs.reduce((acc, val) => acc + val, 0) / values.length;
   }
   
   /**
@@ -502,6 +409,13 @@ export class VitalSignsProcessor {
     this.measurementDuration = 0;
     this.lastVitalSigns = null;
     this.arrhythmiaWindows = [];
+    
+    // Reset all specialized processors
+    this.spo2Processor.reset();
+    this.bpProcessor.reset();
+    this.glucoseProcessor.reset();
+    this.lipidProcessor.reset();
+    this.arrhythmiaDetector.reset();
     
     // Stop processing if active
     if (this.isProcessing) {
