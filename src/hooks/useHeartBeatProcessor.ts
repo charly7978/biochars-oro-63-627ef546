@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
@@ -23,12 +24,7 @@ export const useHeartBeatProcessor = () => {
   const lastBeepTimeRef = useRef<number>(0);
   const MIN_BEEP_INTERVAL_MS = 300; // Minimum time between beeps
   const lastRRIntervalsRef = useRef<number[]>([]);
-  const lastIsArrhythmiaRef = useRef<boolean>(false);
-  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
   
-  const beatHistoryRef = useRef<Array<{time: number, isArrhythmia: boolean}>>([]);
-  const currentArrhythmiaWindowRef = useRef<{start: number, end: number | null}>({start: 0, end: null});
-
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
       sessionId: sessionId.current,
@@ -80,70 +76,6 @@ export const useHeartBeatProcessor = () => {
     }
   }, []);
 
-  const detectArrhythmia = useCallback((rrIntervals: number[]): boolean => {
-    if (rrIntervals.length < 3) return false;
-    
-    const lastThree = rrIntervals.slice(-3);
-    const lastInterval = lastThree[lastThree.length - 1];
-    
-    const previousIntervals = rrIntervals.slice(-6, -1);
-    if (previousIntervals.length === 0) return false;
-    
-    const avgPreviousInterval = previousIntervals.reduce((sum, val) => sum + val, 0) / previousIntervals.length;
-    
-    const variationFromAvg = Math.abs(lastInterval - avgPreviousInterval) / avgPreviousInterval;
-    
-    const isPrematureBeat = lastInterval < 0.7 * avgPreviousInterval;
-    const isDelayedBeat = lastInterval > 1.35 * avgPreviousInterval;
-    const isIrregularVariation = variationFromAvg > 0.25;
-    
-    const isArrhythmia = isPrematureBeat || isDelayedBeat || isIrregularVariation;
-    
-    const now = Date.now();
-    
-    if (isArrhythmia) {
-      beatHistoryRef.current.push({time: now, isArrhythmia: true});
-      
-      if (currentArrhythmiaWindowRef.current.end !== null) {
-        currentArrhythmiaWindowRef.current = {
-          start: now, 
-          end: null
-        };
-      }
-      
-      console.log('useHeartBeatProcessor: Latido arrítmico detectado', {
-        tipo: isPrematureBeat ? 'prematuro' : isDelayedBeat ? 'retrasado' : 'irregular',
-        intervaloActual: lastInterval,
-        promedioAnterior: avgPreviousInterval,
-        variación: variationFromAvg,
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      const now = Date.now(); // Fix: Added missing 'now' variable
-      beatHistoryRef.current.push({time: now, isArrhythmia: false});
-      
-      if (currentArrhythmiaWindowRef.current.end === null) {
-        currentArrhythmiaWindowRef.current.end = now;
-      }
-    }
-    
-    if (beatHistoryRef.current.length > 20) {
-      beatHistoryRef.current = beatHistoryRef.current.slice(-20);
-    }
-    
-    return isArrhythmia;
-  }, []);
-
-  const isTimestampInArrhythmiaWindow = useCallback((timestamp: number): boolean => {
-    if (currentArrhythmiaWindowRef.current.end === null) {
-      return timestamp >= currentArrhythmiaWindowRef.current.start;
-    }
-    
-    const arrhythmicBeats = beatHistoryRef.current.filter(beat => beat.isArrhythmia);
-    
-    return arrhythmicBeats.some(beat => Math.abs(beat.time - timestamp) < 500);
-  }, []);
-
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       console.warn('useHeartBeatProcessor: Processor no inicializado', {
@@ -170,16 +102,6 @@ export const useHeartBeatProcessor = () => {
     if (rrData && rrData.intervals.length > 0) {
       lastRRIntervalsRef.current = [...rrData.intervals];
     }
-    
-    let currentBeatIsArrhythmia = false;
-    
-    if (result.isPeak && result.confidence > 0.85 && lastRRIntervalsRef.current.length >= 3) {
-      currentBeatIsArrhythmia = detectArrhythmia(lastRRIntervalsRef.current);
-      currentBeatIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-      lastIsArrhythmiaRef.current = currentBeatIsArrhythmia;
-    } else {
-      currentBeatIsArrhythmiaRef.current = isTimestampInArrhythmiaWindow(now);
-    }
 
     if (result.isPeak && 
         (!lastPeakTimeRef.current || 
@@ -195,7 +117,6 @@ export const useHeartBeatProcessor = () => {
         confidence: result.confidence,
         isPeak: false,
         arrhythmiaCount: 0,
-        isArrhythmia: currentBeatIsArrhythmiaRef.current,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -210,10 +131,9 @@ export const useHeartBeatProcessor = () => {
 
     return {
       ...result,
-      isArrhythmia: currentBeatIsArrhythmiaRef.current,
       rrData
     };
-  }, [currentBPM, confidence, playBeepSound, detectArrhythmia, isTimestampInArrhythmiaWindow]);
+  }, [currentBPM, confidence, playBeepSound]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Reseteando processor', {
@@ -239,17 +159,12 @@ export const useHeartBeatProcessor = () => {
     lastPeakTimeRef.current = null;
     lastBeepTimeRef.current = 0;
     lastRRIntervalsRef.current = [];
-    lastIsArrhythmiaRef.current = false;
-    currentBeatIsArrhythmiaRef.current = false;
-    beatHistoryRef.current = [];
-    currentArrhythmiaWindowRef.current = {start: 0, end: null};
   }, [currentBPM, confidence]);
 
   return {
     currentBPM,
     confidence,
     processSignal,
-    reset,
-    isArrhythmia: currentBeatIsArrhythmiaRef.current
+    reset
   };
 };
