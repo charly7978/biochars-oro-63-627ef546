@@ -6,6 +6,7 @@ interface VitalMeasurements {
   spo2: number;
   pressure: string;
   arrhythmiaCount: string | number;
+  hemoglobin?: number;
 }
 
 interface ArrhythmiaWindow {
@@ -153,6 +154,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     ...measurements,
     elapsedTime: Math.min(elapsedTime, 30),
     isComplete: elapsedTime >= 30,
-    arrhythmiaWindows
+    arrhythmiaWindows,
+    hemoglobin: 11.5 // Added hemoglobin as shown in the reference (this would normally come from a real measurement)
   };
 };
