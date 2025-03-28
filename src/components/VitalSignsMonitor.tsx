@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useVitalSigns } from '@/context/VitalSignsContext';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -19,7 +19,8 @@ const VitalSignsMonitor: React.FC = () => {
     startMonitoring,
     stopMonitoring,
     resetAll,
-    isArrhythmia
+    isArrhythmia,
+    handleStreamReady
   } = useVitalSigns();
 
   const handleToggleMonitoring = () => {
@@ -36,14 +37,18 @@ const VitalSignsMonitor: React.FC = () => {
         <Card className="p-4">
           <div className="flex flex-col space-y-4">
             <div className="w-full aspect-video relative overflow-hidden rounded-lg">
-              <CameraView />
+              <CameraView 
+                onStreamReady={handleStreamReady}
+                isMonitoring={isMonitoring}
+                isFingerDetected={signalQuality > 0.2}
+                signalQuality={signalQuality * 100}
+              />
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <HeartRateDisplay 
-                heartRate={heartRate} 
-                isMonitoring={isMonitoring}
-                isArrhythmia={isArrhythmia}
+                bpm={heartRate} 
+                confidence={signalQuality}
               />
               
               <div className="flex flex-col justify-between gap-2">
@@ -63,7 +68,7 @@ const VitalSignsMonitor: React.FC = () => {
                   </div>
                 </div>
                 
-                <SignalQualityIndicator quality={signalQuality} />
+                <SignalQualityIndicator quality={signalQuality} isMonitoring={isMonitoring} />
               </div>
             </div>
           </div>
@@ -72,25 +77,25 @@ const VitalSignsMonitor: React.FC = () => {
         <Card className="p-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <VitalSign 
-              title="Heart Rate" 
-              value={`${vitalSigns.heartRate > 0 ? vitalSigns.heartRate : '--'}`} 
+              label="FRECUENCIA CARDÍACA" 
+              value={vitalSigns.heartRate > 0 ? vitalSigns.heartRate : '--'} 
               unit="BPM" 
             />
             <VitalSign 
-              title="SpO2" 
-              value={`${vitalSigns.spo2 > 0 ? vitalSigns.spo2 : '--'}`} 
+              label="SPO2" 
+              value={vitalSigns.spo2 > 0 ? vitalSigns.spo2 : '--'} 
               unit="%" 
             />
             <VitalSign 
-              title="Blood Pressure" 
+              label="PRESIÓN ARTERIAL" 
               value={vitalSigns.pressure} 
               unit="mmHg" 
             />
             <VitalSign 
-              title="Arrhythmia" 
+              label="ARRITMIAS" 
               value={vitalSigns.arrhythmiaStatus} 
               unit="" 
-              isAlert={isArrhythmia}
+              highlighted={isArrhythmia}
             />
           </div>
         </Card>
