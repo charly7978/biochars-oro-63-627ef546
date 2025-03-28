@@ -63,9 +63,11 @@ export interface VitalSignsResult {
   arrhythmiaStatus: string;
   reliability: number;
   arrhythmiaData?: {
+    timestamp: number;
     rmssd: number;
-    windows: {start: number; end: number}[];
-    detected: boolean;
+    rrVariation: number;
+    windows?: {start: number; end: number}[];
+    detected?: boolean;
   };
 }
 

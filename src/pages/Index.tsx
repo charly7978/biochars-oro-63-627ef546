@@ -37,6 +37,19 @@ const VitalSignsMonitor = () => {
     }
   };
 
+  // Transform arrhythmia data to match expected format if needed
+  const getArrhythmiaData = () => {
+    if (!vitalSigns.arrhythmiaData) return undefined;
+    
+    return {
+      timestamp: vitalSigns.arrhythmiaData.timestamp || Date.now(),
+      rmssd: vitalSigns.arrhythmiaData.rmssd || 0,
+      rrVariation: vitalSigns.arrhythmiaData.rrVariation || 0,
+      windows: vitalSigns.arrhythmiaData.windows || [],
+      detected: vitalSigns.arrhythmiaData.detected || false
+    };
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
@@ -77,7 +90,7 @@ const VitalSignsMonitor = () => {
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
-              rawArrhythmiaData={vitalSigns.arrhythmiaData}
+              rawArrhythmiaData={getArrhythmiaData()}
             />
           </div>
 

@@ -174,6 +174,7 @@ export class PPGSignalExtractor {
     // Calculate signal stability
     const recentValues = this.valueHistory.getValues();
     let stability = 100;
+    let normalizedVariation = 0;
     
     if (recentValues.length >= 3) {
       const variations = [];
@@ -182,7 +183,7 @@ export class PPGSignalExtractor {
       }
       
       const avgVariation = variations.reduce((acc, val) => acc + val, 0) / variations.length;
-      const normalizedVariation = avgVariation / (this.baseline || 1);
+      normalizedVariation = avgVariation / (this.baseline || 1);
       
       // Lower variation = higher stability
       stability = Math.max(0, 100 - (normalizedVariation * 200));
