@@ -1,28 +1,27 @@
 
 /**
- * Hook para utilizar el optimizador de señal multicanal
- * Integra el optimizador con el flujo de procesamiento existente
+ * Hook para utilizar el optimizador de señal
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { ProcessedPPGSignal } from '../modules/signal-processing/types';
+import { useState, useCallback, useEffect } from 'react';
 import { 
   SignalOptimizer, 
-  OptimizedSignal, 
-  VitalSignChannel,
-  FeedbackData,
-  createOptimizer
-} from '../modules/signal-optimization';
+  VitalSignChannel, 
+  OptimizedSignal,
+  FeedbackData
+} from '../modules/signal-optimization/types';
+import { createSignalOptimizer } from '../modules/signal-optimization/SignalOptimizer';
+import { ProcessedPPGSignal } from '../modules/signal-processing/types';
 
 /**
- * Hook para trabajar con el optimizador de señal multicanal
+ * Hook que proporciona acceso al optimizador de señal multicanal
  */
 export const useSignalOptimizer = () => {
-  // Referencia al optimizador para mantener instancia estable
-  const optimizerRef = useRef<SignalOptimizer | null>(null);
+  // Crear instancia del optimizador
+  const [optimizer] = useState<SignalOptimizer>(() => createSignalOptimizer());
   
-  // Estado para valores optimizados por canal
-  const [optimizedValues, setOptimizedValues] = useState<Record<VitalSignChannel, OptimizedSignal | null>>({
+  // Estado para resultados más recientes
+  const [optimizedSignals, setOptimizedSignals] = useState<Record<VitalSignChannel, OptimizedSignal | null>>({
     heartRate: null,
     spo2: null,
     bloodPressure: null,
@@ -31,86 +30,45 @@ export const useSignalOptimizer = () => {
     triglycerides: null
   });
   
-  // Inicializar optimizador
-  useEffect(() => {
-    if (!optimizerRef.current) {
-      optimizerRef.current = createOptimizer();
-      console.log("SignalOptimizer: Inicializado a través de hook");
-    }
+  // Procesar una señal PPG
+  const processSignal = useCallback((signal: ProcessedPPGSignal) => {
+    if (!signal) return null;
     
-    // Cleanup al desmontar
-    return () => {
-      if (optimizerRef.current) {
-        optimizerRef.current.reset();
-        optimizerRef.current = null;
-      }
-    };
-  }, []);
-  
-  /**
-   * Procesa una señal a través del optimizador
-   */
-  const optimizeSignal = useCallback((signal: ProcessedPPGSignal) => {
-    if (!optimizerRef.current) return null;
+    // Optimizar la señal para todos los canales
+    const results = optimizer.optimizeSignal(signal);
+    setOptimizedSignals(results);
     
-    try {
-      // Procesar a través de todos los canales
-      const optimized = optimizerRef.current.optimizeSignal(signal);
-      
-      // Actualizar estado
-      setOptimizedValues(optimized);
-      
-      return optimized;
-    } catch (error) {
-      console.error("Error optimizando señal:", error);
-      return null;
-    }
-  }, []);
+    return results;
+  }, [optimizer]);
   
-  /**
-   * Envía retroalimentación de un módulo de cálculo al optimizador
-   */
+  // Enviar retroalimentación para un canal específico
   const sendFeedback = useCallback((feedback: FeedbackData) => {
-    if (!optimizerRef.current) return;
-    
-    try {
-      optimizerRef.current.processFeedback(feedback);
-    } catch (error) {
-      console.error("Error procesando feedback:", error);
-    }
-  }, []);
+    optimizer.processFeedback(feedback);
+  }, [optimizer]);
   
-  /**
-   * Reinicia el optimizador
-   */
+  // Reiniciar el optimizador
   const reset = useCallback(() => {
-    if (optimizerRef.current) {
-      optimizerRef.current.reset();
-      
-      setOptimizedValues({
-        heartRate: null,
-        spo2: null,
-        bloodPressure: null,
-        glucose: null,
-        cholesterol: null,
-        triglycerides: null
-      });
-    }
-  }, []);
+    optimizer.reset();
+    setOptimizedSignals({
+      heartRate: null,
+      spo2: null,
+      bloodPressure: null,
+      glucose: null,
+      cholesterol: null,
+      triglycerides: null
+    });
+  }, [optimizer]);
   
-  /**
-   * Obtiene el valor optimizado para un canal específico
-   */
-  const getOptimizedChannel = useCallback((channel: VitalSignChannel) => {
-    return optimizedValues[channel];
-  }, [optimizedValues]);
+  // Obtener optimizador para un canal específico
+  const getChannelOptimizer = useCallback((channel: VitalSignChannel) => {
+    return optimizer.getChannelOptimizer(channel);
+  }, [optimizer]);
   
   return {
-    optimizeSignal,
+    optimizedSignals,
+    processSignal,
     sendFeedback,
     reset,
-    optimizedValues,
-    getOptimizedChannel,
-    optimizer: optimizerRef.current
+    getChannelOptimizer
   };
 };

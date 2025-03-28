@@ -1,21 +1,14 @@
 
 /**
- * Exportaciones para el módulo de optimización de señales
+ * Módulo de optimización de señal
+ * Proporciona optimizadores para diferentes canales de signos vitales
  */
 
-// Tipos
 export * from './types';
-
-// Optimizador de señal
-export { SignalOptimizer, createOptimizer } from './signal-optimizer';
-
-// Optimizador base de canal
-export { BaseChannelOptimizer } from './base-channel-optimizer';
-
-// Canales específicos
-export { HeartRateOptimizer } from './channels/heart-rate-optimizer';
-export { SPO2Optimizer } from './channels/spo2-optimizer';
-export { BloodPressureOptimizer } from './channels/blood-pressure-optimizer';
-export { GlucoseOptimizer } from './channels/glucose-optimizer';
-export { CholesterolOptimizer } from './channels/cholesterol-optimizer';
-export { TriglyceridesOptimizer } from './channels/triglycerides-optimizer';
+export * from './SignalOptimizer';
+export * from './optimizers/HeartRateOptimizer';
+export * from './optimizers/SpO2Optimizer';
+export * from './optimizers/BloodPressureOptimizer';
+export * from './optimizers/GlucoseOptimizer';
+export * from './optimizers/CholesterolOptimizer';
+export * from './optimizers/TriglyceridesOptimizer';
