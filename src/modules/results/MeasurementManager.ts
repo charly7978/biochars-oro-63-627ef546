@@ -1,3 +1,4 @@
+
 /**
  * Measurement Manager
  * Manages the measurement process and results
@@ -6,8 +7,8 @@
 import { EventType, eventBus } from '../events/EventBus';
 import { VitalSignsResult } from '../types/signal';
 import { cameraModule } from '../camera/CameraModule';
-import { ppgSignalExtractor } from '../extraction/PPGSignalExtractor';
-import { heartBeatExtractor } from '../extraction/HeartBeatExtractor';
+import { ppgSignalExtractor } from '../signal-extraction/PPGSignalExtractor';
+import { heartBeatExtractor } from '../signal-extraction/HeartBeatExtractor';
 import { VitalSignsProcessor } from '../signal-processing/VitalSignsProcessor';
 import { signalOptimizer } from '../optimization/SignalOptimizer';
 
@@ -213,7 +214,7 @@ export class MeasurementManager {
    */
   getVitalSigns(): VitalSignsResult {
     // Get from processor or return default empty result
-    const result = vitalSignsProcessor.reset() || {
+    const defaultResult: VitalSignsResult = {
       timestamp: Date.now(),
       heartRate: 0,
       spo2: 0,
@@ -222,6 +223,8 @@ export class MeasurementManager {
       reliability: 0
     };
     
+    // Use vitalSignsProcessor to get results, or fallback to default
+    const result = vitalSignsProcessor.reset() || defaultResult;
     return result;
   }
 }

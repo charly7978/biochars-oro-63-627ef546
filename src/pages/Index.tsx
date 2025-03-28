@@ -11,30 +11,50 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { useVitalSigns } from "@/context/VitalSignsContext";
+import { measurementManager } from "@/modules/results/MeasurementManager";
+import { VitalSignsResult } from "@/modules/types/signal";
 
 // Component that uses the context
 const VitalSignsMonitor = () => {
   const { 
-    isMonitoring, 
-    isCameraOn, 
-    signalQuality, 
-    vitalSigns, 
-    heartRate, 
-    elapsedTime, 
-    showResults, 
-    lastSignal, 
-    isArrhythmia,
-    startMonitoring, 
-    resetAll,
-    handleStreamReady
+    heartbeatData,
+    isCameraActive,
+    isProcessing,
+    startMonitoring,
+    stopMonitoring
   } = useVitalSigns();
+  
+  // Get measurement state directly from manager
+  const {
+    isMonitoring,
+    isCameraOn,
+    signalQuality,
+    heartRate,
+    elapsedTime,
+    showResults,
+    lastSignal
+  } = measurementManager.getState();
+  
+  // Get vital signs from manager
+  const vitalSigns: VitalSignsResult = measurementManager.getVitalSigns();
+  
+  // Flag for arrhythmia detection
+  const isArrhythmia = vitalSigns.arrhythmiaStatus?.includes("ARRITMIA DETECTADA") || false;
 
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
-      startMonitoring(); // This will actually stop monitoring because it checks the current state
+      stopMonitoring();
     } else {
       startMonitoring();
     }
+  };
+  
+  const resetAll = () => {
+    measurementManager.reset();
+  };
+  
+  const handleStreamReady = (stream: MediaStream) => {
+    measurementManager.handleStreamReady(stream);
   };
 
   // Transform arrhythmia data to match expected format if needed

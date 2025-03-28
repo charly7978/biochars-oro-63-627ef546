@@ -1,4 +1,3 @@
-
 /**
  * PPG Signal Extractor
  * Processes raw camera frames to extract PPG signals
@@ -50,8 +49,8 @@ export class PPGSignalExtractor {
    */
   private processRawSignal(frame: RawSignalFrame): void {
     try {
-      // Use red channel for PPG extraction (most sensitive to blood volume changes)
-      const rawValue = frame.redChannel;
+      // Extract red value - frame should include this property
+      const rawValue = frame.redChannel || this.extractRedValue(frame.imageData);
       
       // Apply median filter to remove spikes
       const medianValue = this.applyMedianFilter(rawValue);
@@ -68,11 +67,9 @@ export class PPGSignalExtractor {
       // Create PPG signal object
       const ppgSignal: PPGSignal = {
         timestamp: frame.timestamp,
-        rawValue,
         filteredValue: smoothedValue - this.baseline,
         quality,
         fingerDetected,
-        amplified: false,
         perfusionIndex: this.calculatePerfusionIndex()
       };
       
@@ -108,11 +105,27 @@ export class PPGSignalExtractor {
       const processingError: ProcessingError = {
         code: 'PPG_PROCESSING_ERROR',
         message: error instanceof Error ? error.message : 'Error processing PPG signal',
-        timestamp: Date.now(),
-        source: 'PPGSignalExtractor'
+        timestamp: Date.now()
       };
       eventBus.publish(EventType.ERROR_OCCURRED, processingError);
     }
+  }
+  
+  /**
+   * Extract red channel value from image data if not provided directly
+   */
+  private extractRedValue(imageData: ImageData): number {
+    // Calculate average red value from image data
+    let redSum = 0;
+    const redValues = [];
+    
+    // Sample every 4th pixel to improve performance
+    for (let i = 0; i < imageData.data.length; i += 16) {
+      redValues.push(imageData.data[i]);
+      redSum += imageData.data[i];
+    }
+    
+    return redSum / redValues.length;
   }
   
   /**
@@ -139,7 +152,7 @@ export class PPGSignalExtractor {
       this.movingAverageBuffer.shift();
     }
     
-    const sum = this.movingAverageBuffer.reduce((acc, val) => acc + val, 0);
+    const sum = this.movingAverageBuffer.reduce((a, b) => a + b, 0);
     return sum / this.movingAverageBuffer.length;
   }
   
