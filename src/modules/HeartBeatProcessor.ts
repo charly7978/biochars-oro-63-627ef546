@@ -53,7 +53,6 @@ export class HeartBeatProcessor {
   private peakCandidateIndex: number | null = null;
   private peakCandidateValue: number = 0;
   private lowSignalCount: number = 0;
-  private audioEnabled: boolean = true;
   
   // Filter instances
   private kalmanFilter: KalmanFilter = new KalmanFilter();
@@ -61,31 +60,6 @@ export class HeartBeatProcessor {
   constructor() {
     this.initAudio();
     this.startTime = Date.now();
-  }
-
-  /**
-   * Set external AudioContext for the processor
-   */
-  public setAudioContext(context: AudioContext): void {
-    this.audioContext = context;
-    console.log("HeartBeatProcessor: AudioContext set externally", {
-      state: context.state,
-      sampleRate: context.sampleRate,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Intentar reproducir un beep de prueba para verificar
-    this.playBeep(0.05).catch(err => {
-      console.error("Error playing test beep after setting context:", err);
-    });
-  }
-
-  /**
-   * Set audio enabled state
-   */
-  public setAudioEnabled(enabled: boolean): void {
-    this.audioEnabled = enabled;
-    console.log(`HeartBeatProcessor: Audio ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   /**
@@ -137,39 +111,16 @@ export class HeartBeatProcessor {
    * Play a beep sound for heart beat
    */
   async playBeep(volume: number = this.BEEP_VOLUME): Promise<void> {
-    if (!this.audioEnabled) {
-      console.log("HeartBeatProcessor: Audio disabled, not playing beep");
-      return;
-    }
-    
-    if (!this.audioContext) {
-      console.error("HeartBeatProcessor: No AudioContext available for beep");
-      return;
-    }
-    
-    if (this.isInWarmup()) {
-      console.log("HeartBeatProcessor: In warmup period, not playing beep");
-      return;
-    }
+    if (!this.audioContext || this.isInWarmup()) return;
 
     const now = Date.now();
-    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
-      console.log("HeartBeatProcessor: Beep too soon after last one, skipping");
-      return;
-    }
+    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) return;
 
     try {
       // Verificar y reanudar el contexto de audio si está suspendido
       if (this.audioContext.state === 'suspended') {
-        console.log("HeartBeatProcessor: Resuming suspended AudioContext before beep");
         await this.audioContext.resume();
       }
-      
-      console.log("HeartBeatProcessor: Playing heartbeat beep", {
-        volume,
-        audioState: this.audioContext.state,
-        timestamp: new Date().toISOString()
-      });
       
       // Crear osciladores y nodos de ganancia
       const primaryOscillator = this.audioContext.createOscillator();
@@ -227,7 +178,11 @@ export class HeartBeatProcessor {
       // Actualizar el tiempo del último beep
       this.lastBeepTime = now;
       
-      console.log("HeartBeatProcessor: Beep played successfully");
+      console.log("HeartBeatProcessor: Beep played", {
+        volume,
+        timestamp: new Date().toISOString(),
+        audioContextState: this.audioContext.state
+      });
     } catch (err) {
       console.error("HeartBeatProcessor: Error playing beep", err);
     }
@@ -269,7 +224,7 @@ export class HeartBeatProcessor {
   /**
    * Process incoming signal value
    */
-  processSignal(ppgValue: number): {
+  processSignal(value: number): {
     bpm: number;
     confidence: number;
     isPeak: boolean;
@@ -277,7 +232,7 @@ export class HeartBeatProcessor {
     arrhythmiaCount: number;
     rrData?: { intervals: number[]; lastPeakTime: number | null };
   } {
-    const medVal = this.medianFilter(ppgValue);
+    const medVal = this.medianFilter(value);
     const movAvgVal = this.calculateMovingAverage(medVal);
     const smoothed = this.calculateEMA(movAvgVal);
 
@@ -326,21 +281,11 @@ export class HeartBeatProcessor {
       if (timeSinceLastPeak >= this.MIN_PEAK_TIME_MS) {
         this.previousPeakTime = this.lastPeakTime;
         this.lastPeakTime = now;
-        
-        // Reproducir el beep para el latido detectado
-        this.playBeep(0.25).catch(err => {
+        this.playBeep(0.12).catch(err => {
           console.error("Error playing heartbeat sound:", err);
         });
-        
         this.updateBPM();
         peakDetected = true;
-        
-        console.log("HeartBeatProcessor: Peak detected with beep", {
-          now,
-          timeSinceLastPeak,
-          bpm: this.getSmoothBPM(),
-          confidence
-        });
       }
     }
 
@@ -531,12 +476,23 @@ export class HeartBeatProcessor {
     this.lowSignalCount = 0;
     this.kalmanFilter.reset();
     
-    // No reinicializamos el audioContext aquí, solo registramos que se ha hecho un reset
-    console.log("HeartBeatProcessor: State reset completed", {
-      hasAudioContext: !!this.audioContext,
-      audioState: this.audioContext ? this.audioContext.state : 'none',
-      timestamp: new Date().toISOString()
-    });
+    // Reinicializar el sistema de audio
+    if (this.audioContext) {
+      try {
+        // Si el contexto está cerrado, creamos uno nuevo
+        if (this.audioContext.state === 'closed') {
+          this.initAudio();
+        } 
+        // Si está suspendido, intentamos reanudarlo
+        else if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(err => {
+            console.error("Error resuming audio context during reset:", err);
+          });
+        }
+      } catch (err) {
+        console.error("Error resetting audio system:", err);
+      }
+    }
   }
 
   /**

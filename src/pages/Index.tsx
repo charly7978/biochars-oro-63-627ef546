@@ -27,7 +27,6 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -38,44 +37,6 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
-
-  useEffect(() => {
-    const requestAudioPermission = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log("Audio permission granted", { timestamp: new Date().toISOString() });
-        setAudioPermissionGranted(true);
-        
-        stream.getAudioTracks().forEach(track => track.stop());
-        
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContextClass) {
-          const tempContext = new AudioContextClass();
-          await tempContext.resume();
-          console.log("Audio context unlocked", { state: tempContext.state });
-          
-          const oscillator = tempContext.createOscillator();
-          const gain = tempContext.createGain();
-          gain.gain.value = 0.01;
-          oscillator.connect(gain);
-          gain.connect(tempContext.destination);
-          oscillator.start(0);
-          oscillator.stop(tempContext.currentTime + 0.01);
-          
-          setTimeout(() => {
-            tempContext.close().catch(err => console.error("Error cerrando contexto temporal:", err));
-          }, 1000);
-        }
-      } catch (err) {
-        console.warn("Could not get audio permission:", err);
-        toast.error("No se pudo obtener permiso de audio. Los latidos no se escucharán.", {
-          duration: 4000,
-        });
-      }
-    };
-    
-    requestAudioPermission();
-  }, []);
 
   const enterFullScreen = async () => {
     try {
@@ -111,15 +72,6 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      
-      if (!audioPermissionGranted) {
-        navigator.mediaDevices.getUserMedia({ audio: true })
-          .then(stream => {
-            setAudioPermissionGranted(true);
-            stream.getAudioTracks().forEach(track => track.stop());
-          })
-          .catch(err => console.warn("Could not get audio permission on start:", err));
-      }
       
       startProcessing();
       
@@ -197,15 +149,16 @@ const Index = () => {
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    if (!audioPermissionGranted) {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(audioStream => {
-          console.log("Audio permission granted during camera initialization");
-          setAudioPermissionGranted(true);
-          audioStream.getAudioTracks().forEach(track => track.stop());
-        })
-        .catch(err => console.warn("Could not get audio permission:", err));
-    }
+    const requestAudioPermission = async () => {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("Audio permission granted");
+      } catch (err) {
+        console.warn("Could not get audio permission:", err);
+      }
+    };
+    
+    requestAudioPermission();
     
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
