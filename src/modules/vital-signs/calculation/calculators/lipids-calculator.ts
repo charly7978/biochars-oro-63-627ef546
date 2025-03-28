@@ -1,12 +1,12 @@
+
 /**
  * Calculador especializado para lípidos
  */
 
-import { BaseCalculator } from './base-calculator';
-import { VitalSignCalculation } from '../types';
 import { OptimizedSignal, VitalSignChannel } from '../../../signal-optimization/types';
+import { BaseCalculator, BaseVitalSignCalculator, VitalSignCalculation } from '../types';
 
-export class LipidsCalculator extends BaseCalculator {
+export class LipidsCalculator extends BaseVitalSignCalculator {
   private readonly lipidType: 'cholesterol' | 'triglycerides';
   private absorptionIndex: number = 1.0;
   private waveformDistortion: number = 0;
@@ -23,8 +23,7 @@ export class LipidsCalculator extends BaseCalculator {
   };
   
   constructor(channel: VitalSignChannel) {
-    super(channel);
-    this._maxBufferSize = 180; // Mayor buffer para análisis de lípidos
+    super(channel, 180); // Mayor buffer para análisis de lípidos
     
     // Determinar tipo de lípido según canal
     this.lipidType = channel === 'cholesterol' ? 'cholesterol' : 'triglycerides';
@@ -50,7 +49,11 @@ export class LipidsCalculator extends BaseCalculator {
       value,
       confidence,
       timestamp: signal.timestamp,
-      metadata: { ...this.waveformFeatures }
+      metadata: { ...this.waveformFeatures },
+      minValue: this.lipidType === 'cholesterol' ? 120 : 50,
+      maxValue: this.lipidType === 'cholesterol' ? 300 : 250,
+      confidenceThreshold: 0.6,
+      defaultValue: 0
     };
   }
   
@@ -281,14 +284,23 @@ export class LipidsCalculator extends BaseCalculator {
   }
   
   /**
+   * Obtiene el parámetro preferido para ajuste
+   */
+  protected getPreferredParameter(): string {
+    return this.lipidType === 'cholesterol' ? "filterStrength" : "amplification";
+  }
+  
+  /**
    * Reinicia calculador
    */
-  public reset(): void {
-    super.reset();
+  protected resetSpecific(): void {
     this.waveformFeatures = {
       symmetry: 0,
       areaUnderCurve: 0,
       peakWidth: 0
     };
+    this.baselineTrend = [];
+    this.absorptionIndex = 1.0;
+    this.waveformDistortion = 0;
   }
 }

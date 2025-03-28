@@ -1,138 +1,133 @@
 
 /**
- * Optimizador especializado para el canal de presión arterial
+ * Optimizador de señal para presión arterial
  */
 
-import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { OptimizedSignal, FeedbackData } from '../types';
+import { ProcessedPPGSignal } from '../../signal-processing/types';
 
 /**
- * Parámetros específicos para optimización de presión arterial
- */
-const BLOOD_PRESSURE_PARAMS: Partial<OptimizationParameters> = {
-  // Enfocado en características de forma de onda
-  amplificationFactor: 1.6,
-  filterStrength: 0.65,
-  frequencyRange: [0.6, 3.0],
-  sensitivityFactor: 1.0,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar la detección de características
- * relacionadas con presión arterial
+ * Optimizador especializado para señales de presión arterial
  */
 export class BloodPressureOptimizer extends BaseChannelOptimizer {
-  // Factores específicos para análisis de forma de onda
-  private pulseTransitTime: number = 0;
-  private waveformFeatures: Array<number> = [];
-  private velocityEstimation: number = 0;
-  
   constructor() {
-    super('bloodPressure', BLOOD_PRESSURE_PARAMS);
+    super('bloodPressure', {
+      amplification: 1.1,
+      filterStrength: 0.6,
+      sensitivity: 1.2,
+      smoothing: 0.3,
+      noiseThreshold: 0.1,
+      dynamicRange: 1.0
+    });
+    
+    // Buffer específico para presión arterial
+    this._maxBufferSize = 90;
   }
   
   /**
-   * Aplica optimizaciones específicas para presión arterial
-   * Enfocado en características de forma de onda y tiempo de tránsito
+   * Optimiza la señal para cálculo de presión arterial
    */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado adaptativo para reducir ruido
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Amplificar señal
+    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
-    // 2. Extraer características de forma de onda
-    this.extractWaveformFeatures(optimized, signal.timestamp);
+    // Filtrar señal
+    const filtered = this.applyAdaptiveFiltering(amplified);
     
-    // 3. Realce de características distintivas de presión
-    optimized = this.enhancePressureFeatures(optimized);
+    // Aplicar procesamiento específico para presión arterial
+    const optimized = this.applyBPSpecificProcessing(filtered);
     
-    // 4. Amplificación adaptativa
-    optimized = this.amplifySignal(optimized);
+    // Actualizar estimación de ruido
+    this.updateNoiseEstimate();
     
-    return optimized;
+    // Calcular confianza
+    const confidence = this.calculateConfidence(signal);
+    
+    // Limitar valor a rango [0,1]
+    const normalizedValue = Math.max(0, Math.min(1, optimized));
+    
+    return {
+      channel: 'bloodPressure',
+      timestamp: signal.timestamp,
+      value: normalizedValue,
+      rawValue: signal.rawValue,
+      amplified: amplified,
+      filtered: filtered,
+      confidence: confidence,
+      quality: signal.quality
+    };
   }
   
   /**
-   * Extrae características de forma de onda relacionadas con presión
+   * Aplica procesamiento específico para presión arterial
    */
-  private extractWaveformFeatures(value: number, timestamp: number): void {
+  private applyBPSpecificProcessing(value: number): number {
     if (this.valueBuffer.length < 10) {
-      this.waveformFeatures = [];
-      return;
+      return value;
     }
     
-    // Detectar pendiente (relacionada con elasticidad arterial)
-    const recent = this.valueBuffer.slice(-5);
-    const slopeUp = recent[4] > recent[0] ? (recent[4] - recent[0]) / 4 : 0;
+    // Preservar componentes de alta frecuencia para detectar dicrótico
+    // Mezcla de valor actual con filtrado ligero
+    const highFreqEmphasis = 0.7;
+    const preservedValue = value * highFreqEmphasis + 
+                          this.valueBuffer[this.valueBuffer.length - 1] * (1 - highFreqEmphasis);
     
-    // Detectar dicrótico (relacionado con resistencia periférica)
-    let hasDicroticNotch = false;
-    if (this.valueBuffer.length >= 15) {
-      const segment = this.valueBuffer.slice(-15);
-      // Análisis simplificado para detectar notch dicrótico
-      for (let i = 5; i < segment.length - 2; i++) {
-        if (segment[i] < segment[i-1] && segment[i] < segment[i+1]) {
-          hasDicroticNotch = true;
-          break;
-        }
-      }
-    }
-    
-    // Estimar tiempo de pulso (relacionado con rigidez arterial)
-    if (this.lastOptimizedValue < value && this.valueBuffer[this.valueBuffer.length-1] < value) {
-      this.pulseTransitTime = timestamp - this.lastOptimizedValue;
+    // Aplicar filtrado de mediana para eliminar espículas
+    if (this.valueBuffer.length >= 5) {
+      const medianWindow = [...this.valueBuffer.slice(-4), preservedValue];
+      medianWindow.sort((a, b) => a - b);
+      const medianValue = medianWindow[2]; // Valor central
       
-      // Estimar velocidad basada en tiempo de tránsito (inversamente proporcional)
-      if (this.pulseTransitTime > 0) {
-        this.velocityEstimation = 1000 / this.pulseTransitTime; // Escala arbitraria
-      }
+      // Mezclar valor preservado y mediana
+      const blendFactor = 0.4;
+      return preservedValue * (1 - blendFactor) + medianValue * blendFactor;
     }
     
-    // Almacenar características
-    this.waveformFeatures = [slopeUp, hasDicroticNotch ? 1 : 0, this.velocityEstimation];
+    return preservedValue;
   }
   
   /**
-   * Realza características relevantes para presión arterial
+   * Procesa retroalimentación del calculador
    */
-  private enhancePressureFeatures(value: number): number {
-    if (this.waveformFeatures.length < 3) return value;
+  public processFeedback(feedback: FeedbackData): void {
+    if (feedback.channel !== 'bloodPressure') return;
     
-    // Realzar pendientes pronunciadas (indicador de presión)
-    const slopeEnhancement = this.waveformFeatures[0] * 0.2;
+    // Escala de ajuste según magnitud
+    const adjustmentScale = feedback.magnitude * 0.15;
     
-    // Realzar notch dicrótico si está presente
-    const dicroticEnhancement = this.waveformFeatures[1] * 0.1;
-    
-    // Ajuste basado en tiempo de pulso estimado
-    const velocityFactor = Math.min(0.15, this.waveformFeatures[2] * 0.01);
-    
-    // Aplicar enhancements
-    return Math.max(0, Math.min(1, value + slopeEnhancement + dicroticEnhancement + velocityFactor));
-  }
-  
-  /**
-   * Procesamiento especializado de feedback para presión arterial
-   */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
-    
-    // Adaptaciones específicas para presión arterial
-    if (feedback.confidence < 0.4) {
-      // Con baja confianza, ajustar para detectar mejor características de onda
-      this.parameters.filterStrength = Math.min(0.75, this.parameters.filterStrength * 1.05);
+    switch (feedback.adjustment) {
+      case 'increase':
+        // Preservar más detalles para detectar dicrótico
+        this.parameters.filterStrength = Math.max(0.3, this.parameters.filterStrength * (1 - adjustmentScale));
+        
+        // Incrementar sensibilidad
+        this.parameters.sensitivity *= (1 + adjustmentScale);
+        break;
+        
+      case 'decrease':
+        // Suavizar más para reducir ruido
+        this.parameters.filterStrength = Math.min(0.8, this.parameters.filterStrength * (1 + adjustmentScale * 0.5));
+        
+        // Reducir amplificación
+        this.parameters.amplification *= (1 - adjustmentScale * 0.5);
+        break;
+        
+      case 'fine-tune':
+        // Ajustar parámetro específico si se proporciona
+        if (feedback.parameter) {
+          const param = feedback.parameter as keyof typeof this.parameters;
+          if (this.parameters[param] !== undefined) {
+            const direction = feedback.confidence && feedback.confidence < 0.5 ? 1 : -1;
+            this.parameters[param] = this.parameters[param] * (1 + direction * adjustmentScale * 0.1);
+          }
+        }
+        break;
+        
+      case 'reset':
+        // Restablecer parámetros por defecto
+        this.reset();
+        break;
     }
-  }
-  
-  /**
-   * Reinicia parámetros específicos
-   */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(BLOOD_PRESSURE_PARAMS);
-    this.pulseTransitTime = 0;
-    this.waveformFeatures = [];
-    this.velocityEstimation = 0;
   }
 }

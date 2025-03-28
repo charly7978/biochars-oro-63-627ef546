@@ -1,166 +1,134 @@
 
 /**
- * Optimizador especializado para el canal de glucosa
+ * Optimizador de señal para glucosa
  */
 
-import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { OptimizedSignal, FeedbackData } from '../types';
+import { ProcessedPPGSignal } from '../../signal-processing/types';
 
 /**
- * Parámetros específicos para optimización de glucosa
- */
-const GLUCOSE_PARAMS: Partial<OptimizationParameters> = {
-  // Enfocado en atenuación y absorción diferencial
-  amplificationFactor: 1.3,
-  filterStrength: 0.7,
-  frequencyRange: [0.2, 2.0], // Rango más amplio para capturar variaciones lentas
-  sensitivityFactor: 1.4,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar las características 
- * relacionadas con glucosa
+ * Optimizador especializado para señales de glucosa
  */
 export class GlucoseOptimizer extends BaseChannelOptimizer {
-  // Factores específicos para análisis de glucosa
-  private baselineValue: number = 0;
-  private absorptionFactor: number = 1.0;
-  private variationHistory: number[] = [];
-  
   constructor() {
-    super('glucose', GLUCOSE_PARAMS);
+    super('glucose', {
+      amplification: 1.2,
+      filterStrength: 0.65,
+      sensitivity: 1.1,
+      smoothing: 0.4,
+      noiseThreshold: 0.12,
+      dynamicRange: 0.9
+    });
+    
+    // Buffer más grande para tendencias lentas de glucosa
+    this._maxBufferSize = 180;
   }
   
   /**
-   * Aplica optimizaciones específicas para glucosa
-   * Enfocado en características de absorción y variación lenta
+   * Optimiza la señal para cálculo de glucosa
    */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado para reducir ruido
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Amplificar señal
+    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
-    // 2. Actualizar línea base y factor de absorción
-    this.updateBaseline(optimized);
+    // Filtrar señal
+    const filtered = this.applyAdaptiveFiltering(amplified);
     
-    // 3. Normalizar con respecto a línea base
-    optimized = this.normalizeWithBaseline(optimized);
+    // Aplicar filtrado adicional específico para glucosa
+    const optimized = this.applyGlucoseSpecificProcessing(filtered);
     
-    // 4. Realzar variaciones lentas (relacionadas con glucosa)
-    optimized = this.enhanceSlowVariations(optimized);
+    // Actualizar estimación de ruido
+    this.updateNoiseEstimate();
     
-    // 5. Amplificación adaptativa
-    optimized = this.amplifySignal(optimized);
+    // Calcular confianza
+    const confidence = this.calculateConfidence(signal);
     
-    return optimized;
+    // Limitar valor a rango [0,1]
+    const normalizedValue = Math.max(0, Math.min(1, optimized));
+    
+    return {
+      channel: 'glucose',
+      timestamp: signal.timestamp,
+      value: normalizedValue,
+      rawValue: signal.rawValue,
+      amplified: amplified,
+      filtered: filtered,
+      confidence: confidence,
+      quality: signal.quality
+    };
   }
   
   /**
-   * Actualiza línea base y factor de absorción
+   * Aplica procesamiento específico para glucosa
    */
-  private updateBaseline(value: number): void {
-    if (this.valueBuffer.length < 20) {
-      this.baselineValue = value;
-      return;
+  private applyGlucoseSpecificProcessing(value: number): number {
+    if (this.valueBuffer.length < 30) {
+      return value;
     }
     
-    // Línea base = promedio móvil de ventana larga
-    const baselineBufferSize = Math.min(this.valueBuffer.length, 30);
-    const baselineValues = this.valueBuffer.slice(-baselineBufferSize);
+    // Aplicar suavizado exponencial con mayor peso a tendencias
+    const alpha = 0.15; // Factor de suavizado bajo para tendencias lentas
+    const smoothed = value * alpha + this.lastOptimizedValue * (1 - alpha);
     
-    // Actualización gradual de línea base (alpha bajo)
-    const alpha = 0.05;
-    const newBaseline = baselineValues.reduce((sum, val) => sum + val, 0) / baselineValues.length;
-    this.baselineValue = (1 - alpha) * this.baselineValue + alpha * newBaseline;
+    // Detección y corrección de desviaciones rápidas (posible ruido)
+    const recentValues = this.valueBuffer.slice(-30);
+    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const maxDeviation = 0.15;
     
-    // Estimar factor de absorción basado en distribución de valores
-    const variances: number[] = [];
-    for (let i = 1; i < baselineValues.length; i++) {
-      variances.push(Math.abs(baselineValues[i] - baselineValues[i-1]));
+    let correctedValue = smoothed;
+    if (Math.abs(smoothed - avgValue) > maxDeviation) {
+      // Limitar desviación respecto a promedio reciente
+      correctedValue = avgValue + Math.sign(smoothed - avgValue) * maxDeviation;
     }
     
-    // Ordenar variaciones para análisis de percentiles
-    variances.sort((a, b) => a - b);
+    // Guardar valor para siguiente iteración
+    this.lastOptimizedValue = correctedValue;
     
-    // Usar percentil 75 como estimador de absorción
-    const p75Index = Math.floor(variances.length * 0.75);
-    this.absorptionFactor = variances.length > 0 ? variances[p75Index] * 20 : 1.0;
+    return correctedValue;
+  }
+  
+  /**
+   * Procesa retroalimentación del calculador
+   */
+  public processFeedback(feedback: FeedbackData): void {
+    if (feedback.channel !== 'glucose') return;
     
-    // Limitar a rango razonable
-    this.absorptionFactor = Math.max(0.8, Math.min(1.8, this.absorptionFactor));
+    // Escala de ajuste según magnitud
+    const adjustmentScale = feedback.magnitude * 0.2;
     
-    // Actualizar historial de variaciones
-    const currentVariation = Math.abs(value - this.baselineValue);
-    this.variationHistory.push(currentVariation);
-    if (this.variationHistory.length > 50) {
-      this.variationHistory.shift();
+    switch (feedback.adjustment) {
+      case 'increase':
+        // Incrementar amplificación
+        this.parameters.amplification *= (1 + adjustmentScale);
+        
+        // Reducir suavizado
+        this.parameters.smoothing = Math.max(0.1, this.parameters.smoothing * (1 - adjustmentScale * 0.5));
+        break;
+        
+      case 'decrease':
+        // Reducir amplificación
+        this.parameters.amplification *= (1 - adjustmentScale);
+        
+        // Incrementar filtrado
+        this.parameters.filterStrength = Math.min(0.9, this.parameters.filterStrength * (1 + adjustmentScale * 0.5));
+        break;
+        
+      case 'fine-tune':
+        // Ajustar parámetro específico si se proporciona
+        if (feedback.parameter) {
+          const param = feedback.parameter as keyof typeof this.parameters;
+          if (this.parameters[param] !== undefined) {
+            // Aplicar pequeño ajuste en dirección positiva (asumiendo mejora)
+            this.parameters[param] = this.parameters[param] * (1 + adjustmentScale * 0.1);
+          }
+        }
+        break;
+        
+      case 'reset':
+        // Restablecer parámetros por defecto
+        this.reset();
+        break;
     }
-  }
-  
-  /**
-   * Normaliza el valor con respecto a la línea base
-   */
-  private normalizeWithBaseline(value: number): number {
-    if (this.baselineValue === 0) return value;
-    
-    // Normalizar como desviación de línea base
-    const deviation = value - this.baselineValue;
-    
-    // Escalar según factor de absorción y sensibilidad del canal
-    const scaledDeviation = deviation * this.absorptionFactor * this.parameters.sensitivityFactor;
-    
-    // Retornar valor en rango [0,1]
-    return Math.max(0, Math.min(1, 0.5 + scaledDeviation));
-  }
-  
-  /**
-   * Realza variaciones lentas relacionadas con glucosa
-   */
-  private enhanceSlowVariations(value: number): number {
-    if (this.variationHistory.length < 10) return value;
-    
-    // Detectar variaciones lentas (ventana amplia)
-    const shortTermAvg = this.variationHistory.slice(-5).reduce((a, b) => a + b, 0) / 5;
-    const longTermAvg = this.variationHistory.slice(-20).reduce((a, b) => a + b, 0) / 20;
-    
-    // Calcular tendencia (positiva = variaciones aumentando, negativa = disminuyendo)
-    const trend = shortTermAvg - longTermAvg;
-    
-    // Realzar según tendencia
-    const enhancementFactor = 1 + Math.abs(trend) * 5;
-    
-    // Aplicar realce
-    const centered = value - 0.5;
-    const enhanced = centered * enhancementFactor;
-    
-    return Math.max(0, Math.min(1, enhanced + 0.5));
-  }
-  
-  /**
-   * Procesamiento especializado de feedback para glucosa
-   */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
-    
-    // Adaptaciones específicas para glucosa
-    if (feedback.confidence < 0.3) {
-      // Con baja confianza, aumentar sensibilidad
-      this.parameters.sensitivityFactor = Math.min(2.0, this.parameters.sensitivityFactor * 1.1);
-    } else if (feedback.confidence > 0.7) {
-      // Con alta confianza, estabilizar
-      this.parameters.sensitivityFactor = 1.4; // Valor óptimo para glucosa
-    }
-  }
-  
-  /**
-   * Reinicia parámetros específicos
-   */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(GLUCOSE_PARAMS);
-    this.baselineValue = 0;
-    this.absorptionFactor = 1.0;
-    this.variationHistory = [];
   }
 }

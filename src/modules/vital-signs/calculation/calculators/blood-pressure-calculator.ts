@@ -1,12 +1,12 @@
+
 /**
  * Calculador especializado para presión arterial
  */
 
-import { BaseCalculator } from './base-calculator';
-import { VitalSignCalculation } from '../types';
 import { OptimizedSignal } from '../../../signal-optimization/types';
+import { BaseCalculator, BaseVitalSignCalculator, VitalSignCalculation } from '../types';
 
-export class BloodPressureCalculator extends BaseCalculator {
+export class BloodPressureCalculator extends BaseVitalSignCalculator {
   private pulseTransitTime: number = 0;
   private dicroticNotchPosition: number = 0;
   private waveformSlope: number = 0;
@@ -46,12 +46,16 @@ export class BloodPressureCalculator extends BaseCalculator {
         pulseTransitTime: this.pulseTransitTime,
         dicroticNotchPosition: this.dicroticNotchPosition,
         waveformSlope: this.waveformSlope
-      }
+      },
+      minValue: 0,
+      maxValue: 200,
+      confidenceThreshold: 0.6,
+      defaultValue: "--/--"
     };
   }
   
   /**
-   * Analiza forma de onda para extraer características
+   * Analiza forma de onda para extrair características
    */
   private analyzeWaveform(): void {
     if (this.valueBuffer.length < 60) return;
@@ -289,10 +293,16 @@ export class BloodPressureCalculator extends BaseCalculator {
   }
   
   /**
+   * Obtiene el parámetro preferido para ajuste
+   */
+  protected getPreferredParameter(): string {
+    return "sensitivity";
+  }
+  
+  /**
    * Reinicia calculador
    */
-  public reset(): void {
-    super.reset();
+  protected resetSpecific(): void {
     this.pulseTransitTime = 0;
     this.dicroticNotchPosition = 0;
     this.waveformSlope = 0;

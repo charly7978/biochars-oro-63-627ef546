@@ -48,6 +48,10 @@ export interface VitalSignCalculation {
   maxValue: number;
   confidenceThreshold: number;
   defaultValue: number | string;
+  value?: number | string;
+  confidence?: number;
+  timestamp?: number;
+  metadata?: Record<string, any>;
 }
 
 // Tipos de feedback para optimización
@@ -59,3 +63,7 @@ export interface FeedbackData {
   confidence?: number;
   additionalData?: any;
 }
+
+// Exportar explícitamente VitalSignCalculation y BaseVitalSignCalculator para otros módulos
+export { VitalSignCalculation };
+export { BaseCalculator as BaseVitalSignCalculator };

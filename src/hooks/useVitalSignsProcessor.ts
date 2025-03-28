@@ -1,4 +1,3 @@
-
 /**
  * Hook para procesamiento de signos vitales
  * Integra los módulos de procesamiento, optimización y cálculo

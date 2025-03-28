@@ -1,173 +1,150 @@
 
 /**
- * Optimizador especializado para el canal de triglicéridos
+ * Optimizador de señal para triglicéridos
  */
 
-import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { OptimizedSignal, FeedbackData } from '../types';
+import { ProcessedPPGSignal } from '../../signal-processing/types';
 
 /**
- * Parámetros específicos para optimización de triglicéridos
- */
-const TRIGLYCERIDES_PARAMS: Partial<OptimizationParameters> = {
-  amplificationFactor: 1.6,
-  filterStrength: 0.72,
-  frequencyRange: [0.3, 2.5],
-  sensitivityFactor: 1.2,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar las características 
- * relacionadas con triglicéridos
+ * Optimizador especializado para señales de triglicéridos
  */
 export class TriglyceridesOptimizer extends BaseChannelOptimizer {
-  // Factores específicos para análisis de triglicéridos
-  private waveDelay: number = 0;
-  private attenuationProfile: number[] = [];
-  private diffusionIndex: number = 1.0;
-  
   constructor() {
-    super('triglycerides', TRIGLYCERIDES_PARAMS);
-  }
-  
-  /**
-   * Aplica optimizaciones específicas para triglicéridos
-   * Enfocado en características de atenuación y difusión
-   */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado para reducir ruido
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
-    
-    // 2. Estimar características de atenuación
-    this.estimateAttenuationProfile(optimized);
-    
-    // 3. Aplicar correcciones basadas en difusión
-    optimized = this.applyDiffusionCorrections(optimized);
-    
-    // 4. Amplificación adaptativa
-    optimized = this.amplifySignal(optimized);
-    
-    return optimized;
-  }
-  
-  /**
-   * Estima características de atenuación relacionadas con triglicéridos
-   */
-  private estimateAttenuationProfile(value: number): void {
-    if (this.valueBuffer.length < 20) {
-      this.attenuationProfile = [];
-      return;
-    }
-    
-    // Analizar relaciones temporales entre puntos clave de la onda
-    const segment = this.valueBuffer.slice(-20);
-    
-    // Encontrar máximos y mínimos locales
-    const peaks: number[] = [];
-    const valleys: number[] = [];
-    
-    for (let i = 1; i < segment.length - 1; i++) {
-      if (segment[i] > segment[i-1] && segment[i] > segment[i+1]) {
-        peaks.push(i);
-      } else if (segment[i] < segment[i-1] && segment[i] < segment[i+1]) {
-        valleys.push(i);
-      }
-    }
-    
-    // Si encontramos al menos un pico y un valle
-    if (peaks.length > 0 && valleys.length > 0) {
-      // Calcular retraso promedio entre picos y valles
-      let totalDelay = 0;
-      let count = 0;
-      
-      for (const peak of peaks) {
-        // Encontrar el valle más cercano después del pico
-        const nextValley = valleys.find(v => v > peak);
-        if (nextValley) {
-          totalDelay += (nextValley - peak);
-          count++;
-        }
-      }
-      
-      if (count > 0) {
-        this.waveDelay = totalDelay / count;
-        
-        // Perfil de atenuación basado en retraso
-        // Un mayor retraso puede indicar mayor presencia de triglicéridos
-        this.diffusionIndex = Math.max(0.8, Math.min(1.5, this.waveDelay / 3));
-      }
-    }
-    
-    // Actualizar perfil de atenuación
-    this.attenuationProfile = segment.map((val, i) => {
-      // Mayor atenuación en fase de descenso que en ascenso (asimetría)
-      const phase = i / segment.length;
-      return phase < 0.3 ? val * 1.1 : val * (1 - ((phase - 0.3) * 0.2));
+    super('triglycerides', {
+      amplification: 1.15,
+      filterStrength: 0.65,
+      sensitivity: 0.85,
+      smoothing: 0.5,
+      noiseThreshold: 0.18,
+      dynamicRange: 0.75
     });
+    
+    // Buffer para tendencias de lípidos
+    this._maxBufferSize = 200;
   }
   
   /**
-   * Aplica correcciones basadas en difusión y atenuación
+   * Optimiza la señal para cálculo de triglicéridos
    */
-  private applyDiffusionCorrections(value: number): number {
-    if (this.attenuationProfile.length < 5) return value;
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Amplificar señal
+    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
-    // Compensar por difusión estimada
-    const diffusionCompensated = value * this.diffusionIndex;
+    // Filtrar señal
+    const filtered = this.applyAdaptiveFiltering(amplified);
     
-    // Ajustar forma basado en perfil de atenuación
-    let phaseCorrection = 0;
+    // Aplicar procesamiento específico para triglicéridos
+    const optimized = this.applyTriglyceridesSpecificProcessing(filtered);
     
-    if (this.valueBuffer.length >= 10) {
-      // Estimar fase actual en ciclo de pulso
-      const recent = this.valueBuffer.slice(-10);
-      const min = Math.min(...recent);
-      const max = Math.max(...recent);
-      
-      if (max > min) {
-        const range = max - min;
-        const normalizedValue = (value - min) / range;
-        
-        // Fase estimada [0,1]
-        const estimatedPhase = normalizedValue;
-        
-        // Corrección basada en fase
-        phaseCorrection = estimatedPhase > 0.6 ? -0.05 : estimatedPhase < 0.3 ? 0.05 : 0;
+    // Actualizar estimación de ruido
+    this.updateNoiseEstimate();
+    
+    // Calcular confianza
+    const confidence = this.calculateConfidence(signal);
+    
+    // Limitar valor a rango [0,1]
+    const normalizedValue = Math.max(0, Math.min(1, optimized));
+    
+    return {
+      channel: 'triglycerides',
+      timestamp: signal.timestamp,
+      value: normalizedValue,
+      rawValue: signal.rawValue,
+      amplified: amplified,
+      filtered: filtered,
+      confidence: confidence,
+      quality: signal.quality
+    };
+  }
+  
+  /**
+   * Aplica procesamiento específico para triglicéridos
+   */
+  private applyTriglyceridesSpecificProcessing(value: number): number {
+    if (this.valueBuffer.length < 20) {
+      return value;
+    }
+    
+    // Suavizado de tendencia para lípidos con factor más alto que colesterol
+    const alpha = 0.08; // Factor de suavizado muy bajo
+    let smoothedValue = value;
+    
+    if (this.lastOptimizedValue !== 0) {
+      smoothedValue = value * alpha + this.lastOptimizedValue * (1 - alpha);
+    }
+    
+    // Para triglicéridos, enfatizar diferencias entre componentes espectrales
+    const lastValues = this.valueBuffer.slice(-20);
+    
+    // Calcular diferencia entre valores pares e impares (estimación simple de componentes frecuenciales)
+    let evenSum = 0, oddSum = 0;
+    for (let i = 0; i < lastValues.length; i++) {
+      if (i % 2 === 0) {
+        evenSum += lastValues[i];
+      } else {
+        oddSum += lastValues[i];
       }
     }
     
-    // Aplicar correcciones
-    const corrected = diffusionCompensated + phaseCorrection;
+    const evenAvg = evenSum / Math.ceil(lastValues.length / 2);
+    const oddAvg = oddSum / Math.floor(lastValues.length / 2);
     
-    return Math.max(0, Math.min(1, corrected));
+    // Diferencia entre componentes como indicador de absorción espectral
+    const componentDiff = Math.abs(evenAvg - oddAvg);
+    
+    // Enfatizar valor basado en diferencia de componentes
+    const emphasisFactor = 1 + (componentDiff * 0.5);
+    smoothedValue = smoothedValue * emphasisFactor;
+    
+    // Guardar valor para próxima iteración
+    this.lastOptimizedValue = smoothedValue;
+    
+    return smoothedValue;
   }
   
   /**
-   * Procesamiento especializado de feedback para triglicéridos
+   * Procesa retroalimentación del calculador
    */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
+  public processFeedback(feedback: FeedbackData): void {
+    if (feedback.channel !== 'triglycerides') return;
     
-    // Adaptaciones específicas para triglicéridos
-    if (feedback.confidence < 0.3) {
-      // Con baja confianza, ajustar difusión
-      this.diffusionIndex = Math.min(1.8, this.diffusionIndex * 1.1);
-    } else if (feedback.confidence > 0.8) {
-      // Con alta confianza, restaurar difusión al valor calculado
-      this.diffusionIndex = Math.max(0.8, Math.min(1.5, this.waveDelay / 3));
+    // Escala de ajuste según magnitud
+    const adjustmentScale = feedback.magnitude * 0.1;
+    
+    switch (feedback.adjustment) {
+      case 'increase':
+        // Incrementar filtrado para estabilizar
+        this.parameters.filterStrength = Math.min(0.9, this.parameters.filterStrength * (1 + adjustmentScale * 0.4));
+        
+        // Incrementar suavizado para enfatizar tendencia
+        this.parameters.smoothing = Math.min(0.75, this.parameters.smoothing * (1 + adjustmentScale * 0.3));
+        break;
+        
+      case 'decrease':
+        // Reducir filtrado para captar más variaciones
+        this.parameters.filterStrength = Math.max(0.4, this.parameters.filterStrength * (1 - adjustmentScale * 0.4));
+        
+        // Reducir suavizado
+        this.parameters.smoothing = Math.max(0.25, this.parameters.smoothing * (1 - adjustmentScale * 0.3));
+        break;
+        
+      case 'fine-tune':
+        // Ajustar parámetro específico si se proporciona
+        if (feedback.parameter) {
+          const param = feedback.parameter as keyof typeof this.parameters;
+          if (this.parameters[param] !== undefined) {
+            const direction = feedback.confidence && feedback.confidence < 0.5 ? 1 : -1;
+            this.parameters[param] = this.parameters[param] * (1 + direction * adjustmentScale * 0.1);
+          }
+        }
+        break;
+        
+      case 'reset':
+        // Restablecer parámetros por defecto
+        this.reset();
+        break;
     }
-  }
-  
-  /**
-   * Reinicia parámetros específicos
-   */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(TRIGLYCERIDES_PARAMS);
-    this.waveDelay = 0;
-    this.attenuationProfile = [];
-    this.diffusionIndex = 1.0;
   }
 }

@@ -1,137 +1,144 @@
 
 /**
- * Optimizador especializado para el canal de SpO2
+ * Optimizador de señal para SpO2
  */
 
-import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { OptimizedSignal, FeedbackData } from '../types';
+import { ProcessedPPGSignal } from '../../signal-processing/types';
 
 /**
- * Parámetros específicos para optimización de SpO2
- */
-const SPO2_PARAMS: Partial<OptimizationParameters> = {
-  // Enfocado en preservar componentes AC/DC para cálculo de SpO2
-  amplificationFactor: 1.4,
-  filterStrength: 0.7,
-  frequencyRange: [0.5, 2.5], // Rango más estrecho
-  sensitivityFactor: 1.1,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar cálculo de SpO2
+ * Optimizador especializado para señales de SpO2
  */
 export class SPO2Optimizer extends BaseChannelOptimizer {
-  // Factores específicos para SpO2
-  private dcComponent: number = 0;
-  private acComponent: number = 0;
-  private perfusionFactor: number = 1.0;
-  
   constructor() {
-    super('spo2', SPO2_PARAMS);
+    super('spo2', {
+      amplification: 1.3,
+      filterStrength: 0.55,
+      sensitivity: 1.1,
+      smoothing: 0.25,
+      noiseThreshold: 0.08,
+      dynamicRange: 1.1
+    });
+    
+    // Buffer para SpO2
+    this._maxBufferSize = 60;
   }
   
   /**
-   * Aplica optimizaciones específicas para SpO2
-   * Enfocado en preservar proporción AC/DC para cálculo preciso
+   * Optimiza la señal para cálculo de SpO2
    */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado adaptativo suave para preservar componentes
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Amplificar señal
+    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
-    // 2. Extraer componentes AC y DC para cálculo de perfusión
-    this.extractACDCComponents(optimized);
+    // Filtrar señal
+    const filtered = this.applyAdaptiveFiltering(amplified);
     
-    // 3. Normalización preservando relación AC/DC
-    optimized = this.normalizeWithPerfusionPreservation(optimized);
+    // Aplicar procesamiento específico para SpO2
+    const optimized = this.applySPO2SpecificProcessing(filtered);
     
-    // 4. Amplificación conservadora para no distorsionar relación AC/DC
-    optimized = this.adaptiveAmplification(optimized);
+    // Actualizar estimación de ruido
+    this.updateNoiseEstimate();
     
-    return optimized;
+    // Calcular confianza
+    const confidence = this.calculateConfidence(signal);
+    
+    // Limitar valor a rango [0,1]
+    const normalizedValue = Math.max(0, Math.min(1, optimized));
+    
+    return {
+      channel: 'spo2',
+      timestamp: signal.timestamp,
+      value: normalizedValue,
+      rawValue: signal.rawValue,
+      amplified: amplified,
+      filtered: filtered,
+      confidence: confidence,
+      quality: signal.quality
+    };
   }
   
   /**
-   * Extrae componentes AC y DC de la señal
+   * Aplica procesamiento específico para SpO2
    */
-  private extractACDCComponents(value: number): void {
-    if (this.valueBuffer.length < 5) {
-      this.dcComponent = value;
-      this.acComponent = 0;
-      return;
+  private applySPO2SpecificProcessing(value: number): number {
+    if (this.valueBuffer.length < 10) {
+      return value;
     }
     
-    // Extracción de componente DC (media móvil de ventana larga)
-    const dcBufferSize = Math.min(this.valueBuffer.length, 15);
-    const recentValues = this.valueBuffer.slice(-dcBufferSize);
-    this.dcComponent = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    // Preservar relación AC/DC para cálculo de SpO2
+    // Componente AC: variación pulsátil
+    const recentValues = this.valueBuffer.slice(-10);
+    const minValue = Math.min(...recentValues);
+    const maxValue = Math.max(...recentValues);
+    const acComponent = maxValue - minValue;
     
-    // Extracción de componente AC (diferencia de pico a pico en ventana corta)
-    const acBufferSize = Math.min(this.valueBuffer.length, 8);
-    const shortTermValues = this.valueBuffer.slice(-acBufferSize);
-    const min = Math.min(...shortTermValues);
-    const max = Math.max(...shortTermValues);
-    this.acComponent = max - min;
+    // Componente DC: valor base
+    const dcComponent = minValue;
     
-    // Calcular índice de perfusión (PI = AC/DC)
-    this.perfusionFactor = this.dcComponent !== 0 ? this.acComponent / this.dcComponent : 0;
-  }
-  
-  /**
-   * Normaliza preservando índice de perfusión
-   */
-  private normalizeWithPerfusionPreservation(value: number): number {
-    if (this.valueBuffer.length < 5) return value;
-    
-    // Normalizar el valor actual preservando relación con DC
-    const normalizedValue = (value - this.dcComponent) / (this.acComponent + 0.001);
-    
-    // Ajustar a rango [0,1] preservando la proporción
-    return Math.max(0, Math.min(1, normalizedValue * 0.5 + 0.5));
-  }
-  
-  /**
-   * Amplificación adaptativa según índice de perfusión
-   */
-  private adaptiveAmplification(value: number): number {
-    // Menor amplificación con perfusión alta para evitar saturación
-    // Mayor amplificación con perfusión baja para mejorar detección
-    const adaptiveFactor = this.perfusionFactor > 0.02 
-      ? Math.min(1.3, this.parameters.amplificationFactor * 0.8)
-      : Math.max(1.6, this.parameters.amplificationFactor * 1.2);
-    
-    // Normalizar alrededor de 0.5
-    const normalized = value - 0.5;
-    
-    // Amplificar con factor adaptativo
-    const amplified = normalized * adaptiveFactor;
-    
-    // Devolver a rango [0,1]
-    return Math.max(0, Math.min(1, amplified + 0.5));
-  }
-  
-  /**
-   * Procesamiento especializado de feedback para SpO2
-   */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
-    
-    // Ajustes específicos para SpO2 basados en retroalimentación
-    if (feedback.confidence < 0.4) {
-      // Aumentar preservación de componentes AC/DC
-      this.parameters.filterStrength = Math.max(0.5, this.parameters.filterStrength * 0.9);
+    // Verificar que componente DC sea significativo
+    if (dcComponent < 0.1) {
+      return value; // Señal muy débil, no optimizar
     }
+    
+    // Ratio AC/DC (crucial para SpO2)
+    const perfusionIndex = acComponent / dcComponent;
+    
+    // Normalizar valor preservando perfusión
+    let optimizedValue = value;
+    const targetPI = perfusionIndex * this.parameters.sensitivity;
+    
+    // Si el valor está cerca de un pico, intensificar para preservar PI
+    const isNearPeak = (value > this.valueBuffer[this.valueBuffer.length - 1]);
+    if (isNearPeak && perfusionIndex > 0) {
+      optimizedValue = value * (1 + 0.1 * this.parameters.sensitivity);
+    }
+    
+    return optimizedValue;
   }
   
   /**
-   * Reinicia parámetros específicos
+   * Procesa retroalimentación del calculador
    */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(SPO2_PARAMS);
-    this.dcComponent = 0;
-    this.acComponent = 0;
-    this.perfusionFactor = 1.0;
+  public processFeedback(feedback: FeedbackData): void {
+    if (feedback.channel !== 'spo2') return;
+    
+    // Escala de ajuste según magnitud
+    const adjustmentScale = feedback.magnitude * 0.1;
+    
+    switch (feedback.adjustment) {
+      case 'increase':
+        // Incrementar sensibilidad para detectar variaciones AC
+        this.parameters.sensitivity *= (1 + adjustmentScale);
+        
+        // Reducir filtrado para preservar componente AC
+        this.parameters.filterStrength = Math.max(0.25, this.parameters.filterStrength * (1 - adjustmentScale * 0.5));
+        break;
+        
+      case 'decrease':
+        // Incrementar filtrado para estabilizar
+        this.parameters.filterStrength = Math.min(0.75, this.parameters.filterStrength * (1 + adjustmentScale * 0.5));
+        
+        // Reducir sensibilidad
+        this.parameters.sensitivity = Math.max(0.8, this.parameters.sensitivity * (1 - adjustmentScale * 0.5));
+        break;
+        
+      case 'fine-tune':
+        // Ajustar parámetro específico si se proporciona
+        if (feedback.parameter) {
+          const param = feedback.parameter as keyof typeof this.parameters;
+          if (this.parameters[param] !== undefined) {
+            const direction = feedback.confidence && feedback.confidence < 0.5 ? 1 : -1;
+            this.parameters[param] = this.parameters[param] * (1 + direction * adjustmentScale * 0.1);
+          }
+        }
+        break;
+        
+      case 'reset':
+        // Restablecer parámetros por defecto
+        this.reset();
+        break;
+    }
   }
 }
