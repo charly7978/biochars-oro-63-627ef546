@@ -35,8 +35,8 @@ const VitalSign: React.FC<VitalSignProps> = ({
   }, [value]);
 
   return (
-    <div className={`flex flex-col items-center p-2 rounded-lg ${
-      highlighted ? 'bg-green-100/10' : 'bg-gray-100/10'
+    <div className={`flex flex-col items-center p-2 rounded-lg transition-colors ${
+      highlighted ? 'bg-green-900/30' : 'bg-gray-900/30'
     }`}>
       <div className="text-gray-400 text-xs mb-1">{label}</div>
       <div className="flex items-baseline">

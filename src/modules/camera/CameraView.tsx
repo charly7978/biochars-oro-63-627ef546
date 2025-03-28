@@ -1,6 +1,5 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { configureCameraForDevice, processFramesControlled } from './CameraFrameCapture';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -24,11 +23,11 @@ const CameraView: React.FC<CameraViewProps> = ({
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
-  const [isIOS, setIsWindows] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
   const processingCallbackRef = useRef<((imageData: ImageData) => void) | null>(null);
-  const frameProcessorRef = useRef<() => void | null>(null);
+  const frameProcessorRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Actualizar callback de procesamiento cuando cambie
   useEffect(() => {
@@ -41,7 +40,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     const androidDetected = /android/i.test(userAgent);
     const iosDetected = /ipad|iphone|ipod/i.test(userAgent);
     
-    console.log("Plataforma detectada:", {
+    console.log("CameraView: Plataforma detectada:", {
       userAgent,
       isAndroid: androidDetected,
       isIOS: iosDetected,
@@ -49,17 +48,17 @@ const CameraView: React.FC<CameraViewProps> = ({
     });
     
     setIsAndroid(androidDetected);
-    setIsWindows(iosDetected);
+    setIsIOS(iosDetected);
   }, []);
 
-  const stopCamera = async () => {
+  const stopCamera = useCallback(() => {
     if (frameProcessorRef.current) {
-      frameProcessorRef.current();
+      clearInterval(frameProcessorRef.current);
       frameProcessorRef.current = null;
     }
     
     if (stream) {
-      console.log("Stopping camera stream and turning off torch");
+      console.log("CameraView: Stopping camera stream and turning off torch");
       stream.getTracks().forEach(track => {
         try {
           if (track.kind === 'video' && track.getCapabilities()?.torch) {
@@ -82,16 +81,59 @@ const CameraView: React.FC<CameraViewProps> = ({
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
     }
-  };
+  }, [stream]);
 
-  const startCamera = async () => {
+  const processFrames = useCallback((videoTrack: MediaStreamTrack) => {
+    if (!processingCallbackRef.current) return;
+    
+    const imageCapture = new ImageCapture(videoTrack);
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    if (!tempCtx) {
+      console.error("No se pudo obtener el contexto 2D del canvas");
+      return;
+    }
+    
+    // Limpiar procesador anterior si existe
+    if (frameProcessorRef.current) {
+      clearInterval(frameProcessorRef.current);
+    }
+    
+    // Calcular intervalo basado en frameRate
+    const interval = Math.floor(1000 / frameRate);
+    
+    // Crear nuevo procesador de frames
+    frameProcessorRef.current = setInterval(async () => {
+      if (!isMonitoring || !processingCallbackRef.current) {
+        if (frameProcessorRef.current) {
+          clearInterval(frameProcessorRef.current);
+          frameProcessorRef.current = null;
+        }
+        return;
+      }
+      
+      try {
+        const frame = await imageCapture.grabFrame();
+        tempCanvas.width = frame.width;
+        tempCanvas.height = frame.height;
+        tempCtx.drawImage(frame, 0, 0);
+        
+        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+        processingCallbackRef.current(imageData);
+      } catch (error) {
+        console.error("Error capturando frame:", error);
+      }
+    }, interval);
+    
+    console.log(`CameraView: Iniciado procesamiento de frames a ${frameRate} FPS (intervalo: ${interval}ms)`);
+  }, [isMonitoring, frameRate]);
+
+  const startCamera = useCallback(async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
-
-      const isAndroid = /android/i.test(navigator.userAgent);
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
@@ -100,21 +142,21 @@ const CameraView: React.FC<CameraViewProps> = ({
       };
 
       if (isAndroid) {
-        console.log("Configurando para Android");
+        console.log("CameraView: Configurando para Android");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 30, max: 60 },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         });
       } else if (isIOS) {
-        console.log("Configurando para iOS");
+        console.log("CameraView: Configurando para iOS");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         });
       } else {
-        console.log("Configurando para escritorio con máxima resolución");
+        console.log("CameraView: Configurando para escritorio con máxima resolución");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
@@ -127,15 +169,67 @@ const CameraView: React.FC<CameraViewProps> = ({
         audio: false
       };
 
-      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
+      console.log("CameraView: Intentando acceder a la cámara con configuración:", constraints);
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Cámara inicializada correctamente");
+      console.log("CameraView: Cámara inicializada correctamente");
       
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack) {
         // Configurar cámara según dispositivo
-        await configureCameraForDevice(videoTrack, isAndroid, isIOS);
+        const capabilities = videoTrack.getCapabilities();
+        console.log("CameraView: Capacidades de la cámara:", capabilities);
+        
+        const advancedConstraints: MediaTrackConstraintSet[] = [];
+        
+        if (isAndroid) {
+          try {
+            if (capabilities.torch) {
+              console.log("CameraView: Activando linterna en Android");
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              setTorchEnabled(true);
+            }
+          } catch (err) {
+            console.error("Error al activar linterna en Android:", err);
+          }
+        } else {
+          if (capabilities.exposureMode) {
+            const exposureConstraint: MediaTrackConstraintSet = { 
+              exposureMode: 'continuous' 
+            };
+            
+            if (capabilities.exposureCompensation?.max) {
+              exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+            }
+            
+            advancedConstraints.push(exposureConstraint);
+          }
+          
+          if (capabilities.focusMode) {
+            advancedConstraints.push({ focusMode: 'continuous' });
+          }
+          
+          if (capabilities.whiteBalanceMode) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+          }
+          
+          if (advancedConstraints.length > 0) {
+            console.log("CameraView: Aplicando configuraciones avanzadas:", advancedConstraints);
+            await videoTrack.applyConstraints({
+              advanced: advancedConstraints
+            });
+          }
+
+          if (capabilities.torch) {
+            console.log("CameraView: Activando linterna para mejorar la señal PPG");
+            await videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            });
+            setTorchEnabled(true);
+          }
+        }
         
         // Configurar video
         if (videoRef.current) {
@@ -151,20 +245,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         
         // Configurar procesamiento de frames si se proporcionó un callback
         if (processingCallbackRef.current) {
-          const imageCapture = new ImageCapture(videoTrack);
-          
-          // Limpiar procesador anterior si existe
-          if (frameProcessorRef.current) {
-            frameProcessorRef.current();
-          }
-          
-          // Iniciar nuevo procesador de frames
-          frameProcessorRef.current = processFramesControlled(
-            imageCapture,
-            isMonitoring,
-            frameRate,
-            processingCallbackRef.current
-          );
+          processFrames(videoTrack);
         }
         
         // Notificar que el stream está listo
@@ -175,17 +256,17 @@ const CameraView: React.FC<CameraViewProps> = ({
         retryAttemptsRef.current = 0;
       }
     } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
+      console.error("CameraView: Error al iniciar la cámara:", err);
       
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
-        console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
+        console.log(`CameraView: Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
         setTimeout(startCamera, 1000);
       } else {
-        console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
+        console.error(`CameraView: Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
     }
-  };
+  }, [isAndroid, isIOS, onStreamReady, processFrames]);
 
   const refreshAutoFocus = useCallback(async () => {
     if (stream && !isFocusing && !isAndroid) {
@@ -200,7 +281,7 @@ const CameraView: React.FC<CameraViewProps> = ({
           await videoTrack.applyConstraints({
             advanced: [{ focusMode: 'continuous' }]
           });
-          console.log("Auto-enfoque refrescado con éxito");
+          console.log("CameraView: Auto-enfoque refrescado con éxito");
         } catch (err) {
           console.error("Error al refrescar auto-enfoque:", err);
         } finally {
@@ -213,25 +294,25 @@ const CameraView: React.FC<CameraViewProps> = ({
   // Manejar inicio/detención de cámara según estado de monitoreo
   useEffect(() => {
     if (isMonitoring && !stream) {
-      console.log("Starting camera because isMonitoring=true");
+      console.log("CameraView: Starting camera because isMonitoring=true");
       startCamera();
     } else if (!isMonitoring && stream) {
-      console.log("Stopping camera because isMonitoring=false");
+      console.log("CameraView: Stopping camera because isMonitoring=false");
       stopCamera();
     }
     
     return () => {
-      console.log("CameraView component unmounting, stopping camera");
+      console.log("CameraView: Component unmounting, stopping camera");
       stopCamera();
     };
-  }, [isMonitoring, stream]);
+  }, [isMonitoring, stream, startCamera, stopCamera]);
 
   // Manejar linterna y enfoque cuando se detecta dedo
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo");
+        console.log("CameraView: Activando linterna después de detectar dedo");
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
         }).then(() => {

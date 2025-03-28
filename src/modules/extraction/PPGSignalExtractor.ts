@@ -1,191 +1,151 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Extractor de señal PPG - especializado en la extracción y limpieza básica
- * Solo trabaja con datos reales sin simulaciones
+ * Extractor de señal PPG
+ * Se encarga de extraer la señal fotopletismográfica sin procesamiento complejo
  */
 
-/**
- * Resultado de la extracción de señal PPG
- */
-export interface PPGSignalExtractionResult {
-  // Información de tiempo
-  timestamp: number;
-  
-  // Valores de señal
+interface PPGExtractionResult {
   rawValue: number;
-  filteredValue: number;
-  
-  // Métricas de señal
-  quality: number;
+  timestamp: number;
+  signalStrength: number;
   fingerDetected: boolean;
-  amplitude: number;
-  baseline: number;
 }
 
-/**
- * Clase para la extracción especializada de señal PPG
- */
 export class PPGSignalExtractor {
-  // Almacenamiento de valores
-  private rawValues: number[] = [];
-  private filteredValues: number[] = [];
-  
-  // Línea base y amplitud
-  private baselineValue: number = 0;
-  private signalAmplitude: number = 0;
-  
-  // Factores de filtrado
-  private readonly ALPHA_EMA = 0.2; // Factor de suavizado exponencial
-  private readonly RECENT_WINDOW_SIZE = 30; // Tamaño de ventana para análisis
+  private recentValues: number[] = [];
+  private readonly maxRecentValues: number = 20;
+  private minSignalThreshold: number = 0.05;
+  private stableCountThreshold: number = 5;
+  private stableCount: number = 0;
+  private baselineMean: number = 0;
+  private baselineStdDev: number = 0;
   
   /**
-   * Procesa un valor PPG crudo y extrae una señal limpia
-   * @param value Valor PPG sin procesar
-   * @returns Resultado de la extracción con señal procesada
+   * Extrae información básica de la señal PPG
+   * Corresponde a la obtención de la señal sin procesamiento avanzado
    */
-  public processValue(value: number): PPGSignalExtractionResult {
+  public extract(value: number): PPGExtractionResult {
     const now = Date.now();
     
-    // Almacenar valor crudo
-    this.rawValues.push(value);
-    if (this.rawValues.length > this.RECENT_WINDOW_SIZE * 2) {
-      this.rawValues.shift();
+    // Almacenar valores recientes
+    this.recentValues.push(value);
+    if (this.recentValues.length > this.maxRecentValues) {
+      this.recentValues.shift();
     }
     
-    // Aplicar filtrado básico (EMA - Exponential Moving Average)
-    const filteredValue = this.applyBasicFiltering(value);
+    // Calculamos un valor básico de fuerza de señal
+    const signalStrength = this.calculateSignalStrength(value);
     
-    // Almacenar valor filtrado
-    this.filteredValues.push(filteredValue);
-    if (this.filteredValues.length > this.RECENT_WINDOW_SIZE * 2) {
-      this.filteredValues.shift();
+    // Detección básica de dedo (sin algoritmos complejos)
+    let fingerDetected = false;
+    
+    // Si hay suficientes valores recientes, verificar si la señal es estable
+    if (this.recentValues.length >= 10) {
+      // Calcular media de valores recientes
+      const mean = this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
+      
+      // Calcular desviación estándar
+      const variance = this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
+      const stdDev = Math.sqrt(variance);
+      
+      // Señal debe tener cierta variación pero no demasiada para ser una señal PPG válida
+      const isValidStdDev = stdDev > 0.01 && stdDev < 0.5;
+      
+      // La media debe estar por encima de un umbral mínimo
+      const hasMinimumSignal = Math.abs(mean) > this.minSignalThreshold;
+      
+      // Si cumple criterios, incrementar contador de estabilidad
+      if (isValidStdDev && hasMinimumSignal) {
+        this.stableCount = Math.min(this.stableCountThreshold + 5, this.stableCount + 1);
+      } else {
+        this.stableCount = Math.max(0, this.stableCount - 1);
+      }
+      
+      // Señal debe ser estable por un tiempo mínimo
+      fingerDetected = this.stableCount >= this.stableCountThreshold;
+      
+      // Actualizar línea base si la señal es estable
+      if (fingerDetected) {
+        this.baselineMean = mean;
+        this.baselineStdDev = stdDev;
+      }
     }
-    
-    // Actualizar línea base y amplitud
-    this.updateBaselineAndAmplitude();
-    
-    // Calcular calidad de señal y detección de dedo
-    const quality = this.calculateSignalQuality();
-    const fingerDetected = this.isFingerDetected();
     
     return {
-      timestamp: now,
       rawValue: value,
-      filteredValue,
-      quality,
-      fingerDetected,
-      amplitude: this.signalAmplitude,
-      baseline: this.baselineValue
+      timestamp: now,
+      signalStrength,
+      fingerDetected
     };
   }
-  
+
   /**
-   * Aplica filtrado básico al valor crudo
+   * Calcula la fuerza de la señal (0-100)
    */
-  private applyBasicFiltering(value: number): number {
-    // Si no hay valores previos, devolver valor actual
-    if (this.filteredValues.length === 0) {
-      return value;
+  private calculateSignalStrength(value: number): number {
+    // Si no hay suficientes datos, devolver un valor bajo
+    if (this.recentValues.length < 10) {
+      return Math.min(100, Math.max(0, Math.abs(value) * 200));
     }
     
-    // Filtro EMA (Exponential Moving Average)
-    const lastFilteredValue = this.filteredValues[this.filteredValues.length - 1];
-    return this.ALPHA_EMA * value + (1 - this.ALPHA_EMA) * lastFilteredValue;
-  }
-  
-  /**
-   * Actualiza la línea base y amplitud de la señal
-   */
-  private updateBaselineAndAmplitude(): void {
-    if (this.filteredValues.length < 5) return;
-    
-    // Usar solo los valores recientes
-    const recentValues = this.filteredValues.slice(-this.RECENT_WINDOW_SIZE);
-    
-    // Calcular min y max para amplitud
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    
-    // Actualizar amplitud
-    this.signalAmplitude = max - min;
-    
-    // Línea base como promedio
-    this.baselineValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-  }
-  
-  /**
-   * Calcula la calidad de la señal (0-100)
-   */
-  private calculateSignalQuality(): number {
-    if (this.filteredValues.length < 10) return 0;
-    
-    // Ventana reciente para análisis
-    const recentValues = this.filteredValues.slice(-this.RECENT_WINDOW_SIZE);
-    const recentRawValues = this.rawValues.slice(-this.RECENT_WINDOW_SIZE);
-    
-    // Factores de calidad
-    
-    // 1. Amplitud de señal (peso: 40%)
-    const amplitudeScore = Math.min(1, this.signalAmplitude / 0.4);
-    
-    // 2. Relación señal-ruido (peso: 40%)
-    // Calculamos la variabilidad entre crudo y filtrado
-    let noiseSum = 0;
-    for (let i = 0; i < recentValues.length && i < recentRawValues.length; i++) {
-      noiseSum += Math.abs(recentValues[i] - recentRawValues[i]);
-    }
-    const avgNoise = noiseSum / recentValues.length;
-    const snrScore = Math.max(0, 1 - (avgNoise / (this.signalAmplitude + 0.001)));
-    
-    // 3. Estabilidad de la línea base (peso: 20%)
-    // Desviación estándar de la señal normalizada
-    const normalizedValues = recentValues.map(v => (v - this.baselineValue) / (this.signalAmplitude + 0.001));
-    const mean = normalizedValues.reduce((sum, val) => sum + val, 0) / normalizedValues.length;
-    const variance = normalizedValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / normalizedValues.length;
+    // Calcular media y desviación estándar recientes
+    const mean = this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
+    const variance = this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
     const stdDev = Math.sqrt(variance);
-    const stabilityScore = Math.max(0, 1 - stdDev);
     
-    // Calidad ponderada total (0-1)
-    const weightedQuality = 
-      0.4 * amplitudeScore + 
-      0.4 * snrScore + 
-      0.2 * stabilityScore;
+    // Señal fuerte debe tener:
+    // 1. Desviación estándar en un rango apropiado (ni muy baja ni muy alta)
+    // 2. Valor medio por encima de un umbral
     
-    // Convertir a escala 0-100
-    return Math.round(weightedQuality * 100);
+    // Calcular calidad basada en desviación estándar (mejor entre 0.05 y 0.2)
+    let stdDevQuality = 0;
+    if (stdDev >= 0.01 && stdDev <= 0.5) {
+      if (stdDev < 0.05) {
+        stdDevQuality = (stdDev - 0.01) / 0.04 * 50; // 0-50
+      } else if (stdDev <= 0.2) {
+        stdDevQuality = 50 + (0.2 - stdDev) / 0.15 * 50; // 50-100
+      } else {
+        stdDevQuality = 50 * (0.5 - stdDev) / 0.3; // 50-0
+      }
+    }
+    
+    // Calcular calidad basada en valor medio
+    const meanQuality = Math.min(100, Math.abs(mean) * 300);
+    
+    // Combinar ambas métricas
+    const quality = stdDevQuality * 0.7 + meanQuality * 0.3;
+    
+    return Math.min(100, Math.max(0, quality));
   }
-  
-  /**
-   * Determina si un dedo está detectado basado en la calidad de la señal
-   */
-  private isFingerDetected(): boolean {
-    // Criterios para la detección del dedo:
-    // 1. Amplitud mínima
-    const hasMinimumAmplitude = this.signalAmplitude > 0.05;
-    
-    // 2. Calidad mínima
-    const quality = this.calculateSignalQuality();
-    const hasMinimumQuality = quality > 20;
-    
-    return hasMinimumAmplitude && hasMinimumQuality;
-  }
-  
+
   /**
    * Reinicia el extractor
    */
   public reset(): void {
-    this.rawValues = [];
-    this.filteredValues = [];
-    this.baselineValue = 0;
-    this.signalAmplitude = 0;
+    this.recentValues = [];
+    this.stableCount = 0;
+    this.baselineMean = 0;
+    this.baselineStdDev = 0;
+  }
+
+  /**
+   * Configura parámetros del extractor
+   */
+  public configure(config: {
+    minSignalThreshold?: number;
+    stableCountThreshold?: number;
+    maxRecentValues?: number;
+  }): void {
+    if (config.minSignalThreshold !== undefined) {
+      this.minSignalThreshold = config.minSignalThreshold;
+    }
+    
+    if (config.stableCountThreshold !== undefined) {
+      this.stableCountThreshold = config.stableCountThreshold;
+    }
+    
+    if (config.maxRecentValues !== undefined) {
+      this.maxRecentValues = config.maxRecentValues;
+    }
   }
 }
-
-/**
- * Crea una instancia de extractor de señal PPG
- */
-export const createPPGSignalExtractor = (): PPGSignalExtractor => {
-  return new PPGSignalExtractor();
-};

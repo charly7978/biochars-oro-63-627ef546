@@ -1,11 +1,8 @@
 
 /**
- * Tipos para el procesamiento central de señales
+ * Tipos para procesamiento de señal
  */
 
-/**
- * Resultado del procesamiento de señal PPG
- */
 export interface ProcessedPPGSignal {
   timestamp: number;
   rawValue: number;
@@ -15,36 +12,32 @@ export interface ProcessedPPGSignal {
   quality: number;
   fingerDetected: boolean;
   signalStrength: number;
+  metadata?: {
+    rrIntervals?: number[];
+    lastPeakTime?: number | null;
+    isPeak?: boolean;
+    [key: string]: any;
+  };
 }
 
-/**
- * Resultado del procesamiento de señal cardíaca
- */
-export interface ProcessedHeartbeatSignal {
-  timestamp: number;
-  value: number;
-  isPeak: boolean;
-  peakConfidence: number;
-  instantaneousBPM: number | null;
-  rrInterval: number | null;
-  heartRateVariability: number | null;
+export interface SignalProcessorConfig {
+  filterParams?: {
+    lowPassCutoff?: number;
+    highPassCutoff?: number;
+    smoothingFactor?: number;
+  };
+  amplification?: {
+    gain?: number;
+    adaptiveGain?: boolean;
+  };
+  fingerDetection?: {
+    threshold?: number;
+    stabilityThreshold?: number;
+  };
 }
 
-/**
- * Opciones de configuración para el procesamiento de señal
- */
-export interface SignalProcessingOptions {
-  amplificationFactor?: number;
-  filterStrength?: number;
-  qualityThreshold?: number;
-  fingerDetectionSensitivity?: number;
-}
-
-/**
- * Interfaz para todos los procesadores de señal
- */
-export interface SignalProcessor<T> {
-  processSignal(value: number): T;
+export interface SignalProcessor {
+  processSignal(value: number, timestamp?: number): ProcessedPPGSignal;
+  setConfig(config: SignalProcessorConfig): void;
   reset(): void;
-  configure(options: SignalProcessingOptions): void;
 }

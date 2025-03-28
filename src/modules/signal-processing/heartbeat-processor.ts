@@ -1,232 +1,198 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Procesador avanzado de señal cardíaca
- * Se encarga del procesamiento especializado de picos/latidos
+ * Procesador de latidos cardíacos
+ * Implementa el procesamiento de picos para detectar latidos
  */
-import { ProcessedHeartbeatSignal, SignalProcessor, SignalProcessingOptions } from './types';
 
-/**
- * Clase para el procesamiento avanzado de señales cardíacas
- */
-export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSignal> {
-  // Almacenamiento de valores y picos
-  private values: number[] = [];
-  private peakTimes: number[] = [];
-  private rrIntervals: number[] = [];
+import { SignalProcessor, ProcessedPPGSignal, SignalProcessorConfig } from './types';
+
+export class HeartbeatProcessor implements SignalProcessor {
+  // Configuración del procesador
+  private config: SignalProcessorConfig = {
+    filterParams: {
+      lowPassCutoff: 5, // Hz
+      highPassCutoff: 0.5, // Hz
+      smoothingFactor: 0.85
+    },
+    amplification: {
+      gain: 3.5,
+      adaptiveGain: true
+    }
+  };
   
-  // Detección de picos
+  // Estado del procesador
+  private lastValue: number = 0;
+  private valueBuffer: number[] = [];
+  private readonly bufferSize: number = 10;
   private lastPeakTime: number | null = null;
-  private lastPeakValue: number = 0;
-  private peakThreshold: number = 0.2;
-  private minPeakDistance: number = 250; // ms
+  private readonly minPeakDistance: number = 300; // ms (máximo 200 BPM)
+  private readonly peakThreshold: number = 0.25;
+  private rrIntervals: number[] = [];
+  private readonly maxRRIntervals: number = 10;
   
-  // Configuración
-  private adaptiveToPeakHistory: boolean = true;
-  private dynamicThresholdFactor: number = 0.6;
-  
-  /**
-   * Procesa un valor y detecta picos cardíacos con algoritmos avanzados
-   */
-  public processSignal(value: number): ProcessedHeartbeatSignal {
-    const timestamp = Date.now();
-    
-    // Almacenar valor en buffer
-    this.values.push(value);
-    if (this.values.length > 30) {
-      this.values.shift();
-    }
-    
-    // Comprobar si es un posible pico
-    let isPeak = false;
-    let peakConfidence = 0;
-    let instantaneousBPM: number | null = null;
-    let rrInterval: number | null = null;
-    
-    // Verificar condiciones para detección de pico
-    if (this.isPotentialPeak(value, timestamp)) {
-      // Verificar si es un pico válido con análisis de forma de onda
-      const { isValidPeak, confidence } = this.validatePeak(value);
-      
-      if (isValidPeak) {
-        isPeak = true;
-        peakConfidence = confidence;
-        
-        // Calcular intervalo RR si hay un pico anterior
-        if (this.lastPeakTime !== null) {
-          rrInterval = timestamp - this.lastPeakTime;
-          
-          // Calcular BPM instantáneo a partir del intervalo RR
-          if (rrInterval > 0) {
-            instantaneousBPM = 60000 / rrInterval;
-            
-            // Almacenar intervalo RR para análisis de variabilidad
-            this.rrIntervals.push(rrInterval);
-            if (this.rrIntervals.length > 10) {
-              this.rrIntervals.shift();
-            }
-          }
-        }
-        
-        // Actualizar referencias del pico
-        this.lastPeakTime = timestamp;
-        this.lastPeakValue = value;
-        this.peakTimes.push(timestamp);
-        
-        // Limitar el historial de tiempos de picos
-        if (this.peakTimes.length > 10) {
-          this.peakTimes.shift();
-        }
-        
-        // Adaptar el umbral basado en el historial de picos
-        if (this.adaptiveToPeakHistory && this.values.length > 10) {
-          this.adaptThreshold();
-        }
-      }
-    }
-    
-    // Calcular variabilidad del ritmo cardíaco
-    const heartRateVariability = this.calculateHRV();
-    
-    return {
-      timestamp,
-      value,
-      isPeak,
-      peakConfidence,
-      instantaneousBPM,
-      rrInterval,
-      heartRateVariability
-    };
+  constructor() {
+    console.log("HeartbeatProcessor: Instancia creada");
   }
   
   /**
-   * Verifica si un valor cumple las condiciones básicas para ser un pico
+   * Procesa un valor para detectar latidos
    */
-  private isPotentialPeak(value: number, timestamp: number): boolean {
-    // Aplicar umbral y distancia mínima entre picos
-    const timeSinceLastPeak = this.lastPeakTime ? timestamp - this.lastPeakTime : Number.MAX_VALUE;
+  public processSignal(value: number, timestamp: number = Date.now()): ProcessedPPGSignal {
+    // Actualizar buffer de valores
+    this.valueBuffer.push(value);
+    if (this.valueBuffer.length > this.bufferSize) {
+      this.valueBuffer.shift();
+    }
     
-    if (value < this.peakThreshold || timeSinceLastPeak < this.minPeakDistance) {
+    // Aplicar filtro pasa-banda optimizado para detección de latidos
+    const filteredValue = this.applyBandPassFilter(value);
+    
+    // Detectar pico
+    const isPeak = this.detectPeak(filteredValue, timestamp);
+    
+    // Normalizar valor
+    const normalizedValue = value - this.calculateBaseline();
+    
+    // Amplificar señal
+    const amplifiedValue = this.amplifySignal(normalizedValue);
+    
+    // La calidad y detección de dedo se delegan al procesador PPG
+    // Aquí nos enfocamos en la detección de picos
+    
+    const result: ProcessedPPGSignal = {
+      timestamp,
+      rawValue: value,
+      filteredValue,
+      normalizedValue,
+      amplifiedValue,
+      quality: 0, // Se delega al procesador PPG
+      fingerDetected: false, // Se delega al procesador PPG
+      signalStrength: 0, // Se delega al procesador PPG
+      metadata: {
+        isPeak,
+        rrIntervals: [...this.rrIntervals],
+        lastPeakTime: this.lastPeakTime
+      }
+    };
+    
+    this.lastValue = value;
+    
+    return result;
+  }
+  
+  /**
+   * Aplica filtro pasa-banda optimizado para detección de latidos
+   */
+  private applyBandPassFilter(value: number): number {
+    const alpha = this.config.filterParams?.smoothingFactor || 0.85;
+    
+    // Implementación simplificada de filtro pasa-banda
+    // Primero aplicamos un filtro pasa-bajos para eliminar ruido de alta frecuencia
+    const lowPassValue = alpha * this.lastValue + (1 - alpha) * value;
+    
+    // Luego removemos componentes de muy baja frecuencia (DC offset)
+    const baseline = this.calculateBaseline();
+    const highPassValue = lowPassValue - baseline;
+    
+    return highPassValue;
+  }
+  
+  /**
+   * Calcula la línea base (componente DC)
+   */
+  private calculateBaseline(): number {
+    if (this.valueBuffer.length < 3) {
+      return 0;
+    }
+    
+    // Promedio simple para línea base
+    return this.valueBuffer.reduce((sum, val) => sum + val, 0) / this.valueBuffer.length;
+  }
+  
+  /**
+   * Amplifica la señal para mejorar detección
+   */
+  private amplifySignal(value: number): number {
+    const gain = this.config.amplification?.gain || 3.5;
+    return value * gain;
+  }
+  
+  /**
+   * Detecta picos en la señal (latidos)
+   */
+  private detectPeak(value: number, timestamp: number): boolean {
+    if (this.valueBuffer.length < 3) {
       return false;
     }
     
-    // Verificar si es un máximo local (mayor que valores anteriores y posteriores)
-    if (this.values.length < 3) return false;
+    // Verificar tiempo mínimo desde último pico
+    if (this.lastPeakTime !== null && timestamp - this.lastPeakTime < this.minPeakDistance) {
+      return false;
+    }
     
-    const recent = this.values.slice(-3);
-    return recent[1] > recent[0] && recent[1] >= value;
+    // Verificar condiciones de pico
+    const recentValues = this.valueBuffer.slice(-3);
+    const isPeak = recentValues[1] > recentValues[0] && 
+                 recentValues[1] > recentValues[2] && 
+                 recentValues[1] > this.peakThreshold;
+    
+    if (isPeak) {
+      // Registrar intervalo RR si ya hubo un pico previo
+      if (this.lastPeakTime !== null) {
+        const rrInterval = timestamp - this.lastPeakTime;
+        this.rrIntervals.push(rrInterval);
+        
+        if (this.rrIntervals.length > this.maxRRIntervals) {
+          this.rrIntervals.shift();
+        }
+      }
+      
+      this.lastPeakTime = timestamp;
+      
+      console.log("HeartbeatProcessor: Pico detectado", {
+        time: new Date(timestamp).toISOString(),
+        value: recentValues[1],
+        rrIntervals: this.rrIntervals.length
+      });
+    }
+    
+    return isPeak;
   }
   
   /**
-   * Valida un pico usando análisis de forma de onda
+   * Configura parámetros del procesador
    */
-  private validatePeak(value: number): { isValidPeak: boolean, confidence: number } {
-    if (this.values.length < 5) {
-      return { isValidPeak: false, confidence: 0 };
-    }
-    
-    // Comprobar la forma de onda alrededor del potencial pico
-    const segment = this.values.slice(-5);
-    
-    // Verificar patrón ascendente-descendente típico de un latido cardíaco real
-    const hasCardiacPattern = 
-      segment[0] < segment[1] && 
-      segment[1] < segment[2] && 
-      segment[2] > segment[3] && 
-      segment[3] > segment[4];
-    
-    if (!hasCardiacPattern) {
-      return { isValidPeak: false, confidence: 0 };
-    }
-    
-    // Calcular la prominencia del pico (diferencia con valores circundantes)
-    const prominence = Math.min(
-      segment[2] - segment[0],
-      segment[2] - segment[4]
-    );
-    
-    // Normalizar la prominencia para obtener la confianza (0-1)
-    const confidence = Math.min(1, prominence / (this.peakThreshold * 2));
-    
-    return { 
-      isValidPeak: confidence > 0.5,
-      confidence 
+  public setConfig(config: SignalProcessorConfig): void {
+    this.config = {
+      ...this.config,
+      ...config,
+      filterParams: {
+        ...this.config.filterParams,
+        ...config.filterParams
+      },
+      amplification: {
+        ...this.config.amplification,
+        ...config.amplification
+      }
     };
   }
   
   /**
-   * Adapta el umbral de detección basado en el historial de picos
-   */
-  private adaptThreshold(): void {
-    if (this.values.length < 10) return;
-    
-    // Calcular la media y desviación estándar de los valores recientes
-    const recent = this.values.slice(-20);
-    const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-    
-    let variance = 0;
-    for (const val of recent) {
-      variance += Math.pow(val - mean, 2);
-    }
-    variance /= recent.length;
-    
-    const stdDev = Math.sqrt(variance);
-    
-    // Ajustar umbral basado en la distribución de la señal
-    // Uso de factor dinámico para mejor adaptación
-    this.peakThreshold = mean + (stdDev * this.dynamicThresholdFactor);
-    
-    // Limitar a valores razonables
-    this.peakThreshold = Math.max(0.1, Math.min(0.8, this.peakThreshold));
-  }
-  
-  /**
-   * Calcula la variabilidad del ritmo cardíaco (HRV)
-   */
-  private calculateHRV(): number | null {
-    if (this.rrIntervals.length < 3) return null;
-    
-    // Método RMSSD (Root Mean Square of Successive Differences)
-    let sumSquaredDiffs = 0;
-    for (let i = 1; i < this.rrIntervals.length; i++) {
-      const diff = this.rrIntervals[i] - this.rrIntervals[i - 1];
-      sumSquaredDiffs += diff * diff;
-    }
-    
-    return Math.sqrt(sumSquaredDiffs / (this.rrIntervals.length - 1));
-  }
-  
-  /**
-   * Configura el procesador con opciones personalizadas
-   */
-  public configure(options: SignalProcessingOptions): void {
-    if (options.amplificationFactor !== undefined) {
-      this.dynamicThresholdFactor = Math.max(0.3, Math.min(0.9, options.amplificationFactor / 2));
-    }
-    
-    if (options.filterStrength !== undefined) {
-      // Ajustar la distancia mínima entre picos según la fuerza de filtrado
-      this.minPeakDistance = 250 + (options.filterStrength * 100);
-    }
-  }
-  
-  /**
-   * Reinicia el procesador y todos sus buffers
+   * Reinicia el procesador
    */
   public reset(): void {
-    this.values = [];
-    this.peakTimes = [];
-    this.rrIntervals = [];
+    this.lastValue = 0;
+    this.valueBuffer = [];
     this.lastPeakTime = null;
-    this.lastPeakValue = 0;
-    this.peakThreshold = 0.2;
+    this.rrIntervals = [];
+    
+    console.log("HeartbeatProcessor: Reiniciado");
   }
 }
 
 /**
- * Crea una nueva instancia del procesador de señal cardíaca
+ * Crea una nueva instancia del procesador de latidos
  */
-export function createHeartbeatProcessor(): HeartbeatProcessor {
+export function createHeartbeatProcessor(): SignalProcessor {
   return new HeartbeatProcessor();
 }
