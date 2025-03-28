@@ -14,25 +14,36 @@ export class VitalSignsProcessor {
   // Strict medical-grade thresholds with zero tolerance for false positives
   private readonly WINDOW_SIZE = 300;
   private readonly SPO2_CALIBRATION_FACTOR = 1.0; // No artificial calibration
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Aumentado para mejor precisión
-  private readonly SPO2_WINDOW = 8; // Mayor ventana para lecturas más precisas
-  private readonly SMA_WINDOW = 8; // Aumentado para mejor suavizado
-  private readonly RR_WINDOW_SIZE = 15; // Mayor ventana para análisis más preciso
-  private readonly RMSSD_THRESHOLD = 22; // Incrementado para detección de arritmia más definitiva
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1200; // Periodo de aprendizaje extendido
-  private readonly PEAK_THRESHOLD = 0.35; // Umbral de pico incrementado para reducir falsos positivos
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.05; // Incrementado significativamente
+  private readonly SPO2_WINDOW = 8; 
+  private readonly SMA_WINDOW = 8;
+  private readonly RR_WINDOW_SIZE = 15;
+  private readonly RMSSD_THRESHOLD = 22;
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 1200;
+  private readonly PEAK_THRESHOLD = 0.45; // Incrementado significativamente
   
-  // Umbrales más estrictos para validación mejorada
-  private readonly MIN_QUALITY_THRESHOLD = 65; // Calidad mínima incrementada para procesar señales
-  private readonly CONSECUTIVE_VALID_SAMPLES = 5; // Mayor número de muestras consecutivas requeridas
+  // Umbrales mucho más estrictos
+  private readonly MIN_QUALITY_THRESHOLD = 80; // Umbral de calidad muy alto
+  private readonly CONSECUTIVE_VALID_SAMPLES = 8; // Más muestras consecutivas requeridas
   private validSampleCounter: number = 0;
   private lastValidTime: number = 0;
-  private readonly REFRACTORY_PERIOD_MS = 1000; // Periodo refractario aumentado
+  private readonly REFRACTORY_PERIOD_MS = 1200; // Periodo refractario más largo
   
-  // Nuevo: sistema de validación de señal mejorado con memoria
+  // Sistema mejorado para verificación de cambios de amplitud
+  private amplitudeHistory: number[] = [];
+  private readonly AMPLITUDE_HISTORY_SIZE = 15;
+  private readonly MIN_AMPLITUDE_THRESHOLD = 1.2; // Umbral mínimo de amplitud
+  private readonly MIN_AMPLITUDE_VARIATION = 0.5; // Mínima variación requerida
+  
+  // Control de ruido y estabilidad
+  private noiseBuffer: number[] = [];
+  private readonly NOISE_BUFFER_SIZE = 20;
+  private readonly MAX_NOISE_RATIO = 0.15; // Máximo ruido permitido
+  
+  // Validación multi-parámetros
   private signalQualityHistory: number[] = [];
-  private readonly QUALITY_HISTORY_SIZE = 10;
-  private readonly MIN_QUALITY_RATIO = 0.6; // Mínimo 60% de muestras deben tener calidad suficiente
+  private readonly QUALITY_HISTORY_SIZE = 15;
+  private readonly MIN_QUALITY_RATIO = 0.8; // 80% de muestras deben tener calidad suficiente
   
   /**
    * Constructor that initializes the internal direct measurement processor
@@ -54,9 +65,9 @@ export class VitalSignsProcessor {
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null },
-    signalQuality?: number // Nuevo: recibir calidad de señal como parámetro opcional
+    signalQuality?: number
   ): VitalSignsResult {
-    // Actualizar historial de calidad de señal
+    // Mantener historial de calidad
     if (signalQuality !== undefined) {
       this.signalQualityHistory.push(signalQuality);
       if (this.signalQualityHistory.length > this.QUALITY_HISTORY_SIZE) {
@@ -64,20 +75,21 @@ export class VitalSignsProcessor {
       }
     }
     
-    // Calcular calidad promedio y ratio de señales buenas
+    // Cálculos de calidad promedio y ratio
     const avgQuality = this.signalQualityHistory.length > 0 ? 
       this.signalQualityHistory.reduce((sum, q) => sum + q, 0) / this.signalQualityHistory.length : 0;
     
+    // Calcular qué porcentaje de muestras tienen buena calidad
     const goodQualityRatio = this.signalQualityHistory.length > 5 ?
       this.signalQualityHistory.filter(q => q >= this.MIN_QUALITY_THRESHOLD).length / this.signalQualityHistory.length : 0;
     
-    // Verificación estricta: múltiples criterios de calidad deben cumplirse
+    // Verificación estricta multiparámetro
     const hasReliableSignal = avgQuality >= this.MIN_QUALITY_THRESHOLD && 
                              goodQualityRatio >= this.MIN_QUALITY_RATIO;
     
-    // Validación de calidad de señal más estricta
+    // Validación estricta de calidad
     if (signalQuality !== undefined && (!hasReliableSignal || signalQuality < this.MIN_QUALITY_THRESHOLD)) {
-      this.validSampleCounter = Math.max(0, this.validSampleCounter - 1);
+      this.validSampleCounter = 0; // Reset completo ante baja calidad
       console.log("VitalSignsProcessor: Rejected low quality signal", { 
         quality: signalQuality, 
         avgQuality, 
@@ -87,38 +99,64 @@ export class VitalSignsProcessor {
       return this.getEmptyResult();
     }
     
-    // Validate input data - con validación más estricta y detallada
+    // Validación estricta del valor PPG
     if (isNaN(ppgValue) || !isFinite(ppgValue) || ppgValue < 0 || Math.abs(ppgValue) > 300) {
       console.warn("VitalSignsProcessor: Rejected invalid PPG value", { value: ppgValue });
       this.validSampleCounter = 0;
-      this.signalQualityHistory = []; // Resetear historial ante valor claramente inválido
+      this.signalQualityHistory = []; // Reset completo ante valor claramente inválido
+      this.amplitudeHistory = [];
       return this.getEmptyResult();
     }
     
-    // Detección de señal atípica (potencial falso positivo)
-    const isOutlier = this.signalQualityHistory.length > 3 && 
-                     Math.abs(ppgValue) > 3 * avgQuality;
-    
-    if (isOutlier) {
-      console.warn("VitalSignsProcessor: Rejected outlier PPG value", { 
-        value: ppgValue, 
-        avgQuality, 
-        ratio: Math.abs(ppgValue) / avgQuality 
-      });
-      return this.getEmptyResult();
+    // Análisis de ruido en la señal
+    this.noiseBuffer.push(ppgValue);
+    if (this.noiseBuffer.length > this.NOISE_BUFFER_SIZE) {
+      this.noiseBuffer.shift();
     }
     
-    // Validate RR data if provided con validaciones adicionales
+    if (this.noiseBuffer.length >= 10) {
+      const noiseLevel = this.calculateNoiseLevel(this.noiseBuffer);
+      if (noiseLevel > this.MAX_NOISE_RATIO) {
+        console.warn("VitalSignsProcessor: Excessive noise detected", { noiseLevel });
+        this.validSampleCounter = Math.max(0, this.validSampleCounter - 2);
+        return this.getEmptyResult();
+      }
+    }
+    
+    // Análisis de amplitud para detección de dedos reales
+    this.amplitudeHistory.push(Math.abs(ppgValue));
+    if (this.amplitudeHistory.length > this.AMPLITUDE_HISTORY_SIZE) {
+      this.amplitudeHistory.shift();
+    }
+    
+    if (this.amplitudeHistory.length >= 10) {
+      const amplitudeStats = this.calculateAmplitudeStats(this.amplitudeHistory);
+      
+      // Verificar si hay suficiente variación en amplitud (característica de pulso real)
+      if (amplitudeStats.max - amplitudeStats.min < this.MIN_AMPLITUDE_VARIATION || 
+          amplitudeStats.max < this.MIN_AMPLITUDE_THRESHOLD) {
+        console.warn("VitalSignsProcessor: Insufficient signal amplitude variation", { 
+          min: amplitudeStats.min,
+          max: amplitudeStats.max,
+          range: amplitudeStats.max - amplitudeStats.min,
+          threshold: this.MIN_AMPLITUDE_VARIATION
+        });
+        this.validSampleCounter = Math.max(0, this.validSampleCounter - 1);
+        return this.getEmptyResult();
+      }
+    }
+    
+    // Validación estricta de datos RR
     if (rrData) {
       const now = Date.now();
       
-      // Verificar que haya suficientes intervalos para análisis confiable
+      // Verificar que haya suficientes intervalos
       if (rrData.intervals.length < 8) {
         console.warn("VitalSignsProcessor: Insufficient RR intervals for reliable analysis");
         return this.getEmptyResult();
       }
       
-      // Verificar que los intervalos sean plausibles fisiológicamente
+      // Verificación fisiológica de intervalos
       const hasInvalidIntervals = rrData.intervals.some(interval => 
         isNaN(interval) || !isFinite(interval) || interval <= 300 || interval > 1800);
       
@@ -128,7 +166,7 @@ export class VitalSignsProcessor {
         return this.getEmptyResult();
       }
       
-      // Verificar tasa de latidos plausible con rangos más estrictos (40-180 BPM)
+      // Verificar tasa cardíaca plausible
       if (rrData.intervals.length > 0) {
         const averageRR = rrData.intervals.reduce((sum, val) => sum + val, 0) / rrData.intervals.length;
         const approximateBPM = 60000 / averageRR;
@@ -140,7 +178,7 @@ export class VitalSignsProcessor {
         }
       }
       
-      // Verificar la variabilidad de intervalos RR para detectar artefactos
+      // Verificar la variabilidad de intervalos para detectar artefactos
       if (rrData.intervals.length >= 3) {
         const variations = [];
         for (let i = 1; i < rrData.intervals.length; i++) {
@@ -150,24 +188,23 @@ export class VitalSignsProcessor {
         const maxVariation = Math.max(...variations);
         const avgVariation = variations.reduce((sum, v) => sum + v, 0) / variations.length;
         
-        // Detectar variaciones extremas indicativas de artefactos
+        // Detectar variaciones extremas
         if (maxVariation > 5 * avgVariation) {
           console.warn("VitalSignsProcessor: Rejected RR intervals with implausible variations");
           return this.getEmptyResult();
         }
       }
       
-      // Prevenir procesamiento durante el periodo refractario
+      // Periodo refractario para evitar procesamiento continuo
       if (now - this.lastValidTime < this.REFRACTORY_PERIOD_MS) {
-        // Aún no ha pasado suficiente tiempo desde la última muestra válida
         return this.getEmptyResult();
       }
     }
     
-    // Incrementar contador de muestras válidas
+    // Incrementar contador de muestras válidas solo con pruebas superadas
     this.validSampleCounter++;
     
-    // Exigir suficientes muestras válidas consecutivas antes de procesar
+    // Exigir más muestras válidas consecutivas
     if (this.validSampleCounter < this.CONSECUTIVE_VALID_SAMPLES) {
       console.log("VitalSignsProcessor: Building confidence", { 
         counter: this.validSampleCounter, 
@@ -182,38 +219,37 @@ export class VitalSignsProcessor {
     // Process with validated data only
     const result = this.processor.processSignal(ppgValue, rrData);
     
-    // Validación adicional de resultados
-    if (result && result.spo2 > 0) {
-      // Verificar resultados plausibles
-      if (result.spo2 > 100) {
-        result.spo2 = 100; // Limitar a valores fisiológicos
-      } else if (result.spo2 < 75) {
-        // SpO2 demasiado bajo podría ser un falso positivo
-        // Requerir mayor número de muestras para confirmar
-        if (this.validSampleCounter < this.CONSECUTIVE_VALID_SAMPLES * 2) {
-          result.spo2 = 0;
-          console.log("VitalSignsProcessor: Low SpO2 value requires additional validation");
-        }
-      }
-    }
-    
-    // Validar también otros valores
-    if (result && result.glucose > 0) {
-      // Valores de glucosa extremos requieren validación adicional
-      if (result.glucose < 50 || result.glucose > 300) {
-        if (this.validSampleCounter < this.CONSECUTIVE_VALID_SAMPLES * 3) {
-          result.glucose = 0;
-          console.log("VitalSignsProcessor: Extreme glucose value requires additional validation");
-        }
-      }
-    }
-    
     console.log("VitalSignsProcessor: Processed valid signal with quality", { 
       signalQuality, 
-      validSamples: this.validSampleCounter 
+      validSamples: this.validSampleCounter,
+      averageQuality: avgQuality,
+      goodQualityRatio
     });
     
     return result;
+  }
+  
+  /**
+   * Calcula estadísticas de amplitud de señal
+   */
+  private calculateAmplitudeStats(values: number[]): { min: number, max: number, avg: number } {
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+    
+    return { min, max, avg };
+  }
+  
+  /**
+   * Calcula el nivel de ruido como la relación entre desviación estándar y valor medio
+   */
+  private calculateNoiseLevel(values: number[]): number {
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Relación ruido/señal
+    return stdDev / (mean + 0.001); // Evitar división por cero
   }
   
   /**
@@ -224,6 +260,8 @@ export class VitalSignsProcessor {
     this.validSampleCounter = 0;
     this.lastValidTime = 0;
     this.signalQualityHistory = [];
+    this.amplitudeHistory = [];
+    this.noiseBuffer = [];
     return this.processor.reset();
   }
   
@@ -236,6 +274,8 @@ export class VitalSignsProcessor {
     this.validSampleCounter = 0;
     this.lastValidTime = 0;
     this.signalQualityHistory = [];
+    this.amplitudeHistory = [];
+    this.noiseBuffer = [];
     this.processor.fullReset();
   }
   
