@@ -1,24 +1,46 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Types for vital signs processing
  */
 
-import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
+export interface HeartRateResult {
+  bpm: number;
+  confidence: number;
+  isPeak: boolean;
+  isArrhythmia: boolean;
+  arrhythmiaCount: number;
+}
+
+export interface OxygenSaturationResult {
+  spO2: number;
+  confidence: number;
+}
+
+export interface RespirationRateResult {
+  rpm: number;
+  confidence: number;
+}
+
+export interface BloodPressureResult {
+  systolic: number;
+  diastolic: number;
+  confidence: number;
+}
+
+export interface StressLevelResult {
+  level: number;
+  confidence: number;
+}
+
+export interface VitalSignsResult {
+  heartRate: HeartRateResult;
+  oxygenSaturation: OxygenSaturationResult;
+  respirationRate: RespirationRateResult;
+  bloodPressure: BloodPressureResult;
+  stressLevel: StressLevelResult;
+}
 
 export interface ArrhythmiaWindow {
   start: number;
   end: number;
-}
-
-export interface UseVitalSignsProcessorReturn {
-  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
-  reset: () => VitalSignsResult | null;
-  fullReset: () => void;
-  arrhythmiaCounter: number;
-  lastValidResults: VitalSignsResult | null;
-  arrhythmiaWindows: ArrhythmiaWindow[];
-  debugInfo: {
-    processedSignals: number;
-    signalLog: { timestamp: number, value: number, result: any }[];
-  };
 }

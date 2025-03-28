@@ -14,14 +14,19 @@ export {
   shouldProcessMeasurement, 
   createWeakSignalResult,
   resetSignalQualityState,
-  isFingerDetected
+  isFingerDetected,
+  isFingerDetectedByPattern,
+  resetDetectionStates
 } from './signal-quality';
 
 export { 
-  handlePeakDetection 
+  handlePeakDetection,
+  shouldAdjustArrhythmiaDetection,
+  processArrhythmiaVisualization
 } from './peak-detection';
 
 export { 
   updateLastValidBpm, 
-  processLowConfidenceResult 
+  processLowConfidenceResult,
+  enhanceArrhythmiaDetection
 } from './result-processor';

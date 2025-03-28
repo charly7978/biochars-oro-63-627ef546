@@ -166,6 +166,12 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
       
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
+      
+      // Important: Make sure the HeartBeatProcessor knows about arrhythmia
+      if (processorRef.current && result.isArrhythmia) {
+        console.log("Arrhythmia detected! Ensuring processor is updated.");
+        processorRef.current.arrhythmiaCounter = (processorRef.current.arrhythmiaCounter || 0) + 1;
+      }
     }
 
     // Registro periódico para depuración

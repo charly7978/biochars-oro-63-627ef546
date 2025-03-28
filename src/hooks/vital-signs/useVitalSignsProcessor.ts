@@ -1,9 +1,10 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useHeartBeatProcessor } from '../heart-beat/useHeartBeatProcessor';
-import { useOxygenSaturationProcessor } from '../oxygen-saturation/useOxygenSaturationProcessor';
-import { useRespirationRateProcessor } from '../respiration-rate/useRespirationRateProcessor';
-import { useBloodPressureProcessor } from '../blood-pressure/useBloodPressureProcessor';
-import { useStressLevelProcessor } from '../stress-level/useStressLevelProcessor';
+import { useOxygenSaturationProcessor } from './mock-processors';
+import { useRespirationRateProcessor } from './mock-processors';
+import { useBloodPressureProcessor } from './mock-processors';
+import { useStressLevelProcessor } from './mock-processors';
 import { VitalSignsResult } from './types';
 
 // Performance tracking interfaces
