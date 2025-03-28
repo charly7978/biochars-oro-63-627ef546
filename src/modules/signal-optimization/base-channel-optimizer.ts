@@ -1,209 +1,172 @@
 
 /**
- * Optimizador base de canal
- * 
- * Clase base abstracta para todos los optimizadores de canal
+ * Optimizador base para todos los canales
  */
 
-import { OptimizedSignal, OptimizationParameters, VitalSignChannel, FeedbackData } from './types';
+import { ChannelOptimizer, OptimizedSignal, FeedbackData } from './types';
 import { ProcessedPPGSignal } from '../signal-processing/types';
 
 /**
- * Clase base para optimizadores de canal
+ * Parámetros configurables para el optimizador
  */
-export abstract class BaseChannelOptimizer {
-  protected channelName: VitalSignChannel;
-  protected parameters: OptimizationParameters;
-  protected lastOptimizedValue: number = 0;
+export interface OptimizerParameters {
+  amplification: number;
+  filterStrength: number;
+  sensitivity: number;
+  smoothing: number;
+  noiseThreshold: number;
+  dynamicRange: number;
+}
+
+/**
+ * Clase base para optimizadores de canal
+ * Proporciona funcionalidad común para todos los optimizadores
+ */
+export class BaseChannelOptimizer implements ChannelOptimizer {
+  protected channel: string;
+  protected parameters: OptimizerParameters;
   protected valueBuffer: number[] = [];
   protected _maxBufferSize: number = 60;
-  protected confidenceLevel: number = 0;
-  protected noiseEstimate: number = 0;
+  protected noiseEstimate: number = 0.1;
+  protected lastOptimizedValue: number = 0;
+  protected defaultParameters: OptimizerParameters;
   
-  constructor(channelName: VitalSignChannel, customParams?: Partial<OptimizationParameters>) {
-    this.channelName = channelName;
-    
-    // Parámetros por defecto
-    this.parameters = {
-      amplification: 1.0,
-      filterStrength: 0.5,
-      sensitivity: 1.0,
-      smoothing: 0.3,
-      noiseThreshold: 0.1,
-      dynamicRange: 1.0
-    };
-    
-    // Aplicar personalización
-    if (customParams) {
-      this.parameters = {
-        ...this.parameters,
-        ...customParams
-      };
-    }
+  constructor(channel: string, initialParameters: OptimizerParameters) {
+    this.channel = channel;
+    this.parameters = { ...initialParameters };
+    this.defaultParameters = { ...initialParameters };
   }
   
   /**
-   * Optimiza una señal PPG para el canal específico
+   * Optimiza una señal procesada para este canal específico
    */
-  public abstract optimize(signal: ProcessedPPGSignal): OptimizedSignal;
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Amplificar señal
+    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
+    
+    // Filtrar señal
+    const filtered = this.applyAdaptiveFiltering(amplified);
+    
+    // Actualizar buffer
+    this.valueBuffer.push(filtered);
+    if (this.valueBuffer.length > this._maxBufferSize) {
+      this.valueBuffer.shift();
+    }
+    
+    // Actualizar estimación de ruido
+    this.updateNoiseEstimate();
+    
+    // Calcular confianza
+    const confidence = this.calculateConfidence(signal);
+    
+    // Guardar valor optimizado para siguiente iteración
+    this.lastOptimizedValue = filtered;
+    
+    return {
+      channel: this.channel as any,
+      timestamp: signal.timestamp,
+      value: filtered,
+      rawValue: signal.rawValue,
+      amplified: amplified,
+      filtered: filtered,
+      confidence: confidence,
+      quality: signal.quality
+    };
+  }
   
   /**
-   * Procesa retroalimentación del calculador
-   */
-  public abstract processFeedback(feedback: FeedbackData): void;
-  
-  /**
-   * Aplica amplificación adaptativa basada en relación señal/ruido
+   * Aplica amplificación adaptativa a la señal
    */
   protected applyAdaptiveAmplification(value: number): number {
-    // Calcular factor de amplificación dinámico
-    const amplificationFactor = this.parameters.amplification * 
-      (1 + 0.5 * Math.max(0, 1 - this.noiseEstimate));
-    
-    // Aplicar amplificación
-    return value * amplificationFactor;
+    return value * this.parameters.amplification;
   }
   
   /**
-   * Aplica filtrado adaptativo basado en características de la señal
+   * Aplica filtrado adaptativo a la señal
    */
   protected applyAdaptiveFiltering(value: number): number {
-    // Añadir al buffer
-    this.addToBuffer(value);
-    
-    // Si el buffer es insuficiente, devolver valor original
+    // Si no hay suficientes valores en el buffer, devolver valor sin cambios
     if (this.valueBuffer.length < 3) {
       return value;
     }
     
-    // Calcular intensidad de filtro dinámica
-    const filterFactor = this.parameters.filterStrength * 
-      (1 + 0.3 * Math.min(1, this.noiseEstimate / 0.2));
+    // Filtrado exponencial
+    const alpha = 1 - this.parameters.filterStrength;
+    const previousValue = this.valueBuffer[this.valueBuffer.length - 1];
+    const filtered = value * alpha + previousValue * (1 - alpha);
     
-    // Aplicar filtro de media móvil ponderada
-    const weights = [0.2, 0.3, 0.5]; // Mayor peso a muestras recientes
-    let filteredValue = 0;
-    let weightSum = 0;
-    
-    // Tomar las últimas 3 muestras
-    const samples = this.valueBuffer.slice(-3);
-    
-    for (let i = 0; i < samples.length; i++) {
-      filteredValue += samples[i] * weights[i];
-      weightSum += weights[i];
-    }
-    
-    // Normalizar por suma de pesos
-    filteredValue /= weightSum;
-    
-    // Mezclar valor original y filtrado según intensidad
-    return value * (1 - filterFactor) + filteredValue * filterFactor;
+    return filtered;
   }
   
   /**
-   * Actualiza estimación de ruido
+   * Actualiza la estimación de ruido basada en valores recientes
    */
   protected updateNoiseEstimate(): void {
-    if (this.valueBuffer.length < 10) {
-      this.noiseEstimate = 0.3; // Valor por defecto con pocas muestras
-      return;
-    }
+    if (this.valueBuffer.length < 10) return;
     
-    // Usar últimas 10 muestras
-    const samples = this.valueBuffer.slice(-10);
+    // Tomar última ventana de valores
+    const window = this.valueBuffer.slice(-10);
     
-    // Calcular diferencias consecutivas
-    const diffs = [];
-    for (let i = 1; i < samples.length; i++) {
-      diffs.push(Math.abs(samples[i] - samples[i-1]));
-    }
+    // Calcular la media móvil
+    const mean = window.reduce((sum, val) => sum + val, 0) / window.length;
     
-    // Ordenar diferencias
-    diffs.sort((a, b) => a - b);
+    // Calcular desviación absoluta media
+    const mad = window.reduce((sum, val) => sum + Math.abs(val - mean), 0) / window.length;
     
-    // Usar mediana de diferencias como estimador de ruido
-    const medianIndex = Math.floor(diffs.length / 2);
-    const medianDiff = diffs[medianIndex];
-    
-    // Normalizar a [0,1]
-    this.noiseEstimate = Math.min(1, medianDiff / 0.3);
+    // Actualizar estimación de ruido con suavizado
+    this.noiseEstimate = this.noiseEstimate * 0.9 + mad * 0.1;
   }
   
   /**
-   * Añade un valor al buffer
-   */
-  protected addToBuffer(value: number): void {
-    this.valueBuffer.push(value);
-    
-    // Limitar tamaño de buffer
-    if (this.valueBuffer.length > this._maxBufferSize) {
-      this.valueBuffer.shift();
-    }
-  }
-  
-  /**
-   * Calcula confianza basada en calidad de señal
+   * Calcula nivel de confianza para la señal optimizada
    */
   protected calculateConfidence(signal: ProcessedPPGSignal): number {
-    // Factores de confianza
+    // Factores que determinan la confianza:
+    // 1. Calidad de la señal original
+    // 2. Nivel de ruido estimado
+    // 3. Estabilidad de la señal (ventana reciente)
     
-    // 1. Calidad de señal (de procesador)
-    const signalQualityFactor = signal.quality / 100;
+    // Factor de calidad
+    const qualityFactor = signal.quality / 100;
     
-    // 2. Detección de dedo
-    const fingerDetectionFactor = signal.fingerDetected ? 1.0 : 0.0;
+    // Factor de ruido (menor ruido = mayor confianza)
+    const noiseFactor = Math.max(0, 1 - this.noiseEstimate * 10);
     
-    // 3. Fuerza de señal
-    const signalStrengthFactor = signal.signalStrength / 100;
-    
-    // 4. Estabilidad de señal
-    const stabilityFactor = this.calculateStabilityFactor();
-    
-    // Combinación ponderada
-    return (signalQualityFactor * 0.3) + 
-           (fingerDetectionFactor * 0.4) + 
-           (signalStrengthFactor * 0.2) + 
-           (stabilityFactor * 0.1);
-  }
-  
-  /**
-   * Calcula factor de estabilidad
-   */
-  protected calculateStabilityFactor(): number {
-    if (this.valueBuffer.length < 10) {
-      return 0.5; // Valor por defecto con pocas muestras
+    // Factor de estabilidad (si hay suficientes muestras)
+    let stabilityFactor = 0.5;
+    if (this.valueBuffer.length > 10) {
+      const recentValues = this.valueBuffer.slice(-10);
+      const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+      const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
+      const cv = mean !== 0 ? Math.sqrt(variance) / Math.abs(mean) : 1;
+      stabilityFactor = Math.max(0, Math.min(1, 1 - cv));
     }
     
-    // Usar últimas 10 muestras
-    const samples = this.valueBuffer.slice(-10);
+    // Calcular confianza combinada
+    const confidence = (
+      qualityFactor * 0.4 + 
+      noiseFactor * 0.3 + 
+      stabilityFactor * 0.3
+    );
     
-    // Calcular desviación estándar
-    const mean = samples.reduce((sum, v) => sum + v, 0) / samples.length;
-    const variance = samples.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / samples.length;
-    const stdDev = Math.sqrt(variance);
-    
-    // Normalizar a [0,1] donde 1 es más estable
-    // Asumir que desviación de 0.3 o más es inestable
-    return Math.max(0, 1 - (stdDev / 0.3));
+    return Math.max(0, Math.min(1, confidence));
   }
   
   /**
-   * Resetea el optimizador
+   * Procesa retroalimentación del calculador
+   */
+  public processFeedback(feedback: FeedbackData): void {
+    // Implementación base - debe ser sobreescrita por clases hijas
+    console.log(`Feedback recibido en ${this.channel}:`, feedback);
+  }
+  
+  /**
+   * Reinicia el optimizador a valores por defecto
    */
   public reset(): void {
     this.valueBuffer = [];
+    this.parameters = { ...this.defaultParameters };
+    this.noiseEstimate = 0.1;
     this.lastOptimizedValue = 0;
-    this.confidenceLevel = 0;
-    this.noiseEstimate = 0;
-    
-    // Restaurar parámetros por defecto
-    this.parameters = {
-      amplification: 1.0,
-      filterStrength: 0.5,
-      sensitivity: 1.0,
-      smoothing: 0.3,
-      noiseThreshold: 0.1,
-      dynamicRange: 1.0
-    };
   }
 }

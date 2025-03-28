@@ -28,12 +28,18 @@ export class GlucoseOptimizer extends BaseChannelOptimizer {
   /**
    * Optimiza la señal para cálculo de glucosa
    */
-  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+  public override optimize(signal: ProcessedPPGSignal): OptimizedSignal {
     // Amplificar señal
     const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
     // Filtrar señal
     const filtered = this.applyAdaptiveFiltering(amplified);
+    
+    // Actualizar buffer
+    this.valueBuffer.push(filtered);
+    if (this.valueBuffer.length > this._maxBufferSize) {
+      this.valueBuffer.shift();
+    }
     
     // Aplicar filtrado adicional específico para glucosa
     const optimized = this.applyGlucoseSpecificProcessing(filtered);
@@ -43,6 +49,9 @@ export class GlucoseOptimizer extends BaseChannelOptimizer {
     
     // Calcular confianza
     const confidence = this.calculateConfidence(signal);
+    
+    // Guardar valor optimizado para siguiente iteración
+    this.lastOptimizedValue = optimized;
     
     // Limitar valor a rango [0,1]
     const normalizedValue = Math.max(0, Math.min(1, optimized));
@@ -82,16 +91,13 @@ export class GlucoseOptimizer extends BaseChannelOptimizer {
       correctedValue = avgValue + Math.sign(smoothed - avgValue) * maxDeviation;
     }
     
-    // Guardar valor para siguiente iteración
-    this.lastOptimizedValue = correctedValue;
-    
     return correctedValue;
   }
   
   /**
    * Procesa retroalimentación del calculador
    */
-  public processFeedback(feedback: FeedbackData): void {
+  public override processFeedback(feedback: FeedbackData): void {
     if (feedback.channel !== 'glucose') return;
     
     // Escala de ajuste según magnitud
@@ -120,7 +126,8 @@ export class GlucoseOptimizer extends BaseChannelOptimizer {
           const param = feedback.parameter as keyof typeof this.parameters;
           if (this.parameters[param] !== undefined) {
             // Aplicar pequeño ajuste en dirección positiva (asumiendo mejora)
-            this.parameters[param] = this.parameters[param] * (1 + adjustmentScale * 0.1);
+            const adjustFactor = adjustmentScale * 0.1;
+            this.parameters[param] = this.parameters[param] * (1 + adjustFactor);
           }
         }
         break;

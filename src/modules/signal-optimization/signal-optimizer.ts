@@ -24,8 +24,8 @@ import { TriglyceridesOptimizer } from './channels/triglycerides-optimizer';
  * Distribuye la señal PPG a varios optimizadores especializados
  */
 export class SignalOptimizer implements ISignalOptimizer {
-  private readonly channels: Map<VitalSignChannel, ChannelOptimizer>;
-  private lastOptimizedValues: Record<VitalSignChannel, OptimizedSignal | null>;
+  protected readonly channels: Map<VitalSignChannel, ChannelOptimizer>;
+  protected lastOptimizedValues: Record<VitalSignChannel, OptimizedSignal | null>;
   
   constructor() {
     // Inicializar canales
@@ -116,6 +116,3 @@ export class SignalOptimizer implements ISignalOptimizer {
 export function createOptimizer(): ISignalOptimizer {
   return new SignalOptimizer();
 }
-
-// Exportación explícita para uso en otros módulos
-export { SignalOptimizer };

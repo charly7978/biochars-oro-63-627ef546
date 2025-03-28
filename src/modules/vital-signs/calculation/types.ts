@@ -63,7 +63,3 @@ export interface FeedbackData {
   confidence?: number;
   additionalData?: any;
 }
-
-// Exportar explícitamente usando 'export type' para los tipos
-export type { VitalSignCalculation };
-export type { BaseCalculator as BaseVitalSignCalculator };

@@ -33,12 +33,18 @@ export class HeartRateOptimizer extends BaseChannelOptimizer {
   /**
    * Optimiza la señal para detección de frecuencia cardíaca
    */
-  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+  public override optimize(signal: ProcessedPPGSignal): OptimizedSignal {
     // Amplificar señal
-    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
+    const amplified = this.applyHeartRateAmplification(signal.filteredValue);
     
     // Filtrar señal
     const filtered = this.applyAdaptiveFiltering(amplified);
+    
+    // Actualizar buffer
+    this.valueBuffer.push(filtered);
+    if (this.valueBuffer.length > this._maxBufferSize) {
+      this.valueBuffer.shift();
+    }
     
     // Detectar picos para ritmo cardíaco
     const isPeak = this.detectPeak(filtered, signal.timestamp);
@@ -54,6 +60,9 @@ export class HeartRateOptimizer extends BaseChannelOptimizer {
     
     // Calcular confianza
     const confidence = this.calculateConfidence(signal);
+    
+    // Guardar valor optimizado para siguiente iteración
+    this.lastOptimizedValue = filtered;
     
     // Crear objeto optimizado
     return {
@@ -94,7 +103,7 @@ export class HeartRateOptimizer extends BaseChannelOptimizer {
   /**
    * Procesa retroalimentación del calculador
    */
-  public processFeedback(feedback: FeedbackData): void {
+  public override processFeedback(feedback: FeedbackData): void {
     if (feedback.channel !== 'heartRate') return;
     
     // Escala de ajuste según magnitud
@@ -141,7 +150,7 @@ export class HeartRateOptimizer extends BaseChannelOptimizer {
   /**
    * Amplifica la señal específicamente para frecuencia cardíaca
    */
-  private applyAdaptiveAmplification(value: number): number {
+  private applyHeartRateAmplification(value: number): number {
     // Implementar amplificación adaptativa basada en historia reciente
     const baseAmplification = this.parameters.amplification;
     
@@ -170,5 +179,12 @@ export class HeartRateOptimizer extends BaseChannelOptimizer {
     }
     
     return value * adaptiveFactor;
+  }
+
+  /**
+   * Sobrescribir método de la clase base para utilizar nuestra implementación específica
+   */
+  protected override applyAdaptiveAmplification(value: number): number {
+    return this.applyHeartRateAmplification(value);
   }
 }

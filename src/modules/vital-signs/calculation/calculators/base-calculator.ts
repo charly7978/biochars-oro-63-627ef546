@@ -57,6 +57,3 @@ export class BaseCalculator implements IBaseCalculator {
     return quality * 100;
   }
 }
-
-// Exportar la clase base para que otros módulos puedan utilizarla
-export { BaseCalculator as BaseVitalSignCalculator };
