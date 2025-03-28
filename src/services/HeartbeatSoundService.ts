@@ -1,4 +1,3 @@
-
 /**
  * HeartbeatSoundService.ts
  * Servicio dedicado para manejar el audio del latido cardíaco,
@@ -92,8 +91,9 @@ class HeartbeatSoundService {
   
   /**
    * Reproduce un beep de prueba audible para inicializar y probar el audio
+   * Ahora es público para permitir su uso desde otros módulos
    */
-  private async playTestBeep(volume = 0.1): Promise<void> {
+  public async playTestBeep(volume = 0.1): Promise<void> {
     if (!this.audioContext) {
       console.error("HeartbeatSoundService: No audio context for test beep");
       return;
