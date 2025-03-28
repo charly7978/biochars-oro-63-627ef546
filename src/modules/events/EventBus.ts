@@ -1,140 +1,147 @@
 
 /**
- * Bus de Eventos Centralizado para comunicación entre módulos
- * Implementa un patrón publicación-suscripción para permitir retroalimentación bidireccional
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
-type EventCallback<T = any> = (data: T) => void;
+/**
+ * Bus de Eventos
+ * Sistema de comunicación entre módulos mediante eventos
+ */
+
+import { useEffect } from 'react';
 
 export enum EventType {
   // Eventos de cámara
-  CAMERA_READY = 'camera:ready',
+  CAMERA_FRAME_READY = 'camera:frame_ready',
+  CAMERA_STARTED = 'camera:started',
+  CAMERA_STOPPED = 'camera:stopped',
   CAMERA_ERROR = 'camera:error',
-  CAMERA_FRAME = 'camera:frame',
   
   // Eventos de extracción de señal
-  SIGNAL_EXTRACTED = 'signal:extracted',
-  PPG_SIGNAL_EXTRACTED = 'signal:ppg',
-  COMBINED_SIGNAL_DATA = 'signal:combined',
-  SIGNAL_QUALITY_CHANGED = 'signal:quality',
-  FINGER_DETECTED = 'signal:finger',
-  FINGER_LOST = 'signal:finger-lost',
-  FINGER_DETECTION_RESULT = 'signal:finger-result',
-  
-  // Eventos de latido cardíaco
-  HEARTBEAT_DATA = 'heart:data',
-  HEARTBEAT_DETECTED = 'heart:beat',
-  HEARTBEAT_RATE_CHANGED = 'heart:rate',
+  HEARTBEAT_DATA = 'extraction:heartbeat_data',
+  PPG_SIGNAL_EXTRACTED = 'extraction:ppg_signal',
+  COMBINED_SIGNAL_DATA = 'extraction:combined_signal',
   
   // Eventos de procesamiento
-  PROCESSED_HEARTBEAT = 'process:heartbeat',
-  PROCESSED_PPG = 'process:ppg',
+  PROCESSED_HEARTBEAT = 'processing:heartbeat',
+  PROCESSED_PPG = 'processing:ppg',
+  HEARTBEAT_PEAK_DETECTED = 'processing:peak_detected',
+  FINGER_DETECTED = 'processing:finger_detected',
+  FINGER_LOST = 'processing:finger_lost',
+  FINGER_DETECTION_CHANGED = 'processing:finger_detection_changed',
+  SIGNAL_QUALITY_CHANGED = 'processing:signal_quality_changed',
+  SIGNAL_EXTRACTED = 'processing:signal_extracted',
   
   // Eventos de optimización
-  OPTIMIZED_HEART_RATE = 'optimize:heart-rate',
-  OPTIMIZED_SPO2 = 'optimize:spo2',
-  OPTIMIZED_BLOOD_PRESSURE = 'optimize:blood-pressure',
-  OPTIMIZED_GLUCOSE = 'optimize:glucose',
-  OPTIMIZED_LIPIDS = 'optimize:lipids',
-  OPTIMIZED_ARRHYTHMIA = 'optimize:arrhythmia',
+  OPTIMIZED_HEART_RATE = 'optimization:heart_rate',
+  OPTIMIZED_SPO2 = 'optimization:spo2',
+  OPTIMIZED_BLOOD_PRESSURE = 'optimization:blood_pressure',
+  OPTIMIZED_GLUCOSE = 'optimization:glucose',
+  OPTIMIZED_LIPIDS = 'optimization:lipids',
+  OPTIMIZED_ARRHYTHMIA = 'optimization:arrhythmia',
   
-  // Eventos de signos vitales
-  VITAL_SIGNS_UPDATED = 'vitals:updated',
-  VITAL_SIGNS_FINAL = 'vitals:final',
-  ARRHYTHMIA_DETECTED = 'vitals:arrhythmia',
+  // Eventos de resultados
+  VITAL_SIGNS_UPDATED = 'results:vital_signs_updated',
+  HEARTBEAT_RATE_CHANGED = 'results:heartbeat_rate_changed',
+  ARRHYTHMIA_DETECTED = 'results:arrhythmia_detected',
+  ARRHYTHMIA_STATUS_CHANGED = 'results:arrhythmia_status_changed',
   
-  // Eventos de estado de monitorización
-  MONITORING_STARTED = 'monitor:start',
-  MONITORING_STOPPED = 'monitor:stop',
-  MONITORING_RESET = 'monitor:reset',
-  
-  // Eventos de retroalimentación de procesamiento
-  PROCESSOR_FEEDBACK = 'process:feedback',
-  OPTIMIZATION_APPLIED = 'process:optimized',
-  
-  // Eventos de error
-  ERROR_OCCURRED = 'error:occurred'
+  // Eventos de control
+  MONITORING_STARTED = 'control:monitoring_started',
+  MONITORING_STOPPED = 'control:monitoring_stopped',
+  MONITORING_RESET = 'control:monitoring_reset'
 }
 
-class EventBus {
-  private listeners: Map<EventType, Set<EventCallback>> = new Map();
+type EventHandler = (data: any) => void;
+
+class EventBusClass {
+  private handlers: Map<EventType, EventHandler[]> = new Map();
   
   /**
    * Suscribirse a un evento
    */
-  subscribe<T = any>(event: EventType, callback: EventCallback<T>): () => void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+  subscribe(eventType: EventType, handler: EventHandler): void {
+    if (!this.handlers.has(eventType)) {
+      this.handlers.set(eventType, []);
     }
     
-    this.listeners.get(event)!.add(callback);
-    
-    // Devolver función de cancelación de suscripción
-    return () => {
-      const callbacks = this.listeners.get(event);
-      if (callbacks) {
-        callbacks.delete(callback);
-        if (callbacks.size === 0) {
-          this.listeners.delete(event);
-        }
-      }
-    };
+    const handlers = this.handlers.get(eventType);
+    if (handlers) {
+      handlers.push(handler);
+    }
   }
   
   /**
-   * Publicar un evento con datos
+   * Cancelar suscripción a un evento
    */
-  publish<T = any>(event: EventType, data: T): void {
-    const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      callbacks.forEach(callback => {
+  unsubscribe(eventType: EventType, handler: EventHandler): void {
+    const handlers = this.handlers.get(eventType);
+    
+    if (handlers) {
+      const index = handlers.indexOf(handler);
+      if (index !== -1) {
+        handlers.splice(index, 1);
+      }
+    }
+  }
+  
+  /**
+   * Publicar un evento
+   */
+  publish(eventType: EventType, data: any): void {
+    const handlers = this.handlers.get(eventType);
+    
+    if (handlers) {
+      // Ejecutar cada manejador con los datos proporcionados
+      handlers.forEach(handler => {
         try {
-          callback(data);
+          handler(data);
         } catch (error) {
-          console.error(`Error en manejador de evento para ${event}:`, error);
+          console.error(`Error en manejador para evento ${eventType}:`, error);
         }
       });
     }
   }
   
   /**
-   * Limpiar todos los oyentes para un evento
+   * Limpiar todas las suscripciones
    */
-  clear(event?: EventType): void {
-    if (event) {
-      this.listeners.delete(event);
-    } else {
-      this.listeners.clear();
-    }
+  clear(): void {
+    this.handlers.clear();
   }
 }
 
-// Instancia singleton
-export const eventBus = new EventBus();
+// Instancia singleton global
+export const eventBus = new EventBusClass();
 
-// Hooks auxiliares para componentes React
-import { useEffect } from 'react';
-
-export function useEventSubscription<T = any>(
-  event: EventType,
-  callback: EventCallback<T>
-): void {
+/**
+ * Hook para suscribirse a eventos del bus en componentes React
+ */
+export const useEventSubscription = (
+  eventType: EventType,
+  handler: EventHandler
+): void => {
   useEffect(() => {
-    const unsubscribe = eventBus.subscribe(event, callback);
-    return unsubscribe;
-  }, [event, callback]);
-}
-
-export function useMultiEventSubscription(
-  subscriptions: { event: EventType; callback: EventCallback }[]
-): void {
-  useEffect(() => {
-    const unsubscribers = subscriptions.map(({ event, callback }) => 
-      eventBus.subscribe(event, callback)
-    );
+    // Suscribirse al evento
+    eventBus.subscribe(eventType, handler);
     
+    // Cancelar suscripción al desmontar
     return () => {
-      unsubscribers.forEach(unsubscribe => unsubscribe());
+      eventBus.unsubscribe(eventType, handler);
     };
-  }, [subscriptions]);
-}
+  }, [eventType, handler]);
+};
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
