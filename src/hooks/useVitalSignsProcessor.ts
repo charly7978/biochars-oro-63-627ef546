@@ -20,7 +20,7 @@ import { heartBeatExtractor } from '../modules/extraction/HeartBeatExtractor';
 import { ppgSignalExtractor } from '../modules/extraction/PPGSignalExtractor';
 import { combinedSignalProvider } from '../modules/extraction/CombinedSignalProvider';
 import { signalProcessor } from '../modules/processing/SignalProcessor';
-import { signalOptimizer } from '../modules/optimization/SignalOptimizer';
+import { SignalOptimizer, signalOptimizer } from '../modules/optimization/SignalOptimizer';
 import { vitalSignsCalculator } from '../modules/results/VitalSignsCalculator';
 import { updateSignalLog } from '../utils/signalLogUtils';
 

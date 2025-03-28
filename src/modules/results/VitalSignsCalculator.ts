@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -14,14 +13,7 @@
  */
 
 import { EventType, eventBus } from '../events/EventBus';
-import { 
-  OptimizedHeartRate, 
-  OptimizedSPO2, 
-  OptimizedBloodPressure,
-  OptimizedGlucose,
-  OptimizedLipids,
-  OptimizedArrhythmia
-} from '../optimization/SignalOptimizer';
+import { VitalSignsResult } from '../types/signal';
 
 export interface ArrhythmiaData {
   timestamp: number;
