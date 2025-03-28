@@ -1,3 +1,4 @@
+
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -14,13 +15,13 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { EventType, eventBus, useEventSubscription } from '../modules/events/EventBus';
-import { VitalSignsResult } from '../modules/results/VitalSignsCalculator';
+import { VitalSignsResult } from '../modules/types/signal';
 import { cameraFrameReader } from '../modules/camera/CameraFrameReader';
 import { heartBeatExtractor } from '../modules/extraction/HeartBeatExtractor';
 import { ppgSignalExtractor } from '../modules/extraction/PPGSignalExtractor';
 import { combinedSignalProvider } from '../modules/extraction/CombinedSignalProvider';
 import { signalProcessor } from '../modules/processing/SignalProcessor';
-import { SignalOptimizer, signalOptimizer } from '../modules/optimization/SignalOptimizer';
+import { signalOptimizer } from '../modules/optimization/SignalOptimizer';
 import { vitalSignsCalculator } from '../modules/results/VitalSignsCalculator';
 import { updateSignalLog } from '../utils/signalLogUtils';
 
@@ -68,7 +69,6 @@ export const useVitalSignsProcessor = () => {
       combinedSignalProvider.stop();
       signalProcessor.stopProcessing();
       signalOptimizer.stop();
-      vitalSignsCalculator.stopCalculating();
       
       console.log("useVitalSignsProcessor: Hook destruido", {
         sessionId: sessionId.current,
@@ -85,7 +85,11 @@ export const useVitalSignsProcessor = () => {
     
     // Actualizar ventanas de arritmia si hay datos
     if (result.arrhythmiaData?.windows) {
-      setArrhythmiaWindows(result.arrhythmiaData.windows);
+      const formattedWindows = result.arrhythmiaData.windows.map(window => ({
+        start: window[0],
+        end: window[1]
+      }));
+      setArrhythmiaWindows(formattedWindows as any);
     }
     
     // Actualizar log
@@ -122,9 +126,12 @@ export const useVitalSignsProcessor = () => {
     
     // Retornar último resultado válido o valores por defecto
     return lastValidResults || {
+      timestamp: Date.now(),
+      heartRate: 0,
       spo2: 0,
       pressure: "--/--",
-      arrhythmiaStatus: "--"
+      arrhythmiaStatus: "--",
+      reliability: 0
     };
   }, [lastValidResults]);
 
@@ -150,9 +157,6 @@ export const useVitalSignsProcessor = () => {
       // Iniciar optimización
       signalOptimizer.start();
       
-      // Iniciar cálculos
-      vitalSignsCalculator.startCalculating();
-      
       // Comenzar lectura de frames
       cameraFrameReader.startFrameReading();
       
@@ -169,7 +173,6 @@ export const useVitalSignsProcessor = () => {
    */
   const stopProcessing = useCallback(() => {
     // Detener en orden inverso
-    vitalSignsCalculator.stopCalculating();
     signalOptimizer.stop();
     signalProcessor.stopProcessing();
     combinedSignalProvider.stop();
@@ -188,7 +191,7 @@ export const useVitalSignsProcessor = () => {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.bloodPressure.display
+          presión: lastValidResults.pressure
         } : null
       },
       timestamp: new Date().toISOString()
@@ -196,9 +199,7 @@ export const useVitalSignsProcessor = () => {
     
     // Reiniciar procesadores pero no resultados
     signalProcessor.reset();
-    // Quitamos la referencia a resetFilters que no existe
-    signalOptimizer.stop();
-    signalOptimizer.start();
+    signalOptimizer.reset();
     setArrhythmiaWindows([]);
     
     console.log("Reseteo suave completado - manteniendo resultados");
@@ -213,7 +214,7 @@ export const useVitalSignsProcessor = () => {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.bloodPressure.display
+          presión: lastValidResults.pressure
         } : null,
         señalesProcesadas: processedSignals.current
       },
