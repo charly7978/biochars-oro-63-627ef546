@@ -64,11 +64,13 @@ export class ModelRegistry {
     if (specificId) {
       const model = this.models.get(specificId);
       if (model) {
+        console.log(`Reiniciando modelo específico: ${specificId}`);
         this.models.set(specificId, new (Object.getPrototypeOf(model).constructor)());
         this.modelInitialized.set(specificId, false);
       }
     } else {
       // Reiniciar todos los modelos
+      console.log('Reiniciando todos los modelos');
       const modelIds = Array.from(this.models.keys());
       for (const id of modelIds) {
         const model = this.models.get(id);
