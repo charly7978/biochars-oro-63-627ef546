@@ -31,7 +31,8 @@ const PPGSignalMeter = memo(({
   onReset,
   arrhythmiaStatus,
   preserveResults = false,
-  isArrhythmia = false
+  isArrhythmia = false,
+  rawArrhythmiaData
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -138,7 +139,11 @@ const PPGSignalMeter = memo(({
       
       lastArrhythmiaTimeRef.current = now;
       
-      console.log('PPGSignalMeter: Nueva arritmia detectada en', new Date(now).toISOString());
+      console.log('PPGSignalMeter: Nueva arritmia detectada en', new Date(now).toISOString(), {
+        isArrhythmia,
+        currentState: arrhythmiaTransitionRef.current,
+        segments: arrhythmiaSegmentsRef.current.length
+      });
     } 
     else if (!isArrhythmia && arrhythmiaTransitionRef.current.active) {
       arrhythmiaTransitionRef.current = {
@@ -154,7 +159,11 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      console.log('PPGSignalMeter: Fin de arritmia en', new Date(now).toISOString());
+      console.log('PPGSignalMeter: Fin de arritmia en', new Date(now).toISOString(), {
+        isArrhythmia,
+        currentState: arrhythmiaTransitionRef.current,
+        segments: arrhythmiaSegmentsRef.current.length
+      });
     }
     
     arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(
@@ -338,12 +347,26 @@ const PPGSignalMeter = memo(({
       Math.abs(pointTime - peak.time) < ARRHYTHMIA_DURATION_MS
     );
     
-    if (isNearArrhythmicPeak) return true;
+    if (isNearArrhythmicPeak) {
+      return true;
+    }
     
-    return arrhythmiaSegmentsRef.current.some(segment => {
+    const isInArrhythmiaSegment = arrhythmiaSegmentsRef.current.some(segment => {
       const endTime = segment.endTime || now;
       return pointTime >= segment.startTime && pointTime <= endTime;
     });
+    
+    if (isInArrhythmiaSegment && Math.random() < 0.05) {
+      console.log('PPGSignalMeter: Punto en ventana de arritmia', {
+        pointTime: new Date(pointTime).toISOString(),
+        segments: arrhythmiaSegmentsRef.current.map(s => ({
+          start: new Date(s.startTime).toISOString(),
+          end: s.endTime ? new Date(s.endTime).toISOString() : 'null'
+        }))
+      });
+    }
+    
+    return isInArrhythmiaSegment;
   }, []);
 
   const renderSignal = useCallback(() => {
@@ -405,6 +428,13 @@ const PPGSignalMeter = memo(({
     const scaledValue = normalizedValue * verticalScale;
     
     const pointIsArrhythmia = isPointInArrhythmiaWindow(now, now);
+    
+    console.log('PPGSignalMeter: Estado de arritmia actual', {
+      isArrhythmia: isArrhythmia,
+      pointIsArrhythmia: pointIsArrhythmia,
+      hasActiveSegments: arrhythmiaSegmentsRef.current.length > 0,
+      timestamp: new Date(now).toISOString()
+    });
     
     const dataPoint: PPGDataPointExtended = {
       time: now,

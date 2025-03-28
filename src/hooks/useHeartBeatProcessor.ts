@@ -19,11 +19,13 @@ export const useHeartBeatProcessor = () => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
+  const [isArrhythmia, setIsArrhythmia] = useState<boolean>(false);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const lastPeakTimeRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const MIN_BEEP_INTERVAL_MS = 300; // Minimum time between beeps
   const lastRRIntervalsRef = useRef<number[]>([]);
+  const arrhythmiaCounterRef = useRef<number>(0);
   
   useEffect(() => {
     console.log('useHeartBeatProcessor: Creando nueva instancia de HeartBeatProcessor', {
@@ -88,6 +90,7 @@ export const useHeartBeatProcessor = () => {
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
+        isArrhythmia: false,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -103,6 +106,26 @@ export const useHeartBeatProcessor = () => {
       lastRRIntervalsRef.current = [...rrData.intervals];
     }
 
+    // Determinar si es un latido arrítmico
+    let beatIsArrhythmic = false;
+    
+    if (rrData && rrData.intervals.length >= 5) {
+      const recentIntervals = rrData.intervals.slice(-5);
+      const avgRR = recentIntervals.reduce((a, b) => a + b, 0) / recentIntervals.length;
+      const lastRR = recentIntervals[recentIntervals.length - 1];
+      
+      // Un latido es arrítmico si varía más del 30% del promedio
+      const variation = Math.abs(lastRR - avgRR) / avgRR;
+      beatIsArrhythmic = variation > 0.3 || lastRR < 0.7 * avgRR || lastRR > 1.3 * avgRR;
+      
+      // Actualizar estado de arritmia
+      setIsArrhythmia(beatIsArrhythmic);
+      
+      if (beatIsArrhythmic && result.isPeak) {
+        arrhythmiaCounterRef.current++;
+      }
+    }
+
     if (result.isPeak && 
         (!lastPeakTimeRef.current || 
          now - lastPeakTimeRef.current >= MIN_BEEP_INTERVAL_MS)) {
@@ -116,7 +139,8 @@ export const useHeartBeatProcessor = () => {
         bpm: currentBPM,
         confidence: result.confidence,
         isPeak: false,
-        arrhythmiaCount: 0,
+        arrhythmiaCount: arrhythmiaCounterRef.current,
+        isArrhythmia: beatIsArrhythmic,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -131,6 +155,8 @@ export const useHeartBeatProcessor = () => {
 
     return {
       ...result,
+      arrhythmiaCount: arrhythmiaCounterRef.current,
+      isArrhythmia: beatIsArrhythmic,
       rrData
     };
   }, [currentBPM, confidence, playBeepSound]);
@@ -156,15 +182,18 @@ export const useHeartBeatProcessor = () => {
     
     setCurrentBPM(0);
     setConfidence(0);
+    setIsArrhythmia(false);
     lastPeakTimeRef.current = null;
     lastBeepTimeRef.current = 0;
     lastRRIntervalsRef.current = [];
+    arrhythmiaCounterRef.current = 0;
   }, [currentBPM, confidence]);
 
   return {
     currentBPM,
     confidence,
     processSignal,
-    reset
+    reset,
+    isArrhythmia
   };
 };
