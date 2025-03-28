@@ -34,18 +34,23 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       session: sessionId.current
     });
 
-    // Always reset to zero when stopping or not measuring
     if (!isMeasuring) {
-      console.log('useVitalMeasurement - Reiniciando mediciones a cero', {
+      console.log('useVitalMeasurement - Reiniciando mediciones por detención', {
         prevValues: {...measurements},
         timestamp: new Date().toISOString()
       });
       
-      setMeasurements({
-        heartRate: 0,
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaCount: "--"
+      setMeasurements(prev => {
+        const newValues = {
+          ...prev,
+          heartRate: 0,
+          spo2: 0,
+          pressure: "--/--",
+          arrhythmiaCount: "--"
+        };
+        
+        console.log('useVitalMeasurement - Nuevos valores tras reinicio', newValues);
+        return newValues;
       });
       
       setElapsedTime(0);
@@ -54,16 +59,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     }
 
     const startTime = Date.now();
-    console.log('useVitalMeasurement - Iniciando medición desde cero', {
-      startTime: new Date(startTime).toISOString()
-    });
-    
-    // Reset measurements to zero at start
-    setMeasurements({
-      heartRate: 0,
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaCount: 0
+    console.log('useVitalMeasurement - Iniciando medición', {
+      startTime: new Date(startTime).toISOString(),
+      prevValues: {...measurements}
     });
     
     const MEASUREMENT_DURATION = 30000;
@@ -78,22 +76,22 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      // Use direct method to get BPM with no adjustments
-      const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
-      const bpm = Math.round(rawBPM);
+      const bpm = processor.getFinalBPM() || 0;
       const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
       
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
         processorType: processor ? typeof processor : 'undefined',
         processorMethods: processor ? Object.getOwnPropertyNames(processor.__proto__) : [],
-        rawBPM,
         bpm,
         arrhythmias,
+        rawBPM: processor.getFinalBPM(),
+        confidence: processor.getConfidence ? processor.getConfidence() : 'N/A',
+        arritmiaWindows: processor.getArrhythmiaWindows ? processor.getArrhythmiaWindows() : [],
         timestamp: new Date().toISOString()
       });
 
-      // Check for arrhythmia windows
+      // Verificamos si hay ventanas de arritmia disponibles
       if (processor.getArrhythmiaWindows && typeof processor.getArrhythmiaWindows === 'function') {
         const windows = processor.getArrhythmiaWindows();
         if (windows && Array.isArray(windows) && windows.length > 0) {
@@ -101,12 +99,31 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         }
       }
 
-      // Update measurements directly without preserving previous values
-      setMeasurements({
-        heartRate: bpm,
-        spo2: 0, // These will be updated by the VitalSignsProcessor
-        pressure: "--/--",
-        arrhythmiaCount: arrhythmias
+      setMeasurements(prev => {
+        if (prev.heartRate === bpm && prev.arrhythmiaCount === arrhythmias) {
+          console.log('useVitalMeasurement - Valores sin cambios, no se actualiza', {
+            currentBPM: prev.heartRate,
+            currentArrhythmias: prev.arrhythmiaCount,
+            timestamp: new Date().toISOString()
+          });
+          return prev;
+        }
+        
+        const newValues = {
+          ...prev,
+          heartRate: bpm,
+          arrhythmiaCount: arrhythmias
+        };
+        
+        console.log('useVitalMeasurement - Actualizando valores', {
+          prevBPM: prev.heartRate,
+          newBPM: bpm,
+          prevArrhythmias: prev.arrhythmiaCount,
+          newArrhythmias: arrhythmias,
+          timestamp: new Date().toISOString()
+        });
+        
+        return newValues;
       });
     };
 

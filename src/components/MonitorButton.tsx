@@ -1,7 +1,4 @@
-
 import React from 'react';
-import { cn } from '@/lib/utils';
-import { Button } from './ui/button';
 
 interface MonitorButtonProps {
   isMonitoring: boolean;
@@ -9,31 +6,18 @@ interface MonitorButtonProps {
   variant?: "monitor" | "reset";
 }
 
-const MonitorButton: React.FC<MonitorButtonProps> = ({ 
-  isMonitoring, 
-  onToggle, 
-  variant = "monitor" 
-}) => {
-  const baseClass = "w-full animation-smooth";
-  
-  // Get the button variant accepted by shadcn/ui Button component
-  const getButtonVariant = () => {
-    if (variant === "reset") return "secondary";
-    return isMonitoring ? "destructive" : "default"; // Using 'default' instead of 'primary'
-  };
-  
+const MonitorButton: React.FC<MonitorButtonProps> = ({ isMonitoring, onToggle, variant = "monitor" }) => {
+  // Para "monitor": azul menos vivo; para "reset": gris
+  const baseClass = "px-4 py-2 rounded transition-colors duration-300 w-full text-white";
+  const classes =
+    variant === "monitor"
+      ? `${baseClass} ${isMonitoring ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'}`
+      : `${baseClass} bg-gray-500 hover:bg-gray-600`;
+      
   return (
-    <Button 
-      onClick={onToggle} 
-      variant={getButtonVariant()}
-      className={cn(
-        baseClass,
-        isMonitoring && variant === "monitor" && "bg-[var(--medical-danger-direct)] hover:bg-[var(--medical-danger-direct)]/90",
-        !isMonitoring && variant === "monitor" && "bg-[var(--medical-info-direct)] hover:bg-[var(--medical-info-direct)]/90"
-      )}
-    >
+    <button onClick={onToggle} className={classes}>
       {variant === "monitor" ? (isMonitoring ? 'Detener' : 'Iniciar') : 'Reset'}
-    </Button>
+    </button>
   );
 };
 
