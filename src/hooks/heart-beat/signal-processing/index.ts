@@ -24,3 +24,8 @@ export {
   updateLastValidBpm, 
   processLowConfidenceResult 
 } from './result-processor';
+
+// Export extractors for direct access
+export * from '../../modules/extraction/HeartbeatExtractor';
+export * from '../../modules/extraction/PPGSignalExtractor';
+export * from '../../modules/extraction/CombinedExtractor';
