@@ -36,8 +36,35 @@ export function normalizeValue(value: number, min: number, max: number): number 
 
 /**
  * Calcula el índice de perfusión basado en componentes AC y DC
+ * IMPORTANTE: Mejorado para ser más preciso y reducir falsos positivos
  */
 export function calculatePerfusionIndex(ac: number, dc: number): number {
   if (dc === 0) return 0;
-  return ac / dc;
+  
+  // Devolvemos un valor normalizado para evitar falsos positivos
+  return Math.min(0.95, Math.max(0, ac / dc));
+}
+
+/**
+ * Función para determinar si un latido debe considerarse arrítmico 
+ * basado en sus características
+ */
+export function isArrhythmicBeat(
+  currentRR: number, 
+  avgRR: number, 
+  consecutiveAbnormalCount: number,
+  threshold: number = 0.35
+): boolean {
+  // Solo consideramos arrítmicos los latidos que son muy diferentes del promedio
+  // o si hay una secuencia consistente de anormalidades
+  const variation = Math.abs(currentRR - avgRR) / avgRR;
+  
+  // Un latido es arrítmico si:
+  // 1. Es mucho más corto que el promedio (prematuro)
+  // 2. Es mucho más largo que el promedio (bloqueado)
+  // 3. La variación es extremadamente alta
+  return (currentRR < 0.70 * avgRR) || 
+         (currentRR > 1.35 * avgRR) || 
+         (variation > threshold) || 
+         (consecutiveAbnormalCount >= 3 && variation > 0.25);
 }

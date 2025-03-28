@@ -1,22 +1,25 @@
+
 /**
  * Advanced Arrhythmia Processor based on peer-reviewed cardiac research
  */
 export class ArrhythmiaProcessor {
   // Configuration based on Harvard Medical School research on HRV
   // MODIFICADO: Ajustamos parámetros para reducir drásticamente la sensibilidad
-  private readonly RR_WINDOW_SIZE = 10; // Manteniedo ventana grande para mejor poder estadístico
-  private readonly RMSSD_THRESHOLD = 80; // Aumentado de 60 a 80 (mucho menos sensible)
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 10000; // Extendido de 8000 a 10000ms para mejor calibración
-  private readonly SD1_THRESHOLD = 60; // Aumentado de 45 a 60 (mucho menos sensible)
-  private readonly PERFUSION_INDEX_MIN = 0.5; // Aumentado de 0.35 a 0.5 (requiere mucho mejor señal)
+  private readonly RR_WINDOW_SIZE = 10;
+  // CAMBIO CRÍTICO: Aumentamos mucho más los umbrales para que las arritmias sean raras
+  private readonly RMSSD_THRESHOLD = 90; // Aumentado a 90 (mucho menos sensible)
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 10000;
+  private readonly SD1_THRESHOLD = 65; // Aumentado a 65 (mucho menos sensible)
+  private readonly PERFUSION_INDEX_MIN = 0.6; // Aumentado a 0.6 (requiere mejor señal)
   
   // Advanced detection parameters from Mayo Clinic research
-  private readonly PNNX_THRESHOLD = 0.5; // Aumentado de 0.35 a 0.5 (mucho menos sensible)
-  private readonly SHANNON_ENTROPY_THRESHOLD = 2.5; // Aumentado de 2.0 a 2.5
-  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.8; // Aumentado de 1.6 a 1.8
+  private readonly PNNX_THRESHOLD = 0.65; // Aumentado a 0.65 (mucho menos sensible)
+  private readonly SHANNON_ENTROPY_THRESHOLD = 2.7; // Aumentado a 2.7
+  private readonly SAMPLE_ENTROPY_THRESHOLD = 1.9; // Aumentado a 1.9
   
   // Minimum time between arrhythmias to reduce false positives
-  private readonly MIN_ARRHYTHMIA_INTERVAL = 5000; // Aumentado de 3000 a 5000ms
+  // CAMBIO CRÍTICO: Exigimos mucho más tiempo entre arritmias
+  private readonly MIN_ARRHYTHMIA_INTERVAL = 6000; // Aumentado a 6000ms (6 segundos)
 
   // State variables
   private rrIntervals: number[] = [];
@@ -36,9 +39,9 @@ export class ArrhythmiaProcessor {
   private sampleEntropy: number = 0;
   private pnnX: number = 0;
   
-  // Aumentamos el contador de confirmaciones consecutivas
+  // CAMBIO CRÍTICO: Aumentamos aún más el contador de confirmaciones
   private consecutiveDetections: number = 0;
-  private readonly CONFIRMATION_THRESHOLD = 5; // Aumentado de 3 a 5 para exigir más confirmaciones
+  private readonly CONFIRMATION_THRESHOLD = 7; // Aumentado a 7 para exigir más confirmaciones
 
   /**
    * Processes heart beat data to detect arrhythmias using advanced HRV analysis
@@ -114,15 +117,15 @@ export class ArrhythmiaProcessor {
     
     for (let i = 1; i < recentRR.length; i++) {
       const diff = recentRR[i] - recentRR[i-1];
-      // Only count intervals within physiological limits - más estrictos
-      if (recentRR[i] >= 600 && recentRR[i] <= 1200) { // Rango más estrecho (antes 500-1500)
+      // CAMBIO CRÍTICO: Rango fisiológico aún más estricto
+      if (recentRR[i] >= 650 && recentRR[i] <= 1100) { // Rango más estrecho
         sumSquaredDiff += diff * diff;
         validIntervals++;
       }
     }
     
-    // Require at least 90% valid intervals (antes 80%)
-    if (validIntervals < this.RR_WINDOW_SIZE * 0.9) {
+    // CAMBIO CRÍTICO: Exigimos más intervalos válidos
+    if (validIntervals < this.RR_WINDOW_SIZE * 0.92) { // Aumentado a 92%
       this.consecutiveDetections = 0; // Reset counter on poor quality data
       return;
     }
@@ -130,8 +133,9 @@ export class ArrhythmiaProcessor {
     const rmssd = Math.sqrt(sumSquaredDiff / validIntervals);
     
     // Calculate mean RR and standard deviation with outlier rejection
-    const validRRs = recentRR.filter(rr => rr >= 600 && rr <= 1200); // Rango más estrecho
-    if (validRRs.length < this.RR_WINDOW_SIZE * 0.9) { // Aumentado de 0.8 a 0.9
+    // CAMBIO CRÍTICO: Filtrado de outliers aún más estricto
+    const validRRs = recentRR.filter(rr => rr >= 650 && rr <= 1100);
+    if (validRRs.length < this.RR_WINDOW_SIZE * 0.92) { // Aumentado a 92%
       this.consecutiveDetections = 0; // Reset counter on poor quality data
       return;
     }
@@ -145,6 +149,7 @@ export class ArrhythmiaProcessor {
     );
     
     const coefficientOfVariation = rrStandardDeviation / avgRR;
+    // CAMBIO CRÍTICO: Cálculo de variación más diferenciado
     const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
     
     // Advanced non-linear dynamics metrics with stricter thresholds
@@ -153,23 +158,23 @@ export class ArrhythmiaProcessor {
     this.lastRMSSD = rmssd;
     this.lastRRVariation = rrVariation;
     
-    // Multi-parametric decision algorithm with much more conservative thresholds
+    // CAMBIO CRÍTICO: Algoritmo de decisión multi-paramétrico con umbral mucho más alto
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const arrhythmiaDetected = 
       timeSinceLastArrhythmia >= this.MIN_ARRHYTHMIA_INTERVAL && (
-        // Primary condition: requires multiple criteria to be met - MUCHO más estricto
+        // Condición principal: requiere que MÚLTIPLES criterios se cumplan y sean muy extremos
         (rmssd > this.RMSSD_THRESHOLD && 
-         rrVariation > 0.4 && // Aumentado de 0.32 a 0.4 
-         coefficientOfVariation > 0.25) || // Aumentado de 0.18 a 0.25
+         rrVariation > 0.45 && // Aumentado a 0.45 (45% de variación) 
+         coefficientOfVariation > 0.3) || // Aumentado a 0.3
         
-        // Secondary condition: requires very strong signal quality - MUCHO más estricto
+        // Condición secundaria: requiere calidad de señal excepcional
         (this.shannonEntropy > this.SHANNON_ENTROPY_THRESHOLD && 
          this.pnnX > this.PNNX_THRESHOLD && 
-         coefficientOfVariation > 0.35) || // Aumentado de 0.25 a 0.35
+         coefficientOfVariation > 0.4) || // Aumentado a 0.4
         
-        // Extreme variation condition: requires multiple confirmations - MUCHO más estricto
-        (rrVariation > 0.5 && // Aumentado de 0.4 a 0.5
-         coefficientOfVariation > 0.4 && // Aumentado de 0.28 a 0.4
+        // Condición de variación extrema: requiere múltiples confirmaciones
+        (rrVariation > 0.55 && // Aumentado a 0.55 (55% de variación) 
+         coefficientOfVariation > 0.45 && // Aumentado a 0.45
          this.sampleEntropy > this.SAMPLE_ENTROPY_THRESHOLD)
       );
 
@@ -177,11 +182,14 @@ export class ArrhythmiaProcessor {
     if (arrhythmiaDetected) {
       this.consecutiveDetections++;
     } else {
-      this.consecutiveDetections = 0;
+      // CAMBIO CRÍTICO: Hacemos que sea más difícil acumular detecciones
+      this.consecutiveDetections = Math.max(0, this.consecutiveDetections - 1);
     }
     
-    // Solo consideramos una arritmia real si hay muchas más detecciones consecutivas
-    const newArrhythmiaState = arrhythmiaDetected && (this.consecutiveDetections >= this.CONFIRMATION_THRESHOLD);
+    // CAMBIO CRÍTICO: Solo consideramos una arritmia real si hay muchas más detecciones
+    // consecutivas y consistentes
+    const newArrhythmiaState = arrhythmiaDetected && 
+                              (this.consecutiveDetections >= this.CONFIRMATION_THRESHOLD);
 
     // If it's a new arrhythmia and enough time has passed since the last one
     if (newArrhythmiaState && 
@@ -203,7 +211,9 @@ export class ArrhythmiaProcessor {
         timestamp: currentTime
       });
       
-      this.consecutiveDetections = 0; // Resetear después de confirmar una arritmia
+      // CAMBIO CRÍTICO: Reiniciamos el contador más agresivamente para hacer las
+      // arritmias más infrecuentes
+      this.consecutiveDetections = 0;
     }
 
     this.arrhythmiaDetected = newArrhythmiaState;

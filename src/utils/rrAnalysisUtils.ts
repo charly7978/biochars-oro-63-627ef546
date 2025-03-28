@@ -35,6 +35,9 @@ export function analyzeRRIntervals(
   // Calculamos información básica sobre los intervalos RR
   const avgRR = lastIntervals.reduce((a, b) => a + b, 0) / lastIntervals.length;
   const lastRR = lastIntervals[lastIntervals.length - 1];
+  
+  // CAMBIO CRÍTICO: Hacemos la condición mucho más estricta para que un latido se considere arrítmico
+  // Antes la variación era demasiado pequeña y marcaba casi todo como arritmia
   const rrVariation = Math.abs(lastRR - avgRR) / avgRR;
   
   // Calculate RMSSD (Root Mean Square of Successive Differences)
@@ -50,10 +53,10 @@ export function analyzeRRIntervals(
     lastIntervals.length
   );
   
-  // Detección de latido prematuro: 
-  // Un latido es prematuro si es significativamente más corto que el promedio
-  // O si hay una variación abrupta en el ritmo
-  const isPremature = (lastRR < 0.85 * avgRR) || (rrVariation > 0.15);
+  // CAMBIO CRÍTICO: Hacemos la detección mucho más restrictiva
+  // Un latido es prematuro solo si es significativamente diferente del promedio
+  // Aumentamos muchísimo el umbral para que solo detecte arritmias cuando realmente hay un cambio grande
+  const isPremature = (lastRR < 0.70 * avgRR) || (lastRR > 1.35 * avgRR) || (rrVariation > 0.35);
   
   // Determine if this should increase the counter
   const shouldIncrementCounter = 
