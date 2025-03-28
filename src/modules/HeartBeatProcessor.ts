@@ -1,3 +1,4 @@
+
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -27,6 +28,9 @@ export class HeartBeatProcessor {
   // Banderas para sincronización forzada
   FORCE_IMMEDIATE_BEEP = true; // Nueva bandera para forzar beeps inmediatos
   SKIP_TIMING_VALIDATION = true; // Omitir validaciones que puedan retrasar beeps
+  
+  // Variable para controlar el estado de monitoreo
+  private isMonitoring = false;
 
   signalBuffer = [];
   medianBuffer = [];
@@ -54,6 +58,30 @@ export class HeartBeatProcessor {
     this.startTime = Date.now();
   }
 
+  /**
+   * Establece el estado de monitoreo del procesador
+   * @param monitoring Verdadero para activar el monitoreo, falso para desactivarlo
+   */
+  setMonitoring(monitoring: boolean): void {
+    this.isMonitoring = monitoring;
+    console.log(`HeartBeatProcessor: Monitoring set to ${monitoring}`);
+    
+    // Si se activa el monitoreo, asegurarse que el audio esté iniciado
+    if (monitoring && this.audioContext && this.audioContext.state !== 'running') {
+      this.audioContext.resume().catch(err => {
+        console.error("HeartBeatProcessor: Error resuming audio context", err);
+      });
+    }
+  }
+
+  /**
+   * Obtiene el estado actual de monitoreo
+   * @returns Verdadero si el monitoreo está activo
+   */
+  isMonitoringActive(): boolean {
+    return this.isMonitoring;
+  }
+
   async initAudio() {
     try {
       // Inicializa o recupera el contexto de audio con baja latencia
@@ -75,6 +103,9 @@ export class HeartBeatProcessor {
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
+    // Si no está en modo de monitoreo, no reproducir beeps
+    if (!this.isMonitoring) return false;
+    
     // Si estamos en el período de calentamiento, no reproducir beeps
     if (this.isInWarmup()) return false;
     
@@ -192,6 +223,17 @@ export class HeartBeatProcessor {
     filteredValue: number;
     arrhythmiaCount: number;
   } {
+    // Si no está en modo de monitoreo, retornar valores por defecto
+    if (!this.isMonitoring) {
+      return {
+        bpm: 0,
+        confidence: 0,
+        isPeak: false,
+        filteredValue: 0,
+        arrhythmiaCount: 0
+      };
+    }
+    
     // Iniciar temporizador si es la primera vez
     if (this.startTime === 0) {
       this.startTime = Date.now();
