@@ -67,7 +67,7 @@ export class ArrhythmiaCalculator {
       
       console.log(`ARRITMIA DETECTADA #${this.arrhythmiaCount} - RMSSD: ${rmssd.toFixed(2)}, severidad: ${severity}`);
       
-      const arrhythmiaStatus = `Arritmia|${this.arrhythmiaCount}`;
+      const arrhythmiaStatus = `ARRITMIA DETECTADA|${this.arrhythmiaCount}`;
       const arrhythmiaData = {
         timestamp: currentTime,
         rmssd: rmssd,
@@ -82,7 +82,7 @@ export class ArrhythmiaCalculator {
       };
       
       // Dispatch an event for the PPG graph
-      const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
+      const arrhythmiaEvent = new CustomEvent('external-arrhythmia-detected', {
         detail: { 
           start: windowStart, 
           end: windowEnd, 
@@ -92,6 +92,12 @@ export class ArrhythmiaCalculator {
         }
       });
       document.dispatchEvent(arrhythmiaEvent);
+      
+      // Force redraw
+      setTimeout(() => {
+        const refreshEvent = new CustomEvent('refresh-ppg-visualization');
+        document.dispatchEvent(refreshEvent);
+      }, 100);
       
       return {
         status: arrhythmiaStatus,

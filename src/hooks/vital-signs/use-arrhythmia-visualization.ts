@@ -52,6 +52,18 @@ export const useArrhythmiaVisualization = () => {
     });
     document.dispatchEvent(arrhythmiaEvent);
     
+    // Also dispatch the external event to ensure redundant pickup
+    const externalEvent = new CustomEvent('external-arrhythmia-detected', {
+      detail: { 
+        start, 
+        end, 
+        timestamp: Date.now(),
+        severity,
+        type
+      }
+    });
+    document.dispatchEvent(externalEvent);
+    
     // Force the PPGSignalMeter to redraw by dispatching another event
     setTimeout(() => {
       const refreshEvent = new CustomEvent('refresh-ppg-visualization');

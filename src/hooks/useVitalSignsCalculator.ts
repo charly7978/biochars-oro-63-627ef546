@@ -102,6 +102,12 @@ export const useVitalSignsCalculator = () => {
           }
         });
         document.dispatchEvent(arrhythmiaEvent);
+        
+        // Dispatch a refresh event to ensure visualization gets updated
+        setTimeout(() => {
+          const refreshEvent = new CustomEvent('refresh-ppg-visualization');
+          document.dispatchEvent(refreshEvent);
+        }, 100);
       }
       
       console.log("VitalSignsCalculator: Cálculo realizado con éxito", { 

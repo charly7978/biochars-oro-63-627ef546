@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -92,6 +93,18 @@ export class ArrhythmiaProcessor {
         }
       });
       document.dispatchEvent(arrhythmiaEvent);
+      
+      // Also dispatch a more specific event to ensure PPGSignalMeter catches it
+      const externalArrhythmiaEvent = new CustomEvent('external-arrhythmia-detected', {
+        detail: {
+          timestamp: currentTime,
+          start: lastArrhythmiaData.visualWindow.start,
+          end: lastArrhythmiaData.visualWindow.end,
+          severity: lastArrhythmiaData.severity,
+          type: lastArrhythmiaData.type
+        }
+      });
+      document.dispatchEvent(externalArrhythmiaEvent);
     }
     
     return {
