@@ -1,6 +1,7 @@
+
 /**
- * Lipid Processor
- * Simulates lipid profile estimation
+ * Procesador de Lípidos
+ * Simula estimación del perfil lipídico basado en signos vitales
  */
 export class LipidProcessor {
   private readonly CHOLESTEROL_BASELINE = 170;
@@ -11,14 +12,14 @@ export class LipidProcessor {
   private readonly BUFFER_SIZE = 5;
 
   /**
-   * Estimate lipid profile from vital signs
-   * Note: This is a simulation - real lipid profile cannot be accurately measured from PPG alone
+   * Estimar perfil lipídico a partir de signos vitales
+   * Nota: Esta es una simulación - el perfil lipídico real no puede medirse con precisión solo desde PPG
    */
   public estimateLipids(spo2: number, heartRate: number, ppgValues: number[]): {
     totalCholesterol: number;
     triglycerides: number;
   } {
-    // If we don't have valid inputs, return baseline values
+    // Si no tenemos entradas válidas, devolver valores base
     if (spo2 === 0 || heartRate === 0 || ppgValues.length < 30) {
       return {
         totalCholesterol: this.CHOLESTEROL_BASELINE,
@@ -26,13 +27,13 @@ export class LipidProcessor {
       };
     }
 
-    // Calculate signal features
+    // Calcular características de la señal
     const max = Math.max(...ppgValues);
     const min = Math.min(...ppgValues);
     const amplitude = max - min;
     const mean = ppgValues.reduce((a, b) => a + b, 0) / ppgValues.length;
     
-    // Calculate signal variation
+    // Calcular variación de la señal
     let squaredDiffs = 0;
     for (const val of ppgValues) {
       squaredDiffs += Math.pow(val - mean, 2);
@@ -40,31 +41,31 @@ export class LipidProcessor {
     const variance = squaredDiffs / ppgValues.length;
     const stdDev = Math.sqrt(variance);
     
-    // Simulate lipid profile variations based on input parameters
+    // Simular variaciones del perfil lipídico basadas en parámetros de entrada
     
-    // Higher heart rate might correlate with metabolic activity
+    // Frecuencia cardíaca más alta podría correlacionarse con actividad metabólica
     const hrFactor = Math.max(-15, Math.min(15, (heartRate - 70) * 0.5));
     
-    // Lower SpO2 can indicate metabolic issues
+    // SpO2 más bajo puede indicar problemas metabólicos
     const spo2Factor = Math.max(-10, Math.min(10, (98 - spo2) * 1.5));
     
-    // Signal features can indicate vascular health
+    // Características de la señal pueden indicar salud vascular
     const varFactor = Math.max(-10, Math.min(10, (stdDev - 0.1) * 80));
     const ampFactor = Math.max(-10, Math.min(10, (amplitude - 0.5) * 40));
     
-    // Calculate raw estimates
+    // Calcular estimaciones crudas
     const rawCholesterol = this.CHOLESTEROL_BASELINE + hrFactor + spo2Factor + varFactor;
     const rawTriglycerides = this.TRIGLYCERIDES_BASELINE + hrFactor + spo2Factor + ampFactor;
     
-    // Add randomness to simulate natural variations
-    const cholNoise = Math.random() * 10 - 5; // -5 to +5
-    const trigNoise = Math.random() * 8 - 4;  // -4 to +4
+    // Añadir aleatoriedad para simular variaciones naturales
+    const cholNoise = Math.random() * 10 - 5; // -5 a +5
+    const trigNoise = Math.random() * 8 - 4;  // -4 a +4
     
-    // Apply constraints to keep values in realistic ranges
+    // Aplicar restricciones para mantener valores en rangos realistas
     const cholEstimate = Math.max(140, Math.min(240, rawCholesterol + cholNoise));
     const trigEstimate = Math.max(80, Math.min(200, rawTriglycerides + trigNoise));
     
-    // Smooth with previous estimates
+    // Suavizar con estimaciones previas
     this.lastCholesterolEstimates.push(cholEstimate);
     this.lastTriglyceridesEstimates.push(trigEstimate);
     
@@ -73,7 +74,7 @@ export class LipidProcessor {
       this.lastTriglyceridesEstimates.shift();
     }
     
-    // Average the recent estimates
+    // Promediar las estimaciones recientes
     const smoothedCholesterol = 
       this.lastCholesterolEstimates.reduce((a, b) => a + b, 0) / 
       this.lastCholesterolEstimates.length;
@@ -89,7 +90,7 @@ export class LipidProcessor {
   }
   
   /**
-   * Reset the processor
+   * Reiniciar el procesador
    */
   public reset(): void {
     this.lastCholesterolEstimates = [];

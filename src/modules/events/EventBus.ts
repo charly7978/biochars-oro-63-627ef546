@@ -1,42 +1,58 @@
 
 /**
- * Centralized Event Bus for inter-module communication
- * Implements a publish-subscribe pattern to enable bidirectional feedback
+ * Bus de Eventos Centralizado para comunicación entre módulos
+ * Implementa un patrón publicación-suscripción para permitir retroalimentación bidireccional
  */
 
 type EventCallback<T = any> = (data: T) => void;
 
 export enum EventType {
-  // Camera events
+  // Eventos de cámara
   CAMERA_READY = 'camera:ready',
   CAMERA_ERROR = 'camera:error',
   CAMERA_FRAME = 'camera:frame',
   
-  // Signal extraction events
+  // Eventos de extracción de señal
   SIGNAL_EXTRACTED = 'signal:extracted',
+  PPG_SIGNAL_EXTRACTED = 'signal:ppg',
+  COMBINED_SIGNAL_DATA = 'signal:combined',
   SIGNAL_QUALITY_CHANGED = 'signal:quality',
   FINGER_DETECTED = 'signal:finger',
   FINGER_LOST = 'signal:finger-lost',
+  FINGER_DETECTION_RESULT = 'signal:finger-result',
   
-  // Heart beat events
+  // Eventos de latido cardíaco
+  HEARTBEAT_DATA = 'heart:data',
   HEARTBEAT_DETECTED = 'heart:beat',
   HEARTBEAT_RATE_CHANGED = 'heart:rate',
   
-  // Vital signs events
+  // Eventos de procesamiento
+  PROCESSED_HEARTBEAT = 'process:heartbeat',
+  PROCESSED_PPG = 'process:ppg',
+  
+  // Eventos de optimización
+  OPTIMIZED_HEART_RATE = 'optimize:heart-rate',
+  OPTIMIZED_SPO2 = 'optimize:spo2',
+  OPTIMIZED_BLOOD_PRESSURE = 'optimize:blood-pressure',
+  OPTIMIZED_GLUCOSE = 'optimize:glucose',
+  OPTIMIZED_LIPIDS = 'optimize:lipids',
+  OPTIMIZED_ARRHYTHMIA = 'optimize:arrhythmia',
+  
+  // Eventos de signos vitales
   VITAL_SIGNS_UPDATED = 'vitals:updated',
   VITAL_SIGNS_FINAL = 'vitals:final',
   ARRHYTHMIA_DETECTED = 'vitals:arrhythmia',
   
-  // Monitoring state events
+  // Eventos de estado de monitorización
   MONITORING_STARTED = 'monitor:start',
   MONITORING_STOPPED = 'monitor:stop',
   MONITORING_RESET = 'monitor:reset',
   
-  // Processing feedback events
+  // Eventos de retroalimentación de procesamiento
   PROCESSOR_FEEDBACK = 'process:feedback',
   OPTIMIZATION_APPLIED = 'process:optimized',
   
-  // Error events
+  // Eventos de error
   ERROR_OCCURRED = 'error:occurred'
 }
 
@@ -44,7 +60,7 @@ class EventBus {
   private listeners: Map<EventType, Set<EventCallback>> = new Map();
   
   /**
-   * Subscribe to an event
+   * Suscribirse a un evento
    */
   subscribe<T = any>(event: EventType, callback: EventCallback<T>): () => void {
     if (!this.listeners.has(event)) {
@@ -53,7 +69,7 @@ class EventBus {
     
     this.listeners.get(event)!.add(callback);
     
-    // Return unsubscribe function
+    // Devolver función de cancelación de suscripción
     return () => {
       const callbacks = this.listeners.get(event);
       if (callbacks) {
@@ -66,7 +82,7 @@ class EventBus {
   }
   
   /**
-   * Publish an event with data
+   * Publicar un evento con datos
    */
   publish<T = any>(event: EventType, data: T): void {
     const callbacks = this.listeners.get(event);
@@ -75,14 +91,14 @@ class EventBus {
         try {
           callback(data);
         } catch (error) {
-          console.error(`Error in event handler for ${event}:`, error);
+          console.error(`Error en manejador de evento para ${event}:`, error);
         }
       });
     }
   }
   
   /**
-   * Clear all listeners for an event
+   * Limpiar todos los oyentes para un evento
    */
   clear(event?: EventType): void {
     if (event) {
@@ -93,10 +109,10 @@ class EventBus {
   }
 }
 
-// Singleton instance
+// Instancia singleton
 export const eventBus = new EventBus();
 
-// Helper hooks for React components
+// Hooks auxiliares para componentes React
 import { useEffect } from 'react';
 
 export function useEventSubscription<T = any>(

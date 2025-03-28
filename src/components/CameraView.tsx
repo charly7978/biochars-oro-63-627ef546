@@ -1,12 +1,11 @@
 
 /**
- * Camera View Component
- * Displays the camera feed and finger detection status
+ * Componente de Vista de Cámara
+ * Muestra el feed de la cámara y el estado de detección de dedo
  */
 
 import React, { useRef, useEffect } from 'react';
 import { Fingerprint } from 'lucide-react';
-import { useVitalSigns } from '@/context/VitalSignsContext';
 
 interface CameraViewProps {
   onStreamReady: (stream: MediaStream) => void;
@@ -29,12 +28,12 @@ const CameraView: React.FC<CameraViewProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   
   /**
-   * Start camera with optimal settings for PPG
+   * Iniciar cámara con configuración óptima para PPG
    */
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("getUserMedia is not supported");
+        throw new Error("getUserMedia no está soportado");
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
@@ -85,7 +84,7 @@ const CameraView: React.FC<CameraViewProps> = ({
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
         } catch (err) {
-          console.log("Could not apply some optimizations:", err);
+          console.log("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
@@ -101,12 +100,12 @@ const CameraView: React.FC<CameraViewProps> = ({
         onStreamReady(newStream);
       }
     } catch (err) {
-      console.error("Error starting camera:", err);
+      console.error("Error al iniciar la cámara:", err);
     }
   };
 
   /**
-   * Stop all camera tracks and clean up
+   * Detener todas las pistas de la cámara y limpiar
    */
   const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {
@@ -118,7 +117,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   };
 
-  // Start/stop camera based on isMonitoring prop
+  // Iniciar/detener cámara según prop isMonitoring
   useEffect(() => {
     if (isMonitoring) {
       startCamera();
@@ -130,7 +129,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     };
   }, [isMonitoring]);
 
-  // Calculate button position styles
+  // Calcular estilos de posición del botón
   const getFingerButtonStyle = () => {
     const defaultStyle = "absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center";
     
@@ -138,7 +137,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       return defaultStyle;
     }
     
-    // If custom position is provided, use it instead of default styling
+    // Si se proporciona posición personalizada, usarla en lugar del estilo predeterminado
     let customStyle = "absolute z-20 flex flex-col items-center";
     
     if (buttonPosition.x !== undefined) {
@@ -184,7 +183,7 @@ const CameraView: React.FC<CameraViewProps> = ({
           <span className={`text-xs mt-2 transition-colors duration-300 ${
             isFingerDetected ? 'text-green-500' : 'text-gray-400'
           }`}>
-            {isFingerDetected ? "finger detected" : "place your finger on the lens"}
+            {isFingerDetected ? "dedo detectado" : "ubique su dedo en el lente"}
           </span>
         </div>
       )}
