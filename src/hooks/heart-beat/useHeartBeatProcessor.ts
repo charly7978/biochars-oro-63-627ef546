@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -125,7 +126,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       confidence, 
       processorRef.current, 
       requestBeep, 
-      isMonitoringRef.current, 
+      isMonitoringRef.current,  // <-- Changed from isMonitoringRef to isMonitoringRef.current
       lastRRIntervalsRef.current,
       currentBeatIsArrhythmiaRef.current
     );
