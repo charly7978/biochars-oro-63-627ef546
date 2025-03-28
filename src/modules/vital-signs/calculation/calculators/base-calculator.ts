@@ -1,4 +1,3 @@
-
 /**
  * Calculador base para signos vitales
  * 
@@ -12,12 +11,13 @@ export abstract class BaseCalculator implements VitalSignCalculator {
   protected readonly channel: VitalSignChannel;
   protected lastCalculation: VitalSignCalculation | null = null;
   protected valueBuffer: number[] = [];
-  protected readonly MAX_BUFFER_SIZE = 60;
+  protected _maxBufferSize: number = 60;
   protected confidenceThreshold = 0.4;
   protected suggestedParameters: Record<string, number> = {};
   
-  constructor(channel: VitalSignChannel) {
+  constructor(channel: VitalSignChannel, maxBufferSize: number = 60) {
     this.channel = channel;
+    this._maxBufferSize = maxBufferSize;
   }
   
   /**
@@ -38,9 +38,7 @@ export abstract class BaseCalculator implements VitalSignCalculator {
     
     // Añadir valor al buffer
     this.valueBuffer.push(signal.optimizedValue);
-    if (this.valueBuffer.length > this.MAX_BUFFER_SIZE) {
-      this.valueBuffer.shift();
-    }
+    this.maintainBufferSize();
     
     // Realizar cálculo específico
     const result = this.performCalculation(signal);
@@ -137,5 +135,11 @@ export abstract class BaseCalculator implements VitalSignCalculator {
     
     // Combinar factores
     return (rangeQuality * 0.6) + (stabilityQuality * 0.4);
+  }
+  
+  protected maintainBufferSize() {
+    if (this.valueBuffer.length > this._maxBufferSize) {
+      this.valueBuffer.shift();
+    }
   }
 }

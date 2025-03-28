@@ -1,4 +1,3 @@
-
 /**
  * Calculador especializado para presión arterial
  */
@@ -13,9 +12,7 @@ export class BloodPressureCalculator extends BaseCalculator {
   private waveformSlope: number = 0;
   
   constructor() {
-    super('bloodPressure');
-    // Mayor tamaño de buffer para análisis de forma de onda
-    this.MAX_BUFFER_SIZE = 120;
+    super('bloodPressure', 45); // Customize buffer size if needed
   }
   
   /**

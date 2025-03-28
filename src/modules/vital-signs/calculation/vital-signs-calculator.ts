@@ -1,4 +1,3 @@
-
 /**
  * Calculador central de signos vitales
  * 
@@ -121,17 +120,14 @@ class VitalSignsCalculatorImpl implements VitalSignsCalculatorManager {
     }
     
     // Procesar arritmias con datos de frecuencia cardíaca
-    if (signals.heartRate && result.heartRate.value) {
-      // Extraer metadata de picos cardíacos si existe
-      const peakMetadata = signals.heartRate.metadata || {};
-      const rrIntervals = peakMetadata.rrIntervals as number[] || [];
+    const heartRateSignal = signals.heartRate;
+    if (heartRateSignal && heartRateSignal.metadata) {
+      const rrIntervals = heartRateSignal.metadata.rrIntervals || [];
       
-      // Calcular estado de arritmia
       const arrhythmiaResult = this.arrhythmiaCalculator.processRRIntervals(rrIntervals);
       result.arrhythmia = arrhythmiaResult;
       
-      // Actualizar datos de visualización
-      this.updateVisualizationData(signals.heartRate, arrhythmiaResult);
+      this.updateVisualizationData(heartRateSignal, arrhythmiaResult);
     }
     
     return result;
