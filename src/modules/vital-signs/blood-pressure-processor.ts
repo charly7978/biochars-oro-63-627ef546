@@ -8,7 +8,7 @@
  * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
-import { calculateVariance } from '../utils/MathUtils';
+import { calculateVariance } from './utils';
 
 export class BloodPressureProcessor {
   private systolicBuffer: number[] = [];

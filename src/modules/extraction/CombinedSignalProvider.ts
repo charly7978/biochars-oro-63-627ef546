@@ -1,5 +1,14 @@
 
 /**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
+
+/**
  * Proveedor de Señal Combinada
  * Integra y combina señales de latidos y PPG para proveer una señal balanceada
  */
@@ -74,29 +83,26 @@ export class CombinedSignalProvider {
     
     // Solo combinar si tenemos ambos tipos de datos
     if (this.lastHeartbeatData && this.lastPPGData) {
-      // Detectar presencia de dedo y calidad de señal (básico en esta etapa)
+      // Detectar presencia de dedo y calidad de señal (no procesar, solo extraer)
       const ppgRecent = this.lastPPGData.rawValues;
       const hasEnoughData = ppgRecent.length >= 10;
       
-      // Cálculo básico de presencia de dedo
+      // Cálculo simple de presencia de dedo (sin procesar)
       let fingerDetected = false;
       let signalQuality = 0;
       
       if (hasEnoughData) {
         const recentAvg = ppgRecent.slice(-10).reduce((a, b) => a + b, 0) / 10;
-        const minThreshold = 0.1; // Umbral mínimo para detección de dedo
+        const minThreshold = 0.12;
         
-        // Detección básica basada en amplitud
+        // Detección básica
         fingerDetected = recentAvg > minThreshold;
         
         // Calidad básica
         if (fingerDetected) {
           const recentMax = Math.max(...ppgRecent.slice(-10));
           const recentMin = Math.min(...ppgRecent.slice(-10));
-          const amplitude = recentMax - recentMin;
-          
-          // Calidad basada en amplitud de señal
-          signalQuality = Math.min(100, Math.max(0, amplitude * 200));
+          signalQuality = Math.min(100, Math.max(0, ((recentMax - recentMin) * 300)));
         }
       }
       
@@ -114,12 +120,6 @@ export class CombinedSignalProvider {
       
       // Publicar datos combinados
       eventBus.publish(EventType.COMBINED_SIGNAL_DATA, combinedData);
-      
-      // También informar sobre detección de dedo
-      eventBus.publish(
-        fingerDetected ? EventType.FINGER_DETECTED : EventType.FINGER_LOST,
-        { quality: signalQuality, timestamp: combinedData.timestamp }
-      );
     }
     
     // Programar próxima combinación
@@ -133,6 +133,15 @@ export class CombinedSignalProvider {
     return this.lastCombinedData;
   }
 }
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
 
 // Exportar instancia singleton
 export const combinedSignalProvider = new CombinedSignalProvider();

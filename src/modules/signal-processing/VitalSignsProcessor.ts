@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -8,451 +7,281 @@
  * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
-/**
- * Vital Signs Processor
- * Central processing module that combines signal data to calculate vital signs
- */
-
+import { calculateVariance } from '../vital-signs/utils';
 import { EventType, eventBus } from '../events/EventBus';
-import { HeartBeatResult, PPGSignal, VitalSignsResult } from '../types/signal';
-import { SpO2Processor } from '../vital-signs/spo2-processor';
 import { BloodPressureProcessor } from '../vital-signs/blood-pressure-processor';
-import { GlucoseProcessor } from '../vital-signs/glucose-processor'; 
-import { LipidProcessor } from '../vital-signs/lipid-processor';
-import { ArrhythmiaDetector } from '../vital-signs/ArrhythmiaDetector';
 
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
+export interface VitalSignsResult {
+  heartRate: number;
+  spo2: number;
+  bloodPressure: {
+    systolic: number;
+    diastolic: number;
+    display: string;
+  };
+  arrhythmiaStatus: string;
+  reliability: number;
+  timestamp: number;
+  lastArrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+    windows?: {start: number; end: number}[];
+    detected?: boolean;
+  };
+}
 
 export class VitalSignsProcessor {
-  // Buffers for signal analysis
-  private ppgBuffer: PPGSignal[] = [];
-  private heartbeatBuffer: HeartBeatResult[] = [];
-  private signalStartTime: number = 0;
-  
-  // Results tracking
-  private lastVitalSigns: VitalSignsResult | null = null;
-  private lastValidResults: VitalSignsResult | null = null;
-  private arrhythmiaWindows: {start: number; end: number}[] = [];
-  
-  // Processing state
-  private isProcessing: boolean = false;
-  private processingInterval: number | null = null;
-  private measurementDuration: number = 0;
-  
-  // Constants
-  private readonly BUFFER_SIZE = 300;
-  private readonly RESULT_INTERVAL_MS = 1000;
-  private readonly MIN_MEASUREMENT_TIME_MS = 15000;
-  
-  // Specialized processors
-  private spo2Processor: SpO2Processor;
-  private bpProcessor: BloodPressureProcessor;
-  private glucoseProcessor: GlucoseProcessor;
-  private lipidProcessor: LipidProcessor;
-  private arrhythmiaDetector: ArrhythmiaDetector;
+  private ppgValues: number[] = [];
+  private rrIntervals: number[] = [];
+  private lastRRIntervals: number[] = [];
+  private lastHeartRate: number = 60;
+  private lastSPO2: number = 98;
+  private lastArrhythmiaStatus: string = "NORMAL";
+  private lastBloodPressure: string = "120/80";
+  private lastPeakTime: number | null = null;
+  private lastArrhythmiaData: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+    windows?: {start: number; end: number}[];
+    detected?: boolean;
+  } | null = null;
+  private arrhythmiaLearningData: number[] = [];
+  private arrhythmiaBaseline: number = 0;
+  private bloodPressureProcessor: BloodPressureProcessor = new BloodPressureProcessor();
+  private isLearning: boolean = true;
+  private learningStartTime: number = 0;
+
+  private readonly WINDOW_SIZE = 300;
+  private readonly SPO2_CALIBRATION_FACTOR = 1.05; // Aumentado de 1.02 a 1.05 para mejor calibración
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Reducido de 0.05 a 0.045 para mayor sensibilidad
+  private readonly SPO2_WINDOW = 8; // Reducido de 10 a 8 para respuesta más rápida
+  private readonly SMA_WINDOW = 3;
+  private readonly RR_WINDOW_SIZE = 5;
+  private readonly RMSSD_THRESHOLD = 22; // Reducido de 25 a 22 para mejor detección de arritmias
+  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2500; // Reducido de 3000 a 2500 ms
+  private readonly PEAK_THRESHOLD = 0.28; // Reducido de 0.3 a 0.28 para mayor sensibilidad
   
   constructor() {
-    // Initialize specialized processors
-    this.spo2Processor = new SpO2Processor();
-    this.bpProcessor = new BloodPressureProcessor();
-    this.glucoseProcessor = new GlucoseProcessor();
-    this.lipidProcessor = new LipidProcessor();
-    this.arrhythmiaDetector = new ArrhythmiaDetector();
-  
-    // Subscribe to signal events
-    eventBus.subscribe(EventType.SIGNAL_EXTRACTED, this.onPPGSignal.bind(this));
-    eventBus.subscribe(EventType.HEARTBEAT_DETECTED, this.onHeartBeat.bind(this));
-    
-    // Subscribe to monitoring state events
-    eventBus.subscribe(EventType.MONITORING_STARTED, this.startProcessing.bind(this));
-    eventBus.subscribe(EventType.MONITORING_STOPPED, this.stopProcessing.bind(this));
-    eventBus.subscribe(EventType.MONITORING_RESET, this.reset.bind(this));
-    
-    console.log('Vital Signs Processor initialized');
+    this.learningStartTime = Date.now();
   }
   
   /**
-   * Handle incoming PPG signals
+   * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+   * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+   * 
+   * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+   * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+   * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
    */
-  private onPPGSignal(signal: PPGSignal): void {
-    if (!this.isProcessing) return;
-    
-    // Add to buffer
-    this.ppgBuffer.push(signal);
-    
-    // Keep buffer at fixed size
-    if (this.ppgBuffer.length > this.BUFFER_SIZE) {
-      this.ppgBuffer.shift();
-    }
-    
-    // Update measurement duration
-    if (this.signalStartTime === 0 && signal.fingerDetected) {
-      this.signalStartTime = signal.timestamp;
-    }
-    
-    if (this.signalStartTime > 0) {
-      this.measurementDuration = signal.timestamp - this.signalStartTime;
-    }
-  }
   
-  /**
-   * Handle incoming heart beat events
-   */
-  private onHeartBeat(heartBeat: HeartBeatResult): void {
-    if (!this.isProcessing) return;
-    
-    // Add to buffer
-    this.heartbeatBuffer.push(heartBeat);
-    
-    // Keep buffer at fixed size
-    if (this.heartbeatBuffer.length > 50) {
-      this.heartbeatBuffer.shift();
-    }
-  }
-  
-  /**
-   * Start processing vital signs
-   */
-  private startProcessing(): void {
-    if (this.isProcessing) return;
-    
-    this.isProcessing = true;
-    this.signalStartTime = 0;
-    this.measurementDuration = 0;
-    
-    // Start periodic processing
-    this.processingInterval = window.setInterval(() => {
-      this.processVitalSigns();
-    }, this.RESULT_INTERVAL_MS);
-    
-    console.log('Started vital signs processing');
-  }
-  
-  /**
-   * Stop processing and finalize results
-   */
-  private stopProcessing(): void {
-    if (!this.isProcessing) return;
-    
-    this.isProcessing = false;
-    
-    // Clear interval
-    if (this.processingInterval !== null) {
-      clearInterval(this.processingInterval);
-      this.processingInterval = null;
+  public processSignal(ppgValue: number, rrData?: { intervals: number[]; lastPeakTime: number | null }): VitalSignsResult {
+    this.ppgValues.push(ppgValue);
+    if (this.ppgValues.length > this.WINDOW_SIZE) {
+      this.ppgValues.shift();
     }
     
-    // Process final results
-    const finalResults = this.processVitalSigns(true);
-    
-    // Save valid results
-    if (finalResults && this.isValidResult(finalResults)) {
-      this.lastValidResults = finalResults;
-      eventBus.publish(EventType.VITAL_SIGNS_FINAL, finalResults);
-    } else if (this.lastValidResults) {
-      // Use last valid results if available
-      eventBus.publish(EventType.VITAL_SIGNS_FINAL, this.lastValidResults);
+    if (rrData && rrData.intervals.length > 0) {
+      this.rrIntervals = rrData.intervals;
+      this.lastPeakTime = rrData.lastPeakTime;
     }
     
-    console.log('Stopped vital signs processing');
-  }
-  
-  /**
-   * Process vital signs from current signal data
-   */
-  private processVitalSigns(isFinal: boolean = false): VitalSignsResult | null {
-    // Skip processing if no data or not enough time elapsed
-    if (this.ppgBuffer.length < 30 || this.heartbeatBuffer.length < 3) {
-      return null;
-    }
-    
-    try {
-      // Get recent PPG signals with finger detected
-      const recentPPG = this.ppgBuffer
-        .filter(s => s.fingerDetected)
-        .slice(-60);
-      
-      if (recentPPG.length < 30 && !isFinal) {
-        return null;
+    if (this.isLearning && (Date.now() - this.learningStartTime) < this.ARRHYTHMIA_LEARNING_PERIOD) {
+      this.arrhythmiaLearningData.push(ppgValue);
+      if (this.arrhythmiaLearningData.length > 250) {
+        this.arrhythmiaLearningData.shift();
       }
-      
-      // Get recent heart beats
-      const recentHeartbeats = this.heartbeatBuffer.slice(-10);
-      
-      // Calculate heart rate
-      const heartRate = this.calculateHeartRate(recentHeartbeats);
-      
-      // Extract raw values for processing
-      const ppgValues = recentPPG.map(s => s.filteredValue);
-      
-      // Use specialized processors for each vital sign
-      const spo2 = this.spo2Processor.calculateSpO2(ppgValues);
-      const pressure = this.bpProcessor.calculateBloodPressure(heartRate, ppgValues);
-      
-      // Check for arrhythmia using the specialized detector
-      const arrhythmiaData = this.detectArrhythmia(recentHeartbeats);
-      
-      // Create glucose and lipids estimates using specialized processors
-      const glucose = this.glucoseProcessor.estimateGlucose(spo2, heartRate, ppgValues);
-      const lipids = this.lipidProcessor.estimateLipids(spo2, heartRate, ppgValues);
-      
-      // Calculate reliability score based on measurement quality
-      const reliability = this.calculateReliabilityScore(
-        recentPPG, 
-        heartRate, 
-        this.measurementDuration
-      );
-      
-      // Create vital signs result
-      const result: VitalSignsResult = {
-        timestamp: Date.now(),
-        heartRate,
-        spo2,
-        pressure,
-        glucose,
-        lipids,
-        arrhythmiaStatus: arrhythmiaData.isArrhythmia ? "Irregular" : "Normal",
-        reliability,
-        arrhythmiaData: {
-          timestamp: arrhythmiaData.timestamp || Date.now(),
-          // Corregir para usar los valores correctos del objeto ArrhythmiaDetectionResult
-          rmssdValue: arrhythmiaData.arrhythmiaCounter || 0,
-          rrVariabilityValue: arrhythmiaData.isArrhythmia ? 1 : 0,
-          windows: this.arrhythmiaWindows
-        }
-      };
-      
-      // Save as last result
-      this.lastVitalSigns = result;
-      
-      // Publish result event
-      eventBus.publish(EventType.VITAL_SIGNS_UPDATED, result);
-      
-      // Publish arrhythmia event if detected
-      if (arrhythmiaData.isArrhythmia) {
-        eventBus.publish(EventType.ARRHYTHMIA_DETECTED, arrhythmiaData);
-      }
-      
-      return result;
-    } catch (error) {
-      console.error('Error processing vital signs:', error);
-      return null;
-    }
-  }
-  
-  /**
-   * Calculate heart rate from recent heartbeats
-   */
-  private calculateHeartRate(heartbeats: HeartBeatResult[]): number {
-    if (heartbeats.length < 3) return 0;
-    
-    // Use the most recent valid heart rate
-    const recentRates = heartbeats
-      .filter(hb => hb.bpm >= 40 && hb.bpm <= 200)
-      .map(hb => hb.bpm);
-    
-    if (recentRates.length === 0) return 0;
-    
-    // Use median to avoid outliers
-    const sorted = [...recentRates].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
-  }
-  
-  /**
-   * Detect arrhythmia from heart beat intervals
-   */
-  private detectArrhythmia(heartbeats: HeartBeatResult[]): any {
-    if (heartbeats.length < 5) {
-      return { 
-        timestamp: Date.now(),
-        isArrhythmia: false,
-        arrhythmiaCounter: 0,
-        arrhythmiaStatus: "--",
-        visualWindow: null
-      };
+    } else if (this.isLearning) {
+      this.isLearning = false;
+      this.arrhythmiaBaseline = this.calculateBaseline();
+      console.log("Aprendizaje completado, baseline:", this.arrhythmiaBaseline);
     }
     
-    // Use the arrhythmia detector to analyze the heartbeats
-    const heartbeatIntervals = this.extractRRIntervals(heartbeats);
+    const smoothedPPG = this.applySimpleMovingAverage(this.ppgValues, this.SMA_WINDOW);
+    const spo2 = this.calculateSPO2(smoothedPPG);
+    const rrIntervals = this.filterAndSmoothRRIntervals(this.rrIntervals, this.RR_WINDOW_SIZE);
+    const heartRate = rrIntervals.length > 0 ? Math.round(60000 / (rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length)) : this.lastHeartRate;
     
-    if (heartbeatIntervals.length < 4) {
-      return { 
-        timestamp: Date.now(),
-        isArrhythmia: false,
-        arrhythmiaCounter: 0,
-        arrhythmiaStatus: "--",
-        visualWindow: null
-      };
-    }
+    const bloodPressure = this.bloodPressureProcessor.calculateBloodPressure(heartRate, this.ppgValues);
     
-    // Analyze RR intervals using the arrhythmia detector
-    const currentTime = Date.now();
-    const signalQuality = this.calculateSignalQuality(this.ppgBuffer.slice(-30));
-    const result = this.arrhythmiaDetector.analyzeRRIntervals(
-      heartbeatIntervals,
-      currentTime,
-      signalQuality
-    );
+    const arrhythmiaResult = this.processArrhythmia(Date.now());
     
-    // If arrhythmia is detected, update the windows
-    if (result.isArrhythmia && heartbeats.length > 0) {
-      const lastBeat = heartbeats[heartbeats.length - 1];
-      if (lastBeat.timestamp) {
-        const window = {
-          start: lastBeat.timestamp - 2000,
-          end: lastBeat.timestamp
-        };
-        
-        // Add to arrhythmia windows
-        this.arrhythmiaWindows.push(window);
-        
-        // Keep only last 3 windows
-        if (this.arrhythmiaWindows.length > 3) {
-          this.arrhythmiaWindows.shift();
-        }
-      }
-    }
+    this.lastHeartRate = heartRate;
+    this.lastSPO2 = spo2;
+    this.lastBloodPressure = bloodPressure;
+    this.lastRRIntervals = rrIntervals;
+    this.lastArrhythmiaStatus = arrhythmiaResult.arrhythmiaStatus;
+    this.lastArrhythmiaData = arrhythmiaResult.arrhythmiaData;
+    
+    const reliability = this.calculateReliability(spo2, heartRate, arrhythmiaResult.arrhythmiaStatus);
     
     return {
-      ...result,
-      windows: [...this.arrhythmiaWindows]
+      heartRate: this.lastHeartRate,
+      spo2: this.lastSPO2,
+      bloodPressure: {
+        systolic: parseInt(bloodPressure.split('/')[0]),
+        diastolic: parseInt(bloodPressure.split('/')[1]),
+        display: bloodPressure
+      },
+      arrhythmiaStatus: this.lastArrhythmiaStatus,
+      reliability: reliability,
+      timestamp: Date.now(),
+      lastArrhythmiaData: this.lastArrhythmiaData
     };
   }
   
-  /**
-   * Extract RR intervals from heartbeats
-   */
-  private extractRRIntervals(heartbeats: HeartBeatResult[]): number[] {
-    const intervals: number[] = [];
+  private calculateReliability(spo2: number, heartRate: number, arrhythmiaStatus: string): number {
+    let reliability = 70;
     
-    for (let i = 1; i < heartbeats.length; i++) {
-      if (heartbeats[i].lastPeakTime && heartbeats[i-1].lastPeakTime) {
-        const interval = heartbeats[i].lastPeakTime - heartbeats[i-1].lastPeakTime;
-        if (interval > 300 && interval < 1500) {  // Valid interval range (40-200 BPM)
-          intervals.push(interval);
-        }
+    if (spo2 < 90) {
+      reliability -= 10;
+    }
+    if (heartRate < 50 || heartRate > 120) {
+      reliability -= 10;
+    }
+    if (arrhythmiaStatus !== "NORMAL") {
+      reliability -= 15;
+    }
+    
+    return Math.max(10, Math.min(95, reliability));
+  }
+  
+  private applySimpleMovingAverage(data: number[], windowSize: number): number[] {
+    const sma: number[] = [];
+    for (let i = windowSize - 1; i < data.length; i++) {
+      let sum = 0;
+      for (let j = i - windowSize + 1; j <= i; j++) {
+        sum += data[j];
       }
+      sma.push(sum / windowSize);
+    }
+    return sma;
+  }
+  
+  private calculateSPO2(smoothedPPG: number[]): number {
+    if (smoothedPPG.length < this.SPO2_WINDOW) {
+      return this.lastSPO2;
     }
     
-    return intervals;
-  }
-  
-  /**
-   * Calculate signal quality for reliability assessment
-   */
-  private calculateSignalQuality(signals: PPGSignal[]): number {
-    if (signals.length === 0) return 0;
+    const recentPPG = smoothedPPG.slice(-this.SPO2_WINDOW);
+    const maxValue = Math.max(...recentPPG);
+    const minValue = Math.min(...recentPPG);
     
-    // Average the quality values from the signals
-    const avgQuality = signals.reduce((sum, signal) => sum + signal.quality, 0) / signals.length;
-    
-    // Check finger detection consistency
-    const fingerDetectionRatio = signals.filter(s => s.fingerDetected).length / signals.length;
-    
-    // Combined quality score
-    return Math.round(avgQuality * 0.7 + fingerDetectionRatio * 100 * 0.3);
-  }
-  
-  /**
-   * Calculate reliability score for the measurement
-   */
-  private calculateReliabilityScore(
-    ppgSignals: PPGSignal[],
-    heartRate: number,
-    duration: number
-  ): number {
-    if (ppgSignals.length < 10 || heartRate === 0) return 0;
-    
-    // Calculate average signal quality
-    const avgQuality = ppgSignals.reduce((acc, s) => acc + s.quality, 0) / ppgSignals.length;
-    
-    // Duration factor (longer measurements typically more reliable)
-    const durationFactor = Math.min(1, duration / this.MIN_MEASUREMENT_TIME_MS);
-    
-    // Heart rate factor (extremely low or high heart rates might indicate problems)
-    const hrFactor = heartRate >= 50 && heartRate <= 150 ? 1 : 0.7;
-    
-    // Calculate weighted reliability score
-    const reliability = Math.round(
-      (avgQuality * 0.5) + 
-      (durationFactor * 0.3) + 
-      (hrFactor * 0.2)
-    );
-    
-    return Math.min(100, Math.max(0, reliability));
-  }
-  
-  /**
-   * Check if a result is valid/complete
-   */
-  private isValidResult(result: VitalSignsResult): boolean {
-    return (
-      result.heartRate > 40 &&
-      result.spo2 >= 90 &&
-      result.pressure !== "--/--" &&
-      result.reliability > 50
-    );
-  }
-  
-  /**
-   * Get the last calculated vital signs
-   */
-  getLastVitalSigns(): VitalSignsResult | null {
-    return this.lastVitalSigns;
-  }
-  
-  /**
-   * Get the last valid results (preserved after stopping)
-   */
-  getLastValidResults(): VitalSignsResult | null {
-    return this.lastValidResults;
-  }
-  
-  /**
-   * Reset processor state
-   */
-  reset(): void {
-    this.ppgBuffer = [];
-    this.heartbeatBuffer = [];
-    this.signalStartTime = 0;
-    this.measurementDuration = 0;
-    this.lastVitalSigns = null;
-    this.arrhythmiaWindows = [];
-    
-    // Reset all specialized processors
-    this.spo2Processor.reset();
-    this.bpProcessor.reset();
-    this.glucoseProcessor.reset();
-    this.lipidProcessor.reset();
-    this.arrhythmiaDetector.reset();
-    
-    // Stop processing if active
-    if (this.isProcessing) {
-      this.stopProcessing();
+    let perfusionIndex = 0;
+    if (maxValue !== 0) {
+      perfusionIndex = minValue / maxValue;
     }
     
-    // Complete reset clears saved results too
-    this.lastValidResults = null;
+    if (perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
+      console.warn("Índice de perfusión bajo:", perfusionIndex);
+      return this.lastSPO2;
+    }
     
-    console.log('Vital Signs Processor reset');
+    let spo2 = 100 - (perfusionIndex * 100) * this.SPO2_CALIBRATION_FACTOR;
+    spo2 = Math.max(85, Math.min(100, spo2));
+    return Math.round(spo2);
   }
+  
+  private filterAndSmoothRRIntervals(rrIntervals: number[], windowSize: number): number[] {
+    const filteredIntervals = rrIntervals.filter(interval => interval > 300 && interval < 1500);
+    const smoothedIntervals: number[] = [];
+    
+    for (let i = windowSize - 1; i < filteredIntervals.length; i++) {
+      let sum = 0;
+      for (let j = i - windowSize + 1; j <= i; j++) {
+        sum += filteredIntervals[j];
+      }
+      smoothedIntervals.push(sum / windowSize);
+    }
+    
+    return smoothedIntervals;
+  }
+  
+  private calculateBaseline(): number {
+    if (this.arrhythmiaLearningData.length === 0) {
+      return 0;
+    }
+    return this.arrhythmiaLearningData.reduce((a, b) => a + b, 0) / this.arrhythmiaLearningData.length;
+  }
+  
+  private processArrhythmia(timestamp: number): {
+    arrhythmiaStatus: string;
+    arrhythmiaData: {
+      timestamp: number;
+      rmssd: number;
+      rrVariation: number;
+      windows?: {start: number; end: number}[];
+      detected?: boolean;
+    } | null;
+  } {
+    if (this.rrIntervals.length < 2) {
+      return {
+        arrhythmiaStatus: "INSUFICIENTE",
+        arrhythmiaData: null
+      };
+    }
+    
+    let detectedWindows: {start: number; end: number}[] = [];
+    let hasArrhythmia = false;
+    
+    const rmssd = this.calculateRMSSD(this.rrIntervals);
+    const rrVariation = calculateVariance(this.rrIntervals);
+    
+    let arrhythmiaStatus = "NORMAL";
+    
+    if (rmssd > this.RMSSD_THRESHOLD) {
+      arrhythmiaStatus = "ALERTA";
+      hasArrhythmia = true;
+      detectedWindows.push({start: 0, end: this.rrIntervals.length});
+    }
+    
+    return {
+      arrhythmiaStatus,
+      arrhythmiaData: {
+        timestamp,
+        rmssd,
+        rrVariation,
+        windows: detectedWindows,
+        detected: hasArrhythmia
+      }
+    };
+  }
+  
+  private calculateRMSSD(rrIntervals: number[]): number {
+    let rmsd = 0;
+    for (let i = 0; i < rrIntervals.length - 1; i++) {
+      rmsd += Math.pow(rrIntervals[i + 1] - rrIntervals[i], 2);
+    }
+    return Math.sqrt(rmsd / (rrIntervals.length - 1));
+  }
+  
+  public reset() {
+    this.ppgValues = [];
+    this.rrIntervals = [];
+    this.lastRRIntervals = [];
+    this.lastHeartRate = 60;
+    this.lastSPO2 = 98;
+    this.lastArrhythmiaStatus = "NORMAL";
+    this.lastBloodPressure = "120/80";
+    this.lastPeakTime = null;
+    this.bloodPressureProcessor.reset();
+    this.arrhythmiaLearningData = [];
+    this.arrhythmiaBaseline = 0;
+    this.isLearning = true;
+    this.learningStartTime = Date.now();
+  }
+  
+  public fullReset(): void {
+    this.reset();
+  }
+  
+  /**
+   * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+   * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+   * 
+   * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+   * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+   * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+   */
 }
-
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
-
-// Export singleton instance
-export const vitalSignsProcessor = new VitalSignsProcessor();

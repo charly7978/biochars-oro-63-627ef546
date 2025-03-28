@@ -1,5 +1,14 @@
 
 /**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
+
+/**
  * Procesador de Señal
  * Módulo central de procesamiento con algoritmos avanzados para procesamiento de señal
  */
@@ -8,7 +17,7 @@ import { EventType, eventBus } from '../events/EventBus';
 import { HeartBeatData } from '../extraction/HeartBeatExtractor';
 import { PPGSignalData } from '../extraction/PPGSignalExtractor';
 import { CombinedSignalData } from '../extraction/CombinedSignalProvider';
-import { KalmanFilter } from '../utils/SignalProcessingFilters';
+import { calculateVariance } from '../vital-signs/utils';
 
 export interface ProcessedHeartbeatData {
   timestamp: number;
@@ -36,8 +45,10 @@ export interface FingerDetectionResult {
 
 export class SignalProcessor {
   // Procesadores específicos de señal
-  private heartbeatKalmanFilter: KalmanFilter = new KalmanFilter(0.01, 0.1);
-  private ppgKalmanFilter: KalmanFilter = new KalmanFilter(0.008, 0.15);
+  private medianBufferPPG: number[] = [];
+  private medianBufferHB: number[] = [];
+  private movingAvgBufferPPG: number[] = [];
+  private movingAvgBufferHB: number[] = [];
   
   // Buffers para procesamiento
   private heartbeatValues: number[] = [];
@@ -54,6 +65,17 @@ export class SignalProcessor {
   private readonly BPM_SMA_WINDOW = 5;
   private readonly FINGER_DETECTION_WINDOW = 10;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.05;
+  private readonly MEDIAN_WINDOW_SIZE = 5;
+  private readonly MOVING_AVG_WINDOW_SIZE = 7;
+  
+  /**
+   * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+   * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+   * 
+   * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+   * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+   * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+   */
   
   /**
    * Iniciar procesamiento
@@ -91,8 +113,10 @@ export class SignalProcessor {
     this.qualityBuffer = [];
     this.lastBPM = 0;
     this.lastPerfusionIndex = 0;
-    this.heartbeatKalmanFilter.reset();
-    this.ppgKalmanFilter.reset();
+    this.medianBufferPPG = [];
+    this.medianBufferHB = [];
+    this.movingAvgBufferPPG = [];
+    this.movingAvgBufferHB = [];
   }
   
   /**
@@ -102,11 +126,12 @@ export class SignalProcessor {
     if (!this.isProcessing) return;
     
     try {
-      // Aplicar filtro de Kalman a la señal de latido
-      const filteredValue = this.heartbeatKalmanFilter.filter(data.rawValue);
+      // Aplicar filtrado a la señal de latido
+      const filteredValue = this.applyMedianFilter(data.rawValue, this.medianBufferHB);
+      const smoothedValue = this.applyMovingAverageFilter(filteredValue, this.movingAvgBufferHB);
       
       // Agregar a buffer
-      this.heartbeatValues.push(filteredValue);
+      this.heartbeatValues.push(smoothedValue);
       if (this.heartbeatValues.length > 50) {
         this.heartbeatValues.shift();
       }
@@ -176,24 +201,25 @@ export class SignalProcessor {
     if (!this.isProcessing) return;
     
     try {
-      // Aplicar filtro de Kalman a la señal PPG (principalmente canal rojo)
-      const filteredValue = this.ppgKalmanFilter.filter(data.redChannel);
+      // Aplicar filtros a la señal PPG (principalmente canal rojo)
+      const filteredValue = this.applyMedianFilter(data.redChannel, this.medianBufferPPG);
+      const smoothedValue = this.applyMovingAverageFilter(filteredValue, this.movingAvgBufferPPG);
       
       // Agregar a buffer
-      this.ppgValues.push(filteredValue);
+      this.ppgValues.push(smoothedValue);
       if (this.ppgValues.length > 50) {
         this.ppgValues.shift();
       }
       
       // Normalizar señal (0-1)
-      let normalizedValue = filteredValue;
+      let normalizedValue = smoothedValue;
       if (this.ppgValues.length >= 10) {
         const recentMin = Math.min(...this.ppgValues.slice(-10));
         const recentMax = Math.max(...this.ppgValues.slice(-10));
         const range = recentMax - recentMin;
         
         if (range > 0) {
-          normalizedValue = (filteredValue - recentMin) / range;
+          normalizedValue = (smoothedValue - recentMin) / range;
         }
       }
       
@@ -205,12 +231,12 @@ export class SignalProcessor {
       const perfusionIndex = this.calculatePerfusionIndex();
       
       // Estimar calidad de señal basada en perfusión y estabilidad
-      const quality = this.estimateSignalQuality(filteredValue, perfusionIndex);
+      const quality = this.estimateSignalQuality(smoothedValue, perfusionIndex);
       
       // Crear datos PPG procesados
       const processedData: ProcessedPPGData = {
         timestamp: data.timestamp,
-        filteredValue,
+        filteredValue: smoothedValue,
         normalizedValue,
         amplifiedValue,
         perfusionIndex,
@@ -223,6 +249,33 @@ export class SignalProcessor {
     } catch (error) {
       console.error('Error procesando datos PPG:', error);
     }
+  }
+  
+  /**
+   * Aplicar filtro de mediana
+   */
+  private applyMedianFilter(value: number, buffer: number[]): number {
+    buffer.push(value);
+    
+    if (buffer.length > this.MEDIAN_WINDOW_SIZE) {
+      buffer.shift();
+    }
+    
+    const sorted = [...buffer].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+  
+  /**
+   * Aplicar filtro de media móvil
+   */
+  private applyMovingAverageFilter(value: number, buffer: number[]): number {
+    buffer.push(value);
+    
+    if (buffer.length > this.MOVING_AVG_WINDOW_SIZE) {
+      buffer.shift();
+    }
+    
+    return buffer.reduce((a, b) => a + b, 0) / buffer.length;
   }
   
   /**
@@ -262,7 +315,7 @@ export class SignalProcessor {
     
     // 2. Factor de estabilidad (variación)
     const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-    const variance = recent.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recent.length;
+    const variance = calculateVariance(recent);
     const stdDev = Math.sqrt(variance);
     const cv = mean !== 0 ? stdDev / mean : 1; // Coeficiente de variación
     
@@ -361,6 +414,15 @@ export class SignalProcessor {
     };
   }
 }
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
 
 // Exportar instancia singleton
 export const signalProcessor = new SignalProcessor();
