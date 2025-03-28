@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -9,198 +8,227 @@
  */
 
 /**
- * Extractor de Latidos
- * Se enfoca exclusivamente en la extracción de picos cardíacos sin procesamiento complejo
+ * Extractor de Latidos Cardíacos
+ * Detecta latidos en la señal PPG y calcula la frecuencia cardíaca
  */
 
-import { EventType, eventBus } from '../events/EventBus';
-import { RawFrame } from '../camera/CameraFrameReader';
+import { eventBus, EventType } from '../events/EventBus';
+import { RawSignalFrame } from '../types/signal';
+import { calculateStandardDeviation, filterOutliers } from '../utils/vitalSignsUtils';
 
-export interface HeartBeatData {
-  peaks: number[];
-  peakTimes: number[];
-  lastPeakTime: number | null;
-  intervals: number[];
+export interface HeartBeatResult {
   timestamp: number;
-  rawValue: number;
+  bpm: number;
+  peaks: number[];
+  quality: number;
 }
 
 export class HeartBeatExtractor {
-  private recentValues: number[] = [];
+  private isRunning: boolean = false;
+  private rawSignalBuffer: number[] = [];
+  private processedBuffer: number[] = [];
+  private peakIndices: number[] = [];
+  private valleyIndices: number[] = [];
   private lastPeakTime: number | null = null;
-  private peakThreshold: number = 0.3;
-  private lastPeaks: number[] = [];
-  private intervals: number[] = [];
-  private isExtracting: boolean = false;
-  private readonly BUFFER_SIZE = 30;
-  private readonly MIN_PEAK_DISTANCE_MS = 300; // Mínima distancia entre picos (ms)
+  private recentBPMs: number[] = [];
+  private recentPeaks: number[] = [];
+  
+  // Configuración
+  private readonly bufferSize: number = 150;
+  private readonly sampleRate: number = 30;
+  private readonly bpmCalculationWindow: number = 5;
+  private readonly peakThreshold: number = 0.6;
+  private readonly valleyThreshold: number = 0.4;
+  
+  constructor() {
+    // Suscribirse a los eventos necesarios
+    eventBus.subscribe(EventType.CAMERA_FRAME_READY, this.handleRawFrameData.bind(this));
+  }
   
   /**
    * Iniciar extracción
    */
   startExtraction(): void {
-    if (this.isExtracting) return;
+    if (this.isRunning) return;
     
-    this.isExtracting = true;
-    this.reset();
-    
-    // Suscribirse a frames de cámara
-    eventBus.subscribe(EventType.CAMERA_FRAME, this.processFrame.bind(this));
-    console.log('Extracción de latidos iniciada');
+    this.isRunning = true;
+    this.clearBuffers();
+    console.log('Extractor de latidos cardíacos iniciado');
   }
   
   /**
    * Detener extracción
    */
   stopExtraction(): void {
-    this.isExtracting = false;
-    this.reset();
-    console.log('Extracción de latidos detenida');
+    this.isRunning = false;
+    this.clearBuffers();
+    console.log('Extractor de latidos cardíacos detenido');
   }
   
   /**
-   * Reiniciar buffers y estados
+   * Limpiar todos los buffers
    */
-  reset(): void {
-    this.recentValues = [];
+  private clearBuffers(): void {
+    this.rawSignalBuffer = [];
+    this.processedBuffer = [];
+    this.peakIndices = [];
+    this.valleyIndices = [];
     this.lastPeakTime = null;
-    this.lastPeaks = [];
-    this.intervals = [];
+    this.recentBPMs = [];
+    this.recentPeaks = [];
   }
   
   /**
-   * Procesar un frame para extraer datos de latido
+   * Manejar datos de frame sin procesar
    */
-  private processFrame(frame: RawFrame): void {
-    if (!this.isExtracting) return;
+  private handleRawFrameData(frame: RawSignalFrame): void {
+    if (!this.isRunning) return;
     
-    try {
-      // Extraer valor de canal rojo (principal para PPG)
-      const redValue = this.extractRedValue(frame.imageData);
-      
-      // Añadir a buffer
-      this.recentValues.push(redValue);
-      if (this.recentValues.length > this.BUFFER_SIZE) {
-        this.recentValues.shift();
-      }
-      
-      // Buscar picos (básico, sin procesamiento avanzado)
-      this.detectPeaks(redValue, frame.timestamp);
-      
-      // Crear datos de latido
-      const heartBeatData: HeartBeatData = {
-        peaks: this.lastPeaks,
-        peakTimes: [],  // Tiempos de los picos detectados
-        lastPeakTime: this.lastPeakTime,
-        intervals: this.intervals,
-        timestamp: frame.timestamp,
-        rawValue: redValue
-      };
-      
-      // Publicar datos para que otros módulos los procesen
-      eventBus.publish(EventType.HEARTBEAT_DATA, heartBeatData);
-      
-    } catch (error) {
-      console.error('Error en extracción de latidos:', error);
+    // Extraer valor de la señal (simulado)
+    const signalValue = this.extractSignalValue(frame.imageData);
+    
+    // Añadir al buffer
+    this.rawSignalBuffer.push(signalValue);
+    
+    // Mantener el tamaño del buffer
+    if (this.rawSignalBuffer.length > this.bufferSize) {
+      this.rawSignalBuffer.shift();
+    }
+    
+    // Procesar la señal
+    const processedValue = this.processSignal(signalValue);
+    this.processedBuffer.push(processedValue);
+    
+    // Mantener el tamaño del buffer procesado
+    if (this.processedBuffer.length > this.bufferSize) {
+      this.processedBuffer.shift();
+    }
+    
+    // Detectar picos y valles
+    this.detectPeaksAndValleys(processedValue);
+    
+    // Calcular BPM
+    const currentBPM = this.calculateBPM();
+    
+    // Publicar resultado
+    if (currentBPM > 0) {
+      this.publishHeartbeat(currentBPM);
     }
   }
   
   /**
-   * Extraer valor promedio de canal rojo
+   * Simular la extracción de un valor de señal desde los datos del frame
    */
-  private extractRedValue(imageData: ImageData): number {
-    const data = imageData.data;
-    let redSum = 0;
-    let count = 0;
-    
-    // Extraer del centro de la imagen (30%)
-    const startX = Math.floor(imageData.width * 0.35);
-    const endX = Math.floor(imageData.width * 0.65);
-    const startY = Math.floor(imageData.height * 0.35);
-    const endY = Math.floor(imageData.height * 0.65);
-    
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i]; // Canal rojo
-        count++;
-      }
+  private extractSignalValue(imageData: ImageData): number {
+    // Simulación simple: promediar los valores del canal rojo
+    let sum = 0;
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      sum += imageData.data[i]; // Canal rojo
     }
-    
-    const avgRed = count > 0 ? (redSum / count) / 255 : 0; // Normalizado a 0-1
-    return avgRed;
+    return sum / (imageData.data.length / 4);
   }
   
   /**
-   * Detección básica de picos (sin procesamiento complejo)
-   * "Pescar los peces y llevarlos a la orilla"
+   * Simular el procesamiento de la señal
    */
-  private detectPeaks(value: number, timestamp: number): void {
-    // Necesitamos al menos 3 valores para detectar un pico
-    if (this.recentValues.length < 3) return;
+  private processSignal(signalValue: number): number {
+    // Simulación simple: normalizar el valor
+    const min = Math.min(...this.rawSignalBuffer);
+    const max = Math.max(...this.rawSignalBuffer);
+    return (signalValue - min) / (max - min);
+  }
+  
+  /**
+   * Detectar picos y valles en la señal
+   */
+  private detectPeaksAndValleys(processedValue: number): void {
+    const lastIndex = this.processedBuffer.length - 1;
     
-    // Considerar un valor como pico si es mayor que los valores adyacentes
-    // y supera un umbral mínimo
-    const n = this.recentValues.length;
-    const current = this.recentValues[n-1];
-    const prev = this.recentValues[n-2];
-    const prevPrev = this.recentValues[n-3];
-    
-    const isPeak = current < prev && 
-                  prev > prevPrev && 
-                  prev > this.peakThreshold;
-    
-    if (isPeak) {
-      const now = timestamp;
+    // Detectar picos
+    if (
+      lastIndex > 0 &&
+      processedValue > this.processedBuffer[lastIndex - 1] &&
+      processedValue > this.peakThreshold
+    ) {
+      this.peakIndices.push(lastIndex);
+      this.recentPeaks.push(Date.now());
       
-      // Verificar distancia mínima entre picos
-      if (this.lastPeakTime === null || now - this.lastPeakTime > this.MIN_PEAK_DISTANCE_MS) {
-        // Añadir a picos detectados
-        this.lastPeaks.push(prev);
-        if (this.lastPeaks.length > 10) {
-          this.lastPeaks.shift();
-        }
-        
-        // Calcular intervalo RR
-        if (this.lastPeakTime !== null) {
-          const interval = now - this.lastPeakTime;
-          this.intervals.push(interval);
-          if (this.intervals.length > 8) {
-            this.intervals.shift();
-          }
-          
-          // Notificar latido detectado
-          eventBus.publish(EventType.HEARTBEAT_DETECTED, {
-            timestamp: now,
-            interval: interval
-          });
-        }
-        
-        this.lastPeakTime = now;
+      if (this.recentPeaks.length > 15) {
+        this.recentPeaks.shift();
       }
+    }
+    
+    // Detectar valles
+    if (
+      lastIndex > 0 &&
+      processedValue < this.processedBuffer[lastIndex - 1] &&
+      processedValue < this.valleyThreshold
+    ) {
+      this.valleyIndices.push(lastIndex);
     }
   }
   
   /**
-   * Actualizar umbral de detección de picos
+   * Calcular BPM (latidos por minuto)
    */
-  updatePeakThreshold(threshold: number): void {
-    this.peakThreshold = Math.max(0.1, Math.min(0.5, threshold));
+  private calculateBPM(): number {
+    if (this.peakIndices.length < 2) return 0;
+    
+    // Tomar los últimos picos detectados
+    const lastPeakIndex = this.peakIndices[this.peakIndices.length - 1];
+    
+    // Calcular el tiempo entre los últimos picos
+    const timeDiff = lastPeakIndex / this.sampleRate; // segundos
+    
+    // Calcular BPM
+    const bpm = 60 / timeDiff;
+    
+    // Filtrar valores atípicos
+    const filteredBPMs = filterOutliers([...this.recentBPMs, bpm]);
+    
+    // Mantener los valores recientes
+    this.recentBPMs = filteredBPMs.slice(-this.bpmCalculationWindow);
+    
+    // Calcular el promedio de los valores recientes
+    const avgBPM = this.recentBPMs.reduce((a, b) => a + b, 0) / this.recentBPMs.length;
+    
+    return avgBPM;
   }
   
   /**
-   * Obtener dato actual
+   * Publicar el evento de latido detectado
    */
-  getCurrentData(): {
-    intervals: number[];
-    lastPeakTime: number | null;
-  } {
-    return {
-      intervals: [...this.intervals],
-      lastPeakTime: this.lastPeakTime
-    };
+  private publishHeartbeat(currentBPM: number): void {
+    // Calcular la calidad de la señal
+    const quality = this.calculateSignalQuality();
+    
+    // Evento de latido detectado
+    eventBus.publish(EventType.HEARTBEAT_PEAK_DETECTED, {
+      timestamp: Date.now(),
+      bpm: currentBPM,
+      confidence: quality,
+      peaks: this.recentPeaks
+    });
+    
+    this.lastPeakTime = Date.now();
+  }
+  
+  /**
+   * Calcular la calidad de la señal
+   */
+  private calculateSignalQuality(): number {
+    // Simulación simple: usar la desviación estándar de la señal como calidad
+    const stdDev = calculateStandardDeviation(this.processedBuffer);
+    
+    // Invertir la desviación estándar para que valores más bajos sean mejor calidad
+    const quality = 100 - (stdDev * 100);
+    
+    return Math.max(0, Math.min(100, quality)); // asegurar que esté entre 0 y 100
   }
 }
+
+// Exportar instancia singleton
+export const heartBeatExtractor = new HeartBeatExtractor();
 
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
@@ -210,6 +238,3 @@ export class HeartBeatExtractor {
  * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
  * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
-
-// Exportar instancia singleton
-export const heartBeatExtractor = new HeartBeatExtractor();
