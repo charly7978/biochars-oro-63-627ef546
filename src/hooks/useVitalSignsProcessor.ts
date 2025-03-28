@@ -74,7 +74,7 @@ export const useVitalSignsProcessor = () => {
     isWeakSignal: boolean = false
   ) => {
     if (isWeakSignal) {
-      return {
+      return lastValidResults || {
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",

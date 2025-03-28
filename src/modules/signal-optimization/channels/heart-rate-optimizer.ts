@@ -1,161 +1,227 @@
 
 /**
- * Optimizador especializado para el canal de frecuencia cardíaca
+ * Optimizador de canal para frecuencia cardíaca
+ * Implementa técnicas avanzadas específicas para optimizar señales de frecuencia cardíaca
  */
 
 import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { OptimizedSignal, FeedbackData, ChannelOptimizerConfig } from '../types';
 
-/**
- * Parámetros específicos para optimización de frecuencia cardíaca
- */
-const HEART_RATE_PARAMS: Partial<OptimizationParameters> = {
-  // Enfocado en resaltar picos cardíacos
-  amplificationFactor: 1.8,
-  filterStrength: 0.6,
-  frequencyRange: [0.6, 3.3], // ~35-200 BPM
-  sensitivityFactor: 1.2,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar la detección de frecuencia cardíaca
- */
 export class HeartRateOptimizer extends BaseChannelOptimizer {
-  // Valores específicos para detección de picos
-  private peakEnhancementFactor: number = 1.5;
-  private valleySuppressionFactor: number = 0.8;
-  private dynamicThresholdBuffer: number[] = [];
+  private readonly peakEnhancementFactor: number = 1.5;
+  private readonly smoothingFactor: number = 0.4;
+  private feedbackCounter: number = 0;
+  private adaptiveThreshold: number = 0.2;
   
-  constructor() {
-    super('heartRate', HEART_RATE_PARAMS);
+  constructor(config: ChannelOptimizerConfig = {}) {
+    super('heartRate', config);
   }
   
   /**
-   * Aplica optimizaciones específicas para frecuencia cardíaca
-   * Enfocado en realzar picos para mejor detección de pulso
+   * Optimiza una señal PPG específicamente para análisis de frecuencia cardíaca
    */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado adaptativo para reducir ruido
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
-    
-    // 2. Realce de picos para mejorar detección de latidos
-    optimized = this.enhancePeaks(optimized);
-    
-    // 3. Filtrado de frecuencia para mantener solo el rango cardíaco
-    optimized = this.applyFrequencyDomain(optimized, signal.timestamp);
-    
-    // 4. Amplificación adaptativa
-    optimized = this.amplifySignal(optimized);
-    
-    return optimized;
-  }
-  
-  /**
-   * Realza picos y suprime valles para mejorar detección
-   */
-  private enhancePeaks(value: number): number {
-    if (this.valueBuffer.length < 5) return value;
-    
-    // Detectar si es un posible pico
-    const recent = this.valueBuffer.slice(-3);
-    const isPotentialPeak = recent[1] >= recent[0] && recent[1] >= recent[2];
-    const isPotentialValley = recent[1] <= recent[0] && recent[1] <= recent[2];
-    
-    // Realzar picos y suprimir valles
-    if (isPotentialPeak) {
-      return value * this.peakEnhancementFactor;
-    } else if (isPotentialValley) {
-      return value * this.valleySuppressionFactor;
+  public optimizeSignal(signal: ProcessedPPGSignal): OptimizedSignal | null {
+    if (!signal || !signal.fingerDetected) {
+      return null;
     }
     
-    return value;
-  }
-  
-  /**
-   * Aplica filtrado en dominio de frecuencia para mantener solo rango cardíaco
-   */
-  private applyFrequencyDomain(value: number, timestamp: number): number {
-    // Implementación simplificada de filtro paso banda
-    // En una implementación real se usaría FFT o filtros IIR/FIR más avanzados
-    if (this.valueBuffer.length < 10) return value;
+    // Añadir al buffer para contexto histórico
+    this.addToBuffer(signal);
     
-    // Actualizar buffer para análisis de frecuencia
-    this.dynamicThresholdBuffer.push(value);
-    if (this.dynamicThresholdBuffer.length > 30) {
-      this.dynamicThresholdBuffer.shift();
-    }
+    // Extraer valores filtrados del buffer para optimización
+    const filteredValues = this.signalBuffer
+      .slice(-20)
+      .map(s => s.filteredValue);
     
-    // Estimación simple de frecuencia dominante
-    const dominant = this.estimateDominantFrequency();
+    // Aplicar algoritmos de avanzada para optimización de frecuencia cardíaca
+    const optimizedValues = this.applyHeartRateOptimization(filteredValues);
     
-    // Atenuar señal si está fuera del rango de frecuencias cardíacas
-    const [minFreq, maxFreq] = this.parameters.frequencyRange;
-    if (dominant < minFreq || dominant > maxFreq) {
-      return value * 0.8; // Atenuar señales fuera del rango cardíaco
-    }
+    // Extraer RR intervals si están disponibles
+    const rrIntervals = signal.rrIntervals || [];
     
-    return value;
-  }
-  
-  /**
-   * Estima la frecuencia dominante en la señal
-   */
-  private estimateDominantFrequency(): number {
-    if (this.dynamicThresholdBuffer.length < 10) return 1.0;
-    
-    // Análisis simplificado de autocorrelación
-    const signal = [...this.dynamicThresholdBuffer];
-    const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-    const normalized = signal.map(v => v - mean);
-    
-    // Buscar período por autocorrelación
-    let maxCorr = 0;
-    let period = 10; // Valor por defecto (~3Hz/180BPM)
-    
-    for (let lag = 5; lag < Math.min(20, normalized.length/2); lag++) {
-      let corr = 0;
-      for (let i = 0; i < normalized.length - lag; i++) {
-        corr += normalized[i] * normalized[i + lag];
+    return {
+      channelId: this.channelId,
+      timestamp: signal.timestamp,
+      value: optimizedValues[optimizedValues.length - 1] || signal.filteredValue,
+      quality: this.calculateSignalQuality(signal),
+      confidence: this.calculateConfidence(signal),
+      metadata: {
+        rrIntervals: rrIntervals,
+        lastPeakTime: signal.lastPeakTime,
+        isPeak: signal.isPeak
       }
-      corr /= (normalized.length - lag);
+    };
+  }
+  
+  /**
+   * Procesa retroalimentación desde calculador de frecuencia cardíaca
+   */
+  public processFeedback(feedback: FeedbackData): void {
+    if (!feedback || !feedback.adjustment) return;
+    
+    this.feedbackCounter++;
+    
+    // Ajustar parámetros basados en la retroalimentación
+    if (feedback.adjustment.type === 'sensitivity') {
+      // Ajustar umbral adaptativo
+      this.adaptiveThreshold = Math.max(
+        0.05, 
+        Math.min(0.5, this.adaptiveThreshold + feedback.adjustment.value)
+      );
+    }
+    
+    if (feedback.adjustment.type === 'amplification') {
+      // Ajustar factor de amplificación
+      this.config.amplificationFactor = Math.max(
+        0.5,
+        Math.min(3.0, (this.config.amplificationFactor || 1.0) + feedback.adjustment.value)
+      );
+    }
+    
+    // Registrar feedback para depuración
+    console.log(`HeartRateOptimizer: Processed feedback #${this.feedbackCounter}`, {
+      newThreshold: this.adaptiveThreshold,
+      newAmplification: this.config.amplificationFactor,
+      feedbackType: feedback.adjustment.type
+    });
+  }
+  
+  /**
+   * Aplica algoritmos avanzados de optimización para frecuencia cardíaca
+   */
+  private applyHeartRateOptimization(values: number[]): number[] {
+    if (values.length < 2) return values;
+    
+    // Paso 1: Aumentar prominencia de picos
+    const peakEnhanced = this.enhancePeaks(values);
+    
+    // Paso 2: Aplicar filtrado adaptativo
+    const filtered = this.applyAdaptiveFiltering(peakEnhanced);
+    
+    // Paso 3: Amplificar señal para mejor detección
+    const amplified = filtered.map(v => this.amplifySignal(v));
+    
+    return amplified;
+  }
+  
+  /**
+   * Aumenta la prominencia de los picos en la señal
+   * Algoritmo avanzado para resaltar características cardíacas
+   */
+  private enhancePeaks(values: number[]): number[] {
+    if (values.length < 3) return values;
+    
+    const result: number[] = [];
+    
+    // Cálculo de primera derivada para detectar pendientes
+    const derivatives: number[] = [];
+    for (let i = 1; i < values.length; i++) {
+      derivatives.push(values[i] - values[i-1]);
+    }
+    
+    // Análisis de pendientes para identificar picos potenciales
+    result.push(values[0]);
+    for (let i = 1; i < values.length - 1; i++) {
+      const isLocalPeak = derivatives[i-1] > 0 && derivatives[i] < 0;
       
-      if (corr > maxCorr) {
-        maxCorr = corr;
-        period = lag;
+      if (isLocalPeak) {
+        // Amplificar picos detectados
+        result.push(values[i] * this.peakEnhancementFactor);
+      } else {
+        // Mantener otros valores con suavizado
+        const smoothed = values[i] * (1 - this.smoothingFactor) + 
+                        values[i-1] * this.smoothingFactor;
+        result.push(smoothed);
+      }
+    }
+    result.push(values[values.length - 1]);
+    
+    return result;
+  }
+  
+  /**
+   * Calcula la calidad de la señal para frecuencia cardíaca
+   * Implementa múltiples criterios especializados
+   */
+  private calculateSignalQuality(signal: ProcessedPPGSignal): number {
+    // Iniciar con la calidad de señal base
+    let quality = signal.quality;
+    
+    // Factor 1: Estabilidad de intervalos RR (si están disponibles)
+    if (signal.rrIntervals && signal.rrIntervals.length > 1) {
+      const rrVariability = this.calculateRRVariability(signal.rrIntervals);
+      
+      // Penalizar alta variabilidad (podría indicar artefactos)
+      if (rrVariability > 0.2) {
+        quality -= rrVariability * 25;
       }
     }
     
-    // Convertir período a frecuencia estimada (asumiendo ~30fps)
-    const estimatedFreq = 30 / period;
-    return estimatedFreq;
-  }
-  
-  /**
-   * Procesamiento especializado de feedback para frecuencia cardíaca
-   */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
-    
-    // Ajustes específicos para frecuencia cardíaca
-    if (feedback.confidence < 0.3) {
-      // Con baja confianza, aumentar realce de picos
-      this.peakEnhancementFactor = Math.min(2.0, this.peakEnhancementFactor * 1.1);
-    } else if (feedback.confidence > 0.8) {
-      // Con alta confianza, estabilizar
-      this.peakEnhancementFactor = 1.5; // Valor óptimo
+    // Factor 2: Amplitud de señal (señal débil reduce calidad)
+    if (this.signalBuffer.length > 5) {
+      const recentValues = this.signalBuffer.slice(-5).map(s => s.filteredValue);
+      const amplitude = Math.max(...recentValues) - Math.min(...recentValues);
+      
+      if (amplitude < 0.1) {
+        quality -= 15;
+      }
     }
+    
+    // Garantizar rango válido
+    return Math.max(0, Math.min(100, quality));
   }
   
   /**
-   * Reinicia parámetros específicos
+   * Calcula la variabilidad de los intervalos RR
    */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(HEART_RATE_PARAMS);
-    this.peakEnhancementFactor = 1.5;
-    this.valleySuppressionFactor = 0.8;
-    this.dynamicThresholdBuffer = [];
+  private calculateRRVariability(rrIntervals: number[]): number {
+    if (rrIntervals.length < 2) return 0;
+    
+    // Calcular diferencias absolutas entre intervalos adyacentes
+    const differences: number[] = [];
+    for (let i = 1; i < rrIntervals.length; i++) {
+      differences.push(Math.abs(rrIntervals[i] - rrIntervals[i-1]));
+    }
+    
+    // Calcular promedio de diferencias
+    const avgDifference = differences.reduce((sum, diff) => sum + diff, 0) / differences.length;
+    
+    // Normalizar al intervalo RR promedio
+    const avgRR = rrIntervals.reduce((sum, rr) => sum + rr, 0) / rrIntervals.length;
+    
+    return avgDifference / avgRR;
+  }
+  
+  /**
+   * Calcula la confianza en la señal optimizada
+   */
+  private calculateConfidence(signal: ProcessedPPGSignal): number {
+    // Base: calidad de señal normalizada
+    let confidence = signal.quality / 100;
+    
+    // Factor: consistencia de detección de picos
+    if (this.signalBuffer.length > 10) {
+      const peakCount = this.signalBuffer.filter(s => s.isPeak).length;
+      const expectedPeakCount = this.signalBuffer.length / 5; // Asumiendo ~12 por minuto
+      
+      const peakRatio = peakCount / expectedPeakCount;
+      
+      // Penalizar si hay muy pocos o demasiados picos
+      if (peakRatio < 0.5 || peakRatio > 1.5) {
+        confidence *= 0.8;
+      }
+    }
+    
+    // Factor: estabilidad del procesador (aumenta con cada feedback exitoso)
+    confidence *= (1 + Math.min(0.2, this.feedbackCounter * 0.02));
+    
+    return Math.max(0, Math.min(1, confidence));
+  }
+  
+  // Método marcado como protegido para evitar conflictos de visibilidad
+  protected applyFrequencyDomain(values: number[]): number[] {
+    // Implementación específica para frecuencia cardíaca
+    return values; // Implementación simplificada
   }
 }

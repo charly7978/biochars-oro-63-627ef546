@@ -23,6 +23,18 @@ export interface ProcessedPPGSignal {
   isPeak?: boolean;
   lastPeakTime?: number | null;
   rrIntervals?: number[];
+  
+  // Valor normalizado (agregado para compatibilidad)
+  normalizedValue?: number;
+  
+  // Valor amplificado (agregado para compatibilidad)
+  amplifiedValue?: number;
+  
+  // Intensidad de señal
+  signalStrength?: number;
+  
+  // Metadatos adicionales
+  metadata?: Record<string, any>;
 }
 
 // Modos de procesamiento de señal
@@ -43,5 +55,17 @@ export interface PPGProcessingOptions {
   mode?: SignalProcessingMode;
   
   // Factor de amplificación
+  amplificationFactor?: number;
+}
+
+// Interfaces base para los procesadores de señal
+export interface SignalProcessor {
+  processSignal(input: number): ProcessedPPGSignal;
+  reset(): void;
+}
+
+export interface SignalProcessorConfig {
+  mode?: SignalProcessingMode;
+  filterWindowSize?: number;
   amplificationFactor?: number;
 }

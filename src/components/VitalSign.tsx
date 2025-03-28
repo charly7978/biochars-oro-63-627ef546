@@ -6,13 +6,15 @@ interface VitalSignProps {
   value: number | string | any;
   unit?: string;
   highlighted?: boolean;
+  calibrationProgress?: number;
 }
 
 const VitalSign: React.FC<VitalSignProps> = ({ 
   label, 
   value, 
   unit = '', 
-  highlighted = false 
+  highlighted = false,
+  calibrationProgress 
 }) => {
   // Asegurarse de que value sea primitivo (string o número)
   const displayValue = React.useMemo(() => {
@@ -49,6 +51,15 @@ const VitalSign: React.FC<VitalSignProps> = ({
           <span className="text-gray-400 text-xs ml-1">{unit}</span>
         )}
       </div>
+      
+      {calibrationProgress !== undefined && (
+        <div className="w-full mt-1 bg-gray-700/30 h-1 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-blue-500 transition-all duration-300 ease-in-out" 
+            style={{ width: `${Math.min(100, Math.max(0, calibrationProgress * 100))}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 };
