@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -90,7 +89,6 @@ const Index = () => {
             console.log("Index: Nuevos signos vitales procesados", vitals);
             setVitalSigns(vitals);
             
-            // Mostrar notificación de arritmia si se detecta
             if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('Arritmia')) {
               toast({
                 title: "¡Arritmia detectada!",
@@ -175,7 +173,7 @@ const Index = () => {
       toast({
         title: "Medición completada",
         description: "Resultados disponibles",
-        variant: "success"
+        variant: "default"
       });
     }
     

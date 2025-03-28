@@ -45,16 +45,34 @@ const VitalSign: React.FC<VitalSignProps> = ({
            String(displayValue).includes("Arritmia");
   }, [label, displayValue, arrhythmiaData]);
 
+  // Determinar severidad de arritmia para coloración
+  const arrhythmiaSeverity = React.useMemo(() => {
+    if (!showArrhythmiaIndicator || !arrhythmiaData) return null;
+    return arrhythmiaData.severity === 'alta' ? 'alta' : 'media';
+  }, [showArrhythmiaIndicator, arrhythmiaData]);
+
+  // Colores basados en la severidad
+  const getBgColor = () => {
+    if (highlighted) return 'bg-green-900/30';
+    if (showArrhythmiaIndicator) {
+      return arrhythmiaData.severity === 'alta' ? 'bg-red-900/40' : 'bg-red-900/30';
+    }
+    return 'bg-gray-900/30';
+  };
+
+  const getTextColor = () => {
+    if (highlighted) return 'text-green-400';
+    if (showArrhythmiaIndicator) {
+      return arrhythmiaData.severity === 'alta' ? 'text-red-500' : 'text-red-400';
+    }
+    return 'text-white';
+  };
+
   return (
-    <div className={`flex flex-col items-center p-2 rounded-lg transition-colors ${
-      highlighted ? 'bg-green-900/30' : showArrhythmiaIndicator ? 'bg-red-900/30' : 'bg-gray-900/30'
-    }`}>
+    <div className={`flex flex-col items-center p-2 rounded-lg transition-colors ${getBgColor()}`}>
       <div className="text-gray-400 text-xs mb-1">{label}</div>
       <div className="flex items-baseline">
-        <span className={`text-xl font-bold ${
-          highlighted ? 'text-green-400' : 
-          showArrhythmiaIndicator ? 'text-red-400' : 'text-white'
-        }`}>
+        <span className={`text-xl font-bold ${getTextColor()}`}>
           {displayValue}
         </span>
         {unit && displayValue !== "--" && (
@@ -72,7 +90,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
       )}
       
       {showArrhythmiaIndicator && arrhythmiaData && (
-        <div className="w-full mt-1 text-xs text-red-300">
+        <div className={`w-full mt-1 text-xs ${arrhythmiaData.severity === 'alta' ? 'text-red-300' : 'text-orange-300'}`}>
           {arrhythmiaData.severity === 'alta' ? 'Severidad alta' : 'Severidad media'}
         </div>
       )}
