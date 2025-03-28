@@ -20,6 +20,8 @@ export class VitalSignsProcessor {
   
   constructor() {
     this.vitalSignsCalculator = new VitalSignsCalculator();
+    // Iniciamos el optimizador al crear el procesador
+    signalOptimizer.start();
   }
 
   /**
@@ -86,6 +88,8 @@ export class VitalSignsProcessor {
    * Reinicia el procesador
    */
   public reset(): VitalSignsResult | undefined {
+    // Reiniciar el optimizador también
+    signalOptimizer.reset();
     return undefined;
   }
   
@@ -93,6 +97,10 @@ export class VitalSignsProcessor {
    * Reinicio completo del procesador
    */
   public fullReset(): void {
+    // Reiniciar el optimizador
+    signalOptimizer.reset();
+    // Detener el optimizador
+    signalOptimizer.stop();
     // Lógica adicional de reinicio si es necesario
   }
 }
