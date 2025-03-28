@@ -65,11 +65,11 @@ export const usePPGExtraction = () => {
       
       // Actualizar estado
       setLastResult(result);
-      setSignalQuality(result.quality);
-      setFingerDetected(result.fingerDetected);
+      setSignalQuality(result.quality || 0);
+      setFingerDetected(result.combined.fingerDetected);
       
       // Actualizar ritmo cardíaco si hay confianza suficiente
-      if (result.averageBPM !== null && result.confidence > 0.4) {
+      if (result.averageBPM !== null && result.averageBPM > 0 && result.confidence > 0.4) {
         setHeartRate(result.averageBPM);
       }
       

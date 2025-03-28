@@ -13,12 +13,12 @@ interface PPGExtractionResult {
 
 export class PPGSignalExtractor {
   private recentValues: number[] = [];
-  private readonly maxRecentValues: number = 20;
   private minSignalThreshold: number = 0.05;
   private stableCountThreshold: number = 5;
   private stableCount: number = 0;
   private baselineMean: number = 0;
   private baselineStdDev: number = 0;
+  private _maxRecentValues: number = 20;
   
   /**
    * Extrae información básica de la señal PPG
@@ -29,7 +29,7 @@ export class PPGSignalExtractor {
     
     // Almacenar valores recientes
     this.recentValues.push(value);
-    if (this.recentValues.length > this.maxRecentValues) {
+    if (this.recentValues.length > this._maxRecentValues) {
       this.recentValues.shift();
     }
     
@@ -145,7 +145,14 @@ export class PPGSignalExtractor {
     }
     
     if (config.maxRecentValues !== undefined) {
-      this.maxRecentValues = config.maxRecentValues;
+      this._maxRecentValues = config.maxRecentValues;
     }
+  }
+  
+  /**
+   * Obtiene el máximo de valores recientes configurado
+   */
+  public get maxRecentValues(): number {
+    return this._maxRecentValues;
   }
 }

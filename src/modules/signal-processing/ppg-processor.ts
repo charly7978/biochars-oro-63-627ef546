@@ -1,282 +1,373 @@
 
 /**
- * Procesador de señal PPG
- * Implementa el procesamiento central de la señal fotopletismográfica
+ * Procesador avanzado de señal PPG
+ * Implementa algoritmos de vanguardia para el procesamiento óptimo de la señal fotopletismográfica
  */
 
-import { SignalProcessor, ProcessedPPGSignal, SignalProcessorConfig } from './types';
-import { detectFinger } from './utils/finger-detector';
-import { assessSignalQuality } from './utils/quality-detector';
+import { ProcessedPPGSignal, SignalProcessor, SignalProcessorConfig } from './types';
+import { detectFingerContact } from './utils/finger-detector';
+import { evaluateSignalQuality } from './utils/quality-detector';
 import { normalizeSignal } from './utils/signal-normalizer';
 
-export class PPGSignalProcessor implements SignalProcessor {
-  // Configuración del procesador
+export class PPGProcessor implements SignalProcessor {
+  // Parámetros de configuración
   private config: SignalProcessorConfig = {
     filterParams: {
-      lowPassCutoff: 5, // Hz
-      highPassCutoff: 0.5, // Hz
-      smoothingFactor: 0.85
+      lowPassCutoff: 5.0,        // Hz - Frecuencia de corte paso bajo
+      highPassCutoff: 0.5,       // Hz - Frecuencia de corte paso alto
+      smoothingFactor: 0.85      // Factor de suavizado
     },
     amplification: {
-      gain: 3.5,
-      adaptiveGain: true
+      gain: 3.5,                 // Ganancia general
+      adaptiveGain: true         // Adaptación automática según calidad
     },
     fingerDetection: {
-      threshold: 0.08,
-      stabilityThreshold: 5
+      threshold: 0.05,           // Umbral para detección de dedo
+      stabilityThreshold: 0.75   // Umbral de estabilidad requerida
     }
   };
+
+  // Estado interno del procesador
+  private readonly BUFFER_SIZE = 100;
+  private readonly SAMPLE_RATE = 30;  // Hz - Tasa de muestreo esperada
+  private valueBuffer: number[] = [];
+  private timeBuffer: number[] = [];
+  private smoothedBuffer: number[] = [];
+  private lastProcessedSignal: ProcessedPPGSignal | null = null;
   
-  // Estado del procesador
-  private lastFilteredValue: number = 0;
-  private signalBuffer: number[] = [];
-  private readonly bufferSize: number = 50;
-  private baselineValue: number = 0;
-  private baselineUpdated: boolean = false;
-  private qualityHistory: number[] = [];
-  private readonly qualityHistorySize: number = 10;
-  private stabilityCounter: number = 0;
-  private lastTimestamp: number = 0;
+  // Filtros IIR avanzados
+  private lowPassFilter: LowPassFilter;
+  private highPassFilter: HighPassFilter;
+  private adaptiveFilter: AdaptiveNoiseFilter;
+  
+  // Detección avanzada de picos
+  private peakDetector: PeakDetector;
   
   constructor() {
-    console.log("PPGSignalProcessor: Instancia creada");
+    // Inicializar filtros avanzados
+    this.lowPassFilter = new LowPassFilter(this.config.filterParams.lowPassCutoff, this.SAMPLE_RATE);
+    this.highPassFilter = new HighPassFilter(this.config.filterParams.highPassCutoff, this.SAMPLE_RATE);
+    this.adaptiveFilter = new AdaptiveNoiseFilter(0.01, 0.98);
+    
+    // Inicializar detector de picos adaptativo
+    this.peakDetector = new PeakDetector(0.3, 300);
+    
+    console.log("PPGProcessor: Inicializado con algoritmos de filtrado avanzado");
   }
-  
+
   /**
-   * Procesa un valor de señal PPG
+   * Procesa un valor de señal PPG y aplica algoritmos avanzados de filtrado y optimización
+   * @param value Valor crudo de la señal PPG
+   * @param timestamp Marca de tiempo (ms) de la captura
+   * @returns Señal PPG procesada con todos los parámetros calculados
    */
   public processSignal(value: number, timestamp: number = Date.now()): ProcessedPPGSignal {
-    // Actualizar buffer de señal
-    this.signalBuffer.push(value);
-    if (this.signalBuffer.length > this.bufferSize) {
-      this.signalBuffer.shift();
+    // Actualizar buffers
+    this.valueBuffer.push(value);
+    this.timeBuffer.push(timestamp);
+    
+    if (this.valueBuffer.length > this.BUFFER_SIZE) {
+      this.valueBuffer.shift();
+      this.timeBuffer.shift();
     }
     
-    // Aplicar filtro pasa-bajos para suavizar la señal
-    const filteredValue = this.applyLowPassFilter(value);
+    // ===== FASE 1: FILTRADO AVANZADO =====
+    // Aplicar filtro paso alto para eliminar componente DC y tendencias lentas
+    const highPassValue = this.highPassFilter.filter(value);
     
-    // Normalizar señal (centrar alrededor de cero)
-    const normalizedValue = this.normalizeValue(filteredValue);
+    // Aplicar filtro paso bajo para eliminar ruido de alta frecuencia
+    const filteredValue = this.lowPassFilter.filter(highPassValue);
     
-    // Amplificar señal
-    const amplifiedValue = this.amplifySignal(normalizedValue);
+    // Aplicar filtro adaptativo para ruido variable
+    const adaptiveFiltered = this.adaptiveFilter.filter(filteredValue);
     
-    // Detectar presencia de dedo
-    const fingerDetected = this.detectFinger(filteredValue);
+    // ===== FASE 2: NORMALIZACIÓN Y AMPLIFICACIÓN =====
+    // Normalizar señal entre 0-1 para estandarización
+    const normalizedValue = normalizeSignal(adaptiveFiltered, this.valueBuffer);
     
-    // Evaluar calidad de la señal
-    const quality = this.evaluateSignalQuality(filteredValue, fingerDetected);
+    // Calcular factor de amplificación adaptativo según calidad
+    let amplificationGain = this.config.amplification.gain;
+    if (this.config.amplification.adaptiveGain) {
+      // Reducir ganancia si la señal es débil o ruidosa
+      const signalQuality = evaluateSignalQuality(this.valueBuffer.slice(-30));
+      amplificationGain *= Math.min(1, 0.5 + signalQuality * 0.5);
+    }
     
-    // Calcular fuerza de la señal
-    const signalStrength = this.calculateSignalStrength(filteredValue, quality);
+    // Amplificar señal para mejor detección de características
+    const amplifiedValue = normalizedValue * amplificationGain;
     
-    const result: ProcessedPPGSignal = {
+    // ===== FASE 3: ANÁLISIS DE CALIDAD Y DETECCIONES =====
+    // Detectar presencia de dedo con algoritmo avanzado
+    const fingerDetected = detectFingerContact(this.valueBuffer.slice(-30), this.config.fingerDetection.threshold);
+    
+    // Evaluar calidad de señal
+    const signalStrength = evaluateSignalQuality(this.valueBuffer.slice(-30));
+    
+    // Detectar picos con algoritmo adaptativo
+    const isPeak = this.peakDetector.detectPeak(amplifiedValue, timestamp);
+    
+    // Obtener datos de RR para análisis cardíaco
+    const { rrIntervals, lastPeakTime } = this.peakDetector.getRRData();
+    
+    // ===== FASE 4: COMPILAR RESULTADO =====
+    const processedSignal: ProcessedPPGSignal = {
       timestamp,
       rawValue: value,
-      filteredValue,
+      filteredValue: adaptiveFiltered,
       normalizedValue,
       amplifiedValue,
-      quality,
+      quality: signalStrength * 100, // Convertir a escala 0-100
       fingerDetected,
       signalStrength,
-      metadata: {}
+      metadata: {
+        rrIntervals,
+        lastPeakTime,
+        isPeak
+      }
     };
     
-    this.lastTimestamp = timestamp;
+    this.lastProcessedSignal = processedSignal;
+    return processedSignal;
+  }
+
+  /**
+   * Actualiza la configuración del procesador
+   */
+  public setConfig(config: SignalProcessorConfig): void {
+    this.config = { ...this.config, ...config };
     
-    return result;
-  }
-  
-  /**
-   * Aplica filtro pasa-bajos a la señal
-   */
-  private applyLowPassFilter(value: number): number {
-    const alpha = this.config.filterParams?.smoothingFactor || 0.85;
-    this.lastFilteredValue = alpha * this.lastFilteredValue + (1 - alpha) * value;
-    return this.lastFilteredValue;
-  }
-  
-  /**
-   * Normaliza la señal respecto a una línea base
-   */
-  private normalizeValue(value: number): number {
-    // Si el buffer tiene suficientes valores, calcular línea base
-    if (this.signalBuffer.length >= 20 && !this.baselineUpdated) {
-      const recentValues = this.signalBuffer.slice(-20);
-      this.baselineValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-      this.baselineUpdated = true;
+    // Actualizar parámetros de filtros en tiempo real
+    if (config.filterParams) {
+      if (config.filterParams.lowPassCutoff) {
+        this.lowPassFilter.setCutoff(config.filterParams.lowPassCutoff);
+      }
+      if (config.filterParams.highPassCutoff) {
+        this.highPassFilter.setCutoff(config.filterParams.highPassCutoff);
+      }
     }
     
-    // Actualizar periódicamente la línea base
-    if (this.signalBuffer.length % 10 === 0) {
-      const recentValues = this.signalBuffer.slice(-20);
-      this.baselineValue = this.baselineValue * 0.8 + 
-                          (recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length) * 0.2;
+    // Actualizar detector de picos
+    if (config.fingerDetection) {
+      if (config.fingerDetection.threshold) {
+        this.peakDetector.setThreshold(config.fingerDetection.threshold);
+      }
     }
+  }
+
+  /**
+   * Reinicia el procesador y todos sus componentes internos
+   */
+  public reset(): void {
+    this.valueBuffer = [];
+    this.timeBuffer = [];
+    this.smoothedBuffer = [];
+    this.lastProcessedSignal = null;
     
-    // Normalizar respecto a la línea base
-    return value - this.baselineValue;
+    // Reiniciar estados de filtros
+    this.lowPassFilter.reset();
+    this.highPassFilter.reset();
+    this.adaptiveFilter.reset();
+    
+    // Reiniciar detector de picos
+    this.peakDetector.reset();
+    
+    console.log("PPGProcessor: Reset completo de estados");
+  }
+}
+
+// ===== IMPLEMENTACIONES DE ALGORITMOS AVANZADOS =====
+
+/**
+ * Filtro paso bajo IIR avanzado
+ * Elimina componentes de alta frecuencia (ruido)
+ */
+class LowPassFilter {
+  private a: number;
+  private b: number;
+  private prevOutput: number = 0;
+  
+  constructor(cutoffFrequency: number, sampleRate: number) {
+    const rc = 1.0 / (2.0 * Math.PI * cutoffFrequency);
+    const dt = 1.0 / sampleRate;
+    this.a = dt / (rc + dt);
+    this.b = rc / (rc + dt);
   }
   
-  /**
-   * Amplifica la señal para mejorar la detección de picos
-   */
-  private amplifySignal(value: number): number {
-    const gain = this.config.amplification?.gain || 3.5;
-    
-    // Si está habilitada la ganancia adaptativa, ajustar según la variabilidad
-    if (this.config.amplification?.adaptiveGain && this.signalBuffer.length >= 10) {
-      const recentValues = this.signalBuffer.slice(-10);
-      const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-      const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-      const stdDev = Math.sqrt(variance);
-      
-      // Ajustar ganancia inversamente a la desviación estándar (más estable = más ganancia)
-      const adaptiveGain = stdDev < 0.1 ? 
-                         gain * (1 + (0.1 - stdDev) * 10) : 
-                         gain / (1 + (stdDev - 0.1) * 5);
-      
-      return value * adaptiveGain;
-    }
-    
-    return value * gain;
+  public filter(input: number): number {
+    this.prevOutput = this.a * input + this.b * this.prevOutput;
+    return this.prevOutput;
   }
   
-  /**
-   * Detecta la presencia de dedo sobre la cámara
-   */
-  private detectFinger(value: number): boolean {
-    const threshold = this.config.fingerDetection?.threshold || 0.08;
-    const stabilityThreshold = this.config.fingerDetection?.stabilityThreshold || 5;
+  public setCutoff(cutoffFrequency: number): void {
+    const rc = 1.0 / (2.0 * Math.PI * cutoffFrequency);
+    const dt = 1.0 / 30; // Mantener constante la tasa de muestreo
+    this.a = dt / (rc + dt);
+    this.b = rc / (rc + dt);
+  }
+  
+  public reset(): void {
+    this.prevOutput = 0;
+  }
+}
+
+/**
+ * Filtro paso alto IIR avanzado
+ * Elimina componentes de baja frecuencia (tendencias lentas)
+ */
+class HighPassFilter {
+  private a: number;
+  private b: number;
+  private prevInput: number = 0;
+  private prevOutput: number = 0;
+  
+  constructor(cutoffFrequency: number, sampleRate: number) {
+    const rc = 1.0 / (2.0 * Math.PI * cutoffFrequency);
+    const dt = 1.0 / sampleRate;
+    this.a = rc / (rc + dt);
+    this.b = rc / (rc + dt);
+  }
+  
+  public filter(input: number): number {
+    const output = this.a * (this.prevOutput + input - this.prevInput);
+    this.prevInput = input;
+    this.prevOutput = output;
+    return output;
+  }
+  
+  public setCutoff(cutoffFrequency: number): void {
+    const rc = 1.0 / (2.0 * Math.PI * cutoffFrequency);
+    const dt = 1.0 / 30;
+    this.a = rc / (rc + dt);
+    this.b = rc / (rc + dt);
+  }
+  
+  public reset(): void {
+    this.prevInput = 0;
+    this.prevOutput = 0;
+  }
+}
+
+/**
+ * Filtro adaptativo de ruido avanzado
+ * Se ajusta dinámicamente al ruido presente en la señal
+ */
+class AdaptiveNoiseFilter {
+  private learningRate: number;
+  private momentum: number;
+  private weights: number[] = [0, 0, 0, 0, 0];
+  private inputs: number[] = [0, 0, 0, 0, 0];
+  
+  constructor(learningRate: number, momentum: number) {
+    this.learningRate = learningRate;
+    this.momentum = momentum;
+  }
+  
+  public filter(input: number): number {
+    // Actualizar buffer de entradas
+    this.inputs.shift();
+    this.inputs.push(input);
     
-    // Verificar si hay suficientes muestras para evaluar
-    if (this.signalBuffer.length < 10) {
+    // Aplicar filtro
+    let output = 0;
+    for (let i = 0; i < this.weights.length; i++) {
+      output += this.weights[i] * this.inputs[i];
+    }
+    
+    // Actualizar pesos (aprendizaje adaptativo)
+    const error = input - output;
+    for (let i = 0; i < this.weights.length; i++) {
+      this.weights[i] = this.momentum * this.weights[i] + 
+                        this.learningRate * error * this.inputs[i];
+    }
+    
+    return output;
+  }
+  
+  public reset(): void {
+    this.weights = [0, 0, 0, 0, 0];
+    this.inputs = [0, 0, 0, 0, 0];
+  }
+}
+
+/**
+ * Detector de picos adaptativo avanzado
+ * Identifica picos en la señal PPG ajustándose a la calidad
+ */
+class PeakDetector {
+  private threshold: number;
+  private minInterval: number;
+  private buffer: number[] = [];
+  private readonly BUFFER_SIZE = 5;
+  private lastPeakTime: number | null = null;
+  private rrIntervals: number[] = [];
+  private readonly MAX_RR_INTERVALS = 20;
+  
+  constructor(threshold: number, minInterval: number) {
+    this.threshold = threshold;
+    this.minInterval = minInterval;
+  }
+  
+  public detectPeak(value: number, timestamp: number): boolean {
+    // Actualizar buffer
+    this.buffer.push(value);
+    if (this.buffer.length > this.BUFFER_SIZE) {
+      this.buffer.shift();
+    }
+    
+    // Necesitamos al menos 3 valores para detectar un pico
+    if (this.buffer.length < 3) {
       return false;
     }
     
-    // Calcular estadísticas recientes
-    const recentValues = this.signalBuffer.slice(-10);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-    const stdDev = Math.sqrt(variance);
+    // Un pico es cuando el valor del medio es mayor que sus vecinos
+    const isPotentialPeak = 
+      this.buffer[Math.floor(this.buffer.length / 2)] > this.buffer[Math.floor(this.buffer.length / 2) - 1] &&
+      this.buffer[Math.floor(this.buffer.length / 2)] > this.buffer[Math.floor(this.buffer.length / 2) + 1] &&
+      this.buffer[Math.floor(this.buffer.length / 2)] > this.threshold;
     
-    // Criterios de detección:
-    // 1. La media debe estar por encima del umbral
-    // 2. Debe haber cierta variabilidad pero no demasiada
-    const condition1 = Math.abs(mean) > threshold;
-    const condition2 = stdDev > 0.01 && stdDev < 0.5;
+    // Verificar tiempo mínimo desde el último pico
+    const hasMinimumInterval = 
+      this.lastPeakTime === null || 
+      (timestamp - this.lastPeakTime) > this.minInterval;
     
-    if (condition1 && condition2) {
-      this.stabilityCounter = Math.min(stabilityThreshold + 3, this.stabilityCounter + 1);
-    } else {
-      this.stabilityCounter = Math.max(0, this.stabilityCounter - 1);
-    }
+    const isPeak = isPotentialPeak && hasMinimumInterval;
     
-    return this.stabilityCounter >= stabilityThreshold;
-  }
-  
-  /**
-   * Evalúa la calidad de la señal (0-100)
-   */
-  private evaluateSignalQuality(value: number, fingerDetected: boolean): number {
-    // Si no se detecta dedo, calidad cero
-    if (!fingerDetected) {
-      return 0;
-    }
-    
-    let quality = 0;
-    
-    // Evaluar basado en variabilidad reciente
-    if (this.signalBuffer.length >= 20) {
-      const recentValues = this.signalBuffer.slice(-20);
-      const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-      const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-      const stdDev = Math.sqrt(variance);
-      
-      // Calidad basada en desviación estándar (mejor entre 0.05 y 0.2)
-      if (stdDev >= 0.01 && stdDev <= 0.5) {
-        if (stdDev < 0.05) {
-          quality = (stdDev - 0.01) / 0.04 * 50; // 0-50
-        } else if (stdDev <= 0.2) {
-          quality = 50 + (0.2 - stdDev) / 0.15 * 50; // 50-100
-        } else {
-          quality = 50 * (0.5 - stdDev) / 0.3; // 50-0
+    // Si es un pico, registrarlo y calcular intervalo RR
+    if (isPeak) {
+      if (this.lastPeakTime !== null) {
+        const interval = timestamp - this.lastPeakTime;
+        this.rrIntervals.push(interval);
+        if (this.rrIntervals.length > this.MAX_RR_INTERVALS) {
+          this.rrIntervals.shift();
         }
       }
-      
-      // Valor absoluto también influye en la calidad
-      const absValue = Math.abs(value);
-      let amplitudeQuality = Math.min(100, absValue * 300);
-      
-      // Combinar métricas
-      quality = quality * 0.7 + amplitudeQuality * 0.3;
+      this.lastPeakTime = timestamp;
     }
     
-    // Almacenar calidad para suavizar los cambios
-    this.qualityHistory.push(quality);
-    if (this.qualityHistory.length > this.qualityHistorySize) {
-      this.qualityHistory.shift();
-    }
-    
-    // Suavizar cambios de calidad usando promedio móvil
-    const smoothedQuality = this.qualityHistory.reduce((sum, q) => sum + q, 0) / this.qualityHistory.length;
-    
-    return Math.round(Math.min(100, Math.max(0, smoothedQuality)));
+    return isPeak;
   }
   
-  /**
-   * Calcula la fuerza de la señal (0-100)
-   */
-  private calculateSignalStrength(value: number, quality: number): number {
-    // La fuerza se basa en amplitud y calidad
-    const absValue = Math.abs(value);
-    const amplitudeStrength = Math.min(100, absValue * 300);
-    
-    // Combinar con calidad para obtener fuerza final
-    return Math.round(quality * 0.7 + amplitudeStrength * 0.3);
-  }
-  
-  /**
-   * Configura parámetros del procesador
-   */
-  public setConfig(config: SignalProcessorConfig): void {
-    this.config = {
-      ...this.config,
-      ...config,
-      filterParams: {
-        ...this.config.filterParams,
-        ...config.filterParams
-      },
-      amplification: {
-        ...this.config.amplification,
-        ...config.amplification
-      },
-      fingerDetection: {
-        ...this.config.fingerDetection,
-        ...config.fingerDetection
-      }
+  public getRRData(): { rrIntervals: number[], lastPeakTime: number | null } {
+    return {
+      rrIntervals: [...this.rrIntervals],
+      lastPeakTime: this.lastPeakTime
     };
   }
   
-  /**
-   * Reinicia el procesador
-   */
+  public setThreshold(threshold: number): void {
+    this.threshold = threshold;
+  }
+  
   public reset(): void {
-    this.lastFilteredValue = 0;
-    this.signalBuffer = [];
-    this.baselineValue = 0;
-    this.baselineUpdated = false;
-    this.qualityHistory = [];
-    this.stabilityCounter = 0;
-    this.lastTimestamp = 0;
-    
-    console.log("PPGSignalProcessor: Reiniciado");
+    this.buffer = [];
+    this.lastPeakTime = null;
+    this.rrIntervals = [];
   }
 }
 
 /**
  * Crea una nueva instancia del procesador de señal PPG
  */
-export function createPPGSignalProcessor(): SignalProcessor {
-  return new PPGSignalProcessor();
+export function createPPGProcessor(): SignalProcessor {
+  return new PPGProcessor();
 }
