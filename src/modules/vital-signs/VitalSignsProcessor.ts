@@ -1,5 +1,5 @@
+
 import { ArrhythmiaDetector, ArrhythmiaDetectionResult } from './ArrhythmiaDetector';
-import { calculateAC, calculateDC, calculatePerfusionIndex, applySMAFilter } from './utils';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -46,6 +46,7 @@ export class VitalSignsProcessor {
   private rrIntervals: number[] = [];
   private measurementStartTime: number = Date.now();
   private arrhythmiaDetector: ArrhythmiaDetector;
+  private smaBuffer: number[] = [];
   
   private spo2Buffer: number[] = [];
   private readonly SPO2_BUFFER_SIZE = 10;
@@ -125,8 +126,8 @@ export class VitalSignsProcessor {
     if (values.length < 10) return 0;
     
     const std = this.calculateStandardDeviation(values);
-    const ac = this.calculateAC(values);
-    const dc = this.calculateDC(values);
+    const ac = calculateAC(values);
+    const dc = calculateDC(values);
     
     const variability = std / (dc > 0 ? dc : 1);
     const perfusionIndex = ac / (dc > 0 ? dc : 1);
@@ -165,8 +166,8 @@ export class VitalSignsProcessor {
     const bpFactor = bp.systolic > 0 ? ((bp.systolic - 120) * 0.6) : 0;
     
     // Adjust based on signal characteristics
-    const ac = this.calculateAC(values);
-    const dc = this.calculateDC(values);
+    const ac = calculateAC(values);
+    const dc = calculateDC(values);
     const perfusionIndex = dc > 0 ? ac / dc : 0;
     const perfusionFactor = perfusionIndex * 50;
     
@@ -188,17 +189,6 @@ export class VitalSignsProcessor {
     return Math.sqrt(avgSqDiff);
   }
 
-  private calculateAC(values: number[]): number {
-    if (values.length === 0) return 0;
-    return Math.max(...values) - Math.min(...values);
-  }
-
-  private calculateDC(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
-
-  private smaBuffer: number[] = [];
   private applySMAFilter(value: number): number {
     this.smaBuffer.push(value);
     if (this.smaBuffer.length > this.SMA_WINDOW) {
@@ -217,7 +207,7 @@ export class VitalSignsProcessor {
       return 0;
     }
 
-    const dc = this.calculateDC(values);
+    const dc = calculateDC(values);
     if (dc === 0) {
       if (this.spo2Buffer.length > 0) {
         const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
@@ -226,7 +216,7 @@ export class VitalSignsProcessor {
       return 0;
     }
 
-    const ac = this.calculateAC(values);
+    const ac = calculateAC(values);
     
     const perfusionIndex = ac / dc;
     
@@ -385,25 +375,6 @@ export class VitalSignsProcessor {
     return mean;
   }
 
-  private calculateStandardDeviation(values: number[]): number {
-    const n = values.length;
-    if (n === 0) return 0;
-    const mean = values.reduce((a, b) => a + b, 0) / n;
-    const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-    const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-    return Math.sqrt(avgSqDiff);
-  }
-
-  private calculateAC(values: number[]): number {
-    if (values.length === 0) return 0;
-    return Math.max(...values) - Math.min(...values);
-  }
-
-  private calculateDC(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
-
   public reset(): VitalSignsResult | null {
     const lastValidResult: VitalSignsResult | null = this.ppgValues.length > 30 ? {
       spo2: this.calculateSpO2(this.ppgValues.slice(-60)),
@@ -444,6 +415,15 @@ export class VitalSignsProcessor {
     this.reset();
     this.arrhythmiaDetector = new ArrhythmiaDetector();
   }
+}
 
-  private smaBuffer: number[] = [];
+// Utilidades extraídas para evitar duplicación
+function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+function calculateDC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
 }
