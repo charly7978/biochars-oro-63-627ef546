@@ -21,5 +21,11 @@ export interface VitalSignsResult {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
+    visualWindow?: {
+      start: number;
+      end: number;
+    };
+    severity?: 'media' | 'alta';
+    type?: string;
   } | null;
 }
