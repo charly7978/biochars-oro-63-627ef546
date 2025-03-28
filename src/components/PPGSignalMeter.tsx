@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, HeartPulse, AlertTriangle } from 'lucide-react';
 import { CircularBuffer } from '../utils/CircularBuffer';
