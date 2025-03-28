@@ -74,13 +74,25 @@ export class ArrhythmiaProcessor {
             start: windowStart,
             end: windowEnd
           },
-          severity: 'media',
+          severity: 'media' as 'media' | 'alta',
           type: 'irregular'
         } 
       : null;
     
     if (this.arrhythmiaDetected && lastArrhythmiaData) {
       console.log("ArrhythmiaProcessor: Returning arrhythmia data with visualization window", lastArrhythmiaData);
+      
+      // Dispatch event for connected components to react
+      const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
+        detail: {
+          timestamp: currentTime,
+          start: lastArrhythmiaData.visualWindow.start,
+          end: lastArrhythmiaData.visualWindow.end,
+          severity: lastArrhythmiaData.severity,
+          type: lastArrhythmiaData.type
+        }
+      });
+      document.dispatchEvent(arrhythmiaEvent);
     }
     
     return {
