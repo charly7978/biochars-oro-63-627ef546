@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, ISignalProcessor } from '../types/signal';
 import { PPGSignalProcessor as CorePPGSignalProcessor } from './core/SignalProcessor';
 
@@ -81,10 +80,10 @@ export class PPGSignalProcessor implements ISignalProcessor {
   }
 
   /**
-   * Método requerido por la interfaz pero que no hace nada
+   * Calibra el procesador para mejores resultados
    */
   async calibrate(): Promise<boolean> {
-    return true;
+    return this.coreProcessor.calibrate();
   }
 
   /**
