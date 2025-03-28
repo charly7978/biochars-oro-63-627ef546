@@ -21,7 +21,8 @@ const VitalSignsMonitor = () => {
     isCameraActive,
     isProcessing,
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    reset
   } = useVitalSigns();
   
   // Get measurement state directly from manager
@@ -50,6 +51,7 @@ const VitalSignsMonitor = () => {
   };
   
   const resetAll = () => {
+    reset();
     measurementManager.reset();
   };
   
@@ -105,7 +107,7 @@ const VitalSignsMonitor = () => {
               value={lastSignal?.filteredValue || 0}
               quality={lastSignal?.quality || 0}
               isFingerDetected={lastSignal?.fingerDetected || false}
-              onStartMeasurement={startMonitoring}
+              onStartMeasurement={handleToggleMonitoring}
               onReset={resetAll}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}

@@ -1,3 +1,4 @@
+
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -85,7 +86,15 @@ export const useVitalSignsProcessor = () => {
     
     // Actualizar ventanas de arritmia si hay datos
     if (result.arrhythmiaData?.windows) {
-      setArrhythmiaWindows(result.arrhythmiaData.windows);
+      // Convertir y mapear los datos de ventanas al formato ArrhythmiaWindow
+      const formattedWindows: ArrhythmiaWindow[] = (result.arrhythmiaData.windows || []).map((window: any[]) => {
+        return {
+          start: window[0] || 0,
+          end: window[1] || 0
+        };
+      });
+      
+      setArrhythmiaWindows(formattedWindows);
     }
     
     // Actualizar log
@@ -188,7 +197,7 @@ export const useVitalSignsProcessor = () => {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.bloodPressure.display
+          presión: lastValidResults.pressure
         } : null
       },
       timestamp: new Date().toISOString()
@@ -213,7 +222,7 @@ export const useVitalSignsProcessor = () => {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.bloodPressure.display
+          presión: lastValidResults.pressure
         } : null,
         señalesProcesadas: processedSignals.current
       },
