@@ -1,3 +1,4 @@
+
 /**
  * Hook para cálculo de signos vitales
  * 

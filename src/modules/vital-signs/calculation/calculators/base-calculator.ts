@@ -50,3 +50,5 @@ export abstract class BaseCalculator {
     return Math.max(0, Math.min(100, 100 - cv));
   }
 }
+
+export { BaseCalculator as BaseVitalSignCalculator };

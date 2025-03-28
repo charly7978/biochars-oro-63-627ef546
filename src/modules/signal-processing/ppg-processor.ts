@@ -1,213 +1,260 @@
 
 /**
- * Procesador principal de señal PPG
- * Implementa filtrado, normalización y detección avanzada
+ * Procesador de señal PPG
+ * Extrae, filtra y normaliza señales PPG
  */
 
-import { ProcessedPPGSignal, PPGProcessingOptions, SignalProcessingMode } from './types';
-import { detectFinger, detectFingerContact } from './utils/finger-detector';
-import { assessSignalQuality, evaluateSignalQuality } from './utils/quality-detector';
+import { ProcessedPPGSignal } from './types';
+import { SignalProcessor } from './types';
 
-/**
- * Procesador avanzado de señal PPG con pipeline de procesamiento flexible
- */
-export class PPGProcessor {
-  // Modo de procesamiento
-  private mode: SignalProcessingMode = 'standard';
+export class PPGProcessor implements SignalProcessor {
+  private buffer: number[] = [];
+  private bufferSize = 50;
+  private initialized = false;
+  private lastRawValue = 0;
+  private lastNormalizedValue = 0;
+  private signalQualityEstimate = 0;
+  private fingerDetected = false;
   
-  // Umbral de detección de dedo
-  private fingerThreshold: number = 0.05;
-  
-  // Filtros y buffer
-  private readonly MAX_BUFFER_SIZE = 100;
-  private valueBuffer: number[] = [];
-  private readonly SMA_WINDOW_SIZE = 15;
-  private readonly LPF_ALPHA = 0.2;
-  
-  // Detección de dedo
-  private fingerStabilityCounter: number = 0;
-  private readonly STABILITY_THRESHOLD = 5;
-  
-  // Último resultado para cálculos diferenciales
-  private lastResult: ProcessedPPGSignal | null = null;
-  
-  /**
-   * Inicializa el procesador con opciones específicas
-   */
-  constructor(options: PPGProcessingOptions = {}) {
-    this.configure(options);
-    console.log("PPGProcessor: Inicializado con modo:", this.mode);
+  constructor() {
+    this.reset();
   }
   
   /**
-   * Configura parámetros del procesador
+   * Inicializa el procesador
    */
-  public configure(options: PPGProcessingOptions): void {
-    if (options.mode !== undefined) {
-      this.mode = options.mode;
-    }
-    
-    if (options.fingerDetectionThreshold !== undefined) {
-      this.fingerThreshold = options.fingerDetectionThreshold;
-    }
+  public initialize(): void {
+    this.reset();
+    this.initialized = true;
   }
   
   /**
-   * Procesa un valor PPG raw y retorna información procesada
+   * Procesa un valor de entrada y produce una señal PPG procesada
    */
-  public processValue(value: number): ProcessedPPGSignal {
-    const now = Date.now();
-    
-    // Actualizar buffer
-    this.valueBuffer.push(value);
-    if (this.valueBuffer.length > this.MAX_BUFFER_SIZE) {
-      this.valueBuffer.shift();
+  public processSignal(input: number): ProcessedPPGSignal {
+    // Verificar inicialización
+    if (!this.initialized) {
+      this.initialize();
     }
     
-    // Aplicar filtros según modo
-    const filteredValue = this.applyFilters(value);
+    // Añadir a buffer
+    this.buffer.push(input);
+    if (this.buffer.length > this.bufferSize) {
+      this.buffer.shift();
+    }
     
-    // Detectar presencia de dedo
-    const { detected, updatedCounter } = detectFinger(
-      this.valueBuffer,
-      this.fingerStabilityCounter,
-      {
-        threshold: this.fingerThreshold,
-        stabilityThreshold: this.STABILITY_THRESHOLD,
-        minStdDev: 0.01,
-        maxStdDev: 0.5
-      }
-    );
+    // Detectar presencia de dedo (señal significativa)
+    this.detectFinger(input);
     
-    this.fingerStabilityCounter = updatedCounter;
+    // Calcular calidad de señal
+    this.calculateSignalQuality();
     
-    // Evaluar calidad de señal
-    const quality = assessSignalQuality(this.valueBuffer, detected);
+    // Normalizar valor
+    const normalizedValue = this.normalizeValue(input);
+    
+    // Amplificar valor si es necesario
+    const amplifiedValue = this.amplifyValue(normalizedValue);
+    
+    // Filtrar señal
+    const filteredValue = this.filterValue(amplifiedValue);
     
     // Crear resultado
     const result: ProcessedPPGSignal = {
-      rawValue: value,
-      filteredValue,
-      timestamp: now,
-      quality,
-      fingerDetected: detected,
-      rrIntervals: this.lastResult?.rrIntervals || [],
-      lastPeakTime: this.lastResult?.lastPeakTime || null,
-      isPeak: false // Será actualizado por procesador de latidos
+      timestamp: Date.now(),
+      rawValue: input,
+      normalizedValue: normalizedValue,
+      amplifiedValue: amplifiedValue,
+      filteredValue: filteredValue,
+      quality: this.signalQualityEstimate,
+      fingerDetected: this.fingerDetected,
+      signalStrength: this.calculateSignalStrength(input),
+      isPeak: false // Se establecerá en otro procesador
     };
     
-    this.lastResult = result;
+    // Actualizar últimos valores
+    this.lastRawValue = input;
+    this.lastNormalizedValue = normalizedValue;
+    
     return result;
   }
   
   /**
-   * Aplica cadena de filtros basada en modo actual
+   * Iniciar el procesador
    */
-  private applyFilters(value: number): number {
-    if (this.valueBuffer.length < 3) return value;
-    
-    // Aplicar filtros en cascada
-    switch (this.mode) {
-      case 'adaptive':
-        return this.applyAdaptiveFilters(value);
-      case 'highSensitivity':
-        return this.applyHighSensitivityFilters(value);
-      case 'lowNoise':
-        return this.applyLowNoiseFilters(value);
-      case 'standard':
-      default:
-        return this.applyStandardFilters(value);
-    }
+  public start(): void {
+    this.initialized = true;
   }
   
   /**
-   * Aplica filtros en modo estándar
+   * Detener el procesador
    */
-  private applyStandardFilters(value: number): number {
-    // 1. Media móvil simple para eliminar ruido
-    const smaWindowSize = Math.min(this.SMA_WINDOW_SIZE, this.valueBuffer.length);
-    const recentValues = this.valueBuffer.slice(-smaWindowSize);
-    const smaValue = recentValues.reduce((sum, val) => sum + val, 0) / smaWindowSize;
-    
-    // 2. Filtro pasa bajos
-    const lpfValue = this.lastResult 
-      ? this.lastResult.filteredValue * (1 - this.LPF_ALPHA) + smaValue * this.LPF_ALPHA
-      : smaValue;
-    
-    return lpfValue;
+  public stop(): void {
+    this.initialized = false;
   }
   
   /**
-   * Aplica filtros adaptativos basados en calidad de señal
-   */
-  private applyAdaptiveFilters(value: number): number {
-    // Determinar fuerza de filtrado basada en calidad
-    let filterStrength = 0.5;
-    
-    if (this.lastResult) {
-      // Ajustar filtro según calidad
-      if (this.lastResult.quality < 30) {
-        filterStrength = 0.8; // Filtrado fuerte para señales malas
-      } else if (this.lastResult.quality > 70) {
-        filterStrength = 0.3; // Filtrado suave para señales buenas
-      }
-    }
-    
-    // Aplicar filtrado adaptativo
-    const smaWindowSize = Math.min(this.SMA_WINDOW_SIZE, this.valueBuffer.length);
-    const recentValues = this.valueBuffer.slice(-smaWindowSize);
-    const smaValue = recentValues.reduce((sum, val) => sum + val, 0) / smaWindowSize;
-    
-    // Combinar con peso adaptativo
-    const adaptiveValue = this.lastResult 
-      ? this.lastResult.filteredValue * filterStrength + smaValue * (1 - filterStrength)
-      : smaValue;
-    
-    return adaptiveValue;
-  }
-  
-  /**
-   * Aplica filtros para alta sensibilidad
-   */
-  private applyHighSensitivityFilters(value: number): number {
-    // Filtrado mínimo para preservar detalles
-    const smaWindowSize = Math.min(5, this.valueBuffer.length);
-    const recentValues = this.valueBuffer.slice(-smaWindowSize);
-    const smaValue = recentValues.reduce((sum, val) => sum + val, 0) / smaWindowSize;
-    
-    return smaValue;
-  }
-  
-  /**
-   * Aplica filtros agresivos para señales ruidosas
-   */
-  private applyLowNoiseFilters(value: number): number {
-    // 1. Media móvil de ventana amplia
-    const smaWindowSize = Math.min(this.SMA_WINDOW_SIZE * 2, this.valueBuffer.length);
-    const recentValues = this.valueBuffer.slice(-smaWindowSize);
-    const smaValue = recentValues.reduce((sum, val) => sum + val, 0) / smaWindowSize;
-    
-    // 2. Filtro pasa bajos agresivo
-    const lpfValue = this.lastResult 
-      ? this.lastResult.filteredValue * 0.8 + smaValue * 0.2
-      : smaValue;
-    
-    return lpfValue;
-  }
-  
-  /**
-   * Obtiene el último resultado procesado
-   */
-  public getLastResult(): ProcessedPPGSignal | null {
-    return this.lastResult;
-  }
-  
-  /**
-   * Reinicia el procesador
+   * Resetear el procesador
    */
   public reset(): void {
-    this.valueBuffer = [];
-    this.fingerStabilityCounter = 0;
-    this.lastResult = null;
+    this.buffer = [];
+    this.initialized = false;
+    this.lastRawValue = 0;
+    this.lastNormalizedValue = 0;
+    this.signalQualityEstimate = 0;
+    this.fingerDetected = false;
+  }
+  
+  /**
+   * Calibrar el procesador con valores de referencia
+   */
+  public calibrate(referenceValues: number[]): void {
+    if (referenceValues && referenceValues.length > 0) {
+      // Usar valores de referencia para mejorar normalización
+      const min = Math.min(...referenceValues);
+      const max = Math.max(...referenceValues);
+      const range = max - min;
+      
+      // Actualizar buffer con valores calibrados
+      this.buffer = referenceValues.slice(-this.bufferSize);
+    }
+  }
+  
+  /**
+   * Detecta si hay un dedo presente basado en la señal
+   */
+  private detectFinger(value: number): void {
+    if (this.buffer.length < 10) {
+      this.fingerDetected = value > 0.1; // Umbral mínimo
+      return;
+    }
+    
+    // Calcular variación de señal
+    const recentValues = this.buffer.slice(-10);
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
+    
+    // Hay dedo si hay señal significativa con cierta variación
+    this.fingerDetected = mean > 0.1 && variance > 0.0001 && variance < 0.1;
+  }
+  
+  /**
+   * Calcula la calidad estimada de la señal [0-100]
+   */
+  private calculateSignalQuality(): void {
+    if (this.buffer.length < 10 || !this.fingerDetected) {
+      this.signalQualityEstimate = 0;
+      return;
+    }
+    
+    // Factores que afectan calidad
+    const recentValues = this.buffer.slice(-10);
+    
+    // 1. Variabilidad adecuada (ni muy alta ni muy baja)
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
+    const cv = Math.sqrt(variance) / mean; // Coeficiente de variación
+    
+    // Calidad óptima en rangos adecuados de variación
+    let variabilityScore = 0;
+    if (cv > 0.05 && cv < 0.5) {
+      variabilityScore = 100 - Math.abs((cv - 0.2) * 200);
+    }
+    
+    // 2. Amplitud suficiente
+    const range = Math.max(...recentValues) - Math.min(...recentValues);
+    const amplitudeScore = Math.min(100, range * 200);
+    
+    // 3. Continuidad (sin saltos bruscos)
+    const deltas = [];
+    for (let i = 1; i < recentValues.length; i++) {
+      deltas.push(Math.abs(recentValues[i] - recentValues[i-1]));
+    }
+    const maxDelta = Math.max(...deltas);
+    const continuityScore = 100 - Math.min(100, maxDelta * 200);
+    
+    // Calidad combinada
+    this.signalQualityEstimate = Math.round(
+      variabilityScore * 0.4 + 
+      amplitudeScore * 0.3 + 
+      continuityScore * 0.3
+    );
+    
+    // Asegurar rango 0-100
+    this.signalQualityEstimate = Math.max(0, Math.min(100, this.signalQualityEstimate));
+  }
+  
+  /**
+   * Normaliza el valor de entrada [0-1]
+   */
+  private normalizeValue(value: number): number {
+    // Si el buffer está vacío, normalización simple
+    if (this.buffer.length < 5) {
+      return Math.max(0, Math.min(1, value));
+    }
+    
+    // Normalizar con min-max del buffer reciente
+    const min = Math.min(...this.buffer);
+    const max = Math.max(...this.buffer);
+    
+    // Evitar división por cero
+    if (max === min) return 0.5;
+    
+    // Normalizar a 0-1
+    return (value - min) / (max - min);
+  }
+  
+  /**
+   * Amplifica el valor normalizado para resaltar cambios
+   */
+  private amplifyValue(value: number): number {
+    // Amplificar señal débil
+    if (value < 0.3) {
+      return value * 1.5;
+    }
+    
+    // Mantener señal media
+    if (value < 0.7) {
+      return value;
+    }
+    
+    // Comprimir señal fuerte
+    return 0.7 + (value - 0.7) * 0.7;
+  }
+  
+  /**
+   * Filtra el valor para reducir ruido
+   */
+  private filterValue(value: number): number {
+    // Si no hay suficiente historial, devolver sin cambios
+    if (this.buffer.length < 3) {
+      return value;
+    }
+    
+    // Filtro paso-bajo simple (promedio móvil)
+    const recentValues = this.buffer.slice(-3);
+    const average = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Mezclar valor actual con promedio (suavizado)
+    const filterStrength = 0.3; // 0-1 (mayor = más suavizado)
+    return value * (1 - filterStrength) + average * filterStrength;
+  }
+  
+  /**
+   * Calcula la intensidad de la señal [0-100]
+   */
+  private calculateSignalStrength(value: number): number {
+    // Algoritmo simple: usar amplitud
+    const recentValues = this.buffer.slice(-10);
+    
+    if (recentValues.length < 3) {
+      return value > 0.1 ? 50 : 0;
+    }
+    
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const range = max - min;
+    
+    // Convertir a porcentaje
+    return Math.min(100, range * 100 * 5);
   }
 }

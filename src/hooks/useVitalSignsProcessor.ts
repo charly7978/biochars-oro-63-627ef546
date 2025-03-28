@@ -271,9 +271,17 @@ export const useVitalSignsProcessor = () => {
   return {
     processSignal,
     reset,
-    fullReset,
-    getVisualizationData,
-    getDebugInfo,
+    fullReset: resetOptimizer,
+    getVisualizationData: () => visualizationData,
+    getDebugInfo: () => ({
+      processedSignals: processedSignals.current,
+      calibrationProgress: calibrationRef.current,
+      optimizedChannelsAvailable: Object.keys(optimizedSignals).filter(
+        k => optimizedSignals[k] !== null
+      ),
+      lastCalculation,
+      visualizationAvailable: !!visualizationData
+    }),
     lastValidResults
   };
 };

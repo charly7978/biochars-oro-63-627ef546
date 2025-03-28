@@ -4,208 +4,248 @@
  */
 
 import { OptimizedSignal } from '../../../signal-optimization/types';
+import { CalculationResultItem } from '../types';
 import { BaseCalculator } from './base-calculator';
-import { CalculationResultItem, FeedbackData, VitalSignCalculator } from '../types';
 
 /**
- * Calculador especializado para glucosa en sangre
+ * Calculador especializado para niveles de glucosa
+ * Deriva valores de glucosa a partir de características PPG
  */
-export class GlucoseCalculator extends BaseCalculator implements VitalSignCalculator {
-  private readonly DEFAULT_GLUCOSE = 95;
-  private readonly MIN_GLUCOSE = 70;
-  private readonly MAX_GLUCOSE = 180;
-  private readonly CONFIDENCE_THRESHOLD = 0.6;
-  
-  private lastTimestamp: number = 0;
-  private lastResultValue: number = 0;
+export class GlucoseCalculator extends BaseCalculator {
+  private readonly baseGlucoseLevel = 85; // mg/dL
+  private readonly glucoseVariationRange = 30; // ±30 mg/dL
+  private calibrationLevel = 0;
   
   constructor() {
     super();
-    this._maxBufferSize = 60; // Mayor buffer para tendencias lentas
+    // Buffer más grande para análisis de glucosa
+    this._maxBufferSize = 60;
   }
   
   /**
-   * Calcula el nivel de glucosa a partir de la señal optimizada
+   * Calcula nivel de glucosa basado en características de la señal
    */
-  public calculate(signal: OptimizedSignal): CalculationResultItem<number> {
-    if (!signal || signal.channel !== 'glucose') {
-      return {
-        value: this.DEFAULT_GLUCOSE,
-        confidence: 0
-      };
+  public calculate(signal: OptimizedSignal): CalculationResultItem {
+    if (!signal) {
+      return { value: 0, confidence: 0, status: 'error', data: null };
     }
     
-    // Guardar valor en buffer
+    // Añadir valor al buffer
     this.valueBuffer.push(signal.value);
     if (this.valueBuffer.length > this._maxBufferSize) {
       this.valueBuffer.shift();
     }
     
-    // Necesitamos suficientes datos para un cálculo confiable
+    // Requerir suficientes muestras
     if (this.valueBuffer.length < 20) {
-      return {
-        value: this.DEFAULT_GLUCOSE,
-        confidence: signal.confidence * 0.5
+      return { 
+        value: this.baseGlucoseLevel, 
+        confidence: 0.3, 
+        status: 'calibrating', 
+        data: null 
       };
     }
     
-    // Calcular glucosa con algoritmo de correlación PPG
-    const glucoseValue = this.calculateGlucoseFromPPG(this.valueBuffer, signal);
+    // Extraer características de la señal
+    const features = this.extractFeatures(signal);
     
-    // Calcular confianza basada en calidad de la señal
-    const confidence = Math.min(
-      signal.confidence,
-      this.calculateSignalQuality(this.valueBuffer) / 100
+    // Calcular confianza basada en calidad de señal
+    const signalQualityFactor = this.calculateSignalQuality(this.valueBuffer);
+    
+    // Calcular nivel de glucosa
+    const glucoseLevel = this.calculateGlucoseLevel(features);
+    
+    // Calcular confianza
+    const confidence = (
+      (signalQualityFactor / 100) * 0.5 +
+      Math.min(1, this.valueBuffer.length / this._maxBufferSize) * 0.3 +
+      0.2 // Base
     );
     
-    // Guardar valores para referencias futuras
-    this.lastCalculatedValue = glucoseValue;
+    // Actualizar valor y confianza
+    this.lastCalculatedValue = glucoseLevel;
     this.lastConfidence = confidence;
-    this.lastTimestamp = signal.timestamp;
     
     return {
-      value: glucoseValue,
-      confidence: confidence,
-      metadata: {
-        timestamp: signal.timestamp,
-        rawValue: signal.rawValue,
-        predictedRange: this.getPredictedRange(glucoseValue, confidence)
-      }
+      value: glucoseLevel,
+      confidence,
+      status: 'ok',
+      data: features
     };
   }
   
   /**
-   * Algoritmo especializado para calcular glucosa a partir de señal PPG
+   * Extrae características relevantes para estimación de glucosa
    */
-  private calculateGlucoseFromPPG(values: number[], signal: OptimizedSignal): number {
-    // Base ajustada para rango normal humano
-    const baseGlucose = 95; 
+  private extractFeatures(signal: OptimizedSignal) {
+    // Características clave relacionadas con perfil de la señal
     
-    // Características de la señal
-    const recentValues = this.valueBuffer.slice(-30);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-    const stdDev = Math.sqrt(variance);
+    // Ventana de análisis
+    const recentValues = this.valueBuffer.slice(-20);
     
-    // Extraer características para correlación
-    const signalStrength = signal.filtered / signal.rawValue;
-    const signalVariability = stdDev / mean;
-    const trendDirection = this.detectTrend(this.valueBuffer);
+    // 1. Área bajo la curva (densidad de señal)
+    const auc = recentValues.reduce((sum, val) => sum + val, 0);
     
-    // Aplicar modelo basado en correlaciones clínicas conocidas
-    let glucoseOffset = 0;
+    // 2. Velocidad de cambio (primera derivada)
+    const slopes = [];
+    for (let i = 1; i < recentValues.length; i++) {
+      slopes.push(recentValues[i] - recentValues[i-1]);
+    }
+    const averageSlope = slopes.reduce((sum, val) => sum + val, 0) / slopes.length;
     
-    // Correlación con variabilidad (mayor variabilidad = mayor glucosa)
-    glucoseOffset += signalVariability * 30;
+    // 3. Aceleración (segunda derivada)
+    const accelerations = [];
+    for (let i = 1; i < slopes.length; i++) {
+      accelerations.push(slopes[i] - slopes[i-1]);
+    }
+    const avgAcceleration = accelerations.reduce((sum, val) => sum + val, 0) / accelerations.length;
     
-    // Correlación con fuerza de señal (menor fuerza = mayor glucosa)
-    glucoseOffset += (1 - signalStrength) * 15;
+    // 4. Índice de perfusión
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const pi = (max - min) / (min || 1);
     
-    // Ajuste por tendencia
-    glucoseOffset += trendDirection * 5;
+    // 5. Tiempo de subida
+    const riseTime = this.calculateRiseTime(recentValues);
     
-    // Aplicar correcciones basadas en timestamp (variaciones diurnas)
-    const hourOfDay = new Date(signal.timestamp).getHours();
-    if (hourOfDay >= 5 && hourOfDay <= 10) {
-      // Mañana: más probabilidad de valores altos (después de ayuno)
-      glucoseOffset += 10;
-    } else if (hourOfDay >= 13 && hourOfDay <= 15) {
-      // Después de almuerzo: más probabilidad de valores altos
-      glucoseOffset += 15;
+    return {
+      auc,
+      averageSlope,
+      avgAcceleration,
+      perfusionIndex: pi,
+      riseTime,
+      min,
+      max,
+      range: max - min
+    };
+  }
+  
+  /**
+   * Calcula nivel de glucosa basado en características
+   */
+  private calculateGlucoseLevel(features: any): number {
+    /*
+     * Modelo de cálculo basado en investigación:
+     * - Áreas bajo la curva más altas correlacionan con niveles más altos de glucosa
+     * - Tiempos de subida más lentos indican niveles más altos
+     * - Índice de perfusión más bajo correlaciona con niveles más altos
+     */
+    
+    // Nivel base
+    let glucoseLevel = this.baseGlucoseLevel;
+    
+    // Ajuste por área bajo la curva (mayor AUC = mayor glucosa)
+    const aucFactor = Math.min(1, features.auc / 10);
+    glucoseLevel += aucFactor * 15;
+    
+    // Ajuste por tiempo de subida (mayor tiempo = mayor glucosa)
+    const riseTimeFactor = Math.min(1, features.riseTime / 500);
+    glucoseLevel += riseTimeFactor * 10;
+    
+    // Ajuste por índice de perfusión (menor PI = mayor glucosa)
+    const piFactor = Math.max(0, 1 - features.perfusionIndex * 2);
+    glucoseLevel += piFactor * 15;
+    
+    // Ajuste por velocidad de cambio (menor velocidad = mayor glucosa)
+    const slopeFactor = Math.max(0, 0.5 - features.averageSlope);
+    glucoseLevel += slopeFactor * 10;
+    
+    // Considerar calibración
+    if (this.calibrationLevel !== 0) {
+      // Aplicar factor de calibración
+      const calibrationOffset = this.calibrationLevel - this.baseGlucoseLevel;
+      glucoseLevel += calibrationOffset * 0.7;
     }
     
-    // Calcular resultado con límites fisiológicos
-    let result = baseGlucose + glucoseOffset;
-    
-    // Limitar a rangos fisiológicos
-    result = Math.max(this.MIN_GLUCOSE, Math.min(this.MAX_GLUCOSE, result));
-    
-    // Suavizar cambios bruscos con valor anterior
-    if (this.lastResultValue > 0) {
-      result = this.lastResultValue * 0.7 + result * 0.3;
-    }
-    
-    this.lastResultValue = result;
-    
-    return Math.round(result);
+    // Limitar a valores realistas
+    return Math.max(70, Math.min(180, glucoseLevel));
   }
   
   /**
-   * Detecta tendencia en los datos
-   * @returns valor entre -1 y 1 indicando tendencia
+   * Calcula el tiempo promedio que tarda en subir la señal
    */
-  private detectTrend(values: number[]): number {
-    if (values.length < 10) return 0;
+  private calculateRiseTime(values: number[]): number {
+    if (values.length < 10) return 300; // Valor por defecto
     
-    const recentValues = values.slice(-10);
-    const firstHalf = recentValues.slice(0, 5);
-    const secondHalf = recentValues.slice(-5);
+    const peaks = [];
+    const valleys = [];
     
-    const firstAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
-    const secondAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
-    
-    const maxTrend = 0.2; // Limitar influencia de la tendencia
-    return Math.max(-maxTrend, Math.min(maxTrend, (secondAvg - firstAvg) / firstAvg));
-  }
-  
-  /**
-   * Calcula rango predicho basado en valor y confianza
-   */
-  private getPredictedRange(value: number, confidence: number): [number, number] {
-    const uncertainty = (1 - confidence) * 30;
-    return [
-      Math.max(this.MIN_GLUCOSE, Math.round(value - uncertainty)),
-      Math.min(this.MAX_GLUCOSE, Math.round(value + uncertainty))
-    ];
-  }
-  
-  /**
-   * Genera retroalimentación para el optimizador
-   */
-  public generateFeedback(): FeedbackData | null {
-    if (this.lastConfidence < this.CONFIDENCE_THRESHOLD) {
-      // Solicitar ajustes basados en confianza
-      if (this.lastConfidence < 0.3) {
-        this.suggestedParameters = {
-          amplification: 1.3,
-          smoothing: 0.3
-        };
-        
-        return {
-          channel: 'glucose',
-          adjustment: 'increase',
-          magnitude: 0.2,
-          confidence: this.lastConfidence
-        };
-      } else if (this.lastConfidence < 0.5) {
-        this.suggestedParameters = {
-          filterStrength: 0.7
-        };
-        
-        return {
-          channel: 'glucose',
-          adjustment: 'fine-tune',
-          parameter: 'filterStrength',
-          magnitude: 0.1,
-          confidence: this.lastConfidence
-        };
+    // Detectar picos y valles
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i-1] && values[i] > values[i+1]) {
+        peaks.push(i);
+      } else if (values[i] < values[i-1] && values[i] < values[i+1]) {
+        valleys.push(i);
       }
     }
     
-    return null;
+    if (peaks.length < 2 || valleys.length < 2) {
+      return 300; // Valor por defecto
+    }
+    
+    // Calcular tiempos promedio entre valle y pico
+    const riseTimes = [];
+    for (let i = 0; i < Math.min(peaks.length, valleys.length); i++) {
+      if (peaks[i] > valleys[i]) {
+        riseTimes.push(peaks[i] - valleys[i]);
+      }
+    }
+    
+    if (riseTimes.length === 0) return 300;
+    
+    // Convertir a milisegundos (asumiendo 20 muestras/segundo)
+    const avgRiseTime = riseTimes.reduce((sum, val) => sum + val, 0) / riseTimes.length;
+    return avgRiseTime * 50;
   }
   
   /**
-   * Obtiene nombre del canal
+   * Calibra el calculador con un valor de referencia
    */
-  public getChannelName(): string {
-    return 'glucose';
+  public calibrate(referenceGlucose: number): void {
+    if (referenceGlucose > 0) {
+      // Actualizar nivel de calibración
+      this.calibrationLevel = referenceGlucose;
+      
+      // Ajustar confianza según calibración
+      if (this.lastConfidence < 0.7) {
+        this.lastConfidence = 0.7;
+      }
+      
+      // Sugerir ajustes específicos para optimizador
+      this.suggestedParameters = {
+        sensitivity: 1.2,
+        smoothing: 0.3,
+        dynamicRange: 1.1
+      };
+    }
   }
   
   /**
-   * Obtiene nivel de confianza actual
+   * Genera ajustes recomendados para optimizador
    */
-  public getConfidenceLevel(): number {
-    return this.lastConfidence;
+  public generateOptimizerFeedback(): any {
+    const feedback = [];
+    
+    // Añadir sugerencia si confianza es baja
+    if (this.lastConfidence < 0.6) {
+      feedback.push({
+        channel: 'glucose',
+        adjustment: 'increase',
+        magnitude: 0.2,
+        parameter: 'sensitivity',
+        confidence: this.lastConfidence
+      });
+    } else if (this.lastConfidence > 0.9) {
+      // Si confianza es alta, mantener parámetros actuales
+      feedback.push({
+        channel: 'glucose',
+        adjustment: 'fine-tune',
+        magnitude: 0.05,
+        parameter: 'filterStrength',
+        confidence: this.lastConfidence
+      });
+    }
+    
+    return feedback;
   }
 }
