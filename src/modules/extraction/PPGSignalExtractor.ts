@@ -23,10 +23,6 @@ export interface PPGSignalData {
   timestamp: number;
   rawValues: number[];
   combinedValue: number;
-  channelData?: {
-    red: number;
-    ir: number;
-  };
 }
 
 export class PPGSignalExtractor {
@@ -46,7 +42,7 @@ export class PPGSignalExtractor {
     this.reset();
     
     // Suscribirse a frames de cámara
-    eventBus.subscribe(EventType.CAMERA_FRAME_READY, this.processFrame.bind(this));
+    eventBus.subscribe(EventType.CAMERA_FRAME, this.processFrame.bind(this));
     console.log('Extracción de señal PPG iniciada');
   }
   
@@ -101,11 +97,7 @@ export class PPGSignalExtractor {
         blueChannel: blue,
         timestamp: frame.timestamp,
         rawValues: [...this.recentRedValues], // Para análisis de tendencia
-        combinedValue,
-        channelData: {
-          red: red,
-          ir: red * 0.95 // Utilizamos el canal rojo como base para ambos valores
-        }
+        combinedValue
       };
       
       // Publicar datos para que otros módulos los procesen
@@ -120,12 +112,6 @@ export class PPGSignalExtractor {
       
     } catch (error) {
       console.error('Error en extracción de señal PPG:', error);
-      eventBus.publish(EventType.ERROR_OCCURRED, {
-        source: 'PPGSignalExtractor',
-        message: 'Error procesando frame',
-        timestamp: Date.now(),
-        error
-      });
     }
   }
   

@@ -1,3 +1,4 @@
+
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -9,10 +10,26 @@
 
 /**
  * Calculador de Signos Vitales
- * Procesa las señales optimizadas para obtener valores finales de signos vitales
+ * Integra señales optimizadas para cálculo preciso de signos vitales
  */
 
 import { EventType, eventBus } from '../events/EventBus';
+import { 
+  OptimizedHeartRate, 
+  OptimizedSPO2, 
+  OptimizedBloodPressure,
+  OptimizedGlucose,
+  OptimizedLipids,
+  OptimizedArrhythmia
+} from '../optimization/SignalOptimizer';
+
+export interface ArrhythmiaData {
+  timestamp: number;
+  rmssd: number;
+  rrVariation: number;
+  windows: Array<{start: number, end: number}>;
+  detected: boolean;
+}
 
 export interface BloodPressure {
   systolic: number;
@@ -25,210 +42,306 @@ export interface Lipids {
   triglycerides: number;
 }
 
-export interface ArrhythmiaWindow {
-  start: number;
-  end: number;
-}
-
-export interface ArrhythmiaData {
-  rmssd: number;
-  rrVariation: number;
-  detected: boolean;
-  timestamp: number;
-  windows?: number[][];  // Cambiado para ser compatible con el formato esperado
-}
-
 export interface VitalSignsResult {
   timestamp: number;
   heartRate: number;
   spo2: number;
-  pressure: string;
-  arrhythmiaStatus: string;
+  bloodPressure: BloodPressure;
+  glucose: number;
+  lipids: Lipids;
   reliability: number;
-  bloodPressure?: {
-    systolic: number;
-    diastolic: number;
-    display: string;
-  };
-  glucose?: number;
-  lipids?: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  arrhythmiaData?: {
-    rmssd: number;
-    rrVariation: number;
-    detected: boolean;
-    timestamp: number;
-    windows?: number[][];
-  };
+  arrhythmiaStatus: string;
+  arrhythmiaData?: ArrhythmiaData;
 }
 
 export class VitalSignsCalculator {
-  // Datos optimizados (simulados por ahora)
-  private optimizedHeartRate: number = 0;
-  private optimizedSPO2: number = 0;
-  private optimizedBloodPressure: BloodPressure = { systolic: 120, diastolic: 80, display: '120/80' };
-  private optimizedGlucose: number = 90;
-  private optimizedLipids: Lipids = { totalCholesterol: 180, triglycerides: 150 };
-  private optimizedArrhythmiaStatus: { arrhythmiaStatus: string; arrhythmiaData?: ArrhythmiaData } = { arrhythmiaStatus: 'RITMO NORMAL' };
+  // Estado
+  private isCalculating: boolean = false;
+  private calculationInterval: number | null = null;
   
-  // Contador de actualizaciones
-  private updateCount: number = 0;
+  // Datos optimizados más recientes
+  private lastHeartRate: OptimizedHeartRate | null = null;
+  private lastSPO2: OptimizedSPO2 | null = null;
+  private lastBloodPressure: OptimizedBloodPressure | null = null;
+  private lastGlucose: OptimizedGlucose | null = null;
+  private lastLipids: OptimizedLipids | null = null;
+  private lastArrhythmia: OptimizedArrhythmia | null = null;
+  
+  // Resultados calculados
+  private lastResult: VitalSignsResult | null = null;
+  private lastValidResult: VitalSignsResult | null = null;
+  
+  // Ventanas de arritmias (para visualización)
+  private arrhythmiaWindows: Array<{start: number, end: number}> = [];
+  private isArrhythmiaDetected: boolean = false;
   
   /**
-   * Inicia el calculador de signos vitales
+   * Iniciar cálculo continuo
    */
   startCalculating(): void {
-    console.log('VitalSignsCalculator: Iniciando el cálculo de signos vitales');
+    if (this.isCalculating) return;
     
-    // Simulación: actualizar signos vitales cada 3 segundos
-    setInterval(() => {
-      this.updateVitalSigns();
-    }, 3000);
+    this.isCalculating = true;
+    
+    // Suscribirse a datos optimizados
+    eventBus.subscribe(EventType.OPTIMIZED_HEART_RATE, this.handleHeartRateData.bind(this));
+    eventBus.subscribe(EventType.OPTIMIZED_SPO2, this.handleSPO2Data.bind(this));
+    eventBus.subscribe(EventType.OPTIMIZED_BLOOD_PRESSURE, this.handleBloodPressureData.bind(this));
+    eventBus.subscribe(EventType.OPTIMIZED_GLUCOSE, this.handleGlucoseData.bind(this));
+    eventBus.subscribe(EventType.OPTIMIZED_LIPIDS, this.handleLipidsData.bind(this));
+    eventBus.subscribe(EventType.OPTIMIZED_ARRHYTHMIA, this.handleArrhythmiaData.bind(this));
+    
+    // Iniciar ciclo de cálculo
+    this.calculationInterval = window.setInterval(() => {
+      this.calculateVitalSigns();
+    }, 1000); // Calcular cada 1 segundo
+    
+    console.log('Calculador de signos vitales iniciado');
   }
   
   /**
-   * Detiene el calculador de signos vitales
+   * Detener cálculo
    */
   stopCalculating(): void {
-    console.log('VitalSignsCalculator: Deteniendo el cálculo de signos vitales');
+    this.isCalculating = false;
     
-    // Detener cualquier temporizador o proceso en curso
-    clearInterval(this.updateVitalSigns as any);
-  }
-  
-  /**
-   * Simula la optimización de la frecuencia cardíaca
-   */
-  private getOptimizedHeartRate(): number {
-    // Simulación: variar la frecuencia cardíaca entre 60 y 100
-    this.optimizedHeartRate = Math.floor(Math.random() * (100 - 60 + 1)) + 60;
-    return this.optimizedHeartRate;
-  }
-  
-  /**
-   * Simula la optimización de la saturación de oxígeno (SpO2)
-   */
-  private getOptimizedSPO2(): number {
-    // Simulación: variar SpO2 entre 95 y 99
-    this.optimizedSPO2 = Math.floor(Math.random() * (99 - 95 + 1)) + 95;
-    return this.optimizedSPO2;
-  }
-  
-  /**
-   * Simula la optimización de la presión arterial
-   */
-  private getOptimizedBloodPressure(): BloodPressure {
-    // Simulación: variar la presión sistólica y diastólica
-    const systolic = Math.floor(Math.random() * (130 - 110 + 1)) + 110;
-    const diastolic = Math.floor(Math.random() * (90 - 70 + 1)) + 70;
-    this.optimizedBloodPressure = {
-      systolic,
-      diastolic,
-      display: `${systolic}/${diastolic}`
-    };
-    return this.optimizedBloodPressure;
-  }
-  
-  /**
-   * Simula la optimización de los niveles de glucosa
-   */
-  private getOptimizedGlucose(): number {
-    // Simulación: variar los niveles de glucosa entre 70 y 110
-    this.optimizedGlucose = Math.floor(Math.random() * (110 - 70 + 1)) + 70;
-    return this.optimizedGlucose;
-  }
-  
-  /**
-   * Simula la optimización de los niveles de lípidos
-   */
-  private getOptimizedLipids(): Lipids {
-    // Simulación: variar los niveles de colesterol y triglicéridos
-    this.optimizedLipids = {
-      totalCholesterol: Math.floor(Math.random() * (200 - 150 + 1)) + 150,
-      triglycerides: Math.floor(Math.random() * (200 - 100 + 1)) + 100
-    };
-    return this.optimizedLipids;
-  }
-  
-  /**
-   * Simula la optimización del estado de arritmia
-   */
-  private getOptimizedArrhythmiaStatus(): { arrhythmiaStatus: string; arrhythmiaData?: ArrhythmiaData } {
-    // Simulación: detectar arritmia aleatoriamente
-    const detected = Math.random() < 0.2; // 20% de probabilidad de arritmia
-    let arrhythmiaData: ArrhythmiaData | undefined = undefined;
-    
-    if (detected) {
-      arrhythmiaData = {
-        rmssd: Math.floor(Math.random() * (100 - 50 + 1)) + 50,
-        rrVariation: Math.floor(Math.random() * (20 - 5 + 1)) + 5,
-        detected: true,
-        timestamp: Date.now(),
-        windows: [[Date.now() - 1000, Date.now()]]
-      };
-      this.optimizedArrhythmiaStatus = { arrhythmiaStatus: 'ARRITMIA DETECTADA', arrhythmiaData };
-    } else {
-      this.optimizedArrhythmiaStatus = { arrhythmiaStatus: 'RITMO NORMAL' };
+    if (this.calculationInterval !== null) {
+      clearInterval(this.calculationInterval);
+      this.calculationInterval = null;
     }
     
-    return this.optimizedArrhythmiaStatus;
+    // Mantener último resultado válido
+    if (this.lastResult && this.isResultValid(this.lastResult)) {
+      this.lastValidResult = this.lastResult;
+    }
+    
+    console.log('Calculador de signos vitales detenido');
   }
   
   /**
-   * Calcula la fiabilidad general de los signos vitales
+   * Manejar datos de frecuencia cardíaca
    */
-  private calculateReliability(): number {
-    // Simulación: la fiabilidad depende del número de actualizaciones
-    let reliability = Math.min(100, this.updateCount * 10);
-    return reliability;
+  private handleHeartRateData(data: OptimizedHeartRate): void {
+    this.lastHeartRate = data;
+    
+    // Notificar cambio de frecuencia cardíaca si es válida
+    if (data.heartRate > 0 && data.confidence > 50) {
+      eventBus.publish(EventType.HEARTBEAT_RATE_CHANGED, {
+        heartRate: data.heartRate,
+        timestamp: data.timestamp
+      });
+    }
   }
-
+  
   /**
-   * Actualiza los signos vitales utilizando datos optimizados
+   * Manejar datos de SpO2
    */
-  private updateVitalSigns(): void {
+  private handleSPO2Data(data: OptimizedSPO2): void {
+    this.lastSPO2 = data;
+  }
+  
+  /**
+   * Manejar datos de presión arterial
+   */
+  private handleBloodPressureData(data: OptimizedBloodPressure): void {
+    this.lastBloodPressure = data;
+  }
+  
+  /**
+   * Manejar datos de glucosa
+   */
+  private handleGlucoseData(data: OptimizedGlucose): void {
+    this.lastGlucose = data;
+  }
+  
+  /**
+   * Manejar datos de lípidos
+   */
+  private handleLipidsData(data: OptimizedLipids): void {
+    this.lastLipids = data;
+  }
+  
+  /**
+   * Manejar datos de arritmias
+   */
+  private handleArrhythmiaData(data: OptimizedArrhythmia): void {
+    this.lastArrhythmia = data;
+    
+    // Detectar arritmias
+    const newArrhythmiaState = data.detectionProbability > 70;
+    
+    // Si cambió el estado de arritmia
+    if (newArrhythmiaState !== this.isArrhythmiaDetected) {
+      this.isArrhythmiaDetected = newArrhythmiaState;
+      
+      // Si se detectó una nueva arritmia, añadir ventana
+      if (newArrhythmiaState) {
+        const currentTime = Date.now();
+        this.arrhythmiaWindows.push({
+          start: currentTime - 5000, // 5 segundos antes
+          end: currentTime + 5000    // 5 segundos después
+        });
+        
+        // Limitar número de ventanas almacenadas
+        if (this.arrhythmiaWindows.length > 5) {
+          this.arrhythmiaWindows.shift();
+        }
+        
+        // Notificar detección de arritmia
+        eventBus.publish(EventType.ARRHYTHMIA_DETECTED, {
+          timestamp: currentTime,
+          rmssd: data.rmssd,
+          rrVariation: data.rrVariation,
+          windows: [...this.arrhythmiaWindows],
+          detected: true
+        });
+      }
+      
+      // Notificar cambio de estado de arritmia
+      eventBus.publish(EventType.ARRHYTHMIA_STATUS_CHANGED, {
+        status: this.isArrhythmiaDetected ? 'DETECTED' : 'NORMAL',
+        timestamp: Date.now()
+      });
+    }
+  }
+  
+  /**
+   * Calcular signos vitales integrando datos optimizados
+   */
+  private calculateVitalSigns(): void {
+    if (!this.isCalculating) return;
+    
     const currentTime = Date.now();
     
-    // Obtener datos actuales
-    const heartRate = this.getOptimizedHeartRate();
-    const spo2 = this.getOptimizedSPO2();
-    const bloodPressure = this.getOptimizedBloodPressure();
-    const glucose = this.getOptimizedGlucose();
-    const lipids = this.getOptimizedLipids();
-    const { arrhythmiaStatus, arrhythmiaData } = this.getOptimizedArrhythmiaStatus();
+    // Verificar si tenemos datos recientes (últimos 10 segundos)
+    const dataFreshness = 10000; // 10 segundos
+    const hasRecentHeartRate = this.lastHeartRate && (currentTime - this.lastHeartRate.timestamp < dataFreshness);
+    const hasRecentSPO2 = this.lastSPO2 && (currentTime - this.lastSPO2.timestamp < dataFreshness);
+    const hasRecentBP = this.lastBloodPressure && (currentTime - this.lastBloodPressure.timestamp < dataFreshness);
     
-    // Actualizar la fiabilidad general basada en múltiples factores
-    const reliability = this.calculateReliability();
+    // Sólo calcular si tenemos datos mínimos necesarios
+    if (!hasRecentHeartRate) {
+      return;
+    }
     
-    // Empaquetar todo en formato de resultado unificado
-    const vitalSigns: VitalSignsResult = {
+    // Integrar todos los datos disponibles en un resultado final
+    const heartRate = hasRecentHeartRate ? this.lastHeartRate!.heartRate : 0;
+    
+    // SpO2 (saturación de oxígeno)
+    const spo2 = hasRecentSPO2 ? this.lastSPO2!.spo2 : 0;
+    
+    // Presión arterial
+    const bloodPressure: BloodPressure = hasRecentBP ? {
+      systolic: this.lastBloodPressure!.systolic,
+      diastolic: this.lastBloodPressure!.diastolic,
+      display: this.lastBloodPressure!.display
+    } : {
+      systolic: 0,
+      diastolic: 0,
+      display: "--/--"
+    };
+    
+    // Glucosa
+    const glucose = this.lastGlucose?.value || 0;
+    
+    // Lípidos
+    const lipids: Lipids = this.lastLipids ? {
+      totalCholesterol: this.lastLipids.totalCholesterol,
+      triglycerides: this.lastLipids.triglycerides
+    } : {
+      totalCholesterol: 0,
+      triglycerides: 0
+    };
+    
+    // Confiabilidad general (promedio ponderado)
+    let reliability = 0;
+    let weightSum = 0;
+    
+    if (hasRecentHeartRate) {
+      reliability += this.lastHeartRate!.confidence * 0.4;
+      weightSum += 0.4;
+    }
+    
+    if (hasRecentSPO2) {
+      reliability += this.lastSPO2!.confidence * 0.3;
+      weightSum += 0.3;
+    }
+    
+    if (hasRecentBP) {
+      reliability += this.lastBloodPressure!.confidence * 0.3;
+      weightSum += 0.3;
+    }
+    
+    // Normalizar confiabilidad
+    reliability = weightSum > 0 ? reliability / weightSum : 0;
+    
+    // Estado de arritmia
+    const arrhythmiaStatus = this.isArrhythmiaDetected ? "ARRITMIA DETECTADA" : "SIN ARRITMIAS";
+    
+    // Datos de arritmia
+    const arrhythmiaData: ArrhythmiaData | undefined = this.lastArrhythmia ? {
+      timestamp: this.lastArrhythmia.timestamp,
+      rmssd: this.lastArrhythmia.rmssd,
+      rrVariation: this.lastArrhythmia.rrVariation,
+      windows: [...this.arrhythmiaWindows],
+      detected: this.isArrhythmiaDetected
+    } : undefined;
+    
+    // Crear resultado final
+    const result: VitalSignsResult = {
       timestamp: currentTime,
       heartRate,
       spo2,
-      pressure: `${bloodPressure.systolic}/${bloodPressure.diastolic}`,
-      arrhythmiaStatus,
-      reliability,
       bloodPressure,
       glucose,
       lipids,
-      arrhythmiaData: arrhythmiaData ? {
-        rmssd: arrhythmiaData.rmssd,
-        rrVariation: arrhythmiaData.rrVariation,
-        detected: arrhythmiaData.detected,
-        timestamp: arrhythmiaData.timestamp,
-        windows: arrhythmiaData.windows || []
-      } : undefined
+      reliability,
+      arrhythmiaStatus,
+      arrhythmiaData
     };
     
-    // Publicar resultado actualizado
-    eventBus.publish(EventType.VITAL_SIGNS_UPDATED, vitalSigns);
+    this.lastResult = result;
     
-    // Incrementar contador de actualizaciones
-    this.updateCount++;
+    // Actualizar último resultado válido si corresponde
+    if (this.isResultValid(result)) {
+      this.lastValidResult = result;
+    }
+    
+    // Publicar resultado
+    eventBus.publish(EventType.VITAL_SIGNS_UPDATED, result);
+  }
+  
+  /**
+   * Verificar si un resultado es válido
+   */
+  private isResultValid(result: VitalSignsResult): boolean {
+    // Un resultado es válido si tiene frecuencia cardíaca
+    return result.heartRate > 40 && result.heartRate < 200;
+  }
+  
+  /**
+   * Obtener último resultado calculado
+   */
+  getLastVitalSigns(): VitalSignsResult | null {
+    return this.lastResult;
+  }
+  
+  /**
+   * Obtener último resultado válido
+   */
+  getLastValidResults(): VitalSignsResult | null {
+    return this.lastValidResult;
   }
 }
 
-// Export singleton instance
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
+
+// Exportar instancia singleton
 export const vitalSignsCalculator = new VitalSignsCalculator();

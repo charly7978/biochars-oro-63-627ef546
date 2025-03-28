@@ -1,6 +1,4 @@
-
 import React from 'react';
-import { Button } from "@/components/ui/button";
 
 interface MonitorButtonProps {
   isMonitoring: boolean;
@@ -9,23 +7,17 @@ interface MonitorButtonProps {
 }
 
 const MonitorButton: React.FC<MonitorButtonProps> = ({ isMonitoring, onToggle, variant = "monitor" }) => {
-  // Determine the styles based on the variant and state
-  const getButtonVariant = () => {
-    if (variant === "monitor") {
-      return isMonitoring ? "destructive" : "default";
-    } else {
-      return "secondary";
-    }
-  };
+  // Para "monitor": azul menos vivo; para "reset": gris
+  const baseClass = "px-4 py-2 rounded transition-colors duration-300 w-full text-white";
+  const classes =
+    variant === "monitor"
+      ? `${baseClass} ${isMonitoring ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'}`
+      : `${baseClass} bg-gray-500 hover:bg-gray-600`;
       
   return (
-    <Button 
-      onClick={onToggle} 
-      variant={getButtonVariant()} 
-      className="w-full"
-    >
+    <button onClick={onToggle} className={classes}>
       {variant === "monitor" ? (isMonitoring ? 'Detener' : 'Iniciar') : 'Reset'}
-    </Button>
+    </button>
   );
 };
 

@@ -4,12 +4,7 @@
  */
 
 import { EventType, eventBus } from '../events/EventBus';
-import { 
-  HeartBeatResult, 
-  PPGSignal, 
-  ProcessingError, 
-  HeartBeatData 
-} from '../types/signal';
+import { HeartBeatResult, PPGSignal, ProcessingError } from '../types/signal';
 import { CircularBuffer } from '../../utils/CircularBuffer';
 
 export class HeartBeatExtractor {
@@ -106,17 +101,15 @@ export class HeartBeatExtractor {
           const heartBeatResult: HeartBeatResult = {
             timestamp: now,
             bpm: Math.round(this.getSmoothBPM()),
-            confidence: confidence,
+            confidence,
             isPeak: true,
             filteredValue: value,
-            peaks: [],
-            quality: Math.round(confidence * 100),
-            intervals: [...this.rrIntervals],
+            rrIntervals: [...this.rrIntervals],
             lastPeakTime: this.lastPeakTime
           };
           
           // Publish heart beat detected event
-          eventBus.publish(EventType.HEARTBEAT_PEAK_DETECTED, heartBeatResult);
+          eventBus.publish(EventType.HEARTBEAT_DETECTED, heartBeatResult);
           
           // Publish heart rate change event if BPM is valid
           if (heartBeatResult.bpm > 0) {
@@ -132,7 +125,8 @@ export class HeartBeatExtractor {
       const processingError: ProcessingError = {
         code: 'HEARTBEAT_PROCESSING_ERROR',
         message: error instanceof Error ? error.message : 'Error processing heart beat',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        source: 'HeartBeatExtractor'
       };
       eventBus.publish(EventType.ERROR_OCCURRED, processingError);
     }

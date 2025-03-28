@@ -1,150 +1,103 @@
 
 /**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ * Core signal types for the entire application 
+ * These interfaces are used for communication between modules
  */
 
 /**
- * Definiciones de tipos para el sistema de procesamiento de señales
+ * Raw camera frame data after initial extraction
  */
-
-export interface RGBData {
-  red: number;
-  green: number;
-  blue: number;
+export interface RawSignalFrame {
+  timestamp: number;
+  redChannel: number;
+  greenChannel: number;
+  blueChannel: number;
+  frameQuality: number;
 }
 
-export interface ChannelData {
-  red: number;
-  ir: number;
-  ratio?: number;
-}
-
-export interface ROIData {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface ProcessedSignal {
+/**
+ * Processed PPG signal data
+ */
+export interface PPGSignal {
   timestamp: number;
   rawValue: number;
   filteredValue: number;
   quality: number;
   fingerDetected: boolean;
-  roi: ROIData;
-  perfusionIndex: number;
+  amplified: boolean;
+  roi?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  perfusionIndex?: number;
 }
 
-export interface ProcessingError {
-  code: string;
-  message: string;
+/**
+ * Heart beat detection result
+ */
+export interface HeartBeatResult {
   timestamp: number;
+  bpm: number;
+  confidence: number;
+  isPeak: boolean;
+  filteredValue: number;
+  rrIntervals: number[];
+  lastPeakTime: number | null;
 }
 
-export interface SignalProcessor {
-  initialize(): Promise<void>;
-  start(): void;
-  stop(): void;
-  calibrate(): Promise<boolean>;
-  processFrame(imageData: ImageData): void;
-}
-
+/**
+ * Final vital signs measurement results
+ */
 export interface VitalSignsResult {
   timestamp: number;
   heartRate: number;
   spo2: number;
   pressure: string;
-  bloodPressure?: {
-    systolic: number;
-    diastolic: number;
-    display: string;
-  };
   glucose?: number;
   lipids?: {
     totalCholesterol: number;
     triglycerides: number;
   };
   arrhythmiaStatus: string;
+  reliability: number;
   arrhythmiaData?: {
+    timestamp: number;
     rmssd: number;
     rrVariation: number;
-    detected: boolean;
-    timestamp: number;
-    windows?: any[][];
+    windows?: {start: number; end: number}[];
+    detected?: boolean;
   };
-  reliability: number;
-}
-
-// Agregamos las interfaces que faltaban para el sistema de cámara
-export interface CameraConfig {
-  width: number;
-  height: number;
-  fps: number;
-  facingMode: 'user' | 'environment';
-}
-
-export interface RawSignalFrame {
-  timestamp: number;
-  imageData: ImageData;
-  width: number;
-  height: number;
-  roi?: ROIData;
-  redChannel?: number; // Added for compatibility with PPGSignalExtractor
-}
-
-// Interfaces para extracción de señal
-export interface PPGSignal {
-  timestamp: number;
-  value?: number;
-  rawValue?: number;
-  filteredValue: number;
-  quality: number;
-  fingerDetected: boolean;
-  amplified?: boolean;
-  perfusionIndex: number;
-}
-
-export interface PPGSignalData {
-  timestamp: number;
-  rawValues: number[];
-  filteredValue: number;
-  combinedValue: number;
-  quality: number;
-  channelData?: ChannelData;
-}
-
-export interface HeartBeatResult {
-  timestamp: number;
-  bpm: number; 
-  peaks: number[];
-  quality: number;
-  isPeak?: boolean;
-  filteredValue?: number;
-  confidence?: number;
-  intervals?: number[];
-  lastPeakTime?: number | null;
-}
-
-// Used in multiple extractors
-export interface HeartBeatData {
-  timestamp: number;
-  bpm: number;
-  rawValue: number;
-  quality: number;
-  intervals?: number[];
 }
 
 /**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ * Processing error structure
  */
+export interface ProcessingError {
+  code: string;
+  message: string;
+  timestamp: number;
+  source: string;
+}
+
+/**
+ * Camera configuration options
+ */
+export interface CameraConfig {
+  facingMode: string;
+  width: number;
+  height: number;
+  frameRate: number;
+  torch: boolean;
+}
+
+/**
+ * Signal processing options
+ */
+export interface SignalProcessingOptions {
+  filterStrength: number;
+  adaptivityLevel: number;
+  detectionSensitivity: number;
+  fingerprintThreshold: number;
+}

@@ -21,8 +21,6 @@ export enum EventType {
   CAMERA_STARTED = 'camera:started',
   CAMERA_STOPPED = 'camera:stopped',
   CAMERA_ERROR = 'camera:error',
-  CAMERA_READY = 'camera:ready',
-  CAMERA_FRAME = 'camera:frame',
   
   // Eventos de extracción de señal
   HEARTBEAT_DATA = 'extraction:heartbeat_data',
@@ -49,7 +47,6 @@ export enum EventType {
   
   // Eventos de resultados
   VITAL_SIGNS_UPDATED = 'results:vital_signs_updated',
-  VITAL_SIGNS_FINAL = 'results:vital_signs_final',
   HEARTBEAT_RATE_CHANGED = 'results:heartbeat_rate_changed',
   ARRHYTHMIA_DETECTED = 'results:arrhythmia_detected',
   ARRHYTHMIA_STATUS_CHANGED = 'results:arrhythmia_status_changed',
@@ -57,10 +54,7 @@ export enum EventType {
   // Eventos de control
   MONITORING_STARTED = 'control:monitoring_started',
   MONITORING_STOPPED = 'control:monitoring_stopped',
-  MONITORING_RESET = 'control:monitoring_reset',
-  
-  // Eventos de error
-  ERROR_OCCURRED = 'error:occurred'
+  MONITORING_RESET = 'control:monitoring_reset'
 }
 
 type EventHandler = (data: any) => void;

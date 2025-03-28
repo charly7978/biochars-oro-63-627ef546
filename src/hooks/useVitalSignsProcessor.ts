@@ -85,16 +85,8 @@ export const useVitalSignsProcessor = () => {
     setLastValidResults(result);
     
     // Actualizar ventanas de arritmia si hay datos
-    if (result.arrhythmiaData?.windows) {
-      // Convertir y mapear los datos de ventanas al formato ArrhythmiaWindow
-      const formattedWindows: ArrhythmiaWindow[] = (result.arrhythmiaData.windows || []).map((window: any[]) => {
-        return {
-          start: window[0] || 0,
-          end: window[1] || 0
-        };
-      });
-      
-      setArrhythmiaWindows(formattedWindows);
+    if (result.lastArrhythmiaData?.windows) {
+      setArrhythmiaWindows(result.lastArrhythmiaData.windows);
     }
     
     // Actualizar log
@@ -197,7 +189,7 @@ export const useVitalSignsProcessor = () => {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.pressure
+          presión: lastValidResults.bloodPressure.display
         } : null
       },
       timestamp: new Date().toISOString()
@@ -222,7 +214,7 @@ export const useVitalSignsProcessor = () => {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.pressure
+          presión: lastValidResults.bloodPressure.display
         } : null,
         señalesProcesadas: processedSignals.current
       },
