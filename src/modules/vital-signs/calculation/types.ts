@@ -16,6 +16,7 @@ export interface CalculationResultItem<T = number | string> {
 export interface ArrhythmiaResultItem {
   status: string;
   data: any;
+  count?: number;
 }
 
 // Resultado completo de cálculo
@@ -33,4 +34,28 @@ export interface CalculationResult {
 export interface BaseCalculator {
   calculate(signal: OptimizedSignal): CalculationResultItem;
   reset(): void;
+}
+
+// Interfaz para calculador de signo vital con configuración específica
+export interface VitalSignCalculator extends BaseCalculator {
+  getChannelName(): string;
+  getConfidenceLevel(): number;
+}
+
+// Configuración para cálculos específicos
+export interface VitalSignCalculation {
+  minValue: number;
+  maxValue: number;
+  confidenceThreshold: number;
+  defaultValue: number | string;
+}
+
+// Tipos de feedback para optimización
+export interface FeedbackData {
+  channel: string;
+  adjustment: 'increase' | 'decrease' | 'reset' | 'fine-tune';
+  magnitude: number;
+  parameter?: string;
+  confidence?: number;
+  additionalData?: any;
 }

@@ -45,6 +45,10 @@ export interface OptimizationParameters {
   // Nivel de filtrado aplicado
   filteringLevel: FilteringLevel;
   
+  // Parámetros adicionales específicos por canal
+  filterStrength?: number;
+  sensitivityFactor?: number;
+  
   // Factores específicos por canal
   channelSpecific?: {
     [key: string]: any;
@@ -70,6 +74,9 @@ export interface FeedbackData {
   
   // Magnitud del ajuste (0-1)
   magnitude: number;
+  
+  // Confianza del cálculo
+  confidence?: number;
   
   // Parámetro específico a ajustar
   parameter?: keyof OptimizationParameters | string;

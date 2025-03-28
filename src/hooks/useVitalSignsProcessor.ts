@@ -7,7 +7,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSignalOptimizer } from './useSignalOptimizer';
 import { useVitalSignsCalculator } from './useVitalSignsCalculator';
-import { VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
+import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
 
 /**
  * Hook que integra el procesamiento, optimización y cálculo de signos vitales
@@ -16,6 +16,14 @@ export const useVitalSignsProcessor = () => {
   // Estado para resultados
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState<Record<string, number>>({
+    heartRate: 0,
+    spo2: 0,
+    pressure: 0,
+    arrhythmia: 0,
+    glucose: 0,
+    lipids: 0
+  });
   
   // Optimizador multicanal
   const { 
@@ -34,6 +42,7 @@ export const useVitalSignsProcessor = () => {
   
   // Referencia para conteo de señales procesadas
   const processedSignals = useRef(0);
+  const calibrationRef = useRef(0);
   
   // Procesar cálculos cuando cambian las señales optimizadas
   useEffect(() => {
@@ -56,7 +65,10 @@ export const useVitalSignsProcessor = () => {
             lipids: (result.cholesterol.confidence + result.triglycerides.confidence) / 2,
             overall: 0.7
           },
-          lastArrhythmiaData: result.arrhythmia.data
+          lastArrhythmiaData: result.arrhythmia.data,
+          calibration: {
+            progress: calculateCalibrationProgress(processedSignals.current)
+          }
         };
         
         console.log("VitalSignsProcessor: Resultados procesados", processedResult);
@@ -64,6 +76,23 @@ export const useVitalSignsProcessor = () => {
       }
     }
   }, [optimizedValues, calculateVitalSigns, isProcessing]);
+
+  // Función para calcular el progreso de calibración
+  const calculateCalibrationProgress = (frames: number) => {
+    const maxFrames = 60;
+    const progress = Math.min(1, frames / maxFrames);
+    
+    calibrationRef.current = progress;
+    
+    return {
+      heartRate: progress,
+      spo2: progress * 0.8,
+      pressure: progress * 0.7,
+      arrhythmia: progress * 0.6,
+      glucose: progress * 0.5,
+      lipids: progress * 0.4
+    };
+  };
   
   /**
    * Procesa una señal PPG y calcula signos vitales
@@ -82,6 +111,9 @@ export const useVitalSignsProcessor = () => {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
+        },
+        calibration: {
+          progress: calculateCalibrationProgress(processedSignals.current)
         }
       };
     }
@@ -91,12 +123,13 @@ export const useVitalSignsProcessor = () => {
     
     try {
       // Registro diagnóstico periódico
-      if (processedSignals.current % 45 === 0) {
+      if (processedSignals.current % 15 === 0) {
         console.log("useVitalSignsProcessor: Procesando señal", {
           inputValue: value,
           rrDataPresent: !!rrData,
           rrIntervals: rrData?.intervals.length || 0,
           signalNumber: processedSignals.current,
+          calibration: calibrationRef.current,
           optimizedChannels: Object.keys(optimizedValues).filter(
             k => optimizedValues[k] !== null
           ).length
@@ -128,8 +161,18 @@ export const useVitalSignsProcessor = () => {
       
       // El cálculo se realiza en el efecto cuando cambian los valores optimizados
       
-      // Asegurarse de que devolvemos valores simples, no objetos de cálculo
-      return lastValidResults || {
+      // Asegurarse de que devolvemos el último resultado válido con progreso de calibración
+      if (lastValidResults) {
+        const resultWithCalibration = {
+          ...lastValidResults,
+          calibration: {
+            progress: calculateCalibrationProgress(processedSignals.current)
+          }
+        };
+        return resultWithCalibration;
+      }
+      
+      return {
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
@@ -137,6 +180,9 @@ export const useVitalSignsProcessor = () => {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
+        },
+        calibration: {
+          progress: calculateCalibrationProgress(processedSignals.current)
         }
       };
     } catch (error) {
@@ -150,6 +196,9 @@ export const useVitalSignsProcessor = () => {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
+        },
+        calibration: {
+          progress: calculateCalibrationProgress(processedSignals.current)
         }
       };
     }
@@ -183,8 +232,17 @@ export const useVitalSignsProcessor = () => {
     resetOptimizer();
     resetCalculator();
     processedSignals.current = 0;
+    calibrationRef.current = 0;
     setLastValidResults(null);
     setIsProcessing(false);
+    setCalibrationProgress({
+      heartRate: 0,
+      spo2: 0,
+      pressure: 0,
+      arrhythmia: 0,
+      glucose: 0,
+      lipids: 0
+    });
     
     console.log("useVitalSignsProcessor: Full reset completado");
   }, [resetOptimizer, resetCalculator]);
@@ -202,6 +260,7 @@ export const useVitalSignsProcessor = () => {
   const getDebugInfo = useCallback(() => {
     return {
       processedSignals: processedSignals.current,
+      calibrationProgress: calibrationRef.current,
       optimizedChannelsAvailable: Object.keys(optimizedValues).filter(
         k => optimizedValues[k] !== null
       ),

@@ -1,237 +1,226 @@
 
 /**
- * Gestor de retroalimentación
- * Genera feedback para el optimizador basado en los resultados
+ * Gestor de retroalimentación bidireccional entre calculador y optimizador
  */
 
-import { FeedbackData, VitalSignChannel } from '../../signal-optimization/types';
 import { CalculationResult } from './types';
+import { FeedbackData } from '../../signal-optimization/types';
 
+/**
+ * Clase que gestiona la generación de feedback para el optimizador de señal
+ * basada en los resultados de cálculo
+ */
 export class FeedbackManager {
+  // Umbrales de confianza para feedback
+  private readonly CONFIDENCE_THRESHOLD_HIGH = 0.8;
+  private readonly CONFIDENCE_THRESHOLD_MEDIUM = 0.5;
+  private readonly CONFIDENCE_THRESHOLD_LOW = 0.3;
+  
+  // Almacena último feedback enviado por canal para evitar oscilaciones
+  private lastFeedback: Map<string, FeedbackData> = new Map();
+  
   /**
-   * Genera retroalimentación para el optimizador
+   * Genera feedback para el optimizador basado en resultados
    */
-  public generateFeedback(calculation: CalculationResult): FeedbackData[] {
+  public generateFeedback(result: CalculationResult): FeedbackData[] {
     const feedbackItems: FeedbackData[] = [];
     
-    // Generar feedback para frecuencia cardíaca
-    if (calculation.heartRate.value > 0) {
-      feedbackItems.push(this.generateHeartRateFeedback(calculation));
-    }
+    // Procesar cada tipo de resultado
+    this.processFeedbackForHeartRate(result, feedbackItems);
+    this.processFeedbackForSPO2(result, feedbackItems);
+    this.processFeedbackForBloodPressure(result, feedbackItems);
+    this.processFeedbackForGlucose(result, feedbackItems);
+    this.processFeedbackForLipids(result, feedbackItems);
     
-    // Generar feedback para SpO2
-    if (calculation.spo2.value > 0) {
-      feedbackItems.push(this.generateSpO2Feedback(calculation));
-    }
-    
-    // Generar feedback para presión arterial
-    if (calculation.bloodPressure.value !== "--/--") {
-      feedbackItems.push(this.generateBloodPressureFeedback(calculation));
-    }
-    
-    // Generar feedback para glucosa
-    if (calculation.glucose.value > 0) {
-      feedbackItems.push(this.generateGlucoseFeedback(calculation));
-    }
-    
-    // Generar feedback para colesterol
-    if (calculation.cholesterol.value > 0) {
-      feedbackItems.push(this.generateCholesterolFeedback(calculation));
-    }
-    
-    // Generar feedback para triglicéridos
-    if (calculation.triglycerides.value > 0) {
-      feedbackItems.push(this.generateTriglyceridesFeedback(calculation));
-    }
-    
-    return feedbackItems;
+    // Filtrar feedback que causaría oscilaciones
+    return this.filterStableFeedback(feedbackItems);
   }
   
   /**
-   * Genera feedback para frecuencia cardíaca
+   * Reinicia historial de feedback
    */
-  private generateHeartRateFeedback(calculation: CalculationResult): FeedbackData {
-    const heartRate = calculation.heartRate;
-    
-    // Ajustar amplificación según confianza
-    let adjustment: 'increase' | 'decrease' | 'reset' = 'reset';
-    let magnitude = 0.2;
-    let parameter: string = 'amplificationFactor';
-    
-    if (heartRate.confidence < 0.4) {
-      adjustment = 'increase';
-      magnitude = 0.3;
-    } else if (heartRate.confidence > 0.8) {
-      adjustment = 'decrease';
-      magnitude = 0.2;
-    }
-    
-    return {
-      channel: 'heartRate',
-      adjustment,
-      magnitude,
-      parameter,
-      additionalData: {
-        currentValue: heartRate.value,
-        confidence: heartRate.confidence
-      }
-    };
+  public reset(): void {
+    this.lastFeedback.clear();
   }
   
   /**
-   * Genera feedback para SpO2
+   * Procesa feedback para frecuencia cardíaca
    */
-  private generateSpO2Feedback(calculation: CalculationResult): FeedbackData {
-    const spo2 = calculation.spo2;
+  private processFeedbackForHeartRate(
+    result: CalculationResult, 
+    feedbackItems: FeedbackData[]
+  ): void {
+    const heartRate = result.heartRate;
     
-    // Ajustar filtrado según valor
-    let adjustment: 'increase' | 'decrease' | 'reset' = 'reset';
-    let magnitude = 0.2;
-    let parameter: string = 'filteringLevel';
-    
-    if (spo2.value < 85 || spo2.value > 100) {
-      // Valores fuera de rango fisiológico normal necesitan más filtrado
-      adjustment = 'increase';
-      magnitude = 0.4;
-    } else if (spo2.confidence < 0.4) {
-      adjustment = 'increase';
-      magnitude = 0.3;
-    }
-    
-    return {
-      channel: 'spo2',
-      adjustment,
-      magnitude,
-      parameter,
-      additionalData: {
-        currentValue: spo2.value,
-        confidence: spo2.confidence
+    if (heartRate.confidence < this.CONFIDENCE_THRESHOLD_HIGH) {
+      // Validar valor fisiológico
+      const isPhysiologicallyNormal = 
+        typeof heartRate.value === 'number' && 
+        heartRate.value >= 40 && 
+        heartRate.value <= 180;
+      
+      if (!isPhysiologicallyNormal) {
+        // Señal requiere mayor optimización
+        feedbackItems.push({
+          channel: 'heartRate',
+          adjustment: 'increase',
+          magnitude: 0.8,
+          parameter: 'amplificationFactor'
+        });
+      } else if (heartRate.confidence < this.CONFIDENCE_THRESHOLD_MEDIUM) {
+        // Ajuste fino para mejorar confianza
+        feedbackItems.push({
+          channel: 'heartRate',
+          adjustment: 'fine-tune',
+          magnitude: 0.5,
+          parameter: 'filteringLevel'
+        });
       }
-    };
+    }
   }
   
   /**
-   * Genera feedback para presión arterial
+   * Procesa feedback para SpO2
    */
-  private generateBloodPressureFeedback(calculation: CalculationResult): FeedbackData {
-    const bloodPressure = calculation.bloodPressure;
+  private processFeedbackForSPO2(
+    result: CalculationResult, 
+    feedbackItems: FeedbackData[]
+  ): void {
+    const spo2 = result.spo2;
     
-    // Extraer valores sistólica/diastólica
-    const [systolic, diastolic] = (bloodPressure.value as string).split('/').map(v => parseInt(v));
-    
-    // Determinar ajuste
-    let adjustment: 'increase' | 'decrease' | 'reset' = 'reset';
-    let magnitude = 0.2;
-    let parameter: string = 'amplificationFactor';
-    
-    if (isNaN(systolic) || isNaN(diastolic)) {
-      // Si no hay valores válidos, aumentar amplificación
-      adjustment = 'increase';
-      magnitude = 0.3;
-    } else if (systolic > 180 || diastolic > 120 || systolic < 80 || diastolic < 40) {
-      // Valores extremos requieren más filtrado
-      adjustment = 'increase';
-      parameter = 'filteringLevel';
-      magnitude = 0.4;
-    }
-    
-    return {
-      channel: 'bloodPressure',
-      adjustment,
-      magnitude,
-      parameter,
-      additionalData: {
-        currentValue: bloodPressure.value,
-        confidence: bloodPressure.confidence
+    if (spo2.confidence < this.CONFIDENCE_THRESHOLD_HIGH) {
+      // Validar valor fisiológico
+      const isPhysiologicallyNormal = 
+        typeof spo2.value === 'number' && 
+        spo2.value >= 80 && 
+        spo2.value <= 100;
+      
+      if (!isPhysiologicallyNormal) {
+        // Señal requiere mayor optimización
+        feedbackItems.push({
+          channel: 'spo2',
+          adjustment: 'increase',
+          magnitude: 0.7,
+          parameter: 'amplificationFactor'
+        });
+      } else if (spo2.confidence < this.CONFIDENCE_THRESHOLD_LOW) {
+        // Mejorar filtrado para señal débil
+        feedbackItems.push({
+          channel: 'spo2',
+          adjustment: 'fine-tune',
+          magnitude: 0.6,
+          parameter: 'filteringLevel'
+        });
       }
-    };
+    }
   }
   
   /**
-   * Genera feedback para glucosa
+   * Procesa feedback para presión arterial
    */
-  private generateGlucoseFeedback(calculation: CalculationResult): FeedbackData {
-    const glucose = calculation.glucose;
+  private processFeedbackForBloodPressure(
+    result: CalculationResult, 
+    feedbackItems: FeedbackData[]
+  ): void {
+    const bloodPressure = result.bloodPressure;
     
-    // Ajustar según confianza y valor
-    let adjustment: 'increase' | 'decrease' | 'reset' = 'reset';
-    let magnitude = 0.2;
-    let parameter: string = 'amplificationFactor';
-    
-    if (glucose.value < 60 || glucose.value > 180) {
-      // Valores fuera del rango normal
-      adjustment = 'fine-tune';
-      magnitude = 0.3;
-    } else if (glucose.confidence < 0.4) {
-      adjustment = 'increase';
-      magnitude = 0.2;
-    }
-    
-    return {
-      channel: 'glucose',
-      adjustment,
-      magnitude,
-      parameter,
-      additionalData: {
-        currentValue: glucose.value,
-        confidence: glucose.confidence
+    if (bloodPressure.confidence < this.CONFIDENCE_THRESHOLD_MEDIUM) {
+      // Validar formato de presión
+      const isValidFormat = 
+        typeof bloodPressure.value === 'string' && 
+        bloodPressure.value.includes('/');
+      
+      if (!isValidFormat || bloodPressure.value === "--/--") {
+        // Señal requiere mayor optimización
+        feedbackItems.push({
+          channel: 'bloodPressure',
+          adjustment: 'increase',
+          magnitude: 0.8,
+          parameter: 'amplificationFactor'
+        });
       }
-    };
+    }
   }
   
   /**
-   * Genera feedback para colesterol
+   * Procesa feedback para glucosa
    */
-  private generateCholesterolFeedback(calculation: CalculationResult): FeedbackData {
-    const cholesterol = calculation.cholesterol;
+  private processFeedbackForGlucose(
+    result: CalculationResult, 
+    feedbackItems: FeedbackData[]
+  ): void {
+    const glucose = result.glucose;
     
-    // Ajustar según confianza
-    let adjustment: 'increase' | 'decrease' | 'reset' = 'reset';
-    let magnitude = 0.2;
-    let parameter: string = 'filteringLevel';
-    
-    if (cholesterol.confidence < 0.3) {
-      adjustment = 'increase';
-      magnitude = 0.4;
-    }
-    
-    return {
-      channel: 'cholesterol',
-      adjustment,
-      magnitude,
-      parameter,
-      additionalData: {
-        currentValue: cholesterol.value,
-        confidence: cholesterol.confidence
+    if (glucose.confidence < this.CONFIDENCE_THRESHOLD_MEDIUM) {
+      // Validar valor fisiológico
+      const isPhysiologicallyNormal = 
+        typeof glucose.value === 'number' && 
+        glucose.value >= 70 && 
+        glucose.value <= 180;
+      
+      if (!isPhysiologicallyNormal) {
+        // Señal requiere ajuste por canal específico
+        feedbackItems.push({
+          channel: 'glucose',
+          adjustment: 'fine-tune',
+          magnitude: 0.7,
+          parameter: 'sensitivityFactor'
+        });
       }
-    };
+    }
   }
   
   /**
-   * Genera feedback para triglicéridos
+   * Procesa feedback para lípidos
    */
-  private generateTriglyceridesFeedback(calculation: CalculationResult): FeedbackData {
-    const triglycerides = calculation.triglycerides;
+  private processFeedbackForLipids(
+    result: CalculationResult, 
+    feedbackItems: FeedbackData[]
+  ): void {
+    const cholesterol = result.cholesterol;
+    const triglycerides = result.triglycerides;
     
-    // Ajustar según confianza
-    let adjustment: 'increase' | 'decrease' | 'reset' = 'reset';
-    let magnitude = 0.2;
-    let parameter: string = 'filteringLevel';
-    
-    if (triglycerides.confidence < 0.3) {
-      adjustment = 'increase';
-      magnitude = 0.4;
+    // Procesar colesterol
+    if (cholesterol.confidence < this.CONFIDENCE_THRESHOLD_LOW) {
+      feedbackItems.push({
+        channel: 'cholesterol',
+        adjustment: 'fine-tune',
+        magnitude: 0.6,
+        parameter: 'amplificationFactor'
+      });
     }
     
-    return {
-      channel: 'triglycerides',
-      adjustment,
-      magnitude,
-      parameter,
-      additionalData: {
-        currentValue: triglycerides.value,
-        confidence: triglycerides.confidence
+    // Procesar triglicéridos
+    if (triglycerides.confidence < this.CONFIDENCE_THRESHOLD_LOW) {
+      feedbackItems.push({
+        channel: 'triglycerides',
+        adjustment: 'fine-tune',
+        magnitude: 0.5,
+        parameter: 'filteringLevel'
+      });
+    }
+  }
+  
+  /**
+   * Filtra feedback para evitar oscilaciones
+   */
+  private filterStableFeedback(items: FeedbackData[]): FeedbackData[] {
+    const result: FeedbackData[] = [];
+    
+    for (const item of items) {
+      const lastItem = this.lastFeedback.get(item.channel);
+      
+      // Si no hay feedback anterior o es diferente
+      if (!lastItem || 
+          lastItem.adjustment !== item.adjustment || 
+          Math.abs(lastItem.magnitude - item.magnitude) > 0.2) {
+        
+        // Actualizar último feedback
+        this.lastFeedback.set(item.channel, item);
+        result.push(item);
       }
-    };
+    }
+    
+    return result;
   }
 }

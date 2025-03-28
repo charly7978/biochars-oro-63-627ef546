@@ -12,7 +12,7 @@ import { GlucoseCalculator } from './calculators/glucose-calculator';
 import { LipidsCalculator } from './calculators/lipids-calculator';
 import { ArrhythmiaCalculator } from './calculators/arrhythmia-calculator';
 import { FeedbackManager } from './feedback-manager';
-import { BaseCalculator, CalculationResult } from './types';
+import { BaseCalculator, CalculationResult, CalculationResultItem } from './types';
 
 /**
  * Clase principal que gestiona el cálculo de signos vitales
@@ -23,6 +23,7 @@ export class VitalSignsCalculatorManager {
   private feedbackManager: FeedbackManager;
   private lastCalculation: CalculationResult | null = null;
   private visualizationData: any = null;
+  private arrhythmiaCalculator: ArrhythmiaCalculator;
   
   constructor() {
     // Inicializar calculadores especializados
@@ -32,6 +33,9 @@ export class VitalSignsCalculatorManager {
     this.calculators.set('glucose', new GlucoseCalculator());
     this.calculators.set('cholesterol', new LipidsCalculator('cholesterol'));
     this.calculators.set('triglycerides', new LipidsCalculator('triglycerides'));
+    
+    // Inicializar calculador de arritmias
+    this.arrhythmiaCalculator = new ArrhythmiaCalculator();
     
     // Inicializar gestor de feedback
     this.feedbackManager = new FeedbackManager();
@@ -66,34 +70,24 @@ export class VitalSignsCalculatorManager {
           // Calcular utilizando señal optimizada
           const channelResult = calculator.calculate(signal);
           
-          // Guardar resultado
+          // Guardar resultado con el tipo correcto
           if (channel === 'heartRate') {
-            result.heartRate = channelResult;
+            result.heartRate = channelResult as CalculationResultItem<number>;
             
             // Calcular arritmias si hay datos de frecuencia cardíaca
             if (signal.metadata?.intervals && signal.metadata.intervals.length > 0) {
-              const arrhythmiaCalculator = new ArrhythmiaCalculator();
-              result.arrhythmia = arrhythmiaCalculator.calculate({
-                channel: 'heartRate',
-                value: channelResult.value as number,
-                timestamp: signal.timestamp,
-                confidence: channelResult.confidence,
-                metadata: {
-                  intervals: signal.metadata.intervals,
-                  lastPeakTime: signal.metadata.lastPeakTime
-                }
-              });
+              result.arrhythmia = this.arrhythmiaCalculator.calculate(signal);
             }
           } else if (channel === 'spo2') {
-            result.spo2 = channelResult;
+            result.spo2 = channelResult as CalculationResultItem<number>;
           } else if (channel === 'bloodPressure') {
-            result.bloodPressure = channelResult;
+            result.bloodPressure = channelResult as CalculationResultItem<string>;
           } else if (channel === 'glucose') {
-            result.glucose = channelResult;
+            result.glucose = channelResult as CalculationResultItem<number>;
           } else if (channel === 'cholesterol') {
-            result.cholesterol = channelResult;
+            result.cholesterol = channelResult as CalculationResultItem<number>;
           } else if (channel === 'triglycerides') {
-            result.triglycerides = channelResult;
+            result.triglycerides = channelResult as CalculationResultItem<number>;
           }
         }
       }
@@ -130,6 +124,7 @@ export class VitalSignsCalculatorManager {
       calculator.reset();
     }
     
+    this.arrhythmiaCalculator.reset();
     this.lastCalculation = null;
     this.visualizationData = null;
   }

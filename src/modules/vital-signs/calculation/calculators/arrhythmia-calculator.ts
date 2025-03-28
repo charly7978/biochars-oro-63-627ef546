@@ -1,188 +1,106 @@
 
 /**
- * Calculador de arritmias cardíacas
- * 
- * Analiza intervalos RR para detectar irregularidades en el ritmo cardíaco
+ * Calculador de arritmias
  */
 
-import { CalculationResult } from '../types';
+import { OptimizedSignal } from '../../../../modules/signal-optimization/types';
+import { CalculationResultItem, ArrhythmiaResultItem } from '../types';
 
+/**
+ * Clase para detección y clasificación de arritmias cardíacas
+ */
 export class ArrhythmiaCalculator {
   private arrhythmiaCount: number = 0;
-  private lastDetectionTime: number | null = null;
-  private rrHistory: number[] = [];
-  private readonly MAX_RR_HISTORY = 30;
-  private stabilityCounter: number = 0;
+  private lastIntervals: number[] = [];
+  private rmssd: number = 0;
   
   /**
-   * Procesa intervalos RR para detectar arritmias
+   * Calcula estado de arritmia basado en señal
    */
-  public processRRIntervals(rrIntervals: number[]): CalculationResult['arrhythmia'] {
-    if (rrIntervals.length < 5) {
+  public calculate(signal: OptimizedSignal): ArrhythmiaResultItem {
+    if (!signal || !signal.metadata?.intervals || signal.metadata.intervals.length < 2) {
       return {
         status: "--",
-        count: this.arrhythmiaCount,
-        lastDetection: this.lastDetectionTime,
-        data: null
+        data: null,
+        count: 0
       };
     }
     
-    // Añadir intervalos al historial
-    for (const interval of rrIntervals) {
-      if (interval >= 300 && interval <= 1500) {
-        this.rrHistory.push(interval);
-        
-        if (this.rrHistory.length > this.MAX_RR_HISTORY) {
-          this.rrHistory.shift();
-        }
-      }
-    }
+    // Obtener intervalos RR
+    const intervals = signal.metadata.intervals;
     
-    // Verificar si tenemos suficientes datos para análisis
-    if (this.rrHistory.length < 10) {
+    // Calcular variación
+    const rmssd = this.calculateRMSSD(intervals);
+    this.rmssd = rmssd;
+    
+    // Detectar arritmia basado en umbral de variación
+    const isArrhythmia = rmssd > 100; // Umbral típico para variabilidad alta
+    
+    if (isArrhythmia) {
+      this.arrhythmiaCount++;
+      
       return {
-        status: "INSUFICIENTE",
-        count: this.arrhythmiaCount,
-        lastDetection: this.lastDetectionTime,
-        data: null
+        status: `Arritmia|${this.arrhythmiaCount}`,
+        data: {
+          timestamp: Date.now(),
+          rmssd: rmssd,
+          rrVariation: this.calculateVariation(intervals)
+        },
+        count: this.arrhythmiaCount
       };
     }
     
-    // Calcular métricas de variabilidad
-    const metrics = this.calculateVariabilityMetrics(this.rrHistory);
-    
-    // Aplicar criterios de detección
-    const result = this.detectArrhythmia(metrics);
-    
     return {
-      status: result.status,
-      count: this.arrhythmiaCount,
-      lastDetection: result.isArrhythmia ? Date.now() : this.lastDetectionTime,
-      data: metrics
+      status: "Normal",
+      data: {
+        timestamp: Date.now(),
+        rmssd: rmssd,
+        rrVariation: this.calculateVariation(intervals)
+      },
+      count: this.arrhythmiaCount
     };
   }
   
   /**
-   * Calcula métricas de variabilidad de RR
+   * Calcula RMSSD (Raíz cuadrada del promedio de las diferencias cuadradas)
    */
-  private calculateVariabilityMetrics(rrIntervals: number[]): ArrhythmiaMetrics {
-    // Calcular estadísticas básicas
-    const mean = rrIntervals.reduce((sum, val) => sum + val, 0) / rrIntervals.length;
+  private calculateRMSSD(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
     
-    // Calcular desviación estándar
-    const variance = rrIntervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / rrIntervals.length;
-    const stdDev = Math.sqrt(variance);
+    let sumSquaredDiff = 0;
+    let count = 0;
     
-    // Calcular RMSSD (Root Mean Square of Successive Differences)
-    let rmssdSum = 0;
-    for (let i = 1; i < rrIntervals.length; i++) {
-      rmssdSum += Math.pow(rrIntervals[i] - rrIntervals[i-1], 2);
+    for (let i = 1; i < intervals.length; i++) {
+      const diff = intervals[i] - intervals[i - 1];
+      sumSquaredDiff += diff * diff;
+      count++;
     }
-    const rmssd = Math.sqrt(rmssdSum / (rrIntervals.length - 1));
     
-    // Calcular pNN50 (porcentaje de intervalos que difieren más de 50ms)
-    let nn50Count = 0;
-    for (let i = 1; i < rrIntervals.length; i++) {
-      if (Math.abs(rrIntervals[i] - rrIntervals[i-1]) > 50) {
-        nn50Count++;
-      }
-    }
-    const pnn50 = (nn50Count / (rrIntervals.length - 1)) * 100;
+    if (count === 0) return 0;
     
-    // Calcular coeficiente de variación
-    const cvRR = (stdDev / mean) * 100;
-    
-    return {
-      mean,
-      stdDev,
-      rmssd,
-      pnn50,
-      cvRR,
-      sdnn: stdDev
-    };
+    return Math.sqrt(sumSquaredDiff / count);
   }
   
   /**
-   * Detecta arritmia basado en métricas
+   * Calcula variación porcentual en intervalos
    */
-  private detectArrhythmia(metrics: ArrhythmiaMetrics): ArrhythmiaResult {
-    // Umbral adaptativo para detección
-    const cvThreshold = 15;
-    const rmssdThreshold = 50;
-    const pnn50Threshold = 30;
+  private calculateVariation(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
     
-    // Detectar posible arritmia basado en métricas
-    const isCVHigh = metrics.cvRR > cvThreshold;
-    const isRMSSDHigh = metrics.rmssd > rmssdThreshold;
-    const isPNN50High = metrics.pnn50 > pnn50Threshold;
+    const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const stdDev = Math.sqrt(
+      intervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / intervals.length
+    );
     
-    // Determinar tipo de arritmia
-    let arrhythmiaType = "NORMAL";
-    let isArrhythmia = false;
-    
-    if (isCVHigh && isRMSSDHigh && isPNN50High) {
-      // Alta variabilidad en todos los parámetros
-      arrhythmiaType = "ARRITMIA|" + (++this.arrhythmiaCount);
-      this.lastDetectionTime = Date.now();
-      isArrhythmia = true;
-      this.stabilityCounter = 0;
-    } else if (isCVHigh || isRMSSDHigh) {
-      // Variabilidad moderada
-      if (this.stabilityCounter < 5) {
-        arrhythmiaType = "IRREGULAR|" + this.arrhythmiaCount;
-        isArrhythmia = false;
-      } else {
-        arrhythmiaType = "NORMAL";
-        isArrhythmia = false;
-      }
-      this.stabilityCounter = 0;
-    } else {
-      // Ritmo normal
-      arrhythmiaType = "NORMAL";
-      isArrhythmia = false;
-      this.stabilityCounter = Math.min(10, this.stabilityCounter + 1);
-    }
-    
-    return {
-      status: arrhythmiaType,
-      isArrhythmia
-    };
+    return (stdDev / mean) * 100; // Coeficiente de variación en porcentaje
   }
   
   /**
-   * Obtiene contador de arritmias
-   */
-  public getArrhythmiaCount(): number {
-    return this.arrhythmiaCount;
-  }
-  
-  /**
-   * Reinicia detector de arritmias
+   * Reinicia el contador de arritmias
    */
   public reset(): void {
     this.arrhythmiaCount = 0;
-    this.lastDetectionTime = null;
-    this.rrHistory = [];
-    this.stabilityCounter = 0;
+    this.lastIntervals = [];
+    this.rmssd = 0;
   }
-}
-
-/**
- * Métricas de variabilidad de intervalos RR
- */
-interface ArrhythmiaMetrics {
-  mean: number;
-  stdDev: number;
-  rmssd: number;
-  pnn50: number;
-  cvRR: number;
-  sdnn: number;
-}
-
-/**
- * Resultado de detección de arritmia
- */
-interface ArrhythmiaResult {
-  status: string;
-  isArrhythmia: boolean;
 }
