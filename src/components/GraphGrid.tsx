@@ -26,22 +26,19 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
 				
-				// Create the gradient according to the reference image - purple to turquoise to green
+				// Enhanced background with glassmorphism effect - subtle gradient
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
-				gradient.addColorStop(0, 'rgba(220, 180, 255, 0.9)'); // Purple at top
-				gradient.addColorStop(0.3, 'rgba(180, 200, 255, 0.8)'); // Light blue-purple
-				gradient.addColorStop(0.5, 'rgba(100, 220, 255, 0.8)'); // Turquoise
-				gradient.addColorStop(0.7, 'rgba(80, 230, 220, 0.8)'); // Turquoise-green
-				gradient.addColorStop(0.9, 'rgba(100, 255, 180, 0.8)'); // Light green
-				gradient.addColorStop(1, 'rgba(150, 255, 150, 0.8)'); // Green at bottom
-				
+				gradient.addColorStop(0, 'rgba(243, 247, 252, 0.6)'); // More transparent at top
+				gradient.addColorStop(0.4, 'rgba(237, 244, 249, 0.7)'); // Slightly darker at middle
+				gradient.addColorStop(0.6, 'rgba(241, 238, 248, 0.7)'); // Start transitioning to subtle lilac
+				gradient.addColorStop(1, 'rgba(240, 230, 255, 0.6)'); // Transparent lilac tone at bottom
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				
-				// Draw grid with improved quality for better visibility
+				// Draw grid with improved quality and glassmorphism effect
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(100, 100, 180, 0.25)'; // More visible grid lines
-				ctx.lineWidth = 0.5; // Thinner lines for better aesthetics
+				ctx.strokeStyle = 'rgba(70,80,130,0.12)'; // More transparent for glass effect
+				ctx.lineWidth = 0.6; // Thinner lines for glass effect
 				
 				// Draw vertical grid lines with better precision
 				for (let x = 0; x <= displayWidth; x += cellSize) {
@@ -60,9 +57,9 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				}
 				ctx.stroke();
 				
-				// Add major grid lines for better reference
+				// Add an enhanced grid with major lines - glass effect
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(120, 120, 200, 0.35)'; // More visible major grid
+				ctx.strokeStyle = 'rgba(50,70,120,0.15)'; // More transparent for major grid
 				ctx.lineWidth = 1;
 				
 				// Major vertical lines every 5 cells
@@ -70,18 +67,6 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 					const xPos = Math.floor(x) + 0.5;
 					ctx.moveTo(xPos, 0);
 					ctx.lineTo(xPos, displayHeight);
-					
-					// Add numbers on the left side
-					if (x === 0) {
-						const yNumbers = [6.9, 6.4, 6.0, 5.6, 5.1, 4.7, 4.2, 3.8, 3.3, 2.9, 2.4, 2.0, 1.6, 1.1, 0.7, 0.2, -0.2, -0.7, -1.1];
-						yNumbers.forEach((num, i) => {
-							const yPos = Math.floor((i + 1) * cellSize * 3.5) + 0.5;
-							ctx.font = 'bold 14px Arial';
-							ctx.fillStyle = 'rgba(80, 80, 140, 0.8)';
-							ctx.textAlign = 'left';
-							ctx.fillText(num.toString(), 5, yPos + 5);
-						});
-					}
 				}
 				
 				// Major horizontal lines every 5 cells
@@ -92,12 +77,15 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				}
 				ctx.stroke();
 				
-				// Add text message in the center when waiting for signal
-				ctx.font = 'bold 24px Arial';
-				ctx.fillStyle = 'rgba(100, 100, 150, 0.6)';
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				ctx.fillText('Esperando señal válida...', displayWidth / 2, displayHeight / 2);
+				// Add subtle glow points at intersections for glass effect
+				ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+				for (let x = 0; x <= displayWidth; x += cellSize * 5) {
+					for (let y = 0; y <= displayHeight; y += cellSize * 5) {
+						ctx.beginPath();
+						ctx.arc(x, y, 1, 0, Math.PI * 2);
+						ctx.fill();
+					}
+				}
 			}
 		}
 	}, [width, height, cellSize]);
@@ -109,8 +97,8 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				width: '100%', 
 				height: 'auto', 
 				display: 'block',
-				borderRadius: '0px',
-				boxShadow: 'none'
+				borderRadius: '8px',
+				boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)'
 			}} 
 			className="ppg-graph gpu-accelerated rendering-optimized"
 		/>
