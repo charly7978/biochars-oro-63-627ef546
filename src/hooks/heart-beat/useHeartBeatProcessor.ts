@@ -168,9 +168,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
       
       // Important: Make sure the HeartBeatProcessor knows about arrhythmia
-      if (processorRef.current && result.isArrhythmia) {
+      if (processorRef.current && result.isArrhythmia && processorRef.current.setArrhythmiaCounter) {
         console.log("Arrhythmia detected! Ensuring processor is updated.");
-        processorRef.current.arrhythmiaCounter = (processorRef.current.arrhythmiaCounter || 0) + 1;
+        processorRef.current.setArrhythmiaCounter(
+          (processorRef.current.getArrhythmiaCounter ? processorRef.current.getArrhythmiaCounter() : 0) + 1
+        );
       }
     }
 

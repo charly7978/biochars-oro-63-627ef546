@@ -65,10 +65,10 @@ export const useVitalSignsProcessor = () => {
     const heartBeatResult = heartBeatProcessor.processSignal(value);
     
     // Usar el resultado de frecuencia cardíaca para otros procesadores
-    const oxygenResult = oxygenSaturationProcessor.processSignal(value, heartBeatResult);
-    const respirationResult = respirationRateProcessor.processSignal(value, heartBeatResult);
-    const bloodPressureResult = bloodPressureProcessor.processSignal(heartBeatResult);
-    const stressResult = stressLevelProcessor.processSignal(heartBeatResult, respirationResult);
+    const oxygenResult = oxygenSaturationProcessor.processSignal();
+    const respirationResult = respirationRateProcessor.processSignal();
+    const bloodPressureResult = bloodPressureProcessor.processSignal();
+    const stressResult = stressLevelProcessor.processSignal();
     
     // Resultado combinado de todos los signos vitales
     const result: VitalSignsResult = {

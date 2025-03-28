@@ -11,7 +11,8 @@ export * from './result-processor';
 // Export specific functions for direct use
 export { 
   checkWeakSignal, 
-  shouldProcessMeasurement, 
+  shouldProcessMeasurement,
+  shouldProcessSimpleMeasurement,
   createWeakSignalResult,
   resetSignalQualityState,
   isFingerDetected,

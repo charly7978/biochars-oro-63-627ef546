@@ -44,3 +44,13 @@ export interface ArrhythmiaWindow {
   start: number;
   end: number;
 }
+
+export interface UseVitalSignsProcessorReturn {
+  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => any;
+  reset: () => any;
+  fullReset: () => void;
+  arrhythmiaCounter: number;
+  lastValidResults: VitalSignsResult | null;
+  arrhythmiaWindows: ArrhythmiaWindow[];
+  debugInfo: any;
+}

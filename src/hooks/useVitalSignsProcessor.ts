@@ -4,11 +4,11 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
+import { VitalSignsResult } from './vital-signs/types';
+import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
-import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 
 /**
@@ -86,11 +86,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     weakSignalsCountRef.current = updatedWeakSignalsCount;
     
     // Process signal directly - no simulation
-    let result = processVitalSignal(value, rrData, isWeakSignal);
+    let result = processVitalSignal(value, rrData);
     const currentTime = Date.now();
     
     // If arrhythmia is detected in real data, register visualization window
-    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+    if (result.arrhythmiaStatus && result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
       
       // Window based on real heart rate

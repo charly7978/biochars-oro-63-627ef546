@@ -82,7 +82,7 @@ export const shouldProcessMeasurement = (
  * Simple version for checking if we should process a measurement
  * when only value is available and not additional quality metrics
  */
-export const shouldProcessMeasurement = (
+export const shouldProcessSimpleMeasurement = (
   value: number
 ): boolean => {
   // Simple amplitude check
@@ -130,9 +130,10 @@ export const resetDetectionStates = () => {
 
 /**
  * Detect if a finger is present based on signal pattern
- * @param signalHistory History of signals with time and values
- * @param currentPatternCount Current count of detected patterns
- * @returns Object with detection result and updated pattern count
+ * @param signalQuality Signal quality
+ * @param hasFingerPattern Pattern detection result
+ * @param weakSignalsCount Count of weak signals
+ * @returns Boolean indicating if finger is detected
  */
 export const isFingerDetected = (
   signalQuality: number,
