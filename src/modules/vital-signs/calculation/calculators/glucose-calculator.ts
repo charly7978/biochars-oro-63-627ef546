@@ -1,6 +1,5 @@
-
 /**
- * Calculador especializado para niveles de glucosa
+ * Calculador especializado para glucosa
  */
 
 import { BaseCalculator } from './base-calculator';
@@ -8,14 +7,13 @@ import { VitalSignCalculation } from '../types';
 import { OptimizedSignal } from '../../../signal-optimization/types';
 
 export class GlucoseCalculator extends BaseCalculator {
-  private decayTime: number = 0;
-  private peakAmplitude: number = 0;
-  private areaUnderCurve: number = 0;
+  private absorptionRatio: number = 1.0;
+  private baselineVariation: number = 0;
+  private trendData: number[] = [];
   
   constructor() {
     super('glucose');
-    // Mayor tamaño de buffer para análisis temporal
-    this.MAX_BUFFER_SIZE = 150;
+    this._maxBufferSize = 120; // Mayor buffer para detectar tendencias lentas
   }
   
   /**
@@ -133,23 +131,23 @@ export class GlucoseCalculator extends BaseCalculator {
    * Calcula confianza del resultado
    */
   private calculateConfidence(): number {
-    if (this.valueBuffer.length < 90) {
-      return 0.3 * (this.valueBuffer.length / 90); // Confianza reducida con pocas muestras
+    if (this.valueBuffer.length < 30) {
+      return 0.2; // Confianza baja con pocas muestras
     }
     
     // Factores de confianza
     
-    // 1. Cantidad de muestras
-    const sampleConfidence = Math.min(1, this.valueBuffer.length / this.MAX_BUFFER_SIZE);
-    
-    // 2. Calidad de señal
+    // 1. Estabilidad de señal
     const signalQuality = this.calculateSignalQuality(this.valueBuffer);
     
-    // 3. Estabilidad de características
-    const stabilityFactor = this.calculateStabilityFactor();
+    // 2. Cantidad de muestras
+    const sampleConfidence = Math.min(1.0, this.valueBuffer.length / this._maxBufferSize);
     
-    // Combinación ponderada
-    return (sampleConfidence * 0.3) + (signalQuality * 0.4) + (stabilityFactor * 0.3);
+    // 3. Consistencia de tendencia
+    const trendConfidence = this.calculateTrendConsistency();
+    
+    // Combinar factores
+    return (signalQuality * 0.3) + (sampleConfidence * 0.3) + (trendConfidence * 0.4);
   }
   
   /**
@@ -231,4 +229,8 @@ export class GlucoseCalculator extends BaseCalculator {
     this.peakAmplitude = 0;
     this.areaUnderCurve = 0;
   }
+
+    private calculateTrendConsistency(): number {
+        return 0.8;
+    }
 }

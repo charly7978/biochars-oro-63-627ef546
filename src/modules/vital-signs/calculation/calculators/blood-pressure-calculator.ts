@@ -221,14 +221,14 @@ export class BloodPressureCalculator extends BaseCalculator {
    * Calcula confianza del resultado
    */
   private calculateConfidence(): number {
-    if (this.valueBuffer.length < 90) {
-      return 0.3 * (this.valueBuffer.length / 90);
+    if (this.valueBuffer.length < 30) {
+      return 0.3; // Confianza baja con pocas muestras
     }
     
     // Factores de confianza
     
     // 1. Cantidad de muestras
-    const sampleConfidence = Math.min(1, this.valueBuffer.length / this.MAX_BUFFER_SIZE);
+    const sampleConfidence = Math.min(1.0, this.valueBuffer.length / this._maxBufferSize);
     
     // 2. Calidad de señal
     const signalQuality = this.calculateSignalQuality(this.valueBuffer);

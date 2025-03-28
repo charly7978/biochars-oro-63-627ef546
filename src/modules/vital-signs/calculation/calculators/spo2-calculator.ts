@@ -1,4 +1,3 @@
-
 /**
  * Calculador especializado para SpO2
  */
@@ -16,7 +15,7 @@ export class SPO2Calculator extends BaseCalculator {
   constructor() {
     super('spo2');
     // Aumentar tamaño de buffer para cálculos de SpO2
-    this.MAX_BUFFER_SIZE = 90;
+    this._maxBufferSize = 90;
   }
   
   /**
@@ -172,7 +171,7 @@ export class SPO2Calculator extends BaseCalculator {
     const signalQuality = this.calculateSignalQuality(this.valueBuffer);
     
     // 3. Cantidad de muestras
-    const sampleConfidence = Math.min(1.0, this.valueBuffer.length / this.MAX_BUFFER_SIZE);
+    const sampleConfidence = Math.min(1.0, this.valueBuffer.length / this._maxBufferSize);
     
     // Combinar factores (perfusión es crítico para SpO2)
     return (perfusionConfidence * 0.5) + (signalQuality * 0.3) + (sampleConfidence * 0.2);

@@ -1,4 +1,3 @@
-
 /**
  * Calculador especializado para lípidos
  */
@@ -9,21 +8,16 @@ import { OptimizedSignal, VitalSignChannel } from '../../../signal-optimization/
 
 export class LipidsCalculator extends BaseCalculator {
   private readonly lipidType: 'cholesterol' | 'triglycerides';
-  private waveformFeatures: {
-    symmetry: number;
-    areaUnderCurve: number;
-    peakWidth: number;
-  } = {
-    symmetry: 0,
-    areaUnderCurve: 0,
-    peakWidth: 0
-  };
+  private absorptionIndex: number = 1.0;
+  private waveformDistortion: number = 0;
+  private baselineTrend: number[] = [];
   
-  constructor(type: 'cholesterol' | 'triglycerides') {
-    super(type as VitalSignChannel);
-    this.lipidType = type;
-    // Mayor tamaño de buffer para análisis de forma de onda
-    this.MAX_BUFFER_SIZE = 120;
+  constructor(channel: VitalSignChannel) {
+    super(channel);
+    this._maxBufferSize = 180; // Mayor buffer para análisis de lípidos
+    
+    // Determinar tipo de lípido según canal
+    this.lipidType = channel === 'cholesterol' ? 'cholesterol' : 'triglycerides';
   }
   
   /**
@@ -187,29 +181,29 @@ export class LipidsCalculator extends BaseCalculator {
    * Calcula confianza del resultado
    */
   private calculateConfidence(): number {
-    if (this.valueBuffer.length < 60) {
-      return this.valueBuffer.length / 120; // Confianza proporcional a cantidad de datos
+    if (this.valueBuffer.length < 40) {
+      return 0.2; // Confianza baja con pocas muestras
     }
     
     // Factores de confianza
     
-    // 1. Cantidad de muestras
-    const sampleConfidence = Math.min(1, this.valueBuffer.length / this.MAX_BUFFER_SIZE);
-    
-    // 2. Calidad de señal
+    // 1. Calidad de señal
     const signalQuality = this.calculateSignalQuality(this.valueBuffer);
     
-    // 3. Estabilidad de características
-    const featureStability = this.calculateFeatureStability();
+    // 2. Cantidad de muestras
+    const sampleConfidence = Math.min(1.0, this.valueBuffer.length / this._maxBufferSize);
+    
+    // 3. Consistencia de características
+    const featureConsistency = this.calculateFeatureConsistency();
     
     // Combinar factores
-    return (sampleConfidence * 0.3) + (signalQuality * 0.4) + (featureStability * 0.3);
+    return (signalQuality * 0.3) + (sampleConfidence * 0.3) + (featureConsistency * 0.4);
   }
   
   /**
    * Calcula estabilidad de características
    */
-  private calculateFeatureStability(): number {
+  private calculateFeatureConsistency(): number {
     // Para calcular estabilidad, necesitaríamos histórico de características
     // Simplificando, usamos una medida de estabilidad basada en buffer actual
     
