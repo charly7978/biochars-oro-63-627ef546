@@ -1,207 +1,227 @@
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useHeartBeatProcessor } from '../heart-beat/useHeartBeatProcessor';
+import { useOxygenSaturationProcessor } from '../oxygen-saturation/useOxygenSaturationProcessor';
+import { useRespirationRateProcessor } from '../respiration-rate/useRespirationRateProcessor';
+import { useBloodPressureProcessor } from '../blood-pressure/useBloodPressureProcessor';
+import { useStressLevelProcessor } from '../stress-level/useStressLevelProcessor';
+import { VitalSignsResult } from './types';
+
+// Performance tracking interfaces
+interface ProcessingPerformance {
+  framesPerSecond: number;
+  processingTime: number;
+  lastUpdateTime: number;
+}
+
+interface VitalSignsProcessorState {
+  processedSignals: number;
+  signalLog: Array<{ timestamp: number; value: number; result: any }>;
+  performance?: ProcessingPerformance;
+}
 
 /**
- * Hook optimizado para procesar signos vitales
- * - Mejor estructura de código
- * - Rendimiento mejorado
- * - Mejor manejo de errores y detección
+ * Hook centralizado para el procesamiento de todos los signos vitales
+ * Coordina los diferentes procesadores y optimiza el rendimiento
  */
-import { useState, useRef, useEffect } from 'react';
-import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
-import { useArrhythmiaVisualization } from './use-arrhythmia-visualization';
-import { useSignalProcessing } from './use-signal-processing';
-import { useVitalSignsLogging } from './use-vital-signs-logging';
-import { UseVitalSignsProcessorReturn } from './types';
-import { checkSignalQuality } from '@/modules/heart-beat/signal-quality';
+export const useVitalSignsProcessor = () => {
+  // Estado para seguimiento de rendimiento y logs
+  const [state, setState] = useState<VitalSignsProcessorState>({
+    processedSignals: 0,
+    signalLog: []
+  });
 
-export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // Estado centralizado
-  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
-  
-  // Seguimiento de sesión para métricas
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  const processStartTime = useRef<number>(Date.now());
-  
-  // Seguimiento de calidad de señal mejorado
-  const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.05;
-  const MAX_WEAK_SIGNALS = 10;
-  
-  // Hooks especializados para diferentes aspectos del procesamiento
-  const { 
-    arrhythmiaWindows, 
-    addArrhythmiaWindow, 
-    clearArrhythmiaWindows 
-  } = useArrhythmiaVisualization();
-  
-  const { 
-    processSignal: processVitalSignal, 
-    initializeProcessor,
-    reset: resetProcessor, 
-    fullReset: fullResetProcessor,
-    getArrhythmiaCounter,
-    getDebugInfo,
-    processedSignals
-  } = useSignalProcessing();
-  
-  const { 
-    logSignalData, 
-    clearLog 
-  } = useVitalSignsLogging();
-  
-  // Métricas de procesamiento
-  const qualityHistory = useRef<number[]>([]);
-  const performanceHistory = useRef<{timestamp: number, duration: number}[]>([]);
-  
-  // Inicializar procesadores - solo medición directa
-  useEffect(() => {
-    console.log("useVitalSignsProcessor: Inicializando procesador optimizado", {
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
+  // Referencias para medición de rendimiento
+  const lastProcessTimeRef = useRef<number>(0);
+  const processingTimesRef = useRef<number[]>([]);
+  const frameTimesRef = useRef<number[]>([]);
+  const lastFrameTimeRef = useRef<number>(0);
+
+  // Procesadores individuales para cada signo vital
+  const heartBeatProcessor = useHeartBeatProcessor();
+  const oxygenSaturationProcessor = useOxygenSaturationProcessor();
+  const respirationRateProcessor = useRespirationRateProcessor();
+  const bloodPressureProcessor = useBloodPressureProcessor();
+  const stressLevelProcessor = useStressLevelProcessor();
+
+  // Procesar una señal PPG y calcular todos los signos vitales
+  const processSignal = useCallback((value: number): VitalSignsResult => {
+    const startTime = performance.now();
     
-    // Crear nuevas instancias para medición directa
-    initializeProcessor();
-    processStartTime.current = Date.now();
-    
-    return () => {
-      const sessionDuration = Date.now() - processStartTime.current;
-      const avgProcessingTime = performanceHistory.current.length > 0
-        ? performanceHistory.current.reduce((sum, item) => sum + item.duration, 0) / performanceHistory.current.length
-        : 0;
+    // Registrar tiempo entre frames para cálculo de FPS
+    const now = Date.now();
+    if (lastFrameTimeRef.current > 0) {
+      const frameTime = now - lastFrameTimeRef.current;
+      frameTimesRef.current.push(frameTime);
       
-      console.log("useVitalSignsProcessor: Limpieza del procesador", {
-        sessionId: sessionId.current,
-        totalArrhythmias: getArrhythmiaCounter(),
-        processedSignals: processedSignals.current,
-        sessionDuration: `${(sessionDuration / 1000).toFixed(2)}s`,
-        avgProcessingTime: `${avgProcessingTime.toFixed(2)}ms`,
-        timestamp: new Date().toISOString()
-      });
+      // Mantener solo los últimos 30 frames para el cálculo
+      if (frameTimesRef.current.length > 30) {
+        frameTimesRef.current.shift();
+      }
+    }
+    lastFrameTimeRef.current = now;
+    
+    // Procesar frecuencia cardíaca (componente principal)
+    const heartBeatResult = heartBeatProcessor.processSignal(value);
+    
+    // Usar el resultado de frecuencia cardíaca para otros procesadores
+    const oxygenResult = oxygenSaturationProcessor.processSignal(value, heartBeatResult);
+    const respirationResult = respirationRateProcessor.processSignal(value, heartBeatResult);
+    const bloodPressureResult = bloodPressureProcessor.processSignal(heartBeatResult);
+    const stressResult = stressLevelProcessor.processSignal(heartBeatResult, respirationResult);
+    
+    // Resultado combinado de todos los signos vitales
+    const result: VitalSignsResult = {
+      heartRate: {
+        bpm: heartBeatResult.bpm,
+        confidence: heartBeatResult.confidence,
+        isPeak: heartBeatResult.isPeak,
+        isArrhythmia: heartBeatResult.isArrhythmia || false,
+        arrhythmiaCount: heartBeatResult.arrhythmiaCount || 0
+      },
+      oxygenSaturation: {
+        spO2: oxygenResult.spO2,
+        confidence: oxygenResult.confidence
+      },
+      respirationRate: {
+        rpm: respirationResult.rpm,
+        confidence: respirationResult.confidence
+      },
+      bloodPressure: {
+        systolic: bloodPressureResult.systolic,
+        diastolic: bloodPressureResult.diastolic,
+        confidence: bloodPressureResult.confidence
+      },
+      stressLevel: {
+        level: stressResult.level,
+        confidence: stressResult.confidence
+      }
     };
-  }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
-  
-  /**
-   * Procesar señal PPG directamente con medición de rendimiento
-   */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
-    const processingStart = performance.now();
     
-    // Verificar señal débil para detectar remoción de dedo usando función centralizada
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      value,
-      weakSignalsCountRef.current,
-      {
-        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
-      }
-    );
+    // Calcular tiempo de procesamiento
+    const endTime = performance.now();
+    const processingTime = endTime - startTime;
+    processingTimesRef.current.push(processingTime);
     
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Procesar señal directamente - sin simulación
-    let result = processVitalSignal(value, rrData, isWeakSignal);
-    const currentTime = Date.now();
-    
-    // Si se detecta arritmia en datos reales, registrar ventana de visualización
-    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
-      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-      
-      // Ventana basada en frecuencia cardíaca real
-      let windowWidth = 400;
-      
-      // Ajustar según intervalos RR reales
-      if (rrData && rrData.intervals.length > 0) {
-        const lastIntervals = rrData.intervals.slice(-4);
-        const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-        windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-      }
-      
-      addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+    // Mantener solo los últimos 30 tiempos de procesamiento
+    if (processingTimesRef.current.length > 30) {
+      processingTimesRef.current.shift();
     }
     
-    // Registrar datos de señal procesada
-    logSignalData(value, result, processedSignals.current);
+    // Actualizar estadísticas de rendimiento cada 30 frames
+    if (state.processedSignals % 30 === 0) {
+      // Calcular FPS basado en tiempos entre frames
+      const avgFrameTime = frameTimesRef.current.reduce((sum, time) => sum + time, 0) / 
+                          Math.max(1, frameTimesRef.current.length);
+      const framesPerSecond = avgFrameTime > 0 ? 1000 / avgFrameTime : 0;
+      
+      // Calcular tiempo promedio de procesamiento
+      const avgProcessingTime = processingTimesRef.current.reduce((sum, time) => sum + time, 0) / 
+                               Math.max(1, processingTimesRef.current.length);
+      
+      // Actualizar métricas de rendimiento
+      setState(prevState => ({
+        ...prevState,
+        performance: {
+          framesPerSecond,
+          processingTime: avgProcessingTime,
+          lastUpdateTime: now
+        }
+      }));
+    }
     
-    // Medir rendimiento y registrarlo
-    const processingEnd = performance.now();
-    const processingDuration = processingEnd - processingStart;
-    
-    performanceHistory.current.push({
-      timestamp: currentTime,
-      duration: processingDuration
+    // Actualizar log de señales (mantener solo los últimos 100 puntos)
+    setState(prevState => {
+      const newLog = [...prevState.signalLog, { timestamp: now, value, result }];
+      if (newLog.length > 100) {
+        newLog.shift();
+      }
+      
+      return {
+        processedSignals: prevState.processedSignals + 1,
+        signalLog: newLog,
+        performance: prevState.performance
+      };
     });
     
-    if (performanceHistory.current.length > 100) {
-      performanceHistory.current.shift();
-    }
+    lastProcessTimeRef.current = now;
     
-    // Registrar calidad de señal para análisis
-    qualityHistory.current.push(isWeakSignal ? 0 : 1);
-    if (qualityHistory.current.length > 30) {
-      qualityHistory.current.shift();
-    }
-    
-    // Registrar métricas periódicamente
-    if (processedSignals.current % 100 === 0) {
-      const avgQuality = qualityHistory.current.reduce((sum, val) => sum + val, 0) / qualityHistory.current.length;
-      const avgProcessingTime = performanceHistory.current.reduce((sum, item) => sum + item.duration, 0) / performanceHistory.current.length;
-      
-      console.log("Métricas de procesamiento:", {
-        signals: processedSignals.current,
-        avgQuality: `${(avgQuality * 100).toFixed(1)}%`,
-        avgProcessingTime: `${avgProcessingTime.toFixed(2)}ms`,
-        arrhythmias: getArrhythmiaCounter()
-      });
-    }
-    
-    // Siempre retornar resultado real
     return result;
-  };
-
-  /**
-   * Realizar reset completo - comenzar desde cero
-   */
-  const reset = () => {
-    resetProcessor();
-    clearArrhythmiaWindows();
-    setLastValidResults(null);
-    weakSignalsCountRef.current = 0;
-    qualityHistory.current = [];
-    performanceHistory.current = [];
-    
-    return null;
-  };
+  }, [
+    heartBeatProcessor, 
+    oxygenSaturationProcessor, 
+    respirationRateProcessor, 
+    bloodPressureProcessor, 
+    stressLevelProcessor, 
+    state.processedSignals
+  ]);
   
-  /**
-   * Realizar reset completo - limpiar todos los datos
-   */
-  const fullReset = () => {
-    fullResetProcessor();
-    setLastValidResults(null);
-    clearArrhythmiaWindows();
-    weakSignalsCountRef.current = 0;
-    clearLog();
-    qualityHistory.current = [];
-    performanceHistory.current = [];
-  };
-
+  // Reiniciar todos los procesadores
+  const reset = useCallback(() => {
+    heartBeatProcessor.reset();
+    oxygenSaturationProcessor.reset();
+    respirationRateProcessor.reset();
+    bloodPressureProcessor.reset();
+    stressLevelProcessor.reset();
+    
+    // Reiniciar estado y métricas
+    setState({
+      processedSignals: 0,
+      signalLog: []
+    });
+    
+    processingTimesRef.current = [];
+    frameTimesRef.current = [];
+    lastFrameTimeRef.current = 0;
+    lastProcessTimeRef.current = 0;
+    
+    console.log('VitalSignsProcessor: Todos los procesadores reiniciados');
+  }, [
+    heartBeatProcessor, 
+    oxygenSaturationProcessor, 
+    respirationRateProcessor, 
+    bloodPressureProcessor, 
+    stressLevelProcessor
+  ]);
+  
+  // Iniciar monitoreo en todos los procesadores
+  const startMonitoring = useCallback(() => {
+    heartBeatProcessor.startMonitoring();
+    // Otros procesadores pueden tener su propia lógica de inicio
+    console.log('VitalSignsProcessor: Monitoreo iniciado');
+  }, [heartBeatProcessor]);
+  
+  // Detener monitoreo en todos los procesadores
+  const stopMonitoring = useCallback(() => {
+    heartBeatProcessor.stopMonitoring();
+    // Otros procesadores pueden tener su propia lógica de detención
+    console.log('VitalSignsProcessor: Monitoreo detenido');
+  }, [heartBeatProcessor]);
+  
+  // Limpiar recursos al desmontar
+  useEffect(() => {
+    return () => {
+      stopMonitoring();
+      console.log('VitalSignsProcessor: Recursos liberados');
+    };
+  }, [stopMonitoring]);
+  
   return {
     processSignal,
     reset,
-    fullReset,
-    arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Siempre devolver null para asegurar que las mediciones comiencen desde cero
-    arrhythmiaWindows,
-    debugInfo: {
-      ...getDebugInfo(),
-      performance: {
-        avgProcessingTime: performanceHistory.current.length > 0
-          ? performanceHistory.current.reduce((sum, item) => sum + item.duration, 0) / performanceHistory.current.length
-          : 0,
-        signalQuality: qualityHistory.current.length > 0
-          ? qualityHistory.current.reduce((sum, val) => sum + val, 0) / qualityHistory.current.length
-          : 0
-      }
+    startMonitoring,
+    stopMonitoring,
+    performance: state.performance,
+    stats: {
+      processedSignals: state.processedSignals,
+      logLength: state.signalLog.length
+    },
+    // Exponer procesadores individuales para acceso directo si es necesario
+    processors: {
+      heartBeat: heartBeatProcessor,
+      oxygenSaturation: oxygenSaturationProcessor,
+      respirationRate: respirationRateProcessor,
+      bloodPressure: bloodPressureProcessor,
+      stressLevel: stressLevelProcessor
     }
   };
 };

@@ -123,7 +123,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
     
     return shouldPlayBeep;
-  }, [requestImmediateBeep]);
+  }, [requestImmediateBeep, lastSignalQualityRef]);
 
   // Función optimizada para procesar señales
   const processSignal = useCallback((value: number): HeartBeatResult => {
@@ -166,11 +166,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
       
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
-      
-      // Diagnostico mejorado
-      if (arrhythmiaResult.isArrhythmia && arrhythmiaResult.pattern) {
-        result.arrhythmiaPattern = arrhythmiaResult.pattern;
-      }
     }
 
     // Registro periódico para depuración
@@ -189,7 +184,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     confidence, 
     processSignalInternal, 
     requestBeep, 
-    detectArrhythmia
+    detectArrhythmia, 
+    lastRRIntervalsRef,
+    currentBeatIsArrhythmiaRef,
+    isMonitoringRef
   ]);
 
   // Reset mejorado
@@ -241,7 +239,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         beepProcessorTimeoutRef.current = null;
       }
     }
-  }, []);
+  }, [beepProcessorTimeoutRef, consecutiveWeakSignalsRef, lastBeepTimeRef, lastPeakTimeRef, pendingBeepsQueue]);
 
   // Detener monitoreo
   const stopMonitoring = useCallback(() => {
