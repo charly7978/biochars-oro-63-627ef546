@@ -8,7 +8,9 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
+import { toast } from "@/hooks/use-toast";
+import { HeartPulse, AlertTriangle } from "lucide-react";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -42,7 +44,8 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults
+    lastValidResults,
+    getVisualizationData
   } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
@@ -86,6 +89,15 @@ const Index = () => {
           if (vitals) {
             console.log("Index: Nuevos signos vitales procesados", vitals);
             setVitalSigns(vitals);
+            
+            // Mostrar notificación de arritmia si se detecta
+            if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('Arritmia')) {
+              toast({
+                title: "¡Arritmia detectada!",
+                description: "Se ha detectado una irregularidad en el ritmo cardíaco.",
+                variant: "destructive"
+              });
+            }
           }
         }
         
@@ -133,6 +145,12 @@ const Index = () => {
           return newTime;
         });
       }, 1000);
+      
+      toast({
+        title: "Medición iniciada",
+        description: "Coloque su dedo sobre la cámara",
+        variant: "default"
+      });
     }
   };
 
@@ -153,6 +171,12 @@ const Index = () => {
     if (savedResults) {
       setVitalSigns(savedResults);
       setShowResults(true);
+      
+      toast({
+        title: "Medición completada",
+        description: "Resultados disponibles",
+        variant: "success"
+      });
     }
     
     setElapsedTime(0);
@@ -188,6 +212,12 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    
+    toast({
+      title: "Aplicación reiniciada",
+      description: "Todos los datos han sido restablecidos",
+      variant: "default"
+    });
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -311,6 +341,7 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
@@ -339,10 +370,9 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
-                label="GLUCOSA"
-                value={vitalSigns.glucose || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
+                label="ARRITMIAS"
+                value={vitalSigns.arrhythmiaStatus?.split('|')[0] || "--"}
+                highlighted={vitalSigns.arrhythmiaStatus?.includes('Arritmia')}
               />
               <VitalSign 
                 label="COLESTEROL"

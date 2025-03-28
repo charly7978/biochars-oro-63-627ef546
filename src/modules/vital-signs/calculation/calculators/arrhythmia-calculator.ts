@@ -4,7 +4,7 @@
  */
 
 import { OptimizedSignal } from '../../../../modules/signal-optimization/types';
-import { CalculationResultItem, ArrhythmiaResultItem } from '../types';
+import { ArrhythmiaResultItem } from '../types';
 
 /**
  * Clase para detección y clasificación de arritmias cardíacas
@@ -13,6 +13,9 @@ export class ArrhythmiaCalculator {
   private arrhythmiaCount: number = 0;
   private lastIntervals: number[] = [];
   private rmssd: number = 0;
+  private detectionWindowStart: number = Date.now();
+  private lastDetectionTime: number = 0;
+  private minDetectionIntervalMs: number = 5000; // Mínimo tiempo entre detecciones
   
   /**
    * Calcula estado de arritmia basado en señal
@@ -26,6 +29,8 @@ export class ArrhythmiaCalculator {
       };
     }
     
+    const currentTime = Date.now();
+    
     // Obtener intervalos RR
     const intervals = signal.metadata.intervals;
     
@@ -33,27 +38,35 @@ export class ArrhythmiaCalculator {
     const rmssd = this.calculateRMSSD(intervals);
     this.rmssd = rmssd;
     
-    // Detectar arritmia basado en umbral de variación
-    const isArrhythmia = rmssd > 100; // Umbral típico para variabilidad alta
+    // Detectar arritmia basado en umbral de variación - aumentado para mejor visualización
+    const isArrhythmia = rmssd > 70; // Umbral más sensible para visualización
     
-    if (isArrhythmia) {
+    // Verificar si ha pasado suficiente tiempo desde la última detección
+    const canDetectNewArrhythmia = currentTime - this.lastDetectionTime > this.minDetectionIntervalMs;
+    
+    if (isArrhythmia && canDetectNewArrhythmia) {
       this.arrhythmiaCount++;
+      this.lastDetectionTime = currentTime;
+      
+      console.log(`ARRITMIA DETECTADA #${this.arrhythmiaCount} - RMSSD: ${rmssd.toFixed(2)}`);
       
       return {
         status: `Arritmia|${this.arrhythmiaCount}`,
         data: {
-          timestamp: Date.now(),
+          timestamp: currentTime,
           rmssd: rmssd,
-          rrVariation: this.calculateVariation(intervals)
+          rrVariation: this.calculateVariation(intervals),
+          intervals: intervals.slice(-5),
+          severity: rmssd > 100 ? 'alta' : 'media'
         },
         count: this.arrhythmiaCount
       };
     }
     
     return {
-      status: "Normal",
+      status: isArrhythmia ? "Irregular" : "Normal",
       data: {
-        timestamp: Date.now(),
+        timestamp: currentTime,
         rmssd: rmssd,
         rrVariation: this.calculateVariation(intervals)
       },
@@ -102,5 +115,14 @@ export class ArrhythmiaCalculator {
     this.arrhythmiaCount = 0;
     this.lastIntervals = [];
     this.rmssd = 0;
+    this.detectionWindowStart = Date.now();
+    this.lastDetectionTime = 0;
+  }
+  
+  /**
+   * Obtiene el contador actual de arritmias
+   */
+  public getArrhythmiaCount(): number {
+    return this.arrhythmiaCount;
   }
 }

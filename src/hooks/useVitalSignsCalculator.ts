@@ -69,6 +69,13 @@ export const useVitalSignsCalculator = () => {
         sendFeedback(feedback);
       }
       
+      console.log("VitalSignsCalculator: Cálculo realizado con éxito", { 
+        heartRate: result.heartRate.value,
+        spo2: result.spo2.value,
+        pressure: result.bloodPressure.value,
+        arrhythmia: result.arrhythmia.status
+      });
+      
       return result;
     } catch (error) {
       console.error("Error calculando signos vitales:", error);
