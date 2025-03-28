@@ -50,10 +50,14 @@ const installPeakDetectionPatch = () => {
         // Reproducir sonido de latido si existe la función global
         if (window.playHeartbeatSound) {
           window.playHeartbeatSound();
+          console.log("Peak detected! Playing heartbeat sound");
+        } else {
+          console.warn("playHeartbeatSound function not found on window object");
         }
       }
     } catch (e) {
       // No hacer nada si hay errores, no queremos romper el funcionamiento normal
+      console.error("Error in peak detection patch:", e);
     }
     
     return result;
