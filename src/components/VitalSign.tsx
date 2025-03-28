@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
@@ -90,8 +91,11 @@ const VitalSign: React.FC<VitalSignProps> = ({
       )}
       
       {showArrhythmiaIndicator && arrhythmiaData && (
-        <div className={`w-full mt-1 text-xs ${arrhythmiaData.severity === 'alta' ? 'text-red-300' : 'text-orange-300'}`}>
-          {arrhythmiaData.severity === 'alta' ? 'Severidad alta' : 'Severidad media'}
+        <div className="flex items-center mt-1 gap-1">
+          <AlertTriangle className={`w-3 h-3 ${arrhythmiaData.severity === 'alta' ? 'text-red-500' : 'text-orange-400'}`} />
+          <div className={`text-xs ${arrhythmiaData.severity === 'alta' ? 'text-red-300' : 'text-orange-300'}`}>
+            {arrhythmiaData.severity === 'alta' ? 'Severidad alta' : 'Severidad media'}
+          </div>
         </div>
       )}
     </div>

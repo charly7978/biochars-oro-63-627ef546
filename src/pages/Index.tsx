@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -71,6 +72,25 @@ const Index = () => {
       console.log("Index: Actualizando signos vitales con lastValidResults", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
+      
+      // Dispatch event for PPG graph showing arrhythmia if present
+      if (lastValidResults.arrhythmiaStatus && lastValidResults.arrhythmiaStatus.includes('Arritmia') && 
+          lastValidResults.lastArrhythmiaData && lastValidResults.lastArrhythmiaData.visualWindow) {
+        
+        const window = lastValidResults.lastArrhythmiaData.visualWindow;
+        const severity = lastValidResults.lastArrhythmiaData.severity || 'media';
+        
+        const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
+          detail: { 
+            start: window.start, 
+            end: window.end, 
+            timestamp: Date.now(),
+            severity: severity,
+            type: 'irregular'
+          }
+        });
+        document.dispatchEvent(arrhythmiaEvent);
+      }
     }
   }, [lastValidResults, isMonitoring]);
 
@@ -95,6 +115,23 @@ const Index = () => {
                 description: "Se ha detectado una irregularidad en el ritmo cardíaco.",
                 variant: "destructive"
               });
+              
+              // Dispatch event for PPG graph if there is arrhythmia data
+              if (vitals.lastArrhythmiaData && vitals.lastArrhythmiaData.visualWindow) {
+                const window = vitals.lastArrhythmiaData.visualWindow;
+                const severity = vitals.lastArrhythmiaData.severity || 'media';
+                
+                const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
+                  detail: { 
+                    start: window.start, 
+                    end: window.end, 
+                    timestamp: Date.now(),
+                    severity: severity,
+                    type: 'irregular'
+                  }
+                });
+                document.dispatchEvent(arrhythmiaEvent);
+              }
             }
           }
         }
@@ -175,6 +212,28 @@ const Index = () => {
         description: "Resultados disponibles",
         variant: "default"
       });
+      
+      // Trigger arrhythmia visualization again for the saved results
+      if (savedResults.arrhythmiaStatus?.includes('Arritmia') && 
+          savedResults.lastArrhythmiaData?.visualWindow) {
+        
+        const window = savedResults.lastArrhythmiaData.visualWindow;
+        const severity = savedResults.lastArrhythmiaData.severity || 'media';
+        
+        // Add delay to ensure components are ready
+        setTimeout(() => {
+          const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
+            detail: { 
+              start: window.start, 
+              end: window.end, 
+              timestamp: Date.now(),
+              severity: severity,
+              type: 'irregular'
+            }
+          });
+          document.dispatchEvent(arrhythmiaEvent);
+        }, 500);
+      }
     }
     
     setElapsedTime(0);
@@ -210,6 +269,10 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    
+    // Clear arrhythmia visualizations
+    const clearEvent = new CustomEvent('arrhythmia-windows-cleared');
+    document.dispatchEvent(clearEvent);
     
     toast({
       title: "Aplicación reiniciada",

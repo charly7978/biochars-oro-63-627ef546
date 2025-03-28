@@ -1,3 +1,4 @@
+
 /**
  * Calculador de arritmias
  */
@@ -15,7 +16,7 @@ export class ArrhythmiaCalculator {
   private detectionWindowStart: number = Date.now();
   private lastDetectionTime: number = 0;
   private minDetectionIntervalMs: number = 5000; // Mínimo tiempo entre detecciones
-  private arrhythmiaWindows: {start: number, end: number}[] = [];
+  private arrhythmiaWindows: {start: number, end: number, severity: 'alta' | 'media'}[] = [];
   
   /**
    * Calcula estado de arritmia basado en señal
@@ -51,14 +52,20 @@ export class ArrhythmiaCalculator {
       // Registrar ventana de arritmia para visualización
       const windowEnd = currentTime;
       const windowStart = windowEnd - 3000; // 3 segundos antes
-      this.arrhythmiaWindows.push({start: windowStart, end: windowEnd});
+      const severity = rmssd > 100 ? 'alta' : 'media';
+      
+      this.arrhythmiaWindows.push({
+        start: windowStart, 
+        end: windowEnd,
+        severity
+      });
       
       // Limitar a las 3 últimas detecciones para visualización
       if (this.arrhythmiaWindows.length > 3) {
         this.arrhythmiaWindows.shift();
       }
       
-      console.log(`ARRITMIA DETECTADA #${this.arrhythmiaCount} - RMSSD: ${rmssd.toFixed(2)}`);
+      console.log(`ARRITMIA DETECTADA #${this.arrhythmiaCount} - RMSSD: ${rmssd.toFixed(2)}, severidad: ${severity}`);
       
       const arrhythmiaStatus = `Arritmia|${this.arrhythmiaCount}`;
       const arrhythmiaData = {
@@ -66,18 +73,25 @@ export class ArrhythmiaCalculator {
         rmssd: rmssd,
         rrVariation: this.calculateVariation(intervals),
         intervals: intervals.slice(-5),
-        severity: rmssd > 100 ? 'alta' : 'media',
-        visualWindow: {start: windowStart, end: windowEnd}
+        severity: severity,
+        visualWindow: {
+          start: windowStart,
+          end: windowEnd
+        },
+        type: 'irregular'
       };
       
-      if (arrhythmiaStatus.includes('Arritmia')) {
-        // Add visual window data for PPG graph
-        const now = Date.now();
-        arrhythmiaData.visualWindow = {
-          start: now - 1500, // 1.5 seconds before
-          end: now           // current time
-        };
-      }
+      // Dispatch an event for the PPG graph
+      const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
+        detail: { 
+          start: windowStart, 
+          end: windowEnd, 
+          timestamp: currentTime,
+          severity: severity,
+          type: 'irregular'
+        }
+      });
+      document.dispatchEvent(arrhythmiaEvent);
       
       return {
         status: arrhythmiaStatus,
@@ -153,7 +167,7 @@ export class ArrhythmiaCalculator {
   /**
    * Obtiene las ventanas de arritmia para visualización
    */
-  public getArrhythmiaWindows(): {start: number, end: number}[] {
+  public getArrhythmiaWindows(): {start: number, end: number, severity: 'alta' | 'media'}[] {
     return [...this.arrhythmiaWindows];
   }
 }

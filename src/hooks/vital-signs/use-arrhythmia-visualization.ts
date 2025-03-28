@@ -8,6 +8,8 @@ import { useState, useCallback, useEffect } from 'react';
 export interface ArrhythmiaWindow {
   start: number;
   end: number;
+  severity?: 'media' | 'alta';
+  type?: string;
 }
 
 /**
@@ -20,10 +22,15 @@ export const useArrhythmiaVisualization = () => {
   /**
    * Register a new arrhythmia window for visualization in PPG graph
    */
-  const addArrhythmiaWindow = useCallback((start: number, end: number) => {
+  const addArrhythmiaWindow = useCallback((
+    start: number, 
+    end: number, 
+    severity: 'media' | 'alta' = 'alta',
+    type: string = 'irregular'
+  ) => {
     // Limit to most recent arrhythmia windows for visualization
     setArrhythmiaWindows(prev => {
-      const newWindows = [...prev, { start, end }];
+      const newWindows = [...prev, { start, end, severity, type }];
       if (newWindows.length > 3) {
         return newWindows.slice(-3);
       }
@@ -31,7 +38,7 @@ export const useArrhythmiaVisualization = () => {
     });
     
     // Log for debugging
-    console.log(`ArrhythmiaVisualization: Nueva ventana de arritmia registrada para gráfico PPG: ${start} - ${end}`);
+    console.log(`ArrhythmiaVisualization: Nueva ventana de arritmia registrada para gráfico PPG: ${start} - ${end}, severidad: ${severity}`);
     
     // Dispatch custom event for PPG graph to listen to
     const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
@@ -39,11 +46,17 @@ export const useArrhythmiaVisualization = () => {
         start, 
         end, 
         timestamp: Date.now(),
-        severity: 'alta',  // Include severity for PPG graph coloring
-        type: 'irregular'
+        severity,
+        type
       }
     });
     document.dispatchEvent(arrhythmiaEvent);
+    
+    // Force the PPGSignalMeter to redraw by dispatching another event
+    setTimeout(() => {
+      const refreshEvent = new CustomEvent('refresh-ppg-visualization');
+      document.dispatchEvent(refreshEvent);
+    }, 100);
   }, []);
   
   /**
@@ -60,9 +73,14 @@ export const useArrhythmiaVisualization = () => {
   // Listen for external arrhythmia signals from the processor
   useEffect(() => {
     const handleExternalArrhythmia = (event: CustomEvent) => {
-      const { timestamp, window, severity } = event.detail;
+      const { timestamp, window, severity, type } = event.detail;
       if (window && window.start && window.end) {
-        addArrhythmiaWindow(window.start, window.end);
+        addArrhythmiaWindow(
+          window.start, 
+          window.end, 
+          severity || 'alta',
+          type || 'irregular'
+        );
       }
     };
     
