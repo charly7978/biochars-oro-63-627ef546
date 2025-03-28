@@ -279,28 +279,30 @@ const PPGSignalMeter = memo(({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, 'rgba(220, 200, 255, 0.85)');   // Púrpura claro arriba
-    gradient.addColorStop(0.2, 'rgba(200, 180, 250, 0.85)');  // Púrpura más claro
-    gradient.addColorStop(0.4, 'rgba(180, 190, 255, 0.85)');  // Azul lavanda
-    gradient.addColorStop(0.6, 'rgba(160, 210, 250, 0.85)');  // Azul claro
-    gradient.addColorStop(0.75, 'rgba(140, 230, 240, 0.85)');  // Turquesa
-    gradient.addColorStop(0.85, 'rgba(130, 240, 220, 0.85)');  // Verde agua
-    gradient.addColorStop(1, 'rgba(120, 255, 200, 0.85)');    // Verde menta abajo
+    gradient.addColorStop(0.00, 'rgba(230, 210, 255, 0.9)');  // Púrpura más claro arriba
+    gradient.addColorStop(0.14, 'rgba(215, 200, 250, 0.9)');  // Púrpura lavanda
+    gradient.addColorStop(0.28, 'rgba(200, 190, 245, 0.9)');  // Azul-púrpura
+    gradient.addColorStop(0.42, 'rgba(180, 200, 240, 0.9)');  // Azul celeste
+    gradient.addColorStop(0.56, 'rgba(160, 210, 235, 0.9)');  // Azul claro
+    gradient.addColorStop(0.70, 'rgba(140, 220, 230, 0.9)');  // Turquesa
+    gradient.addColorStop(0.84, 'rgba(130, 230, 220, 0.9)');  // Verde agua
+    gradient.addColorStop(0.92, 'rgba(120, 240, 210, 0.9)');  // Verde menta
+    gradient.addColorStop(1.00, 'rgba(110, 245, 200, 0.9)');  // Verde menta más oscuro abajo
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    ctx.globalAlpha = 0.03;
+    ctx.globalAlpha = 0.05;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
         ctx.fillRect(i, j, 10, 10);
       }
     }
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.15)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.12)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {

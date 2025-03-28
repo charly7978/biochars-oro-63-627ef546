@@ -3,22 +3,23 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
-// Apply high-resolution interface class to the root element
-const applyHighResolution = () => {
+// Función para configurar el modo inmersivo total
+const setupImmersiveMode = () => {
+  // Aplicar clase de interfaz de alta resolución
   const rootElement = document.getElementById('root');
   if (rootElement) {
-    rootElement.classList.add('high-res-interface');
+    rootElement.classList.add('high-res-interface', 'immersive-interface');
   }
   
-  // Apply high-DPI rendering for crisp text and UI
+  // Optimizar la renderización para interfaces de alta resolución
   document.body.style.textRendering = 'geometricPrecision';
+  document.body.style.fontSmoothing = 'antialiased';
   
-  // Force device pixel ratio to be respected
+  // Forzar el pixel ratio del dispositivo sea respetado
   if (window.devicePixelRatio > 1) {
-    // Create a CSS variable with the device pixel ratio for use in styles
     document.documentElement.style.setProperty('--device-pixel-ratio', window.devicePixelRatio.toString());
     
-    // Add special classes for high-DPI displays
+    // Agregar clases especiales para pantallas de alta densidad
     document.documentElement.classList.add('high-dpi');
     if (window.devicePixelRatio >= 2) {
       document.documentElement.classList.add('retina');
@@ -28,102 +29,133 @@ const applyHighResolution = () => {
     }
   }
   
-  // Set optimal rendering settings based on device capabilities
+  // Configurar para diferentes tamaños de pantalla
   const setOptimalRendering = () => {
-    // For 4K displays and higher
     if (window.screen.width >= 3840 || window.screen.height >= 3840) {
       document.documentElement.classList.add('display-4k');
     }
-    // For 2K/Retina displays
     else if (window.screen.width >= 2048 || window.screen.height >= 2048) {
       document.documentElement.classList.add('display-2k');
     }
   };
   
   setOptimalRendering();
+  
+  // Deshabilitar gestos del navegador y pantalla táctil que puedan interferir
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length > 1) {
+      e.preventDefault(); // Prevenir zoom con pinch
+    }
+  }, { passive: false });
+  
+  document.addEventListener('gesturestart', (e) => {
+    e.preventDefault(); // Prevenir gestos en Safari
+  }, { passive: false });
+  
+  // Prevenir doble-tap para zoom
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd < 300) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
 };
 
-// Function to request fullscreen on startup
-const requestFullscreenMode = () => {
+// Solicitar pantalla completa de forma agresiva
+const requestFullscreenAggressively = () => {
   try {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen()
-        .catch(err => console.warn('Error attempting to enable fullscreen:', err));
+    const docElem = document.documentElement;
+    
+    // Ocultar la barra de navegación
+    if ('setOverlayScrollbars' in docElem) {
+      docElem.setOverlayScrollbars(false);
     }
     
-    // Handle screen orientation if available
-    if (window.screen && window.screen.orientation) {
-      // Lock to portrait as the app is designed for it
-      window.screen.orientation.lock('portrait')
-        .catch(err => console.warn('Failed to lock orientation:', err));
-    }
-    
-    // Try to set maximum resolution and prevent scaling
+    // Configurar viewport para maximizar área útil
     const metaViewport = document.querySelector('meta[name="viewport"]');
     if (metaViewport) {
       metaViewport.setAttribute('content', 
         'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi');
     }
     
-    // Request fullscreen appropriately
-    const docElem = document.documentElement;
+    // Activar pantalla completa con diferentes métodos
     if (docElem.requestFullscreen) {
-      docElem.requestFullscreen();
+      docElem.requestFullscreen({ navigationUI: "hide" });
     } else if ((docElem as any).webkitRequestFullscreen) {
       (docElem as any).webkitRequestFullscreen();
     } else if ((docElem as any).msRequestFullscreen) {
       (docElem as any).msRequestFullscreen();
     }
+    
+    // Bloquear orientación a retrato si es posible
+    if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+      window.screen.orientation.lock('portrait')
+        .catch(err => console.log('No se pudo bloquear la orientación:', err));
+    }
+    
+    // Apagar tiempo de inactividad de la pantalla si es posible
+    if ((navigator as any).wakeLock) {
+      (navigator as any).wakeLock.request('screen')
+        .catch(err => console.log('No se pudo mantener la pantalla encendida:', err));
+    }
   } catch (err) {
-    console.error('Fullscreen API not supported:', err);
+    console.error('Error al configurar pantalla completa:', err);
   }
 };
 
-// Execute immediately AND on first user interaction
-requestFullscreenMode();
-applyHighResolution();
+// Inicializar inmediatamente
+setupImmersiveMode();
+requestFullscreenAggressively();
 
-// Ensure we request fullscreen on every user interaction until successful
+// Asegurar pantalla completa en cada interacción del usuario hasta conseguirla
 let isFullscreen = false;
-const checkFullscreen = () => {
-  return document.fullscreenElement !== null;
-};
-
 const handleUserInteraction = () => {
-  isFullscreen = checkFullscreen();
+  isFullscreen = document.fullscreenElement !== null;
   if (!isFullscreen) {
-    requestFullscreenMode();
+    requestFullscreenAggressively();
   } else {
-    // Remove listeners if we're already in fullscreen
     document.removeEventListener('click', handleUserInteraction);
     document.removeEventListener('touchstart', handleUserInteraction);
   }
 };
 
+// Añadir listeners para la interacción del usuario
 document.addEventListener('click', handleUserInteraction);
 document.addEventListener('touchstart', handleUserInteraction);
 
-// Handle resolution scaling on resize and orientation change
-window.addEventListener('resize', applyHighResolution);
-window.addEventListener('orientationchange', applyHighResolution);
+// Manejar cambios en la orientación y tamaño de pantalla
+window.addEventListener('resize', setupImmersiveMode);
+window.addEventListener('orientationchange', () => {
+  setupImmersiveMode();
+  requestFullscreenAggressively();
+});
 
-// Let's improve graph performance with a MutationObserver
-// This will add performance classes to any PPG graph elements that are added to the DOM
-const setupPerformanceObserver = () => {
+// Optimizar rendimiento gráfico con MutationObserver
+const setupPerformanceOptimizer = () => {
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.addedNodes.length) {
         mutation.addedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            // Find PPG graph elements and apply performance optimizations
+            // Encontrar elementos de gráficos PPG y optimizarlos
             const graphElements = node.querySelectorAll('.ppg-signal-meter, canvas, svg');
             graphElements.forEach((el) => {
               if (el instanceof HTMLElement) {
-                el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized');
+                el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized', 'hyper-performance');
+                el.style.willChange = 'transform, opacity';
+                el.style.transform = 'translateZ(0)';
+                
                 if (el instanceof HTMLCanvasElement) {
-                  const ctx = el.getContext('2d');
+                  const ctx = el.getContext('2d', {
+                    alpha: false,
+                    desynchronized: true
+                  });
+                  
                   if (ctx) {
                     ctx.imageSmoothingEnabled = false;
+                    ctx.imageSmoothingQuality = 'low';
                   }
                 }
               }
@@ -142,8 +174,8 @@ const setupPerformanceObserver = () => {
   return observer;
 };
 
-// Start the performance observer after render
-window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
+// Iniciar el optimizador de rendimiento después del renderizado
+window.addEventListener('DOMContentLoaded', setupPerformanceOptimizer);
 
-// Render the app
+// Renderizar la aplicación
 createRoot(document.getElementById("root")!).render(<App />);
