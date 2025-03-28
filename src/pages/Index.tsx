@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -149,17 +150,6 @@ const Index = () => {
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    const requestAudioPermission = async () => {
-      try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log("Audio permission granted");
-      } catch (err) {
-        console.warn("Could not get audio permission:", err);
-      }
-    };
-    
-    requestAudioPermission();
-    
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
@@ -289,7 +279,6 @@ const Index = () => {
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
             signalQuality={signalQuality}
-            enableAudio={true}
           />
         </div>
 
