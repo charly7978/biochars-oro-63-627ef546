@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -279,13 +278,17 @@ const PPGSignalMeter = memo(({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Create a more sophisticated gradient background
+    // Create a more sophisticated rainbow gradient background
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
-    gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
-    gradient.addColorStop(0.7, '#F2FCE2'); // Soft green (lower middle)
-    gradient.addColorStop(1, '#D3E4FD'); // Soft blue (bottom)
-    
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');        // Pure white at top
+    gradient.addColorStop(0.1, 'rgba(220, 240, 255, 0.8)');     // Soft white-blue
+    gradient.addColorStop(0.2, 'rgba(180, 220, 255, 0.7)');     // Light blue
+    gradient.addColorStop(0.35, 'rgba(150, 220, 180, 0.7)');    // Soft green
+    gradient.addColorStop(0.5, 'rgba(255, 255, 130, 0.7)');     // Soft yellow
+    gradient.addColorStop(0.65, 'rgba(255, 180, 120, 0.7)');    // Light orange
+    gradient.addColorStop(0.8, 'rgba(255, 120, 120, 0.7)');     // Soft red
+    gradient.addColorStop(1, 'rgba(220, 120, 240, 0.7)');       // Purple at bottom
+  
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
