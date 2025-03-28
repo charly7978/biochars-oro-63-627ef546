@@ -9,7 +9,6 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { CalculationResult } from "@/modules/vital-signs/calculation/types";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -67,6 +66,7 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
+      console.log("Index: Actualizando signos vitales con lastValidResults", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -84,7 +84,7 @@ const Index = () => {
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
-            // Ensure we handle potential VitalSignCalculation objects
+            console.log("Index: Nuevos signos vitales procesados", vitals);
             setVitalSigns(vitals);
           }
         }

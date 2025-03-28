@@ -59,6 +59,7 @@ export const useVitalSignsProcessor = () => {
           lastArrhythmiaData: result.arrhythmia.data
         };
         
+        console.log("VitalSignsProcessor: Resultados procesados", processedResult);
         setLastValidResults(processedResult);
       }
     }
