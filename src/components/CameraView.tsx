@@ -1,6 +1,12 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+/**
+ * Camera View Component
+ * Displays the camera feed and finger detection status
+ */
+
+import React, { useRef, useEffect } from 'react';
 import { Fingerprint } from 'lucide-react';
+import { useVitalSigns } from '@/context/VitalSignsContext';
 
 interface CameraViewProps {
   onStreamReady: (stream: MediaStream) => void;
@@ -21,23 +27,7 @@ const CameraView: React.FC<CameraViewProps> = ({
   buttonPosition = { x: 0, y: 0 }
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-
-  /**
-   * Stop all camera tracks and clean up
-   */
-  const stopCamera = async () => {
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
-        if (videoRef.current) {
-          videoRef.current.srcObject = null;
-        }
-      });
-      setStream(null);
-    }
-  };
-
+  
   /**
    * Start camera with optimal settings for PPG
    */
@@ -106,8 +96,6 @@ const CameraView: React.FC<CameraViewProps> = ({
           videoRef.current.style.transform = 'translateZ(0)';
         }
       }
-
-      setStream(newStream);
       
       if (onStreamReady) {
         onStreamReady(newStream);
@@ -117,11 +105,24 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   };
 
+  /**
+   * Stop all camera tracks and clean up
+   */
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => {
+        track.stop();
+      });
+      videoRef.current.srcObject = null;
+    }
+  };
+
   // Start/stop camera based on isMonitoring prop
   useEffect(() => {
-    if (isMonitoring && !stream) {
+    if (isMonitoring) {
       startCamera();
-    } else if (!isMonitoring && stream) {
+    } else {
       stopCamera();
     }
     return () => {

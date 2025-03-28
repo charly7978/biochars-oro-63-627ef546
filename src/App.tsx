@@ -1,4 +1,9 @@
 
+/**
+ * Main application component
+ * Sets up routing and context providers
+ */
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import Index from "./pages/Index";

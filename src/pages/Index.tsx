@@ -1,11 +1,16 @@
 
+/**
+ * Main application page
+ * Displays vital signs monitor with camera and results
+ */
+
 import React from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { useVitalSigns, VitalSignsProvider } from "@/context/VitalSignsContext";
+import { useVitalSigns } from "@/context/VitalSignsContext";
 
 // Component that uses the context
 const VitalSignsMonitor = () => {
@@ -72,7 +77,7 @@ const VitalSignsMonitor = () => {
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              rawArrhythmiaData={vitalSigns.arrhythmiaData}
             />
           </div>
 
@@ -143,11 +148,7 @@ const VitalSignsMonitor = () => {
 
 // Main component that provides the context
 const Index = () => {
-  return (
-    <VitalSignsProvider>
-      <VitalSignsMonitor />
-    </VitalSignsProvider>
-  );
+  return <VitalSignsMonitor />;
 };
 
 export default Index;

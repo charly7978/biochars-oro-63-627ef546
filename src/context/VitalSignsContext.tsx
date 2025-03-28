@@ -1,13 +1,17 @@
 
-import React, { createContext, useContext, useState, useRef, useEffect } from "react";
-import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
-import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
-import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+/**
+ * Vital Signs Context
+ * Provides state and actions for vital signs monitoring
+ */
+
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { toast } from "sonner";
+import { EventType, eventBus, useEventSubscription } from "@/modules/events/EventBus";
+import { PPGSignal, VitalSignsResult } from "@/modules/types/signal";
+import { measurementManager } from "@/modules/results/MeasurementManager";
 
 interface VitalSignsContextType {
-  // Measurement state
+  // State
   isMonitoring: boolean;
   isCameraOn: boolean;
   signalQuality: number;
@@ -30,14 +34,12 @@ interface VitalSignsContextType {
 }
 
 const initialVitalSigns: VitalSignsResult = {
+  timestamp: Date.now(),
+  heartRate: 0,
   spo2: 0,
   pressure: "--/--",
   arrhythmiaStatus: "--",
-  glucose: 0,
-  lipids: {
-    totalCholesterol: 0,
-    triglycerides: 0
-  }
+  reliability: 0
 };
 
 const VitalSignsContext = createContext<VitalSignsContextType | undefined>(undefined);
@@ -51,7 +53,7 @@ export const useVitalSigns = () => {
 };
 
 export const VitalSignsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // State
+  // State tracking
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -59,213 +61,132 @@ export const VitalSignsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const measurementTimerRef = useRef<number | null>(null);
+  const [lastSignal, setLastSignal] = useState<{
+    fingerDetected: boolean;
+    filteredValue: number;
+    quality: number;
+  } | null>(null);
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
   
-  // Custom hooks
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat, isArrhythmia } = useHeartBeatProcessor();
-  const { 
-    processSignal: processVitalSigns, 
-    reset: resetVitalSigns,
-    fullReset: fullResetVitalSigns,
-    lastValidResults
-  } = useVitalSignsProcessor();
-
-  const enterFullScreen = async () => {
-    try {
-      await document.documentElement.requestFullscreen();
-    } catch (err) {
-      console.log('Error al entrar en pantalla completa:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (lastValidResults && !isMonitoring) {
-      setVitalSigns(lastValidResults);
-      setShowResults(true);
-    }
-  }, [lastValidResults, isMonitoring]);
-
-  const startMonitoring = () => {
-    if (isMonitoring) {
-      stopMonitoring();
-    } else {
-      enterFullScreen();
-      setIsMonitoring(true);
-      setIsCameraOn(true);
-      setShowResults(false);
-      
-      startProcessing();
-      
-      setElapsedTime(0);
-      
-      if (measurementTimerRef.current) {
-        clearInterval(measurementTimerRef.current);
-      }
-      
-      measurementTimerRef.current = window.setInterval(() => {
-        setElapsedTime(prev => {
-          const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
-          
-          if (newTime >= 30) {
-            stopMonitoring();
-            return 30;
-          }
-          return newTime;
-        });
-      }, 1000);
-    }
-  };
-
-  const stopMonitoring = () => {
-    console.log("Finalizando medición: manteniendo resultados");
-    
-    setIsMonitoring(false);
-    setIsCameraOn(false);
-    stopProcessing();
-    
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
-      measurementTimerRef.current = null;
-    }
-    
-    const savedResults = resetVitalSigns();
-    if (savedResults) {
-      setVitalSigns(savedResults);
-      setShowResults(true);
-    }
-    
-    setElapsedTime(0);
-    setSignalQuality(0);
-  };
-
-  const resetAll = () => {
-    console.log("Reseteando completamente la aplicación");
-    setIsMonitoring(false);
-    setIsCameraOn(false);
+  // Subscribe to heart beat events
+  useEventSubscription(EventType.HEARTBEAT_DETECTED, () => {
+    // Audio feedback handled by other modules
+  });
+  
+  // Subscribe to monitoring state events
+  useEventSubscription(EventType.MONITORING_STARTED, () => {
+    setIsMonitoring(true);
+    setIsCameraOn(true);
     setShowResults(false);
-    stopProcessing();
-    
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
-      measurementTimerRef.current = null;
-    }
-    
-    fullResetVitalSigns();
     setElapsedTime(0);
-    setHeartRate(0);
-    setVitalSigns(initialVitalSigns);
-    setSignalQuality(0);
-  };
-
-  const handleStreamReady = (stream: MediaStream) => {
-    if (!isMonitoring) return;
     
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
-    
-    const enhanceCanvas = document.createElement('canvas');
-    const enhanceCtx = enhanceCanvas.getContext('2d', {willReadFrequently: true});
-    enhanceCanvas.width = 320;
-    enhanceCanvas.height = 240;
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
-      
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
-      
-      if (timeSinceLastProcess >= targetFrameInterval) {
-        try {
-          const frame = await imageCapture.grabFrame();
-          
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          if (enhanceCtx) {
-            enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
-            
-            enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';
-            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            enhanceCtx.globalCompositeOperation = 'source-over';
-            
-            const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            processFrame(imageData);
-          } else {
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-          }
-          
-          frameCount++;
-          lastProcessTime = now;
-          
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-          }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
-        }
-      }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
+    // Enter fullscreen if available
+    const enterFullScreen = async () => {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch (err) {
+        console.log('Error entering fullscreen:', err);
       }
     };
-
-    processImage();
-  };
-
+    
+    enterFullScreen();
+  });
+  
+  useEventSubscription(EventType.MONITORING_STOPPED, (data: { duration: number }) => {
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    setElapsedTime(data.duration);
+    setShowResults(true);
+  });
+  
+  useEventSubscription(EventType.MONITORING_RESET, () => {
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    setElapsedTime(0);
+    setSignalQuality(0);
+    setHeartRate(0);
+    setShowResults(false);
+    setVitalSigns(initialVitalSigns);
+    setLastSignal(null);
+    setIsArrhythmia(false);
+  });
+  
+  // Subscribe to vital signs events
+  useEventSubscription(EventType.VITAL_SIGNS_UPDATED, (data: VitalSignsResult) => {
+    setVitalSigns(data);
+  });
+  
+  useEventSubscription(EventType.VITAL_SIGNS_FINAL, (data: VitalSignsResult) => {
+    setVitalSigns(data);
+    setShowResults(true);
+  });
+  
+  // Subscribe to heart rate events
+  useEventSubscription(EventType.HEARTBEAT_RATE_CHANGED, (data: { heartRate: number }) => {
+    setHeartRate(data.heartRate);
+  });
+  
+  // Subscribe to signal events
+  useEventSubscription(EventType.SIGNAL_EXTRACTED, (data: PPGSignal) => {
+    setLastSignal({
+      fingerDetected: data.fingerDetected,
+      filteredValue: data.filteredValue,
+      quality: data.quality
+    });
+    
+    setSignalQuality(data.quality);
+  });
+  
+  // Subscribe to arrhythmia events
+  useEventSubscription(EventType.ARRHYTHMIA_DETECTED, () => {
+    setIsArrhythmia(true);
+    
+    toast.warning('Posible arritmia detectada', {
+      description: 'Se ha detectado un ritmo cardíaco irregular',
+    });
+  });
+  
+  // Subscribe to error events
+  useEventSubscription(EventType.ERROR_OCCURRED, (error: { message: string }) => {
+    toast.error('Error', {
+      description: error.message,
+    });
+  });
+  
+  // Sync with measurement manager on mount
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
-      
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-      }
-      
-      setSignalQuality(lastSignal.quality);
+    const state = measurementManager.getState();
+    setIsMonitoring(state.isMonitoring);
+    setIsCameraOn(state.isCameraOn);
+    setSignalQuality(state.signalQuality);
+    setHeartRate(state.heartRate);
+    setElapsedTime(state.elapsedTime);
+    setShowResults(state.showResults);
+    setLastSignal(state.lastSignal);
+    
+    const vs = measurementManager.getVitalSigns();
+    if (vs) {
+      setVitalSigns(vs);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
-
+  }, []);
+  
+  // Action handlers
+  const startMonitoring = () => {
+    measurementManager.startMonitoring();
+  };
+  
+  const stopMonitoring = () => {
+    measurementManager.stopMonitoring();
+  };
+  
+  const resetAll = () => {
+    measurementManager.reset();
+  };
+  
+  const handleStreamReady = (stream: MediaStream) => {
+    measurementManager.handleStreamReady(stream);
+  };
+  
   const value = {
     isMonitoring,
     isCameraOn,
@@ -281,7 +202,7 @@ export const VitalSignsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     resetAll,
     handleStreamReady
   };
-
+  
   return (
     <VitalSignsContext.Provider value={value}>
       {children}
