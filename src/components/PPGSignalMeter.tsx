@@ -63,11 +63,13 @@ const PPGSignalMeter = memo(({
   const PEAK_THRESHOLD = 0.3;
   const MAX_PEAKS_TO_DISPLAY = 30;
 
+  // Inicializar buffer de datos
   useEffect(() => {
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPoint>(600);
     }
     
+    // Inicializar canvas para grid
     const gridCanvas = document.createElement('canvas');
     gridCanvas.width = CANVAS_WIDTH;
     gridCanvas.height = CANVAS_HEIGHT;
@@ -78,6 +80,7 @@ const PPGSignalMeter = memo(({
       gridCanvasRef.current = gridCanvas;
     }
     
+    // Iniciar renderizado
     renderSignal();
     
     return () => {
@@ -87,22 +90,28 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
+  // Procesar cambios en el valor de señal PPG
   useEffect(() => {
+    // Añadir valor de calidad al historial
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > 9) {
       qualityHistoryRef.current.shift();
     }
     
+    // Contar frames consecutivos con dedo detectado para estabilizar detección
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
     
+    // Solo procesar cuando hay dedo detectado
     if (isFingerDetected && dataBufferRef.current) {
+      // Verificar si este punto es parte de una arritmia
       const isCurrentArrhythmia = isArrhythmia || 
         (arrhythmiaStatus && arrhythmiaStatus.toLowerCase().includes('arritmia'));
       
+      // Añadir punto al buffer
       const now = Date.now();
       dataBufferRef.current.push({
         time: now,
@@ -110,12 +119,16 @@ const PPGSignalMeter = memo(({
         isArrhythmia: isCurrentArrhythmia
       });
       
+      // Procesar arritmias
       if (isCurrentArrhythmia) {
+        // Mostrar alerta visual
         setShowArrhythmiaAlert(true);
         setTimeout(() => setShowArrhythmiaAlert(false), 2000);
         
+        // Registrar segmento de arritmia para visualización
         const lastSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
         
+        // Si no hay segmento abierto o el último está cerrado, abrir nuevo segmento
         if (!lastSegment || lastSegment.endTime !== null) {
           arrhythmiaSegmentsRef.current.push({
             startTime: now,
@@ -123,6 +136,7 @@ const PPGSignalMeter = memo(({
           });
           lastArrhythmiaTime.current = now;
           
+          // Actualizar contador si hay estado de arritmia
           if (arrhythmiaStatus && arrhythmiaStatus.includes('|')) {
             const parts = arrhythmiaStatus.split('|');
             if (parts.length > 1) {
@@ -135,6 +149,7 @@ const PPGSignalMeter = memo(({
           }
         }
       } else {
+        // Si no hay arritmia, cerrar segmento de arritmia abierto
         const lastSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
         if (lastSegment && lastSegment.endTime === null) {
           lastSegment.endTime = now;
@@ -143,25 +158,31 @@ const PPGSignalMeter = memo(({
     }
   }, [value, quality, isFingerDetected, arrhythmiaStatus, rawArrhythmiaData, isArrhythmia]);
 
+  // Función para dibujar grid
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
+    // Fondo
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
+    // Grid
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
     ctx.lineWidth = 0.5;
     
+    // Líneas verticales
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
     }
     
+    // Líneas horizontales
     for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
     }
     ctx.stroke();
     
+    // Línea central
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(100, 100, 100, 0.4)';
     ctx.lineWidth = 1;
@@ -171,21 +192,25 @@ const PPGSignalMeter = memo(({
     ctx.stroke();
     ctx.setLineDash([]);
   }, []);
-
+  
+  // Función para detectar picos en la señal
   const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     
     for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
       
+      // Verificar si ya procesamos este punto
       const alreadyDetected = peaksRef.current.some(peak => 
         Math.abs(peak.time - currentPoint.time) < 100
       );
       
       if (alreadyDetected) continue;
       
+      // Verificar si es un pico
       let isPeak = true;
       
+      // Comparar con puntos anteriores
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
         if (points[j].value >= currentPoint.value) {
           isPeak = false;
@@ -193,6 +218,7 @@ const PPGSignalMeter = memo(({
         }
       }
       
+      // Comparar con puntos siguientes
       if (isPeak) {
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
           if (j < points.length && points[j].value > currentPoint.value) {
@@ -202,6 +228,7 @@ const PPGSignalMeter = memo(({
         }
       }
       
+      // Si es pico y supera umbral, registrar
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
         peaksRef.current.push({
           time: currentPoint.time,
@@ -211,11 +238,13 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    // Limpiar picos antiguos
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
+  // Renderizar señal PPG
   const renderSignal = useCallback(() => {
     const canvas = canvasRef.current;
     const buffer = dataBufferRef.current;
@@ -225,16 +254,20 @@ const PPGSignalMeter = memo(({
       
       if (ctx) {
         const now = Date.now();
-        const points = buffer.getPoints();
+        const points = buffer.getItems();
         
+        // Limpiar canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
+        // Dibujar grid
         if (gridCanvasRef.current) {
           ctx.drawImage(gridCanvasRef.current, 0, 0);
         }
         
+        // Detectar picos
         detectPeaks(points, now);
         
+        // Dibujar segmentos de arritmia
         ctx.fillStyle = 'rgba(255, 50, 50, 0.15)';
         
         for (const segment of arrhythmiaSegmentsRef.current) {
@@ -248,6 +281,7 @@ const PPGSignalMeter = memo(({
           ctx.fillRect(startX, 0, endX - startX, canvas.height);
         }
         
+        // Dibujar línea de señal PPG
         ctx.beginPath();
         ctx.lineWidth = 2;
         ctx.strokeStyle = 'rgba(50, 205, 50, 0.8)';
@@ -269,6 +303,7 @@ const PPGSignalMeter = memo(({
             ctx.moveTo(x, y);
             isFirstPoint = false;
           } else {
+            // Utilizar curvas para suavizar la línea
             const controlX = (lastX + x) / 2;
             ctx.quadraticCurveTo(controlX, lastY, x, y);
           }
@@ -279,6 +314,7 @@ const PPGSignalMeter = memo(({
         
         ctx.stroke();
         
+        // Dibujar picos detectados
         for (const peak of peaksRef.current) {
           const age = now - peak.time;
           if (age > WINDOW_WIDTH_MS) continue;
@@ -292,6 +328,7 @@ const PPGSignalMeter = memo(({
           ctx.fill();
         }
         
+        // Dibujar estado de arritmia
         if (arrhythmiaStatus && arrhythmiaStatus !== "--") {
           const displayStatus = arrhythmiaStatus.split('|')[0];
           ctx.font = 'bold 16px Arial';
@@ -309,6 +346,7 @@ const PPGSignalMeter = memo(({
           }
         }
         
+        // Dibujar contador de arritmias
         if (arrhythmiaCountRef.current > 0) {
           ctx.font = 'bold 18px Arial';
           ctx.fillStyle = '#ff3333';
@@ -317,9 +355,11 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    // Continuar renderizado
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [detectPeaks]);
 
+  // Calcular color basado en calidad
   const getQualityColor = useCallback(() => {
     const avgQuality = qualityHistoryRef.current.length 
       ? qualityHistoryRef.current.reduce((a, b) => a + b, 0) / qualityHistoryRef.current.length
@@ -331,6 +371,7 @@ const PPGSignalMeter = memo(({
     return 'from-red-500 to-rose-500';
   }, [isFingerDetected]);
 
+  // Obtener texto para calidad
   const getQualityText = useCallback(() => {
     const avgQuality = qualityHistoryRef.current.length 
       ? qualityHistoryRef.current.reduce((a, b) => a + b, 0) / qualityHistoryRef.current.length
@@ -366,11 +407,13 @@ const PPGSignalMeter = memo(({
           className="w-full h-full"
         />
         
+        {/* Indicador de calidad */}
         <div className="absolute bottom-4 right-4 flex items-center space-x-2">
           <div className="text-white text-sm">{getQualityText()}</div>
           <div className={`w-20 h-3 rounded-full bg-gradient-to-r ${getQualityColor()}`} />
         </div>
         
+        {/* Indicador de arritmias */}
         {arrhythmiaCountRef.current > 0 && (
           <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/40 p-2 rounded">
             <HeartPulse className="h-5 w-5 text-red-500" />
