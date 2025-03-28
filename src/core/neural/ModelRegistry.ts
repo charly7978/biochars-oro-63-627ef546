@@ -1,9 +1,9 @@
-
 import { BaseNeuralModel } from './NeuralNetworkBase';
 import { HeartRateNeuralModel } from './HeartRateModel';
 import { SpO2NeuralModel } from './SpO2Model';
 import { BloodPressureNeuralModel } from './BloodPressureModel';
 import { ArrhythmiaNeuralModel } from './ArrhythmiaModel';
+import { GlucoseNeuralModel } from './GlucoseModel';
 
 /**
  * Registro centralizado de modelos neuronales
@@ -20,6 +20,7 @@ export class ModelRegistry {
     this.registerModel('spo2', () => new SpO2NeuralModel());
     this.registerModel('bloodPressure', () => new BloodPressureNeuralModel());
     this.registerModel('arrhythmia', () => new ArrhythmiaNeuralModel());
+    this.registerModel('glucose', () => new GlucoseNeuralModel());
   }
   
   /**
