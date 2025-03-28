@@ -38,8 +38,9 @@ export class ArrhythmiaCalculator {
     const rmssd = this.calculateRMSSD(intervals);
     this.rmssd = rmssd;
     
-    // Detectar arritmia basado en umbral de variación - aumentado para mejor visualización
-    const isArrhythmia = rmssd > 70; // Umbral más sensible para visualización
+    // Detectar arritmia basado en umbral de variación 
+    // Umbral reducido para aumentar sensibilidad en demostración
+    const isArrhythmia = rmssd > 50; 
     
     // Verificar si ha pasado suficiente tiempo desde la última detección
     const canDetectNewArrhythmia = currentTime - this.lastDetectionTime > this.minDetectionIntervalMs;
