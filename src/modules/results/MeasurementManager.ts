@@ -1,4 +1,3 @@
-
 /**
  * Measurement Manager
  * Manages the measurement process and results
@@ -225,6 +224,15 @@ export class MeasurementManager {
     
     // Use vitalSignsProcessor to get results, or fallback to default
     const result = vitalSignsProcessor.reset() || defaultResult;
+    
+    // Ensure result has all required properties
+    if (!result.hasOwnProperty('pressure')) {
+      return {
+        ...result,
+        pressure: "--/--"
+      };
+    }
+    
     return result;
   }
 }

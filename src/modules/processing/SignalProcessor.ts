@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -30,7 +29,10 @@ export interface ProcessedPPGData {
   filteredValue: number;
   quality: number;
   perfusionIndex: number;
-  channelData?: ChannelData;
+  channelData?: {
+    red: number;
+    ir: number;
+  };
 }
 
 export class SignalProcessor {

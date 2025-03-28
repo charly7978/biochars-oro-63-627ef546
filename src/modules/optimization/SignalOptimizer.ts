@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -191,8 +190,8 @@ export class SignalOptimizer {
       filteredValue: data.filteredValue,
       perfusionIndex: data.perfusionIndex || 0,
       channelData: {
-        red: data.redValue || 0,
-        ir: data.irValue || 0
+        red: data.channelData?.red || 0,
+        ir: data.channelData?.ir || 0
       }
     };
     

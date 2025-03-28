@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -46,12 +45,26 @@ export interface VitalSignsResult {
   timestamp: number;
   heartRate: number;
   spo2: number;
-  bloodPressure: BloodPressure;
-  glucose: number;
-  lipids: Lipids;
-  reliability: number;
+  pressure: string;
   arrhythmiaStatus: string;
-  arrhythmiaData?: ArrhythmiaData;
+  reliability: number;
+  bloodPressure?: {
+    systolic: number;
+    diastolic: number;
+    display: string;
+  };
+  glucose?: number;
+  lipids?: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  arrhythmiaData?: {
+    rmssd: number;
+    rrVariation: number;
+    detected: boolean;
+    timestamp: number;
+    windows?: any[][];
+  };
 }
 
 export class VitalSignsCalculator {
@@ -292,11 +305,12 @@ export class VitalSignsCalculator {
       timestamp: currentTime,
       heartRate,
       spo2,
+      pressure: `${bloodPressure.systolic}/${bloodPressure.diastolic}`,
+      arrhythmiaStatus,
+      reliability,
       bloodPressure,
       glucose,
       lipids,
-      reliability,
-      arrhythmiaStatus,
       arrhythmiaData
     };
     
