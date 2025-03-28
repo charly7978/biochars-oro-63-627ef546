@@ -26,18 +26,18 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
 				
-				// Enhanced background with intensified glassmorphism effect - stronger gradient
+				// Significantly intensified glassmorphism gradient with higher contrast and vibrance
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
-				gradient.addColorStop(0, 'rgba(243, 247, 252, 0.85)'); // Lighter at top, more opaque
-				gradient.addColorStop(0.4, 'rgba(237, 244, 249, 0.85)'); // Slightly darker at middle, more opaque
-				gradient.addColorStop(0.6, 'rgba(241, 238, 248, 0.85)'); // Transition to more vibrant lilac
-				gradient.addColorStop(1, 'rgba(230, 210, 255, 0.85)'); // More saturated lilac tone at bottom, more opaque
+				gradient.addColorStop(0, 'rgba(245, 250, 255, 0.9)'); // Almost white at top, very opaque
+				gradient.addColorStop(0.3, 'rgba(237, 244, 253, 0.9)'); // Light blue transition
+				gradient.addColorStop(0.6, 'rgba(235, 225, 255, 0.9)'); // Strong transition to vibrant violet
+				gradient.addColorStop(1, 'rgba(220, 190, 255, 0.9)'); // Deep saturated lilac at bottom, highly opaque
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				
 				// Draw grid with improved quality and glassmorphism effect
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(70,80,130,0.15)'; // Slightly more visible grid lines
+				ctx.strokeStyle = 'rgba(70,80,130,0.2)'; // More visible grid lines
 				ctx.lineWidth = 0.6; // Thinner lines for glass effect
 				
 				// Draw vertical grid lines with better precision
@@ -59,7 +59,7 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				
 				// Add an enhanced grid with major lines - more visible glass effect
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(50,70,120,0.20)'; // More visible major grid lines
+				ctx.strokeStyle = 'rgba(50,70,120,0.25)'; // Even more visible major grid lines
 				ctx.lineWidth = 1;
 				
 				// Major vertical lines every 5 cells
@@ -78,11 +78,11 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				ctx.stroke();
 				
 				// Add more pronounced glow points at intersections for glass effect
-				ctx.fillStyle = 'rgba(255, 255, 255, 0.25)'; // More visible glow points
+				ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'; // Brighter, more visible glow points
 				for (let x = 0; x <= displayWidth; x += cellSize * 5) {
 					for (let y = 0; y <= displayHeight; y += cellSize * 5) {
 						ctx.beginPath();
-						ctx.arc(x, y, 1.5, 0, Math.PI * 2); // Slightly larger points
+						ctx.arc(x, y, 2, 0, Math.PI * 2); // Larger glow points
 						ctx.fill();
 					}
 				}
