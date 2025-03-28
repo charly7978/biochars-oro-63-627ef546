@@ -1,49 +1,28 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Advanced configuration for state-of-the-art arrhythmia detection
  */
+export interface ArrhythmiaConfig {
+  MIN_TIME_BETWEEN_ARRHYTHMIAS: number;
+  MAX_ARRHYTHMIAS_PER_SESSION: number;
+  SIGNAL_QUALITY_THRESHOLD: number;
+  SEQUENTIAL_DETECTION_THRESHOLD?: number;
+  SPECTRAL_FREQUENCY_THRESHOLD?: number;
+  SENSITIVITY_LEVEL?: 'low' | 'medium' | 'high';
+}
 
-/**
- * Interface for R-R interval analysis results.
- * Contains data about heart rate variability metrics and potential arrhythmia detection
- * based on DIRECT measurements only.
- */
-export interface RRAnalysisResult {
-  /**
-   * Root Mean Square of Successive Differences - a measure of heart rate variability
-   */
-  rmssd: number;
-  
-  /**
-   * Relative variation in RR intervals
-   */
-  rrVariation: number;
-  
-  /**
-   * Timestamp when the analysis was performed
-   */
+export interface ArrhythmiaPattern {
+  score: number;
+  confidence: number;
   timestamp: number;
-  
-  /**
-   * Boolean flag indicating whether an arrhythmia was detected
-   */
-  isArrhythmia: boolean;
-  
-  /**
-   * Visualization window for arrhythmia detection
-   */
-  visualWindow?: {
-    start: number;
-    end: number;
-  };
-  
-  /**
-   * Severity of the detected arrhythmia
-   */
-  severity?: 'media' | 'alta';
-  
-  /**
-   * Type of arrhythmia detected
-   */
   type?: string;
+}
+
+export interface RRAnalysisResult {
+  rmssd: number;
+  rrVariation: number;
+  timestamp: number;
+  isArrhythmia: boolean;
+  heartRate?: number;
+  signalQuality?: number;
 }

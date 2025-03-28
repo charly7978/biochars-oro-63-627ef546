@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -7,9 +8,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
-import { toast } from "@/hooks/use-toast";
-import { HeartPulse, AlertTriangle } from "lucide-react";
+import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -43,8 +42,7 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults,
-    getVisualizationData
+    lastValidResults
   } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
@@ -68,33 +66,8 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      console.log("Index: Actualizando signos vitales con lastValidResults", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
-      
-      // Dispatch event for PPG graph showing arrhythmia if present
-      if (lastValidResults.arrhythmiaStatus && lastValidResults.arrhythmiaStatus.includes('Arritmia') && 
-          lastValidResults.lastArrhythmiaData && lastValidResults.lastArrhythmiaData.visualWindow) {
-        
-        const window = lastValidResults.lastArrhythmiaData.visualWindow;
-        const severity = lastValidResults.lastArrhythmiaData.severity || 'media';
-        
-        console.log("Index: Dispatching arrhythmia event from lastValidResults:", {
-          window,
-          severity
-        });
-        
-        const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
-          detail: { 
-            start: window.start, 
-            end: window.end, 
-            timestamp: Date.now(),
-            severity: severity,
-            type: 'irregular'
-          }
-        });
-        document.dispatchEvent(arrhythmiaEvent);
-      }
     }
   }, [lastValidResults, isMonitoring]);
 
@@ -110,47 +83,7 @@ const Index = () => {
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
-            console.log("Index: Nuevos signos vitales procesados", {
-              spo2: vitals.spo2,
-              pressure: vitals.pressure,
-              arrhythmiaStatus: vitals.arrhythmiaStatus,
-              glucoseValue: vitals.glucose, 
-              cholesterol: vitals.lipids?.totalCholesterol,
-              triglycerides: vitals.lipids?.triglycerides,
-              lastArrhythmiaData: vitals.lastArrhythmiaData
-            });
-            
             setVitalSigns(vitals);
-            
-            if (vitals.arrhythmiaStatus && vitals.arrhythmiaStatus.includes('Arritmia')) {
-              toast({
-                title: "¡Arritmia detectada!",
-                description: "Se ha detectado una irregularidad en el ritmo cardíaco.",
-                variant: "destructive"
-              });
-              
-              // Dispatch event for PPG graph if there is arrhythmia data
-              if (vitals.lastArrhythmiaData && vitals.lastArrhythmiaData.visualWindow) {
-                const window = vitals.lastArrhythmiaData.visualWindow;
-                const severity = vitals.lastArrhythmiaData.severity || 'media';
-                
-                console.log("Index: Dispatching arrhythmia event from real-time vitals:", {
-                  window,
-                  severity
-                });
-                
-                const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
-                  detail: { 
-                    start: window.start, 
-                    end: window.end, 
-                    timestamp: Date.now(),
-                    severity: severity,
-                    type: 'irregular'
-                  }
-                });
-                document.dispatchEvent(arrhythmiaEvent);
-              }
-            }
           }
         }
         
@@ -198,12 +131,6 @@ const Index = () => {
           return newTime;
         });
       }, 1000);
-      
-      toast({
-        title: "Medición iniciada",
-        description: "Coloque su dedo sobre la cámara",
-        variant: "default"
-      });
     }
   };
 
@@ -220,40 +147,11 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
-    const savedResults = resetVitalSigns();
-    if (savedResults) {
-      setVitalSigns(savedResults);
+    resetVitalSigns();
+    
+    if (lastValidResults) {
+      setVitalSigns(lastValidResults);
       setShowResults(true);
-      
-      toast({
-        title: "Medición completada",
-        description: "Resultados disponibles",
-        variant: "default"
-      });
-      
-      console.log("Index: Dispatching final arrhythmia visualization for saved results", savedResults);
-      
-      // Trigger arrhythmia visualization again for the saved results
-      if (savedResults.arrhythmiaStatus?.includes('Arritmia') && 
-          savedResults.lastArrhythmiaData?.visualWindow) {
-        
-        const window = savedResults.lastArrhythmiaData.visualWindow;
-        const severity = savedResults.lastArrhythmiaData.severity || 'media';
-        
-        // Add delay to ensure components are ready
-        setTimeout(() => {
-          const arrhythmiaEvent = new CustomEvent('arrhythmia-detected', {
-            detail: { 
-              start: window.start, 
-              end: window.end, 
-              timestamp: Date.now(),
-              severity: severity,
-              type: 'irregular'
-            }
-          });
-          document.dispatchEvent(arrhythmiaEvent);
-        }, 500);
-      }
     }
     
     setElapsedTime(0);
@@ -289,16 +187,6 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
-    
-    // Clear arrhythmia visualizations
-    const clearEvent = new CustomEvent('arrhythmia-windows-cleared');
-    document.dispatchEvent(clearEvent);
-    
-    toast({
-      title: "Aplicación reiniciada",
-      description: "Todos los datos han sido restablecidos",
-      variant: "default"
-    });
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -422,7 +310,6 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
@@ -451,10 +338,10 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
-                label="ARRITMIAS"
-                value={vitalSigns.arrhythmiaStatus?.split('|')[0] || "--"}
-                highlighted={vitalSigns.arrhythmiaStatus?.includes('Arritmia')}
-                arrhythmiaData={vitalSigns.lastArrhythmiaData}
+                label="GLUCOSA"
+                value={vitalSigns.glucose || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
               />
               <VitalSign 
                 label="COLESTEROL"

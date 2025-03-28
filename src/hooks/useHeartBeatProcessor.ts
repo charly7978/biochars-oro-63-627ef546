@@ -1,249 +1,195 @@
-
-import { useState, useCallback, useRef } from 'react';
-import { CircularBuffer } from '../utils/CircularBuffer';
-
-interface HeartBeatResult {
-  bpm: number;
-  isPeak: boolean;
-  value: number;
-  time: number;
-  confidence: number;
-  rrData: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
-}
-
-interface PPGDataPoint {
-  time: number;
-  value: number;
-}
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrhythmiaProcessor } from '../modules/arrhythmia-processor';
 
 export const useHeartBeatProcessor = () => {
-  const [lastBPM, setLastBPM] = useState(0);
-  const [averageRR, setAverageRR] = useState(0);
+  const [initialized, setInitialized] = useState(false);
   const [isMonitoring, setIsMonitoring] = useState(false);
+  const [bpm, setBpm] = useState(0);
+  const [rrData, setRrData] = useState<{ intervals: number[], lastPeakTime: number | null }>({ 
+    intervals: [], 
+    lastPeakTime: null 
+  });
   const [isArrhythmia, setIsArrhythmia] = useState(false);
-  
-  const valueBuffer = useRef<number[]>([]);
-  const peakBuffer = useRef<CircularBuffer<PPGDataPoint>>(new CircularBuffer<PPGDataPoint>(20));
-  const lastPeakTime = useRef<number | null>(null);
-  const lastProcessTime = useRef(0);
-  const rrIntervals = useRef<number[]>([]);
-  const arrhythmiaCounter = useRef(0);
-  
-  const MIN_PEAK_INTERVAL_MS = 300;
-  const MAX_PEAK_INTERVAL_MS = 1500;
-  const PEAK_THRESHOLD = 0.3;
-  
-  /**
-   * Detecta si un valor representa un pico de señal
-   */
-  const detectPeak = useCallback((value: number, timestamp: number): boolean => {
-    if (lastPeakTime.current === null || 
-        timestamp - lastPeakTime.current >= MIN_PEAK_INTERVAL_MS) {
-      
-      // Verificar umbral y que sea mayor que valores recientes
-      if (value > PEAK_THRESHOLD && valueBuffer.current.length > 3) {
-        const recentValues = valueBuffer.current.slice(-3);
-        const maxRecent = Math.max(...recentValues);
-        
-        if (value > maxRecent) {
-          lastPeakTime.current = timestamp;
-          
-          // Actualizamos rrIntervals
-          if (lastPeakTime.current) {
-            const interval = timestamp - lastPeakTime.current;
-            if (interval >= MIN_PEAK_INTERVAL_MS && interval <= MAX_PEAK_INTERVAL_MS) {
-              rrIntervals.current.push(interval);
-              
-              // Mantener buffer limitado
-              if (rrIntervals.current.length > 10) {
-                rrIntervals.current.shift();
-              }
-              
-              // Calcular promedio RR para SDNN
-              const avgRR = rrIntervals.current.reduce((sum, val) => sum + val, 0) / 
-                            rrIntervals.current.length;
-              setAverageRR(avgRR);
-              
-              // Detectar arritmia
-              checkForArrhythmia();
-            }
-          }
-          
-          // Guardar pico
-          peakBuffer.current.push({
-            time: timestamp,
-            value: value
-          });
-          
-          return true;
-        }
+  const sessionId = useRef(Math.random().toString(36).substring(2, 9));
+  const arrhythmiaProcessorRef = useRef<ArrhythmiaProcessor | null>(null);
+  const processorRef = useRef<any>(null);
+  const monitoringStateRef = useRef(false);
+
+  useEffect(() => {
+    console.log('useHeartBeatProcessor: Initializing new processor', {
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
+    });
+
+    try {
+      const HeartBeatProcessor = (window as any).HeartBeatProcessor;
+      if (!HeartBeatProcessor) {
+        console.error('HeartBeatProcessor not found in window object');
+        return;
       }
-    }
-    
-    return false;
-  }, []);
-  
-  /**
-   * Verifica si hay arritmia basado en intervalos RR
-   */
-  const checkForArrhythmia = useCallback(() => {
-    if (rrIntervals.current.length < 3) {
-      setIsArrhythmia(false);
-      return;
-    }
-    
-    // Calcular SDNN (desviación estándar de intervalos NN)
-    const mean = rrIntervals.current.reduce((sum, val) => sum + val, 0) / 
-                rrIntervals.current.length;
-    
-    const variance = rrIntervals.current.reduce(
-      (sum, val) => sum + Math.pow(val - mean, 2), 0
-    ) / rrIntervals.current.length;
-    
-    const sdnn = Math.sqrt(variance);
-    
-    // Calcular coeficiente de variación (CV)
-    const cv = sdnn / mean;
-    
-    // Si CV es mayor a umbral, detectar arritmia
-    const cvThreshold = 0.15;
-    const isCurrentArrhythmia = cv > cvThreshold;
-    
-    if (isCurrentArrhythmia && !isArrhythmia) {
-      arrhythmiaCounter.current++;
-    }
-    
-    setIsArrhythmia(isCurrentArrhythmia);
-  }, [isArrhythmia]);
-  
-  /**
-   * Calcula la frecuencia cardíaca a partir de la señal PPG
-   */
-  const calculateBPM = useCallback(() => {
-    if (rrIntervals.current.length < 2) return 0;
-    
-    // Filtrar outliers
-    const sortedIntervals = [...rrIntervals.current].sort((a, b) => a - b);
-    const q1 = sortedIntervals[Math.floor(sortedIntervals.length * 0.25)];
-    const q3 = sortedIntervals[Math.floor(sortedIntervals.length * 0.75)];
-    const iqr = q3 - q1;
-    
-    const filteredIntervals = rrIntervals.current.filter(
-      interval => interval >= q1 - 1.5 * iqr && interval <= q3 + 1.5 * iqr
-    );
-    
-    if (filteredIntervals.length === 0) return 0;
-    
-    // Calcular promedio de intervalos filtrados
-    const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / 
-                        filteredIntervals.length;
-    
-    // Convertir de ms a BPM
-    return Math.round(60000 / avgInterval);
-  }, []);
-  
-  /**
-   * Procesa un valor de señal PPG
-   */
-  const processSignal = useCallback((value: number): HeartBeatResult => {
-    if (!isMonitoring) {
-      return {
-        bpm: 0,
-        isPeak: false,
-        value: 0,
-        time: Date.now(),
-        confidence: 0,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+
+      const processor = new HeartBeatProcessor();
+      processorRef.current = processor;
+      arrhythmiaProcessorRef.current = new ArrhythmiaProcessor();
+      
+      // Expose the processor to the global scope
+      (window as any).heartBeatProcessor = processor;
+      
+      // Add API methods to the processor for accessing the arrhythmia detector
+      processor.getArrhythmiaProcessor = () => arrhythmiaProcessorRef.current;
+      processor.getArrhythmiaCounter = () => arrhythmiaProcessorRef.current?.getArrhythmiaCounter() || 0;
+      processor.getRRData = () => ({ intervals: processor.getRRIntervals(), lastPeakTime: processor.getLastPeakTime() });
+      
+      setInitialized(true);
+
+      return () => {
+        console.log('useHeartBeatProcessor: Cleanup', {
+          sessionId: sessionId.current,
+          timestamp: new Date().toISOString()
+        });
+        processor.stop();
+        (window as any).heartBeatProcessor = null;
       };
+    } catch (err) {
+      console.error('Error initializing HeartBeatProcessor:', err);
     }
-    
-    const now = Date.now();
-    lastProcessTime.current = now;
-    
-    // Almacenar valor en buffer
-    valueBuffer.current.push(value);
-    if (valueBuffer.current.length > 30) {
-      valueBuffer.current.shift();
-    }
-    
-    // Detectar pico
-    const isPeak = detectPeak(value, now);
-    
-    // Calcular BPM
-    const bpm = calculateBPM();
-    if (bpm > 0) {
-      setLastBPM(bpm);
-    }
-    
-    // Calcular confianza
-    let confidence = 0;
-    if (rrIntervals.current.length >= 3) {
-      const mean = rrIntervals.current.reduce((sum, val) => sum + val, 0) / 
-                  rrIntervals.current.length;
-      
-      const variance = rrIntervals.current.reduce(
-        (sum, val) => sum + Math.pow(val - mean, 2), 0
-      ) / rrIntervals.current.length;
-      
-      const cv = Math.sqrt(variance) / mean;
-      confidence = Math.max(0, Math.min(1, 1 - cv * 2));
-    }
-    
-    return {
-      bpm: bpm || lastBPM,
-      isPeak,
-      value,
-      time: now,
-      confidence,
-      rrData: {
-        intervals: rrIntervals.current,
-        lastPeakTime: lastPeakTime.current
+  }, []);
+
+  useEffect(() => {
+    if (!processorRef.current) return;
+
+    try {
+      if (isMonitoring) {
+        processorRef.current.setMonitoring(true);
+        monitoringStateRef.current = true;
+        console.log('HeartBeatProcessor: Started monitoring');
+      } else {
+        processorRef.current.setMonitoring(false);
+        monitoringStateRef.current = false;
+        console.log('HeartBeatProcessor: Stopped monitoring');
+        setBpm(0); // Reset BPM when stopping
+        setRrData({ intervals: [], lastPeakTime: null });
       }
-    };
-  }, [detectPeak, calculateBPM, lastBPM, isMonitoring]);
-  
-  /**
-   * Inicia el monitoreo
-   */
+    } catch (err) {
+      console.error('Error toggling monitoring state:', err);
+    }
+  }, [isMonitoring]);
+
+  const updateBpmPeriodically = useCallback(() => {
+    if (!processorRef.current || !monitoringStateRef.current) return;
+
+    try {
+      // Update BPM
+      const currentBpm = processorRef.current.calculateCurrentBPM();
+      setBpm(Math.round(currentBpm));
+
+      // Update RR intervals data
+      const intervals = processorRef.current.getRRIntervals();
+      const lastPeakTime = processorRef.current.getLastPeakTime();
+      setRrData({ intervals, lastPeakTime });
+
+      // Process arrhythmia data
+      if (arrhythmiaProcessorRef.current && intervals.length > 0) {
+        const result = arrhythmiaProcessorRef.current.processRRData({ intervals, lastPeakTime });
+        setIsArrhythmia(result.isArrhythmia);
+      }
+    } catch (err) {
+      console.error('Error updating BPM or RR data:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    const intervalId = setInterval(updateBpmPeriodically, 100);
+    return () => clearInterval(intervalId);
+  }, [updateBpmPeriodically]);
+
+  const processSignal = useCallback((value: number) => {
+    if (!processorRef.current) return { bpm: 0, rrData: { intervals: [], lastPeakTime: null } };
+    
+    try {
+      // Process the signal directly
+      const result = processorRef.current.processSignal(value);
+      
+      // Update state based on the result
+      const currentBpm = processorRef.current.calculateCurrentBPM();
+      setBpm(Math.round(currentBpm));
+      
+      // Get updated RR intervals
+      const intervals = processorRef.current.getRRIntervals();
+      const lastPeakTime = processorRef.current.getLastPeakTime();
+      const updatedRRData = { intervals, lastPeakTime };
+      setRrData(updatedRRData);
+      
+      // Process for arrhythmia
+      if (arrhythmiaProcessorRef.current && intervals.length > 0) {
+        const arrhythmiaResult = arrhythmiaProcessorRef.current.processRRData({ intervals, lastPeakTime });
+        setIsArrhythmia(arrhythmiaResult.isArrhythmia);
+      }
+      
+      return { 
+        bpm: Math.round(currentBpm), 
+        rrData: updatedRRData,
+        confidence: processorRef.current.getConfidence ? processorRef.current.getConfidence() : 1.0
+      };
+    } catch (err) {
+      console.error('Error processing signal:', err);
+      return { bpm: 0, rrData: { intervals: [], lastPeakTime: null }, confidence: 0 };
+    }
+  }, []);
+
   const startMonitoring = useCallback(() => {
-    setIsMonitoring(true);
+    if (processorRef.current) {
+      processorRef.current.setMonitoring(true);
+      monitoringStateRef.current = true;
+      setIsMonitoring(true);
+    }
   }, []);
   
-  /**
-   * Detiene el monitoreo
-   */
   const stopMonitoring = useCallback(() => {
-    setIsMonitoring(false);
+    if (processorRef.current) {
+      processorRef.current.setMonitoring(false);
+      monitoringStateRef.current = false;
+      setIsMonitoring(false);
+    }
   }, []);
-  
-  /**
-   * Reinicia el procesador
-   */
+
   const reset = useCallback(() => {
-    valueBuffer.current = [];
-    peakBuffer.current.clear();
-    rrIntervals.current = [];
-    lastPeakTime.current = null;
-    lastProcessTime.current = 0;
-    arrhythmiaCounter.current = 0;
-    setLastBPM(0);
-    setAverageRR(0);
-    setIsArrhythmia(false);
+    if (!processorRef.current) return;
+    
+    try {
+      processorRef.current.reset();
+      if (arrhythmiaProcessorRef.current) {
+        arrhythmiaProcessorRef.current.reset();
+      }
+      setBpm(0);
+      setRrData({ intervals: [], lastPeakTime: null });
+      setIsArrhythmia(false);
+      console.log('HeartBeatProcessor: Reset completed');
+    } catch (err) {
+      console.error('Error resetting HeartBeatProcessor:', err);
+    }
   }, []);
-  
+
   return {
-    processSignal,
-    lastBPM,
-    averageRR,
-    reset,
+    initialized,
+    isMonitoring,
+    bpm,
+    rrData,
     isArrhythmia,
+    arrhythmiaProcessor: arrhythmiaProcessorRef.current,
+    setIsMonitoring,
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    processSignal,
+    reset,
+    playBeep: (volume: number) => {
+      try {
+        if (processorRef.current) {
+          processorRef.current.playBeep(volume);
+        }
+      } catch (err) {
+        console.error('Error playing beep:', err);
+      }
+    }
   };
 };

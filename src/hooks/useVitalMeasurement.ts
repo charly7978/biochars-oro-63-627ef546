@@ -23,6 +23,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const lastArrhythmiaTimestampRef = useRef<number>(0);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -94,10 +95,22 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       });
 
       // Check for arrhythmia windows
-      if (processor.getArrhythmiaWindows && typeof processor.getArrhythmiaWindows === 'function') {
-        const windows = processor.getArrhythmiaWindows();
-        if (windows && Array.isArray(windows) && windows.length > 0) {
-          setArrhythmiaWindows(windows);
+      const arrhythmiaProcessor = processor.getArrhythmiaProcessor ? processor.getArrhythmiaProcessor() : null;
+      if (arrhythmiaProcessor) {
+        const status = arrhythmiaProcessor.processRRData(processor.getRRData ? processor.getRRData() : undefined);
+        if (status && status.lastArrhythmiaData && status.lastArrhythmiaData.timestamp > lastArrhythmiaTimestampRef.current) {
+          lastArrhythmiaTimestampRef.current = status.lastArrhythmiaData.timestamp;
+          
+          // Create arrhythmia window for visualization
+          const windowWidth = 600; // 600ms window
+          const timestamp = status.lastArrhythmiaData.timestamp;
+          setArrhythmiaWindows(prev => {
+            const newWindows = [...prev, {
+              start: timestamp - windowWidth/2,
+              end: timestamp + windowWidth/2
+            }];
+            return newWindows.slice(-3); // Keep only the 3 most recent
+          });
         }
       }
 
