@@ -1,3 +1,4 @@
+
 import { 
   KalmanFilter, 
   applyMedianFilter, 
@@ -54,6 +55,7 @@ export class HeartBeatProcessor {
   private peakCandidateValue: number = 0;
   private lowSignalCount: number = 0;
   private audioEnabled: boolean = true;
+  private manualBeepMode: boolean = true; // Activamos modo de beep manual para sincronización
   
   // Filter instances
   private kalmanFilter: KalmanFilter = new KalmanFilter();
@@ -61,6 +63,13 @@ export class HeartBeatProcessor {
   constructor() {
     this.initAudio();
     this.startTime = Date.now();
+  }
+
+  /**
+   * Verifica si el procesador está listo (fuera del período de warmup)
+   */
+  public isReady(): boolean {
+    return !this.isInWarmup();
   }
 
   /**
@@ -86,6 +95,14 @@ export class HeartBeatProcessor {
   public setAudioEnabled(enabled: boolean): void {
     this.audioEnabled = enabled;
     console.log(`HeartBeatProcessor: Audio ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Set manual beep mode (for synchronization with visual peaks)
+   */
+  public setManualBeepMode(enabled: boolean): void {
+    this.manualBeepMode = enabled;
+    console.log(`HeartBeatProcessor: Manual beep mode ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   /**
@@ -147,7 +164,7 @@ export class HeartBeatProcessor {
       return;
     }
     
-    if (this.isInWarmup()) {
+    if (this.isInWarmup() && volume > 0.1) {
       console.log("HeartBeatProcessor: In warmup period, not playing beep");
       return;
     }
@@ -327,19 +344,24 @@ export class HeartBeatProcessor {
         this.previousPeakTime = this.lastPeakTime;
         this.lastPeakTime = now;
         
-        // Reproducir el beep para el latido detectado
-        this.playBeep(0.25).catch(err => {
-          console.error("Error playing heartbeat sound:", err);
-        });
+        // Si estamos en modo beep automático, reproducir aquí
+        // En modo manual, el beep se controlará desde afuera
+        if (!this.manualBeepMode) {
+          // Reproducir el beep para el latido detectado
+          this.playBeep(0.25).catch(err => {
+            console.error("Error playing heartbeat sound:", err);
+          });
+        }
         
         this.updateBPM();
         peakDetected = true;
         
-        console.log("HeartBeatProcessor: Peak detected with beep", {
+        console.log("HeartBeatProcessor: Peak detected", {
           now,
           timeSinceLastPeak,
           bpm: this.getSmoothBPM(),
-          confidence
+          confidence,
+          manualBeepMode: this.manualBeepMode
         });
       }
     }
