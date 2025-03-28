@@ -29,7 +29,14 @@ const Index = () => {
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat, isArrhythmia } = useHeartBeatProcessor();
+  const { 
+    processSignal: processHeartBeat, 
+    isArrhythmia,
+    startMonitoring: startHeartBeatMonitoring,
+    stopMonitoring: stopHeartBeatMonitoring,
+    reset: resetHeartBeatProcessor
+  } = useHeartBeatProcessor();
+  
   const { 
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
@@ -63,6 +70,41 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Process signal only if we have good quality and finger detection
+  useEffect(() => {
+    if (lastSignal && isMonitoring) {
+      // Only process if the quality is sufficient and the finger is detected
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        
+        // Only update heart rate if confidence is sufficient
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+          setHeartRate(heartBeatResult.bpm);
+          
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
+          }
+        }
+        
+        setSignalQuality(lastSignal.quality);
+      } else {
+        // When no quality signal, update signal quality but not values
+        setSignalQuality(lastSignal.quality);
+        
+        // If finger not detected for a while, reset heart rate to zero
+        if (!lastSignal.fingerDetected && heartRate > 0) {
+          setHeartRate(0);
+        }
+      }
+    } else if (!isMonitoring) {
+      // If not monitoring, maintain zero values
+      setSignalQuality(0);
+    }
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+
   const startMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -71,8 +113,10 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
+      setHeartRate(0); // Reset heart rate explicitly
       
       startProcessing();
+      startHeartBeatMonitoring(); // Update the processor state
       
       setElapsedTime(0);
       
@@ -96,11 +140,12 @@ const Index = () => {
   };
 
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición: manteniendo resultados");
+    console.log("Finalizando medición");
     
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
+    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -115,6 +160,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
+    setHeartRate(0); // Reset heart rate explicitly
   };
 
   const handleReset = () => {
@@ -123,6 +169,8 @@ const Index = () => {
     setIsCameraOn(false);
     setShowResults(false);
     stopProcessing();
+    stopHeartBeatMonitoring();
+    resetHeartBeatProcessor();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -173,11 +221,6 @@ const Index = () => {
     let lastFpsUpdateTime = Date.now();
     let processingFps = 0;
     
-    const enhanceCanvas = document.createElement('canvas');
-    const enhanceCtx = enhanceCanvas.getContext('2d', {willReadFrequently: true});
-    enhanceCanvas.width = 320;
-    enhanceCanvas.height = 240;
-    
     const processImage = async () => {
       if (!isMonitoring) return;
       
@@ -200,21 +243,8 @@ const Index = () => {
             0, 0, targetWidth, targetHeight
           );
           
-          if (enhanceCtx) {
-            enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
-            
-            enhanceCtx.globalCompositeOperation = 'source-over';
-            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';
-            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            enhanceCtx.globalCompositeOperation = 'source-over';
-            
-            const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
-            processFrame(imageData);
-          } else {
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-          }
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          processFrame(imageData);
           
           frameCount++;
           lastProcessTime = now;
@@ -238,20 +268,6 @@ const Index = () => {
     processImage();
   };
 
-  useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
-      
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-      }
-      
-      setSignalQuality(lastSignal.quality);
-    }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
-
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -261,6 +277,7 @@ const Index = () => {
   };
 
   return (
+    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
