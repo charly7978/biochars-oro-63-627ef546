@@ -145,9 +145,5 @@ const setupPerformanceObserver = () => {
 // Start the performance observer after render
 window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
-// Make sure backgrounds are properly rendered
-document.documentElement.style.background = 'transparent';
-document.body.style.background = 'transparent';
-
 // Render the app
 createRoot(document.getElementById("root")!).render(<App />);
