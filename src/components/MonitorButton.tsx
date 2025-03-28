@@ -7,13 +7,15 @@ interface MonitorButtonProps {
   onToggle: () => void;
   variant?: "monitor" | "reset";
   disabled?: boolean;
+  extraClasses?: string;
 }
 
 const MonitorButton: React.FC<MonitorButtonProps> = ({ 
   isMonitoring, 
   onToggle, 
   variant = "monitor",
-  disabled = false
+  disabled = false,
+  extraClasses = ""
 }) => {
   // Determine text and color based on variant and state
   const buttonText = variant === "monitor" 
@@ -29,7 +31,7 @@ const MonitorButton: React.FC<MonitorButtonProps> = ({
       onClick={onToggle} 
       variant={buttonVariant}
       disabled={disabled}
-      className="w-full font-bold"
+      className={`w-full font-bold ${extraClasses}`}
     >
       {buttonText}
     </Button>

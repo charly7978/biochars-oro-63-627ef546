@@ -1,3 +1,4 @@
+
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -14,12 +15,20 @@
 
 import { EventType, eventBus } from '../events/EventBus';
 import { VitalSignsResult } from '../types/signal';
+import { 
+  OptimizedHeartRate, 
+  OptimizedSPO2, 
+  OptimizedBloodPressure, 
+  OptimizedGlucose, 
+  OptimizedLipids,
+  OptimizedArrhythmia 
+} from '../types/optimized-data';
 
 export interface ArrhythmiaData {
   timestamp: number;
   rmssd: number;
   rrVariation: number;
-  windows: Array<{start: number, end: number}>;
+  windows: number[][];
   detected: boolean;
 }
 
@@ -32,18 +41,6 @@ export interface BloodPressure {
 export interface Lipids {
   totalCholesterol: number;
   triglycerides: number;
-}
-
-export interface VitalSignsResult {
-  timestamp: number;
-  heartRate: number;
-  spo2: number;
-  bloodPressure: BloodPressure;
-  glucose: number;
-  lipids: Lipids;
-  reliability: number;
-  arrhythmiaStatus: string;
-  arrhythmiaData?: ArrhythmiaData;
 }
 
 export class VitalSignsCalculator {
@@ -64,7 +61,7 @@ export class VitalSignsCalculator {
   private lastValidResult: VitalSignsResult | null = null;
   
   // Ventanas de arritmias (para visualización)
-  private arrhythmiaWindows: Array<{start: number, end: number}> = [];
+  private arrhythmiaWindows: Array<[number, number]> = [];
   private isArrhythmiaDetected: boolean = false;
   
   /**
@@ -169,10 +166,10 @@ export class VitalSignsCalculator {
       // Si se detectó una nueva arritmia, añadir ventana
       if (newArrhythmiaState) {
         const currentTime = Date.now();
-        this.arrhythmiaWindows.push({
-          start: currentTime - 5000, // 5 segundos antes
-          end: currentTime + 5000    // 5 segundos después
-        });
+        this.arrhythmiaWindows.push([
+          currentTime - 5000, // 5 segundos antes
+          currentTime + 5000  // 5 segundos después
+        ]);
         
         // Limitar número de ventanas almacenadas
         if (this.arrhythmiaWindows.length > 5) {
@@ -223,27 +220,19 @@ export class VitalSignsCalculator {
     const spo2 = hasRecentSPO2 ? this.lastSPO2!.spo2 : 0;
     
     // Presión arterial
-    const bloodPressure: BloodPressure = hasRecentBP ? {
-      systolic: this.lastBloodPressure!.systolic,
-      diastolic: this.lastBloodPressure!.diastolic,
-      display: this.lastBloodPressure!.display
-    } : {
-      systolic: 0,
-      diastolic: 0,
-      display: "--/--"
-    };
+    let pressure = "--/--";
+    if (hasRecentBP) {
+      pressure = this.lastBloodPressure!.display;
+    }
     
     // Glucosa
     const glucose = this.lastGlucose?.value || 0;
     
     // Lípidos
-    const lipids: Lipids = this.lastLipids ? {
+    const lipids = this.lastLipids ? {
       totalCholesterol: this.lastLipids.totalCholesterol,
       triglycerides: this.lastLipids.triglycerides
-    } : {
-      totalCholesterol: 0,
-      triglycerides: 0
-    };
+    } : undefined;
     
     // Confiabilidad general (promedio ponderado)
     let reliability = 0;
@@ -271,26 +260,36 @@ export class VitalSignsCalculator {
     const arrhythmiaStatus = this.isArrhythmiaDetected ? "ARRITMIA DETECTADA" : "SIN ARRITMIAS";
     
     // Datos de arritmia
-    const arrhythmiaData: ArrhythmiaData | undefined = this.lastArrhythmia ? {
-      timestamp: this.lastArrhythmia.timestamp,
-      rmssd: this.lastArrhythmia.rmssd,
-      rrVariation: this.lastArrhythmia.rrVariation,
-      windows: [...this.arrhythmiaWindows],
-      detected: this.isArrhythmiaDetected
-    } : undefined;
+    let arrhythmiaData: ArrhythmiaData | undefined = undefined;
+    
+    if (this.lastArrhythmia) {
+      arrhythmiaData = {
+        timestamp: this.lastArrhythmia.timestamp,
+        rmssd: this.lastArrhythmia.rmssd,
+        rrVariation: this.lastArrhythmia.rrVariation,
+        windows: [...this.arrhythmiaWindows],
+        detected: this.isArrhythmiaDetected
+      };
+    }
     
     // Crear resultado final
     const result: VitalSignsResult = {
       timestamp: currentTime,
       heartRate,
       spo2,
-      bloodPressure,
-      glucose,
-      lipids,
-      reliability,
+      pressure,
       arrhythmiaStatus,
+      reliability,
       arrhythmiaData
     };
+    
+    if (glucose > 0) {
+      result.glucose = glucose;
+    }
+    
+    if (lipids) {
+      result.lipids = lipids;
+    }
     
     this.lastResult = result;
     

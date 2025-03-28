@@ -32,9 +32,14 @@ export class VitalSignsProcessor {
   public initialize(): void {
     if (!this.optimizerInitialized) {
       try {
-        signalOptimizer.start();
-        this.optimizerInitialized = true;
-        console.log('VitalSignsProcessor: Optimizador iniciado correctamente');
+        // Verificamos si signalOptimizer existe y tiene el método start
+        if (signalOptimizer && typeof signalOptimizer.start === 'function') {
+          signalOptimizer.start();
+          this.optimizerInitialized = true;
+          console.log('VitalSignsProcessor: Optimizador iniciado correctamente');
+        } else {
+          console.error('VitalSignsProcessor: Error - signalOptimizer no disponible o no tiene método start');
+        }
       } catch (error) {
         console.error('VitalSignsProcessor: Error al iniciar el optimizador', error);
       }
@@ -53,7 +58,11 @@ export class VitalSignsProcessor {
   ): VitalSignsResult {
     // Asegurarse de que el optimizador esté iniciado
     if (!this.optimizerInitialized) {
-      this.initialize();
+      try {
+        this.initialize();
+      } catch (error) {
+        console.error('VitalSignsProcessor: Error al inicializar durante procesamiento', error);
+      }
     }
 
     // Crear un objeto ProcessedPPGData básico con el valor ppg
@@ -65,8 +74,15 @@ export class VitalSignsProcessor {
       quality: 1,
     };
 
-    // Optimizar la señal PPG
-    const optimizedData = signalOptimizer.optimizeSignal(data);
+    // Optimizar la señal PPG si el optimizador está disponible
+    let optimizedData = data;
+    try {
+      if (signalOptimizer && typeof signalOptimizer.optimizeSignal === 'function') {
+        optimizedData = signalOptimizer.optimizeSignal(data);
+      }
+    } catch (error) {
+      console.error('VitalSignsProcessor: Error al optimizar señal', error);
+    }
 
     // Calcular ritmo cardíaco
     const heartRate = rrData && rrData.intervals.length > 0 ? 
@@ -106,7 +122,11 @@ export class VitalSignsProcessor {
     };
     
     // Notificar resultados a través del bus de eventos
-    eventBus.publish(EventType.VITAL_SIGNS_UPDATED, result);
+    try {
+      eventBus.publish(EventType.VITAL_SIGNS_UPDATED, result);
+    } catch (error) {
+      console.error('VitalSignsProcessor: Error al publicar resultados', error);
+    }
     
     return result;
   }
@@ -117,7 +137,7 @@ export class VitalSignsProcessor {
   public reset(): VitalSignsResult | undefined {
     try {
       // Reiniciar el optimizador si está inicializado
-      if (this.optimizerInitialized) {
+      if (this.optimizerInitialized && signalOptimizer && typeof signalOptimizer.reset === 'function') {
         signalOptimizer.reset();
       }
       console.log('VitalSignsProcessor: Procesador reiniciado correctamente');
@@ -135,9 +155,13 @@ export class VitalSignsProcessor {
     try {
       // Reiniciar el optimizador
       if (this.optimizerInitialized) {
-        signalOptimizer.reset();
+        if (signalOptimizer && typeof signalOptimizer.reset === 'function') {
+          signalOptimizer.reset();
+        }
         // Detener el optimizador
-        signalOptimizer.stop();
+        if (signalOptimizer && typeof signalOptimizer.stop === 'function') {
+          signalOptimizer.stop();
+        }
         this.optimizerInitialized = false;
       }
       console.log('VitalSignsProcessor: Procesador completamente reiniciado');

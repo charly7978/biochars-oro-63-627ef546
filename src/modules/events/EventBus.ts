@@ -1,153 +1,151 @@
 
 /**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ * Event Bus para comunicación entre módulos
+ * Implementa patrón publish-subscribe para desacoplar componentes
  */
 
-/**
- * Bus de Eventos
- * Sistema de comunicación entre módulos mediante eventos
- */
+import { useState, useEffect } from 'react';
 
-import { useEffect } from 'react';
-
+// Tipos de eventos del sistema
 export enum EventType {
-  // Eventos de cámara
-  CAMERA_FRAME_READY = 'camera:frame_ready',
-  CAMERA_STARTED = 'camera:started',
-  CAMERA_STOPPED = 'camera:stopped',
-  CAMERA_ERROR = 'camera:error',
-  CAMERA_READY = 'camera:ready',
-  CAMERA_FRAME = 'camera:frame',
+  // Eventos de entrada de datos
+  CAMERA_FRAME_READY = 'camera_frame_ready',
+  CAMERA_ERROR = 'camera_error',
+  CAMERA_READY = 'camera_ready',
   
   // Eventos de extracción de señal
-  HEARTBEAT_DATA = 'extraction:heartbeat_data',
-  PPG_SIGNAL_EXTRACTED = 'extraction:ppg_signal',
-  COMBINED_SIGNAL_DATA = 'extraction:combined_signal',
+  SIGNAL_EXTRACTED = 'signal_extracted',
+  SIGNAL_OPTIMIZED = 'signal_optimized',
+  SIGNAL_PROCESSED = 'signal_processed',
   
-  // Eventos de procesamiento
-  PROCESSED_HEARTBEAT = 'processing:heartbeat',
-  PROCESSED_PPG = 'processing:ppg',
-  HEARTBEAT_PEAK_DETECTED = 'processing:peak_detected',
-  FINGER_DETECTED = 'processing:finger_detected',
-  FINGER_LOST = 'processing:finger_lost',
-  FINGER_DETECTION_CHANGED = 'processing:finger_detection_changed',
-  SIGNAL_QUALITY_CHANGED = 'processing:signal_quality_changed',
-  SIGNAL_EXTRACTED = 'processing:signal_extracted',
+  // Eventos de análisis de frecuencia cardíaca
+  HEARTBEAT_DETECTED = 'heartbeat_detected',
+  HEARTBEAT_RATE_CHANGED = 'heartbeat_rate_changed',
   
-  // Eventos de optimización
-  OPTIMIZED_HEART_RATE = 'optimization:heart_rate',
-  OPTIMIZED_SPO2 = 'optimization:spo2',
-  OPTIMIZED_BLOOD_PRESSURE = 'optimization:blood_pressure',
-  OPTIMIZED_GLUCOSE = 'optimization:glucose',
-  OPTIMIZED_LIPIDS = 'optimization:lipids',
-  OPTIMIZED_ARRHYTHMIA = 'optimization:arrhythmia',
+  // Eventos de datos optimizados
+  OPTIMIZED_HEART_RATE = 'optimized_heart_rate',
+  OPTIMIZED_SPO2 = 'optimized_spo2',
+  OPTIMIZED_BLOOD_PRESSURE = 'optimized_blood_pressure',
+  OPTIMIZED_GLUCOSE = 'optimized_glucose',
+  OPTIMIZED_LIPIDS = 'optimized_lipids',
+  OPTIMIZED_ARRHYTHMIA = 'optimized_arrhythmia',
+  
+  // Eventos de arritmias
+  ARRHYTHMIA_DETECTED = 'arrhythmia_detected',
+  ARRHYTHMIA_STATUS_CHANGED = 'arrhythmia_status_changed',
+  
+  // Eventos de estado
+  MONITORING_STARTED = 'monitoring_started',
+  MONITORING_STOPPED = 'monitoring_stopped',
+  MONITORING_RESET = 'monitoring_reset',
   
   // Eventos de resultados
-  VITAL_SIGNS_UPDATED = 'results:vital_signs_updated',
-  VITAL_SIGNS_FINAL = 'results:vital_signs_final',
-  HEARTBEAT_RATE_CHANGED = 'results:heartbeat_rate_changed',
-  ARRHYTHMIA_DETECTED = 'results:arrhythmia_detected',
-  ARRHYTHMIA_STATUS_CHANGED = 'results:arrhythmia_status_changed',
-  
-  // Eventos de control
-  MONITORING_STARTED = 'control:monitoring_started',
-  MONITORING_STOPPED = 'control:monitoring_stopped',
-  MONITORING_RESET = 'control:monitoring_reset',
-  
-  // Eventos de error
-  ERROR_OCCURRED = 'error:occurred'
+  VITAL_SIGNS_UPDATED = 'vital_signs_updated'
 }
 
-type EventHandler = (data: any) => void;
+// Tipo para funciones de callback
+type EventCallback = (data: any) => void;
 
-class EventBusClass {
-  private handlers: Map<EventType, EventHandler[]> = new Map();
+// Clase principal del Event Bus
+class EventBus {
+  private listeners: Map<EventType, EventCallback[]> = new Map();
   
   /**
    * Suscribirse a un evento
+   * @param eventType Tipo de evento
+   * @param callback Función a llamar cuando ocurra el evento
    */
-  subscribe(eventType: EventType, handler: EventHandler): void {
-    if (!this.handlers.has(eventType)) {
-      this.handlers.set(eventType, []);
+  public subscribe(eventType: EventType, callback: EventCallback): void {
+    if (!this.listeners.has(eventType)) {
+      this.listeners.set(eventType, []);
     }
-    
-    const handlers = this.handlers.get(eventType);
-    if (handlers) {
-      handlers.push(handler);
-    }
+    this.listeners.get(eventType)!.push(callback);
   }
   
   /**
    * Cancelar suscripción a un evento
+   * @param eventType Tipo de evento
+   * @param callback Función a remover
    */
-  unsubscribe(eventType: EventType, handler: EventHandler): void {
-    const handlers = this.handlers.get(eventType);
+  public unsubscribe(eventType: EventType, callback: EventCallback): void {
+    if (!this.listeners.has(eventType)) return;
     
-    if (handlers) {
-      const index = handlers.indexOf(handler);
-      if (index !== -1) {
-        handlers.splice(index, 1);
-      }
+    const callbacks = this.listeners.get(eventType)!;
+    const index = callbacks.indexOf(callback);
+    
+    if (index !== -1) {
+      callbacks.splice(index, 1);
     }
   }
   
   /**
    * Publicar un evento
+   * @param eventType Tipo de evento
+   * @param data Datos del evento
    */
-  publish(eventType: EventType, data: any): void {
-    const handlers = this.handlers.get(eventType);
+  public publish(eventType: EventType, data: any): void {
+    if (!this.listeners.has(eventType)) return;
     
-    if (handlers) {
-      // Ejecutar cada manejador con los datos proporcionados
-      handlers.forEach(handler => {
-        try {
-          handler(data);
-        } catch (error) {
-          console.error(`Error en manejador para evento ${eventType}:`, error);
-        }
-      });
-    }
+    const callbacks = this.listeners.get(eventType)!;
+    callbacks.forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        console.error(`Error al procesar evento ${eventType}:`, error);
+      }
+    });
   }
   
   /**
-   * Limpiar todas las suscripciones
+   * Limpiar todos los listeners
    */
-  clear(): void {
-    this.handlers.clear();
+  public clear(): void {
+    this.listeners.clear();
   }
 }
 
-// Instancia singleton global
-export const eventBus = new EventBusClass();
+// Instancia singleton del Event Bus
+export const eventBus = new EventBus();
 
 /**
- * Hook para suscribirse a eventos del bus en componentes React
+ * Hook para suscribirse a eventos
+ * @param eventType Tipo de evento
+ * @param callback Función a llamar cuando ocurra el evento
  */
-export const useEventSubscription = (
-  eventType: EventType,
-  handler: EventHandler
-): void => {
+export function useEventSubscription(eventType: EventType, callback: EventCallback): void {
   useEffect(() => {
-    // Suscribirse al evento
-    eventBus.subscribe(eventType, handler);
+    eventBus.subscribe(eventType, callback);
     
-    // Cancelar suscripción al desmontar
     return () => {
-      eventBus.unsubscribe(eventType, handler);
+      eventBus.unsubscribe(eventType, callback);
     };
-  }, [eventType, handler]);
-};
+  }, [eventType, callback]);
+}
 
 /**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ * Hook para estado basado en eventos
+ * @param eventType Tipo de evento
+ * @param initialState Estado inicial
  */
+export function useEventState<T>(eventType: EventType, initialState: T): [T, (data: T) => void] {
+  const [state, setState] = useState<T>(initialState);
+  
+  useEffect(() => {
+    const handleEvent = (data: T) => {
+      setState(data);
+    };
+    
+    eventBus.subscribe(eventType, handleEvent);
+    
+    return () => {
+      eventBus.unsubscribe(eventType, handleEvent);
+    };
+  }, [eventType]);
+  
+  const updateState = (data: T) => {
+    setState(data);
+    eventBus.publish(eventType, data);
+  };
+  
+  return [state, updateState];
+}

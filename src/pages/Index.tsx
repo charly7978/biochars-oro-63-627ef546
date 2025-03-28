@@ -4,7 +4,7 @@
  * Displays vital signs monitor with camera and results
  */
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
@@ -14,7 +14,7 @@ import { useVitalSigns } from "@/context/VitalSignsContext";
 import { measurementManager } from "@/modules/results/MeasurementManager";
 import { vitalSignsProcessor } from "@/modules/vital-signs/VitalSignsProcessor";
 import { VitalSignsResult } from "@/modules/types/signal";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "@/components/ui/use-toast";
 
 // Component that uses the context
 const VitalSignsMonitor = () => {
@@ -45,11 +45,26 @@ const VitalSignsMonitor = () => {
   // Flag for arrhythmia detection
   const isArrhythmia = vitalSigns.arrhythmiaStatus?.includes("ARRITMIA DETECTADA") || false;
 
+  useEffect(() => {
+    console.log("Estado actual de monitoreo:", { 
+      isMonitoring, 
+      isCameraOn, 
+      signalQuality, 
+      lastSignal: lastSignal ? {
+        fingerDetected: lastSignal.fingerDetected,
+        quality: lastSignal.quality
+      } : null
+    });
+  }, [isMonitoring, isCameraOn, signalQuality, lastSignal]);
+
   const handleToggleMonitoring = useCallback(() => {
     setIsButtonDisabled(true);
     
     try {
+      console.log("Intentando cambiar estado de monitoreo. Estado actual:", isMonitoring);
+      
       if (isMonitoring) {
+        console.log("Deteniendo monitoreo...");
         stopMonitoring();
         toast({
           title: "Monitoreo detenido",
@@ -57,6 +72,7 @@ const VitalSignsMonitor = () => {
           variant: "default",
         });
       } else {
+        console.log("Iniciando monitoreo...");
         // Inicializar el procesador antes de iniciar el monitoreo
         vitalSignsProcessor.initialize();
         startMonitoring();
@@ -82,6 +98,7 @@ const VitalSignsMonitor = () => {
     setIsButtonDisabled(true);
     
     try {
+      console.log("Reiniciando todo el sistema...");
       measurementManager.reset();
       vitalSignsProcessor.fullReset();
       toast({
@@ -102,6 +119,7 @@ const VitalSignsMonitor = () => {
   }, []);
   
   const handleStreamReady = useCallback((stream: MediaStream) => {
+    console.log("Stream listo, informando al measurement manager...");
     measurementManager.handleStreamReady(stream);
   }, []);
 
