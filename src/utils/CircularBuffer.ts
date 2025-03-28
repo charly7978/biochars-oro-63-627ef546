@@ -4,7 +4,7 @@ export interface PPGDataPoint {
   value: number;
 }
 
-export class CircularBuffer<T = PPGDataPoint> {
+export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
   private buffer: T[];
   private capacity: number;
   private index: number;
@@ -43,11 +43,6 @@ export class CircularBuffer<T = PPGDataPoint> {
     }
     
     return this.buffer.slice(0, this.index).filter(p => p !== undefined);
-  }
-
-  // Adding getValues() method as an alias to getPoints() for compatibility
-  public getValues(): T[] {
-    return this.getPoints();
   }
 
   public clear(): void {
