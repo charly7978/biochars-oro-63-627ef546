@@ -23,7 +23,6 @@ export const useHeartBeatProcessor = () => {
   const processorRef = useRef<HeartBeatProcessor>(new HeartBeatProcessor());
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioInitializedRef = useRef<boolean>(false);
-  const lastPeakRef = useRef<number | null>(null);
 
   // Inicializar el contexto de audio para asegurar que el sonido funcione
   useEffect(() => {
@@ -133,26 +132,6 @@ export const useHeartBeatProcessor = () => {
       setBpm(result.bpm);
     }
     
-    // Si detectamos un pico (isPeak), reproducimos el beep manualmente
-    // Esto asegura que el beep se sincronice con el pico máximo visualizado en el gráfico
-    if (result.isPeak && audioContextRef.current && audioInitializedRef.current) {
-      // Verificamos que el pico actual sea diferente al último
-      const now = Date.now();
-      if (!lastPeakRef.current || (now - lastPeakRef.current) > 300) {
-        // Reproducimos el beep directamente por el audio context
-        try {
-          // Solo reproducimos el beep si no estamos en warmup
-          if (processor.isReady()) {
-            processor.playBeep(0.35);
-            lastPeakRef.current = now;
-            console.log("Manual beep played at peak detection", { timestamp: now });
-          }
-        } catch (err) {
-          console.error("Error playing manual beep at peak:", err);
-        }
-      }
-    }
-    
     // Actualizar estado de arritmia si está presente en el resultado
     if (result.arrhythmiaCount > 0 && !isArrhythmia) {
       setIsArrhythmia(true);
@@ -174,7 +153,6 @@ export const useHeartBeatProcessor = () => {
       setBpm(0);
       setIsArrhythmia(false);
       setArrhythmiaData(null);
-      lastPeakRef.current = null;
       
       // Reiniciar conexión de audio
       if (audioContextRef.current) {
@@ -187,7 +165,6 @@ export const useHeartBeatProcessor = () => {
   const startProcessing = useCallback(() => {
     setIsProcessing(true);
     reset();
-    lastPeakRef.current = null;
     
     // Asegurar que el audio esté habilitado al comenzar
     if (audioContextRef.current && processorRef.current) {
