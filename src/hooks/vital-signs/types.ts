@@ -1,56 +1,35 @@
 
 /**
- * Types for vital signs processing
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE!
+ * 
+ * This file contains typescript interfaces for the vital signs processor
  */
 
-export interface HeartRateResult {
-  bpm: number;
-  confidence: number;
-  isPeak: boolean;
-  isArrhythmia: boolean;
-  arrhythmiaCount: number;
-}
-
-export interface OxygenSaturationResult {
-  spO2: number;
-  confidence: number;
-}
-
-export interface RespirationRateResult {
-  rpm: number;
-  confidence: number;
-}
-
-export interface BloodPressureResult {
-  systolic: number;
-  diastolic: number;
-  confidence: number;
-}
-
-export interface StressLevelResult {
-  level: number;
-  confidence: number;
-}
-
 export interface VitalSignsResult {
-  heartRate: HeartRateResult;
-  oxygenSaturation: OxygenSaturationResult;
-  respirationRate: RespirationRateResult;
-  bloodPressure: BloodPressureResult;
-  stressLevel: StressLevelResult;
-}
-
-export interface ArrhythmiaWindow {
-  start: number;
-  end: number;
+  spo2: number;
+  pressure: string;
+  arrhythmiaStatus: string;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  lastArrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null;
 }
 
 export interface UseVitalSignsProcessorReturn {
-  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => any;
-  reset: () => any;
+  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
+  reset: () => VitalSignsResult | null;
   fullReset: () => void;
   arrhythmiaCounter: number;
   lastValidResults: VitalSignsResult | null;
-  arrhythmiaWindows: ArrhythmiaWindow[];
-  debugInfo: any;
+  arrhythmiaWindows: Array<{start: number, end: number}>;
+  debugInfo: {
+    processedSignals: number;
+    signalLog: Array<{timestamp: number, value: number, result: any}>;
+  };
 }

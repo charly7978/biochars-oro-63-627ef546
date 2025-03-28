@@ -168,11 +168,20 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
       
       // Important: Make sure the HeartBeatProcessor knows about arrhythmia
-      if (processorRef.current && result.isArrhythmia && typeof processorRef.current.getArrhythmiaCounter === 'function') {
+      if (processorRef.current && result.isArrhythmia) {
         console.log("Arrhythmia detected! Updating processor counter.");
-        // Instead of trying to modify private property, use the method if it exists
-        // The processor should handle the counter increment internally
-        processorRef.current.updateArrhythmiaCounter?.();
+        // Safely increment arrhythmia counter
+        try {
+          const currentCount = processorRef.current.getArrhythmiaCounter ? 
+            processorRef.current.getArrhythmiaCounter() : 0;
+          
+          // Check if there's a method to handle arrhythmia count increments
+          if (typeof processorRef.current.incrementArrhythmiaCounter === 'function') {
+            processorRef.current.incrementArrhythmiaCounter();
+          }
+        } catch (err) {
+          console.error("Error handling arrhythmia counter:", err);
+        }
       }
     }
 

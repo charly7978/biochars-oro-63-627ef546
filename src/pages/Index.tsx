@@ -8,7 +8,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { VitalSignsResult } from "@/hooks/vital-signs/types";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -66,8 +66,13 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      setVitalSigns(lastValidResults);
-      setShowResults(true);
+      if (lastValidResults) {
+        setVitalSigns(prevState => ({
+          ...prevState,
+          ...lastValidResults
+        }));
+        setShowResults(true);
+      }
     }
   }, [lastValidResults, isMonitoring]);
 
@@ -83,7 +88,10 @@ const Index = () => {
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
-            setVitalSigns(vitals);
+            setVitalSigns(prevState => ({
+              ...prevState,
+              ...vitals
+            }));
           }
         }
         
@@ -149,7 +157,10 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      setVitalSigns(savedResults);
+      setVitalSigns(prevState => ({
+        ...prevState,
+        ...savedResults
+      }));
       setShowResults(true);
     }
     

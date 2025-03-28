@@ -85,7 +85,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     weakSignalsCountRef.current = updatedWeakSignalsCount;
     
     // Process signal directly - no simulation
-    let result = processVitalSignal(value, rrData);
+    let result = processVitalSignal(value, rrData, isWeakSignal);
     const currentTime = Date.now();
     
     // If arrhythmia is detected in real data, register visualization window
