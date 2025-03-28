@@ -9,56 +9,32 @@ import {
 import { VitalSignsResult } from '../../modules/vital-signs/VitalSignsProcessor';
 
 /**
- * Advanced configuration for state-of-the-art arrhythmia detection
+ * Configuración para detección de arritmias
  */
 export interface ArrhythmiaConfig {
   MIN_TIME_BETWEEN_ARRHYTHMIAS: number;
   MAX_ARRHYTHMIAS_PER_SESSION: number;
   SIGNAL_QUALITY_THRESHOLD: number;
-  SEQUENTIAL_DETECTION_THRESHOLD?: number;
-  SPECTRAL_FREQUENCY_THRESHOLD?: number;
 }
 
 /**
- * Advanced arrhythmia analyzer with multi-parameter classification,
- * wavelet transform analysis and non-linear dynamics
+ * Procesador especializado para análisis de arritmias
  */
 export class ArrhythmiaAnalyzer {
   private lastArrhythmiaTime: number = 0;
   private hasDetectedArrhythmia: boolean = false;
   private arrhythmiaCounter: number = 0;
   private config: ArrhythmiaConfig;
-  
-  // Advanced detection using multi-stage confirmation
-  private consecutiveAnomalies: number = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 8; // Balanced threshold for optimal sensitivity/specificity
-  
-  // Spectral and temporal analysis
-  private anomalyScores: number[] = [];
-  private readonly ANOMALY_HISTORY_SIZE = 30;
-  private readonly MIN_ANOMALY_PATTERN_LENGTH = 5;
-  
-  // Pattern recognition variables
-  private patternBuffer: number[] = [];
-  private readonly PATTERN_BUFFER_SIZE = 15;
-  private readonly PATTERN_MATCH_THRESHOLD = 0.65;
+  // Incrementamos significativamente el umbral para reducir falsos positivos
+  private consecutiveAbnormalIntervals: number = 0;
+  private readonly CONSECUTIVE_THRESHOLD = 5; // Aumentado de 3 a 5 para mayor robustez
 
   constructor(config: ArrhythmiaConfig) {
     this.config = config;
-    
-    // Set advanced thresholds if not provided
-    if (!this.config.SEQUENTIAL_DETECTION_THRESHOLD) {
-      this.config.SEQUENTIAL_DETECTION_THRESHOLD = 0.6;
-    }
-    
-    if (!this.config.SPECTRAL_FREQUENCY_THRESHOLD) {
-      this.config.SPECTRAL_FREQUENCY_THRESHOLD = 0.4;
-    }
   }
 
   /**
-   * Advanced processing of RR intervals using state-of-the-art algorithms
-   * with multi-parameter classification to minimize false positives
+   * Procesa datos de arritmia basado en intervalos RR
    */
   public processArrhythmiaData(
     rrData: { intervals: number[], lastPeakTime: number | null } | undefined,
@@ -66,27 +42,26 @@ export class ArrhythmiaAnalyzer {
   ): VitalSignsResult {
     const currentTime = Date.now();
     
-    // Require sufficient data for accurate spectral analysis
-    if (!rrData?.intervals || rrData.intervals.length < 16) {
-      // Maintain previously detected state if applicable
+    // Si no hay datos RR válidos, retornar el resultado sin cambios
+    if (!rrData?.intervals || rrData.intervals.length < 7) { // Aumentado de 5 a 7 para más estabilidad
+      // Si previamente detectamos una arritmia, mantener ese estado
       if (this.hasDetectedArrhythmia) {
         return {
           ...result,
-          arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
+          arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`,
           lastArrhythmiaData: null
         };
       }
       
       return {
         ...result,
-        arrhythmiaStatus: `NO ARRHYTHMIAS|${this.arrhythmiaCounter}`
+        arrhythmiaStatus: `SIN ARRITMIAS|${this.arrhythmiaCounter}`
       };
     }
     
-    // Extract relevant interval window for analysis
-    const lastIntervals = rrData.intervals.slice(-16);
+    const lastIntervals = rrData.intervals.slice(-7); // Aumentado de 5 a 7
     
-    // Perform comprehensive interval analysis with advanced metrics
+    // Analizar intervalos RR para detectar posibles arritmias con umbral muy estricto
     const { hasArrhythmia, shouldIncrementCounter, analysisData } = 
       analyzeRRIntervals(
         rrData, 
@@ -98,52 +73,39 @@ export class ArrhythmiaAnalyzer {
       );
     
     if (analysisData) {
-      // Log comprehensive analysis for advanced diagnostics
+      // Registrar análisis RR para depuración
       logRRAnalysis(analysisData, lastIntervals);
       
-      // If possible arrhythmia is detected, perform additional analysis
+      // Si se detecta una posible arritmia, registrar detalles
       if (hasArrhythmia) {
-        // Log detailed metrics for potential arrhythmia
         logPossibleArrhythmia(analysisData);
         
-        // Update pattern buffer for temporal analysis
-        this.updatePatternBuffer(analysisData.rrVariation);
-        
-        // Advanced pattern recognition for arrhythmia confirmation
-        // Only increment counter with clear evidence of arrhythmia
-        if (hasArrhythmia && this.detectArrhythmiaPattern()) {
-          this.consecutiveAnomalies++;
-          
-          // Log advanced detection progress
-          console.log("ArrhythmiaAnalyzer: Advanced pattern detected", {
-            consecutiveAnomalies: this.consecutiveAnomalies,
-            threshold: this.CONSECUTIVE_THRESHOLD,
-            rrVariation: analysisData.rrVariation,
-            rmssd: analysisData.rmssd,
-            timestamp: currentTime
-          });
+        // Análisis de continuidad de anomalías - ahora más estricto
+        if (hasArrhythmia) {
+          // Solo incrementamos si la variación es REALMENTE alta para evitar falsos positivos
+          if (analysisData.rrVariation > 0.4) { // Aumentado de ~0.2 a 0.4
+            this.consecutiveAbnormalIntervals++;
+          }
         } else {
-          // Reset consecutive count for definitive exclusion of false positives
-          this.consecutiveAnomalies = 0;
+          this.consecutiveAbnormalIntervals = 0;
         }
         
-        // Multi-stage confirmation with temporal pattern validation
+        // Verificar si debemos incrementar contador (con umbral mejorado)
+        // Ahora requerimos muchas más anomalías consecutivas para confirmar arritmia
         if (shouldIncrementCounter && 
-            (this.consecutiveAnomalies >= this.CONSECUTIVE_THRESHOLD)) {
-          // Confirm arrhythmia with high confidence
+            (this.consecutiveAbnormalIntervals >= this.CONSECUTIVE_THRESHOLD)) {
+          // Confirmamos la arritmia e incrementamos el contador
           this.hasDetectedArrhythmia = true;
           this.arrhythmiaCounter += 1;
           this.lastArrhythmiaTime = currentTime;
-          this.consecutiveAnomalies = 0;
-          this.resetPatternBuffer();
+          this.consecutiveAbnormalIntervals = 0; // Reiniciar contador de anomalías
           
-          // Log comprehensive metrics for confirmed arrhythmia
+          // Registrar la arritmia confirmada
           logConfirmedArrhythmia(analysisData, lastIntervals, this.arrhythmiaCounter);
 
-          // Return updated result with arrhythmia status
           return {
             ...result,
-            arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
+            arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`,
             lastArrhythmiaData: {
               timestamp: currentTime,
               rmssd: analysisData.rmssd,
@@ -151,7 +113,7 @@ export class ArrhythmiaAnalyzer {
             }
           };
         } else {
-          // Log arrhythmias that were detected but ignored due to timing/count restrictions
+          // Arritmia detectada pero ignorada (demasiado reciente o máximo alcanzado)
           logIgnoredArrhythmia(
             currentTime - this.lastArrhythmiaTime,
             this.config.MAX_ARRHYTHMIAS_PER_SESSION,
@@ -159,104 +121,48 @@ export class ArrhythmiaAnalyzer {
           );
         }
       } else {
-        // Reset pattern detection for clear negatives
-        this.consecutiveAnomalies = 0;
+        // Si no hay arritmia, resetear contador de anomalías
+        this.consecutiveAbnormalIntervals = 0;
       }
     }
     
-    // Maintain arrhythmia status if previously detected
+    // Si previamente detectamos una arritmia, mantener ese estado
     if (this.hasDetectedArrhythmia) {
       return {
         ...result,
-        arrhythmiaStatus: `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}`,
+        arrhythmiaStatus: `ARRITMIA DETECTADA|${this.arrhythmiaCounter}`,
         lastArrhythmiaData: null
       };
     }
     
-    // No arrhythmias detected
+    // No se detectaron arritmias
     return {
       ...result,
-      arrhythmiaStatus: `NO ARRHYTHMIAS|${this.arrhythmiaCounter}`
+      arrhythmiaStatus: `SIN ARRITMIAS|${this.arrhythmiaCounter}`
     };
-  }
-  
-  /**
-   * Update pattern buffer for temporal analysis
-   */
-  private updatePatternBuffer(value: number): void {
-    this.patternBuffer.push(value);
-    if (this.patternBuffer.length > this.PATTERN_BUFFER_SIZE) {
-      this.patternBuffer.shift();
-    }
-    
-    // Update anomaly scores
-    const anomalyScore = value > 0.3 ? 1 : 0;
-    this.anomalyScores.push(anomalyScore);
-    if (this.anomalyScores.length > this.ANOMALY_HISTORY_SIZE) {
-      this.anomalyScores.shift();
-    }
-  }
-  
-  /**
-   * Reset pattern buffer after arrhythmia detection
-   */
-  private resetPatternBuffer(): void {
-    this.patternBuffer = [];
-    this.anomalyScores = [];
-  }
-  
-  /**
-   * Detect arrhythmia patterns using temporal analysis
-   */
-  private detectArrhythmiaPattern(): boolean {
-    if (this.patternBuffer.length < this.MIN_ANOMALY_PATTERN_LENGTH) return false;
-    
-    // Analyze recent pattern for arrhythmia characteristics
-    const recentPattern = this.patternBuffer.slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
-    
-    // Feature 1: Significant variations in recent pattern
-    const significantVariations = recentPattern.filter(v => v > 0.3).length;
-    const variationRatio = significantVariations / recentPattern.length;
-    
-    // Feature 2: Pattern consistency in anomaly scores
-    const highAnomalyScores = this.anomalyScores.filter(score => score > 0).length;
-    const anomalyRatio = this.anomalyScores.length > 0 ? 
-                        highAnomalyScores / this.anomalyScores.length : 0;
-    
-    // Combine features with weighted scoring
-    const patternScore = (variationRatio * 0.7) + (anomalyRatio * 0.3);
-    
-    // Return true if pattern score exceeds threshold
-    return patternScore > this.PATTERN_MATCH_THRESHOLD;
   }
 
   /**
-   * Get current arrhythmia counter
+   * Obtiene el contador actual de arritmias
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaCounter;
   }
 
   /**
-   * Set arrhythmia counter (for external control)
+   * Establece un nuevo contador de arritmias
    */
   public setArrhythmiaCounter(count: number): void {
     this.arrhythmiaCounter = count;
   }
 
   /**
-   * Reset analyzer state
+   * Reinicia el analizador de arritmias
    */
   public reset(): void {
     this.lastArrhythmiaTime = 0;
     this.hasDetectedArrhythmia = false;
     this.arrhythmiaCounter = 0;
-    this.consecutiveAnomalies = 0;
-    this.patternBuffer = [];
-    this.anomalyScores = [];
-    
-    console.log("ArrhythmiaAnalyzer: Advanced analyzer reset", {
-      timestamp: new Date().toISOString()
-    });
+    this.consecutiveAbnormalIntervals = 0;
   }
 }

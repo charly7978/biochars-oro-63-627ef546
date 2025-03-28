@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { getSignalColor, isPointInArrhythmiaWindow } from '../utils/displayOptimizer';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -159,7 +158,7 @@ const PPGSignalMeter = memo(({
     }
     
     arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(
-      segment => now - (segment.endTime || now) < 3000
+      segment => now - (segment.endTime || now) < WINDOW_WIDTH_MS
     );
   }, [isArrhythmia]);
 
@@ -333,17 +332,17 @@ const PPGSignalMeter = memo(({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
-  const isPointInArrhythmiaSegment = useCallback((pointTime: number, now: number): boolean => {
+  const isPointInArrhythmiaWindow = useCallback((pointTime: number, now: number): boolean => {
     const isNearArrhythmicPeak = peaksRef.current.some(peak => 
-      peak.isArrhythmia && Math.abs(pointTime - peak.time) < 300
+      peak.isArrhythmia && 
+      Math.abs(pointTime - peak.time) < ARRHYTHMIA_DURATION_MS
     );
     
     if (isNearArrhythmicPeak) return true;
     
     return arrhythmiaSegmentsRef.current.some(segment => {
       const endTime = segment.endTime || now;
-      const segmentAge = now - endTime;
-      return segmentAge < 3000 && pointTime >= segment.startTime && pointTime <= endTime;
+      return pointTime >= segment.startTime && pointTime <= endTime;
     });
   }, []);
 
@@ -405,7 +404,7 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
-    const pointIsArrhythmia = isArrhythmia;
+    const pointIsArrhythmia = isPointInArrhythmiaWindow(now, now);
     
     const dataPoint: PPGDataPointExtended = {
       time: now,
@@ -425,7 +424,7 @@ const PPGSignalMeter = memo(({
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
-        point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
+        point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaWindow(point.time, now);
         
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2) - 40 - point.value;
@@ -433,7 +432,7 @@ const PPGSignalMeter = memo(({
         if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
           if (segmentPoints.length > 0) {
             renderCtx.beginPath();
-            renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+            renderCtx.strokeStyle = currentSegmentIsArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
             renderCtx.lineWidth = 2;
             renderCtx.lineJoin = 'round';
             renderCtx.lineCap = 'round';
@@ -459,7 +458,7 @@ const PPGSignalMeter = memo(({
       
       if (segmentPoints.length > 0) {
         renderCtx.beginPath();
-        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+        renderCtx.strokeStyle = currentSegmentIsArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
         renderCtx.lineWidth = 2;
         renderCtx.lineJoin = 'round';
         renderCtx.lineCap = 'round';
@@ -482,8 +481,6 @@ const PPGSignalMeter = memo(({
           const y = (canvas.height / 2) - 40 - peak.value;
           
           if (x >= 0 && x <= canvas.width) {
-            const peakColor = getSignalColor(!!peak.isArrhythmia);
-            
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
@@ -495,19 +492,19 @@ const PPGSignalMeter = memo(({
               renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
               renderCtx.fill();
               
-              renderCtx.fillStyle = peakColor;
+              renderCtx.fillStyle = ARRHYTHMIA_COLOR;
               renderCtx.beginPath();
               renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
             } else {
-              renderCtx.fillStyle = peakColor;
+              renderCtx.fillStyle = NORMAL_COLOR;
               renderCtx.beginPath();
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
             }
             
             renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = peak.isArrhythmia ? '#ea384c' : '#000000';
+            renderCtx.fillStyle = peak.isArrhythmia ? ARRHYTHMIA_COLOR : '#000000';
             renderCtx.textAlign = 'center';
             renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
           }
@@ -524,7 +521,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaSegment]);
+  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaWindow]);
 
   useEffect(() => {
     renderSignal();

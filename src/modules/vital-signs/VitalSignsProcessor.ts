@@ -28,8 +28,9 @@ export interface VitalSignsResult {
 }
 
 /**
- * Main vital signs processor
- * Integrates different specialized processors to calculate health metrics
+ * Procesador principal de signos vitales
+ * Integra los diferentes procesadores especializados para calcular métricas de salud
+ * con enfoque en precisión y honestidad de los resultados
  */
 export class VitalSignsProcessor {
   private spo2Processor: SpO2Processor;
@@ -41,77 +42,72 @@ export class VitalSignsProcessor {
   
   private lastValidResults: VitalSignsResult | null = null;
   
-  // Thresholds for valid measurements adjusted for real PPG measurements
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.02;
-  private readonly MIN_CONFIDENCE_THRESHOLD = 0.25;
+  // Umbrales de señal mínima para considerar mediciones válidas
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.4;
 
   /**
-   * Constructor that initializes all specialized processors
+   * Constructor que inicializa el procesador interno refactorizado
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing new instance");
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
+    
+    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
   }
   
   /**
-   * Processes the PPG signal and calculates all vital signs
-   * Implementing improved validation and stability strategies
+   * Procesa la señal PPG y calcula todos los signos vitales
+   * Implementando estrategias mejoradas de validación y estabilidad
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Apply filtering to the PPG signal
+    // Verificar calidad mínima de señal
+    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE) {
+      return this.getLastValidResults() || this.createEmptyResults();
+    }
+
+    // Aplicar filtrado a la señal PPG
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // Process arrhythmia data if available
+    // Procesar datos de arritmia si están disponibles
     const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
     
-    // Get PPG values for processing
+    // Obtener los valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
     
-    // Limit the PPG values buffer
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
-    }
-    
-    // Check minimum signal quality
-    if (ppgValue < this.MIN_SIGNAL_AMPLITUDE && ppgValues.length < 60) {
+    // Solo procesar si hay suficientes datos de PPG
+    if (ppgValues.length < 100) {
       return this.getLastValidResults() || this.createEmptyResults();
     }
     
-    // Only process with enough data
-    if (ppgValues.length < 30) {
-      return this.getLastValidResults() || this.createEmptyResults();
-    }
-    
-    // Calculate SpO2
+    // Calcular SpO2
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-60));
     
-    // Calculate blood pressure
+    // Calcular presión arterial
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-120));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose
+    // Calcular glucosa con validación de confianza
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calculate lipids
+    // Calcular lípidos con validación de confianza
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate overall confidence
+    // Calcular confianza general basada en promedios ponderados
     const overallConfidence = (glucoseConfidence * 0.5) + (lipidsConfidence * 0.5);
 
-    // Prepare result with all metrics
+    // Preparar resultado con todas las métricas calculadas
     const result: VitalSignsResult = {
       spo2,
       pressure,
@@ -126,7 +122,7 @@ export class VitalSignsProcessor {
       }
     };
     
-    // Update valid results if there is enough confidence
+    // Solo actualizar resultados válidos si hay suficiente confianza
     if (this.isValidMeasurement(result)) {
       this.lastValidResults = { ...result };
     }
@@ -135,7 +131,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Checks if a measurement has enough quality to be considered valid
+   * Verifica si una medición tiene suficiente calidad para considerarse válida
    */
   private isValidMeasurement(result: VitalSignsResult): boolean {
     const { spo2, pressure, glucose, lipids, confidence } = result;
@@ -152,7 +148,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Creates an empty result for when there is no valid data
+   * Crea un resultado vacío para cuando no hay datos válidos
    */
   private createEmptyResults(): VitalSignsResult {
     return {
@@ -168,7 +164,7 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Reset the processor while maintaining the last valid results
+   * Reinicia el procesador manteniendo los últimos resultados válidos
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -182,14 +178,14 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Get the last valid results
+   * Obtiene los últimos resultados válidos
    */
   public getLastValidResults(): VitalSignsResult | null {
     return this.lastValidResults;
   }
   
   /**
-   * Completely reset the processor, removing previous data and results
+   * Reinicia completamente el procesador, eliminando datos y resultados previos
    */
   public fullReset(): void {
     this.reset();

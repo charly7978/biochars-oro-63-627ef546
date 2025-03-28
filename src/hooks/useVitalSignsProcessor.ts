@@ -2,8 +2,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
-import { ArrhythmiaAnalyzer } from './arrhythmia/ArrhythmiaAnalyzer';
-import { ArrhythmiaConfig } from './arrhythmia/types';
+import { ArrhythmiaAnalyzer, ArrhythmiaConfig } from './arrhythmia/arrhythmiaAnalysis';
 
 interface ArrhythmiaWindow {
   start: number;
@@ -11,135 +10,121 @@ interface ArrhythmiaWindow {
 }
 
 /**
- * Advanced hook for processing vital signs with cutting-edge algorithms
- * Implements natural signal processing and accurate arrhythmia detection
+ * Custom hook para procesar signos vitales con algoritmos avanzados
+ * Usa procesamiento de señal mejorado y detección de arritmias basada en investigación médica
  */
 export const useVitalSignsProcessor = () => {
-  // State management
+  // State
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
-  // References for internal state
+  // Referencias para estado interno
   const processorRef = useRef<VitalSignsProcessor | null>(null);
   const arrhythmiaAnalyzerRef = useRef<ArrhythmiaAnalyzer | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Advanced configuration with optimized parameters
+  // Configuración avanzada basada en guías clínicas
   const arrhythmiaConfig = useRef<ArrhythmiaConfig>({
-    MIN_TIME_BETWEEN_ARRHYTHMIAS: 10000, // 10 seconds between arrhythmias
-    MAX_ARRHYTHMIAS_PER_SESSION: 10,     // Maximum 10 per session to avoid data loss
-    SIGNAL_QUALITY_THRESHOLD: 0.60,      // Adjusted quality threshold
-    SEQUENTIAL_DETECTION_THRESHOLD: 0.50, // Sequential detection threshold
-    SPECTRAL_FREQUENCY_THRESHOLD: 0.35    // Frequency validation threshold
+    // Aumentamos el tiempo mínimo entre arritmias para reducir falsos positivos
+    MIN_TIME_BETWEEN_ARRHYTHMIAS: 5000, // Aumentado de 1000ms a 5000ms
+    MAX_ARRHYTHMIAS_PER_SESSION: 5,    // Reducido de 20 a 5 para ser más selectivos
+    SIGNAL_QUALITY_THRESHOLD: 0.7      // Aumentado de 0.55 a 0.7 para mayor calidad
   });
   
-  // Initialize processor components
+  // Inicialización
   useEffect(() => {
-    console.log("useVitalSignsProcessor: Initializing processor with new configuration", {
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Create new instances to ensure clean state
     processorRef.current = new VitalSignsProcessor();
     arrhythmiaAnalyzerRef.current = new ArrhythmiaAnalyzer(arrhythmiaConfig.current);
     
+    console.log("useVitalSignsProcessor: Hook inicializado", {
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString(),
+      parametros: { ...arrhythmiaConfig.current }
+    });
+    
     return () => {
-      console.log("useVitalSignsProcessor: Processor cleanup", {
+      console.log("useVitalSignsProcessor: Hook destruido", {
         sessionId: sessionId.current,
-        totalArrhythmias: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
-        processedSignals: processedSignals.current,
+        arritmiasTotales: arrhythmiaAnalyzerRef.current?.getArrhythmiaCounter() || 0,
+        señalesProcesadas: processedSignals.current,
         timestamp: new Date().toISOString()
       });
     };
   }, []);
   
   /**
-   * Register a new arrhythmia window for visualization
+   * Registra una nueva ventana de arritmia - MEJORADO para evitar falsos positivos
    */
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    // Limit to most recent arrhythmia windows for visualization
+    // Verificamos la calidad y número de ventanas para evitar saturación
+    const currentTime = Date.now();
+    
+    // Limitamos a las últimas 3 ventanas de arritmias para evitar que todo se vuelva rojo
     setArrhythmiaWindows(prev => {
       const newWindows = [...prev, { start, end }];
-      return newWindows.slice(-3); // Keep only the 3 most recent
+      // Solo mantenemos las 3 ventanas más recientes
+      return newWindows.slice(-3);
     });
   }, []);
   
   /**
-   * Process PPG signal using advanced algorithms for vital signs extraction
-   * and arrhythmia detection with real-time classification
+   * Procesa la señal con algoritmos mejorados
    */
   const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
-    if (!processorRef.current || !arrhythmiaAnalyzerRef.current) {
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
-    }
+    if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
+    };
     
     processedSignals.current++;
     
-    // Processing log for diagnostics
-    if (processedSignals.current % 30 === 0) {
-      console.log("useVitalSignsProcessor: Processing signal", {
-        inputValue: value,
-        rrDataPresent: !!rrData,
-        rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: arrhythmiaAnalyzerRef.current.getArrhythmiaCount(),
-        signalNumber: processedSignals.current,
-        sessionId: sessionId.current
-      });
-    }
+    // Registrar procesamiento de señal
+    console.log("useVitalSignsProcessor: Procesando señal", {
+      valorEntrada: value,
+      rrDataPresente: !!rrData,
+      intervalosRR: rrData?.intervals.length || 0,
+      ultimosIntervalos: rrData?.intervals.slice(-3) || [],
+      contadorArritmias: arrhythmiaAnalyzerRef.current.getArrhythmiaCounter(),
+      señalNúmero: processedSignals.current,
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
+    });
     
-    // Process signal through main processor
+    // Procesar señal a través del procesador de signos vitales
     let result = processorRef.current.processSignal(value, rrData);
     const currentTime = Date.now();
     
-    // Process arrhythmias only if there is enough data
-    if (rrData && rrData.intervals.length >= 6) {
-      // Analyze data with advanced algorithms
-      const arrhythmiaResult = arrhythmiaAnalyzerRef.current.analyzeRRData(rrData, result);
-      result = arrhythmiaResult;
-      
-      // If arrhythmia is detected, register visualization window
-      if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
-        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-        
-        // Dynamic window based on heart rate
-        let windowWidth = 600; // 600ms default window
-        
-        // Adjust width based on RR intervals
-        if (rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-5);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          // Window proportional to RR interval
-          windowWidth = Math.max(400, Math.min(1000, avgInterval * 1.2));
-        }
-        
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
-      }
+    // Procesar datos de arritmia si están disponibles
+    result = arrhythmiaAnalyzerRef.current.processArrhythmiaData(rrData, result);
+    
+    // Si se detectó arritmia y tenemos datos, registrar la ventana de arritmia
+    // MEJORADO para crear ventanas más precisas
+    if (result.arrhythmiaStatus.includes("ARRITMIA DETECTADA") && result.lastArrhythmiaData) {
+      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+      // Crear una ventana más corta: 1s en total (antes era 3s)
+      addArrhythmiaWindow(arrhythmiaTime - 500, arrhythmiaTime + 500);
     }
     
-    // Update signal log
+    // Actualizar log de señales
     signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
     
-    // Store valid results
+    // Si tenemos un resultado válido, guardarlo
     if (result.spo2 > 0 && result.glucose > 0 && result.lipids.totalCholesterol > 0) {
-      if (processedSignals.current % 50 === 0) {
-        console.log("useVitalSignsProcessor: Valid result detected", {
-          spo2: result.spo2,
-          pressure: result.pressure,
-          timestamp: new Date().toISOString()
-        });
-      }
+      console.log("useVitalSignsProcessor: Resultado válido detectado", {
+        spo2: result.spo2,
+        presión: result.pressure,
+        glucosa: result.glucose,
+        lípidos: result.lipids,
+        timestamp: new Date().toISOString()
+      });
       setLastValidResults(result);
     }
     
@@ -147,32 +132,64 @@ export const useVitalSignsProcessor = () => {
   }, [addArrhythmiaWindow]);
 
   /**
-   * Perform soft reset - maintain results but reinitialize processors
+   * Soft reset: mantener los resultados pero reiniciar los procesadores
    */
   const reset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return null;
     
-    console.log("useVitalSignsProcessor: Soft reset initiated");
+    console.log("useVitalSignsProcessor: Reseteo suave", {
+      estadoAnterior: {
+        arritmias: arrhythmiaAnalyzerRef.current.getArrhythmiaCounter(),
+        últimosResultados: lastValidResults ? {
+          spo2: lastValidResults.spo2,
+          presión: lastValidResults.pressure
+        } : null
+      },
+      timestamp: new Date().toISOString()
+    });
     
     const savedResults = processorRef.current.reset();
     arrhythmiaAnalyzerRef.current.reset();
     setArrhythmiaWindows([]);
     
     if (savedResults) {
+      console.log("useVitalSignsProcessor: Guardando resultados tras reset", {
+        resultadosGuardados: {
+          spo2: savedResults.spo2,
+          presión: savedResults.pressure,
+          estadoArritmia: savedResults.arrhythmiaStatus
+        },
+        timestamp: new Date().toISOString()
+      });
+      
       setLastValidResults(savedResults);
+    } else {
+      console.log("useVitalSignsProcessor: No hay resultados para guardar tras reset", {
+        timestamp: new Date().toISOString()
+      });
     }
     
-    console.log("Soft reset completed - keeping results");
+    console.log("Reseteo suave completado - manteniendo resultados");
     return savedResults;
-  }, []);
+  }, [lastValidResults]);
   
   /**
-   * Perform full reset - clear all data and reinitialize processors
+   * Hard reset: borrar todos los resultados y reiniciar
    */
   const fullReset = useCallback(() => {
     if (!processorRef.current || !arrhythmiaAnalyzerRef.current) return;
     
-    console.log("useVitalSignsProcessor: Full reset initiated");
+    console.log("useVitalSignsProcessor: Reseteo completo", {
+      estadoAnterior: {
+        arritmias: arrhythmiaAnalyzerRef.current.getArrhythmiaCounter(),
+        últimosResultados: lastValidResults ? {
+          spo2: lastValidResults.spo2,
+          presión: lastValidResults.pressure
+        } : null,
+        señalesProcesadas: processedSignals.current
+      },
+      timestamp: new Date().toISOString()
+    });
     
     processorRef.current.fullReset();
     arrhythmiaAnalyzerRef.current.reset();
@@ -180,14 +197,14 @@ export const useVitalSignsProcessor = () => {
     setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
-    console.log("Full reset complete - all data cleared");
-  }, []);
+    console.log("Reseteo completo finalizado - borrando todos los resultados");
+  }, [processorRef, lastValidResults]);
 
   return {
     processSignal,
     reset,
     fullReset,
-    arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCount() || 0,
+    arrhythmiaCounter: arrhythmiaAnalyzerRef.current?.getArrhythmiaCounter() || 0,
     lastValidResults,
     arrhythmiaWindows,
     debugInfo: {
