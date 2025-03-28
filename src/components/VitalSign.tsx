@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -20,6 +19,15 @@ const VitalSign = ({
   highlighted = false,
   calibrationProgress 
 }: VitalSignProps) => {
+  const displayValue = (val: any): string | number => {
+    if (val && typeof val === 'object' && 'value' in val) {
+      return val.value;
+    }
+    return val;
+  };
+
+  const processedValue = displayValue(value);
+
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
       switch(label) {
@@ -216,14 +224,10 @@ const VitalSign = ({
     return info;
   };
 
-  const displayValue = (label: string, value: string | number) => {
-    return value;
-  };
-
-  const riskLabel = getRiskLabel(label, value);
+  const riskLabel = getRiskLabel(label, processedValue);
   const riskColor = getRiskColor(riskLabel);
-  const detailedInfo = getDetailedInfo(label, value);
-  const formattedValue = displayValue(label, value);
+  const detailedInfo = getDetailedInfo(label, processedValue);
+  const formattedValue = processedValue;
 
   return (
     <Sheet>

@@ -7,13 +7,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSignalOptimizer } from './useSignalOptimizer';
 import { useVitalSignsCalculator } from './useVitalSignsCalculator';
+import { VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 
 /**
  * Hook que integra el procesamiento, optimización y cálculo de signos vitales
  */
 export const useVitalSignsProcessor = () => {
   // Estado para resultados
-  const [lastValidResults, setLastValidResults] = useState(null);
+  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   
   // Optimizador multicanal
@@ -40,7 +41,25 @@ export const useVitalSignsProcessor = () => {
       const result = calculateVitalSigns();
       
       if (result) {
-        setLastValidResults(result);
+        // Transformar los objetos de cálculo a valores simples para VitalSignsResult
+        const processedResult: VitalSignsResult = {
+          spo2: typeof result.spo2.value === 'number' ? result.spo2.value : 0,
+          pressure: typeof result.bloodPressure.value === 'string' ? result.bloodPressure.value : "--/--",
+          arrhythmiaStatus: result.arrhythmia.status || "--",
+          glucose: typeof result.glucose.value === 'number' ? result.glucose.value : 0,
+          lipids: {
+            totalCholesterol: typeof result.cholesterol.value === 'number' ? result.cholesterol.value : 0,
+            triglycerides: typeof result.triglycerides.value === 'number' ? result.triglycerides.value : 0
+          },
+          confidence: {
+            glucose: result.glucose.confidence,
+            lipids: (result.cholesterol.confidence + result.triglycerides.confidence) / 2,
+            overall: 0.7
+          },
+          lastArrhythmiaData: result.arrhythmia.data
+        };
+        
+        setLastValidResults(processedResult);
       }
     }
   }, [optimizedValues, calculateVitalSigns, isProcessing]);
@@ -108,7 +127,8 @@ export const useVitalSignsProcessor = () => {
       
       // El cálculo se realiza en el efecto cuando cambian los valores optimizados
       
-      return lastCalculation || lastValidResults || {
+      // Asegurarse de que devolvemos valores simples, no objetos de cálculo
+      return lastValidResults || {
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
@@ -132,7 +152,7 @@ export const useVitalSignsProcessor = () => {
         }
       };
     }
-  }, [optimizeSignal, lastCalculation, lastValidResults, optimizedValues]);
+  }, [optimizeSignal, lastValidResults, optimizedValues]);
   
   /**
    * Reinicia el procesador manteniendo último resultado
