@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -65,9 +66,9 @@ const PPGSignalMeter = memo(({
   const TARGET_FPS = 180;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 6;
-  const PEAK_THRESHOLD = 2.0;
-  const MIN_PEAK_DISTANCE_MS = 200;
+  const PEAK_DETECTION_WINDOW = 8;
+  const PEAK_THRESHOLD = 2.5;
+  const MIN_PEAK_DISTANCE_MS = 220;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 20;
   const REQUIRED_FINGER_FRAMES = 3;
@@ -82,9 +83,10 @@ const PPGSignalMeter = memo(({
   const beepRequesterRef = useRef<((time: number) => void) | null>(null);
   const lastBeepRequestTimeRef = useRef<number>(0);
 
+  // Define requestBeepForPeak BEFORE detectPeaks to fix the "used before declaration" error
   const requestBeepForPeak = useCallback((timestamp: number) => {
     const now = Date.now();
-    if (now - lastBeepRequestTimeRef.current < 250) return;
+    if (now - lastBeepRequestTimeRef.current < 300) return;
     
     if (beepRequesterRef.current) {
       beepRequesterRef.current(timestamp);
@@ -369,8 +371,7 @@ const PPGSignalMeter = memo(({
     if (heartBeatProcessor) {
       beepRequesterRef.current = (timestamp: number) => {
         try {
-          heartBeatProcessor.playBeep(1.0);
-          console.log("PPGSignalMeter: Beep requested for peak at timestamp", timestamp);
+          heartBeatProcessor.playBeep(0.8);
         } catch (err) {
           console.error("Error requesting beep:", err);
         }
@@ -669,4 +670,3 @@ const PPGSignalMeter = memo(({
 PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
-

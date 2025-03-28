@@ -3,8 +3,8 @@ import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/sign
 import { SignalAmplifier } from '../modules/SignalAmplifier';
 
 class KalmanFilter {
-  private R: number = 0.008; // Noise reduction factor
-  private Q: number = 0.12;  // Process noise
+  private R: number = 0.008; // Reducido de 0.01 a 0.008 para menor ruido
+  private Q: number = 0.12;  // Aumentado de 0.1 a 0.12 para mejor seguimiento de cambios rápidos
   private P: number = 1;
   private X: number = 0;
   private K: number = 0;
@@ -28,42 +28,32 @@ export class PPGSignalProcessor implements SignalProcessor {
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
   private readonly DEFAULT_CONFIG = {
-    BUFFER_SIZE: 12,
-    MIN_RED_THRESHOLD: 85,  // Increased threshold for better finger detection
+    BUFFER_SIZE: 12,  // Aumentado de 10 a 12 para mejor análisis espectral
+    MIN_RED_THRESHOLD: 75,  // Reducido de 80 a 75 para mayor sensibilidad
     MAX_RED_THRESHOLD: 245,
     STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 3  // Increased to require more stability
+    MIN_STABILITY_COUNT: 2  // Reducido de 3 a 2 para detección más rápida
   };
   private currentConfig: typeof this.DEFAULT_CONFIG;
-  private readonly BUFFER_SIZE = 12;
-  private readonly MIN_RED_THRESHOLD = 85; // Increased
+  private readonly BUFFER_SIZE = 12; // Actualizado
+  private readonly MIN_RED_THRESHOLD = 75; // Actualizado
   private readonly MAX_RED_THRESHOLD = 245;
   private readonly STABILITY_WINDOW = 4;
-  private readonly MIN_STABILITY_COUNT = 3; // Increased
+  private readonly MIN_STABILITY_COUNT = 2; // Actualizado
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.06; // Increased threshold
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.04; // Reducido para mayor sensibilidad
 
-  // Variables for dynamic threshold adaptation
+  // Variables para adaptación dinámica
   private dynamicThreshold: number = 0;
   private signalHistory: number[] = [];
   private readonly HISTORY_SIZE = 20;
-  private readonly ADAPTATION_RATE = 0.15;
+  private readonly ADAPTATION_RATE = 0.15; // Tasa de adaptación para umbrales dinámicos
   
-  // Signal amplifier for additional improvements
+  // Nuevo: Amplificador de señal para mejoras adicionales
   private signalAmplifier: SignalAmplifier;
   private lastAmplifiedValue: number = 0;
   private signalQuality: number = 0;
-  
-  // New: Variables for improved finger detection
-  private consecutiveWeakSignals: number = 0;
-  private readonly MAX_WEAK_SIGNALS = 3;
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.15; // Higher threshold
-  
-  // False positive prevention
-  private baselineValues: number[] = [];
-  private readonly BASELINE_SIZE = 10;
-  private hasEstablishedBaseline: boolean = false;
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -86,10 +76,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.signalAmplifier.reset();
       this.lastAmplifiedValue = 0;
       this.signalQuality = 0;
-      this.consecutiveWeakSignals = 0;
-      this.baselineValues = [];
-      this.hasEstablishedBaseline = false;
-      console.log("PPGSignalProcessor: Inicializado");
+      console.log("PPGSignalProcessor: Inicializado con amplificador de señal");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
       this.handleError("INIT_ERROR", "Error al inicializar el procesador");
@@ -114,9 +101,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.signalAmplifier.reset();
     this.lastAmplifiedValue = 0;
     this.signalQuality = 0;
-    this.consecutiveWeakSignals = 0;
-    this.baselineValues = [];
-    this.hasEstablishedBaseline = false;
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -134,54 +118,23 @@ export class PPGSignalProcessor implements SignalProcessor {
 
     try {
       const redValue = this.extractRedChannel(imageData);
-      
-      // Establish baseline for better false positive rejection
-      if (!this.hasEstablishedBaseline) {
-        this.baselineValues.push(redValue);
-        if (this.baselineValues.length > this.BASELINE_SIZE) {
-          this.baselineValues.shift();
-          this.hasEstablishedBaseline = true;
-          
-          // Calculate baseline stats
-          const baselineAvg = this.baselineValues.reduce((sum, val) => sum + val, 0) / this.baselineValues.length;
-          const baselineVar = this.baselineValues.reduce((sum, val) => sum + Math.pow(val - baselineAvg, 2), 0) / this.baselineValues.length;
-          console.log("PPGSignalProcessor: Baseline established", { baselineAvg, baselineVar });
-        }
-        
-        // Return early with not-detected status during baseline collection
-        if (!this.hasEstablishedBaseline) {
-          if (this.onSignalReady) {
-            this.onSignalReady({
-              timestamp: Date.now(),
-              rawValue: redValue,
-              filteredValue: 0,
-              quality: 0,
-              fingerDetected: false,
-              roi: this.detectROI(redValue),
-              perfusionIndex: 0
-            });
-          }
-          return;
-        }
-      }
-      
       const filtered = this.kalmanFilter.filter(redValue);
       
-      // Apply advanced signal amplifier
+      // Aplicar amplificador de señal avanzado
       const { amplifiedValue, quality } = this.signalAmplifier.processValue(filtered);
       this.lastAmplifiedValue = amplifiedValue;
       this.signalQuality = quality;
       
-      // Save amplified value in buffer
+      // Guardar el valor amplificado en el buffer
       this.lastValues.push(amplifiedValue);
       
-      // Update history for dynamic adaptation
+      // Actualizar historial para adaptación dinámica
       this.signalHistory.push(amplifiedValue);
       if (this.signalHistory.length > this.HISTORY_SIZE) {
         this.signalHistory.shift();
       }
       
-      // Update dynamic threshold if we have enough data
+      // Actualizar umbral dinámico si tenemos suficientes datos
       if (this.signalHistory.length >= this.HISTORY_SIZE / 2) {
         this.updateDynamicThreshold();
       }
@@ -190,48 +143,33 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastValues.shift();
       }
 
-      // Analysis with amplified value and strict finger detection
+      // Análisis con valor amplificado
       const { isFingerDetected, quality: detectionQuality } = this.analyzeSignal(amplifiedValue, redValue);
-      
-      // Check for weak signal to detect finger removal or poor placement
-      const isWeakSignal = Math.abs(amplifiedValue) < this.WEAK_SIGNAL_THRESHOLD;
-      
-      if (isWeakSignal) {
-        this.consecutiveWeakSignals++;
-      } else {
-        this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 1);
-      }
-      
-      // Override finger detection if we have too many weak signals
-      const finalFingerDetected = isFingerDetected && (this.consecutiveWeakSignals < this.MAX_WEAK_SIGNALS);
-      
-      // Use amplifier quality for better detection
-      const perfusionIndex = this.calculatePerfusionIndex();
-      const combinedQuality = finalFingerDetected ? 
-        Math.round((detectionQuality * 0.7 + this.signalQuality * 100 * 0.3)) : 0;
 
-      console.log("PPGSignalProcessor: Analysis with improved detection", {
+      // Beneficiarse de la calidad del amplificador
+      const perfusionIndex = this.calculatePerfusionIndex();
+      const combinedQuality = Math.round((detectionQuality * 0.7 + this.signalQuality * 100 * 0.3));
+
+      console.log("PPGSignalProcessor: Análisis con amplificador", {
         redValue,
         filtered,
         amplifiedValue,
-        isFingerDetected: finalFingerDetected,
+        isFingerDetected,
         detectionQuality,
         amplifierQuality: this.signalQuality,
         combinedQuality,
         stableFrames: this.stableFrameCount,
         perfusionIndex,
         dynamicThreshold: this.dynamicThreshold,
-        amplifierGain: this.signalAmplifier.getCurrentGain(),
-        weakSignalCount: this.consecutiveWeakSignals,
-        isWeakSignal
+        amplifierGain: this.signalAmplifier.getCurrentGain()
       });
 
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
         rawValue: redValue,
-        filteredValue: amplifiedValue,
-        quality: combinedQuality,
-        fingerDetected: finalFingerDetected,
+        filteredValue: amplifiedValue, // Usamos el valor amplificado
+        quality: combinedQuality, // Calidad mejorada
+        fingerDetected: isFingerDetected,
         roi: this.detectROI(redValue),
         perfusionIndex
       };
@@ -249,10 +187,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     const max = Math.max(...this.signalHistory);
     const range = max - min;
     
-    // Calculate new threshold based on signal range
-    const newThreshold = range * 0.30; // 30% of range as threshold (increased)
+    // Calcular nuevo umbral basado en el rango de la señal
+    const newThreshold = range * 0.25; // 25% del rango como umbral
     
-    // Update dynamically with smoothing
+    // Actualizar dinámicamente con suavizado
     if (this.dynamicThreshold === 0) {
       this.dynamicThreshold = newThreshold;
     } else {
@@ -280,7 +218,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     let redSum = 0;
     let count = 0;
     
-    // Only analyze the center of the image (30% central)
+    // Analizar solo el centro de la imagen (30% central en lugar de 25%)
     const startX = Math.floor(imageData.width * 0.35);
     const endX = Math.floor(imageData.width * 0.65);
     const startY = Math.floor(imageData.height * 0.35);
@@ -289,7 +227,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Red channel
+        redSum += data[i];  // Canal rojo
         count++;
       }
     }
@@ -299,13 +237,12 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
-    // Use dynamic threshold for better adaptation with a minimum threshold
-    const effectiveThreshold = Math.max(
-      this.MIN_RED_THRESHOLD,
-      this.dynamicThreshold > 0 ? this.dynamicThreshold : this.MIN_RED_THRESHOLD
-    );
+    // Usar umbral dinámico para mejor adaptación
+    const effectiveThreshold = this.dynamicThreshold > 0 ? 
+                              this.dynamicThreshold : 
+                              this.MIN_RED_THRESHOLD;
                               
-    // Check if the value is in range
+    // Verificar si el valor está en rango
     const isInRange = rawValue >= effectiveThreshold && rawValue <= this.MAX_RED_THRESHOLD;
     
     if (!isInRange) {
@@ -318,52 +255,49 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Enhanced analysis with amplified signal
+    // Análisis mejorado con señal amplificada
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
-    // Enhanced variation analysis to detect peaks
+    // Análisis mejorado de variación para detectar picos
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
-    // Use amplifier quality to adjust thresholds
+    // Usar la calidad del amplificador para ajustar los umbrales
     const qualityFactor = 0.8 + (this.signalQuality * 0.4); // 0.8-1.2
     
-    // More sensitive detection of cardiac peaks
+    // Detección más sensible de picos cardíacos
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Adaptive thresholds with amplifier influence
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.022 * qualityFactor); // Increased threshold
-    const isStable = maxVariation < adaptiveThreshold * 2.0 && 
-                    minVariation > -adaptiveThreshold * 2.0;
+    // Umbrales adaptativos con influencia del amplificador
+    const adaptiveThreshold = Math.max(1.2, avgValue * 0.018 * qualityFactor);
+    const isStable = maxVariation < adaptiveThreshold * 2.2 && 
+                    minVariation > -adaptiveThreshold * 2.2;
 
     if (isStable) {
       this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      // More gradual reduction to maintain better detection
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      // Reducción más gradual para mantener mejor la detección
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.4);
     }
 
-    // Benefit from amplifier quality for detection
-    // Require both stable frames AND good quality signal
-    const isFingerDetected = 
-      (this.stableFrameCount >= this.MIN_STABILITY_COUNT) && 
-      (this.signalQuality > 0.5); // Increased quality requirement
+    // Beneficio de la calidad del amplificador para detección
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT || this.signalQuality > 0.7;
     
     let quality = 0;
     if (isFingerDetected) {
-      // Improved quality calculation with amplifier
+      // Cálculo de calidad mejorado con amplificador
       const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 2), 1);
       const intensityScore = Math.min((rawValue - effectiveThreshold) / 
                                     (this.MAX_RED_THRESHOLD - effectiveThreshold), 1);
       const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 3)));
       const amplifierScore = this.signalQuality;
       
-      // Weighted with more weight to amplifier
+      // Ponderación con mayor peso al amplificador
       quality = Math.round((
         stabilityScore * 0.3 + 
         intensityScore * 0.3 + 
