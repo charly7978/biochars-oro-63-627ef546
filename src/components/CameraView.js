@@ -1,41 +1,29 @@
 
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
-import { eventBus, EventType } from '../events/EventBus';
 
-interface CameraViewProps {
-  onStreamReady?: (stream: MediaStream) => void;
-  isMonitoring: boolean;
-  isFingerDetected?: boolean;
-  signalQuality?: number;
-  buttonPosition?: {
-    x?: number;
-    y?: number;
-  };
-}
-
-const CameraView: React.FC<CameraViewProps> = ({ 
+const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
-  buttonPosition = { x: 0, y: 0 }
+  buttonPosition 
 }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  
-  /**
-   * Iniciar cámara con configuración óptima para PPG
-   */
+  const videoRef = useRef(null);
+  const [stream, setStream] = useState(null);
+
+  const stopCamera = async () => {
+    if (stream) {
+      stream.getTracks().forEach(track => {
+        track.stop();
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+      });
+      setStream(null);
+    }
+  };
+
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -44,7 +32,7 @@ const CameraView: React.FC<CameraViewProps> = ({
 
       const isAndroid = /android/i.test(navigator.userAgent);
 
-      const baseVideoConstraints: MediaTrackConstraints = {
+      const baseVideoConstraints = {
         facingMode: 'environment',
         width: { ideal: 720 },
         height: { ideal: 480 }
@@ -57,7 +45,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         });
       }
 
-      const constraints: MediaStreamConstraints = {
+      const constraints = {
         video: baseVideoConstraints
       };
 
@@ -67,7 +55,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       if (videoTrack && isAndroid) {
         try {
           const capabilities = videoTrack.getCapabilities();
-          const advancedConstraints: MediaTrackConstraintSet[] = [];
+          const advancedConstraints = [];
           
           if (capabilities.exposureMode) {
             advancedConstraints.push({ exposureMode: 'continuous' });
@@ -101,36 +89,17 @@ const CameraView: React.FC<CameraViewProps> = ({
           videoRef.current.style.transform = 'translateZ(0)';
         }
       }
-      
+
       setStream(newStream);
+      
       if (onStreamReady) {
         onStreamReady(newStream);
       }
-      
-      // Notificar que la cámara está lista
-      eventBus.publish(EventType.CAMERA_READY, { stream: newStream });
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
-      eventBus.publish(EventType.CAMERA_ERROR, { error: err });
     }
   };
 
-  /**
-   * Detener todas las pistas de la cámara y limpiar
-   */
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-      setStream(null);
-    }
-  };
-
-  // Iniciar/detener cámara según prop isMonitoring
   useEffect(() => {
     if (isMonitoring && !stream) {
       startCamera();
@@ -140,32 +109,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     return () => {
       stopCamera();
     };
-  }, [isMonitoring, stream]);
-
-  // Calcular estilos de posición del botón
-  const getFingerButtonStyle = () => {
-    const defaultStyle = "absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center";
-    
-    if (!buttonPosition || (buttonPosition.x === undefined && buttonPosition.y === undefined)) {
-      return defaultStyle;
-    }
-    
-    let customStyle = "absolute z-20 flex flex-col items-center";
-    
-    if (buttonPosition.x !== undefined) {
-      customStyle += ` left-[${buttonPosition.x}px]`;
-    } else {
-      customStyle += " left-1/2 transform -translate-x-1/2";
-    }
-    
-    if (buttonPosition.y !== undefined) {
-      customStyle += ` bottom-[${buttonPosition.y}px]`;
-    } else {
-      customStyle += " bottom-24";
-    }
-    
-    return customStyle;
-  };
+  }, [isMonitoring]);
 
   return (
     <>
@@ -181,8 +125,8 @@ const CameraView: React.FC<CameraViewProps> = ({
           backfaceVisibility: 'hidden'
         }}
       />
-      {isMonitoring && (
-        <div className={getFingerButtonStyle()}>
+      {isMonitoring && buttonPosition && (
+        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
           <Fingerprint
             size={48}
             className={`transition-colors duration-300 ${
@@ -203,13 +147,4 @@ const CameraView: React.FC<CameraViewProps> = ({
   );
 };
 
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
-
-export default CameraView;
+export default CameraView; 

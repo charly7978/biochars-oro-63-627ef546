@@ -261,21 +261,24 @@ export class SignalProcessor {
     const ac = acSum / ppgData.length;
     const dc = dcSum / ppgData.length;
     
-    // PI = (AC/DC) * 100%
-    return dc > 0 ? (ac / dc) : 0;
+    // Calcular PI = (AC/DC) * 100
+    const perfusionIndex = dc !== 0 ? (ac / dc) * 100 : 0;
+    
+    return perfusionIndex;
   }
   
   /**
-   * Obtener últimos datos procesados
+   * Obtener últimos datos procesados de latido
    */
-  getProcessedData(): {
-    heartbeat: ProcessedHeartbeatData | null;
-    ppg: ProcessedPPGData | null;
-  } {
-    return {
-      heartbeat: this.lastProcessedHeartbeat,
-      ppg: this.lastProcessedPPG
-    };
+  getLastHeartbeatData(): ProcessedHeartbeatData | null {
+    return this.lastProcessedHeartbeat;
+  }
+  
+  /**
+   * Obtener últimos datos procesados de PPG
+   */
+  getLastPPGData(): ProcessedPPGData | null {
+    return this.lastProcessedPPG;
   }
 }
 
