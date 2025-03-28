@@ -11,11 +11,12 @@
 /**
  * Optimizador de Señal
  * Divide y optimiza la señal en 6 canales específicos para cada signo vital
+ * Implementa retroalimentación bidireccional con el módulo de cálculo
  */
 
 import { EventType, eventBus } from '../events/EventBus';
 import { ProcessedHeartbeatData, ProcessedPPGData } from '../processing/SignalProcessor';
-import { calculateAC, calculateDC, calculateStandardDeviation } from '../vital-signs/utils';
+import { calculateAC, calculateDC, calculateStandardDeviation } from '../utils/vitalSignsUtils';
 
 export interface OptimizedHeartRate {
   timestamp: number;
@@ -28,8 +29,8 @@ export interface OptimizedSPO2 {
   timestamp: number;
   spo2: number;
   confidence: number;
-  redRatio: number;
-  irRatio: number;
+  redData: number[];
+  irData: number[];
 }
 
 export interface OptimizedBloodPressure {
@@ -62,6 +63,14 @@ export interface OptimizedArrhythmia {
   detectionProbability: number;
 }
 
+// Interfaz para solicitudes de retroalimentación
+export interface FeedbackRequest {
+  channel: 'heart_rate' | 'spo2' | 'blood_pressure' | 'glucose' | 'lipids' | 'arrhythmia';
+  requestId: string;
+  timestamp: number;
+  data: any;
+}
+
 export class SignalOptimizer {
   // Canales para cada signo vital
   private heartRateBuffer: ProcessedHeartbeatData[] = [];
@@ -75,6 +84,9 @@ export class SignalOptimizer {
   private isRunning: boolean = false;
   private optimizationInterval: number | null = null;
   
+  // Sistema de retroalimentación bidireccional
+  private pendingFeedbackRequests: Map<string, FeedbackRequest> = new Map();
+  
   // Constantes
   private readonly HR_BUFFER_SIZE = 10;
   private readonly SPO2_BUFFER_SIZE = 15;
@@ -82,6 +94,11 @@ export class SignalOptimizer {
   private readonly GLUCOSE_BUFFER_SIZE = 20;
   private readonly LIPIDS_BUFFER_SIZE = 20;
   private readonly ARRHYTHMIA_BUFFER_SIZE = 20;
+  
+  constructor() {
+    // Suscribirse a solicitudes de retroalimentación desde el módulo de cálculo
+    eventBus.subscribe(EventType.VITAL_SIGNS_UPDATED, this.handleFeedbackRequest.bind(this));
+  }
   
   /**
    * Iniciar optimización
@@ -100,7 +117,7 @@ export class SignalOptimizer {
       this.optimizeAllChannels();
     }, 1000); // Optimizar cada 1 segundo
     
-    console.log('Optimizador de señal iniciado');
+    console.log('Optimizador de señal iniciado con sistema de retroalimentación bidireccional');
   }
   
   /**
@@ -115,6 +132,7 @@ export class SignalOptimizer {
     }
     
     this.clearBuffers();
+    this.pendingFeedbackRequests.clear();
     console.log('Optimizador de señal detenido');
   }
   
@@ -181,6 +199,45 @@ export class SignalOptimizer {
   }
   
   /**
+   * Manejar solicitudes de retroalimentación del módulo de cálculo
+   * Implementa comunicación bidireccional entre optimización y cálculo
+   */
+  private handleFeedbackRequest(data: any): void {
+    if (!data.feedbackRequest) return;
+    
+    const request = data.feedbackRequest as FeedbackRequest;
+    console.log(`Retroalimentación recibida para canal ${request.channel}, ID: ${request.requestId}`);
+    
+    // Añadir a cola de solicitudes pendientes
+    this.pendingFeedbackRequests.set(request.requestId, request);
+    
+    // Procesar solicitud según el canal
+    switch (request.channel) {
+      case 'heart_rate':
+        this.optimizeHeartRateWithFeedback(request);
+        break;
+      case 'spo2':
+        this.optimizeSPO2WithFeedback(request);
+        break;
+      case 'blood_pressure':
+        this.optimizeBloodPressureWithFeedback(request);
+        break;
+      case 'glucose':
+        this.optimizeGlucoseWithFeedback(request);
+        break;
+      case 'lipids':
+        this.optimizeLipidsWithFeedback(request);
+        break;
+      case 'arrhythmia':
+        this.optimizeArrhythmiaWithFeedback(request);
+        break;
+    }
+    
+    // Eliminar solicitud procesada
+    this.pendingFeedbackRequests.delete(request.requestId);
+  }
+  
+  /**
    * Optimizar todos los canales
    */
   private optimizeAllChannels(): void {
@@ -204,37 +261,39 @@ export class SignalOptimizer {
     try {
       // Filtrar valores de BPM válidos
       const validData = this.heartRateBuffer.filter(data => 
-        data.bpm >= 40 && data.bpm <= 200 && data.confidence > 30
+        data.bpm >= 40 && data.bpm <= 200
       );
       
       if (validData.length < 2) return;
       
-      // Ordenar por confianza y tomar los mejores
-      const sortedByConfidence = [...validData].sort((a, b) => b.confidence - a.confidence);
-      const bestData = sortedByConfidence.slice(0, Math.ceil(sortedByConfidence.length * 0.7));
+      // Calcular BPM optimizado basado en las señales de mayor calidad
+      const weightedValues = validData.map(data => {
+        return {
+          bpm: data.bpm,
+          weight: data.quality / 100
+        };
+      });
       
-      // Calcular BPM ponderado por confianza
       let totalWeight = 0;
       let weightedBpm = 0;
       
-      for (const data of bestData) {
-        const weight = data.confidence / 100;
-        weightedBpm += data.bpm * weight;
-        totalWeight += weight;
+      for (const item of weightedValues) {
+        weightedBpm += item.bpm * item.weight;
+        totalWeight += item.weight;
       }
       
       if (totalWeight > 0) {
         const optimizedBpm = Math.round(weightedBpm / totalWeight);
         
-        // Calcular confianza final
-        const avgConfidence = bestData.reduce((sum, data) => sum + data.confidence, 0) / bestData.length;
+        // Calcular confianza
+        const avgQuality = validData.reduce((sum, data) => sum + data.quality, 0) / validData.length;
         
-        // Extraer datos optimizados
+        // Crear datos optimizados
         const optimizedData: OptimizedHeartRate = {
           timestamp: Date.now(),
           heartRate: optimizedBpm,
-          confidence: avgConfidence,
-          optimizedData: bestData.map(d => d.bpm)
+          confidence: avgQuality,
+          optimizedData: validData.map(d => d.bpm)
         };
         
         // Publicar resultado optimizado
@@ -242,6 +301,77 @@ export class SignalOptimizer {
       }
     } catch (error) {
       console.error('Error optimizando frecuencia cardíaca:', error);
+    }
+  }
+  
+  /**
+   * Optimizar frecuencia cardíaca con retroalimentación del módulo de cálculo
+   */
+  private optimizeHeartRateWithFeedback(request: FeedbackRequest): void {
+    if (this.heartRateBuffer.length < 2) return;
+    
+    try {
+      // Ajustar según retroalimentación
+      const requestData = request.data;
+      const targetConsistency = requestData.targetConsistency || 0;
+      
+      // Filtro optimizado con parámetros ajustados basados en retroalimentación
+      const validData = this.heartRateBuffer.filter(data => {
+        // Ajustar umbrales basados en retroalimentación
+        const minThreshold = requestData.minThreshold || 40;
+        const maxThreshold = requestData.maxThreshold || 200;
+        return data.bpm >= minThreshold && data.bpm <= maxThreshold;
+      });
+      
+      if (validData.length < 2) return;
+      
+      // Calcular ponderación adaptativa basada en retroalimentación
+      const adaptiveWeighting = validData.map(data => {
+        let weight = data.quality / 100;
+        
+        // Ajustar peso según retroalimentación
+        if (targetConsistency > 0) {
+          const normalizedBpm = Math.abs(data.bpm - requestData.targetHeartRate) / 20;
+          const consistencyFactor = Math.max(0, 1 - normalizedBpm);
+          weight = weight * 0.7 + consistencyFactor * 0.3;
+        }
+        
+        return {
+          bpm: data.bpm,
+          weight
+        };
+      });
+      
+      // Calcular BPM ponderado
+      let totalWeight = 0;
+      let weightedBpm = 0;
+      
+      for (const item of adaptiveWeighting) {
+        weightedBpm += item.bpm * item.weight;
+        totalWeight += item.weight;
+      }
+      
+      if (totalWeight > 0) {
+        const optimizedBpm = Math.round(weightedBpm / totalWeight);
+        const adaptiveFeedbackResponse = {
+          requestId: request.requestId,
+          timestamp: Date.now(),
+          heartRate: optimizedBpm,
+          adaptationApplied: true,
+          confidence: Math.min(100, validData.reduce((sum, data) => sum + data.quality, 0) / validData.length)
+        };
+        
+        // Enviar respuesta específica para esta solicitud
+        eventBus.publish(EventType.OPTIMIZED_HEART_RATE, {
+          timestamp: Date.now(),
+          heartRate: optimizedBpm,
+          confidence: adaptiveFeedbackResponse.confidence,
+          optimizedData: validData.map(d => d.bpm),
+          feedbackResponse: adaptiveFeedbackResponse
+        });
+      }
+    } catch (error) {
+      console.error('Error en optimización con retroalimentación de frecuencia cardíaca:', error);
     }
   }
   
@@ -257,50 +387,155 @@ export class SignalOptimizer {
       
       if (qualityData.length < 3) return;
       
-      // Extraer valores de señal para análisis AC/DC
+      // Extraer valores de señal para análisis
       const signalValues = qualityData.map(data => data.filteredValue);
       
-      // Calcular componentes AC/DC para ratio R
+      // Calcular componentes AC/DC para análisis de absorción de luz
       const acComponent = calculateAC(signalValues);
       const dcComponent = calculateDC(signalValues);
       
       if (dcComponent === 0) return;
       
-      // Simular ratio infrarrojo (en un dispositivo real habría ambos sensores)
-      // Esto es simplificado, en un oxímetro real tendríamos canales separados para rojo e IR
-      const redRatio = acComponent / dcComponent;
-      const irRatio = redRatio * 1.05; // Aproximación simplificada
+      // Extraer datos Rojo e IR de señales PPG de alta calidad
+      const redData = [];
+      const irData = [];
       
-      // Calcular SpO2 optimizado
-      // La fórmula empírica típica es: SpO2 = 110 - 25 * R, donde R = (AC_red/DC_red)/(AC_ir/DC_ir)
-      const R = redRatio / irRatio;
-      let spo2 = Math.round(110 - (25 * R));
-      
-      // Limitar a rango válido
-      spo2 = Math.max(70, Math.min(100, spo2));
+      // Recolectar datos de canales específicos
+      for (const data of qualityData) {
+        if (data.channelData && data.channelData.red && data.channelData.ir) {
+          redData.push(data.channelData.red);
+          irData.push(data.channelData.ir);
+        }
+      }
       
       // Calcular confianza basada en calidad y estabilidad
       const avgQuality = qualityData.reduce((sum, data) => sum + data.quality, 0) / qualityData.length;
-      const spo2Values = qualityData.map(data => data.perfusionIndex * 100); // Aproximación
-      const stability = 100 - Math.min(100, calculateStandardDeviation(spo2Values) * 50);
+      const stability = 100 - Math.min(100, calculateStandardDeviation(signalValues) * 50);
       
       const confidence = (avgQuality * 0.7) + (stability * 0.3);
       
-      // Crear datos optimizados
+      // Crear datos optimizados con canal para retroalimentación bidireccional
       const optimizedData: OptimizedSPO2 = {
         timestamp: Date.now(),
-        spo2,
+        spo2: 0, // El valor de SpO2 lo calculará el módulo de cálculo
         confidence,
-        redRatio,
-        irRatio
+        redData,
+        irData
       };
       
-      // Publicar resultado optimizado
+      // Publicar resultado optimizado para que el módulo de cálculo determine el valor final
       eventBus.publish(EventType.OPTIMIZED_SPO2, optimizedData);
       
     } catch (error) {
       console.error('Error optimizando SpO2:', error);
     }
+  }
+  
+  /**
+   * Optimizar SpO2 con retroalimentación del módulo de cálculo
+   */
+  private optimizeSPO2WithFeedback(request: FeedbackRequest): void {
+    if (this.spo2Buffer.length < 3) return;
+    
+    try {
+      // Obtener parámetros de retroalimentación
+      const requestData = request.data;
+      const targetStability = requestData.targetStability || 0;
+      
+      // Filtro optimizado basado en retroalimentación
+      const qualityThreshold = requestData.qualityThreshold || 40;
+      const qualityData = this.spo2Buffer.filter(data => data.quality > qualityThreshold);
+      
+      if (qualityData.length < 3) return;
+      
+      // Extraer valores de señal
+      const signalValues = qualityData.map(data => data.filteredValue);
+      
+      // Aplicar filtro adaptativo basado en retroalimentación
+      let filteredValues = [...signalValues];
+      if (targetStability > 0) {
+        // Filtro de mediana adaptativo
+        filteredValues = this.applyAdaptiveFilter(signalValues, requestData.filterStrength || 0.5);
+      }
+      
+      // Extraer datos de canales específicos
+      const redData = [];
+      const irData = [];
+      
+      // Recolectar datos específicos para SpO2
+      for (const data of qualityData) {
+        if (data.channelData && data.channelData.red && data.channelData.ir) {
+          redData.push(data.channelData.red);
+          irData.push(data.channelData.ir);
+        }
+      }
+      
+      // Calcular confianza adaptativa
+      const adaptiveConfidence = this.calculateAdaptiveConfidence(qualityData, requestData);
+      
+      // Enviar respuesta específica para esta solicitud
+      const adaptiveFeedbackResponse = {
+        requestId: request.requestId,
+        timestamp: Date.now(),
+        filteredValues,
+        adaptationApplied: true,
+        confidence: adaptiveConfidence
+      };
+      
+      eventBus.publish(EventType.OPTIMIZED_SPO2, {
+        timestamp: Date.now(),
+        spo2: 0, // El valor de SpO2 lo calculará el módulo de cálculo
+        confidence: adaptiveConfidence,
+        redData,
+        irData,
+        feedbackResponse: adaptiveFeedbackResponse
+      });
+      
+    } catch (error) {
+      console.error('Error en optimización con retroalimentación de SpO2:', error);
+    }
+  }
+  
+  /**
+   * Aplica un filtro adaptativo basado en parámetros de retroalimentación
+   */
+  private applyAdaptiveFilter(values: number[], strength: number): number[] {
+    if (values.length < 3) return values;
+    
+    const filtered = [];
+    const windowSize = Math.max(3, Math.round(strength * 5));
+    
+    for (let i = 0; i < values.length; i++) {
+      const start = Math.max(0, i - Math.floor(windowSize / 2));
+      const end = Math.min(values.length - 1, i + Math.floor(windowSize / 2));
+      const window = values.slice(start, end + 1);
+      
+      // Ordenar ventana para filtro de mediana
+      window.sort((a, b) => a - b);
+      const median = window[Math.floor(window.length / 2)];
+      filtered.push(median);
+    }
+    
+    return filtered;
+  }
+  
+  /**
+   * Calcula confianza adaptativa basada en retroalimentación
+   */
+  private calculateAdaptiveConfidence(data: ProcessedPPGData[], feedbackParams: any): number {
+    // Calidad base
+    const avgQuality = data.reduce((sum, d) => sum + d.quality, 0) / data.length;
+    
+    // Factores de ajuste de retroalimentación
+    const qualityWeight = feedbackParams.qualityWeight || 0.7;
+    const stabilityWeight = feedbackParams.stabilityWeight || 0.3;
+    
+    // Calcular estabilidad de señal
+    const values = data.map(d => d.filteredValue);
+    const stability = 100 - Math.min(100, calculateStandardDeviation(values) * 50);
+    
+    // Aplicar ponderación adaptativa
+    return (avgQuality * qualityWeight) + (stability * stabilityWeight);
   }
   
   /**
@@ -311,61 +546,164 @@ export class SignalOptimizer {
     
     try {
       // Este método necesita datos tanto de PPG como de latidos para estimar PA
+      const qualityPPGData = this.bloodPressureBuffer.filter(data => data.quality > 50);
       
-      // Obtener último HeartRate optimizado
-      const lastHeartRate = this.heartRateBuffer.length > 0 
+      if (qualityPPGData.length < 3) return;
+      
+      // Extraer datos para análisis y optimización
+      const ppgValues = qualityPPGData.map(data => data.filteredValue);
+      const recentHeartRate = this.heartRateBuffer.length > 0 
         ? this.heartRateBuffer[this.heartRateBuffer.length - 1].bpm 
         : 0;
       
-      if (lastHeartRate === 0) return;
+      if (recentHeartRate === 0) return;
       
-      // Calcular características de la señal PPG
-      const ppgValues = this.bloodPressureBuffer.map(data => data.filteredValue);
-      
-      // Integrar con otros módulos para el cálculo final
-      const ptt = this.estimatePulseTransitTime();
-      
-      // Estimar presión sistólica y diastólica
-      // Fórmulas basadas en PTT y frecuencia cardíaca
-      const baselineSystolic = 120;
-      const baselineDiastolic = 80;
-      
-      // Ajustes basados en características PPG y HR
-      const hrFactor = (lastHeartRate - 70) * 0.5;
-      const amplitudeFactor = calculateAC(ppgValues) * 50;
-      
-      let systolic = baselineSystolic + hrFactor + amplitudeFactor;
-      let diastolic = baselineDiastolic + (hrFactor * 0.4) + (amplitudeFactor * 0.3);
-      
-      // Garantizar valores en rangos normales
-      systolic = Math.max(90, Math.min(180, systolic));
-      diastolic = Math.max(50, Math.min(120, diastolic));
-      
-      // Garantizar que diastólica < sistólica por al menos 20 mmHg
-      if (systolic - diastolic < 20) {
-        diastolic = systolic - 20;
-      }
+      // Canal bidireccional: Calcular variables específicas para PA
+      // pero no determinar valores finales (eso lo hará el módulo de cálculo)
+      const amplitudeAnalysis = this.analyzeSignalAmplitude(ppgValues);
+      const pttEstimation = this.analyzePulseTransitTime(this.heartRateBuffer);
       
       // Calcular confianza
       const confidence = Math.min(80, this.bloodPressureBuffer.reduce((sum, data) => sum + data.quality, 0) / 
-                         this.bloodPressureBuffer.length);
+                        this.bloodPressureBuffer.length);
       
-      // Crear datos optimizados
-      const optimizedData: OptimizedBloodPressure = {
+      // Crear datos optimizados con variables necesarias para cálculo final
+      const optimizedData = {
         timestamp: Date.now(),
-        systolic: Math.round(systolic),
-        diastolic: Math.round(diastolic),
-        display: `${Math.round(systolic)}/${Math.round(diastolic)}`,
+        ptt: pttEstimation.estimatedPTT,
+        heartRate: recentHeartRate,
+        signalAmplitude: amplitudeAnalysis.amplitude,
+        signalRiseTime: amplitudeAnalysis.riseTime,
+        waveformArea: amplitudeAnalysis.area,
         confidence,
-        ptt
+        // Nota: systolic y diastolic serán calculados por el módulo de cálculo
+        systolic: 0, 
+        diastolic: 0,
+        display: "--/--"
       };
       
-      // Publicar resultado optimizado
+      // Publicar resultado optimizado para que el módulo de cálculo determine valores finales
       eventBus.publish(EventType.OPTIMIZED_BLOOD_PRESSURE, optimizedData);
       
     } catch (error) {
       console.error('Error optimizando presión arterial:', error);
     }
+  }
+  
+  /**
+   * Optimizar presión arterial con retroalimentación del módulo de cálculo
+   */
+  private optimizeBloodPressureWithFeedback(request: FeedbackRequest): void {
+    if (this.bloodPressureBuffer.length < 3) return;
+    
+    try {
+      // Obtener parámetros de retroalimentación
+      const requestData = request.data;
+      
+      // Aplicar umbral de calidad adaptativo
+      const qualityThreshold = requestData.qualityThreshold || 50;
+      const qualityPPGData = this.bloodPressureBuffer.filter(data => data.quality > qualityThreshold);
+      
+      if (qualityPPGData.length < 3) return;
+      
+      // Extraer valores con ponderación adaptativa
+      const values = qualityPPGData.map(data => data.filteredValue);
+      
+      // Análisis de forma de onda optimizado según retroalimentación
+      const amplitudeAnalysis = this.analyzeSignalAmplitude(values, requestData.amplitudeWeight);
+      const pttEstimation = this.analyzePulseTransitTime(this.heartRateBuffer, requestData.pttBias);
+      
+      // Enviar respuesta específica para esta solicitud
+      const adaptiveFeedbackResponse = {
+        requestId: request.requestId,
+        timestamp: Date.now(),
+        ptt: pttEstimation.estimatedPTT,
+        amplitudeAnalysis,
+        adaptationApplied: true
+      };
+      
+      eventBus.publish(EventType.OPTIMIZED_BLOOD_PRESSURE, {
+        timestamp: Date.now(),
+        ptt: pttEstimation.estimatedPTT,
+        heartRate: this.heartRateBuffer.length > 0 ? this.heartRateBuffer[this.heartRateBuffer.length - 1].bpm : 0,
+        signalAmplitude: amplitudeAnalysis.amplitude,
+        signalRiseTime: amplitudeAnalysis.riseTime,
+        waveformArea: amplitudeAnalysis.area,
+        confidence: Math.min(90, qualityPPGData.reduce((sum, data) => sum + data.quality, 0) / qualityPPGData.length),
+        systolic: 0, // El módulo de cálculo determinará esto
+        diastolic: 0, // El módulo de cálculo determinará esto
+        display: "--/--",
+        feedbackResponse: adaptiveFeedbackResponse
+      });
+      
+    } catch (error) {
+      console.error('Error en optimización con retroalimentación de presión arterial:', error);
+    }
+  }
+  
+  /**
+   * Analiza la amplitud y características de la forma de onda PPG
+   */
+  private analyzeSignalAmplitude(values: number[], amplitudeWeight = 1.0): {
+    amplitude: number;
+    riseTime: number;
+    decayTime: number;
+    area: number;
+  } {
+    if (values.length < 5) {
+      return { amplitude: 0, riseTime: 0, decayTime: 0, area: 0 };
+    }
+    
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const amplitude = (max - min) * amplitudeWeight;
+    
+    // Estimación de tiempo de subida y bajada (muestras)
+    let riseTime = 0;
+    let decayTime = 0;
+    
+    // Aproximación de área bajo la curva
+    const baseline = min;
+    const area = values.reduce((sum, v) => sum + (v - baseline), 0) / values.length;
+    
+    return { amplitude, riseTime, decayTime, area };
+  }
+  
+  /**
+   * Analiza tiempo de tránsito de pulso a partir de datos de heartbeat
+   */
+  private analyzePulseTransitTime(heartbeatData: ProcessedHeartbeatData[], pttBias = 0): {
+    estimatedPTT: number;
+    confidence: number;
+  } {
+    // Eestimación de PTT
+    // Un PTT típico está entre 180-350ms
+    const baselinePTT = 250 + pttBias; // ms
+    let pttAdjustment = 0;
+    let confidence = 70;
+    
+    // Si tenemos datos de intervalos RR, ajustamos el PTT
+    if (heartbeatData.length > 2) {
+      const allIntervals: number[] = [];
+      heartbeatData.forEach(data => {
+        if (data.intervals && data.intervals.length > 0) {
+          allIntervals.push(...data.intervals);
+        }
+      });
+      
+      if (allIntervals.length > 3) {
+        const avgInterval = allIntervals.reduce((a, b) => a + b, 0) / allIntervals.length;
+        
+        // Aproximación: PTT tiende a ser menor con intervalos RR más cortos (HR más alto)
+        pttAdjustment = (avgInterval - 800) * -0.1;
+        confidence = 85;
+      }
+    }
+    
+    return {
+      estimatedPTT: Math.max(180, Math.min(350, baselinePTT + pttAdjustment)),
+      confidence
+    };
   }
   
   /**
@@ -376,42 +714,40 @@ export class SignalOptimizer {
     
     try {
       // Filtrar datos de calidad
-      const qualityData = this.glucoseBuffer.filter(data => data.quality > 30);
+      const qualityData = this.glucoseBuffer.filter(data => data.quality > 40);
       
       if (qualityData.length < 5) return;
       
-      // Extraer características de la señal para estimación de glucosa
+      // Extraer características para cálculo (pero no calcular valor final - eso lo hará el módulo de cálculo)
       const signalValues = qualityData.map(data => data.filteredValue);
       const perfusionIndices = qualityData.map(data => data.perfusionIndex);
       
-      // Calcular características específicas para glucosa
+      // Calcular características para análisis de glucosa
       const signalMean = calculateDC(signalValues);
       const perfusionMean = calculateDC(perfusionIndices);
       const signalVariability = calculateStandardDeviation(signalValues) / signalMean;
-      
-      // Calcular valor de glucosa optimizado
-      // Usar base fisiológica con ajustes específicos para glucosa
-      const baseGlucose = 95; // mg/dL
-      const perfusionAdjustment = perfusionMean * 30;
-      const variabilityAdjustment = signalVariability * 20;
-      
-      let glucoseValue = baseGlucose + perfusionAdjustment - variabilityAdjustment;
-      glucoseValue = Math.max(70, Math.min(120, glucoseValue));
       
       // Calcular confianza
       const avgQuality = qualityData.reduce((sum, data) => sum + data.quality, 0) / qualityData.length;
       const stability = 100 - Math.min(100, calculateStandardDeviation(perfusionIndices) * 200);
       const confidence = (avgQuality * 0.6) + (stability * 0.4);
       
-      // Crear datos optimizados
+      // Crear datos optimizados con variables clave para cálculo final
       const optimizedData: OptimizedGlucose = {
         timestamp: Date.now(),
-        value: Math.round(glucoseValue),
+        value: 0, // El módulo de cálculo determinará esto
         confidence
       };
       
-      // Publicar resultado optimizado
-      eventBus.publish(EventType.OPTIMIZED_GLUCOSE, optimizedData);
+      // Publicar datos optimizados que el módulo de cálculo usará para determinar el valor final
+      eventBus.publish(EventType.OPTIMIZED_GLUCOSE, {
+        ...optimizedData,
+        signalMean,
+        perfusionMean,
+        signalVariability,
+        stability,
+        adaptationReady: true
+      });
       
     } catch (error) {
       console.error('Error optimizando glucosa:', error);
@@ -419,7 +755,7 @@ export class SignalOptimizer {
   }
   
   /**
-   * Optimizar señal para lípidos
+   * Optimizar señal para lípidos 
    */
   private optimizeLipids(): void {
     if (this.lipidsBuffer.length < this.LIPIDS_BUFFER_SIZE / 2) return;
@@ -430,44 +766,35 @@ export class SignalOptimizer {
       
       if (qualityData.length < 8) return;
       
-      // Extraer características de la señal para estimación de lípidos
+      // Extraer características de la señal para estimación (sin calcular valores finales)
       const signalValues = qualityData.map(data => data.filteredValue);
       const perfusionIndices = qualityData.map(data => data.perfusionIndex);
       
-      // Calcular características específicas para lípidos
+      // Calcular características específicas para análisis lipídico
       const signalMean = calculateDC(signalValues);
       const perfusionMean = calculateDC(perfusionIndices);
       const signalAC = calculateAC(signalValues);
-      
-      // Calcular valores de lípidos optimizados
-      // Usar base fisiológica con ajustes específicos para colesterol y triglicéridos
-      const baseChol = 170; // mg/dL
-      const baseTrig = 120; // mg/dL
-      
-      const perfusionAdjustment = perfusionMean * 40;
-      const amplitudeAdjustment = signalAC * 15;
-      
-      let cholValue = baseChol + perfusionAdjustment + amplitudeAdjustment;
-      let trigValue = baseTrig + (perfusionAdjustment * 0.8) + (amplitudeAdjustment * 1.2);
-      
-      // Limitar a rangos válidos
-      cholValue = Math.max(150, Math.min(240, cholValue));
-      trigValue = Math.max(70, Math.min(190, trigValue));
       
       // Calcular confianza
       const avgQuality = qualityData.reduce((sum, data) => sum + data.quality, 0) / qualityData.length;
       const confidence = Math.min(70, avgQuality);
       
-      // Crear datos optimizados
+      // Crear datos optimizados con variables clave para cálculo final
       const optimizedData: OptimizedLipids = {
         timestamp: Date.now(),
-        totalCholesterol: Math.round(cholValue),
-        triglycerides: Math.round(trigValue),
+        totalCholesterol: 0, // El módulo de cálculo determinará esto
+        triglycerides: 0, // El módulo de cálculo determinará esto
         confidence
       };
       
-      // Publicar resultado optimizado
-      eventBus.publish(EventType.OPTIMIZED_LIPIDS, optimizedData);
+      // Publicar datos optimizados para que el módulo de cálculo determine valores finales
+      eventBus.publish(EventType.OPTIMIZED_LIPIDS, {
+        ...optimizedData,
+        signalMean,
+        perfusionMean,
+        signalAC,
+        adaptationReady: true
+      });
       
     } catch (error) {
       console.error('Error optimizando lípidos:', error);
@@ -475,7 +802,7 @@ export class SignalOptimizer {
   }
   
   /**
-   * Optimizar datos para detección de arritmias
+   * Optimizar datos para detección de arritmias - canal independiente
    */
   private optimizeArrhythmia(): void {
     if (this.arrhythmiaBuffer.length < this.ARRHYTHMIA_BUFFER_SIZE / 2) return;
@@ -492,8 +819,8 @@ export class SignalOptimizer {
       // Necesitamos suficientes intervalos para análisis significativo
       if (allIntervals.length < 8) return;
       
-      // Calcular RMSSD (Root Mean Square of Successive Differences)
-      // Un indicador común para variabilidad de frecuencia cardíaca y arritmias
+      // Calcular variables clave para análisis de arritmias (sin determinar valor final)
+      // RMSSD (Root Mean Square of Successive Differences)
       let sumSquaredDiff = 0;
       let diffCount = 0;
       
@@ -509,35 +836,22 @@ export class SignalOptimizer {
       const avgInterval = allIntervals.reduce((a, b) => a + b, 0) / allIntervals.length;
       const rrVariation = calculateStandardDeviation(allIntervals) / avgInterval;
       
-      // Cálculo de probabilidad de arritmia
-      // Múltiples factores entran en juego
-      const baseThreshold = 25; // ms para RMSSD
-      const variationThreshold = 0.15; // para variación RR normalizada
-      
-      // Calcular probabilidad basada en umbrales
-      let detectionProbability = 0;
-      
-      if (rmssd > baseThreshold) {
-        detectionProbability += (rmssd - baseThreshold) / baseThreshold * 50;
-      }
-      
-      if (rrVariation > variationThreshold) {
-        detectionProbability += (rrVariation - variationThreshold) / variationThreshold * 50;
-      }
-      
-      // Limitar a rango 0-100
-      detectionProbability = Math.min(100, Math.max(0, detectionProbability));
-      
-      // Publicar resultados optimizados para detección de arritmias
+      // Publicar datos optimizados para que el módulo de cálculo determine la probabilidad final
+      // Implementación bidireccional: enviamos variables clave, no probabilidad final
       const optimizedData: OptimizedArrhythmia = {
         timestamp: Date.now(),
         rmssd,
         rrVariation,
         intervals: allIntervals.slice(-20), // Mandar solo los 20 más recientes
-        detectionProbability
+        detectionProbability: 0 // El módulo de cálculo determinará esto
       };
       
-      eventBus.publish(EventType.OPTIMIZED_ARRHYTHMIA, optimizedData);
+      eventBus.publish(EventType.OPTIMIZED_ARRHYTHMIA, {
+        ...optimizedData,
+        intervalCount: allIntervals.length,
+        avgInterval,
+        adaptationReady: true
+      });
       
     } catch (error) {
       console.error('Error optimizando datos de arritmia:', error);
@@ -545,28 +859,89 @@ export class SignalOptimizer {
   }
   
   /**
-   * Estimar el tiempo de tránsito de pulso (PTT)
+   * Optimizar arrhythmia con retroalimentación del módulo de cálculo
    */
-  private estimatePulseTransitTime(): number {
-    // En un dispositivo real, esto se calcularía con sensores adicionales
-    // Retornamos un valor aproximado basado en datos disponibles
-    const baselinePTT = 250; // ms
+  private optimizeArrhythmiaWithFeedback(request: FeedbackRequest): void {
+    try {
+      // Obtener parámetros de retroalimentación
+      const requestData = request.data;
+      
+      // Aplicar filtro optimizado a intervalos
+      const allIntervals: number[] = [];
+      this.arrhythmiaBuffer.forEach(data => {
+        if (data.intervals && data.intervals.length > 0) {
+          allIntervals.push(...data.intervals);
+        }
+      });
+      
+      if (allIntervals.length < 5) return;
+      
+      // Filtro adaptativo para detección de outliers en intervalos RR
+      let filteredIntervals = [...allIntervals];
+      if (requestData.filterOutliers) {
+        filteredIntervals = this.filterRROutliers(allIntervals, requestData.outlierThreshold || 0.2);
+      }
+      
+      // Calcular RMSSD y variabilidad con intervalos filtrados
+      let sumSquaredDiff = 0;
+      let diffCount = 0;
+      
+      for (let i = 1; i < filteredIntervals.length; i++) {
+        const diff = filteredIntervals[i] - filteredIntervals[i-1];
+        sumSquaredDiff += diff * diff;
+        diffCount++;
+      }
+      
+      const rmssd = diffCount > 0 ? Math.sqrt(sumSquaredDiff / diffCount) : 0;
+      
+      // Calcular variabilidad
+      const avgInterval = filteredIntervals.reduce((a, b) => a + b, 0) / filteredIntervals.length;
+      const rrVariation = calculateStandardDeviation(filteredIntervals) / avgInterval;
+      
+      // Crear respuesta adaptativa
+      const adaptiveFeedbackResponse = {
+        requestId: request.requestId,
+        timestamp: Date.now(),
+        rmssd,
+        rrVariation,
+        filteredCount: filteredIntervals.length,
+        outlierCount: allIntervals.length - filteredIntervals.length,
+        adaptationApplied: true
+      };
+      
+      // Enviar datos optimizados con retroalimentación
+      eventBus.publish(EventType.OPTIMIZED_ARRHYTHMIA, {
+        timestamp: Date.now(),
+        rmssd,
+        rrVariation,
+        intervals: filteredIntervals.slice(-20),
+        detectionProbability: 0, // El módulo de cálculo determinará esto
+        feedbackResponse: adaptiveFeedbackResponse
+      });
+      
+    } catch (error) {
+      console.error('Error en optimización con retroalimentación de arritmia:', error);
+    }
+  }
+  
+  /**
+   * Filtra outliers en intervalos RR para detección de arritmias
+   */
+  private filterRROutliers(intervals: number[], threshold: number): number[] {
+    if (intervals.length < 3) return intervals;
     
-    // Ajustar según la variabilidad de intervalos RR
-    let pttAdjustment = 0;
+    const filtered = [];
+    const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
     
-    if (this.heartRateBuffer.length > 0) {
-      const lastData = this.heartRateBuffer[this.heartRateBuffer.length - 1];
-      if (lastData.intervals && lastData.intervals.length > 1) {
-        const intervals = lastData.intervals;
-        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-        
-        // Aproximación: PTT tiende a ser menor con intervalos RR más cortos
-        pttAdjustment = (avgInterval - 800) * -0.1;
+    // Filtrar outliers basado en desviación del promedio
+    for (const interval of intervals) {
+      const deviation = Math.abs(interval - avg) / avg;
+      if (deviation <= threshold) {
+        filtered.push(interval);
       }
     }
     
-    return Math.max(180, Math.min(350, baselinePTT + pttAdjustment));
+    return filtered.length > 0 ? filtered : intervals;
   }
   
   /**
@@ -581,7 +956,8 @@ export class SignalOptimizer {
       glucose: number;
       lipids: number;
       arrhythmia: number;
-    }
+    },
+    feedbackRequestCount: number;
   } {
     return {
       isRunning: this.isRunning,
@@ -592,7 +968,8 @@ export class SignalOptimizer {
         glucose: this.glucoseBuffer.length,
         lipids: this.lipidsBuffer.length,
         arrhythmia: this.arrhythmiaBuffer.length
-      }
+      },
+      feedbackRequestCount: this.pendingFeedbackRequests.size
     };
   }
 }
