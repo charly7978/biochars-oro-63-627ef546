@@ -280,13 +280,13 @@ const PPGSignalMeter = memo(({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     
-    gradient.addColorStop(0.00, 'rgba(255, 127, 127, 0.1)');   // Soft Red
-    gradient.addColorStop(0.17, 'rgba(255, 191, 127, 0.1)');   // Soft Orange
-    gradient.addColorStop(0.33, 'rgba(255, 255, 127, 0.1)');   // Soft Yellow
-    gradient.addColorStop(0.50, 'rgba(127, 255, 127, 0.1)');   // Soft Green
-    gradient.addColorStop(0.67, 'rgba(127, 127, 255, 0.1)');   // Soft Blue
-    gradient.addColorStop(0.83, 'rgba(191, 127, 255, 0.1)');   // Soft Indigo
-    gradient.addColorStop(1.00, 'rgba(255, 127, 255, 0.1)');   // Soft Violet
+    gradient.addColorStop(0.00, 'rgba(255, 200, 200, 0.05)');  // Very soft red
+    gradient.addColorStop(0.16, 'rgba(255, 230, 200, 0.05)');  // Very soft orange
+    gradient.addColorStop(0.32, 'rgba(255, 255, 210, 0.05)');  // Very soft yellow
+    gradient.addColorStop(0.48, 'rgba(220, 255, 220, 0.05)');  // Very soft green
+    gradient.addColorStop(0.64, 'rgba(210, 220, 255, 0.05)');  // Very soft blue
+    gradient.addColorStop(0.80, 'rgba(230, 210, 255, 0.05)');  // Very soft indigo
+    gradient.addColorStop(1.00, 'rgba(255, 210, 230, 0.05)');  // Very soft violet
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);

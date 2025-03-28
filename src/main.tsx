@@ -13,7 +13,8 @@ const setupImmersiveMode = () => {
   
   // Optimizar la renderización para interfaces de alta resolución
   document.body.style.textRendering = 'geometricPrecision';
-  document.body.style.fontSmoothing = 'antialiased';
+  // Fix: Remove incorrect fontSmoothing property
+  document.body.style.setProperty('-webkit-font-smoothing', 'antialiased');
   
   // Forzar el pixel ratio del dispositivo sea respetado
   if (window.devicePixelRatio > 1) {
@@ -69,8 +70,9 @@ const requestFullscreenAggressively = () => {
     const docElem = document.documentElement;
     
     // Ocultar la barra de navegación
-    if ('setOverlayScrollbars' in docElem) {
-      docElem.setOverlayScrollbars(false);
+    // Fix: Remove incorrect setOverlayScrollbars method call
+    if ('scrollbars' in document.documentElement.style) {
+      document.documentElement.style.scrollbars = 'none';
     }
     
     // Configurar viewport para maximizar área útil
@@ -82,7 +84,7 @@ const requestFullscreenAggressively = () => {
     
     // Activar pantalla completa con diferentes métodos
     if (docElem.requestFullscreen) {
-      docElem.requestFullscreen({ navigationUI: "hide" });
+      docElem.requestFullscreen({ navigationUI: "hide" } as any);
     } else if ((docElem as any).webkitRequestFullscreen) {
       (docElem as any).webkitRequestFullscreen();
     } else if ((docElem as any).msRequestFullscreen) {
