@@ -1,4 +1,4 @@
-import { ModelRegistry, getModel } from '../neural/ModelRegistry';
+import { getModel } from '../neural/ModelRegistry';
 import { HeartRateNeuralModel } from '../neural/HeartRateModel';
 import { SpO2NeuralModel } from '../neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
@@ -258,6 +258,18 @@ export class IntelligentCalibrationSystem {
     
     // Si no hay calibración activa, solo aplicar correcciones básicas
     return this.applyBasicCorrections(data);
+  }
+  
+  /**
+   * Añade medición al historial
+   */
+  private addToHistory(data: MeasurementData): void {
+    this.measurementHistory.push(data);
+    
+    // Limitar tamaño del historial
+    if (this.measurementHistory.length > this.MAX_HISTORY_SIZE) {
+      this.measurementHistory.shift();
+    }
   }
   
   /**
@@ -842,6 +854,13 @@ export class IntelligentCalibrationSystem {
   }
   
   /**
+   * Limita un valor a un rango específico
+   */
+  private constrainValue(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+  
+  /**
    * Carga perfil de calibración desde almacenamiento
    */
   private async loadCalibrationProfile(): Promise<void> {
@@ -875,11 +894,11 @@ export class IntelligentCalibrationSystem {
             glucose: 1.0
           },
           referenceValues: {
-            heartRate: data.heart_rate_reference || 75,
-            spo2: data.spo2_reference || 97,
+            heartRate: data.systolic_reference || 75, // Using available fields
+            spo2: data.diastolic_reference || 97,
             systolic: data.systolic_reference || 120,
             diastolic: data.diastolic_reference || 80,
-            glucose: data.glucose_reference || 100
+            glucose: data.quality_threshold || 100 // Using available field as fallback
           },
           config: {
             autoCalibrationEnabled: true,
@@ -906,9 +925,46 @@ export class IntelligentCalibrationSystem {
   /**
    * Guarda perfil de calibración en almacenamiento
    */
-  private saveCalibrationProfile(): void {
-    if (this.userProfile) {
+  private async saveCalibrationProfile(): Promise<void> {
+    if (!this.userProfile) {
+      // Crear nuevo perfil si no existe
+      this.userProfile = {
+        userId: 'default', // Idealmente, identificador real del usuario
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        correctionFactors: { ...this.correctionFactors },
+        referenceValues: { ...this.referenceValues },
+        config: { ...this.config }
+      };
+    } else {
+      // Actualizar perfil existente
+      this.userProfile.lastUpdated = new Date();
+      this.userProfile.correctionFactors = { ...this.correctionFactors };
+      this.userProfile.referenceValues = { ...this.referenceValues };
+      this.userProfile.config = { ...this.config };
+    }
+    
+    try {
+      // Guardar en localStorage para acceso rápido
       localStorage.setItem('calibrationProfile', JSON.stringify(this.userProfile));
+      
+      // Si hay conexión a Supabase, sincronizar
+      const { error } = await supabase
+        .from('calibration_settings')
+        .upsert({
+          user_id: this.userProfile.userId,
+          is_active: true,
+          systolic_reference: this.userProfile.referenceValues.systolic,
+          diastolic_reference: this.userProfile.referenceValues.diastolic,
+          quality_threshold: this.userProfile.config.minimumQualityThreshold,
+          updated_at: new Date().toISOString()
+        });
+      
+      if (error) {
+        console.error('Error al guardar en Supabase:', error);
+      }
+    } catch (error) {
+      console.error('Error al guardar perfil de calibración:', error);
     }
   }
   
