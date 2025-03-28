@@ -130,9 +130,9 @@ export const resetDetectionStates = () => {
 
 /**
  * Detect if a finger is present based on signal pattern
- * @param signalQuality Signal quality
- * @param hasFingerPattern Pattern detection result
- * @param weakSignalsCount Count of weak signals
+ * @param signalQuality Signal quality (0-100)
+ * @param hasFingerPattern Whether a finger pattern was detected
+ * @param weakSignalsCount Count of consecutive weak signals
  * @returns Boolean indicating if finger is detected
  */
 export const isFingerDetected = (
