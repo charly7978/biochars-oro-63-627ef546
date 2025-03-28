@@ -15,12 +15,7 @@ export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
   // Signal measurement parameters
-  private readonly WINDOW_SIZE = 300;
   private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
-  private readonly SPO2_WINDOW = 5;
-  private readonly SMA_WINDOW = 5;
-  private readonly RR_WINDOW_SIZE = 6;
-  private readonly RMSSD_THRESHOLD = 15;
   private readonly PEAK_THRESHOLD = 0.30; // Increased from 0.25
   
   // Extended guard period to prevent false positives
@@ -37,13 +32,13 @@ export class VitalSignsProcessor {
   private readonly HISTORY_SIZE = 15; // Increased from 10
   private readonly STABILITY_THRESHOLD = 0.15; // Reduced from 0.2 (more strict)
   
-  // New: Frame rate tracking for consistency check
+  // Frame rate tracking for consistency check
   private lastFrameTime: number = 0;
   private frameRateHistory: number[] = [];
   private readonly MIN_FRAME_RATE = 15; // Minimum frames per second
   private readonly FRAME_CONSISTENCY_THRESHOLD = 0.5; // Maximum allowed variation in frame times
   
-  // New: Physiological validation
+  // Physiological validation
   private validPhysiologicalSignalsCount: number = 0;
   private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
   

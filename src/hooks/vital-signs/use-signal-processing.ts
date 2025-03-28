@@ -17,10 +17,6 @@ export const useSignalProcessing = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Track when blood pressure values were last updated
-  const lastBPUpdateRef = useRef<number>(Date.now());
-  const forceBPUpdateInterval = useRef<number>(4000);
-  
   /**
    * Process PPG signal directly
    * No simulation or reference values
@@ -100,7 +96,6 @@ export const useSignalProcessing = () => {
     console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode only");
     
     processorRef.current.reset();
-    lastBPUpdateRef.current = Date.now();
     
     console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
     return null;
@@ -118,7 +113,6 @@ export const useSignalProcessing = () => {
     processorRef.current.fullReset();
     processedSignals.current = 0;
     signalLog.current = [];
-    lastBPUpdateRef.current = Date.now();
     
     console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
   }, []);

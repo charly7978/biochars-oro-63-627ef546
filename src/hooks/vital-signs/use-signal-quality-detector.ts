@@ -18,7 +18,7 @@ export const useSignalQualityDetector = () => {
   const WEAK_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
   const MAX_CONSECUTIVE_WEAK_SIGNALS = 5; // Increased from 4
   
-  // New: Signal pattern detection for finger presence
+  // Signal pattern detection for finger presence
   const signalHistoryRef = useRef<Array<{time: number, value: number}>>([]);
   const lastPeakTimesRef = useRef<number[]>([]);
   const detectedRhythmicPatternsRef = useRef<number>(0);

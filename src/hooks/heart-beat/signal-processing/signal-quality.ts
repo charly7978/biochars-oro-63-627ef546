@@ -1,4 +1,7 @@
+
 /**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ *
  * Functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection
  */
@@ -9,13 +12,13 @@ let signalHistory: Array<{time: number, value: number}> = [];
 let patternDetectionCount = 0;
 let fingDetectionConfirmed = false;
 
-// New: Track signal statistics to detect non-physiological patterns
+// Track signal statistics to detect non-physiological patterns
 let signalMean = 0;
 let signalVariance = 0;
 let consecutiveStableFrames = 0;
 const REQUIRED_STABLE_FRAMES = 15; // Must have physiologically stable signal for this many frames
 
-// New: Track time-based consistency
+// Track time-based consistency
 let lastProcessTime = 0;
 const MAX_ALLOWED_GAP_MS = 150; // Maximum time gap allowed between processing
 
