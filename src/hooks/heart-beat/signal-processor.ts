@@ -4,7 +4,7 @@ import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
 import { 
   checkWeakSignal, 
-  shouldProcessSimpleMeasurement, 
+  shouldProcessMeasurement, 
   createWeakSignalResult, 
   handlePeakDetection,
   updateLastValidBpm,
@@ -53,17 +53,17 @@ export function useSignalProcessor() {
       consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
       
       if (isWeakSignal) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
+        return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
       // Only process signals with sufficient amplitude
-      if (!shouldProcessSimpleMeasurement(value)) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
+      if (!shouldProcessMeasurement(value)) {
+        return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
       // Process real signal
       const result = processor.processSignal(value);
-      const rrData = processor.getRRIntervals ? processor.getRRIntervals() : { intervals: [], lastPeakTime: null };
+      const rrData = processor.getRRIntervals();
       
       if (rrData && rrData.intervals.length > 0) {
         lastRRIntervalsRef.current = [...rrData.intervals];
@@ -87,7 +87,7 @@ export function useSignalProcessor() {
       return processLowConfidenceResult(
         result, 
         currentBPM, 
-        processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0
+        processor.getArrhythmiaCounter()
       );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);

@@ -16,7 +16,6 @@ export function useArrhythmiaDetector() {
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
   const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
-  const arrhythmiaCountRef = useRef<number>(0);
 
   /**
    * Analyze real RR intervals to detect arrhythmias 
@@ -40,22 +39,12 @@ export function useArrhythmiaDetector() {
     // Calculate RR variation
     const variationRatio = calculateRRVariation(lastIntervals);
     
-    // More relaxed threshold to improve detection rate
-    let thresholdFactor = 0.20; // Lower than before to detect more arrhythmias
+    // More strict threshold
+    let thresholdFactor = 0.25;
     if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.15; // Even lower for established patterns
+      thresholdFactor = 0.20;
     } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.25; // A bit higher at the beginning
-    }
-    
-    // Check if we need to tweak the detection based on historical data
-    if (heartRateVariabilityRef.current.length > 5) {
-      const avgVar = heartRateVariabilityRef.current.reduce((a, b) => a + b, 0) / 
-                   heartRateVariabilityRef.current.length;
-      if (avgVar < 0.05) {
-        // Very regular heart rate, need more variation to detect arrhythmia
-        thresholdFactor = 0.30;
-      }
+      thresholdFactor = 0.30;
     }
     
     const isIrregular = variationRatio > thresholdFactor;
@@ -66,21 +55,8 @@ export function useArrhythmiaDetector() {
       stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
     }
     
-    // IMPORTANT: Report arrhythmia immediately if the variation is very high
-    let isArrhythmia = isIrregular && (variationRatio > 0.35 || stabilityCounterRef.current > 8); 
-    
-    // Track if we had an arrhythmia before
-    const wasArrhythmia = lastIsArrhythmiaRef.current;
-    
-    // Count arrhythmias
-    if (isArrhythmia && !wasArrhythmia) {
-      arrhythmiaCountRef.current++;
-      // Log that we detected an arrhythmia
-      console.log(`Arrhythmia detected! Count: ${arrhythmiaCountRef.current}, Variation: ${variationRatio.toFixed(2)}`);
-    }
-    
-    // Update state
-    lastIsArrhythmiaRef.current = isArrhythmia;
+    // Require more stability before reporting arrhythmia
+    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
     
     heartRateVariabilityRef.current.push(variationRatio);
     if (heartRateVariabilityRef.current.length > 20) {
@@ -91,8 +67,7 @@ export function useArrhythmiaDetector() {
       rmssd,
       rrVariation: variationRatio,
       timestamp: Date.now(),
-      isArrhythmia,
-      arrhythmiaCount: arrhythmiaCountRef.current
+      isArrhythmia
     };
   }, []);
 
@@ -105,7 +80,6 @@ export function useArrhythmiaDetector() {
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
     currentBeatIsArrhythmiaRef.current = false;
-    arrhythmiaCountRef.current = 0;
   }, []);
 
   return {
@@ -115,7 +89,6 @@ export function useArrhythmiaDetector() {
     lastRRIntervalsRef,
     lastIsArrhythmiaRef,
     currentBeatIsArrhythmiaRef,
-    arrhythmiaCountRef,
     reset
   };
 }
