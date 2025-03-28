@@ -24,7 +24,6 @@ export const useHeartBeatProcessor = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioInitializedRef = useRef<boolean>(false);
   const lastPeakRef = useRef<number | null>(null);
-  const pendingPeakRef = useRef<boolean>(false);
 
   // Inicializar el contexto de audio para asegurar que el sonido funcione
   useEffect(() => {
@@ -134,32 +133,22 @@ export const useHeartBeatProcessor = () => {
       setBpm(result.bpm);
     }
     
-    // Mejoramos la sincronización del beep con el pico visual
-    // Agregamos un pequeño adelanto para compensar las latencias
+    // Si detectamos un pico (isPeak), reproducimos el beep manualmente
+    // Esto asegura que el beep se sincronice con el pico máximo visualizado en el gráfico
     if (result.isPeak && audioContextRef.current && audioInitializedRef.current) {
+      // Verificamos que el pico actual sea diferente al último
       const now = Date.now();
-      
-      // Verificamos que no hayamos reproducido un beep recientemente
       if (!lastPeakRef.current || (now - lastPeakRef.current) > 300) {
-        // Marcamos que hay un pico pendiente para reproducción inmediata
-        pendingPeakRef.current = true;
-        
-        // Reproducimos el beep con prioridad alta (sin demora)
+        // Reproducimos el beep directamente por el audio context
         try {
+          // Solo reproducimos el beep si no estamos en warmup
           if (processor.isReady()) {
-            // Aumentamos ligeramente el volumen para mayor claridad
-            processor.playBeep(0.45);
+            processor.playBeep(0.35);
             lastPeakRef.current = now;
-            pendingPeakRef.current = false;
-            console.log("Beep played EXACTLY at peak detection", { 
-              timestamp: now,
-              isPeak: result.isPeak,
-              filteredValue: result.filteredValue
-            });
+            console.log("Manual beep played at peak detection", { timestamp: now });
           }
         } catch (err) {
-          console.error("Error playing synchronized beep at peak:", err);
-          pendingPeakRef.current = false;
+          console.error("Error playing manual beep at peak:", err);
         }
       }
     }
@@ -186,7 +175,6 @@ export const useHeartBeatProcessor = () => {
       setIsArrhythmia(false);
       setArrhythmiaData(null);
       lastPeakRef.current = null;
-      pendingPeakRef.current = false;
       
       // Reiniciar conexión de audio
       if (audioContextRef.current) {
@@ -200,13 +188,11 @@ export const useHeartBeatProcessor = () => {
     setIsProcessing(true);
     reset();
     lastPeakRef.current = null;
-    pendingPeakRef.current = false;
     
     // Asegurar que el audio esté habilitado al comenzar
     if (audioContextRef.current && processorRef.current) {
       audioContextRef.current.resume().then(() => {
         processorRef.current.setAudioContext(audioContextRef.current!);
-        processorRef.current.setManualBeepMode(true); // Aseguramos que estamos en modo manual
         console.log("Audio context resumed at start processing");
       }).catch(err => {
         console.error("Error resuming audio context at start:", err);
