@@ -28,4 +28,22 @@ export interface RRAnalysisResult {
    * Boolean flag indicating whether an arrhythmia was detected
    */
   isArrhythmia: boolean;
+  
+  /**
+   * Visualization window for arrhythmia detection
+   */
+  visualWindow?: {
+    start: number;
+    end: number;
+  };
+  
+  /**
+   * Severity of the detected arrhythmia
+   */
+  severity?: 'media' | 'alta';
+  
+  /**
+   * Type of arrhythmia detected
+   */
+  type?: string;
 }
