@@ -1,130 +1,221 @@
 
-import { useRef, useState, useCallback } from 'react';
-import { VitalSignsProcessor, VitalSignsResult, RRData } from '../modules';
+/**
+ * Hook para procesamiento de signos vitales
+ * Integra los módulos de procesamiento, optimización y cálculo
+ */
+
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSignalOptimizer } from './useSignalOptimizer';
+import { useVitalSignsCalculator } from './useVitalSignsCalculator';
+import { VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 
 /**
- * Hook para procesamiento de signos vitales que mantiene un estado consistente
- * NOTA: Este hook utiliza el procesador de señales optimizado central
- * manteniendo compatibilidad con interfaces anteriores
+ * Hook que integra el procesamiento, optimización y cálculo de signos vitales
  */
-export function useVitalSignsProcessor() {
-  const processorRef = useRef<VitalSignsProcessor | null>(null);
+export const useVitalSignsProcessor = () => {
+  // Estado para resultados
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
-  const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
-  const processedSignalsRef = useRef<number>(0);
-  const arrhythmiaCounterRef = useRef<number>(0);
-
-  // Inicializar el procesador si no existe
-  if (!processorRef.current) {
-    processorRef.current = new VitalSignsProcessor();
-  }
-
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Optimizador multicanal
+  const { 
+    optimizeSignal, 
+    optimizedValues,
+    reset: resetOptimizer
+  } = useSignalOptimizer();
+  
+  // Calculador de signos vitales con feedback bidireccional
+  const {
+    calculateVitalSigns,
+    lastCalculation,
+    visualizationData,
+    reset: resetCalculator
+  } = useVitalSignsCalculator();
+  
+  // Referencia para conteo de señales procesadas
+  const processedSignals = useRef(0);
+  
+  // Procesar cálculos cuando cambian las señales optimizadas
+  useEffect(() => {
+    if (isProcessing && Object.values(optimizedValues).some(value => value !== null)) {
+      const result = calculateVitalSigns();
+      
+      if (result) {
+        // Transformar los objetos de cálculo a valores simples para VitalSignsResult
+        const processedResult: VitalSignsResult = {
+          spo2: typeof result.spo2.value === 'number' ? result.spo2.value : 0,
+          pressure: typeof result.bloodPressure.value === 'string' ? result.bloodPressure.value : "--/--",
+          arrhythmiaStatus: result.arrhythmia.status || "--",
+          glucose: typeof result.glucose.value === 'number' ? result.glucose.value : 0,
+          lipids: {
+            totalCholesterol: typeof result.cholesterol.value === 'number' ? result.cholesterol.value : 0,
+            triglycerides: typeof result.triglycerides.value === 'number' ? result.triglycerides.value : 0
+          },
+          confidence: {
+            glucose: result.glucose.confidence,
+            lipids: (result.cholesterol.confidence + result.triglycerides.confidence) / 2,
+            overall: 0.7
+          },
+          lastArrhythmiaData: result.arrhythmia.data
+        };
+        
+        console.log("VitalSignsProcessor: Resultados procesados", processedResult);
+        setLastValidResults(processedResult);
+      }
+    }
+  }, [optimizedValues, calculateVitalSigns, isProcessing]);
+  
   /**
    * Procesa una señal PPG y calcula signos vitales
    */
   const processSignal = useCallback((
-    value: number,
-    rrData?: RRData
-  ): VitalSignsResult | null => {
-    if (!processorRef.current) return null;
-
-    // Incrementar contador de señales procesadas
-    processedSignalsRef.current++;
-    
-    try {
-      // Procesar la señal con el optimizador central
-      const result = processorRef.current.processSignal(value, rrData);
-      
-      // Rastrear contador de arritmias
-      if (result.arrhythmiaStatus.includes('ARRITMIA')) {
-        const parts = result.arrhythmiaStatus.split('|');
-        if (parts.length > 1) {
-          const count = parseInt(parts[1], 10);
-          if (!isNaN(count)) {
-            arrhythmiaCounterRef.current = count;
-          }
+    value: number, 
+    rrData?: { intervals: number[], lastPeakTime: number | null },
+    isWeakSignal: boolean = false
+  ) => {
+    if (isWeakSignal) {
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
         }
+      };
+    }
+    
+    setIsProcessing(true);
+    processedSignals.current++;
+    
+    try {
+      // Registro diagnóstico periódico
+      if (processedSignals.current % 45 === 0) {
+        console.log("useVitalSignsProcessor: Procesando señal", {
+          inputValue: value,
+          rrDataPresent: !!rrData,
+          rrIntervals: rrData?.intervals.length || 0,
+          signalNumber: processedSignals.current,
+          optimizedChannels: Object.keys(optimizedValues).filter(
+            k => optimizedValues[k] !== null
+          ).length
+        });
       }
       
-      // Actualizar resultados válidos solo si los valores son significativos
-      if (typeof result.spo2 === 'number' && result.spo2 > 0 && 
-          result.pressure !== "--/--" && result.pressure !== "0/0") {
-        setLastValidResults(result);
+      // Procesar señal a través del optimizador multicanal
+      if (value !== 0) {
+        // Crear objeto de señal PPG para el optimizador
+        const ppgSignal = {
+          timestamp: Date.now(),
+          rawValue: value,
+          filteredValue: value,
+          normalizedValue: value,
+          amplifiedValue: value,
+          quality: 80,
+          fingerDetected: true,
+          signalStrength: 80,
+          // Añadir datos RR para optimizador de frecuencia cardíaca
+          metadata: {
+            rrIntervals: rrData?.intervals || [],
+            lastPeakTime: rrData?.lastPeakTime
+          }
+        };
+        
+        // Optimizar señal para todos los canales
+        optimizeSignal(ppgSignal);
       }
       
-      return result;
+      // El cálculo se realiza en el efecto cuando cambian los valores optimizados
+      
+      // Asegurarse de que devolvemos valores simples, no objetos de cálculo
+      return lastValidResults || {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
     } catch (error) {
-      console.error("Error procesando señal vital:", error);
-      return null;
+      console.error("Error processing vital signs:", error);
+      
+      return lastValidResults || {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
     }
-  }, []);
-
+  }, [optimizeSignal, lastValidResults, optimizedValues]);
+  
   /**
-   * Reinicia el procesador y devuelve los últimos resultados válidos
+   * Reinicia el procesador manteniendo último resultado
    */
-  const reset = useCallback((): VitalSignsResult | null => {
-    if (!processorRef.current) return null;
+  const reset = useCallback(() => {
+    console.log("useVitalSignsProcessor: Reset iniciado");
     
-    try {
-      // Reiniciar procesador pero mantener resultados
-      const savedResults = processorRef.current.reset();
-      return savedResults;
-    } catch (error) {
-      console.error("Error reiniciando procesador:", error);
-      return null;
-    }
-  }, []);
-
+    // Guardar último resultado válido
+    const savedResults = lastValidResults;
+    
+    // Reiniciar optimizador y calculador
+    resetOptimizer();
+    resetCalculator();
+    
+    setIsProcessing(false);
+    
+    console.log("useVitalSignsProcessor: Reset completado");
+    return savedResults;
+  }, [lastValidResults, resetOptimizer, resetCalculator]);
+  
   /**
-   * Reinicia completamente el procesador y todos sus datos
+   * Reinicio completo incluyendo historial
    */
-  const fullReset = useCallback((): void => {
-    if (!processorRef.current) return;
+  const fullReset = useCallback(() => {
+    console.log("useVitalSignsProcessor: Full reset iniciado");
     
-    try {
-      // Reinicio completo
-      processorRef.current.fullReset();
-      setLastValidResults(null);
-      arrhythmiaCounterRef.current = 0;
-      processedSignalsRef.current = 0;
-      sessionIdRef.current = Math.random().toString(36).substring(2, 9);
-    } catch (error) {
-      console.error("Error en reinicio completo:", error);
-    }
-  }, []);
-
+    resetOptimizer();
+    resetCalculator();
+    processedSignals.current = 0;
+    setLastValidResults(null);
+    setIsProcessing(false);
+    
+    console.log("useVitalSignsProcessor: Full reset completado");
+  }, [resetOptimizer, resetCalculator]);
+  
   /**
-   * Inicia el proceso de calibración
+   * Obtiene información de visualización para gráficos
    */
-  const startCalibration = useCallback((): void => {
-    if (!processorRef.current) return;
-    
-    try {
-      processorRef.current.startCalibration();
-    } catch (error) {
-      console.error("Error iniciando calibración:", error);
-    }
-  }, []);
-
+  const getVisualizationData = useCallback(() => {
+    return visualizationData;
+  }, [visualizationData]);
+  
   /**
-   * Fuerza la finalización del proceso de calibración
+   * Obtiene información de depuración
    */
-  const forceCalibrationCompletion = useCallback((): void => {
-    if (!processorRef.current) return;
-    
-    try {
-      processorRef.current.forceCalibrationCompletion();
-    } catch (error) {
-      console.error("Error forzando finalización de calibración:", error);
-    }
-  }, []);
-
+  const getDebugInfo = useCallback(() => {
+    return {
+      processedSignals: processedSignals.current,
+      optimizedChannelsAvailable: Object.keys(optimizedValues).filter(
+        k => optimizedValues[k] !== null
+      ),
+      lastCalculation: lastCalculation,
+      visualizationAvailable: !!visualizationData
+    };
+  }, [optimizedValues, lastCalculation, visualizationData]);
+  
   return {
     processSignal,
     reset,
     fullReset,
-    lastValidResults,
-    startCalibration,
-    forceCalibrationCompletion
+    getVisualizationData,
+    getDebugInfo,
+    lastValidResults
   };
-}
+};

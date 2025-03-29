@@ -1,59 +1,61 @@
 
 /**
- * Utilidades para optimización de visualización en diferentes dispositivos
- * Este archivo maneja las adaptaciones necesarias para diferentes densidades de píxeles
+ * Helper functions for optimizing display in PPG signal visualization
  */
 
 /**
- * Verifica si el dispositivo actual es móvil
+ * Get the appropriate color for signal path based on arrhythmia status
  */
-export const isMobileDevice = (): boolean => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
-};
+export function getSignalColor(isArrhythmia: boolean): string {
+  return isArrhythmia ? '#DC2626' : '#0EA5E9';
+}
 
 /**
- * Optimiza un elemento canvas para dispositivos de alta resolución
- * @param canvas Elemento canvas a optimizar
- * @param width Ancho deseado
- * @param height Alto deseado
+ * Check if a point is within an arrhythmia window
  */
-export const optimizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number): void => {
+export function isPointInArrhythmiaWindow(
+  pointTime: number, 
+  arrhythmiaWindows: Array<{ start: number, end: number }>,
+  now: number
+): boolean {
+  return arrhythmiaWindows.some(window => {
+    // Consider the window active if it's recent (within 3 seconds)
+    const windowAge = now - window.end;
+    const isRecentWindow = windowAge < 3000;
+    
+    return isRecentWindow && pointTime >= window.start && pointTime <= window.end;
+  });
+}
+
+/**
+ * Optimize canvas for device pixel ratio
+ */
+export function optimizeCanvas(canvas: HTMLCanvasElement, width: number, height: number): void {
   const dpr = window.devicePixelRatio || 1;
-  
-  // Establecer las dimensiones del elemento canvas
   canvas.width = width * dpr;
   canvas.height = height * dpr;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
   
-  // Ajustar el contexto para la escala
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.scale(dpr, dpr);
   }
-};
+}
 
 /**
- * Optimiza cualquier elemento HTML para mostrar correctamente en dispositivos de alta resolución
- * @param element Elemento a optimizar
+ * Optimize HTML element for better rendering
  */
-export const optimizeElement = (element: HTMLElement): void => {
-  const dpr = window.devicePixelRatio || 1;
-  
-  if (dpr > 1) {
-    // Aplicar estilos para mejorar la nitidez en pantallas de alta densidad
-    element.style.transform = 'translateZ(0)';
-    element.style.backfaceVisibility = 'hidden';
-  }
-};
+export function optimizeElement(element: HTMLElement): void {
+  element.style.transform = 'translateZ(0)';
+  element.style.backfaceVisibility = 'hidden';
+  element.style.perspective = '1000px';
+}
 
 /**
- * Determina el factor de escala óptimo para un dispositivo
+ * Check if the current device is mobile
  */
-export const getOptimalScaleFactor = (): number => {
-  const dpr = window.devicePixelRatio || 1;
-  
-  // Limitar el factor de escala para dispositivos de muy alta densidad
-  return Math.min(dpr, 2.5);
-};
+export function isMobileDevice(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+}
+
