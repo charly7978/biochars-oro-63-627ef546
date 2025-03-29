@@ -26,8 +26,8 @@ export const useVitalSignsProcessor = () => {
   
   // Optimizador multicanal
   const { 
-    optimizeSignal, 
-    optimizedValues,
+    processSignal: optimizeSignal, 
+    optimizedSignals,
     reset: resetOptimizer
   } = useSignalOptimizer();
   
@@ -45,7 +45,7 @@ export const useVitalSignsProcessor = () => {
   
   // Procesar cálculos cuando cambian las señales optimizadas
   useEffect(() => {
-    if (isProcessing && Object.values(optimizedValues).some(value => value !== null)) {
+    if (isProcessing && Object.values(optimizedSignals).some(value => value !== null)) {
       const result = calculateVitalSigns();
       
       if (result) {
@@ -74,7 +74,7 @@ export const useVitalSignsProcessor = () => {
         setLastValidResults(processedResult);
       }
     }
-  }, [optimizedValues, calculateVitalSigns, isProcessing]);
+  }, [optimizedSignals, calculateVitalSigns, isProcessing]);
 
   // Función para calcular el progreso de calibración
   const calculateCalibrationProgress = (frames: number) => {
@@ -129,8 +129,8 @@ export const useVitalSignsProcessor = () => {
           rrIntervals: rrData?.intervals.length || 0,
           signalNumber: processedSignals.current,
           calibration: calibrationRef.current,
-          optimizedChannels: Object.keys(optimizedValues).filter(
-            k => optimizedValues[k] !== null
+          optimizedChannels: Object.keys(optimizedSignals).filter(
+            k => optimizedSignals[k] !== null
           ).length
         });
       }
@@ -201,7 +201,7 @@ export const useVitalSignsProcessor = () => {
         }
       };
     }
-  }, [optimizeSignal, lastValidResults, optimizedValues]);
+  }, [optimizeSignal, lastValidResults, optimizedSignals]);
   
   /**
    * Reinicia el procesador manteniendo último resultado
@@ -260,20 +260,28 @@ export const useVitalSignsProcessor = () => {
     return {
       processedSignals: processedSignals.current,
       calibrationProgress: calibrationRef.current,
-      optimizedChannelsAvailable: Object.keys(optimizedValues).filter(
-        k => optimizedValues[k] !== null
+      optimizedChannelsAvailable: Object.keys(optimizedSignals).filter(
+        k => optimizedSignals[k] !== null
       ),
       lastCalculation: lastCalculation,
       visualizationAvailable: !!visualizationData
     };
-  }, [optimizedValues, lastCalculation, visualizationData]);
+  }, [optimizedSignals, lastCalculation, visualizationData]);
   
   return {
     processSignal,
     reset,
-    fullReset,
-    getVisualizationData,
-    getDebugInfo,
+    fullReset: resetOptimizer,
+    getVisualizationData: () => visualizationData,
+    getDebugInfo: () => ({
+      processedSignals: processedSignals.current,
+      calibrationProgress: calibrationRef.current,
+      optimizedChannelsAvailable: Object.keys(optimizedSignals).filter(
+        k => optimizedSignals[k] !== null
+      ),
+      lastCalculation,
+      visualizationAvailable: !!visualizationData
+    }),
     lastValidResults
   };
 };

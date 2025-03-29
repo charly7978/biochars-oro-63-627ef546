@@ -28,12 +28,18 @@ export class BloodPressureOptimizer extends BaseChannelOptimizer {
   /**
    * Optimiza la señal para cálculo de presión arterial
    */
-  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+  public override optimize(signal: ProcessedPPGSignal): OptimizedSignal {
     // Amplificar señal
     const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
     // Filtrar señal
     const filtered = this.applyAdaptiveFiltering(amplified);
+    
+    // Actualizar buffer
+    this.valueBuffer.push(filtered);
+    if (this.valueBuffer.length > this._maxBufferSize) {
+      this.valueBuffer.shift();
+    }
     
     // Aplicar procesamiento específico para presión arterial
     const optimized = this.applyBPSpecificProcessing(filtered);
@@ -43,6 +49,9 @@ export class BloodPressureOptimizer extends BaseChannelOptimizer {
     
     // Calcular confianza
     const confidence = this.calculateConfidence(signal);
+    
+    // Guardar valor optimizado para siguiente iteración
+    this.lastOptimizedValue = optimized;
     
     // Limitar valor a rango [0,1]
     const normalizedValue = Math.max(0, Math.min(1, optimized));
@@ -90,7 +99,7 @@ export class BloodPressureOptimizer extends BaseChannelOptimizer {
   /**
    * Procesa retroalimentación del calculador
    */
-  public processFeedback(feedback: FeedbackData): void {
+  public override processFeedback(feedback: FeedbackData): void {
     if (feedback.channel !== 'bloodPressure') return;
     
     // Escala de ajuste según magnitud
@@ -119,7 +128,8 @@ export class BloodPressureOptimizer extends BaseChannelOptimizer {
           const param = feedback.parameter as keyof typeof this.parameters;
           if (this.parameters[param] !== undefined) {
             const direction = feedback.confidence && feedback.confidence < 0.5 ? 1 : -1;
-            this.parameters[param] = this.parameters[param] * (1 + direction * adjustmentScale * 0.1);
+            const adjustFactor = direction * adjustmentScale * 0.1;
+            this.parameters[param] = this.parameters[param] * (1 + adjustFactor);
           }
         }
         break;

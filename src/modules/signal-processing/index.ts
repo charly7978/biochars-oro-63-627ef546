@@ -7,6 +7,7 @@
 export * from './types';
 export * from './ppg-processor';
 export * from './heartbeat-processor';
+export * from './combined-processor';
 export * from './utils/finger-detector';
 export * from './utils/quality-detector';
 export * from './utils/signal-normalizer';

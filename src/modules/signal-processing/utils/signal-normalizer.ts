@@ -1,65 +1,71 @@
 
 /**
- * Normalizador de señal
- * Implementa funciones para normalizar la señal PPG
+ * Utilidades para normalización de señal PPG
  */
 
 /**
- * Normaliza un valor de señal respecto a una línea base
+ * Normaliza un valor dentro de un rango específico
  */
-export function normalizeSignal(
-  value: number,
-  baselineValue: number
-): number {
-  return value - baselineValue;
+export function normalizeValue(value: number, min: number, max: number): number {
+  if (max === min) return 0;
+  return (value - min) / (max - min);
 }
 
 /**
- * Calcula la línea base a partir de un buffer de valores
+ * Normaliza un array de valores al rango [0,1]
  */
-export function calculateBaseline(
-  buffer: number[],
-  currentBaseline: number,
-  weight: number = 0.2
-): number {
-  if (buffer.length === 0) {
-    return currentBaseline;
-  }
-
-  // Calcular promedio del buffer
-  const average = buffer.reduce((sum, val) => sum + val, 0) / buffer.length;
-
-  // Actualizar línea base con ponderación
-  return currentBaseline * (1 - weight) + average * weight;
+export function normalizeValues(values: number[]): number[] {
+  if (values.length === 0) return [];
+  
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  
+  if (max === min) return values.map(() => 0.5);
+  
+  return values.map(v => (v - min) / (max - min));
 }
 
 /**
- * Amplifica un valor normalizado
+ * Amplifica una señal PPG de forma adaptativa
  */
-export function amplifySignal(
-  normalizedValue: number,
-  gain: number,
-  values: number[] = []
-): number {
-  // Ganancia fija
-  let effectiveGain = gain;
+export function amplifySignal(value: number, recentValues: number[], factor: number = 1.5): number {
+  if (recentValues.length < 3) return value;
+  
+  // Calcular media móvil
+  const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+  
+  // Centrar el valor respecto a la media
+  const centeredValue = value - mean;
+  
+  // Amplificar y re-centrar
+  return (centeredValue * factor) + mean;
+}
 
-  // Si hay suficientes valores y se desea ganancia adaptativa
-  if (values.length >= 10) {
-    // Calcular variabilidad reciente
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
+/**
+ * Aplica filtro de Media Móvil Simple (SMA)
+ */
+export function applyMovingAverageFilter(value: number, buffer: number[], windowSize: number = 5): number {
+  const window = [...buffer, value].slice(-windowSize);
+  return window.reduce((sum, val) => sum + val, 0) / window.length;
+}
 
-    // Ajustar ganancia inversamente a la desviación estándar
-    if (stdDev < 0.1) {
-      // Más ganancia para señal estable
-      effectiveGain = gain * (1 + (0.1 - stdDev) * 10);
-    } else {
-      // Menos ganancia para señal muy variable
-      effectiveGain = gain / (1 + (stdDev - 0.1) * 5);
-    }
-  }
+/**
+ * Aplica filtro Pasa Bajos Exponencial
+ */
+export function applyLowPassFilter(value: number, lastValue: number, alpha: number = 0.2): number {
+  return alpha * value + (1 - alpha) * lastValue;
+}
 
-  return normalizedValue * effectiveGain;
+/**
+ * Detecta y elimina outliers usando método de desviación estándar
+ */
+export function removeOutliers(values: number[], threshold: number = 2.0): number[] {
+  if (values.length <= 3) return values;
+  
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
+  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+  const stdDev = Math.sqrt(variance);
+  
+  return values.filter(v => Math.abs(v - mean) <= threshold * stdDev);
 }
