@@ -26,3 +26,22 @@ export interface UseHeartBeatReturn {
   startMonitoring: () => void;
   stopMonitoring: () => void;
 }
+
+export interface PPGDataPoint {
+  time: number;
+  value: number;
+  isPeak: boolean;
+  isArrhythmia?: boolean;
+}
+
+export interface CardiacMetrics {
+  bpm: number;
+  confidence: number;
+  rrVariability: number;
+  rrIntervalAvg?: number;
+  rrIntervalMin?: number;
+  rrIntervalMax?: number;
+  waveformAmplitude?: number;
+  qualityScore: number;
+  arrhythmiaCount: number;
+}
