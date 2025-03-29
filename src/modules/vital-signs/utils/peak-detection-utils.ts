@@ -15,23 +15,25 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   // Busca picos correctamente orientados (hacia arriba)
   for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
-    // Detección de picos (orientados hacia arriba)
+    // Detección de picos (orientados hacia arriba) - Umbral reducido para capturar más picos
     if (
-      v >= values[i - 1] * 0.95 &&
-      v >= values[i + 1] * 0.95
+      v >= values[i - 1] * 0.92 &&
+      v >= values[i + 1] * 0.92
     ) {
       const localMin = Math.min(values[i - 1], values[i + 1]);
-      if (v - localMin > 0.02) {
+      // Umbral de amplitud reducido para capturar más picos
+      if (v - localMin > 0.01) {
         peakIndices.push(i);
       }
     }
-    // Detección de valles (orientados hacia abajo)
+    // Detección de valles (orientados hacia abajo) - Umbral ajustado para mejor detección
     if (
-      v <= values[i - 1] * 1.05 &&
-      v <= values[i + 1] * 1.05
+      v <= values[i - 1] * 1.08 &&
+      v <= values[i + 1] * 1.08
     ) {
       const localMax = Math.max(values[i - 1], values[i + 1]);
-      if (localMax - v > 0.02) {
+      // Umbral de amplitud reducido para capturar más valles
+      if (localMax - v > 0.01) {
         valleyIndices.push(i);
       }
     }
@@ -39,7 +41,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   
   // Filtrar picos muy cercanos (mejora de visualización)
   const filteredPeaks: number[] = [];
-  const MIN_DISTANCE = 3;
+  const MIN_DISTANCE = 2; // Distancia mínima reducida para capturar más picos
   
   for (let i = 0; i < peakIndices.length; i++) {
     if (i === 0 || peakIndices[i] - peakIndices[i - 1] >= MIN_DISTANCE) {
@@ -75,7 +77,8 @@ export function calculateAmplitude(
       }
     }
     
-    if (closestValleyIdx !== -1 && minDistance < 10) {
+    // Distancia máxima aumentada para capturar más relaciones pico-valle
+    if (closestValleyIdx !== -1 && minDistance < 15) {
       const amp = values[peakIdx] - values[closestValleyIdx];
       if (amp > 0) {
         amps.push(amp);

@@ -61,6 +61,7 @@ export function isMobileDevice(): boolean {
 
 /**
  * Format vital signs data for display
+ * Garantiza que los datos de signos vitales sean válidos y tengan un formato adecuado para mostrar
  */
 export function formatVitalSigns(data: { 
   heartRate?: number; 
@@ -68,11 +69,12 @@ export function formatVitalSigns(data: {
   pressure?: string;
   arrhythmiaCount?: number | string;
 }) {
+  // Verificar que todos los valores sean válidos y asignar valores por defecto si son nulos o indefinidos
   return {
-    heartRate: data.heartRate || 0,
-    spo2: data.spo2 || 0,
+    heartRate: data.heartRate !== undefined && data.heartRate > 0 ? data.heartRate : "--",
+    spo2: data.spo2 !== undefined && data.spo2 > 0 ? data.spo2 : "--",
     pressure: data.pressure || "--/--",
-    arrhythmiaCount: data.arrhythmiaCount || 0
+    arrhythmiaCount: data.arrhythmiaCount || "--"
   };
 }
 
@@ -176,4 +178,50 @@ export function drawPPGReference(
     // Lower amplitude label
     ctx.fillText(`-${i}`, 5, centerY + (i * amplitudeStep) + 10);
   }
+}
+
+/**
+ * Renderiza la información de signos vitales en una posición específica del canvas
+ */
+export function renderVitalSignsOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  vitalSigns: {
+    heartRate: number | string;
+    spo2: number | string;
+    pressure: string;
+    arrhythmiaCount: number | string;
+  }
+): void {
+  const padding = 15;
+  const topOffset = 30;
+  const lineHeight = 25;
+  
+  // Configurar estilo para el texto
+  ctx.font = 'bold 16px "Inter", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  
+  // Dibujar fondo semitransparente para mejor legibilidad
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(padding, topOffset, width - (padding * 2), lineHeight * 4 + 20);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(padding, topOffset, width - (padding * 2), lineHeight * 4 + 20);
+  
+  // Renderizar cada signo vital
+  ctx.fillStyle = '#FFFFFF';
+  
+  // Frecuencia cardíaca
+  ctx.fillText(`FC: ${vitalSigns.heartRate} BPM`, padding + 10, topOffset + lineHeight);
+  
+  // SpO2
+  ctx.fillText(`SpO2: ${vitalSigns.spo2}%`, padding + 10, topOffset + lineHeight * 2);
+  
+  // Presión arterial
+  ctx.fillText(`PA: ${vitalSigns.pressure} mmHg`, padding + 10, topOffset + lineHeight * 3);
+  
+  // Arritmias
+  ctx.fillText(`Arritmias: ${vitalSigns.arrhythmiaCount}`, padding + 10, topOffset + lineHeight * 4);
 }

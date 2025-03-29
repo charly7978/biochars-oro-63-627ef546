@@ -46,7 +46,7 @@ export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
   }
 
   public toArray(): T[] {
-    // Alias for getPoints() to ensure compatibility
+    // Esta función es un alias para getPoints() para mantener compatibilidad
     return this.getPoints();
   }
 
