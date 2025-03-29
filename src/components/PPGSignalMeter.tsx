@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -54,9 +55,11 @@ const PPGSignalMeter = memo(({
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const lastArrhythmiaTimeRef = useRef<number>(0);
 
+  // Audio context para beeps
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
+  // Bandera para controlar que no ocurran beeps duplicados
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
   const CANVAS_CENTER_OFFSET = 60;
@@ -84,12 +87,14 @@ const PPGSignalMeter = memo(({
   const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
   const ARRHYTHMIA_DURATION_MS = 800;
 
+  // Configuración de audio
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 350;
+  const MIN_BEEP_INTERVAL_MS = 350; // Aumentado para evitar beeps muy cercanos
 
+  // Inicializar el contexto de audio
   useEffect(() => {
     const initAudio = async () => {
       try {
@@ -101,6 +106,7 @@ const PPGSignalMeter = memo(({
             await audioContextRef.current.resume();
           }
           
+          // Beep de inicialización silencioso
           await playBeep(0.01);
         }
       } catch (err) {
@@ -120,6 +126,7 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
+  // Función para reproducir beep SOLO cuando se dibuja un círculo
   const playBeep = useCallback(async (volume = BEEP_VOLUME) => {
     try {
       const now = Date.now();
@@ -198,6 +205,7 @@ const PPGSignalMeter = memo(({
       
       lastBeepTimeRef.current = now;
       
+      // Resetear la bandera de pico pendiente
       pendingBeepPeakIdRef.current = null;
       
       return true;
@@ -374,9 +382,11 @@ const PPGSignalMeter = memo(({
     
     const effectivePeakThreshold = 1.8;
     
+    // Solo analizar puntos positivos (parte superior de la onda)
     for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
       
+      // Solo considerar picos positivos para evitar detección doble
       if (currentPoint.value <= 0) continue;
       
       const minPeakDistance = 180;
@@ -415,7 +425,7 @@ const PPGSignalMeter = memo(({
           index: i,
           value: currentPoint.value,
           time: currentPoint.time,
-          isArrhythmia: isInArrhythmiaSegment || currentPoint.isArrhythmia
+          isArrhythmia: isInArrhythmiaSegment
         });
       }
     }
@@ -426,16 +436,27 @@ const PPGSignalMeter = memo(({
       );
       
       if (!tooClose) {
+        // Generar ID único para este pico
         const peakId = Date.now() + Math.random();
         
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
           isArrhythmia: peak.isArrhythmia,
-          beepPlayed: false
+          beepPlayed: false // Marcar que aún no se ha reproducido beep para este pico
         });
         
-        pendingBeepPeakIdRef.current = peakId;
+        // Marcar este pico como pendiente para beep en la fase de renderizado
+        if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+          pendingBeepPeakIdRef.current = peakId;
+          
+          console.log("PPGSignalMeter: Pico detectado, programado para beep:", {
+            time: peak.time,
+            value: peak.value,
+            isArrhythmia: peak.isArrhythmia,
+            peakId
+          });
+        }
       }
     }
     
@@ -504,10 +525,12 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     const scaledValue = normalizedValue * verticalScale;
     
+    const pointIsArrhythmia = isArrhythmia;
+    
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
-      isArrhythmia: isArrhythmia
+      isArrhythmia: pointIsArrhythmia
     };
     
     dataBufferRef.current.push(dataPoint);
@@ -515,28 +538,14 @@ const PPGSignalMeter = memo(({
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
+    // Variable para controlar si se dibujó algún círculo y podemos emitir beep
     let shouldBeep = false;
     
     if (points.length > 1) {
-      renderCtx.beginPath();
-      renderCtx.lineWidth = 2;
-      renderCtx.lineJoin = 'round';
-      renderCtx.lineCap = 'round';
+      let segmentPoints: {x: number, y: number, isArrhythmia: boolean}[] = [];
+      let currentSegmentIsArrhythmia = false;
       
-      if (window.devicePixelRatio > 1) {
-        renderCtx.shadowBlur = 0.5;
-      }
-      
-      const firstPoint = points[0];
-      const firstX = canvas.width - ((now - firstPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-      const firstY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - firstPoint.value;
-      renderCtx.moveTo(firstX, firstY);
-      
-      let currentPathColor = getSignalColor(!!firstPoint.isArrhythmia);
-      let lastDrawnPoint = { x: firstX, y: firstY };
-      let pathStarted = true;
-      
-      for (let i = 1; i < points.length; i++) {
+      for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
         point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaSegment(point.time, now);
@@ -544,57 +553,70 @@ const PPGSignalMeter = memo(({
         const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2) - CANVAS_CENTER_OFFSET - point.value;
         
-        renderCtx.lineTo(x, y);
-        lastDrawnPoint = { x, y };
-      }
-      
-      renderCtx.strokeStyle = NORMAL_COLOR;
-      if (window.devicePixelRatio > 1) {
-        renderCtx.shadowColor = NORMAL_COLOR;
-      }
-      renderCtx.stroke();
-      
-      for (let i = 0; i < points.length; i++) {
-        const point = points[i];
-        
-        if (point.isArrhythmia) {
-          let startIdx = i;
-          let endIdx = i;
-          
-          while (endIdx < points.length - 1 && points[endIdx + 1].isArrhythmia) {
-            endIdx++;
-          }
-          
-          if (endIdx > startIdx) {
+        if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
+          if (segmentPoints.length > 0) {
             renderCtx.beginPath();
-            renderCtx.lineWidth = 2.5;
+            renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+            renderCtx.lineWidth = 2;
+            renderCtx.lineJoin = 'round';
+            renderCtx.lineCap = 'round';
             
-            const startPoint = points[startIdx];
-            const startX = canvas.width - ((now - startPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-            const startY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - startPoint.value;
-            
-            renderCtx.moveTo(startX, startY);
-            
-            for (let j = startIdx + 1; j <= endIdx; j++) {
-              const segPoint = points[j];
-              const segX = canvas.width - ((now - segPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-              const segY = (canvas.height / 2) - CANVAS_CENTER_OFFSET - segPoint.value;
-              renderCtx.lineTo(segX, segY);
-            }
-            
-            renderCtx.strokeStyle = ARRHYTHMIA_COLOR;
             if (window.devicePixelRatio > 1) {
-              renderCtx.shadowColor = ARRHYTHMIA_COLOR;
+              renderCtx.shadowBlur = 0.5;
+              renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
             }
-            renderCtx.stroke();
             
-            i = endIdx;
+            for (let j = 0; j < segmentPoints.length; j++) {
+              const segPoint = segmentPoints[j];
+              if (j === 0) {
+                renderCtx.moveTo(segPoint.x, segPoint.y);
+              } else {
+                renderCtx.lineTo(segPoint.x, segPoint.y);
+              }
+            }
+            
+            renderCtx.stroke();
+            if (window.devicePixelRatio > 1) {
+              renderCtx.shadowBlur = 0;
+            }
+            
+            segmentPoints = [];
           }
+          
+          currentSegmentIsArrhythmia = !!point.isArrhythmia;
+        }
+        
+        segmentPoints.push({ x, y, isArrhythmia: !!point.isArrhythmia });
+      }
+      
+      if (segmentPoints.length > 0) {
+        renderCtx.beginPath();
+        renderCtx.strokeStyle = getSignalColor(currentSegmentIsArrhythmia);
+        renderCtx.lineWidth = 2;
+        renderCtx.lineJoin = 'round';
+        renderCtx.lineCap = 'round';
+        
+        if (window.devicePixelRatio > 1) {
+          renderCtx.shadowBlur = 0.5;
+          renderCtx.shadowColor = getSignalColor(currentSegmentIsArrhythmia);
+        }
+        
+        for (let j = 0; j < segmentPoints.length; j++) {
+          const segPoint = segmentPoints[j];
+          if (j === 0) {
+            renderCtx.moveTo(segPoint.x, segPoint.y);
+          } else {
+            renderCtx.lineTo(segPoint.x, segPoint.y);
+          }
+        }
+        
+        renderCtx.stroke();
+        if (window.devicePixelRatio > 1) {
+          renderCtx.shadowBlur = 0;
         }
       }
       
-      renderCtx.shadowBlur = 0;
-      
+      // Dibujar círculos en los picos detectados y activar beep solo al dibujar un círculo
       if (peaksRef.current.length > 0) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
@@ -603,6 +625,7 @@ const PPGSignalMeter = memo(({
           if (x >= 0 && x <= canvas.width) {
             const peakColor = getSignalColor(!!peak.isArrhythmia);
             
+            // DIBUJAR CÍRCULO AQUÍ - Esto es lo que queremos enlazar con el beep
             if (peak.isArrhythmia) {
               renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
               renderCtx.beginPath();
@@ -616,18 +639,10 @@ const PPGSignalMeter = memo(({
               
               renderCtx.fillStyle = peakColor;
               renderCtx.beginPath();
-              renderCtx.arc(x, y, 5, 0, Math.PI * 2);
+              renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
               renderCtx.fill();
               
-              renderCtx.font = 'bold 14px Inter';
-              renderCtx.fillStyle = peakColor;
-              renderCtx.textAlign = 'center';
-              const valueText = Math.abs(peak.value / verticalScale).toFixed(2);
-              renderCtx.fillText(valueText, x, y - 18);
-              
-              renderCtx.font = 'bold 11px Inter';
-              renderCtx.fillText("ARRITMIA", x, y - 32);
-              
+              // Activar bandera de beep si no se ha reproducido para este pico
               if (!peak.beepPlayed) {
                 shouldBeep = true;
                 peak.beepPlayed = true;
@@ -638,22 +653,23 @@ const PPGSignalMeter = memo(({
               renderCtx.arc(x, y, 5, 0, Math.PI * 2);
               renderCtx.fill();
               
-              renderCtx.font = 'bold 14px Inter';
-              renderCtx.fillStyle = peakColor;
-              renderCtx.textAlign = 'center';
-              const valueText = Math.abs(peak.value / verticalScale).toFixed(2);
-              renderCtx.fillText(valueText, x, y - 18);
-              
+              // Activar bandera de beep si no se ha reproducido para este pico
               if (!peak.beepPlayed) {
                 shouldBeep = true;
                 peak.beepPlayed = true;
               }
             }
+            
+            renderCtx.font = 'bold 16px Inter';
+            renderCtx.fillStyle = peak.isArrhythmia ? '#ea384c' : '#000000';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
           }
         });
       }
     }
     
+    // Actualizar visibleCanvas desde el offscreen
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
       const visibleCtx = canvas.getContext('2d', { alpha: false });
       if (visibleCtx) {
@@ -661,6 +677,7 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    // Reproducir beep SOLO si se dibujó un círculo y hay picos pendientes
     if (shouldBeep && pendingBeepPeakIdRef.current && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
       console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
