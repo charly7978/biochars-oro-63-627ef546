@@ -5,8 +5,8 @@ import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
 import { useSignalValidation } from '../hooks/useSignalValidation';
 import SignalValidationBox from './SignalValidationBox';
+import { validateFullSignal } from '../core/RealSignalValidator';
 
-// Define the interfaces needed for the component
 interface PPGDataPointExtended {
   time: number;
   value: number;
@@ -60,7 +60,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
-  // Use the signal validation hook
   const { 
     validation, 
     addValue: addValidationValue, 
@@ -70,7 +69,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     reset: resetValidation
   } = useSignalValidation();
 
-  // Constants for the component
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
   const CANVAS_HEIGHT = 900;
@@ -98,7 +96,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
-  // Initialize the audio context
   useEffect(() => {
     const initAudio = async () => {
       try {
@@ -129,7 +126,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     };
   }, []);
 
-  // Function to play a beep sound
   const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
     try {
       const now = Date.now();
@@ -153,7 +149,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [triggerHeartbeatFeedback]);
 
-  // Update signal buffer
   useEffect(() => {
     if (preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
@@ -165,27 +160,23 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [preserveResults, isFingerDetected]);
 
-  // Process quality measurements and add values to validation
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > 9) {
       qualityHistoryRef.current.shift();
     }
     
-    // Update finger detection counter
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
 
-    // Add current value to the validation buffer
     if (isFingerDetected && value !== 0) {
       addValidationValue(value);
     }
   }, [quality, isFingerDetected, value, addValidationValue]);
 
-  // Initialize canvas
   useEffect(() => {
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
@@ -203,7 +194,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, []);
 
-  // Get average quality
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
@@ -219,7 +209,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     return weightSum > 0 ? weightedSum / weightSum : 0;
   }, []);
 
-  // Get quality color
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
@@ -229,7 +218,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
-  // Get quality text
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
@@ -239,13 +227,11 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     return 'Señal débil';
   }, [getAverageQuality]);
 
-  // Smooth value function
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
   }, []);
 
-  // Draw grid function
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
@@ -332,7 +318,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
-  // Detect peaks function
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     
@@ -397,7 +382,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
-  // Render signal function
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -476,6 +460,9 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
+
+    const ppgOptimized = points.map(p => p.value);
+    const result = validateFullSignal(ppgOptimized);
     
     let shouldBeep = false;
     
@@ -576,7 +563,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
 
-  // Initialize rendering
   useEffect(() => {
     renderSignal();
     
@@ -587,7 +573,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     };
   }, [renderSignal]);
 
-  // Reset function
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
@@ -597,7 +582,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     onReset();
   }, [onReset, resetValidation]);
 
-  // Start the validation when monitoring starts
   useEffect(() => {
     if (isFingerDetected) {
       startValidation();
@@ -611,6 +595,10 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= 3;
+
+  const points = dataBufferRef.current?.getPoints() || [];
+  const ppgOptimized = points.map(p => p.value);
+  const result = validateFullSignal(ppgOptimized);
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -631,7 +619,16 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
           
-          {isFingerDetected && <SignalValidationBox result={validation} />}
+          {isFingerDetected && (
+            <SignalValidationBox
+              result={result}
+              ppg={ppgOptimized}
+              lastBeepTime={lastBeepTimeRef.current}
+              lastFrameTime={lastRenderTimeRef.current}
+              calibrationInProgress={false}
+              optimizerWorking={false}
+            />
+          )}
         </div>
 
         <div className="flex flex-col items-center">
