@@ -106,7 +106,8 @@ export class BloodPressureAnalyzer {
 
   private getAdaptivelySmoothedEstimate(current: BloodPressureResult): BloodPressureResult {
     const fallbackFactor = 0.3;
-    const factor = current.confidence < 0.4 ? fallbackFactor : 1 - current.confidence;
+    const rawFactor = current.confidence < 0.4 ? fallbackFactor : 1 - current.confidence;
+    const factor = Math.min(rawFactor, 0.7); // nunca más de 70% suavizado
 
     return {
       systolic: Math.round(this.lastEstimate.systolic * factor + current.systolic * (1 - factor)),
