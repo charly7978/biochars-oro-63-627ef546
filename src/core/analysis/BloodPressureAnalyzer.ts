@@ -27,7 +27,7 @@ export class BloodPressureAnalyzer {
   constructor(config: Partial<ProcessorConfig> = {}) {
     const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
     this.calibrationFactor = full.nonInvasiveSettings.bpCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5; // más permisivo
+    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5;
   }
 
   public estimate(values: number[]): BloodPressureResult {
@@ -58,7 +58,7 @@ export class BloodPressureAnalyzer {
     };
 
     this.pushToHistory(estimate);
-    this.lastEstimate = this.getAdaptivelySmoothedEstimate(estimate);
+    this.lastEstimate = this.getForceSmoothedEstimate(estimate);
 
     console.log('[BP DEBUG]', {
       amplitude: amplitude.toFixed(4),
@@ -104,15 +104,26 @@ export class BloodPressureAnalyzer {
     if (this.history.length > this.HISTORY_SIZE) this.history.shift();
   }
 
-  private getAdaptivelySmoothedEstimate(current: BloodPressureResult): BloodPressureResult {
-    const fallbackFactor = 0.3;
-    const rawFactor = current.confidence < 0.4 ? fallbackFactor : 1 - current.confidence;
-    const factor = Math.min(rawFactor, 0.7); // nunca más de 70% suavizado
+  private getForceSmoothedEstimate(current: BloodPressureResult): BloodPressureResult {
+    const factor = current.confidence < 0.4 ? 0.4 : 0.2; // más sensible
+    const minimumChange = 1; // forzar al menos 1 punto de diferencia si confiable
+
+    let systolic = this.lastEstimate.systolic * factor + current.systolic * (1 - factor);
+    let diastolic = this.lastEstimate.diastolic * factor + current.diastolic * (1 - factor);
+    let map = this.lastEstimate.map * factor + current.map * (1 - factor);
+
+    // Forzar cambio mínimo si se queda congelado
+    if (Math.abs(systolic - this.lastEstimate.systolic) < minimumChange) {
+      systolic += Math.sign(current.systolic - this.lastEstimate.systolic) * minimumChange;
+    }
+    if (Math.abs(diastolic - this.lastEstimate.diastolic) < minimumChange) {
+      diastolic += Math.sign(current.diastolic - this.lastEstimate.diastolic) * minimumChange;
+    }
 
     return {
-      systolic: Math.round(this.lastEstimate.systolic * factor + current.systolic * (1 - factor)),
-      diastolic: Math.round(this.lastEstimate.diastolic * factor + current.diastolic * (1 - factor)),
-      map: Math.round(this.lastEstimate.map * factor + current.map * (1 - factor)),
+      systolic: Math.round(systolic),
+      diastolic: Math.round(diastolic),
+      map: Math.round(map),
       confidence: current.confidence,
       isReliable: current.isReliable
     };
