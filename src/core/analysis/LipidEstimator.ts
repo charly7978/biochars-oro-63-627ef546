@@ -1,22 +1,7 @@
 
+import { UserProfile } from '../types';
+import { LipidResult } from '../types/vital-signs-results';
 import { ProcessorConfig } from '../config/ProcessorConfig';
-
-// Define missing interfaces
-export interface UserProfile {
-  age?: number;
-  gender?: 'male' | 'female' | 'other';
-  weight?: number;
-  height?: number;
-  condition?: string;
-}
-
-export interface LipidResult {
-  totalCholesterol: number;
-  triglycerides: number;
-  ldl?: number;
-  hdl?: number;
-  confidence: number;
-}
 
 export class LipidEstimator {
   private dataPoints: number[] = [];
@@ -24,7 +9,6 @@ export class LipidEstimator {
   private readonly DEFAULT_TOTAL_CHOLESTEROL = 185;
   private readonly DEFAULT_TRIGLYCERIDES = 150;
   private readonly BASE_CONFIDENCE = 0.6;
-  private readonly CALIBRATION_FACTOR = 1.0;  // Fixed value since config.lipidCalibrationFactor doesn't exist
   
   constructor(private config: ProcessorConfig, private userProfile?: UserProfile) {}
   
@@ -55,8 +39,8 @@ export class LipidEstimator {
       const frequencyFeatures = this.calculateFrequencyFeatures(this.dataPoints);
       
       // Aplicar factores de calibración
-      const cholesterolCalibration = this.CALIBRATION_FACTOR;
-      const triglycerideCalibration = this.CALIBRATION_FACTOR;
+      const cholesterolCalibration = this.config.lipidCalibrationFactor;
+      const triglycerideCalibration = this.config.lipidCalibrationFactor;
       
       // Estimar colesterol total basado en características de la señal
       const totalCholesterolRaw = this.DEFAULT_TOTAL_CHOLESTEROL +

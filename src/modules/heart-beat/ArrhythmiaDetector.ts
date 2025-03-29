@@ -1,7 +1,6 @@
 
-/**
- * Interfaz para eventos de arritmia detectados
- */
+// ArrhythmiaDetector.ts - analiza intervalos RR para detectar arritmias
+
 export interface ArrhythmiaEvent {
   type: 'bradycardia' | 'tachycardia' | 'irregular' | 'extrasystole';
   timestamp: number;
@@ -9,20 +8,12 @@ export interface ArrhythmiaEvent {
   rr: number;
 }
 
-/**
- * Detector de arritmias basado en intervalos RR
- */
 export class ArrhythmiaDetector {
   private rrHistory: number[] = [];
   private readonly MAX_HISTORY = 20;
   private readonly BRADYCARDIA_THRESHOLD = 50;
   private readonly TACHYCARDIA_THRESHOLD = 110;
 
-  /**
-   * Actualiza el detector con un nuevo intervalo RR y devuelve un evento de arritmia si se detecta
-   * @param rr Intervalo RR en milisegundos
-   * @returns Evento de arritmia o null si no se detecta
-   */
   public update(rr: number): ArrhythmiaEvent | null {
     if (rr <= 300 || rr >= 2000) return null; // fuera de rango válido (300-2000 ms)
 
@@ -62,9 +53,6 @@ export class ArrhythmiaDetector {
     return null;
   }
 
-  /**
-   * Resetea el historial de intervalos RR
-   */
   public reset() {
     this.rrHistory = [];
   }

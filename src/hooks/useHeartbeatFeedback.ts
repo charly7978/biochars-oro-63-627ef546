@@ -38,7 +38,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled || !audioCtxRef.current) return;
 
-    // Patrones de vibración mejorados - ASEGURARSE QUE SE EJECUTE INMEDIATAMENTE
+    // Patrones de vibración - ASEGURARSE QUE SE EJECUTE INMEDIATAMENTE
     if ('vibrate' in navigator) {
       try {
         switch (type) {
