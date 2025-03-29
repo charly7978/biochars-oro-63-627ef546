@@ -11,7 +11,7 @@ const SignalValidationBox: React.FC<Props> = ({ result }) => {
 
   return (
     <div
-      className="px-3 py-1 rounded-lg border shadow text-xs font-medium"
+      className="absolute top-2 left-2 z-30 px-3 py-1 rounded-lg border shadow text-xs font-medium"
       style={{
         backgroundColor: 'rgba(255, 255, 255, 0.55)',
         backdropFilter: 'blur(1.5px)',
