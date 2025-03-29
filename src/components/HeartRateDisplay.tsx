@@ -65,10 +65,10 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="glass-card-dark p-3 text-center animation-hardware-accelerated rounded-lg"
+      className="bg-[rgba(15,25,50,0.15)] backdrop-filter bg-opacity-10 border border-blue-300/10 p-3 text-center animation-hardware-accelerated rounded-lg shadow-[0_0_15px_rgba(120,160,255,0.1)]"
     >
       <div className="flex items-center justify-center gap-1 mb-1">
-        <h3 className="text-gray-400/90 text-sm typography-clinical">Heart Rate</h3>
+        <h3 className="text-blue-100/90 text-sm typography-clinical">Heart Rate</h3>
         
         {getReliabilityIndicator() === "low" && (
           <div className="relative" title="Signal quality is low">
@@ -85,15 +85,15 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
           fill={isReliable ? "currentColor" : "none"}
           strokeWidth={1.5}
         />
-        <span className={`text-3xl font-bold typography-medical-data ${getValueClass()} animate-subtle-pulse drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]`}>
+        <span className={`text-3xl font-bold typography-medical-data ${getValueClass()} animate-subtle-pulse drop-shadow-[0_0_12px_rgba(140,180,255,0.5)]`}>
           {bpm > 0 ? bpm : '--'}
         </span>
-        <span className="text-gray-400/90 text-xs unit-text">BPM</span>
+        <span className="text-blue-100/90 text-xs unit-text">BPM</span>
       </div>
       
       {/* Signal amplification indicator */}
       {confidence > 0 && (
-        <div className="mt-1.5 w-full bg-gray-700/30 rounded-full h-0.5 overflow-hidden">
+        <div className="mt-1.5 w-full bg-blue-900/20 rounded-full h-0.5 overflow-hidden">
           <div 
             className={`h-full rounded-full animation-smooth ${
               confidence > 0.8 ? 'bg-green-500' : 

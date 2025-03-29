@@ -49,7 +49,26 @@ export const keyframes = {
     "100%": { opacity: "1", transform: "translateY(0)" }
   },
   "subtle-pulse": {
-    "0%, 100%": { opacity: "0.95", textShadow: "0 0 3px rgba(255,255,255,0.2)" },
-    "50%": { opacity: "1", textShadow: "0 0 12px rgba(255,255,255,0.4), 0 0 4px rgba(255,255,255,0.3)" }
+    "0%, 100%": { opacity: "0.95", textShadow: "0 0 3px rgba(140,180,255,0.2)" },
+    "50%": { opacity: "1", textShadow: "0 0 12px rgba(140,180,255,0.5), 0 0 4px rgba(120,160,255,0.4)" }
+  },
+  "blue-subtle-glow": {
+    "0%, 100%": { 
+      boxShadow: "0 0 5px rgba(100,140,240,0.15)" 
+    },
+    "50%": { 
+      boxShadow: "0 0 15px rgba(100,140,255,0.3)" 
+    }
+  },
+  "display-panel-pulse": {
+    "0%": { 
+      backgroundColor: "rgba(15,25,50,0.15)" 
+    },
+    "50%": { 
+      backgroundColor: "rgba(20,35,60,0.18)" 
+    },
+    "100%": { 
+      backgroundColor: "rgba(15,25,50,0.15)" 
+    }
   }
 };
