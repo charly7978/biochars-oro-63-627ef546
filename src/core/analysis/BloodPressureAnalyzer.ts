@@ -10,7 +10,6 @@ export interface BloodPressureResult {
 
 export class BloodPressureAnalyzer {
   private readonly MIN_REQUIRED_SAMPLES = 60;
-  private readonly STABILITY_FACTOR = 0.6;
   private readonly history: BloodPressureResult[] = [];
   private readonly HISTORY_SIZE = 5;
 
@@ -57,7 +56,7 @@ export class BloodPressureAnalyzer {
     };
 
     this.pushToHistory(estimate);
-    this.lastEstimate = this.getSmoothedEstimate(estimate);
+    this.lastEstimate = this.getAdaptivelySmoothedEstimate(estimate);
     return this.lastEstimate;
   }
 
@@ -92,22 +91,14 @@ export class BloodPressureAnalyzer {
     if (this.history.length > this.HISTORY_SIZE) this.history.shift();
   }
 
-  private getSmoothedEstimate(current: BloodPressureResult): BloodPressureResult {
-    const base = this.history.reduce((acc, val) => {
-      acc.systolic += val.systolic;
-      acc.diastolic += val.diastolic;
-      acc.map += val.map;
-      acc.confidence += val.confidence;
-      return acc;
-    }, { systolic: 0, diastolic: 0, map: 0, confidence: 0 });
-
-    const n = this.history.length;
+  private getAdaptivelySmoothedEstimate(current: BloodPressureResult): BloodPressureResult {
+    const factor = 1 - current.confidence;
     return {
-      systolic: Math.round(base.systolic / n * this.STABILITY_FACTOR + current.systolic * (1 - this.STABILITY_FACTOR)),
-      diastolic: Math.round(base.diastolic / n * this.STABILITY_FACTOR + current.diastolic * (1 - this.STABILITY_FACTOR)),
-      map: Math.round(base.map / n * this.STABILITY_FACTOR + current.map * (1 - this.STABILITY_FACTOR)),
-      confidence: base.confidence / n,
-      isReliable: current.confidence >= this.confidenceThreshold
+      systolic: Math.round(this.lastEstimate.systolic * factor + current.systolic * (1 - factor)),
+      diastolic: Math.round(this.lastEstimate.diastolic * factor + current.diastolic * (1 - factor)),
+      map: Math.round(this.lastEstimate.map * factor + current.map * (1 - factor)),
+      confidence: current.confidence,
+      isReliable: current.isReliable
     };
   }
 
