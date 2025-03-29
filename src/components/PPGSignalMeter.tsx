@@ -49,7 +49,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const lastRenderTimeRef = useRef<number>(0);
   const lastArrhythmiaTime = useRef<number>(0);
   const arrhythmiaCountRef = useRef<number>(0);
-  // Add the missing peaksRef definition here
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -58,9 +57,11 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   
+  // Configuración de audio mejorada
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
+  const heartbeatSoundRef = useRef<HTMLAudioElement | null>(null);
 
   // Use the signal validation hook
   const { 
@@ -100,8 +101,16 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
-  // Initialize the audio context
+  // Initialize the audio context and preload the heartbeat sound
   useEffect(() => {
+    console.log("PPGSignalMeter: Inicializando sistema de audio");
+    
+    // Precargar el sonido de latido cardíaco
+    const heartbeatSound = new Audio('/sounds/heartbeat.mp3');
+    heartbeatSound.load();
+    heartbeatSoundRef.current = heartbeatSound;
+    
+    // Inicializar AudioContext (necesario para Web Audio API)
     const initAudio = async () => {
       try {
         if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
@@ -110,9 +119,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
+            console.log("PPGSignalMeter: Audio Context resumido con éxito");
           }
           
-          await playBeep(0.01);
+          // Reproducir un beep silencioso para activar el audio en navegadores que requieren interacción
+          const silentBeep = await playBeep(0.01);
+          console.log("PPGSignalMeter: Beep de inicialización:", silentBeep ? "exitoso" : "fallido");
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
@@ -128,13 +140,20 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         });
         audioContextRef.current = null;
       }
+      
+      if (heartbeatSoundRef.current) {
+        heartbeatSoundRef.current.pause();
+        heartbeatSoundRef.current = null;
+      }
     };
   }, []);
 
-  // Function to play a beep sound
+  // Función mejorada para reproducir beep con garantía de sonido
   const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
     try {
       const now = Date.now();
+      
+      // Verificar el intervalo mínimo para evitar beeps muy seguidos
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
         console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
           timeSinceLastBeep: now - lastBeepTimeRef.current,
@@ -143,8 +162,49 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         return false;
       }
       
+      console.log("PPGSignalMeter: Intentando reproducir beep", {
+        volumen: volume,
+        esArritmia: isArrhythmia,
+        tiempo: new Date(now).toISOString()
+      });
+      
+      // Usar el archivo de audio precargado (más confiable en móviles)
+      if (heartbeatSoundRef.current) {
+        heartbeatSoundRef.current.volume = volume;
+        heartbeatSoundRef.current.currentTime = 0;
+        
+        const playPromise = heartbeatSoundRef.current.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          console.log("PPGSignalMeter: Beep reproducido exitosamente con Audio");
+        }
+      } 
+      // Método alternativo usando Web Audio API
+      else if (audioContextRef.current) {
+        const oscillator = audioContextRef.current.createOscillator();
+        const gainNode = audioContextRef.current.createGain();
+        
+        oscillator.type = 'sine';
+        oscillator.frequency.value = isArrhythmia ? BEEP_SECONDARY_FREQUENCY : BEEP_PRIMARY_FREQUENCY;
+        
+        gainNode.gain.value = volume;
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContextRef.current.destination);
+        
+        oscillator.start();
+        oscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000);
+        
+        console.log("PPGSignalMeter: Beep reproducido exitosamente con Web Audio API");
+      } else {
+        console.warn("PPGSignalMeter: No hay método de audio disponible");
+        return false;
+      }
+      
+      // Activar retroalimentación háptica
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
+      // Actualizar el tiempo del último beep
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
       
@@ -334,9 +394,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
-  // Detect peaks function
+  // Detect peaks function with logging mejorado
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
-    if (points.length < PEAK_DETECTION_WINDOW) return;
+    if (points.length < PEAK_DETECTION_WINDOW) {
+      console.log("PPGSignalMeter: No hay suficientes puntos para detección de picos");
+      return;
+    }
     
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
     
@@ -368,6 +431,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       }
       
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
+        console.log("PPGSignalMeter: Pico potencial detectado", {
+          time: currentPoint.time,
+          value: currentPoint.value,
+          isArrhythmia: currentPoint.isArrhythmia || false
+        });
+        
         potentialPeaks.push({
           index: i,
           value: currentPoint.value,
@@ -383,6 +452,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       );
       
       if (!tooClose) {
+        console.log("PPGSignalMeter: Nuevo pico añadido a la lista", {
+          time: peak.time,
+          value: peak.value,
+          isArrhythmia: peak.isArrhythmia
+        });
+        
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
@@ -399,7 +474,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
-  // Render signal function
+  // Render signal function con sonido garantizado
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -479,8 +554,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
-    let shouldBeep = false;
-    
     if (points.length > 1) {
       let firstPoint = true;
       let currentPathColor = '#0EA5E9';
@@ -524,6 +597,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         renderCtx.stroke();
       }
       
+      // Dibuja los picos y activa el beep
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - peak.value;
@@ -534,25 +608,22 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
-          // Enhanced synchronized beep logic with detailed logging
+          // Reproducir beep cuando el pico se está dibujando y no se ha reproducido aún
           if (
             !peak.beepPlayed &&
             peak.time < now &&
-            now - peak.time < 60 // tolerancia máxima de 60 ms
+            now - peak.time < 70 && // Tolerancia ajustada a 70ms para mayor sensibilidad
+            consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES
           ) {
-            console.log('Attempting to play beep', {
+            console.log('PICO DETECTADO - REPRODUCIENDO BEEP', {
               peakTime: peak.time,
               currentTime: now,
               timeDiff: now - peak.time,
               isArrhythmia: peak.isArrhythmia,
-              rawArrhythmiaData: rawArrhythmiaData,
-              arrhythmiaStatus: arrhythmiaStatus
+              isBeepPlayed: peak.beepPlayed
             });
 
-            const result = playBeep(1.0, peak.isArrhythmia || 
-              (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
-            
-            console.log('Beep play result:', result);
+            playBeep(BEEP_VOLUME, peak.isArrhythmia);
             peak.beepPlayed = true;
           }
           
@@ -582,13 +653,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       if (visibleCtx) {
         visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
       }
-    }
-    
-    if (shouldBeep && isFingerDetected && 
-        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
     }
     
     lastRenderTimeRef.current = currentTime;
@@ -671,7 +735,19 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
-          onClick={onStartMeasurement}
+          onClick={() => {
+            // Activar audio en respuesta a la interacción del usuario
+            if (audioContextRef.current && audioContextRef.current.state !== 'running') {
+              audioContextRef.current.resume().then(() => {
+                console.log("Audio Context reanudado por interacción del usuario");
+                // Reproducir un beep de prueba para verificar audio
+                playBeep(0.5);
+              });
+            }
+            
+            // Luego iniciar la medición
+            onStartMeasurement();
+          }}
           className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           INICIAR
