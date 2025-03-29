@@ -1,146 +1,178 @@
 
 /**
- * Calculador base para signos vitales
- * 
- * Proporciona funcionalidad común para todos los calculadores específicos
+ * Calculador Base
+ * Proporciona funcionalidad común para todos los calculadores de signos vitales
  */
 
-import { VitalSignCalculator, VitalSignCalculation } from '../types';
-import { OptimizedSignal, VitalSignChannel, FeedbackData } from '../../../signal-optimization/types';
+import { OptimizedSignal } from '../../../../modules/signal-optimization/types';
+import { CalculationResultItem, BaseCalculator, VitalSignCalculator, VitalSignCalculation, FeedbackData } from '../types';
 
-export abstract class BaseCalculator implements VitalSignCalculator {
-  protected readonly channel: VitalSignChannel;
-  protected lastCalculation: VitalSignCalculation | null = null;
+/**
+ * Clase base abstracta para calculadores de signos vitales
+ */
+export abstract class BaseVitalSignCalculator implements VitalSignCalculator {
+  protected config: VitalSignCalculation;
+  protected channelName: string;
+  protected confidence: number = 0;
+  protected lastCalculation: CalculationResultItem | null = null;
   protected valueBuffer: number[] = [];
-  protected _maxBufferSize: number = 60;
-  protected confidenceThreshold = 0.4;
+  protected _maxBufferSize: number = 120;
   protected suggestedParameters: Record<string, number> = {};
   
-  constructor(channel: VitalSignChannel, maxBufferSize: number = 60) {
-    this.channel = channel;
-    this._maxBufferSize = maxBufferSize;
-  }
-  
-  /**
-   * Obtiene el canal asociado al calculador
-   */
-  public getChannel(): VitalSignChannel {
-    return this.channel;
-  }
-  
-  /**
-   * Calcula el valor del signo vital a partir de la señal optimizada
-   */
-  public calculate(signal: OptimizedSignal): VitalSignCalculation {
-    // Validación básica
-    if (signal.channel !== this.channel) {
-      throw new Error(`Canal incorrecto: esperado ${this.channel}, recibido ${signal.channel}`);
-    }
-    
-    // Añadir valor al buffer
-    this.valueBuffer.push(signal.optimizedValue);
-    this.maintainBufferSize();
-    
-    // Realizar cálculo específico
-    const result = this.performCalculation(signal);
-    
-    // Guardar último cálculo
-    this.lastCalculation = result;
-    
-    return result;
-  }
-  
-  /**
-   * Implementación específica de cálculo (a implementar por subclases)
-   */
-  protected abstract performCalculation(signal: OptimizedSignal): VitalSignCalculation;
-  
-  /**
-   * Genera feedback para el optimizador si es necesario
-   */
-  public generateFeedback(): FeedbackData | null {
-    if (!this.lastCalculation || Object.keys(this.suggestedParameters).length === 0) {
-      return null;
-    }
-    
-    // Solo generar feedback si la confianza está por debajo del umbral
-    if (this.lastCalculation.confidence >= this.confidenceThreshold) {
-      return null;
-    }
-    
-    // Generar feedback con parámetros sugeridos
-    return {
-      channel: this.channel,
-      confidence: this.lastCalculation.confidence,
-      suggestedAdjustments: this.convertSuggestedParameters(),
-      timestamp: Date.now()
+  constructor(channelName: string, bufferSize: number = 120) {
+    this.channelName = channelName;
+    this._maxBufferSize = bufferSize;
+    this.config = {
+      minValue: 0,
+      maxValue: 100,
+      confidenceThreshold: 0.6,
+      defaultValue: 0
     };
   }
   
   /**
-   * Convierte parámetros sugeridos al formato esperado por el optimizador
+   * Obtiene el nombre del canal
    */
-  private convertSuggestedParameters(): any {
-    const result: any = {};
-    
-    // Mapear parámetros internos a formato del optimizador
-    if (this.suggestedParameters.amplification !== undefined) {
-      result.amplificationFactor = this.suggestedParameters.amplification;
+  public getChannelName(): string {
+    return this.channelName;
+  }
+  
+  /**
+   * Obtiene nivel de confianza actual
+   */
+  public getConfidenceLevel(): number {
+    return this.confidence;
+  }
+  
+  /**
+   * Calcula el signo vital a partir de una señal optimizada
+   */
+  public calculate(signal: OptimizedSignal): CalculationResultItem {
+    try {
+      // Añadir valor al buffer
+      this.addToBuffer(signal.value);
+      
+      // Validar señal
+      if (!signal || signal.value === 0) {
+        return this.getDefaultResult();
+      }
+      
+      // Calcular resultado específico
+      const result = this.performCalculation(signal);
+      
+      // Actualizar confianza basado en resultado y señal
+      this.confidence = Math.min(signal.confidence, result.confidence);
+      
+      // Guardar último cálculo
+      this.lastCalculation = {
+        value: result.value,
+        confidence: result.confidence,
+        metadata: result.metadata
+      };
+      
+      return this.lastCalculation;
+    } catch (error) {
+      console.error(`Error calculando ${this.channelName}:`, error);
+      return this.getDefaultResult();
+    }
+  }
+  
+  /**
+   * Genera feedback para el optimizador
+   */
+  public generateFeedback(): FeedbackData | null {
+    if (!this.lastCalculation || this.confidence > 0.8) {
+      return null;
     }
     
-    if (this.suggestedParameters.filterStrength !== undefined) {
-      result.filterStrength = this.suggestedParameters.filterStrength;
+    // Generar feedback basado en último cálculo
+    return {
+      channel: this.channelName as any,
+      adjustment: this.confidence < 0.4 ? 'increase' : 'fine-tune',
+      magnitude: 1 - this.confidence,
+      confidence: this.confidence,
+      parameter: this.getPreferredParameter()
+    };
+  }
+  
+  /**
+   * Añade un valor al buffer, manteniendo el tamaño máximo
+   */
+  protected addToBuffer(value: number): void {
+    this.valueBuffer.push(value);
+    
+    // Mantener tamaño de buffer limitado
+    if (this.valueBuffer.length > this._maxBufferSize) {
+      this.valueBuffer.shift();
+    }
+  }
+  
+  /**
+   * Calcula calidad de señal basado en buffer de valores
+   */
+  protected calculateSignalQuality(values: number[]): number {
+    if (values.length < 10) return 0.3;
+    
+    // Calcular varianza normalizada como medida de calidad
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+    
+    // Normalizar varianza a [0,1]
+    // Varianza baja o muy alta indican baja calidad
+    const normalizedVariance = Math.min(variance / 0.5, 1.0);
+    
+    // Convertir a medida de calidad (varianza óptima en rango medio)
+    let quality = 0;
+    if (normalizedVariance < 0.1) {
+      // Varianza muy baja - calidad baja
+      quality = normalizedVariance * 5;
+    } else if (normalizedVariance < 0.5) {
+      // Varianza óptima - calidad alta
+      quality = 0.5 + (normalizedVariance - 0.1) * 1.25;
+    } else {
+      // Varianza alta - calidad baja
+      quality = 1.0 - (normalizedVariance - 0.5) * 1.0;
     }
     
-    if (this.suggestedParameters.sensitivity !== undefined) {
-      result.sensitivityFactor = this.suggestedParameters.sensitivity;
-    }
-    
-    return result;
+    return Math.max(0.1, Math.min(0.95, quality));
   }
   
   /**
    * Reinicia el calculador
    */
   public reset(): void {
+    this.confidence = 0;
     this.lastCalculation = null;
     this.valueBuffer = [];
-    this.suggestedParameters = {};
+    this.resetSpecific();
   }
   
   /**
-   * Calcula calidad de señal basado en estabilidad y rango
+   * Método específico para cálculo del signo vital
+   * Debe ser implementado por cada calculador
    */
-  protected calculateSignalQuality(values: number[]): number {
-    if (values.length < 5) return 0.5;
-    
-    // Analizar ventana reciente
-    const recentValues = values.slice(-10);
-    
-    // Calcular rango
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    const range = max - min;
-    
-    // Calcular desviación estándar
-    const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
-    const variance = recentValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentValues.length;
-    const stdDev = Math.sqrt(variance);
-    
-    // Normalizar desviación
-    const normalizedStdDev = Math.min(1, stdDev / (range + 0.001));
-    
-    // Calcular calidad en función de rango y estabilidad
-    const rangeQuality = Math.min(1, range * 5);
-    const stabilityQuality = 1 - normalizedStdDev;
-    
-    // Combinar factores
-    return (rangeQuality * 0.6) + (stabilityQuality * 0.4);
-  }
+  protected abstract performCalculation(signal: OptimizedSignal): VitalSignCalculation;
   
-  protected maintainBufferSize() {
-    if (this.valueBuffer.length > this._maxBufferSize) {
-      this.valueBuffer.shift();
-    }
+  /**
+   * Método específico para reinicio del calculador
+   */
+  protected abstract resetSpecific(): void;
+  
+  /**
+   * Obtiene el parámetro preferido para ajuste
+   */
+  protected abstract getPreferredParameter(): string;
+  
+  /**
+   * Obtiene resultado por defecto
+   */
+  protected getDefaultResult(): CalculationResultItem {
+    return {
+      value: this.config.defaultValue,
+      confidence: 0
+    };
   }
 }
+
+// Export the BaseCalculator type as well for compatibility
+export { BaseVitalSignCalculator as BaseCalculator };

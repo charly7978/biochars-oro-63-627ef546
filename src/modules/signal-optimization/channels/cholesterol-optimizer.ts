@@ -1,148 +1,141 @@
 
 /**
- * Optimizador especializado para el canal de colesterol
+ * Optimizador de señal para colesterol
  */
 
-import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { OptimizedSignal, FeedbackData } from '../types';
+import { ProcessedPPGSignal } from '../../signal-processing/types';
 
 /**
- * Parámetros específicos para optimización de colesterol
- */
-const CHOLESTEROL_PARAMS: Partial<OptimizationParameters> = {
-  amplificationFactor: 1.5,
-  filterStrength: 0.75,
-  frequencyRange: [0.25, 2.2],
-  sensitivityFactor: 1.3,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar las características 
- * relacionadas con colesterol
+ * Optimizador especializado para señales de colesterol
  */
 export class CholesterolOptimizer extends BaseChannelOptimizer {
-  // Factores específicos para análisis de colesterol
-  private viscosityEstimation: number = 1.0;
-  private waveformDistortion: number = 0;
-  private attenuationFactor: number = 1.0;
-  
   constructor() {
-    super('cholesterol', CHOLESTEROL_PARAMS);
+    super('cholesterol', {
+      amplification: 1.2,
+      filterStrength: 0.7,
+      sensitivity: 0.9,
+      smoothing: 0.45,
+      noiseThreshold: 0.15,
+      dynamicRange: 0.8
+    });
+    
+    // Buffer para tendencias de lípidos
+    this._maxBufferSize = 200;
   }
   
   /**
-   * Aplica optimizaciones específicas para colesterol
-   * Enfocado en características de forma de onda y atenuación
+   * Optimiza la señal para cálculo de colesterol
    */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado para reducir ruido
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Amplificar señal
+    const amplified = this.applyAdaptiveAmplification(signal.filteredValue);
     
-    // 2. Calcular estimadores indirectos (viscosidad, distorsión)
-    this.calculateViscosityEstimators(optimized);
+    // Filtrar señal
+    const filtered = this.applyAdaptiveFiltering(amplified);
     
-    // 3. Aplicar correcciones basadas en características
-    optimized = this.applyViscosityCorrections(optimized);
+    // Aplicar procesamiento específico para colesterol
+    const optimized = this.applyCholesterolSpecificProcessing(filtered);
     
-    // 4. Amplificación adaptativa
-    optimized = this.amplifySignal(optimized);
+    // Actualizar estimación de ruido
+    this.updateNoiseEstimate();
     
-    return optimized;
+    // Calcular confianza
+    const confidence = this.calculateConfidence(signal);
+    
+    // Limitar valor a rango [0,1]
+    const normalizedValue = Math.max(0, Math.min(1, optimized));
+    
+    return {
+      channel: 'cholesterol',
+      timestamp: signal.timestamp,
+      value: normalizedValue,
+      rawValue: signal.rawValue,
+      amplified: amplified,
+      filtered: filtered,
+      confidence: confidence,
+      quality: signal.quality
+    };
   }
   
   /**
-   * Calcula estimadores indirectos relacionados con colesterol
+   * Aplica procesamiento específico para colesterol
    */
-  private calculateViscosityEstimators(value: number): void {
-    if (this.valueBuffer.length < 15) return;
-    
-    // Análisis de forma de onda para detectar distorsión (relacionada con viscosidad)
-    const segment = this.valueBuffer.slice(-15);
-    
-    // Calcular asimetría en forma de onda (skewness)
-    const mean = segment.reduce((a, b) => a + b, 0) / segment.length;
-    
-    let sumCube = 0;
-    let sumSquare = 0;
-    for (const val of segment) {
-      const deviation = val - mean;
-      sumCube += Math.pow(deviation, 3);
-      sumSquare += Math.pow(deviation, 2);
+  private applyCholesterolSpecificProcessing(value: number): number {
+    if (this.valueBuffer.length < 20) {
+      return value;
     }
     
-    const stdDev = Math.sqrt(sumSquare / segment.length);
+    // Suavizado de tendencia para lípidos
+    const alpha = 0.1; // Factor de suavizado bajo
+    let smoothedValue = value;
     
-    // Evitar división por cero
-    if (stdDev > 0) {
-      // Skewness = momento de tercer orden normalizado
-      const skewness = (sumCube / segment.length) / Math.pow(stdDev, 3);
-      
-      // Distorsión = valor absoluto de asimetría
-      this.waveformDistortion = Math.abs(skewness);
-      
-      // Estimar "viscosidad" basado en distorsión y características temporales
-      const diffSum = segment.slice(1).reduce((sum, val, i) => 
-        sum + Math.abs(val - segment[i]), 0);
-      
-      const smoothness = 1 - (diffSum / (segment.length - 1)) * 10;
-      
-      // Combinación ponderada para estimación
-      this.viscosityEstimation = 
-        (this.waveformDistortion * 0.6) + (smoothness * 0.4);
-      
-      // Limitar a rango razonable
-      this.viscosityEstimation = Math.max(0.5, Math.min(2.0, this.viscosityEstimation));
-      
-      // Factor de atenuación inversamente proporcional a viscosidad
-      this.attenuationFactor = 1 / Math.sqrt(this.viscosityEstimation);
+    if (this.lastOptimizedValue !== 0) {
+      smoothedValue = value * alpha + this.lastOptimizedValue * (1 - alpha);
     }
-  }
-  
-  /**
-   * Aplica correcciones basadas en estimadores de viscosidad
-   */
-  private applyViscosityCorrections(value: number): number {
-    if (this.valueBuffer.length < 10) return value;
     
-    // Compensar atenuación relacionada con viscosidad
-    const viscosityCompensated = value * this.attenuationFactor;
+    // Enfatizar características específicas de absorción
+    // Calcular densidad espectral aproximada
+    const lastValues = this.valueBuffer.slice(-20);
+    const meanValue = lastValues.reduce((sum, v) => sum + v, 0) / lastValues.length;
     
-    // Adjustar forma de pulso basado en distorsión
-    const pulseShapeAdjustment = 
-      this.waveformDistortion > 1.2 ? 0.1 : this.waveformDistortion > 0.8 ? 0.05 : 0;
+    // Calcular desviación respecto a media
+    const deviation = value - meanValue;
     
-    // Aplicar ajustes
-    const corrected = viscosityCompensated + pulseShapeAdjustment;
-    
-    return Math.max(0, Math.min(1, corrected));
-  }
-  
-  /**
-   * Procesamiento especializado de feedback para colesterol
-   */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
-    
-    // Adaptaciones específicas para colesterol
-    if (feedback.confidence < 0.3) {
-      // Ajustar atenuación
-      this.attenuationFactor = Math.min(1.5, this.attenuationFactor * 1.1);
-    } else if (feedback.confidence > 0.8) {
-      // Restaurar a valores calculados
-      this.attenuationFactor = 1 / Math.sqrt(this.viscosityEstimation);
+    // Enfatizar desviaciones negativas (absorción característica)
+    const emphasisFactor = 1.1;
+    if (deviation < 0) {
+      smoothedValue += deviation * (emphasisFactor - 1);
     }
+    
+    // Guardar valor para próxima iteración
+    this.lastOptimizedValue = smoothedValue;
+    
+    return smoothedValue;
   }
   
   /**
-   * Reinicia parámetros específicos
+   * Procesa retroalimentación del calculador
    */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(CHOLESTEROL_PARAMS);
-    this.viscosityEstimation = 1.0;
-    this.waveformDistortion = 0;
-    this.attenuationFactor = 1.0;
+  public processFeedback(feedback: FeedbackData): void {
+    if (feedback.channel !== 'cholesterol') return;
+    
+    // Escala de ajuste según magnitud
+    const adjustmentScale = feedback.magnitude * 0.1;
+    
+    switch (feedback.adjustment) {
+      case 'increase':
+        // Incrementar filtrado para estabilizar
+        this.parameters.filterStrength = Math.min(0.85, this.parameters.filterStrength * (1 + adjustmentScale * 0.5));
+        
+        // Incrementar suavizado para enfatizar tendencia
+        this.parameters.smoothing = Math.min(0.7, this.parameters.smoothing * (1 + adjustmentScale * 0.3));
+        break;
+        
+      case 'decrease':
+        // Reducir filtrado para captar más variaciones
+        this.parameters.filterStrength = Math.max(0.4, this.parameters.filterStrength * (1 - adjustmentScale * 0.5));
+        
+        // Reducir suavizado
+        this.parameters.smoothing = Math.max(0.2, this.parameters.smoothing * (1 - adjustmentScale * 0.3));
+        break;
+        
+      case 'fine-tune':
+        // Ajustar parámetro específico si se proporciona
+        if (feedback.parameter) {
+          const param = feedback.parameter as keyof typeof this.parameters;
+          if (this.parameters[param] !== undefined) {
+            const direction = feedback.confidence && feedback.confidence < 0.5 ? 1 : -1;
+            this.parameters[param] = this.parameters[param] * (1 + direction * adjustmentScale * 0.1);
+          }
+        }
+        break;
+        
+      case 'reset':
+        // Restablecer parámetros por defecto
+        this.reset();
+        break;
+    }
   }
 }

@@ -1,220 +1,100 @@
 
 /**
- * Calculador especializado para frecuencia cardíaca
+ * Calculador de frecuencia cardíaca
+ * Calcula la frecuencia cardíaca basada en intervalos RR
  */
 
-import { BaseCalculator } from './base-calculator';
-import { VitalSignCalculation } from '../types';
 import { OptimizedSignal } from '../../../signal-optimization/types';
+import { BaseCalculator, CalculationResultItem } from '../types';
 
-export class HeartRateCalculator extends BaseCalculator {
-  private peakDetector: PeakDetector;
-  private rrIntervals: number[] = [];
-  private readonly MAX_RR_INTERVALS = 10;
-  
-  constructor() {
-    super('heartRate');
-    this.peakDetector = new PeakDetector();
-  }
+export class HeartRateCalculator implements BaseCalculator {
+  private lastCalculatedBPM: number = 0;
+  private confidenceHistory: number[] = [];
+  private readonly MAX_HISTORY = 5;
   
   /**
    * Calcula la frecuencia cardíaca a partir de señal optimizada
    */
-  protected performCalculation(signal: OptimizedSignal): VitalSignCalculation {
-    // Detectar pico cardíaco
-    const { isPeak, confidence: peakConfidence } = 
-      this.peakDetector.detectPeak(signal.optimizedValue, this.valueBuffer);
+  public calculate(signal: OptimizedSignal): CalculationResultItem<number> {
+    // Inicializar resultado
+    let bpm = 0;
+    let confidence = 0;
     
-    // Si es un pico, registrarlo y actualizar intervalos RR
-    if (isPeak) {
-      const lastPeakTime = this.peakDetector.getLastPeakTime();
-      if (lastPeakTime) {
-        const interval = signal.timestamp - lastPeakTime;
+    try {
+      // Obtener intervalos RR de metadatos
+      const intervals = signal.metadata?.intervals || [];
+      
+      if (intervals.length >= 3) {
+        // Filtrar intervalos válidos (entre 300ms y 2000ms)
+        const validIntervals = intervals.filter(i => i >= 300 && i <= 2000);
         
-        // Solo añadir intervalos válidos (40-200 BPM)
-        if (interval >= 300 && interval <= 1500) {
-          this.rrIntervals.push(interval);
+        if (validIntervals.length >= 2) {
+          // Calcular promedio de intervalos
+          const avgInterval = validIntervals.reduce((sum, i) => sum + i, 0) / validIntervals.length;
           
-          // Mantener buffer limitado
-          if (this.rrIntervals.length > this.MAX_RR_INTERVALS) {
-            this.rrIntervals.shift();
+          // Convertir a BPM
+          bpm = Math.round(60000 / avgInterval);
+          
+          // Limitar a rango fisiológico
+          bpm = Math.max(40, Math.min(220, bpm));
+          
+          // Calcular confianza basada en variabilidad de intervalos
+          const stdDev = Math.sqrt(
+            validIntervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / validIntervals.length
+          );
+          
+          // Menor desviación = mayor confianza
+          confidence = Math.max(0.1, Math.min(0.95, 1 - (stdDev / avgInterval / 0.5)));
+          
+          // Añadir factor de confianza basado en cantidad de intervalos
+          confidence *= Math.min(1, validIntervals.length / 8);
+          
+          // Estabilizar BPM si hay valores previos
+          if (this.lastCalculatedBPM > 0 && Math.abs(bpm - this.lastCalculatedBPM) > 15) {
+            bpm = Math.round(0.7 * this.lastCalculatedBPM + 0.3 * bpm);
+            confidence *= 0.8; // Reducir confianza en transiciones bruscas
+          }
+          
+          // Actualizar histórico de confianza
+          this.confidenceHistory.push(confidence);
+          if (this.confidenceHistory.length > this.MAX_HISTORY) {
+            this.confidenceHistory.shift();
+          }
+          
+          // Suavizar confianza
+          if (this.confidenceHistory.length > 1) {
+            confidence = this.confidenceHistory.reduce((sum, c) => sum + c, 0) / this.confidenceHistory.length;
           }
         }
       }
       
-      // Actualizar tiempo de último pico
-      this.peakDetector.setLastPeakTime(signal.timestamp);
-    }
-    
-    // Calcular BPM a partir de intervalos RR
-    const { bpm, confidence: bpmConfidence } = this.calculateBPM();
-    
-    // Añadir metadatos para arritmias
-    const metadata = {
-      isPeak,
-      rrIntervals: [...this.rrIntervals],
-      lastPeakTime: this.peakDetector.getLastPeakTime()
-    };
-    
-    // Generar sugerencias para el optimizador basado en calidad
-    this.updateOptimizationSuggestions(bpmConfidence);
-    
-    return {
-      value: bpm,
-      confidence: bpmConfidence,
-      timestamp: signal.timestamp,
-      metadata
-    };
-  }
-  
-  /**
-   * Calcula BPM a partir de intervalos RR
-   */
-  private calculateBPM(): { bpm: number, confidence: number } {
-    if (this.rrIntervals.length < 3) {
-      return { bpm: 0, confidence: 0 };
-    }
-    
-    // Filtrar intervalos anómalos
-    const validIntervals = this.rrIntervals.filter(
-      interval => interval >= 300 && interval <= 1500
-    );
-    
-    if (validIntervals.length < 3) {
-      return { bpm: 0, confidence: 0 };
-    }
-    
-    // Calcular promedio de intervalos
-    const avgInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
-    
-    // Convertir a BPM
-    const bpm = Math.round(60000 / avgInterval);
-    
-    // Calcular confianza basada en consistencia de intervalos
-    const stdDev = Math.sqrt(
-      validIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / validIntervals.length
-    );
-    
-    // Normalizar desviación estándar como medida de confianza
-    const normalizedStdDev = Math.min(1, stdDev / avgInterval);
-    const consistency = 1 - normalizedStdDev;
-    
-    // Calcular confianza final combinando consistencia y número de muestras
-    const sampleConfidence = Math.min(1, validIntervals.length / 10);
-    const confidence = (consistency * 0.7) + (sampleConfidence * 0.3);
-    
-    return {
-      bpm: Math.max(40, Math.min(200, bpm)), // Limitar a rango fisiológico
-      confidence
-    };
-  }
-  
-  /**
-   * Actualiza sugerencias para optimizador basado en calidad de señal
-   */
-  private updateOptimizationSuggestions(confidence: number): void {
-    if (confidence < 0.3) {
-      // Baja confianza: aumentar amplificación y sensibilidad
-      this.suggestedParameters = {
-        amplification: 2.0,
-        sensitivity: 1.2,
-        filterStrength: 0.7
+      // Guardar último valor calculado
+      if (bpm > 0) {
+        this.lastCalculatedBPM = bpm;
+      }
+      
+      return {
+        value: bpm,
+        confidence,
+        metadata: {
+          intervalCount: intervals.length
+        }
       };
-    } else if (confidence < 0.6) {
-      // Confianza media: ajustes moderados
-      this.suggestedParameters = {
-        amplification: 1.5,
-        sensitivity: 1.1,
-        filterStrength: 0.6
+    } catch (error) {
+      console.error("Error calculando frecuencia cardíaca:", error);
+      
+      return {
+        value: this.lastCalculatedBPM,
+        confidence: 0.1
       };
-    } else {
-      // Alta confianza: optimizaciones mínimas
-      this.suggestedParameters = {};
     }
   }
   
   /**
-   * Reinicia el calculador
+   * Reinicia calculador
    */
   public reset(): void {
-    super.reset();
-    this.peakDetector.reset();
-    this.rrIntervals = [];
-  }
-}
-
-/**
- * Detector de picos cardíacos
- */
-class PeakDetector {
-  private lastValues: number[] = [];
-  private readonly MAX_VALUES = 5;
-  private lastPeakTime: number | null = null;
-  private readonly MIN_PEAK_DISTANCE_MS = 300; // Mínimo tiempo entre picos (máximo 200bpm)
-  private readonly MIN_PEAK_THRESHOLD = 0.15;
-  
-  /**
-   * Detecta si un valor representa un pico cardíaco
-   */
-  public detectPeak(value: number, context: number[]): { isPeak: boolean, confidence: number } {
-    // Actualizar buffer de valores
-    this.lastValues.push(value);
-    if (this.lastValues.length > this.MAX_VALUES) {
-      this.lastValues.shift();
-    }
-    
-    // Necesitamos al menos 3 valores para detectar un pico
-    if (this.lastValues.length < 3) {
-      return { isPeak: false, confidence: 0 };
-    }
-    
-    // Verificar si es un máximo local
-    const isLocalMax = 
-      this.lastValues[1] > this.lastValues[0] && 
-      this.lastValues[1] > this.lastValues[2] &&
-      this.lastValues[1] > this.MIN_PEAK_THRESHOLD;
-    
-    if (!isLocalMax) {
-      return { isPeak: false, confidence: 0 };
-    }
-    
-    // Verificar tiempo desde último pico
-    const now = Date.now();
-    if (this.lastPeakTime && (now - this.lastPeakTime) < this.MIN_PEAK_DISTANCE_MS) {
-      return { isPeak: false, confidence: 0 };
-    }
-    
-    // Calcular prominencia del pico
-    const prominence = Math.min(
-      this.lastValues[1] - this.lastValues[0],
-      this.lastValues[1] - this.lastValues[2]
-    );
-    
-    // Calcular confianza basada en prominencia
-    const confidence = Math.min(1, prominence * 5);
-    
-    return { isPeak: true, confidence };
-  }
-  
-  /**
-   * Establece tiempo de último pico
-   */
-  public setLastPeakTime(time: number): void {
-    this.lastPeakTime = time;
-  }
-  
-  /**
-   * Obtiene tiempo de último pico
-   */
-  public getLastPeakTime(): number | null {
-    return this.lastPeakTime;
-  }
-  
-  /**
-   * Reinicia detector de picos
-   */
-  public reset(): void {
-    this.lastValues = [];
-    this.lastPeakTime = null;
+    this.lastCalculatedBPM = 0;
+    this.confidenceHistory = [];
   }
 }

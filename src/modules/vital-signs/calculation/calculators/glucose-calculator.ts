@@ -3,11 +3,10 @@
  * Calculador especializado para glucosa
  */
 
-import { BaseCalculator } from './base-calculator';
-import { VitalSignCalculation } from '../types';
 import { OptimizedSignal } from '../../../signal-optimization/types';
+import { BaseCalculator, BaseVitalSignCalculator, VitalSignCalculation } from '../types';
 
-export class GlucoseCalculator extends BaseCalculator {
+export class GlucoseCalculator extends BaseVitalSignCalculator {
   private absorptionRatio: number = 1.0;
   private baselineVariation: number = 0;
   private trendData: number[] = [];
@@ -18,8 +17,7 @@ export class GlucoseCalculator extends BaseCalculator {
   private areaUnderCurve: number = 0;
   
   constructor() {
-    super('glucose');
-    this._maxBufferSize = 120; // Mayor buffer para detectar tendencias lentas
+    super('glucose', 120); // Mayor buffer para detectar tendencias lentas
   }
   
   /**
@@ -46,7 +44,11 @@ export class GlucoseCalculator extends BaseCalculator {
         decayTime: this.decayTime,
         peakAmplitude: this.peakAmplitude,
         areaUnderCurve: this.areaUnderCurve
-      }
+      },
+      minValue: 70,
+      maxValue: 200,
+      confidenceThreshold: 0.6,
+      defaultValue: 0
     };
   }
   
@@ -227,16 +229,26 @@ export class GlucoseCalculator extends BaseCalculator {
   }
   
   /**
+   * Obtiene el parámetro preferido para ajuste
+   */
+  protected getPreferredParameter(): string {
+    return "amplification";
+  }
+
+  /**
+   * Calcula consistencia de tendencia
+   */
+  private calculateTrendConsistency(): number {
+    return 0.8;
+  }
+  
+  /**
    * Reinicia calculador
    */
-  public reset(): void {
-    super.reset();
+  protected resetSpecific(): void {
     this.decayTime = 0;
     this.peakAmplitude = 0;
     this.areaUnderCurve = 0;
-  }
-
-  private calculateTrendConsistency(): number {
-    return 0.8;
+    this.trendData = [];
   }
 }

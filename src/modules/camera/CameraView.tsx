@@ -1,9 +1,15 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { CameraFrameProcessor } from './CameraFrameProcessor';
+import { ProcessedPPGSignal } from '../signal-processing/types';
 
 interface CameraViewProps {
+  onFrameProcessed?: (ppgSignal: ProcessedPPGSignal, heartBeatData: {
+    isPeak: boolean;
+    intervals: number[];
+    lastPeakTime: number | null;
+  }) => void;
   onStreamReady?: (stream: MediaStream) => void;
-  onFrameProcessed?: (imageData: ImageData) => void;
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
@@ -11,14 +17,15 @@ interface CameraViewProps {
 }
 
 const CameraView: React.FC<CameraViewProps> = ({ 
-  onStreamReady, 
-  onFrameProcessed,
+  onFrameProcessed, 
+  onStreamReady,
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
   frameRate = 30
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
@@ -26,13 +33,30 @@ const CameraView: React.FC<CameraViewProps> = ({
   const [isIOS, setIsIOS] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
-  const processingCallbackRef = useRef<((imageData: ImageData) => void) | null>(null);
-  const frameProcessorRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const frameProcessorRef = useRef<CameraFrameProcessor | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
-  // Actualizar callback de procesamiento cuando cambie
+  // Inicializar el procesador de frames
   useEffect(() => {
-    processingCallbackRef.current = onFrameProcessed || null;
-  }, [onFrameProcessed]);
+    if (!frameProcessorRef.current) {
+      frameProcessorRef.current = new CameraFrameProcessor();
+      console.log("CameraView: Procesador de frames inicializado");
+    }
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, []);
+  
+  // Configurar procesador según frameRate
+  useEffect(() => {
+    if (frameProcessorRef.current) {
+      frameProcessorRef.current.setProcessingInterval(1000 / frameRate);
+    }
+  }, [frameRate]);
 
   // Detectar plataforma
   useEffect(() => {
@@ -52,13 +76,13 @@ const CameraView: React.FC<CameraViewProps> = ({
   }, []);
 
   const stopCamera = useCallback(() => {
-    if (frameProcessorRef.current) {
-      clearInterval(frameProcessorRef.current);
-      frameProcessorRef.current = null;
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
     
     if (stream) {
-      console.log("CameraView: Stopping camera stream and turning off torch");
+      console.log("CameraView: Deteniendo stream de cámara y apagando linterna");
       stream.getTracks().forEach(track => {
         try {
           if (track.kind === 'video' && track.getCapabilities()?.torch) {
@@ -83,51 +107,50 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   }, [stream]);
 
-  const processFrames = useCallback((videoTrack: MediaStreamTrack) => {
-    if (!processingCallbackRef.current) return;
-    
-    const imageCapture = new ImageCapture(videoTrack);
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D del canvas");
+  // Función para procesar frames
+  const processVideoFrame = useCallback(() => {
+    if (!isMonitoring || !videoRef.current || !videoRef.current.videoWidth || !frameProcessorRef.current) {
       return;
     }
     
-    // Limpiar procesador anterior si existe
-    if (frameProcessorRef.current) {
-      clearInterval(frameProcessorRef.current);
-    }
-    
-    // Calcular intervalo basado en frameRate
-    const interval = Math.floor(1000 / frameRate);
-    
-    // Crear nuevo procesador de frames
-    frameProcessorRef.current = setInterval(async () => {
-      if (!isMonitoring || !processingCallbackRef.current) {
-        if (frameProcessorRef.current) {
-          clearInterval(frameProcessorRef.current);
-          frameProcessorRef.current = null;
-        }
+    try {
+      // Crear canvas si no existe
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement('canvas');
+      }
+      
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      
+      if (!ctx) {
+        console.error("No se pudo obtener contexto 2D del canvas");
         return;
       }
       
-      try {
-        const frame = await imageCapture.grabFrame();
-        tempCanvas.width = frame.width;
-        tempCanvas.height = frame.height;
-        tempCtx.drawImage(frame, 0, 0);
-        
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processingCallbackRef.current(imageData);
-      } catch (error) {
-        console.error("Error capturando frame:", error);
+      // Ajustar tamaño del canvas
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      
+      // Dibujar frame en el canvas
+      ctx.drawImage(videoRef.current, 0, 0);
+      
+      // Obtener datos de imagen
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Procesar frame
+      const processingResult = frameProcessorRef.current.processFrame(imageData);
+      
+      // Enviar resultados al callback
+      if (processingResult && onFrameProcessed) {
+        onFrameProcessed(processingResult.ppgSignal, processingResult.heartBeatData);
       }
-    }, interval);
+    } catch (error) {
+      console.error("Error procesando frame de video:", error);
+    }
     
-    console.log(`CameraView: Iniciado procesamiento de frames a ${frameRate} FPS (intervalo: ${interval}ms)`);
-  }, [isMonitoring, frameRate]);
+    // Programar siguiente frame
+    animationFrameRef.current = requestAnimationFrame(processVideoFrame);
+  }, [isMonitoring, onFrameProcessed]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -243,10 +266,11 @@ const CameraView: React.FC<CameraViewProps> = ({
 
         setStream(newStream);
         
-        // Configurar procesamiento de frames si se proporcionó un callback
-        if (processingCallbackRef.current) {
-          processFrames(videoTrack);
+        // Iniciar procesamiento de frames
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
         }
+        animationFrameRef.current = requestAnimationFrame(processVideoFrame);
         
         // Notificar que el stream está listo
         if (onStreamReady) {
@@ -266,7 +290,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         console.error(`CameraView: Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
     }
-  }, [isAndroid, isIOS, onStreamReady, processFrames]);
+  }, [isAndroid, isIOS, onStreamReady, processVideoFrame]);
 
   const refreshAutoFocus = useCallback(async () => {
     if (stream && !isFocusing && !isAndroid) {

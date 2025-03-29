@@ -1,161 +1,172 @@
 
 /**
- * Optimizador especializado para el canal de frecuencia cardíaca
+ * Optimizador especializado para frecuencia cardíaca
+ * Aplica algoritmos específicos para mejorar la detección de picos y latidos cardíacos
  */
 
-import { ProcessedPPGSignal } from '../../signal-processing/types';
 import { BaseChannelOptimizer } from '../base-channel-optimizer';
-import { FeedbackData, OptimizationParameters } from '../types';
+import { ProcessedPPGSignal } from '../../signal-processing/types';
+import { OptimizedSignal, FeedbackData, OptimizationParameters } from '../types';
 
-/**
- * Parámetros específicos para optimización de frecuencia cardíaca
- */
-const HEART_RATE_PARAMS: Partial<OptimizationParameters> = {
-  // Enfocado en resaltar picos cardíacos
-  amplificationFactor: 1.8,
-  filterStrength: 0.6,
-  frequencyRange: [0.6, 3.3], // ~35-200 BPM
-  sensitivityFactor: 1.2,
-  adaptiveThreshold: true
-};
-
-/**
- * Optimizador especializado para mejorar la detección de frecuencia cardíaca
- */
 export class HeartRateOptimizer extends BaseChannelOptimizer {
-  // Valores específicos para detección de picos
-  private peakEnhancementFactor: number = 1.5;
-  private valleySuppressionFactor: number = 0.8;
-  private dynamicThresholdBuffer: number[] = [];
+  private lastValues: number[] = [];
+  private readonly maxValues = 50;
+  private peakThreshold = 0.3;
+  private readonly minPeakDistance = 300; // ms
+  private lastPeakTime: number | null = null;
+  private rrIntervals: number[] = [];
+  private readonly maxIntervals = 10;
   
-  constructor() {
-    super('heartRate', HEART_RATE_PARAMS);
+  constructor(config: Partial<OptimizationParameters> = {}) {
+    super('heartRate', {
+      amplificationFactor: 1.5,
+      filteringLevel: 'medium',
+      ...config
+    });
   }
   
   /**
-   * Aplica optimizaciones específicas para frecuencia cardíaca
-   * Enfocado en realzar picos para mejor detección de pulso
+   * Optimiza señal para frecuencia cardíaca
    */
-  protected applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number {
-    // 1. Filtrado adaptativo para reducir ruido
-    let optimized = this.applyAdaptiveFilter(signal.filteredValue);
+  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
+    // Añadir al buffer interno
+    this.addToBuffer(signal);
     
-    // 2. Realce de picos para mejorar detección de latidos
-    optimized = this.enhancePeaks(optimized);
+    // Extraer valores
+    const value = signal.filteredValue || signal.rawValue;
     
-    // 3. Filtrado de frecuencia para mantener solo el rango cardíaco
-    optimized = this.applyFrequencyDomain(optimized, signal.timestamp);
-    
-    // 4. Amplificación adaptativa
-    optimized = this.amplifySignal(optimized);
-    
-    return optimized;
-  }
-  
-  /**
-   * Realza picos y suprime valles para mejorar detección
-   */
-  private enhancePeaks(value: number): number {
-    if (this.valueBuffer.length < 5) return value;
-    
-    // Detectar si es un posible pico
-    const recent = this.valueBuffer.slice(-3);
-    const isPotentialPeak = recent[1] >= recent[0] && recent[1] >= recent[2];
-    const isPotentialValley = recent[1] <= recent[0] && recent[1] <= recent[2];
-    
-    // Realzar picos y suprimir valles
-    if (isPotentialPeak) {
-      return value * this.peakEnhancementFactor;
-    } else if (isPotentialValley) {
-      return value * this.valleySuppressionFactor;
+    // Añadir a valores recientes
+    this.lastValues.push(value);
+    if (this.lastValues.length > this.maxValues) {
+      this.lastValues.shift();
     }
     
-    return value;
-  }
-  
-  /**
-   * Aplica filtrado en dominio de frecuencia para mantener solo rango cardíaco
-   */
-  private applyFrequencyDomain(value: number, timestamp: number): number {
-    // Implementación simplificada de filtro paso banda
-    // En una implementación real se usaría FFT o filtros IIR/FIR más avanzados
-    if (this.valueBuffer.length < 10) return value;
+    // Aplicar filtrado adaptativo para suavizar
+    const filteredValues = this.applyAdaptiveFiltering([...this.lastValues]);
     
-    // Actualizar buffer para análisis de frecuencia
-    this.dynamicThresholdBuffer.push(value);
-    if (this.dynamicThresholdBuffer.length > 30) {
-      this.dynamicThresholdBuffer.shift();
-    }
+    // Detectar pico
+    const { isPeak, interval } = this.detectPeak(filteredValues, signal.timestamp);
     
-    // Estimación simple de frecuencia dominante
-    const dominant = this.estimateDominantFrequency();
-    
-    // Atenuar señal si está fuera del rango de frecuencias cardíacas
-    const [minFreq, maxFreq] = this.parameters.frequencyRange;
-    if (dominant < minFreq || dominant > maxFreq) {
-      return value * 0.8; // Atenuar señales fuera del rango cardíaco
-    }
-    
-    return value;
-  }
-  
-  /**
-   * Estima la frecuencia dominante en la señal
-   */
-  private estimateDominantFrequency(): number {
-    if (this.dynamicThresholdBuffer.length < 10) return 1.0;
-    
-    // Análisis simplificado de autocorrelación
-    const signal = [...this.dynamicThresholdBuffer];
-    const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-    const normalized = signal.map(v => v - mean);
-    
-    // Buscar período por autocorrelación
-    let maxCorr = 0;
-    let period = 10; // Valor por defecto (~3Hz/180BPM)
-    
-    for (let lag = 5; lag < Math.min(20, normalized.length/2); lag++) {
-      let corr = 0;
-      for (let i = 0; i < normalized.length - lag; i++) {
-        corr += normalized[i] * normalized[i + lag];
+    // Actualizar intervalos RR si se detectó un pico
+    if (isPeak && interval && interval > 0) {
+      this.rrIntervals.push(interval);
+      if (this.rrIntervals.length > this.maxIntervals) {
+        this.rrIntervals.shift();
       }
-      corr /= (normalized.length - lag);
+    }
+    
+    // Calcular confianza basada en estabilidad de intervalos
+    const confidence = this.calculateConfidence();
+    
+    // Amplificar valor final
+    const amplifiedValue = this.amplifySignal(filteredValues[filteredValues.length - 1]);
+    
+    return {
+      channel: this.channelId,
+      value: amplifiedValue,
+      timestamp: signal.timestamp,
+      confidence,
+      metadata: {
+        peaks: isPeak,
+        intervals: [...this.rrIntervals],
+        lastPeakTime: this.lastPeakTime,
+        filteredValues: filteredValues.slice(-5)
+      }
+    };
+  }
+  
+  /**
+   * Procesa retroalimentación desde el calculador de frecuencia cardíaca
+   */
+  public processFeedback(feedback: FeedbackData): void {
+    // Adaptar configuración según feedback
+    if (feedback.parameter === 'peakThreshold') {
+      if (feedback.adjustment === 'increase') {
+        this.peakThreshold = Math.min(0.6, this.peakThreshold + feedback.magnitude * 0.2);
+      } else if (feedback.adjustment === 'decrease') {
+        this.peakThreshold = Math.max(0.1, this.peakThreshold - feedback.magnitude * 0.1);
+      }
+    } else if (feedback.parameter === 'amplificationFactor') {
+      if (feedback.adjustment === 'increase') {
+        this.parameters.amplificationFactor = Math.min(3.0, this.parameters.amplificationFactor * (1 + feedback.magnitude * 0.5));
+      } else if (feedback.adjustment === 'decrease') {
+        this.parameters.amplificationFactor = Math.max(0.5, this.parameters.amplificationFactor * (1 - feedback.magnitude * 0.3));
+      } else if (feedback.adjustment === 'reset') {
+        this.parameters.amplificationFactor = 1.5;
+      }
+    }
+    
+    // Adaptación general de parámetros
+    this.adaptToFeedback(feedback);
+  }
+  
+  /**
+   * Detecta picos en la señal filtrada
+   */
+  private detectPeak(values: number[], timestamp: number): { isPeak: boolean, interval: number | null } {
+    if (values.length < 3) {
+      return { isPeak: false, interval: null };
+    }
+    
+    const lastIdx = values.length - 1;
+    
+    // Verificar si es un máximo local
+    const isPotentialPeak = values[lastIdx - 1] > values[lastIdx - 2] && 
+                           values[lastIdx - 1] > values[lastIdx] &&
+                           values[lastIdx - 1] > this.peakThreshold;
+                           
+    // Verificar distancia mínima desde último pico
+    const isValidTiming = this.lastPeakTime === null || 
+                          (timestamp - this.lastPeakTime) > this.minPeakDistance;
+    
+    const isPeak = isPotentialPeak && isValidTiming;
+    
+    let interval: number | null = null;
+    
+    if (isPeak) {
+      // Calcular intervalo
+      if (this.lastPeakTime !== null) {
+        interval = timestamp - this.lastPeakTime;
+      }
       
-      if (corr > maxCorr) {
-        maxCorr = corr;
-        period = lag;
-      }
+      // Actualizar último tiempo de pico
+      this.lastPeakTime = timestamp;
     }
     
-    // Convertir período a frecuencia estimada (asumiendo ~30fps)
-    const estimatedFreq = 30 / period;
-    return estimatedFreq;
+    return { isPeak, interval };
   }
   
   /**
-   * Procesamiento especializado de feedback para frecuencia cardíaca
+   * Calcula confianza basada en estabilidad de intervalos RR
    */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    super.adaptToFeedback(feedback);
-    
-    // Ajustes específicos para frecuencia cardíaca
-    if (feedback.confidence < 0.3) {
-      // Con baja confianza, aumentar realce de picos
-      this.peakEnhancementFactor = Math.min(2.0, this.peakEnhancementFactor * 1.1);
-    } else if (feedback.confidence > 0.8) {
-      // Con alta confianza, estabilizar
-      this.peakEnhancementFactor = 1.5; // Valor óptimo
+  private calculateConfidence(): number {
+    if (this.rrIntervals.length < 3) {
+      return 0.3;
     }
+    
+    // Calcular desviación estándar de intervalos
+    const avg = this.rrIntervals.reduce((a, b) => a + b, 0) / this.rrIntervals.length;
+    const variance = this.rrIntervals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / this.rrIntervals.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Menor desviación = mayor confianza (normalizada)
+    const normalizedStdDev = Math.min(1, stdDev / avg);
+    const stabilityConfidence = 1 - normalizedStdDev;
+    
+    // Incluir número de intervalos en confianza
+    const countConfidence = Math.min(1, this.rrIntervals.length / this.maxIntervals);
+    
+    // Confianza combinada (ponderada)
+    return 0.7 * stabilityConfidence + 0.3 * countConfidence;
   }
   
   /**
-   * Reinicia parámetros específicos
+   * Reinicia el optimizador
    */
-  protected resetChannelParameters(): void {
-    super.resetChannelParameters();
-    this.setParameters(HEART_RATE_PARAMS);
-    this.peakEnhancementFactor = 1.5;
-    this.valleySuppressionFactor = 0.8;
-    this.dynamicThresholdBuffer = [];
+  public reset(): void {
+    super.reset();
+    this.lastValues = [];
+    this.lastPeakTime = null;
+    this.rrIntervals = [];
   }
 }

@@ -1,229 +1,209 @@
 
 /**
- * Optimizador base para todos los canales
- * Implementa funcionalidad común para los optimizadores especializados
+ * Optimizador base de canal
+ * 
+ * Clase base abstracta para todos los optimizadores de canal
  */
 
+import { OptimizedSignal, OptimizationParameters, VitalSignChannel, FeedbackData } from './types';
 import { ProcessedPPGSignal } from '../signal-processing/types';
-import { ChannelOptimizer, OptimizationParameters, OptimizedSignal, FeedbackData, VitalSignChannel } from './types';
 
 /**
- * Parámetros por defecto para optimización de canal
+ * Clase base para optimizadores de canal
  */
-const DEFAULT_PARAMS: OptimizationParameters = {
-  amplificationFactor: 1.5,
-  filterStrength: 0.6,
-  noiseThreshold: 0.2,
-  frequencyRange: [0.5, 4.0], // Hz
-  sensitivityFactor: 1.0,
-  adaptiveThreshold: true
-};
-
-export abstract class BaseChannelOptimizer implements ChannelOptimizer {
-  // Canal de optimización
-  protected readonly channel: VitalSignChannel;
-  
-  // Parámetros configurables
+export abstract class BaseChannelOptimizer {
+  protected channelName: VitalSignChannel;
   protected parameters: OptimizationParameters;
-  
-  // Buffer de valores para análisis
-  protected valueBuffer: number[] = [];
-  protected readonly MAX_BUFFER_SIZE = 100;
-  
-  // Valor optimizado anterior para cálculos diferenciales
   protected lastOptimizedValue: number = 0;
+  protected valueBuffer: number[] = [];
+  protected _maxBufferSize: number = 60;
+  protected confidenceLevel: number = 0;
+  protected noiseEstimate: number = 0;
   
-  /**
-   * Constructor para optimizador base
-   */
-  constructor(channel: VitalSignChannel, initialParams: Partial<OptimizationParameters> = {}) {
-    this.channel = channel;
-    this.parameters = { ...DEFAULT_PARAMS };
-    this.setParameters(initialParams);
-  }
-  
-  /**
-   * Obtiene el canal gestionado por este optimizador
-   */
-  public getChannel(): VitalSignChannel {
-    return this.channel;
-  }
-  
-  /**
-   * Obtiene los parámetros actuales de optimización
-   */
-  public getParameters(): OptimizationParameters {
-    return { ...this.parameters };
-  }
-  
-  /**
-   * Actualiza parámetros de optimización
-   */
-  public setParameters(params: Partial<OptimizationParameters>): void {
+  constructor(channelName: VitalSignChannel, customParams?: Partial<OptimizationParameters>) {
+    this.channelName = channelName;
+    
+    // Parámetros por defecto
     this.parameters = {
-      ...this.parameters,
-      ...params
+      amplification: 1.0,
+      filterStrength: 0.5,
+      sensitivity: 1.0,
+      smoothing: 0.3,
+      noiseThreshold: 0.1,
+      dynamicRange: 1.0
     };
+    
+    // Aplicar personalización
+    if (customParams) {
+      this.parameters = {
+        ...this.parameters,
+        ...customParams
+      };
+    }
   }
   
   /**
-   * Método principal de optimización de señal
+   * Optimiza una señal PPG para el canal específico
    */
-  public optimize(signal: ProcessedPPGSignal): OptimizedSignal {
-    // Actualizar buffer para análisis
-    this.valueBuffer.push(signal.filteredValue);
-    if (this.valueBuffer.length > this.MAX_BUFFER_SIZE) {
+  public abstract optimize(signal: ProcessedPPGSignal): OptimizedSignal;
+  
+  /**
+   * Procesa retroalimentación del calculador
+   */
+  public abstract processFeedback(feedback: FeedbackData): void;
+  
+  /**
+   * Aplica amplificación adaptativa basada en relación señal/ruido
+   */
+  protected applyAdaptiveAmplification(value: number): number {
+    // Calcular factor de amplificación dinámico
+    const amplificationFactor = this.parameters.amplification * 
+      (1 + 0.5 * Math.max(0, 1 - this.noiseEstimate));
+    
+    // Aplicar amplificación
+    return value * amplificationFactor;
+  }
+  
+  /**
+   * Aplica filtrado adaptativo basado en características de la señal
+   */
+  protected applyAdaptiveFiltering(value: number): number {
+    // Añadir al buffer
+    this.addToBuffer(value);
+    
+    // Si el buffer es insuficiente, devolver valor original
+    if (this.valueBuffer.length < 3) {
+      return value;
+    }
+    
+    // Calcular intensidad de filtro dinámica
+    const filterFactor = this.parameters.filterStrength * 
+      (1 + 0.3 * Math.min(1, this.noiseEstimate / 0.2));
+    
+    // Aplicar filtro de media móvil ponderada
+    const weights = [0.2, 0.3, 0.5]; // Mayor peso a muestras recientes
+    let filteredValue = 0;
+    let weightSum = 0;
+    
+    // Tomar las últimas 3 muestras
+    const samples = this.valueBuffer.slice(-3);
+    
+    for (let i = 0; i < samples.length; i++) {
+      filteredValue += samples[i] * weights[i];
+      weightSum += weights[i];
+    }
+    
+    // Normalizar por suma de pesos
+    filteredValue /= weightSum;
+    
+    // Mezclar valor original y filtrado según intensidad
+    return value * (1 - filterFactor) + filteredValue * filterFactor;
+  }
+  
+  /**
+   * Actualiza estimación de ruido
+   */
+  protected updateNoiseEstimate(): void {
+    if (this.valueBuffer.length < 10) {
+      this.noiseEstimate = 0.3; // Valor por defecto con pocas muestras
+      return;
+    }
+    
+    // Usar últimas 10 muestras
+    const samples = this.valueBuffer.slice(-10);
+    
+    // Calcular diferencias consecutivas
+    const diffs = [];
+    for (let i = 1; i < samples.length; i++) {
+      diffs.push(Math.abs(samples[i] - samples[i-1]));
+    }
+    
+    // Ordenar diferencias
+    diffs.sort((a, b) => a - b);
+    
+    // Usar mediana de diferencias como estimador de ruido
+    const medianIndex = Math.floor(diffs.length / 2);
+    const medianDiff = diffs[medianIndex];
+    
+    // Normalizar a [0,1]
+    this.noiseEstimate = Math.min(1, medianDiff / 0.3);
+  }
+  
+  /**
+   * Añade un valor al buffer
+   */
+  protected addToBuffer(value: number): void {
+    this.valueBuffer.push(value);
+    
+    // Limitar tamaño de buffer
+    if (this.valueBuffer.length > this._maxBufferSize) {
       this.valueBuffer.shift();
     }
-    
-    // Aplicar optimizaciones específicas de canal
-    const optimizedValue = this.applyChannelSpecificOptimizations(signal);
-    
-    // Calcular calidad de señal optimizada
-    const quality = this.calculateSignalQuality(optimizedValue);
-    
-    // Crear resultado
-    const result: OptimizedSignal = {
-      channel: this.channel,
-      timestamp: signal.timestamp,
-      value: signal.filteredValue,
-      quality,
-      optimizedValue,
-      parameters: this.getParameters(),
-      metadata: {
-        rrIntervals: signal.rrIntervals || [],
-        lastPeakTime: signal.lastPeakTime || null,
-        isPeak: signal.isPeak || false
-      }
-    };
-    
-    // Actualizar valor optimizado anterior
-    this.lastOptimizedValue = optimizedValue;
-    
-    return result;
   }
   
   /**
-   * Procesa feedback desde el calculador
+   * Calcula confianza basada en calidad de señal
    */
-  public processFeedback(feedback: FeedbackData): void {
-    // Verificar que el feedback sea para este canal
-    if (feedback.channel !== this.channel) return;
+  protected calculateConfidence(signal: ProcessedPPGSignal): number {
+    // Factores de confianza
     
-    // Aplicar sugerencias de ajuste de parámetros si existen
-    if (feedback.suggestedAdjustments) {
-      // Aplicar ajustes manteniendo límites razonables
-      this.setParameters(feedback.suggestedAdjustments);
+    // 1. Calidad de señal (de procesador)
+    const signalQualityFactor = signal.quality / 100;
+    
+    // 2. Detección de dedo
+    const fingerDetectionFactor = signal.fingerDetected ? 1.0 : 0.0;
+    
+    // 3. Fuerza de señal
+    const signalStrengthFactor = signal.signalStrength / 100;
+    
+    // 4. Estabilidad de señal
+    const stabilityFactor = this.calculateStabilityFactor();
+    
+    // Combinación ponderada
+    return (signalQualityFactor * 0.3) + 
+           (fingerDetectionFactor * 0.4) + 
+           (signalStrengthFactor * 0.2) + 
+           (stabilityFactor * 0.1);
+  }
+  
+  /**
+   * Calcula factor de estabilidad
+   */
+  protected calculateStabilityFactor(): number {
+    if (this.valueBuffer.length < 10) {
+      return 0.5; // Valor por defecto con pocas muestras
     }
     
-    // Permitir adaptaciones específicas en subclases
-    this.adaptToFeedback(feedback);
+    // Usar últimas 10 muestras
+    const samples = this.valueBuffer.slice(-10);
+    
+    // Calcular desviación estándar
+    const mean = samples.reduce((sum, v) => sum + v, 0) / samples.length;
+    const variance = samples.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / samples.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Normalizar a [0,1] donde 1 es más estable
+    // Asumir que desviación de 0.3 o más es inestable
+    return Math.max(0, 1 - (stdDev / 0.3));
   }
   
   /**
-   * Reinicia el optimizador
+   * Resetea el optimizador
    */
   public reset(): void {
     this.valueBuffer = [];
     this.lastOptimizedValue = 0;
-    this.resetChannelParameters();
-  }
-  
-  /**
-   * Aplicar filtro adaptativo
-   */
-  protected applyAdaptiveFilter(value: number): number {
-    if (this.valueBuffer.length < 3) return value;
+    this.confidenceLevel = 0;
+    this.noiseEstimate = 0;
     
-    // Obtener intensidad de filtrado del canal
-    const filterStrength = this.parameters.filterStrength;
-    
-    // Media móvil ponderada
-    const weight1 = filterStrength;
-    const weight2 = (1 - filterStrength) * 0.7;
-    const weight3 = (1 - filterStrength) * 0.3;
-    
-    const filteredValue = 
-      value * weight1 + 
-      this.valueBuffer[this.valueBuffer.length - 1] * weight2 + 
-      this.valueBuffer[this.valueBuffer.length - 2] * weight3;
-    
-    // Normalizar resultado
-    return filteredValue / (weight1 + weight2 + weight3);
-  }
-  
-  /**
-   * Amplifica señal según parámetros del canal
-   */
-  protected amplifySignal(value: number): number {
-    // Amplificar alrededor de 0.5 (punto medio)
-    const normalized = value - 0.5;
-    const amplified = normalized * this.parameters.amplificationFactor;
-    
-    // Devolver a rango [0,1] con límites suaves
-    return Math.max(0, Math.min(1, amplified + 0.5));
-  }
-  
-  /**
-   * Aplica procesamiento en dominio de frecuencia
-   */
-  protected applyFrequencyDomain(value: number, timestamp: number): number {
-    // Implementación simplificada para filtros de frecuencia
-    // En una implementación real se usaría FFT u otros filtros espectrales
-    
-    return value;
-  }
-  
-  /**
-   * Calcula calidad de señal optimizada
-   */
-  protected calculateSignalQuality(optimizedValue: number): number {
-    if (this.valueBuffer.length < 10) return 50; // Calidad media inicial
-    
-    // Calcular métricas de calidad básicas (estabilidad, amplitud, etc.)
-    const recentValues = this.valueBuffer.slice(-10);
-    
-    // Variabilidad (menor = más estable)
-    let variability = 0;
-    for (let i = 1; i < recentValues.length; i++) {
-      variability += Math.abs(recentValues[i] - recentValues[i-1]);
-    }
-    variability /= recentValues.length - 1;
-    
-    // Amplitud (mayor = mejor señal)
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    const amplitude = max - min;
-    
-    // Calcular calidad relativa a parámetros esperados para el canal
-    const stabilityFactor = Math.max(0, 1 - variability * 10);
-    const amplitudeFactor = Math.min(1, amplitude * 5);
-    
-    // Combinar factores con pesos específicos
-    const quality = (stabilityFactor * 0.6 + amplitudeFactor * 0.4) * 100;
-    
-    return Math.max(0, Math.min(100, quality));
-  }
-  
-  /**
-   * Método abstracto para optimizaciones específicas por canal
-   * Debe ser implementado por subclases
-   */
-  protected abstract applyChannelSpecificOptimizations(signal: ProcessedPPGSignal): number;
-  
-  /**
-   * Permite adaptaciones específicas basadas en feedback
-   * Puede ser sobrecargado por subclases
-   */
-  protected adaptToFeedback(feedback: FeedbackData): void {
-    // Implementación base vacía
-  }
-  
-  /**
-   * Reinicia parámetros específicos del canal
-   * Puede ser sobrecargado por subclases
-   */
-  protected resetChannelParameters(): void {
-    // Reimplementación por defecto
+    // Restaurar parámetros por defecto
+    this.parameters = {
+      amplification: 1.0,
+      filterStrength: 0.5,
+      sensitivity: 1.0,
+      smoothing: 0.3,
+      noiseThreshold: 0.1,
+      dynamicRange: 1.0
+    };
   }
 }
