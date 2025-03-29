@@ -44,7 +44,9 @@ export class BloodPressureAnalyzer {
 
     const map = diastolic + (systolic - diastolic) / 3;
 
-    const confidence = this.calculateConfidence(amplitude, slopeRatio, width, dicroticDrop);
+    let confidence = this.calculateConfidence(amplitude, slopeRatio, width, dicroticDrop);
+    if (isNaN(confidence)) confidence = 0;
+
     const isReliable = confidence >= this.confidenceThreshold;
 
     const estimate: BloodPressureResult = {
@@ -103,7 +105,9 @@ export class BloodPressureAnalyzer {
   }
 
   private getAdaptivelySmoothedEstimate(current: BloodPressureResult): BloodPressureResult {
-    const factor = 1 - current.confidence;
+    const fallbackFactor = 0.3;
+    const factor = current.confidence < 0.4 ? fallbackFactor : 1 - current.confidence;
+
     return {
       systolic: Math.round(this.lastEstimate.systolic * factor + current.systolic * (1 - factor)),
       diastolic: Math.round(this.lastEstimate.diastolic * factor + current.diastolic * (1 - factor)),
