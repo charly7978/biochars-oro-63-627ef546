@@ -45,11 +45,6 @@ export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
     return this.buffer.slice(0, this.index).filter(p => p !== undefined);
   }
 
-  public toArray(): T[] {
-    // Esta función es un alias para getPoints() para mantener compatibilidad
-    return this.getPoints();
-  }
-
   public clear(): void {
     this.buffer = new Array<T>(this.capacity);
     this.index = 0;

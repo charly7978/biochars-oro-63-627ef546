@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -8,6 +9,8 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import HeartRateDisplay from "@/components/HeartRateDisplay";
+import type { CardiacAnalysisResult } from '../modules/vital-signs/CardiacWaveformAnalyzer';
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -26,6 +29,19 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [heartbeatData, setHeartbeatData] = useState<{
+    bpm: number;
+    confidence: number;
+    isPeak: boolean;
+    arrhythmiaCount: number;
+    waveformAnalysis: CardiacAnalysisResult | null;
+  }>({
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: 0,
+    waveformAnalysis: null
+  });
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -34,7 +50,8 @@ const Index = () => {
     isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
+    reset: resetHeartBeatProcessor,
+    waveformAnalysis
   } = useHeartBeatProcessor();
   
   const { 
@@ -70,18 +87,22 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal only if we have good quality and finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Only process if the quality is sufficient and the finger is detected
       const minQualityThreshold = 40; // Increased threshold for better quality detection
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Only update heart rate if confidence is sufficient
         if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
           setHeartRate(heartBeatResult.bpm);
+          setHeartbeatData({
+            bpm: heartBeatResult.bpm,
+            confidence: heartBeatResult.confidence,
+            isPeak: heartBeatResult.isPeak,
+            arrhythmiaCount: heartBeatResult.arrhythmiaCount || 0,
+            waveformAnalysis: heartBeatResult.waveformAnalysis || null
+          });
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
@@ -91,16 +112,13 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
-        // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
         
-        // If finger not detected for a while, reset heart rate to zero
         if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
-      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
@@ -113,11 +131,17 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0); // Reset heart rate explicitly
+      setHeartRate(0);
+      setHeartbeatData({
+        bpm: 0,
+        confidence: 0,
+        isPeak: false,
+        arrhythmiaCount: 0,
+        waveformAnalysis: null
+      });
       
       startProcessing();
-      startHeartBeatMonitoring(); // Update the processor state
-      
+      startHeartBeatMonitoring();
       setElapsedTime(0);
       
       if (measurementTimerRef.current) {
@@ -145,7 +169,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
+    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -160,7 +184,14 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0); // Reset heart rate explicitly
+    setHeartRate(0);
+    setHeartbeatData({
+      bpm: 0,
+      confidence: 0,
+      isPeak: false,
+      arrhythmiaCount: 0,
+      waveformAnalysis: null
+    });
   };
 
   const handleReset = () => {
@@ -277,7 +308,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -324,11 +354,10 @@ const Index = () => {
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
-              <VitalSign 
-                label="FRECUENCIA CARDÍACA"
-                value={heartRate || "--"}
-                unit="BPM"
-                highlighted={showResults}
+              <HeartRateDisplay 
+                bpm={heartRate} 
+                confidence={heartbeatData.confidence}
+                waveformAnalysis={heartbeatData.waveformAnalysis}
               />
               <VitalSign 
                 label="SPO2"

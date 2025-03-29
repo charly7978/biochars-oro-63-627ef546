@@ -89,12 +89,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     let result = processVitalSignal(value, rrData, isWeakSignal);
     const currentTime = Date.now();
     
-    // Si tenemos un resultado con valores validos, guardarlo como último resultado válido
-    if (result.spo2 > 0 || result.pressure !== "--/--") {
-      console.log("useVitalSignsProcessor: Actualizando último resultado válido:", result);
-      setLastValidResults(result);
-    }
-    
     // If arrhythmia is detected in real data, register visualization window
     if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
@@ -124,15 +118,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulations or reference values
    */
   const reset = () => {
-    console.log("useVitalSignsProcessor: Realizando reset, último resultado válido:", lastValidResults);
-    const validResults = lastValidResults; // Guardar resultados válidos antes del reset
-    
     resetProcessor();
     clearArrhythmiaWindows();
+    setLastValidResults(null);
     weakSignalsCountRef.current = 0;
     
-    // Retornar los últimos resultados válidos para mostrarlos al finalizar la medición
-    return validResults;
+    return null;
   };
   
   /**
@@ -152,7 +143,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults,
+    lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
