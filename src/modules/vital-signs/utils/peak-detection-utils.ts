@@ -5,17 +5,15 @@
 
 /**
  * Encuentra picos y valles en una señal real
- * Modificado para representar correctamente los picos en la gráfica PPG
  */
 export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
   // Algoritmo para detección de picos y valles en datos reales
-  // Busca picos correctamente orientados (hacia arriba)
   for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
-    // Detección de picos (orientados hacia arriba)
+    // Detección de picos
     if (
       v >= values[i - 1] * 0.95 &&
       v >= values[i + 1] * 0.95
@@ -25,7 +23,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
         peakIndices.push(i);
       }
     }
-    // Detección de valles (orientados hacia abajo)
+    // Detección de valles
     if (
       v <= values[i - 1] * 1.05 &&
       v <= values[i + 1] * 1.05

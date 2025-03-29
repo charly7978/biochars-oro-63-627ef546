@@ -6,13 +6,12 @@ import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
-import { playHeartbeatSound } from '../utils/audioUtils';
-import FeedbackService from '../services/FeedbackService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
+  const [waveformAnalysis, setWaveformAnalysis] = useState<any | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
   const missedBeepsCounter = useRef<number>(0);
@@ -20,10 +19,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
-  // Referencia al contexto de audio
-  const audioContextRef = useRef<AudioContext | null>(null);
-  
-  // Hooks para procesamiento y detección, sin funcionalidad de beep
   const { 
     requestImmediateBeep, 
     processBeepQueue, 
@@ -52,71 +47,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS
   } = useSignalProcessor();
-
-  // Inicializar el contexto de audio
-  useEffect(() => {
-    if (typeof AudioContext !== 'undefined' && !audioContextRef.current) {
-      try {
-        audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
-        console.log('AudioContext inicializado para sonidos de latidos reales');
-        
-        // Precargar sonido de latido
-        const preloadHeartbeat = async () => {
-          try {
-            if (audioContextRef.current && audioContextRef.current.state === 'running') {
-              await playHeartbeatSound(audioContextRef.current, '/sounds/heartbeat.mp3', 0.01);
-              console.log('Sonido de latido precargado');
-            }
-          } catch (err) {
-            console.error('Error precargando sonido de latido:', err);
-          }
-        };
-        
-        // Intentar precargar cuando el usuario interactúe con la página
-        const prepareAudio = async () => {
-          console.log("Evento de interacción detectado, preparando audio");
-          if (audioContextRef.current) {
-            try {
-              if (audioContextRef.current.state !== 'running') {
-                await audioContextRef.current.resume();
-                console.log("AudioContext resumido:", audioContextRef.current.state);
-              }
-              // Ejecutar test de audio
-              await FeedbackService.testAudio();
-              // Precargar sonido de latido
-              await preloadHeartbeat();
-            } catch (err) {
-              console.error("Error preparando audio:", err);
-            }
-          }
-        };
-        
-        window.addEventListener('click', prepareAudio, { once: false });
-        window.addEventListener('touchstart', prepareAudio, { once: false });
-        
-        // Test inmediato para debug
-        setTimeout(() => {
-          console.log("Test de audio programado");
-          FeedbackService.testAudio();
-        }, 2000);
-        
-        return () => {
-          window.removeEventListener('click', prepareAudio);
-          window.removeEventListener('touchstart', prepareAudio);
-        };
-      } catch (error) {
-        console.error('Error inicializando contexto de audio:', error);
-      }
-    }
-    
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(err => {
-          console.error('Error cerrando contexto de audio:', err);
-        });
-      }
-    };
-  }, []);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -162,30 +92,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Función para reproducir sonido de latido cardíaco real
-  const playRealHeartbeatSound = useCallback(async (volume: number = 0.9): Promise<boolean> => {
-    if (!isMonitoringRef.current) {
-      console.log('No reproduciendo sonido porque no está en monitoreo');
-      return false;
-    }
-    
-    try {
-      return await FeedbackService.playHeartbeat(volume);
-    } catch (err) {
-      console.error('Error reproduciendo sonido de latido real:', err);
-      return false;
-    }
-  }, []);
-
-  // Reemplazamos la implementación actual de requestBeep para usar el sonido real
   const requestBeep = useCallback((value: number): boolean => {
-    if (isMonitoringRef.current && processorRef.current) {
-      // Llamar a playRealHeartbeatSound en lugar del beep sintético
-      playRealHeartbeatSound(value * 0.9);
-      return true;
-    }
+    console.log('useHeartBeatProcessor: Beep ELIMINADO - Todo el sonido SOLO en PPGSignalMeter', {
+      value,
+      isMonitoring: isMonitoringRef.current,
+      processorExists: !!processorRef.current,
+      timestamp: new Date().toISOString()
+    });
+    
     return false;
-  }, [playRealHeartbeatSound]);
+  }, []);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
@@ -197,7 +113,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         rrData: {
           intervals: [],
           lastPeakTime: null
-        }
+        },
+        waveformAnalysis: null
       };
     }
 
@@ -222,6 +139,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
       
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
+    }
+    
+    if (processorRef.current.getCardiacAnalysis) {
+      result.waveformAnalysis = processorRef.current.getCardiacAnalysis();
+      setWaveformAnalysis(result.waveformAnalysis);
     }
 
     return result;
@@ -256,30 +178,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     lastProcessedPeakTimeRef.current = 0;
     
     cleanupBeepProcessor();
-    
-    // Intentar reactivar el contexto de audio si está suspendido
-    if (audioContextRef.current && audioContextRef.current.state !== 'running') {
-      audioContextRef.current.resume().catch(err => {
-        console.error('Error reactivando contexto de audio durante reset:', err);
-      });
-    }
   }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);
 
-  const startMonitoring = useCallback(async () => {
+  const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
-    
-    // Intentar activar el audio al iniciar el monitoreo
-    try {
-      if (audioContextRef.current && audioContextRef.current.state !== 'running') {
-        await audioContextRef.current.resume();
-        console.log('AudioContext activado al iniciar monitoreo:', audioContextRef.current.state);
-      }
-      // Realizar test de audio
-      await FeedbackService.testAudio();
-    } catch (err) {
-      console.error('Error activando audio al iniciar monitoreo:', err);
-    }
-    
     if (processorRef.current) {
       isMonitoringRef.current = true;
       processorRef.current.setMonitoring(true);
@@ -321,6 +223,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     requestBeep,
     startMonitoring,
     stopMonitoring,
-    playRealHeartbeatSound
+    waveformAnalysis
   };
 };

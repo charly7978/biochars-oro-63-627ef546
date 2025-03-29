@@ -54,7 +54,7 @@ export class PeakDetector {
     const valleyIndices: number[] = [];
     
     for (let i = this.VERIFICATION_WINDOW; i < slopeSum.length - this.VERIFICATION_WINDOW; i++) {
-      // Verificar si es un pico potencial - Adaptado para detectar picos reales
+      // Verificar si es un pico potencial
       if (slopeSum[i] > this.adaptiveThreshold) {
         // Verificar si es un máximo local
         let isPeak = true;
@@ -178,7 +178,6 @@ export class PeakDetector {
     for (let i = this.DERIVATIVE_WINDOW; i < values.length; i++) {
       let sum = 0;
       for (let j = 1; j <= this.DERIVATIVE_WINDOW; j++) {
-        // Preservar el signo correcto de la derivada
         sum += values[i] - values[i - j];
       }
       derivative.push(sum / this.DERIVATIVE_WINDOW);

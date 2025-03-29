@@ -26,12 +26,19 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				// Clear with high-quality clearing
 				ctx.clearRect(0, 0, displayWidth, displayHeight);
 				
-				// Enhanced background with glassmorphism effect - subtle gradient
+				// Rainbow gradient background with glassmorphism effect
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
-				gradient.addColorStop(0, 'rgba(243, 247, 252, 0.6)'); // More transparent at top
-				gradient.addColorStop(0.4, 'rgba(237, 244, 249, 0.7)'); // Slightly darker at middle
-				gradient.addColorStop(0.6, 'rgba(241, 238, 248, 0.7)'); // Start transitioning to subtle lilac
-				gradient.addColorStop(1, 'rgba(240, 230, 255, 0.6)'); // Transparent lilac tone at bottom
+				
+				// Rainbow colors from top to bottom (soft at top, more intense at bottom)
+				gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');        // White at top
+				gradient.addColorStop(0.15, 'rgba(200, 230, 255, 0.7)');     // Light blue
+				gradient.addColorStop(0.3, 'rgba(170, 200, 255, 0.7)');      // Blue
+				gradient.addColorStop(0.45, 'rgba(160, 220, 180, 0.7)');     // Green
+				gradient.addColorStop(0.6, 'rgba(255, 255, 150, 0.7)');      // Yellow
+				gradient.addColorStop(0.75, 'rgba(255, 180, 140, 0.7)');     // Orange
+				gradient.addColorStop(0.9, 'rgba(240, 140, 140, 0.7)');      // Red
+				gradient.addColorStop(1, 'rgba(220, 120, 240, 0.7)');        // Purple at bottom
+				
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				

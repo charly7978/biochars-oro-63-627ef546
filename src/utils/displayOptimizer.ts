@@ -58,3 +58,4 @@ export function isMobileDevice(): boolean {
     navigator.userAgent
   );
 }
+
