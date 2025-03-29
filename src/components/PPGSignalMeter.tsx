@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle } from 'lucide-react';
+import { Fingerprint, AlertCircle, Clock } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 
@@ -17,6 +17,12 @@ interface PPGSignalMeterProps {
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
+  vitalSigns?: {
+    heartRate: number;
+    spo2: number;
+    pressure: string;
+    arrhythmiaCount: string | number;
+  };
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -32,7 +38,8 @@ const PPGSignalMeter = memo(({
   arrhythmiaStatus,
   rawArrhythmiaData,
   preserveResults = false,
-  isArrhythmia = false
+  isArrhythmia = false,
+  vitalSigns
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -672,6 +679,18 @@ const PPGSignalMeter = memo(({
           </span>
         </div>
       </div>
+
+      {vitalSigns && (
+        <div className="absolute top-16 right-4 bg-white/30 backdrop-blur-md p-3 rounded-lg shadow-lg z-10">
+          <div className="text-sm font-bold mb-1">Signos Vitales</div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>FC: {vitalSigns.heartRate} BPM</div>
+            <div>SpO2: {vitalSigns.spo2}%</div>
+            <div>Presión: {vitalSigns.pressure}</div>
+            <div>Arritmias: {vitalSigns.arrhythmiaCount}</div>
+          </div>
+        </div>
+      )}
 
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 

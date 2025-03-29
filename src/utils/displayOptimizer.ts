@@ -58,3 +58,20 @@ export function isMobileDevice(): boolean {
     navigator.userAgent
   );
 }
+
+/**
+ * Format vital signs data for display
+ */
+export function formatVitalSigns(data: { 
+  heartRate?: number; 
+  spo2?: number; 
+  pressure?: string;
+  arrhythmiaCount?: number | string;
+}) {
+  return {
+    heartRate: data.heartRate || 0,
+    spo2: data.spo2 || 0,
+    pressure: data.pressure || "--/--",
+    arrhythmiaCount: data.arrhythmiaCount || 0
+  };
+}
