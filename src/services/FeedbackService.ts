@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -28,10 +29,13 @@ export const FeedbackService = {
   vibrate: (pattern: number | number[] = 200) => {
     if ('vibrate' in navigator) {
       try {
+        console.log(`🔆 Activando vibración con patrón:`, pattern);
         navigator.vibrate(pattern);
       } catch (error) {
         console.error('Error al activar vibración:', error);
       }
+    } else {
+      console.warn('API de vibración no disponible en este dispositivo');
     }
   },
 
@@ -40,10 +44,14 @@ export const FeedbackService = {
     if ('vibrate' in navigator) {
       try {
         // Patrón más distintivo para arritmias (triple pulso con pausa)
-        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
+        const pattern = [100, 50, 100, 50, 100, 300, 100];
+        console.log(`⚠️ Activando vibración de arritmia con patrón:`, pattern);
+        navigator.vibrate(pattern);
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
       }
+    } else {
+      console.warn('API de vibración no disponible en este dispositivo');
     }
   },
 
