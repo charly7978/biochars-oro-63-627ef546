@@ -532,6 +532,22 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
+          // Synchronized beep logic
+          if (
+            !peak.beepPlayed &&
+            peak.time < now &&
+            now - peak.time < 60 // tolerancia máxima de 60 ms
+          ) {
+            playBeep(1.0, peak.isArrhythmia || 
+              (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+            peak.beepPlayed = true;
+          }
+          
+          renderCtx.font = 'bold 16px Inter';
+          renderCtx.fillStyle = '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          
           if (peak.isArrhythmia) {
             renderCtx.beginPath();
             renderCtx.arc(x, y, 10, 0, Math.PI * 2);
@@ -543,16 +559,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 25);
-          }
-          
-          renderCtx.font = 'bold 16px Inter';
-          renderCtx.fillStyle = '#000000';
-          renderCtx.textAlign = 'center';
-          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-          
-          if (!peak.beepPlayed) {
-            shouldBeep = true;
-            peak.beepPlayed = true;
           }
         }
       });
