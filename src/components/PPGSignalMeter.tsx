@@ -425,7 +425,7 @@ const PPGSignalMeter = memo(({
     lastValueRef.current = smoothedValue;
     
     const normalizedValue = smoothedValue - (baselineRef.current || 0);
-    const scaledValue = normalizedValue * verticalScale;
+    const scaledValue = normalizedValue * verticalScale * -1;
     
     let currentIsArrhythmia = false;
     if (rawArrhythmiaData && 
@@ -460,10 +460,10 @@ const PPGSignalMeter = memo(({
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = canvas.height / 2 - prevPoint.value;
+        const y1 = canvas.height / 2 + prevPoint.value;
         
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = canvas.height / 2 - point.value;
+        const y2 = canvas.height / 2 + point.value;
         
         if (firstPoint) {
           renderCtx.beginPath();
