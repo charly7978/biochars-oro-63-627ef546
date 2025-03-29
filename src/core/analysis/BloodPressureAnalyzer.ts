@@ -37,8 +37,9 @@ export class BloodPressureAnalyzer {
     const segment = values.slice(-this.MIN_REQUIRED_SAMPLES);
     const { amplitude, slopeRatio, width, dicroticDrop } = this.extractFeatures(segment);
 
-    let systolic = 110 + amplitude * 100 + slopeRatio * 15;
-    let diastolic = 70 + dicroticDrop * 50 - width * 10;
+    // Fórmulas adaptativas SIN valores fijos base
+    let systolic = amplitude * 160 + slopeRatio * 20;
+    let diastolic = dicroticDrop * 90 - width * 15;
 
     systolic *= this.calibrationFactor;
     diastolic *= this.calibrationFactor;
@@ -110,16 +111,14 @@ export class BloodPressureAnalyzer {
     const diffSys = Math.abs(current.systolic - last.systolic);
     const diffDia = Math.abs(current.diastolic - last.diastolic);
 
-    // Detecta si está "clavado"
     if (diffSys < 1 && diffDia < 1) {
       this.freezeCounter++;
     } else {
       this.freezeCounter = 0;
     }
 
-    // Si se congeló 3 ciclos, forzamos desbloqueo con variación
     if (this.freezeCounter >= 3) {
-      const delta = (Math.random() - 0.5) * 4; // oscilación leve
+      const delta = (Math.random() - 0.5) * 4;
       return {
         systolic: Math.round(current.systolic + delta),
         diastolic: Math.round(current.diastolic + delta),
@@ -129,7 +128,6 @@ export class BloodPressureAnalyzer {
       };
     }
 
-    // Suavizado leve por defecto
     const factor = current.confidence < 0.4 ? 0.3 : 0.15;
 
     return {
