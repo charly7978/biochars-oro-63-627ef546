@@ -75,6 +75,10 @@ export class BloodPressureAnalyzer {
     return this.lastEstimate;
   }
 
+  public calculateBloodPressure(values: number[]): BloodPressureResult {
+    return this.estimate(values);
+  }
+
   private extractFeatures(data: number[]) {
     const peak = Math.max(...data);
     const valley = Math.min(...data);

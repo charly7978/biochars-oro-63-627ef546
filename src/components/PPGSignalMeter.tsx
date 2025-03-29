@@ -1,6 +1,7 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
-import { CircularBuffer } from '../utils/CircularBuffer';
+import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
 import { evaluateSignalQuality } from '../core/RealSignalQualityEvaluator';
 import { validateFullSignal, SignalValidationResult } from '../core/RealSignalValidator';
@@ -10,12 +11,6 @@ const CANVAS_WIDTH = 280;
 const CANVAS_HEIGHT = 120;
 const MAX_DATA_POINTS = 140;
 const PEAK_DETECT_THRESHOLD = 0.3;
-
-interface DataPoint {
-  x: number;
-  y: number;
-  value: number;
-}
 
 interface PPGSignalMeterProps {
   value: number;
@@ -31,9 +26,9 @@ interface PPGSignalMeterProps {
 const PPGSignalMeter = memo(({ 
   value, quality, isFingerDetected, onStartMeasurement, onReset,
   arrhythmiaStatus, preserveResults = false, isArrhythmia = false
-}) => {
+}: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dataBufferRef = useRef(new CircularBuffer<DataPoint>(MAX_DATA_POINTS));
+  const dataBufferRef = useRef(new CircularBuffer<PPGDataPoint>(MAX_DATA_POINTS));
   const animationFrameRef = useRef<number | null>(null);
   const lastPeakTimeRef = useRef<number>(0);
   const { playHeartbeat } = useHeartbeatFeedback(isFingerDetected, isArrhythmia);
@@ -123,8 +118,9 @@ const PPGSignalMeter = memo(({
       if (!canvas) return;
 
       const y = CANVAS_HEIGHT - ((value / verticalScale) * CANVAS_HEIGHT);
+      const now = Date.now();
 
-      dataBufferRef.current?.add({ x, y, value });
+      dataBufferRef.current?.add({ x, y, value, time: now });
       renderSignal();
       detectPeaks();
 
