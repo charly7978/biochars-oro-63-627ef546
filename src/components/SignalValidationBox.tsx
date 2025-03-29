@@ -7,6 +7,8 @@ interface Props {
 }
 
 const SignalValidationBox: React.FC<Props> = ({ result }) => {
+  if (result.label === 'Sin datos') return null; // no mostrar nada si no hay señal real
+
   return (
     <div
       className="px-3 py-1 rounded-lg border shadow text-xs font-medium"
