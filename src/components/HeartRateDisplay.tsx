@@ -65,7 +65,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="bg-[rgba(15,25,50,0.15)] backdrop-filter bg-opacity-10 border border-blue-300/10 p-3 text-center animation-hardware-accelerated rounded-lg shadow-[0_0_15px_rgba(120,160,255,0.1)]"
+      className="bg-blue-900/5 border border-blue-400/5 p-3 text-center animation-hardware-accelerated rounded-lg shadow-[0_0_15px_rgba(120,160,255,0.1)]"
     >
       <div className="flex items-center justify-center gap-1 mb-1">
         <h3 className="text-blue-100/90 text-sm typography-clinical">Heart Rate</h3>

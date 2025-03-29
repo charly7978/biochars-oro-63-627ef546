@@ -271,7 +271,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -316,8 +315,8 @@ const Index = () => {
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-[rgba(15,25,50,0.15)] backdrop-filter bg-opacity-10 border-y border-blue-300/10 px-4 py-6 animate-[blue-subtle-glow_4s_ease-in-out_infinite]">
-            <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
+          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-blue-900/5 border-y border-blue-400/5 px-4 py-6 animate-[blue-subtle-glow_4s_ease-in-out_infinite]">
+            <div className="grid grid-cols-2 gap-x-0 gap-y-0 place-items-center h-full overflow-y-auto pb-4">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}

@@ -1,4 +1,3 @@
-
 export const keyframes = {
   "heart-beat": {
     "0%, 100%": { transform: "scale(1)" },
@@ -34,7 +33,6 @@ export const keyframes = {
     "0%, 100%": { textShadow: "0 0 2px rgba(180,200,255,0.3)" },
     "50%": { textShadow: "0 0 25px rgba(140,180,255,0.9), 0 0 15px rgba(120,160,255,0.6)" }
   },
-  // Optimized animations with reduced changes
   "vital-sign-update": {
     "0%": { transform: "scale(0.98)", opacity: "0.9" },
     "100%": { transform: "scale(1)", opacity: "1" }
@@ -62,13 +60,13 @@ export const keyframes = {
   },
   "display-panel-pulse": {
     "0%": { 
-      backgroundColor: "rgba(15,25,50,0.15)" 
+      backgroundColor: "rgba(15,25,50,0.05)" 
     },
     "50%": { 
-      backgroundColor: "rgba(20,35,60,0.18)" 
+      backgroundColor: "rgba(20,35,60,0.08)" 
     },
     "100%": { 
-      backgroundColor: "rgba(15,25,50,0.15)" 
+      backgroundColor: "rgba(15,25,50,0.05)" 
     }
   }
 };
