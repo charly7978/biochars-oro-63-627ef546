@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -7,6 +6,7 @@ import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
+import { playHeartbeatSound } from '../utils/audioUtils';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -18,6 +18,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
+  
+  // Referencia al contexto de audio
+  const audioContextRef = useRef<AudioContext | null>(null);
   
   // Hooks para procesamiento y detección, sin funcionalidad de beep
   const { 
@@ -48,6 +51,55 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS
   } = useSignalProcessor();
+
+  // Inicializar el contexto de audio
+  useEffect(() => {
+    if (typeof AudioContext !== 'undefined' && !audioContextRef.current) {
+      try {
+        audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
+        console.log('AudioContext inicializado para sonidos de latidos reales');
+        
+        // Precargar sonido de latido
+        const preloadHeartbeat = async () => {
+          try {
+            if (audioContextRef.current && audioContextRef.current.state === 'running') {
+              await playHeartbeatSound(audioContextRef.current, '/sounds/heartbeat.mp3', 0.01);
+              console.log('Sonido de latido precargado');
+            }
+          } catch (err) {
+            console.error('Error precargando sonido de latido:', err);
+          }
+        };
+        
+        // Intentar precargar cuando el usuario interactúe con la página
+        const prepareAudio = () => {
+          if (audioContextRef.current && audioContextRef.current.state !== 'running') {
+            audioContextRef.current.resume().then(preloadHeartbeat);
+          } else {
+            preloadHeartbeat();
+          }
+        };
+        
+        window.addEventListener('click', prepareAudio, { once: true });
+        window.addEventListener('touchstart', prepareAudio, { once: true });
+        
+        return () => {
+          window.removeEventListener('click', prepareAudio);
+          window.removeEventListener('touchstart', prepareAudio);
+        };
+      } catch (error) {
+        console.error('Error inicializando contexto de audio:', error);
+      }
+    }
+    
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(err => {
+          console.error('Error cerrando contexto de audio:', err);
+        });
+      }
+    };
+  }, []);
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -93,17 +145,40 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Esta función ahora no hace nada, el beep está centralizado en PPGSignalMeter
-  const requestBeep = useCallback((value: number): boolean => {
-    console.log('useHeartBeatProcessor: Beep ELIMINADO - Todo el sonido SOLO en PPGSignalMeter', {
-      value,
-      isMonitoring: isMonitoringRef.current,
-      processorExists: !!processorRef.current,
-      timestamp: new Date().toISOString()
-    });
+  // Función para reproducir sonido de latido cardíaco real
+  const playRealHeartbeatSound = useCallback(async (volume: number = 0.9): Promise<boolean> => {
+    if (!isMonitoringRef.current) {
+      console.log('No reproduciendo sonido porque no está en monitoreo');
+      return false;
+    }
     
-    return false;
+    try {
+      // Asegurar que el contexto de audio esté activo
+      if (audioContextRef.current && audioContextRef.current.state !== 'running') {
+        await audioContextRef.current.resume();
+      }
+      
+      if (!audioContextRef.current) {
+        console.warn('Contexto de audio no disponible para sonido de latido');
+        return false;
+      }
+      
+      return await playHeartbeatSound(audioContextRef.current, '/sounds/heartbeat.mp3', volume);
+    } catch (err) {
+      console.error('Error reproduciendo sonido de latido real:', err);
+      return false;
+    }
   }, []);
+
+  // Reemplazamos la implementación actual de requestBeep para usar el sonido real
+  const requestBeep = useCallback((value: number): boolean => {
+    if (isMonitoringRef.current && processorRef.current) {
+      // Llamar a playRealHeartbeatSound en lugar del beep sintético
+      playRealHeartbeatSound(value * 0.9);
+      return true;
+    }
+    return false;
+  }, [playRealHeartbeatSound]);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
@@ -151,6 +226,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     detectArrhythmia
   ]);
 
+  // Modificar el reset para limpiar también el contexto de audio si es necesario
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
@@ -175,6 +251,13 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     lastProcessedPeakTimeRef.current = 0;
     
     cleanupBeepProcessor();
+    
+    // Intentar reactivar el contexto de audio si está suspendido
+    if (audioContextRef.current && audioContextRef.current.state !== 'running') {
+      audioContextRef.current.resume().catch(err => {
+        console.error('Error reactivando contexto de audio durante reset:', err);
+      });
+    }
   }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);
 
   const startMonitoring = useCallback(() => {
@@ -221,6 +304,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
     requestBeep,
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    playRealHeartbeatSound // Exportar la nueva función
   };
 };

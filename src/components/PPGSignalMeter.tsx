@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
+import { playHeartbeatSound } from '../utils/audioUtils';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -83,23 +84,33 @@ const PPGSignalMeter = memo(({
     const initAudio = async () => {
       try {
         if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
-          console.log("PPGSignalMeter: Inicializando Audio Context");
+          console.log("PPGSignalMeter: Inicializando Audio Context para latidos reales");
           audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
           
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
           }
           
-          await playBeep(0.01);
+          await playHeartbeatSound(audioContextRef.current, '/sounds/heartbeat.mp3', 0.01);
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
       }
     };
     
-    initAudio();
+    const handleUserInteraction = () => {
+      initAudio();
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
+    };
+    
+    document.addEventListener('click', handleUserInteraction);
+    document.addEventListener('touchstart', handleUserInteraction);
     
     return () => {
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
+      
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(err => {
           console.error("PPGSignalMeter: Error cerrando audio context:", err);
@@ -133,64 +144,22 @@ const PPGSignalMeter = memo(({
         }
       }
       
-      console.log("PPGSignalMeter: Reproduciendo beep para círculo dibujado, volumen:", volume);
+      console.log("PPGSignalMeter: Reproduciendo latido cardíaco real, volumen:", volume);
       
-      const primaryOscillator = audioContextRef.current.createOscillator();
-      const primaryGain = audioContextRef.current.createGain();
-      
-      const secondaryOscillator = audioContextRef.current.createOscillator();
-      const secondaryGain = audioContextRef.current.createGain();
-      
-      primaryOscillator.type = "sine";
-      primaryOscillator.frequency.setValueAtTime(
-        BEEP_PRIMARY_FREQUENCY,
-        audioContextRef.current.currentTime
+      const success = await playHeartbeatSound(
+        audioContextRef.current, 
+        '/sounds/heartbeat.mp3', 
+        Math.min(volume * 1.2, 1.0)
       );
       
-      secondaryOscillator.type = "sine";
-      secondaryOscillator.frequency.setValueAtTime(
-        BEEP_SECONDARY_FREQUENCY,
-        audioContextRef.current.currentTime
-      );
+      if (success) {
+        lastBeepTimeRef.current = now;
+        pendingBeepPeakIdRef.current = null;
+      }
       
-      const adjustedVolume = Math.min(volume * 2.0, 1.0);
-      
-      primaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-      primaryGain.gain.linearRampToValueAtTime(
-        adjustedVolume,
-        audioContextRef.current.currentTime + 0.0005
-      );
-      primaryGain.gain.exponentialRampToValueAtTime(
-        0.01,
-        audioContextRef.current.currentTime + BEEP_DURATION / 1000
-      );
-      
-      secondaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-      secondaryGain.gain.linearRampToValueAtTime(
-        adjustedVolume * 0.8,
-        audioContextRef.current.currentTime + 0.0005
-      );
-      secondaryGain.gain.exponentialRampToValueAtTime(
-        0.01,
-        audioContextRef.current.currentTime + BEEP_DURATION / 1000
-      );
-      
-      primaryOscillator.connect(primaryGain);
-      secondaryOscillator.connect(secondaryGain);
-      primaryGain.connect(audioContextRef.current.destination);
-      secondaryGain.connect(audioContextRef.current.destination);
-      
-      primaryOscillator.start(audioContextRef.current.currentTime);
-      secondaryOscillator.start(audioContextRef.current.currentTime);
-      primaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
-      secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
-      
-      lastBeepTimeRef.current = now;
-      pendingBeepPeakIdRef.current = null;
-      
-      return true;
+      return success;
     } catch (err) {
-      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
+      console.error("PPGSignalMeter: Error reproduciendo latido:", err);
       return false;
     }
   }, []);

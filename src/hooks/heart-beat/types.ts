@@ -25,4 +25,5 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
+  playRealHeartbeatSound?: (volume: number) => Promise<boolean>; // Nueva función para reproducir sonido real
 }
