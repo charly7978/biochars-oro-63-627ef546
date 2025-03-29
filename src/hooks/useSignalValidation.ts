@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SignalValidationResult } from '../core/RealSignalValidator';
 import { validateFullSignal } from '../core/RealSignalValidator';
@@ -9,7 +8,8 @@ const INITIAL_VALIDATION: SignalValidationResult = {
   level: 0,
   color: 'gray',
   label: 'Sin datos',
-  warnings: []
+  warnings: [],
+  badSegments: []
 };
 
 /**
