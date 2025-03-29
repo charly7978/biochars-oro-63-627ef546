@@ -75,3 +75,105 @@ export function formatVitalSigns(data: {
     arrhythmiaCount: data.arrhythmiaCount || 0
   };
 }
+
+/**
+ * Generate medical-style time grid markers
+ */
+export function generateTimeGridMarkers(
+  ctx: CanvasRenderingContext2D, 
+  width: number, 
+  height: number, 
+  timeStep: number = 250, // ms per grid section
+  pixelsPerMs: number = 0.2
+): void {
+  const now = Date.now();
+  
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(120, 120, 120, 0.2)';
+  ctx.lineWidth = 1;
+  
+  // Major time markers (every second)
+  for (let t = 0; t < 5000; t += 1000) {
+    const x = width - (t * pixelsPerMs);
+    if (x < 0) continue;
+    
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    
+    // Add time label
+    ctx.fillStyle = 'rgba(80, 80, 80, 0.7)';
+    ctx.font = '10px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${t/1000}s`, x, height - 5);
+  }
+  
+  ctx.stroke();
+  
+  // Minor time markers
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(150, 150, 150, 0.1)';
+  ctx.lineWidth = 0.5;
+  
+  for (let t = 0; t < 5000; t += timeStep) {
+    if (t % 1000 === 0) continue; // Skip major markers
+    
+    const x = width - (t * pixelsPerMs);
+    if (x < 0) continue;
+    
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+  }
+  
+  ctx.stroke();
+}
+
+/**
+ * Draw professional PPG baseline and amplitude reference
+ */
+export function drawPPGReference(
+  ctx: CanvasRenderingContext2D, 
+  width: number, 
+  height: number
+): void {
+  const centerY = height / 2;
+  
+  // Draw baseline
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(40, 40, 40, 0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 3]);
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(width, centerY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Draw amplitude reference lines
+  const amplitudeStep = 30;
+  const maxAmplitude = 4;
+  
+  ctx.font = '9px "Inter", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(60, 60, 60, 0.5)';
+  
+  for (let i = 1; i <= maxAmplitude; i++) {
+    // Upper amplitude line
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.15)';
+    ctx.lineWidth = 0.5;
+    ctx.moveTo(0, centerY - (i * amplitudeStep));
+    ctx.lineTo(width, centerY - (i * amplitudeStep));
+    ctx.stroke();
+    
+    // Upper amplitude label
+    ctx.fillText(`+${i}`, 5, centerY - (i * amplitudeStep) - 3);
+    
+    // Lower amplitude line
+    ctx.beginPath();
+    ctx.moveTo(0, centerY + (i * amplitudeStep));
+    ctx.lineTo(width, centerY + (i * amplitudeStep));
+    ctx.stroke();
+    
+    // Lower amplitude label
+    ctx.fillText(`-${i}`, 5, centerY + (i * amplitudeStep) + 10);
+  }
+}
