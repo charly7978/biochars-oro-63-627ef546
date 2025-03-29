@@ -48,7 +48,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const lastRenderTimeRef = useRef<number>(0);
   const lastArrhythmiaTime = useRef<number>(0);
   const arrhythmiaCountRef = useRef<number>(0);
-  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
@@ -532,14 +531,25 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
-          // Synchronized beep logic
+          // Enhanced synchronized beep logic with detailed logging
           if (
             !peak.beepPlayed &&
             peak.time < now &&
             now - peak.time < 60 // tolerancia máxima de 60 ms
           ) {
-            playBeep(1.0, peak.isArrhythmia || 
+            console.log('Attempting to play beep', {
+              peakTime: peak.time,
+              currentTime: now,
+              timeDiff: now - peak.time,
+              isArrhythmia: peak.isArrhythmia,
+              rawArrhythmiaData: rawArrhythmiaData,
+              arrhythmiaStatus: arrhythmiaStatus
+            });
+
+            const result = playBeep(1.0, peak.isArrhythmia || 
               (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+            
+            console.log('Beep play result:', result);
             peak.beepPlayed = true;
           }
           
