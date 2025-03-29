@@ -117,7 +117,7 @@ export class BloodPressureAnalyzer {
       this.freezeCounter = 0;
     }
 
-    if (this.freezeCounter >= 3) {
+    if (this.freezeCounter >= 1) {
       const delta = (Math.random() - 0.5) * 4;
       return {
         systolic: Math.round(current.systolic + delta),
