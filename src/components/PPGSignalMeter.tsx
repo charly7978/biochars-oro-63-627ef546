@@ -3,6 +3,7 @@ import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
+import { beatDispatcher } from '../core/BeatDispatcher';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -357,6 +358,8 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
+        
+        beatDispatcher.dispatchBeat(peak.time / 1000, peak.value / verticalScale);
       }
     }
     
@@ -365,7 +368,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, []);
+  }, [MIN_PEAK_DISTANCE_MS, WINDOW_WIDTH_MS, verticalScale]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
