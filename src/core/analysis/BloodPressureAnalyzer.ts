@@ -1,122 +1,197 @@
 
-import { RRInterval } from '../../types/heartbeat';
 import { ProcessorConfig } from '../config/ProcessorConfig';
+import { HeartBeatData } from '../../types/heartbeat';
 
-export interface BloodPressureResult {
-  systolic: number;
-  diastolic: number;
-  map: number;  // Mean Arterial Pressure
-  confidence: number;
-}
-
+/**
+ * Analizador de presión arterial basado en señal PPG
+ */
 export class BloodPressureAnalyzer {
-  private baselineSystolic = 120;
-  private baselineDiastolic = 80;
+  private readonly DEFAULT_MIN_SYSTOLIC = 90;
+  private readonly DEFAULT_MAX_SYSTOLIC = 180;
+  private readonly DEFAULT_MIN_DIASTOLIC = 50;
+  private readonly DEFAULT_MAX_DIASTOLIC = 110;
+  private readonly MIN_SIGNAL_POINTS = 60;
+  
   private config: ProcessorConfig;
+  private signalBuffer: number[] = [];
+  private heartRateBuffer: HeartBeatData[] = [];
   
   constructor(config: ProcessorConfig) {
     this.config = config;
   }
   
   /**
-   * Calculate blood pressure based on heart rate variability and PPG signal
-   * @param rrIntervals Array of RR intervals
-   * @param ppgValues Array of PPG signal values
-   * @returns Blood pressure estimation result
+   * Actualiza la configuración del analizador
    */
-  calculateBloodPressure(rrIntervals: RRInterval[], ppgValues: number[]): BloodPressureResult {
-    if (!rrIntervals || rrIntervals.length < 5 || !ppgValues || ppgValues.length < 10) {
-      return { systolic: 0, diastolic: 0, map: 0, confidence: 0 };
+  public updateConfig(config: ProcessorConfig): void {
+    this.config = config;
+  }
+  
+  /**
+   * Añade un nuevo valor de señal al buffer
+   */
+  public addSignalValue(value: number): void {
+    this.signalBuffer.push(value);
+    if (this.signalBuffer.length > 600) {
+      this.signalBuffer.shift();
+    }
+  }
+  
+  /**
+   * Añade datos de frecuencia cardíaca
+   */
+  public addHeartRateData(heartRate: HeartBeatData): void {
+    this.heartRateBuffer.push(heartRate);
+    if (this.heartRateBuffer.length > 10) {
+      this.heartRateBuffer.shift();
+    }
+  }
+  
+  /**
+   * Estima la presión arterial basada en los datos acumulados
+   * Retorna un string en formato "120/80"
+   */
+  public estimate(): string {
+    if (this.signalBuffer.length < this.MIN_SIGNAL_POINTS || this.heartRateBuffer.length < 3) {
+      return "--/--";
     }
     
-    // Calculate heart rate from RR intervals
-    let totalMs = 0;
-    for (const interval of rrIntervals) {
-      totalMs += interval.duration;
+    try {
+      // Obtener datos básicos
+      const averageHR = this.calculateAverageHeartRate();
+      if (averageHR === 0) return "--/--";
+      
+      // Aplicar el factor de calibración
+      const calibrationFactor = this.config.bpCalibrationFactor;
+      
+      // Cálculo básico inicial
+      let systolic = this.estimateSystolicFromSignal() * calibrationFactor;
+      let diastolic = this.estimateDiastolicFromSignal() * calibrationFactor;
+      
+      // Ajustar según ritmo cardíaco
+      const hrAdjustment = this.calculateHeartRateAdjustment(averageHR);
+      systolic *= hrAdjustment;
+      diastolic *= hrAdjustment;
+      
+      // Limitar a rango fisiológico
+      systolic = Math.max(this.DEFAULT_MIN_SYSTOLIC, Math.min(this.DEFAULT_MAX_SYSTOLIC, systolic));
+      diastolic = Math.max(this.DEFAULT_MIN_DIASTOLIC, Math.min(this.DEFAULT_MAX_DIASTOLIC, diastolic));
+      
+      // Asegurar que sistólica > diastólica
+      if (systolic <= diastolic) {
+        diastolic = systolic - 40;
+      }
+      
+      return `${Math.round(systolic)}/${Math.round(diastolic)}`;
+    } catch (error) {
+      console.error('Error estimando presión arterial:', error);
+      return "--/--";
     }
-    const avgRRInterval = totalMs / rrIntervals.length;
-    const heartRate = 60000 / avgRRInterval;
+  }
+  
+  /**
+   * Calcula la frecuencia cardíaca promedio desde los datos almacenados
+   */
+  private calculateAverageHeartRate(): number {
+    if (this.heartRateBuffer.length === 0) return 0;
     
-    // Calculate signal features
-    const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
+    const validEntries = this.heartRateBuffer.filter(entry => entry.confidence > 0.5);
+    if (validEntries.length === 0) return 0;
     
-    // Calculate time-based features (rise time, fall time)
-    let riseTime = 0;
-    let fallTime = 0;
-    let peakCount = 0;
+    const sum = validEntries.reduce((acc, entry) => acc + entry.bpm, 0);
+    return sum / validEntries.length;
+  }
+  
+  /**
+   * Estima la presión sistólica a partir de la señal PPG
+   */
+  private estimateSystolicFromSignal(): number {
+    if (this.signalBuffer.length < this.MIN_SIGNAL_POINTS) return 120;
     
-    for (let i = 1; i < ppgValues.length - 1; i++) {
-      if (ppgValues[i] > ppgValues[i-1] && ppgValues[i] > ppgValues[i+1]) {
-        peakCount++;
-        
-        // Find rise time (time from trough to peak)
-        let j = i - 1;
-        while (j > 0 && ppgValues[j] >= ppgValues[j-1]) j--;
-        riseTime += (i - j);
-        
-        // Find fall time (time from peak to trough)
-        let k = i + 1;
-        while (k < ppgValues.length - 1 && ppgValues[k] >= ppgValues[k+1]) k++;
-        fallTime += (k - i);
+    // Análisis de la señal para encontrar características de la onda PPG
+    const recentSignal = this.signalBuffer.slice(-this.MIN_SIGNAL_POINTS);
+    
+    // Encuentra las amplitudes mínima y máxima
+    const minValue = Math.min(...recentSignal);
+    const maxValue = Math.max(...recentSignal);
+    const amplitude = maxValue - minValue;
+    
+    // Calcula la derivada de la señal para encontrar pendiente máxima
+    const derivatives = [];
+    for (let i = 1; i < recentSignal.length; i++) {
+      derivatives.push(recentSignal[i] - recentSignal[i-1]);
+    }
+    
+    const maxDerivative = Math.max(...derivatives);
+    const rateOfChange = maxDerivative / amplitude;
+    
+    // Calcular sistólica basada en la amplitud y la tasa de cambio
+    const baseSystolic = 100 + 30 * amplitude + 25 * rateOfChange;
+    
+    return baseSystolic;
+  }
+  
+  /**
+   * Estima la presión diastólica a partir de la señal PPG
+   */
+  private estimateDiastolicFromSignal(): number {
+    if (this.signalBuffer.length < this.MIN_SIGNAL_POINTS) return 80;
+    
+    // Para una estimación simple, podemos basarnos en la sistólica
+    const systolic = this.estimateSystolicFromSignal();
+    
+    // La relación típica entre sistólica y diastólica
+    let diastolic = systolic * 0.65;
+    
+    // Ajustar según características de la señal
+    const recentSignal = this.signalBuffer.slice(-this.MIN_SIGNAL_POINTS);
+    
+    // Encuentra tiempo entre picos (aproximación de tiempo de dicrótico)
+    const peaks = [];
+    for (let i = 1; i < recentSignal.length - 1; i++) {
+      if (recentSignal[i] > recentSignal[i-1] && recentSignal[i] > recentSignal[i+1]) {
+        peaks.push(i);
       }
     }
     
-    if (peakCount > 0) {
-      riseTime /= peakCount;
-      fallTime /= peakCount;
+    if (peaks.length > 1) {
+      // Calcular intervalos entre picos
+      const intervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push(peaks[i] - peaks[i-1]);
+      }
+      
+      // Promedio de intervalos
+      const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+      
+      // Ajustar diastólica según intervalo (proxy para elasticidad arterial)
+      diastolic = diastolic * (0.9 + 0.2 * (avgInterval / 30));
     }
     
-    // Calculate systolic using PTT (Pulse Transit Time) approximation
-    // Uses the ratio of rise time to fall time as PTT analog
-    const pttAnalog = riseTime / (fallTime + 0.01);
-    
-    // Apply calibration factor
-    const adjustedHeartRate = heartRate * this.config.bpCalibrationFactor;
-    
-    // BP calculation based on research models
-    // Systolic = baselineSystolic + k1*(HR-baselineHR) + k2*(1/PTT - 1/baselinePTT)
-    const systolic = this.baselineSystolic + 
-      0.7 * (adjustedHeartRate - 70) + 
-      30 * (signalAmplitude - 0.5) +
-      25 * (pttAnalog - 0.5);
-    
-    // Diastolic typically follows systolic with smaller variation
-    const diastolic = this.baselineDiastolic + 
-      0.4 * (adjustedHeartRate - 70) + 
-      10 * (signalAmplitude - 0.5) +
-      15 * (pttAnalog - 0.5);
-    
-    // Mean Arterial Pressure calculation
-    const map = diastolic + (systolic - diastolic) / 3;
-    
-    // Calculate confidence based on signal and heart rate stability
-    const rrVariability = this.calculateRRVariability(rrIntervals);
-    const confidence = Math.max(0, Math.min(1, 
-      (1 - rrVariability / 150) * 
-      (signalAmplitude > 0.2 ? 1 : signalAmplitude / 0.2) *
-      (peakCount > 5 ? 1 : peakCount / 5)
-    ));
-    
-    return {
-      systolic: Math.round(Math.max(70, Math.min(220, systolic))),
-      diastolic: Math.round(Math.max(40, Math.min(120, diastolic))),
-      map: Math.round(map),
-      confidence: confidence
-    };
+    return diastolic;
   }
   
-  private calculateRRVariability(rrIntervals: RRInterval[]): number {
-    if (rrIntervals.length < 2) return 0;
-    
-    const intervals = rrIntervals.map(rr => rr.duration);
-    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    
-    let variance = 0;
-    for (const interval of intervals) {
-      variance += Math.pow(interval - mean, 2);
+  /**
+   * Calcula ajuste basado en frecuencia cardíaca
+   * La presión tiende a ser mayor con HR elevada y menor con HR baja
+   */
+  private calculateHeartRateAdjustment(heartRate: number): number {
+    const normalHR = 75;
+    if (heartRate < normalHR) {
+      // HR baja: presión tiende a ser menor
+      return 0.95 + (heartRate / normalHR) * 0.05;
+    } else if (heartRate > normalHR) {
+      // HR alta: presión tiende a ser mayor
+      return 1.0 + Math.min(0.15, (heartRate - normalHR) / 100);
     }
-    variance /= intervals.length;
-    
-    return Math.sqrt(variance);
+    return 1.0;
+  }
+  
+  /**
+   * Restablece el estado del analizador
+   */
+  public reset(): void {
+    this.signalBuffer = [];
+    this.heartRateBuffer = [];
   }
 }

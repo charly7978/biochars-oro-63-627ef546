@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
-import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
+import { CircularBuffer } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
 import { useSignalValidation } from '../hooks/useSignalValidation';
 import SignalValidationBox from './SignalValidationBox';
 
 // Define the interfaces needed for the component
-export interface PPGDataPoint {
+interface PPGDataPointExtended {
   time: number;
   value: number;
+  isArrhythmia?: boolean;
 }
 
 interface PPGSignalMeterProps {
@@ -25,10 +26,6 @@ interface PPGSignalMeterProps {
     rrVariation: number;
   } | null;
   preserveResults?: boolean;
-  isArrhythmia?: boolean;
-}
-
-interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
 }
 
@@ -168,7 +165,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [preserveResults, isFingerDetected]);
 
-  // Process quality measurements
+  // Process quality measurements and add values to validation
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > 9) {
@@ -634,7 +631,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
           
-          {/* Reemplazamos el medidor de calidad por el cuadro de validación */}
           {isFingerDetected && <SignalValidationBox result={validation} />}
         </div>
 
