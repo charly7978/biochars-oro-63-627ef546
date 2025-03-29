@@ -69,12 +69,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     reset: resetValidation
   } = useSignalValidation();
 
-  const WINDOW_WIDTH_MS = 4500;
+  const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
-  const CANVAS_HEIGHT = 1100;
-  const GRID_SIZE_X = 5;
+  const CANVAS_HEIGHT = 900;
+  const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 50.0;
+  const verticalScale = 55.0;
   const SMOOTHING_FACTOR = 1.5;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
@@ -463,14 +463,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
     const ppgOptimized = points.map(p => p.value);
     const result = validateFullSignal(ppgOptimized);
-    const badSegments = result.badSegments;
-    
-    badSegments.forEach(([start, end]) => {
-      const xStart = canvas.width - ((now - start) * canvas.width / WINDOW_WIDTH_MS);
-      const xEnd = canvas.width - ((now - end) * canvas.width / WINDOW_WIDTH_MS);
-      renderCtx.fillStyle = 'rgba(255, 0, 0, 0.12)';
-      renderCtx.fillRect(xEnd, 0, xStart - xEnd, canvas.height);
-    });
     
     let shouldBeep = false;
     
