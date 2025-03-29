@@ -77,7 +77,7 @@ const PPGSignalMeter = memo(({
   const BEEP_PRIMARY_FREQUENCY = 680;
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 120;
-  const BEEP_VOLUME = 1.2;
+  const BEEP_VOLUME = 1.9;
   const MIN_BEEP_INTERVAL_MS = 300;
 
   useEffect(() => {
