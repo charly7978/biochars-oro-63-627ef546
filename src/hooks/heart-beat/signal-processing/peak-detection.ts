@@ -1,67 +1,74 @@
 
 /**
- * Module for peak detection in PPG signals
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ *
+ * Functions for peak detection logic, working with real data only
  */
 
 /**
- * Handle peak detection and trigger appropriate responses
- * @param result Current signal processing result
- * @param lastPeakTimeRef Reference to the last peak time
- * @param requestImmediateBeep Function to request a beep
- * @param isMonitoringRef Reference to monitoring state
- * @param value Current signal value
+ * Determines if a measurement should be processed based on signal strength
+ * Only processes real measurements
  */
-export const handlePeakDetection = (
-  result: any,
+export function shouldProcessMeasurement(value: number): boolean {
+  // Umbral más sensible para capturar señales reales mientras filtra ruido
+  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
+}
+
+/**
+ * Creates default signal processing result when signal is too weak
+ * Contains only real data structure with zero values
+ */
+export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
+  return {
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: arrhythmiaCounter || 0,
+    rrData: {
+      intervals: [],
+      lastPeakTime: null
+    },
+    isArrhythmia: false,
+    // Adding transition state to ensure continuous color rendering
+    transition: {
+      active: false,
+      progress: 0,
+      direction: 'none'
+    }
+  };
+}
+
+/**
+ * Handle peak detection with improved natural synchronization
+ * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
+ * No simulation is used - direct measurement only
+ */
+export function handlePeakDetection(
+  result: any, 
   lastPeakTimeRef: React.MutableRefObject<number | null>,
-  requestImmediateBeep: (value: number) => boolean,
+  requestBeepCallback: (value: number) => boolean,
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
-): void => {
-  const isPeak = result.isPeak;
+): void {
+  const now = Date.now();
   
-  // Update peak reference if this is a peak
-  if (isPeak) {
-    const now = Date.now();
+  // Solo actualizar tiempo del pico para cálculos de tiempo
+  if (result.isPeak && result.confidence > 0.05) {
+    // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
-    // Request beep if monitoring
-    if (isMonitoringRef.current) {
-      // Higher value = louder beep
-      const beepVolume = Math.min(0.8, Math.abs(value) * 2);
-      requestImmediateBeep(beepVolume);
-    }
+    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
+    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
+      confianza: result.confidence,
+      valor: value,
+      tiempo: new Date(now).toISOString(),
+      // Log transition state if present
+      transicion: result.transition ? {
+        activa: result.transition.active,
+        progreso: result.transition.progress,
+        direccion: result.transition.direction
+      } : 'no hay transición',
+      isArrhythmia: result.isArrhythmia || false
+    });
   }
-};
-
-/**
- * Utility to check if we should adjust arrhythmia detection
- * based on confidence and historical values
- */
-export const shouldAdjustArrhythmiaDetection = (
-  confidence: number,
-  bpm: number
-): boolean => {
-  // Only enable arrhythmia detection with reasonable confidence
-  // and physiologically plausible values
-  return confidence > 0.4 && bpm >= 40 && bpm <= 180;
-};
-
-/**
- * Process arrhythmia data for visualization
- * @param isArrhythmia Current arrhythmia status
- * @param currentTime Current timestamp
- * @param addArrhythmiaWindow Function to add visualization window
- */
-export const processArrhythmiaVisualization = (
-  isArrhythmia: boolean,
-  currentTime: number,
-  addArrhythmiaWindow: (start: number, end: number) => void
-): void => {
-  if (isArrhythmia) {
-    // Create visualization window around the detected arrhythmia
-    const windowStart = currentTime - 500;
-    const windowEnd = currentTime + 500;
-    addArrhythmiaWindow(windowStart, windowEnd);
-  }
-};
+}
