@@ -5,20 +5,24 @@
  * con feedback bidireccional y toda la funcionalidad integrada.
  */
 
-// Exportar el procesador principal de señales 
+// Exportar el procesador principal de señales desde el ubicación central
 export { 
   SignalProcessor,
-  PPGSignalProcessor 
-} from './core/SignalProcessor';
-
-export type { 
-  ProcessedSignal,
+  PPGSignalProcessor, 
   ISignalProcessor
 } from './core/SignalProcessor';
+
+// Re-exportación de tipos para compatibilidad
+export type { ProcessedSignal } from './core/SignalProcessor';
+export type { ProcessingError } from '../types/signal';
 
 // Exportamos la implementación del procesador existente para retrocompatibilidad
 export { VitalSignsProcessor } from './compat/VitalSignsProcessorAdapter';
 export type { VitalSignsResult, RRData } from './vital-signs/VitalSignsProcessor';
 
-// Nota: Se ha eliminado la exportación de módulos duplicados o innecesarios
-// para centralizar todo el procesamiento en el optimizador de señales diferencial.
+// Exportar utilidades relacionadas con procesamiento de señales
+export { BloodPressureProcessor } from './core/BloodPressureProcessor';
+export { HeartBeatProcessor } from './HeartBeatProcessor';
+
+// Nota: Se mantiene compatibilidad con implementaciones anteriores
+// pero se recomienda usar el optimizador de señales diferencial.

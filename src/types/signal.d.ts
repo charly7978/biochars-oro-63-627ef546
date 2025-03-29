@@ -50,7 +50,7 @@ export interface ProcessingError {
 /**
  * Interfaz que deben implementar todos los procesadores de señal
  */
-export interface SignalProcessor {
+export interface ISignalProcessor {
   initialize: () => Promise<void>;                      // Inicialización
   start: () => void;                                    // Iniciar procesamiento
   stop: () => void;                                     // Detener procesamiento

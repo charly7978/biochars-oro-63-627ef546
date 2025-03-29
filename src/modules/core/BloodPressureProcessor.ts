@@ -1,7 +1,6 @@
-
 /**
  * NOTA IMPORTANTE: Este es un módulo de procesamiento para presión arterial.
- * Las interfaces principales están en index.tsx y PPGSignalMeter.tsx que son INTOCABLES.
+ * Utiliza el optimizador de señal central de 6 canales para sus cálculos.
  */
 
 import { calculateAmplitude, findPeaksAndValleys } from '../../utils/vitalSignsUtils';

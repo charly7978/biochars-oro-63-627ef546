@@ -91,3 +91,59 @@ export function formatBloodPressure(bp: { systolic: number; diastolic: number })
   if (bp.systolic <= 0 || bp.diastolic <= 0) return "--/--";
   return `${bp.systolic}/${bp.diastolic}`;
 }
+
+/**
+ * Calcula la amplitud de la señal entre picos y valles
+ */
+export function calculateAmplitude(
+  values: number[], 
+  peakIndices: number[], 
+  valleyIndices: number[]
+): number {
+  if (peakIndices.length === 0 || valleyIndices.length === 0) {
+    return 0;
+  }
+  
+  // Calcular la amplitud promedio
+  let totalAmplitude = 0;
+  let count = 0;
+  
+  for (let i = 0; i < Math.min(peakIndices.length, valleyIndices.length); i++) {
+    const peakValue = values[peakIndices[i]];
+    const valleyValue = values[valleyIndices[i]];
+    totalAmplitude += (peakValue - valleyValue);
+    count++;
+  }
+  
+  return count > 0 ? totalAmplitude / count : 0;
+}
+
+/**
+ * Encuentra los índices de picos y valles en una señal
+ */
+export function findPeaksAndValleys(values: number[]): {
+  peakIndices: number[];
+  valleyIndices: number[];
+} {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+  
+  if (values.length < 3) {
+    return { peakIndices, valleyIndices };
+  }
+  
+  for (let i = 1; i < values.length - 1; i++) {
+    // Detectar picos (valores máximos locales)
+    if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
+      peakIndices.push(i);
+    }
+    
+    // Detectar valles (valores mínimos locales)
+    if (values[i] < values[i - 1] && values[i] < values[i + 1]) {
+      valleyIndices.push(i);
+    }
+  }
+  
+  return { peakIndices, valleyIndices };
+}
+

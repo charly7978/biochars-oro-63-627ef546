@@ -1,7 +1,6 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PPGSignalProcessor } from '../modules/core/SignalProcessor';
-import type { ProcessedSignal, ProcessingError } from '../types/signal';
+import { PPGSignalProcessor } from '../modules';
+import type { ProcessedSignal, ProcessingError } from '../modules';
 
 /**
  * Hook para gestionar el procesamiento optimizado de señales PPG.
