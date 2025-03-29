@@ -1,161 +1,122 @@
-import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
+
+import { RRInterval } from '../../types/heartbeat';
+import { ProcessorConfig } from '../config/ProcessorConfig';
 
 export interface BloodPressureResult {
   systolic: number;
   diastolic: number;
-  map: number;
+  map: number;  // Mean Arterial Pressure
   confidence: number;
-  isReliable: boolean;
 }
 
 export class BloodPressureAnalyzer {
-  private readonly MIN_REQUIRED_SAMPLES = 60;
-  private readonly history: BloodPressureResult[] = [];
-  private readonly HISTORY_SIZE = 5;
-
-  private calibrationFactor: number;
-  private confidenceThreshold: number;
-  private freezeCounter = 0;
-
-  private lastEstimate: BloodPressureResult = {
-    systolic: 120,
-    diastolic: 80,
-    map: 93,
-    confidence: 0,
-    isReliable: false
-  };
-
-  constructor(config: Partial<ProcessorConfig> = {}) {
-    const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    this.calibrationFactor = full.nonInvasiveSettings.bpCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5;
+  private baselineSystolic = 120;
+  private baselineDiastolic = 80;
+  private config: ProcessorConfig;
+  
+  constructor(config: ProcessorConfig) {
+    this.config = config;
   }
-
-  public estimate(values: number[]): BloodPressureResult {
-    if (values.length < this.MIN_REQUIRED_SAMPLES) return this.lastEstimate;
-
-    const segment = values.slice(-this.MIN_REQUIRED_SAMPLES);
-    const { amplitude, slopeRatio, width, dicroticDrop } = this.extractFeatures(segment);
-
-    // Fórmulas adaptativas SIN valores fijos base
-    let systolic = amplitude * 160 + slopeRatio * 20;
-    let diastolic = dicroticDrop * 90 - width * 15;
-
-    systolic *= this.calibrationFactor;
-    diastolic *= this.calibrationFactor;
-
+  
+  /**
+   * Calculate blood pressure based on heart rate variability and PPG signal
+   * @param rrIntervals Array of RR intervals
+   * @param ppgValues Array of PPG signal values
+   * @returns Blood pressure estimation result
+   */
+  calculateBloodPressure(rrIntervals: RRInterval[], ppgValues: number[]): BloodPressureResult {
+    if (!rrIntervals || rrIntervals.length < 5 || !ppgValues || ppgValues.length < 10) {
+      return { systolic: 0, diastolic: 0, map: 0, confidence: 0 };
+    }
+    
+    // Calculate heart rate from RR intervals
+    let totalMs = 0;
+    for (const interval of rrIntervals) {
+      totalMs += interval.duration;
+    }
+    const avgRRInterval = totalMs / rrIntervals.length;
+    const heartRate = 60000 / avgRRInterval;
+    
+    // Calculate signal features
+    const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
+    
+    // Calculate time-based features (rise time, fall time)
+    let riseTime = 0;
+    let fallTime = 0;
+    let peakCount = 0;
+    
+    for (let i = 1; i < ppgValues.length - 1; i++) {
+      if (ppgValues[i] > ppgValues[i-1] && ppgValues[i] > ppgValues[i+1]) {
+        peakCount++;
+        
+        // Find rise time (time from trough to peak)
+        let j = i - 1;
+        while (j > 0 && ppgValues[j] >= ppgValues[j-1]) j--;
+        riseTime += (i - j);
+        
+        // Find fall time (time from peak to trough)
+        let k = i + 1;
+        while (k < ppgValues.length - 1 && ppgValues[k] >= ppgValues[k+1]) k++;
+        fallTime += (k - i);
+      }
+    }
+    
+    if (peakCount > 0) {
+      riseTime /= peakCount;
+      fallTime /= peakCount;
+    }
+    
+    // Calculate systolic using PTT (Pulse Transit Time) approximation
+    // Uses the ratio of rise time to fall time as PTT analog
+    const pttAnalog = riseTime / (fallTime + 0.01);
+    
+    // Apply calibration factor
+    const adjustedHeartRate = heartRate * this.config.bpCalibrationFactor;
+    
+    // BP calculation based on research models
+    // Systolic = baselineSystolic + k1*(HR-baselineHR) + k2*(1/PTT - 1/baselinePTT)
+    const systolic = this.baselineSystolic + 
+      0.7 * (adjustedHeartRate - 70) + 
+      30 * (signalAmplitude - 0.5) +
+      25 * (pttAnalog - 0.5);
+    
+    // Diastolic typically follows systolic with smaller variation
+    const diastolic = this.baselineDiastolic + 
+      0.4 * (adjustedHeartRate - 70) + 
+      10 * (signalAmplitude - 0.5) +
+      15 * (pttAnalog - 0.5);
+    
+    // Mean Arterial Pressure calculation
     const map = diastolic + (systolic - diastolic) / 3;
-
-    let confidence = this.calculateConfidence(amplitude, slopeRatio, width, dicroticDrop);
-    if (isNaN(confidence)) confidence = 0;
-
-    const isReliable = confidence >= this.confidenceThreshold;
-
-    const estimate: BloodPressureResult = {
-      systolic: Math.round(this.bound(systolic, 90, 180)),
-      diastolic: Math.round(this.bound(diastolic, 55, 120)),
-      map: Math.round(map),
-      confidence,
-      isReliable
-    };
-
-    this.pushToHistory(estimate);
-    this.lastEstimate = this.getUnfrozenEstimate(estimate);
-
-    console.log('[BP DEBUG]', {
-      amplitude: amplitude.toFixed(4),
-      slopeRatio: slopeRatio.toFixed(4),
-      width,
-      dicroticDrop: dicroticDrop.toFixed(4),
-      confidence: confidence.toFixed(3),
-      systolic: estimate.systolic,
-      diastolic: estimate.diastolic
-    });
-
-    return this.lastEstimate;
-  }
-
-  private extractFeatures(data: number[]) {
-    const peak = Math.max(...data);
-    const valley = Math.min(...data);
-    const amplitude = peak - valley;
-
-    const riseIndex = data.findIndex(v => v === peak);
-    const slopeRise = (peak - valley) / (riseIndex + 1);
-    const slopeFall = (peak - valley) / (data.length - riseIndex);
-    const slopeRatio = slopeRise / (slopeFall + 1e-5);
-
-    const width = data.filter(v => v > valley + amplitude * 0.5).length;
-
-    const dicroticDrop = (peak - data[data.length - 1]) / amplitude;
-
-    return { amplitude, slopeRatio, width, dicroticDrop };
-  }
-
-  private calculateConfidence(a: number, s: number, w: number, d: number): number {
-    const score = (a > 0.02 ? 1 : 0.6) * (s > 1 ? 1 : 0.8) * (w > 10 ? 1 : 0.8) * (d > 0.1 ? 1 : 0.7);
-    return Math.min(1, score);
-  }
-
-  private bound(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  private pushToHistory(val: BloodPressureResult) {
-    this.history.push(val);
-    if (this.history.length > this.HISTORY_SIZE) this.history.shift();
-  }
-
-  private getUnfrozenEstimate(current: BloodPressureResult): BloodPressureResult {
-    const last = this.lastEstimate;
-    const diffSys = Math.abs(current.systolic - last.systolic);
-    const diffDia = Math.abs(current.diastolic - last.diastolic);
-
-    if (diffSys < 1 && diffDia < 1) {
-      this.freezeCounter++;
-    } else {
-      this.freezeCounter = 0;
-    }
-
-    if (this.freezeCounter >= 1) {
-      const delta = (Math.random() - 0.5) * 4;
-      return {
-        systolic: Math.round(current.systolic + delta),
-        diastolic: Math.round(current.diastolic + delta),
-        map: Math.round(current.map + delta * 0.5),
-        confidence: current.confidence,
-        isReliable: current.isReliable
-      };
-    }
-
-    const factor = current.confidence < 0.4 ? 0.3 : 0.15;
-
+    
+    // Calculate confidence based on signal and heart rate stability
+    const rrVariability = this.calculateRRVariability(rrIntervals);
+    const confidence = Math.max(0, Math.min(1, 
+      (1 - rrVariability / 150) * 
+      (signalAmplitude > 0.2 ? 1 : signalAmplitude / 0.2) *
+      (peakCount > 5 ? 1 : peakCount / 5)
+    ));
+    
     return {
-      systolic: Math.round(last.systolic * factor + current.systolic * (1 - factor)),
-      diastolic: Math.round(last.diastolic * factor + current.diastolic * (1 - factor)),
-      map: Math.round(last.map * factor + current.map * (1 - factor)),
-      confidence: current.confidence,
-      isReliable: current.isReliable
+      systolic: Math.round(Math.max(70, Math.min(220, systolic))),
+      diastolic: Math.round(Math.max(40, Math.min(120, diastolic))),
+      map: Math.round(map),
+      confidence: confidence
     };
   }
-
-  public getConfidence(): number {
-    return this.lastEstimate.confidence;
-  }
-
-  public isReliable(): boolean {
-    return this.lastEstimate.isReliable;
-  }
-
-  public reset(): void {
-    this.history.length = 0;
-    this.freezeCounter = 0;
-    this.lastEstimate = {
-      systolic: 120,
-      diastolic: 80,
-      map: 93,
-      confidence: 0,
-      isReliable: false
-    };
+  
+  private calculateRRVariability(rrIntervals: RRInterval[]): number {
+    if (rrIntervals.length < 2) return 0;
+    
+    const intervals = rrIntervals.map(rr => rr.duration);
+    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    
+    let variance = 0;
+    for (const interval of intervals) {
+      variance += Math.pow(interval - mean, 2);
+    }
+    variance /= intervals.length;
+    
+    return Math.sqrt(variance);
   }
 }

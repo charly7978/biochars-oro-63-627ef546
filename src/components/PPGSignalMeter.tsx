@@ -1,8 +1,16 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle } from 'lucide-react';
+import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
+import { useSignalValidation } from '../hooks/useSignalValidation';
+import SignalValidationBox from './SignalValidationBox';
+
+// Define the interfaces needed for the component
+export interface PPGDataPoint {
+  time: number;
+  value: number;
+}
 
 interface PPGSignalMeterProps {
   value: number;
@@ -24,7 +32,7 @@ interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
 }
 
-const PPGSignalMeter = memo(({ 
+const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({ 
   value, 
   quality, 
   isFingerDetected,
@@ -34,9 +42,9 @@ const PPGSignalMeter = memo(({
   rawArrhythmiaData,
   preserveResults = false,
   isArrhythmia = false
-}: PPGSignalMeterProps) => {
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
+  const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended>>(new CircularBuffer<PPGDataPointExtended>(600));
   const baselineRef = useRef<number | null>(null);
   const lastValueRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number>();
@@ -55,6 +63,17 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
+  // Use the signal validation hook
+  const { 
+    validation, 
+    addValue: addValidationValue, 
+    validateSignal, 
+    startValidation, 
+    stopValidation, 
+    reset: resetValidation
+  } = useSignalValidation();
+
+  // Constants for the component
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
   const CANVAS_HEIGHT = 900;
@@ -82,6 +101,7 @@ const PPGSignalMeter = memo(({
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
+  // Initialize the audio context
   useEffect(() => {
     const initAudio = async () => {
       try {
@@ -112,6 +132,7 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
+  // Function to play a beep sound
   const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
     try {
       const now = Date.now();
@@ -135,10 +156,8 @@ const PPGSignalMeter = memo(({
     }
   }, [triggerHeartbeatFeedback]);
 
+  // Update signal buffer
   useEffect(() => {
-    if (!dataBufferRef.current) {
-      dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
-    }
     if (preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
@@ -149,19 +168,27 @@ const PPGSignalMeter = memo(({
     }
   }, [preserveResults, isFingerDetected]);
 
+  // Process quality measurements
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
-    if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
+    if (qualityHistoryRef.current.length > 9) {
       qualityHistoryRef.current.shift();
     }
     
+    // Update finger detection counter
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
-  }, [quality, isFingerDetected]);
 
+    // Add current value to the validation buffer
+    if (isFingerDetected && value !== 0) {
+      addValidationValue(value);
+    }
+  }, [quality, isFingerDetected, value, addValidationValue]);
+
+  // Initialize canvas
   useEffect(() => {
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
@@ -179,6 +206,7 @@ const PPGSignalMeter = memo(({
     }
   }, []);
 
+  // Get average quality
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
@@ -194,6 +222,7 @@ const PPGSignalMeter = memo(({
     return weightSum > 0 ? weightedSum / weightSum : 0;
   }, []);
 
+  // Get quality color
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
@@ -203,6 +232,7 @@ const PPGSignalMeter = memo(({
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
+  // Get quality text
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
@@ -212,11 +242,13 @@ const PPGSignalMeter = memo(({
     return 'Señal débil';
   }, [getAverageQuality]);
 
+  // Smooth value function
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
   }, []);
 
+  // Draw grid function
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
@@ -303,6 +335,7 @@ const PPGSignalMeter = memo(({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
+  // Detect peaks function
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     
@@ -367,6 +400,7 @@ const PPGSignalMeter = memo(({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
+  // Render signal function
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -545,6 +579,7 @@ const PPGSignalMeter = memo(({
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
 
+  // Initialize rendering
   useEffect(() => {
     renderSignal();
     
@@ -555,23 +590,37 @@ const PPGSignalMeter = memo(({
     };
   }, [renderSignal]);
 
+  // Reset function
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
     arrhythmiaSegmentsRef.current = [];
     pendingBeepPeakIdRef.current = null;
+    resetValidation();
     onReset();
-  }, [onReset]);
+  }, [onReset, resetValidation]);
+
+  // Start the validation when monitoring starts
+  useEffect(() => {
+    if (isFingerDetected) {
+      startValidation();
+    } else {
+      stopValidation();
+    }
+    return () => {
+      stopValidation();
+    };
+  }, [isFingerDetected, startValidation, stopValidation]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= 3;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
         ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
+        width={1200}
+        height={900}
         className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
         style={{
           transform: 'translate3d(0,0,0)',
@@ -584,18 +633,9 @@ const PPGSignalMeter = memo(({
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
-          <div className="w-[180px]">
-            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
-              <div
-                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
-              />
-            </div>
-            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
-              {getQualityText(quality)}
-            </span>
-          </div>
+          
+          {/* Reemplazamos el medidor de calidad por el cuadro de validación */}
+          {isFingerDetected && <SignalValidationBox result={validation} />}
         </div>
 
         <div className="flex flex-col items-center">
@@ -630,8 +670,6 @@ const PPGSignalMeter = memo(({
       </div>
     </div>
   );
-});
+};
 
-PPGSignalMeter.displayName = 'PPGSignalMeter';
-
-export default PPGSignalMeter;
+export default memo(PPGSignalMeter);
