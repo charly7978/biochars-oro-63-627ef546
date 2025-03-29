@@ -496,7 +496,7 @@ const PPGSignalMeter = memo(({
       
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2 + peak.value;
+        const y = canvas.height / 2 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
