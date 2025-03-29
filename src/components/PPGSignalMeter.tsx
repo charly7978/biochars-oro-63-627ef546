@@ -463,6 +463,14 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
     const ppgOptimized = points.map(p => p.value);
     const result = validateFullSignal(ppgOptimized);
+    const badSegments = result.badSegments;
+    
+    badSegments.forEach(([start, end]) => {
+      const xStart = canvas.width - ((now - start) * canvas.width / WINDOW_WIDTH_MS);
+      const xEnd = canvas.width - ((now - end) * canvas.width / WINDOW_WIDTH_MS);
+      renderCtx.fillStyle = 'rgba(255, 0, 0, 0.12)';
+      renderCtx.fillRect(xEnd, 0, xStart - xEnd, canvas.height);
+    });
     
     let shouldBeep = false;
     

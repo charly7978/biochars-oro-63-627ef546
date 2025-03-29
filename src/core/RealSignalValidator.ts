@@ -7,12 +7,14 @@ export interface SignalValidationResult {
   color: string;
   label: string;
   warnings: string[];
+  badSegments: [number, number][];
 }
 
 export function validateFullSignal(ppg: number[]): SignalValidationResult {
   const base = evaluateSignalQuality(ppg);
   const warnings: string[] = [];
-
+  const badSegments: [number, number][] = [];
+  
   // Verificar señal básica
   if (base.level < 0.4) warnings.push('Energía o forma insuficiente');
 
@@ -20,6 +22,8 @@ export function validateFullSignal(ppg: number[]): SignalValidationResult {
   let invertedPicos = 0;
   let rrOutOfRange = 0;
   let noPicos = true;
+  let segmentStart: number | null = null;
+  const now = Date.now();
 
   for (let i = 1; i < ppg.length - 1; i++) {
     const prev = ppg[i - 1];
@@ -36,6 +40,19 @@ export function validateFullSignal(ppg: number[]): SignalValidationResult {
     if (curr < prev && curr < next && curr < -0.2) {
       invertedPicos++;
     }
+    
+    // Marcar segmentos de tiempo con variabilidad anormal
+    const delta = Math.abs(curr - prev);
+    if (delta < 0.2 || delta > 5) {
+      if (segmentStart === null) segmentStart = now - (ppg.length - i) * 33; // Estimación de tiempo aproximada
+    } else if (segmentStart !== null) {
+      badSegments.push([segmentStart, now - (ppg.length - i) * 33]);
+      segmentStart = null;
+    }
+  }
+  
+  if (segmentStart !== null) {
+    badSegments.push([segmentStart, now]);
   }
 
   if (noPicos) warnings.push('Sin latidos detectados');
@@ -61,6 +78,7 @@ export function validateFullSignal(ppg: number[]): SignalValidationResult {
     level: base.level,
     color: finalColor,
     label,
-    warnings
+    warnings,
+    badSegments
   };
 }
