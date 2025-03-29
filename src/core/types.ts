@@ -1,19 +1,20 @@
 
-export interface HeartBeatResult {
-  bpm: number;
-  confidence: number;
-  isPeak: boolean;
-  arrhythmiaCount: number;
-  rrData?: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
-  isArrhythmia?: boolean;
+// Add missing types referenced in VitalSignsProcessor.ts
+
+export interface UserProfile {
+  age: number;
+  gender: string;
+  height: number;
+  weight: number;
 }
 
-export interface ProcessedSignal {
-  value: number;
-  timestamp: number;
-  quality: number;
-  filteredValue: number;
+export interface VitalSignsResult {
+  spo2: number;
+  pressure: string;
+  arrhythmiaStatus: string;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  }
 }
