@@ -1,287 +1,255 @@
 /**
- * Hook para procesamiento de signos vitales
- * Integra los módulos de procesamiento, optimización y cálculo
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
-
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSignalOptimizer } from './useSignalOptimizer';
-import { useVitalSignsCalculator } from './useVitalSignsCalculator';
-import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
 
 /**
- * Hook que integra el procesamiento, optimización y cálculo de signos vitales
+ * Hook para signos vitales
+ * Proporciona interfaz para procesamiento de signos vitales con arquitectura modular
+ */
+
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { EventType, eventBus, useEventSubscription } from '../modules/events/EventBus';
+import { VitalSignsResult } from '../modules/results/VitalSignsCalculator';
+import { cameraFrameReader } from '../modules/camera/CameraFrameReader';
+import { heartBeatExtractor } from '../modules/extraction/HeartBeatExtractor';
+import { ppgSignalExtractor } from '../modules/extraction/PPGSignalExtractor';
+import { combinedSignalProvider } from '../modules/extraction/CombinedSignalProvider';
+import { signalProcessor } from '../modules/processing/SignalProcessor';
+import { signalOptimizer } from '../modules/optimization/SignalOptimizer';
+import { vitalSignsCalculator } from '../modules/results/VitalSignsCalculator';
+import { updateSignalLog } from '../utils/signalLogUtils';
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
+
+interface ArrhythmiaWindow {
+  start: number;
+  end: number;
+}
+
+/**
+ * Hook para procesamiento integral de signos vitales
+ * Utiliza la arquitectura modular para proporcionar una interfaz unificada
  */
 export const useVitalSignsProcessor = () => {
-  // Estado para resultados
+  // Estado
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [calibrationProgress, setCalibrationProgress] = useState<Record<string, number>>({
-    heartRate: 0,
-    spo2: 0,
-    pressure: 0,
-    arrhythmia: 0,
-    glucose: 0,
-    lipids: 0
-  });
+  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
-  // Optimizador multicanal
-  const { 
-    processSignal: optimizeSignal, 
-    optimizedSignals,
-    reset: resetOptimizer
-  } = useSignalOptimizer();
+  // Referencias para estado interno
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const processedSignals = useRef<number>(0);
+  const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Calculador de signos vitales con feedback bidireccional
-  const {
-    calculateVitalSigns,
-    lastCalculation,
-    visualizationData,
-    reset: resetCalculator
-  } = useVitalSignsCalculator();
-  
-  // Referencia para conteo de señales procesadas
-  const processedSignals = useRef(0);
-  const calibrationRef = useRef(0);
-  
-  // Procesar cálculos cuando cambian las señales optimizadas
+  // Inicialización
   useEffect(() => {
-    if (isProcessing && Object.values(optimizedSignals).some(value => value !== null)) {
-      const result = calculateVitalSigns();
-      
-      if (result) {
-        // Transformar los objetos de cálculo a valores simples para VitalSignsResult
-        const processedResult: VitalSignsResult = {
-          spo2: typeof result.spo2.value === 'number' ? result.spo2.value : 0,
-          pressure: typeof result.bloodPressure.value === 'string' ? result.bloodPressure.value : "--/--",
-          arrhythmiaStatus: result.arrhythmia.status || "--",
-          glucose: typeof result.glucose.value === 'number' ? result.glucose.value : 0,
-          lipids: {
-            totalCholesterol: typeof result.cholesterol.value === 'number' ? result.cholesterol.value : 0,
-            triglycerides: typeof result.triglycerides.value === 'number' ? result.triglycerides.value : 0
-          },
-          confidence: {
-            glucose: result.glucose.confidence,
-            lipids: (result.cholesterol.confidence + result.triglycerides.confidence) / 2,
-            overall: 0.7
-          },
-          lastArrhythmiaData: result.arrhythmia.data,
-          calibration: {
-            progress: calculateCalibrationProgress(processedSignals.current)
-          }
-        };
-        
-        console.log("VitalSignsProcessor: Resultados procesados", processedResult);
-        setLastValidResults(processedResult);
-      }
-    }
-  }, [optimizedSignals, calculateVitalSigns, isProcessing]);
-
-  // Función para calcular el progreso de calibración
-  const calculateCalibrationProgress = (frames: number) => {
-    const maxFrames = 60;
-    const progress = Math.min(1, frames / maxFrames);
-    
-    calibrationRef.current = progress;
-    
-    return {
-      heartRate: progress,
-      spo2: progress * 0.8,
-      pressure: progress * 0.7,
-      arrhythmia: progress * 0.6,
-      glucose: progress * 0.5,
-      lipids: progress * 0.4
-    };
-  };
-  
-  /**
-   * Procesa una señal PPG y calcula signos vitales
-   */
-  const processSignal = useCallback((
-    value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null },
-    isWeakSignal: boolean = false
-  ) => {
-    if (isWeakSignal) {
-      return lastValidResults || {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        calibration: {
-          progress: calculateCalibrationProgress(processedSignals.current)
-        }
-      };
-    }
-    
-    setIsProcessing(true);
-    processedSignals.current++;
-    
-    try {
-      // Registro diagnóstico periódico
-      if (processedSignals.current % 15 === 0) {
-        console.log("useVitalSignsProcessor: Procesando señal", {
-          inputValue: value,
-          rrDataPresent: !!rrData,
-          rrIntervals: rrData?.intervals.length || 0,
-          signalNumber: processedSignals.current,
-          calibration: calibrationRef.current,
-          optimizedChannels: Object.keys(optimizedSignals).filter(
-            k => optimizedSignals[k] !== null
-          ).length
-        });
-      }
-      
-      // Procesar señal a través del optimizador multicanal
-      if (value !== 0) {
-        // Crear objeto de señal PPG para el optimizador
-        const ppgSignal = {
-          timestamp: Date.now(),
-          rawValue: value,
-          filteredValue: value,
-          normalizedValue: value,
-          amplifiedValue: value,
-          quality: 80,
-          fingerDetected: true,
-          signalStrength: 80,
-          // Añadir datos RR para optimizador de frecuencia cardíaca
-          metadata: {
-            rrIntervals: rrData?.intervals || [],
-            lastPeakTime: rrData?.lastPeakTime
-          }
-        };
-        
-        // Optimizar señal para todos los canales
-        optimizeSignal(ppgSignal);
-      }
-      
-      // El cálculo se realiza en el efecto cuando cambian los valores optimizados
-      
-      // Asegurarse de que devolvemos el último resultado válido con progreso de calibración
-      if (lastValidResults) {
-        const resultWithCalibration = {
-          ...lastValidResults,
-          calibration: {
-            progress: calculateCalibrationProgress(processedSignals.current)
-          }
-        };
-        return resultWithCalibration;
-      }
-      
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        calibration: {
-          progress: calculateCalibrationProgress(processedSignals.current)
-        }
-      };
-    } catch (error) {
-      console.error("Error processing vital signs:", error);
-      
-      return lastValidResults || {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        calibration: {
-          progress: calculateCalibrationProgress(processedSignals.current)
-        }
-      };
-    }
-  }, [optimizeSignal, lastValidResults, optimizedSignals]);
-  
-  /**
-   * Reinicia el procesador manteniendo último resultado
-   */
-  const reset = useCallback(() => {
-    console.log("useVitalSignsProcessor: Reset iniciado");
-    
-    // Guardar último resultado válido
-    const savedResults = lastValidResults;
-    
-    // Reiniciar optimizador y calculador
-    resetOptimizer();
-    resetCalculator();
-    
-    setIsProcessing(false);
-    
-    console.log("useVitalSignsProcessor: Reset completado");
-    return savedResults;
-  }, [lastValidResults, resetOptimizer, resetCalculator]);
-  
-  /**
-   * Reinicio completo incluyendo historial
-   */
-  const fullReset = useCallback(() => {
-    console.log("useVitalSignsProcessor: Full reset iniciado");
-    
-    resetOptimizer();
-    resetCalculator();
-    processedSignals.current = 0;
-    calibrationRef.current = 0;
-    setLastValidResults(null);
-    setIsProcessing(false);
-    setCalibrationProgress({
-      heartRate: 0,
-      spo2: 0,
-      pressure: 0,
-      arrhythmia: 0,
-      glucose: 0,
-      lipids: 0
+    console.log("useVitalSignsProcessor: Hook inicializado", {
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
     });
     
-    console.log("useVitalSignsProcessor: Full reset completado");
-  }, [resetOptimizer, resetCalculator]);
-  
-  /**
-   * Obtiene información de visualización para gráficos
-   */
-  const getVisualizationData = useCallback(() => {
-    return visualizationData;
-  }, [visualizationData]);
-  
-  /**
-   * Obtiene información de depuración
-   */
-  const getDebugInfo = useCallback(() => {
-    return {
-      processedSignals: processedSignals.current,
-      calibrationProgress: calibrationRef.current,
-      optimizedChannelsAvailable: Object.keys(optimizedSignals).filter(
-        k => optimizedSignals[k] !== null
-      ),
-      lastCalculation: lastCalculation,
-      visualizationAvailable: !!visualizationData
+    return () => {
+      // Detener todos los módulos al desmontar
+      cameraFrameReader.stopFrameReading();
+      cameraFrameReader.stopCamera();
+      heartBeatExtractor.stopExtraction();
+      ppgSignalExtractor.stopExtraction();
+      combinedSignalProvider.stop();
+      signalProcessor.stopProcessing();
+      signalOptimizer.stop();
+      vitalSignsCalculator.stopCalculating();
+      
+      console.log("useVitalSignsProcessor: Hook destruido", {
+        sessionId: sessionId.current,
+        señalesProcesadas: processedSignals.current,
+        timestamp: new Date().toISOString()
+      });
     };
-  }, [optimizedSignals, lastCalculation, visualizationData]);
+  }, []);
   
+  // Suscribirse a eventos de resultados
+  useEventSubscription(EventType.VITAL_SIGNS_UPDATED, (result: VitalSignsResult) => {
+    // Actualizar resultados válidos
+    setLastValidResults(result);
+    
+    // Actualizar ventanas de arritmia si hay datos
+    if (result.arrhythmiaData?.windows) {
+      setArrhythmiaWindows(result.arrhythmiaData.windows);
+    }
+    
+    // Actualizar log
+    const currentTime = Date.now();
+    signalLog.current = updateSignalLog(
+      signalLog.current, 
+      currentTime, 
+      result.heartRate, // usando la frecuencia cardíaca como valor de señal
+      result, 
+      processedSignals.current
+    );
+    
+    processedSignals.current++;
+  });
+  
+  /**
+   * Procesar la señal
+   * Esta función ahora coordina el procesamiento a través del sistema modular
+   */
+  const processSignal = useCallback((value: number, rrData?: { intervals: number[]; lastPeakTime: number | null }) => {
+    // En la nueva arquitectura, el procesamiento ocurre automáticamente
+    // Esta función queda por compatibilidad, pero ya no maneja directamente el procesamiento
+    
+    // Registrar procesamiento (para debugging)
+    console.log("useVitalSignsProcessor: Solicitud de procesamiento", {
+      valorEntrada: value,
+      rrDataPresente: !!rrData,
+      intervalosRR: rrData?.intervals.length || 0,
+      ultimosIntervalos: rrData?.intervals.slice(-3) || [],
+      señalNúmero: processedSignals.current,
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Retornar último resultado válido o valores por defecto
+    return lastValidResults || {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--"
+    };
+  }, [lastValidResults]);
+
+  /**
+   * Iniciar el procesamiento completo
+   */
+  const startProcessing = useCallback(async () => {
+    try {
+      // Iniciar cámara
+      const cameraStarted = await cameraFrameReader.startCamera();
+      if (!cameraStarted) {
+        throw new Error("No se pudo iniciar la cámara");
+      }
+      
+      // Iniciar extracción
+      heartBeatExtractor.startExtraction();
+      ppgSignalExtractor.startExtraction();
+      combinedSignalProvider.start();
+      
+      // Iniciar procesamiento
+      signalProcessor.startProcessing();
+      
+      // Iniciar optimización
+      signalOptimizer.start();
+      
+      // Iniciar cálculos
+      vitalSignsCalculator.startCalculating();
+      
+      // Comenzar lectura de frames
+      cameraFrameReader.startFrameReading();
+      
+      console.log("useVitalSignsProcessor: Sistema completo iniciado");
+      return true;
+    } catch (error) {
+      console.error("useVitalSignsProcessor: Error iniciando sistema", error);
+      return false;
+    }
+  }, []);
+  
+  /**
+   * Detener el procesamiento completo
+   */
+  const stopProcessing = useCallback(() => {
+    // Detener en orden inverso
+    vitalSignsCalculator.stopCalculating();
+    signalOptimizer.stop();
+    signalProcessor.stopProcessing();
+    combinedSignalProvider.stop();
+    ppgSignalExtractor.stopExtraction();
+    heartBeatExtractor.stopExtraction();
+    cameraFrameReader.stopFrameReading();
+    
+    console.log("useVitalSignsProcessor: Sistema completo detenido");
+  }, []);
+
+  /**
+   * Soft reset: reiniciar los procesadores pero mantener resultados
+   */
+  const reset = useCallback(() => {
+    console.log("useVitalSignsProcessor: Reseteo suave", {
+      estadoAnterior: {
+        últimosResultados: lastValidResults ? {
+          spo2: lastValidResults.spo2,
+          presión: lastValidResults.bloodPressure.display
+        } : null
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+    // Reiniciar procesadores pero no resultados
+    signalProcessor.reset();
+    // Quitamos la referencia a resetFilters que no existe
+    signalOptimizer.stop();
+    signalOptimizer.start();
+    setArrhythmiaWindows([]);
+    
+    console.log("Reseteo suave completado - manteniendo resultados");
+    return lastValidResults;
+  }, [lastValidResults]);
+  
+  /**
+   * Hard reset: borrar todos los resultados y reiniciar
+   */
+  const fullReset = useCallback(() => {
+    console.log("useVitalSignsProcessor: Reseteo completo", {
+      estadoAnterior: {
+        últimosResultados: lastValidResults ? {
+          spo2: lastValidResults.spo2,
+          presión: lastValidResults.bloodPressure.display
+        } : null,
+        señalesProcesadas: processedSignals.current
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+    // Detener y reiniciar todo el sistema
+    stopProcessing();
+    setLastValidResults(null);
+    setArrhythmiaWindows([]);
+    processedSignals.current = 0;
+    signalLog.current = [];
+    
+    console.log("Reseteo completo finalizado - borrando todos los resultados");
+  }, [stopProcessing, lastValidResults]);
+
   return {
     processSignal,
+    startProcessing,
+    stopProcessing,
     reset,
-    fullReset: resetOptimizer,
-    getVisualizationData: () => visualizationData,
-    getDebugInfo: () => ({
+    fullReset,
+    lastValidResults,
+    arrhythmiaWindows,
+    debugInfo: {
       processedSignals: processedSignals.current,
-      calibrationProgress: calibrationRef.current,
-      optimizedChannelsAvailable: Object.keys(optimizedSignals).filter(
-        k => optimizedSignals[k] !== null
-      ),
-      lastCalculation,
-      visualizationAvailable: !!visualizationData
-    }),
-    lastValidResults
+      signalLog: signalLog.current.slice(-10)
+    }
   };
 };
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */

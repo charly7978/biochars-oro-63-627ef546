@@ -1,12 +1,10 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Utilidades compartidas para el procesamiento de señales PPG reales
- * Solo utiliza datos reales sin simulación
+ * Utilidades compartidas para el procesamiento de señales PPG
+ * Centraliza funciones comunes usadas por varios procesadores
  */
 
-// Constantes para procesamiento de señales reales
+// Constantes compartidas
 export const SIGNAL_CONSTANTS = {
   MIN_VALID_VALUES: 120,
   MIN_AMPLITUDE: 0.05,
@@ -16,7 +14,7 @@ export const SIGNAL_CONSTANTS = {
 };
 
 /**
- * Aplica un filtro de media móvil simple a datos reales
+ * Aplica un filtro de media móvil simple (SMA)
  */
 export function applySMAFilter(value: number, buffer: number[], windowSize: number = SIGNAL_CONSTANTS.SMA_WINDOW): {
   filteredValue: number;
@@ -31,7 +29,7 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
 }
 
 /**
- * Calcula la desviación estándar de datos reales
+ * Calcula la desviación estándar de un conjunto de valores
  */
 export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
@@ -43,7 +41,7 @@ export function calculateStandardDeviation(values: number[]): number {
 }
 
 /**
- * Calcula el componente AC de una señal real
+ * Calcula el componente AC (amplitud pico a pico) de una señal
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
@@ -51,7 +49,7 @@ export function calculateAC(values: number[]): number {
 }
 
 /**
- * Calcula el componente DC de una señal real
+ * Calcula el componente DC (valor promedio) de una señal
  */
 export function calculateDC(values: number[]): number {
   if (values.length === 0) return 0;
@@ -59,7 +57,7 @@ export function calculateDC(values: number[]): number {
 }
 
 /**
- * Normaliza valores reales al rango [0,1]
+ * Normaliza un array de valores al rango [0,1]
  */
 export function normalizeValues(values: number[]): number[] {
   if (values.length === 0) return [];
@@ -70,16 +68,16 @@ export function normalizeValues(values: number[]): number[] {
 }
 
 /**
- * Encuentra picos y valles en una señal real
+ * Encuentra picos y valles en una señal
  */
 export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
-  // Algoritmo para detección de picos y valles en datos reales
+  // Algoritmo para detección de picos y valles usando ventana de 5 puntos
   for (let i = 2; i < values.length - 2; i++) {
     const v = values[i];
-    // Detección de picos
+    // Detección de picos (punto más alto en una ventana de 5 puntos)
     if (
       v > values[i - 1] &&
       v > values[i - 2] &&
@@ -88,7 +86,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
     ) {
       peakIndices.push(i);
     }
-    // Detección de valles
+    // Detección de valles (punto más bajo en una ventana de 5 puntos)
     if (
       v < values[i - 1] &&
       v < values[i - 2] &&
@@ -102,7 +100,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
 }
 
 /**
- * Calcula la amplitud entre picos y valles de señales reales
+ * Calcula la amplitud entre picos y valles
  */
 export function calculateAmplitude(
   values: number[],
@@ -123,7 +121,7 @@ export function calculateAmplitude(
   
   if (amps.length === 0) return 0;
 
-  // Calcular media robusta con datos reales
+  // Calcular la media robusta (sin outliers)
   amps.sort((a, b) => a - b);
   const trimmedAmps = amps.slice(
     Math.floor(amps.length * 0.1),
@@ -136,7 +134,7 @@ export function calculateAmplitude(
 }
 
 /**
- * Filtro Kalman para señales reales
+ * Clase auxiliar para filtrado Kalman
  */
 export class KalmanFilter {
   private R: number = 0.01;
@@ -146,7 +144,7 @@ export class KalmanFilter {
   private K: number = 0;
 
   /**
-   * Aplica el filtro Kalman a mediciones reales
+   * Aplica el filtro Kalman a una medición
    */
   filter(measurement: number): number {
     this.P = this.P + this.Q;
@@ -166,7 +164,7 @@ export class KalmanFilter {
 }
 
 /**
- * Evaluador de calidad para señales reales
+ * Evaluador de calidad de señal básico
  */
 export function evaluateSignalQuality(
   values: number[],
@@ -175,23 +173,23 @@ export function evaluateSignalQuality(
 ): number {
   if (values.length < 30) return 0;
   
-  // Análisis de datos reales
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min;
   
-  if (range < minThreshold) return 10;
+  if (range < minThreshold) return 10; // Señal muy débil
   
   const mean = calculateDC(values);
   const stdDev = calculateStandardDeviation(values);
-  const cv = stdDev / mean;
+  const cv = stdDev / mean; // Coeficiente de variación
   
-  // Analizar picos en datos reales
+  // Analizar picos
   const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
   
+  // Si no hay suficientes picos y valles, la señal probablemente no es buena
   if (peakIndices.length < 2 || valleyIndices.length < 2) return 30;
   
-  // Regularidad entre picos reales
+  // Regularidad entre picos (señal más regular = mejor calidad)
   let peakRegularity = 100;
   if (peakIndices.length >= 3) {
     const peakDiffs = [];
@@ -203,22 +201,25 @@ export function evaluateSignalQuality(
     const diffVariation = peakDiffs.reduce((acc, diff) => 
       acc + Math.abs(diff - avgDiff), 0) / peakDiffs.length;
     
+    // Normalizar variación como porcentaje del promedio
     const normalizedVariation = diffVariation / avgDiff;
     
+    // Convertir a puntuación (menor variación = mayor puntuación)
     peakRegularity = 100 - (normalizedVariation * 100);
     peakRegularity = Math.max(0, Math.min(100, peakRegularity));
   }
   
-  // Puntuación basada en datos reales
+  // Amplitud adecuada (ni demasiado grande ni demasiado pequeña)
   const amplitudeScore = range < peakThreshold ? 50 : 
                        range > 1.0 ? 60 : 
                        80;
   
+  // Variabilidad adecuada (ni demasiado constante ni demasiado variable)
   const variabilityScore = cv < 0.05 ? 40 : 
                          cv > 0.5 ? 40 : 
                          90;
   
-  // Combinar puntuaciones de datos reales
+  // Combinar puntuaciones
   const qualityScore = (peakRegularity * 0.5) + (amplitudeScore * 0.3) + (variabilityScore * 0.2);
   
   return Math.min(100, qualityScore);

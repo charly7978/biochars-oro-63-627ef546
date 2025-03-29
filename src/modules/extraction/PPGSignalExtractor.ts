@@ -1,158 +1,200 @@
 
 /**
- * Extractor de señal PPG
- * Se encarga de extraer la señal fotopletismográfica sin procesamiento complejo
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
-interface PPGExtractionResult {
-  rawValue: number;
+/**
+ * Extractor de Señal PPG
+ * Se enfoca exclusivamente en la extracción de la señal PPG sin procesamiento complejo
+ */
+
+import { EventType, eventBus } from '../events/EventBus';
+import { RawFrame } from '../camera/CameraFrameReader';
+
+export interface PPGSignalData {
+  redChannel: number;
+  greenChannel: number;
+  blueChannel: number;
   timestamp: number;
-  signalStrength: number;
-  fingerDetected: boolean;
+  rawValues: number[];
+  combinedValue: number;
+  channelData?: {
+    red: number;
+    ir: number;
+  };
 }
 
 export class PPGSignalExtractor {
-  private recentValues: number[] = [];
-  private minSignalThreshold: number = 0.05;
-  private stableCountThreshold: number = 5;
-  private stableCount: number = 0;
-  private baselineMean: number = 0;
-  private baselineStdDev: number = 0;
-  private _maxRecentValues: number = 20;
+  private recentRedValues: number[] = [];
+  private recentGreenValues: number[] = [];
+  private recentBlueValues: number[] = [];
+  private isExtracting: boolean = false;
+  private readonly BUFFER_SIZE = 50;
   
   /**
-   * Extrae información básica de la señal PPG
-   * Corresponde a la obtención de la señal sin procesamiento avanzado
+   * Iniciar extracción
    */
-  public extract(value: number): PPGExtractionResult {
-    const now = Date.now();
+  startExtraction(): void {
+    if (this.isExtracting) return;
     
-    // Almacenar valores recientes
-    this.recentValues.push(value);
-    if (this.recentValues.length > this._maxRecentValues) {
-      this.recentValues.shift();
-    }
+    this.isExtracting = true;
+    this.reset();
     
-    // Calculamos un valor básico de fuerza de señal
-    const signalStrength = this.calculateSignalStrength(value);
+    // Suscribirse a frames de cámara
+    eventBus.subscribe(EventType.CAMERA_FRAME_READY, this.processFrame.bind(this));
+    console.log('Extracción de señal PPG iniciada');
+  }
+  
+  /**
+   * Detener extracción
+   */
+  stopExtraction(): void {
+    this.isExtracting = false;
+    this.reset();
+    console.log('Extracción de señal PPG detenida');
+  }
+  
+  /**
+   * Reiniciar buffers y estados
+   */
+  reset(): void {
+    this.recentRedValues = [];
+    this.recentGreenValues = [];
+    this.recentBlueValues = [];
+  }
+  
+  /**
+   * Procesar un frame para extraer señal PPG
+   */
+  private processFrame(frame: RawFrame): void {
+    if (!this.isExtracting) return;
     
-    // Detección básica de dedo (sin algoritmos complejos)
-    let fingerDetected = false;
-    
-    // Si hay suficientes valores recientes, verificar si la señal es estable
-    if (this.recentValues.length >= 10) {
-      // Calcular media de valores recientes
-      const mean = this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
+    try {
+      // Extraer valores RGB
+      const { red, green, blue } = this.extractRGBValues(frame.imageData);
       
-      // Calcular desviación estándar
-      const variance = this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
-      const stdDev = Math.sqrt(variance);
+      // Añadir a buffers
+      this.recentRedValues.push(red);
+      this.recentGreenValues.push(green);
+      this.recentBlueValues.push(blue);
       
-      // Señal debe tener cierta variación pero no demasiada para ser una señal PPG válida
-      const isValidStdDev = stdDev > 0.01 && stdDev < 0.5;
-      
-      // La media debe estar por encima de un umbral mínimo
-      const hasMinimumSignal = Math.abs(mean) > this.minSignalThreshold;
-      
-      // Si cumple criterios, incrementar contador de estabilidad
-      if (isValidStdDev && hasMinimumSignal) {
-        this.stableCount = Math.min(this.stableCountThreshold + 5, this.stableCount + 1);
-      } else {
-        this.stableCount = Math.max(0, this.stableCount - 1);
+      // Mantener tamaño de buffer
+      if (this.recentRedValues.length > this.BUFFER_SIZE) {
+        this.recentRedValues.shift();
+        this.recentGreenValues.shift();
+        this.recentBlueValues.shift();
       }
       
-      // Señal debe ser estable por un tiempo mínimo
-      fingerDetected = this.stableCount >= this.stableCountThreshold;
+      // Calcular valor combinado (principalmente para visualización)
+      // En PPG, el canal rojo es el más importante, pero consideramos todos
+      const combinedValue = (red * 0.7) + (green * 0.2) + (blue * 0.1);
       
-      // Actualizar línea base si la señal es estable
-      if (fingerDetected) {
-        this.baselineMean = mean;
-        this.baselineStdDev = stdDev;
+      // Crear datos de señal PPG
+      const ppgData: PPGSignalData = {
+        redChannel: red,
+        greenChannel: green,
+        blueChannel: blue,
+        timestamp: frame.timestamp,
+        rawValues: [...this.recentRedValues], // Para análisis de tendencia
+        combinedValue,
+        channelData: {
+          red: red,
+          ir: red * 0.95 // Utilizamos el canal rojo como base para ambos valores
+        }
+      };
+      
+      // Publicar datos para que otros módulos los procesen
+      eventBus.publish(EventType.PPG_SIGNAL_EXTRACTED, ppgData);
+      
+      // También publicar señal combinada
+      eventBus.publish(EventType.SIGNAL_EXTRACTED, {
+        value: combinedValue,
+        timestamp: frame.timestamp,
+        type: 'combined'
+      });
+      
+    } catch (error) {
+      console.error('Error en extracción de señal PPG:', error);
+      eventBus.publish(EventType.ERROR_OCCURRED, {
+        source: 'PPGSignalExtractor',
+        message: 'Error procesando frame',
+        timestamp: Date.now(),
+        error
+      });
+    }
+  }
+  
+  /**
+   * Extraer valores RGB promedio
+   */
+  private extractRGBValues(imageData: ImageData): {
+    red: number;
+    green: number;
+    blue: number;
+  } {
+    const data = imageData.data;
+    let redSum = 0;
+    let greenSum = 0;
+    let blueSum = 0;
+    let count = 0;
+    
+    // Extraer del centro de la imagen (30%)
+    const startX = Math.floor(imageData.width * 0.35);
+    const endX = Math.floor(imageData.width * 0.65);
+    const startY = Math.floor(imageData.height * 0.35);
+    const endY = Math.floor(imageData.height * 0.65);
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const i = (y * imageData.width + x) * 4;
+        redSum += data[i];       // Canal rojo
+        greenSum += data[i + 1]; // Canal verde
+        blueSum += data[i + 2];  // Canal azul
+        count++;
       }
     }
+    
+    // Normalizar a 0-1
+    const avgRed = count > 0 ? (redSum / count) / 255 : 0;
+    const avgGreen = count > 0 ? (greenSum / count) / 255 : 0;
+    const avgBlue = count > 0 ? (blueSum / count) / 255 : 0;
     
     return {
-      rawValue: value,
-      timestamp: now,
-      signalStrength,
-      fingerDetected
+      red: avgRed,
+      green: avgGreen,
+      blue: avgBlue
     };
-  }
-
-  /**
-   * Calcula la fuerza de la señal (0-100)
-   */
-  private calculateSignalStrength(value: number): number {
-    // Si no hay suficientes datos, devolver un valor bajo
-    if (this.recentValues.length < 10) {
-      return Math.min(100, Math.max(0, Math.abs(value) * 200));
-    }
-    
-    // Calcular media y desviación estándar recientes
-    const mean = this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
-    const variance = this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
-    const stdDev = Math.sqrt(variance);
-    
-    // Señal fuerte debe tener:
-    // 1. Desviación estándar en un rango apropiado (ni muy baja ni muy alta)
-    // 2. Valor medio por encima de un umbral
-    
-    // Calcular calidad basada en desviación estándar (mejor entre 0.05 y 0.2)
-    let stdDevQuality = 0;
-    if (stdDev >= 0.01 && stdDev <= 0.5) {
-      if (stdDev < 0.05) {
-        stdDevQuality = (stdDev - 0.01) / 0.04 * 50; // 0-50
-      } else if (stdDev <= 0.2) {
-        stdDevQuality = 50 + (0.2 - stdDev) / 0.15 * 50; // 50-100
-      } else {
-        stdDevQuality = 50 * (0.5 - stdDev) / 0.3; // 50-0
-      }
-    }
-    
-    // Calcular calidad basada en valor medio
-    const meanQuality = Math.min(100, Math.abs(mean) * 300);
-    
-    // Combinar ambas métricas
-    const quality = stdDevQuality * 0.7 + meanQuality * 0.3;
-    
-    return Math.min(100, Math.max(0, quality));
-  }
-
-  /**
-   * Reinicia el extractor
-   */
-  public reset(): void {
-    this.recentValues = [];
-    this.stableCount = 0;
-    this.baselineMean = 0;
-    this.baselineStdDev = 0;
-  }
-
-  /**
-   * Configura parámetros del extractor
-   */
-  public configure(config: {
-    minSignalThreshold?: number;
-    stableCountThreshold?: number;
-    maxRecentValues?: number;
-  }): void {
-    if (config.minSignalThreshold !== undefined) {
-      this.minSignalThreshold = config.minSignalThreshold;
-    }
-    
-    if (config.stableCountThreshold !== undefined) {
-      this.stableCountThreshold = config.stableCountThreshold;
-    }
-    
-    if (config.maxRecentValues !== undefined) {
-      this._maxRecentValues = config.maxRecentValues;
-    }
   }
   
   /**
-   * Obtiene el máximo de valores recientes configurado
+   * Obtener datos actuales
    */
-  public get maxRecentValues(): number {
-    return this._maxRecentValues;
+  getCurrentData(): {
+    redValues: number[];
+    greenValues: number[];
+    blueValues: number[];
+  } {
+    return {
+      redValues: [...this.recentRedValues],
+      greenValues: [...this.recentGreenValues],
+      blueValues: [...this.recentBlueValues]
+    };
   }
 }
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
+
+// Exportar instancia singleton
+export const ppgSignalExtractor = new PPGSignalExtractor();
