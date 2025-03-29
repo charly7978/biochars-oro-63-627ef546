@@ -233,8 +233,8 @@ const VitalSign = ({
             {label}
           </div>
           
-          <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
-            <span className="text-gradient-soft">
+          <div className="font-bold text-2xl sm:text-3xl transition-all duration-300">
+            <span className="text-gradient-soft drop-shadow-[0_0_8px_rgba(255,255,255,0.25)] animate-subtle-pulse">
               {formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
@@ -274,9 +274,9 @@ const VitalSign = ({
               {unit && <span className="text-sm text-gray-500 ml-2">({unit})</span>}
             </div>
             <div className="flex space-x-2">
-              <span className={`text-xl px-3 py-1 rounded-full ${
+              <span className={`text-2xl px-3 py-1 rounded-full ${
                 riskLabel ? riskColor.replace('text-', 'bg-').replace('[#', 'rgba(').replace(']', ', 0.1)') : 'bg-green-500/10'
-              }`}>
+              } drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]`}>
                 {formattedValue}
                 {unit && unit}
               </span>

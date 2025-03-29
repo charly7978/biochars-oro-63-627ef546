@@ -79,13 +79,13 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       
       <div className="flex items-baseline justify-center gap-1">
         <Heart 
-          className={`h-4 w-4 mr-0.5 ${getHeartColor()} animation-smooth will-change-transform ${
+          className={`h-5 w-5 mr-0.5 ${getHeartColor()} animation-smooth will-change-transform ${
             isAnimating ? 'scale-150 opacity-80' : 'scale-100 opacity-100'
           }`}
           fill={isReliable ? "currentColor" : "none"}
           strokeWidth={1.5}
         />
-        <span className={`text-2xl font-bold typography-medical-data ${getValueClass()}`}>
+        <span className={`text-3xl font-bold typography-medical-data ${getValueClass()} animate-subtle-pulse drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]`}>
           {bpm > 0 ? bpm : '--'}
         </span>
         <span className="text-gray-400/90 text-xs unit-text">BPM</span>

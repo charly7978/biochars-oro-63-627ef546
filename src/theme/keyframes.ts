@@ -22,8 +22,8 @@ export const keyframes = {
     "50%": { height: "0.5rem" }
   },
   "value-glow": {
-    "0%, 100%": { textShadow: "0 0 1px rgba(255,255,255,0.2)" },
-    "50%": { textShadow: "0 0 20px rgba(255,255,255,0.9), 0 0 10px rgba(255,255,255,0.6)" }
+    "0%, 100%": { textShadow: "0 0 2px rgba(255,255,255,0.3)" },
+    "50%": { textShadow: "0 0 25px rgba(255,255,255,0.9), 0 0 15px rgba(255,255,255,0.7)" }
   },
   "arrhythmia-pulse": {
     "0%": { transform: "scale(1)", opacity: "0.9" },
@@ -31,8 +31,8 @@ export const keyframes = {
     "100%": { transform: "scale(1)", opacity: "0.9" }
   },
   "dark-glow": {
-    "0%, 100%": { textShadow: "0 0 1px rgba(180,200,255,0.2)" },
-    "50%": { textShadow: "0 0 20px rgba(140,180,255,0.9), 0 0 10px rgba(120,160,255,0.6)" }
+    "0%, 100%": { textShadow: "0 0 2px rgba(180,200,255,0.3)" },
+    "50%": { textShadow: "0 0 25px rgba(140,180,255,0.9), 0 0 15px rgba(120,160,255,0.6)" }
   },
   // Optimized animations with reduced changes
   "vital-sign-update": {
@@ -49,7 +49,7 @@ export const keyframes = {
     "100%": { opacity: "1", transform: "translateY(0)" }
   },
   "subtle-pulse": {
-    "0%, 100%": { opacity: "0.95" },
-    "50%": { opacity: "1" }
+    "0%, 100%": { opacity: "0.95", textShadow: "0 0 3px rgba(255,255,255,0.2)" },
+    "50%": { opacity: "1", textShadow: "0 0 12px rgba(255,255,255,0.4), 0 0 4px rgba(255,255,255,0.3)" }
   }
 };
