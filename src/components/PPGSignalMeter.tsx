@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle } from 'lucide-react';
+import { Fingerprint, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { playHeartbeatSound } from '../utils/audioUtils';
+import FeedbackService from '../services/FeedbackService';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -54,6 +55,7 @@ const PPGSignalMeter = memo(({
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
 
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
@@ -89,23 +91,38 @@ const PPGSignalMeter = memo(({
           
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
+            console.log("PPGSignalMeter: AudioContext activado:", audioContextRef.current.state);
           }
           
+          await FeedbackService.testAudio();
+          
           await playHeartbeatSound(audioContextRef.current, '/sounds/heartbeat.mp3', 0.01);
+          console.log("PPGSignalMeter: Sonido de latido precargado");
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
       }
     };
     
-    const handleUserInteraction = () => {
-      initAudio();
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
+    const handleUserInteraction = async () => {
+      console.log("PPGSignalMeter: Interacción del usuario detectada");
+      await initAudio();
+      
+      setTimeout(async () => {
+        try {
+          if (audioContextRef.current) {
+            await FeedbackService.testAudio();
+          }
+        } catch (err) {
+          console.error("Error en prueba de audio:", err);
+        }
+      }, 1000);
     };
     
-    document.addEventListener('click', handleUserInteraction);
-    document.addEventListener('touchstart', handleUserInteraction);
+    document.addEventListener('click', handleUserInteraction, { once: false });
+    document.addEventListener('touchstart', handleUserInteraction, { once: false });
+    
+    initAudio();
     
     return () => {
       document.removeEventListener('click', handleUserInteraction);
@@ -121,48 +138,32 @@ const PPGSignalMeter = memo(({
   }, []);
 
   const playBeep = useCallback(async (volume = BEEP_VOLUME) => {
+    if (!audioEnabled) {
+      console.log("PPGSignalMeter: Audio desactivado por el usuario");
+      return false;
+    }
+    
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
-        console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
-          timeSinceLastBeep: now - lastBeepTimeRef.current,
-          minInterval: MIN_BEEP_INTERVAL_MS
-        });
         return false;
       }
       
-      if (!audioContextRef.current || audioContextRef.current.state !== 'running') {
-        if (audioContextRef.current) {
-          await audioContextRef.current.resume();
-        } else {
-          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
-        }
-        
-        if (audioContextRef.current.state !== 'running') {
-          console.warn("PPGSignalMeter: No se pudo activar el contexto de audio");
-          return false;
-        }
-      }
+      console.log("PPGSignalMeter: Reproduciendo latido cardíaco");
       
-      console.log("PPGSignalMeter: Reproduciendo latido cardíaco real, volumen:", volume);
-      
-      const success = await playHeartbeatSound(
-        audioContextRef.current, 
-        '/sounds/heartbeat.mp3', 
-        Math.min(volume * 1.2, 1.0)
-      );
+      const success = await FeedbackService.playHeartbeat(Math.min(volume * 1.2, 1.0));
       
       if (success) {
         lastBeepTimeRef.current = now;
         pendingBeepPeakIdRef.current = null;
+        return true;
       }
-      
-      return success;
+      return false;
     } catch (err) {
       console.error("PPGSignalMeter: Error reproduciendo latido:", err);
       return false;
     }
-  }, []);
+  }, [audioEnabled]);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -594,6 +595,20 @@ const PPGSignalMeter = memo(({
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
+  const toggleAudio = useCallback(() => {
+    setAudioEnabled(prev => !prev);
+    
+    if (!audioEnabled && audioContextRef.current) {
+      audioContextRef.current.resume().catch(err => {
+        console.error("Error activando contexto de audio:", err);
+      });
+      
+      setTimeout(() => {
+        FeedbackService.testAudio();
+      }, 300);
+    }
+  }, [audioEnabled]);
+
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
@@ -626,6 +641,20 @@ const PPGSignalMeter = memo(({
           </div>
         </div>
 
+        <button 
+          onClick={toggleAudio}
+          className="flex flex-col items-center px-2"
+        >
+          {audioEnabled ? (
+            <Volume2 className="h-6 w-6 text-blue-500" />
+          ) : (
+            <VolumeX className="h-6 w-6 text-gray-400" />
+          )}
+          <span className="text-[8px] text-center font-medium text-black/80">
+            {audioEnabled ? "Sonido ON" : "Sonido OFF"}
+          </span>
+        </button>
+
         <div className="flex flex-col items-center">
           <Fingerprint
             className={`h-8 w-8 transition-colors duration-300 ${
@@ -654,6 +683,15 @@ const PPGSignalMeter = memo(({
           className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           RESET
+        </button>
+      </div>
+
+      <div className="absolute bottom-16 left-0 right-0 flex justify-center">
+        <button
+          onClick={() => FeedbackService.testAudio()}
+          className="bg-blue-500 text-white px-4 py-2 rounded-full text-xs z-50"
+        >
+          Probar Audio
         </button>
       </div>
     </div>

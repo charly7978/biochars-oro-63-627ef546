@@ -7,6 +7,7 @@ import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
 import { playHeartbeatSound } from '../utils/audioUtils';
+import FeedbackService from '../services/FeedbackService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -72,16 +73,32 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         };
         
         // Intentar precargar cuando el usuario interactúe con la página
-        const prepareAudio = () => {
-          if (audioContextRef.current && audioContextRef.current.state !== 'running') {
-            audioContextRef.current.resume().then(preloadHeartbeat);
-          } else {
-            preloadHeartbeat();
+        const prepareAudio = async () => {
+          console.log("Evento de interacción detectado, preparando audio");
+          if (audioContextRef.current) {
+            try {
+              if (audioContextRef.current.state !== 'running') {
+                await audioContextRef.current.resume();
+                console.log("AudioContext resumido:", audioContextRef.current.state);
+              }
+              // Ejecutar test de audio
+              await FeedbackService.testAudio();
+              // Precargar sonido de latido
+              await preloadHeartbeat();
+            } catch (err) {
+              console.error("Error preparando audio:", err);
+            }
           }
         };
         
-        window.addEventListener('click', prepareAudio, { once: true });
-        window.addEventListener('touchstart', prepareAudio, { once: true });
+        window.addEventListener('click', prepareAudio, { once: false });
+        window.addEventListener('touchstart', prepareAudio, { once: false });
+        
+        // Test inmediato para debug
+        setTimeout(() => {
+          console.log("Test de audio programado");
+          FeedbackService.testAudio();
+        }, 2000);
         
         return () => {
           window.removeEventListener('click', prepareAudio);
@@ -153,17 +170,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
     
     try {
-      // Asegurar que el contexto de audio esté activo
-      if (audioContextRef.current && audioContextRef.current.state !== 'running') {
-        await audioContextRef.current.resume();
-      }
-      
-      if (!audioContextRef.current) {
-        console.warn('Contexto de audio no disponible para sonido de latido');
-        return false;
-      }
-      
-      return await playHeartbeatSound(audioContextRef.current, '/sounds/heartbeat.mp3', volume);
+      return await FeedbackService.playHeartbeat(volume);
     } catch (err) {
       console.error('Error reproduciendo sonido de latido real:', err);
       return false;
@@ -226,7 +233,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     detectArrhythmia
   ]);
 
-  // Modificar el reset para limpiar también el contexto de audio si es necesario
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
@@ -238,7 +244,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       isMonitoringRef.current = false;
       
       processorRef.current.reset();
-      // No iniciamos audio aquí, está centralizado en PPGSignalMeter
     }
     
     setCurrentBPM(0);
@@ -260,8 +265,21 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
   }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);
 
-  const startMonitoring = useCallback(() => {
+  const startMonitoring = useCallback(async () => {
     console.log('useHeartBeatProcessor: Starting monitoring');
+    
+    // Intentar activar el audio al iniciar el monitoreo
+    try {
+      if (audioContextRef.current && audioContextRef.current.state !== 'running') {
+        await audioContextRef.current.resume();
+        console.log('AudioContext activado al iniciar monitoreo:', audioContextRef.current.state);
+      }
+      // Realizar test de audio
+      await FeedbackService.testAudio();
+    } catch (err) {
+      console.error('Error activando audio al iniciar monitoreo:', err);
+    }
+    
     if (processorRef.current) {
       isMonitoringRef.current = true;
       processorRef.current.setMonitoring(true);
@@ -272,8 +290,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       lastProcessedPeakTimeRef.current = 0;
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
-      
-      // No iniciamos audio ni test beep aquí, está centralizado en PPGSignalMeter
       
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
@@ -305,6 +321,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     requestBeep,
     startMonitoring,
     stopMonitoring,
-    playRealHeartbeatSound // Exportar la nueva función
+    playRealHeartbeatSound
   };
 };

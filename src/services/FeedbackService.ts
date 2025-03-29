@@ -1,10 +1,11 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
  */
 
 import { toast } from "@/hooks/use-toast";
-import { playHeartbeatSound } from "../utils/audioUtils";
+import { playAudio, playHeartbeatSound } from "../utils/audioUtils";
 
 // Configuración de sonidos
 const successSoundUrl = '/sounds/success.mp3';
@@ -33,6 +34,7 @@ const getAudioContext = async (): Promise<AudioContext | null> => {
       audioContext = new AudioContext({ latencyHint: 'interactive' });
       if (audioContext.state !== 'running') {
         await audioContext.resume();
+        console.log("AudioContext resumed successfully:", audioContext.state);
       }
       return audioContext;
     } catch (error) {
@@ -76,6 +78,7 @@ export const FeedbackService = {
           }
         } catch (err) {
           console.error('Error reproduciendo latido cardíaco de alta calidad:', err);
+          console.log("Usando fallback a Audio API estándar para heartbeat");
           // Fallback a Audio API estándar
         }
         
@@ -86,18 +89,7 @@ export const FeedbackService = {
     }
     
     try {
-      const audio = loadSound(soundUrl);
-      // Establecer volumen
-      audio.volume = Math.max(0, Math.min(1, volume));
-      // Reiniciar el audio si ya está reproduciéndose
-      audio.currentTime = 0;
-      
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.error('Error al reproducir audio:', error);
-        });
-      }
+      await playAudio(soundUrl, volume);
     } catch (error) {
       console.error('Error al reproducir sonido:', error);
     }
@@ -164,14 +156,69 @@ export const FeedbackService = {
       // Reproducir sonido de latido de alta calidad
       const context = await getAudioContext();
       if (context) {
-        return await playHeartbeatSound(context, heartbeatSoundUrl, volume);
+        // Asegurarse de que el contexto está activo
+        if (context.state !== 'running') {
+          await context.resume();
+          console.log("AudioContext resumed for heartbeat:", context.state);
+        }
+        
+        const result = await playHeartbeatSound(context, heartbeatSoundUrl, volume);
+        console.log("Resultado de playHeartbeatSound:", result);
+        return result;
       } else {
         // Fallback a HTML Audio API
+        console.log("Sin AudioContext, usando playSound para heartbeat");
         FeedbackService.playSound('heartbeat', volume);
         return true;
       }
     } catch (error) {
       console.error('Error reproduciendo latido cardíaco:', error);
+      // Último recurso: Audio estándar
+      try {
+        await playAudio(heartbeatSoundUrl, volume);
+        return true;
+      } catch (e) {
+        console.error('Error en fallback final de audio:', e);
+        return false;
+      }
+    }
+  },
+  
+  // Test de audio para verificar que funciona
+  testAudio: async () => {
+    console.log("Prueba de audio iniciada");
+    try {
+      const context = await getAudioContext();
+      if (!context) {
+        console.error("No se pudo obtener AudioContext");
+        return false;
+      }
+      
+      // Verificar y resumir el contexto si es necesario
+      if (context.state !== 'running') {
+        console.log("Resumiendo AudioContext desde estado:", context.state);
+        await context.resume();
+        console.log("AudioContext ahora está:", context.state);
+      }
+      
+      // Generar un beep de prueba
+      const oscillator = context.createOscillator();
+      const gainNode = context.createGain();
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(440, context.currentTime);
+      oscillator.connect(gainNode);
+      gainNode.connect(context.destination);
+      
+      oscillator.start();
+      setTimeout(() => {
+        oscillator.stop();
+        console.log("Prueba de audio completada");
+      }, 500);
+      
+      return true;
+    } catch (error) {
+      console.error("Error en prueba de audio:", error);
       return false;
     }
   }

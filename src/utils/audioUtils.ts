@@ -64,7 +64,7 @@ export const playHeartbeatSound = async (
   try {
     if (!context || context.state !== 'running') {
       console.warn('AudioContext no está listo o activo');
-      return false;
+      await context.resume();
     }
     
     // Cargar buffer desde caché si ya existe
@@ -74,16 +74,25 @@ export const playHeartbeatSound = async (
     if (cache[heartbeatUrl]) {
       audioBuffer = cache[heartbeatUrl];
     } else {
-      // Cargar y decodificar archivo de audio
-      const response = await fetch(heartbeatUrl);
-      const arrayBuffer = await response.arrayBuffer();
-      audioBuffer = await context.decodeAudioData(arrayBuffer);
-      
-      // Guardar en caché para futuras reproducciones
-      if (!(window as any).__audioBufferCache) {
-        (window as any).__audioBufferCache = {};
+      try {
+        // Cargar y decodificar archivo de audio
+        const response = await fetch(heartbeatUrl);
+        if (!response.ok) {
+          throw new Error(`Error al cargar archivo de audio: ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        audioBuffer = await context.decodeAudioData(arrayBuffer);
+        
+        // Guardar en caché para futuras reproducciones
+        if (!(window as any).__audioBufferCache) {
+          (window as any).__audioBufferCache = {};
+        }
+        (window as any).__audioBufferCache[heartbeatUrl] = audioBuffer;
+      } catch (fetchError) {
+        console.error('Error cargando archivo de audio:', fetchError);
+        // Alternativa: Reproducir un sonido sintetizado si no se puede cargar el archivo
+        return playFallbackHeartbeatSound(context, volume);
       }
-      (window as any).__audioBufferCache[heartbeatUrl] = audioBuffer;
     }
     
     // Crear nodo de fuente y ganancia
@@ -111,6 +120,61 @@ export const playHeartbeatSound = async (
     return true;
   } catch (error) {
     console.error('Error reproduciendo sonido de latido cardíaco:', error);
+    // Intentar reproducir un sonido sintetizado como fallback
+    return playFallbackHeartbeatSound(context, volume);
+  }
+};
+
+/**
+ * Genera y reproduce un latido cardíaco sintetizado como fallback
+ * cuando no se puede cargar o reproducir el archivo de audio real
+ */
+const playFallbackHeartbeatSound = (context: AudioContext, volume = 0.9): boolean => {
+  try {
+    // Crear oscilador para el "lub" (primer sonido del latido)
+    const osc1 = context.createOscillator();
+    osc1.frequency.value = 80;
+    osc1.type = 'sine';
+    
+    // Crear oscilador para el "dub" (segundo sonido del latido)
+    const osc2 = context.createOscillator();
+    osc2.frequency.value = 60;
+    osc2.type = 'sine';
+    
+    // Nodos de ganancia para controlar la amplitud
+    const gainNode1 = context.createGain();
+    const gainNode2 = context.createGain();
+    
+    // Conectar
+    osc1.connect(gainNode1);
+    osc2.connect(gainNode2);
+    gainNode1.connect(context.destination);
+    gainNode2.connect(context.destination);
+    
+    // Configurar la envolvente de amplitud
+    const now = context.currentTime;
+    
+    // Configuración para el primer sonido (lub)
+    gainNode1.gain.setValueAtTime(0, now);
+    gainNode1.gain.linearRampToValueAtTime(volume, now + 0.03);
+    gainNode1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    
+    // Configuración para el segundo sonido (dub)
+    gainNode2.gain.setValueAtTime(0, now + 0.15);
+    gainNode2.gain.linearRampToValueAtTime(volume * 0.7, now + 0.18);
+    gainNode2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    
+    // Reproducir
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.15);
+    osc2.stop(now + 0.35);
+    
+    console.log('Reproduciendo latido cardíaco sintetizado (fallback)');
+    
+    return true;
+  } catch (error) {
+    console.error('Error reproduciendo latido sintetizado:', error);
     return false;
   }
 };
