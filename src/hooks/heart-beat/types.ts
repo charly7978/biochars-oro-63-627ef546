@@ -1,17 +1,19 @@
 
-import type { CardiacAnalysisResult } from '../../modules/vital-signs/CardiacWaveformAnalyzer';
+import { RRAnalysisResult } from '../arrhythmia/types';
+
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
+}
 
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
+  filteredValue?: number;
   arrhythmiaCount: number;
-  rrData: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
   isArrhythmia?: boolean;
-  waveformAnalysis?: CardiacAnalysisResult | null;
+  rrData?: RRIntervalData;
 }
 
 export interface UseHeartBeatReturn {
@@ -23,5 +25,5 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
-  waveformAnalysis?: CardiacAnalysisResult | null;
+  playRealHeartbeatSound?: (volume: number) => Promise<boolean>; // Nueva función para reproducir sonido real
 }

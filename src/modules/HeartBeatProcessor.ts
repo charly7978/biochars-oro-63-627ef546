@@ -1,6 +1,3 @@
-import { cardiacAnalyzer } from './vital-signs/CardiacWaveformAnalyzer';
-import type { CardiacAnalysisResult } from './vital-signs/CardiacWaveformAnalyzer';
-
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -54,8 +51,6 @@ export class HeartBeatProcessor {
   peakCandidateIndex = null;
   peakCandidateValue = 0;
   rrIntervals: number[] = [];
-  waveformPoints: Array<{time: number, value: number, isPeak: boolean}> = [];
-  cardiacAnalysis: CardiacAnalysisResult | null = null;
 
   constructor() {
     this.initAudio();
@@ -226,7 +221,6 @@ export class HeartBeatProcessor {
     isPeak: boolean;
     filteredValue: number;
     arrhythmiaCount: number;
-    waveformAnalysis?: CardiacAnalysisResult | null;
   } {
     // Si no está en modo de monitoreo, retornar valores por defecto
     if (!this.isMonitoring) {
@@ -235,8 +229,7 @@ export class HeartBeatProcessor {
         confidence: 0,
         isPeak: false,
         filteredValue: 0,
-        arrhythmiaCount: 0,
-        waveformAnalysis: null
+        arrhythmiaCount: 0
       };
     }
     
@@ -264,8 +257,7 @@ export class HeartBeatProcessor {
         confidence: 0,
         isPeak: false,
         filteredValue: smoothed,
-        arrhythmiaCount: 0,
-        waveformAnalysis: null
+        arrhythmiaCount: 0
       };
     }
 
@@ -304,19 +296,6 @@ export class HeartBeatProcessor {
     // Confirmar si realmente es un pico (reduce falsos positivos)
     const confirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
     
-    // Almacenar punto de forma de onda para análisis
-    const currentTime = Date.now();
-    this.waveformPoints.push({
-      time: currentTime,
-      value: normalizedValue,
-      isPeak: confirmedPeak
-    });
-    
-    // Mantener buffer limitado a 100 puntos
-    if (this.waveformPoints.length > 100) {
-      this.waveformPoints.shift();
-    }
-    
     // Actualizar BPM si se confirmó el pico
     if (confirmedPeak) {
       this.updateBPM();
@@ -334,26 +313,15 @@ export class HeartBeatProcessor {
       
       this.previousPeakTime = this.lastPeakTime;
       this.lastPeakTime = Date.now();
-      
-      // Realizar análisis cardíaco si tenemos suficientes datos
-      if (this.waveformPoints.length >= 30 && this.rrIntervals.length >= 5) {
-        this.cardiacAnalysis = cardiacAnalyzer.analyzeWaveform(
-          this.waveformPoints,
-          this.rrIntervals,
-          this.getFinalBPM(),
-          0 // Por ahora no tenemos contador de arritmias
-        );
-      }
     }
     
-    // Retornar resultados con análisis de la forma de onda
+    // Retornar resultados
     return {
       bpm: Math.round(this.getFinalBPM()),
       confidence,
       isPeak: confirmedPeak && !this.isInWarmup(),
       filteredValue: smoothed,
-      arrhythmiaCount: 0,
-      waveformAnalysis: this.cardiacAnalysis
+      arrhythmiaCount: 0
     };
   }
 
@@ -542,8 +510,6 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
     this.rrIntervals = [];
-    this.waveformPoints = [];
-    this.cardiacAnalysis = null;
     
     // Intentar asegurar que el contexto de audio esté activo
     if (this.audioContext && this.audioContext.state !== 'running') {
@@ -558,46 +524,5 @@ export class HeartBeatProcessor {
       intervals: [...this.bpmHistory],
       lastPeakTime: this.lastPeakTime
     };
-  }
-
-  public getWaveformPoints(): Array<{time: number, value: number, isPeak: boolean}> {
-    return this.waveformPoints;
-  }
-
-  public getCardiacAnalysis(): CardiacAnalysisResult | null {
-    return this.cardiacAnalysis;
-  }
-
-  public getCardiacSummaryHTML(): string {
-    if (!this.cardiacAnalysis) return '';
-    
-    const analysis = this.cardiacAnalysis;
-    const reliabilityColor = analysis.reliability > 0.7 ? 'rgb(74, 222, 128)' : 
-                           analysis.reliability > 0.4 ? 'rgb(250, 204, 21)' : 
-                           'rgb(248, 113, 113)';
-    
-    return `
-      <div class="mt-3 p-3 bg-gray-800 bg-opacity-60 rounded-lg text-left">
-        <h3 class="text-sm font-medium text-white mb-2">Análisis Cardíaco</h3>
-        
-        <div class="text-sm font-semibold mb-1 text-white">
-          ${analysis.interpretation}
-        </div>
-        
-        <div class="flex items-center gap-x-2 mb-1">
-          <span class="text-xs text-gray-400">Ritmo:</span>
-          <span class="text-xs font-medium text-white">${analysis.rhythmType}</span>
-          
-          <span class="text-xs text-gray-400 ml-2">Calidad:</span>
-          <span class="text-xs font-medium" style="color: ${reliabilityColor}">
-            ${analysis.signalQuality}
-          </span>
-        </div>
-        
-        <div class="text-xs text-gray-300 mt-1">
-          <span class="text-gray-400">Recomendación:</span> ${analysis.recommendations[0] || ''}
-        </div>
-      </div>
-    `;
   }
 }
