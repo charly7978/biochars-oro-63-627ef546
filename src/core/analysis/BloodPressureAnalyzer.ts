@@ -27,7 +27,7 @@ export class BloodPressureAnalyzer {
   constructor(config: Partial<ProcessorConfig> = {}) {
     const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
     this.calibrationFactor = full.nonInvasiveSettings.bpCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.7;
+    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5; // más permisivo
   }
 
   public estimate(values: number[]): BloodPressureResult {
@@ -57,6 +57,17 @@ export class BloodPressureAnalyzer {
 
     this.pushToHistory(estimate);
     this.lastEstimate = this.getAdaptivelySmoothedEstimate(estimate);
+
+    console.log('[BP DEBUG]', {
+      amplitude: amplitude.toFixed(4),
+      slopeRatio: slopeRatio.toFixed(4),
+      width,
+      dicroticDrop: dicroticDrop.toFixed(4),
+      confidence: confidence.toFixed(3),
+      systolic: estimate.systolic,
+      diastolic: estimate.diastolic
+    });
+
     return this.lastEstimate;
   }
 
