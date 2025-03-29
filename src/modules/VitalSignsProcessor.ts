@@ -1,18 +1,23 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
 import { checkSignalQuality } from './heart-beat/signal-quality';
+import { validateFullSignal } from '../core/RealSignalValidator';
+import type { SignalValidationResult } from '../core/RealSignalValidator';
+
+// Re-export types for compatibility
+export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';
 
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
  * No simulation or data manipulation allowed.
- * Improved resistance to false positives
+ * Improved resistance to false positives with signal validation
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
+  private lastValidationResult: SignalValidationResult | null = null;
   
   // Signal measurement parameters
   private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
@@ -51,13 +56,13 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process a PPG signal with improved false positive detection
+   * Process a PPG signal with improved false positive detection and validation
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): VitalSignsResult {
-    // Apply enhanced verification
+  ) {
+    // Apply enhanced verification and store ppg values for validation
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
     
@@ -112,6 +117,18 @@ export class VitalSignsProcessor {
     // Additional stability check to prevent false positives
     const isStable = this.checkSignalStability();
     
+    // RUN SIGNAL VALIDATION before predictive models
+    // This is where we apply validateFullSignal
+    const validationResult = validateFullSignal(this.signalHistory.slice(-100));
+    this.lastValidationResult = validationResult;
+    
+    // Use signal validation result to determine processing eligibility
+    const signalVerified = !isWeakSignal && 
+                          Math.abs(ppgValue) > 0 && 
+                          isStable && 
+                          frameRateConsistent &&
+                          validationResult.valid;
+    
     // Physiological validation - add more checks for real signals
     if (!isWeakSignal && isStable && frameRateConsistent && Math.abs(ppgValue) > 0) {
       // Signal appears valid from physiological perspective
@@ -123,17 +140,13 @@ export class VitalSignsProcessor {
     
     // Enhanced verification with stability requirement
     const hasPhysiologicalValidation = this.validPhysiologicalSignalsCount >= this.MIN_PHYSIOLOGICAL_SIGNALS;
-    const signalVerified = !isWeakSignal && Math.abs(ppgValue) > 0 && isStable && frameRateConsistent;
     
-    if (signalVerified) {
-      this.lastDetectionTime = now;
-    }
-    
-    // Only process verified and stable signals or within guard period
+    // Only process verified and stable signals with validation
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
       return this.processor.processSignal(ppgValue, rrData);
     } else {
-      // Return empty result without processing when signal is uncertain
+      // Return empty result without processing when signal is uncertain or validation fails
+      console.log("Signal validation failed:", validationResult.warnings);
       return {
         spo2: 0,
         pressure: "--/--",
@@ -145,6 +158,13 @@ export class VitalSignsProcessor {
         }
       };
     }
+  }
+  
+  /**
+   * Get the last signal validation result
+   */
+  public getLastValidationResult(): SignalValidationResult | null {
+    return this.lastValidationResult;
   }
   
   /**
@@ -241,6 +261,3 @@ export class VitalSignsProcessor {
     return this.processor.getArrhythmiaCounter();
   }
 }
-
-// Re-export types for compatibility
-export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';
