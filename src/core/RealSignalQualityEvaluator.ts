@@ -1,80 +1,77 @@
 
 /**
- * Evaluador de calidad de señal PPG real
- * Proporciona evaluación básica de calidad de señal
+ * Signal quality evaluation module for PPG signals
+ * Uses real signal data to determine quality metrics
  */
 
 export interface SignalQualityResult {
-  level: number;
-  color: string;
-  label: string;
+  level: number;        // 0 to 1 normalized quality level
+  color: string;        // color identifier for UI (red, yellow, green, etc)
+  label: string;        // human-readable label
+  description?: string; // optional detailed description
 }
 
 /**
- * Evalúa la calidad de la señal PPG
- * @param ppg - Array de valores PPG para evaluar
- * @returns Resultado de evaluación de calidad
+ * Evaluate PPG signal quality based on real signal characteristics
+ * @param values - Array of PPG signal values
+ * @returns Quality assessment result
  */
-export function evaluateSignalQuality(ppg: number[]): SignalQualityResult {
-  if (!ppg || ppg.length < 10) {
-    return { level: 0, color: 'gray', label: 'Sin datos' };
+export const evaluateSignalQuality = (values: number[]): SignalQualityResult => {
+  if (!values || values.length < 10) {
+    return {
+      level: 0, 
+      color: "gray",
+      label: "Sin datos"
+    };
   }
 
-  // Análisis básico de la señal
-  const min = Math.min(...ppg);
-  const max = Math.max(...ppg);
-  const range = max - min;
+  // Calculate basic statistics
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const amplitude = max - min;
   
-  // Calcular varianza para detector ruido
-  const mean = ppg.reduce((sum, val) => sum + val, 0) / ppg.length;
-  const variance = ppg.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / ppg.length;
-  const normalizedVariance = variance / (mean * mean);
+  // Calculate average and standard deviation
+  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const stdDev = Math.sqrt(
+    values.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / values.length
+  );
   
-  // Detectar inestabilidad
-  let changes = 0;
-  let lastDirection = 0;
+  // Calculate signal-to-noise ratio (simplified)
+  const snr = amplitude / (stdDev + 0.01);  // Add small epsilon to avoid division by zero
   
-  for (let i = 1; i < ppg.length; i++) {
-    const direction = ppg[i] > ppg[i-1] ? 1 : ppg[i] < ppg[i-1] ? -1 : 0;
-    if (direction !== 0 && direction !== lastDirection) {
-      changes++;
-      lastDirection = direction;
+  // Check for peaks and signal consistency
+  let peakCount = 0;
+  for (let i = 1; i < values.length - 1; i++) {
+    if (values[i] > values[i-1] && values[i] > values[i+1]) {
+      peakCount++;
     }
   }
   
-  const changeRate = changes / ppg.length;
+  // Normalized metrics (0-1 scale)
+  const amplitudeScore = Math.min(1, amplitude / 0.5);
+  const snrScore = Math.min(1, snr / 5);
+  const peakScore = Math.min(1, peakCount / (values.length / 15));
   
-  // Calcular nivel de calidad (0-1)
-  let level = 0;
+  // Weighted quality level
+  const level = 0.5 * amplitudeScore + 0.3 * snrScore + 0.2 * peakScore;
   
-  // Factores de calidad
-  const amplitudeScore = Math.min(range * 3, 0.5); // Amplitud contribuye hasta 50%
-  const stabilityScore = Math.max(0, 0.3 - normalizedVariance * 2); // Estabilidad hasta 30% 
-  const rhythmScore = Math.max(0, 0.2 - Math.abs(changeRate - 0.15) * 0.8); // Ritmo hasta 20%
+  // Determine color and label based on quality level
+  let color = "gray";
+  let label = "Desconocida";
   
-  level = amplitudeScore + stabilityScore + rhythmScore;
-  level = Math.min(1, Math.max(0, level));
-  
-  // Determinar color y etiqueta
-  let color = 'gray';
-  let label = 'Desconocida';
-  
-  if (level > 0.85) {
-    color = 'green';
-    label = 'Excelente';
-  } else if (level > 0.65) {
-    color = 'green';
-    label = 'Buena';
-  } else if (level > 0.45) {
-    color = 'yellow';
-    label = 'Regular';
-  } else if (level > 0.25) {
-    color = 'orange';
-    label = 'Baja';
+  if (level < 0.3) {
+    color = "red";
+    label = "Señal débil";
+  } else if (level < 0.6) {
+    color = "yellow";
+    label = "Señal media";
+  } else if (level < 0.85) {
+    color = "green";
+    label = "Señal buena";
   } else {
-    color = 'red';
-    label = 'Muy baja';
+    color = "emerald";
+    label = "Señal óptima";
   }
   
   return { level, color, label };
-}
+};

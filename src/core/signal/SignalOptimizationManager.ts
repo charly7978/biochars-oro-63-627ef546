@@ -1,8 +1,21 @@
 
 import { AdaptiveOptimizer, OptimizedChannel } from './AdaptiveOptimizer';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
-import { ProcessedSignal, OptimizationResult, SignalValidationInfo } from '../types';
-import { validateFullSignal } from '../RealSignalValidator';
+import { ProcessedSignal } from '../types';
+
+/**
+ * Interfaz para resultados de optimización de señal
+ */
+export interface OptimizationResult {
+  heartRate: {
+    value: number;
+    confidence: number;
+  };
+  optimizedChannels: Map<string, OptimizedChannel>;
+  signalQuality: number;
+  isDominantFrequencyValid: boolean;
+  dominantFrequency: number;
+}
 
 /**
  * Gestor de optimización de señales
@@ -36,7 +49,6 @@ export class SignalOptimizationManager {
   
   /**
    * Procesa una nueva señal y devuelve resultado optimizado
-   * Incluye validación de señal antes de enviar a modelos predictivos
    */
   public processSignal(signal: ProcessedSignal): OptimizationResult {
     // Extraer valor filtrado de la señal
@@ -105,19 +117,6 @@ export class SignalOptimizationManager {
     // Calcular calidad general
     const signalQuality = this.optimizer.getSignalQuality();
     
-    // VALIDACIÓN DE SEÑAL
-    // Ejecutar validación antes de que los modelos predictivos usen la señal
-    const recentValues = this.signalBuffer.slice(-100);
-    const validationResult = validateFullSignal(recentValues);
-    
-    // Integrar validación al resultado
-    const validationInfo: SignalValidationInfo = {
-      isValid: validationResult.valid,
-      signalLevel: validationResult.level,
-      warnings: validationResult.warnings,
-      validationResult: validationResult
-    };
-    
     // Proporcionar feedback al optimizador
     this.provideFeedbackToOptimizer(optimizedChannels, heartRate, confidence);
     
@@ -130,8 +129,7 @@ export class SignalOptimizationManager {
       optimizedChannels,
       signalQuality,
       dominantFrequency,
-      isDominantFrequencyValid,
-      validationInfo
+      isDominantFrequencyValid
     };
     
     // Almacenar resultado

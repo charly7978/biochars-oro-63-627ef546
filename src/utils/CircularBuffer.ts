@@ -1,40 +1,61 @@
 
 export interface PPGDataPoint {
-  x: number;
-  y: number;
-  value: number;
   time: number;
+  value: number;
 }
 
-export class CircularBuffer<T extends PPGDataPoint> {
+export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
   private buffer: T[];
   private capacity: number;
+  private index: number;
+  private isFull: boolean;
 
   constructor(capacity: number) {
-    this.buffer = [];
+    this.buffer = new Array<T>(capacity);
     this.capacity = capacity;
+    this.index = 0;
+    this.isFull = false;
   }
 
-  add(item: T): void {
-    if (this.buffer.length >= this.capacity) {
-      this.buffer.shift();
+  public push(item: T): void {
+    this.buffer[this.index] = item;
+    this.index = (this.index + 1) % this.capacity;
+    if (this.index === 0) {
+      this.isFull = true;
     }
-    this.buffer.push(item);
   }
 
-  getPoints(): T[] {
-    return [...this.buffer];
+  public get(index: number): T | undefined {
+    if (!this.isFull && index >= this.index) {
+      return undefined;
+    }
+    
+    const adjustedIndex = (this.index + index) % this.capacity;
+    return this.buffer[adjustedIndex];
   }
 
-  clear(): void {
-    this.buffer = [];
+  public getPoints(): T[] {
+    if (this.isFull) {
+      return [
+        ...this.buffer.slice(this.index),
+        ...this.buffer.slice(0, this.index)
+      ].filter(p => p !== undefined);
+    }
+    
+    return this.buffer.slice(0, this.index).filter(p => p !== undefined);
   }
 
-  getSize(): number {
-    return this.buffer.length;
+  public clear(): void {
+    this.buffer = new Array<T>(this.capacity);
+    this.index = 0;
+    this.isFull = false;
   }
 
-  getCapacity(): number {
-    return this.capacity;
+  public size(): number {
+    return this.isFull ? this.capacity : this.index;
+  }
+
+  public isEmpty(): boolean {
+    return this.index === 0 && !this.isFull;
   }
 }
