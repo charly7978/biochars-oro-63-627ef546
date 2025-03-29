@@ -1,4 +1,3 @@
-
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { optimizeElement } from '../utils/displayOptimizer';
 import { AlertCircle, Heart } from 'lucide-react';
@@ -14,14 +13,12 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Apply optimizations after component mounts
   useEffect(() => {
     if (containerRef.current) {
       optimizeElement(containerRef.current);
     }
   }, []);
   
-  // Animate heart when BPM updates and is reliable
   useEffect(() => {
     if (bpm > 0 && isReliable) {
       setIsAnimating(true);
@@ -85,13 +82,12 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
           fill={isReliable ? "currentColor" : "none"}
           strokeWidth={1.5}
         />
-        <span className={`text-3xl font-bold typography-medical-data ${getValueClass()} animate-subtle-pulse drop-shadow-[0_0_12px_rgba(140,180,255,0.5)]`}>
+        <span className={`text-4xl font-bold typography-medical-data ${getValueClass()} animate-subtle-pulse drop-shadow-[0_0_12px_rgba(140,180,255,0.5)]`}>
           {bpm > 0 ? bpm : '--'}
         </span>
         <span className="text-blue-100/90 text-xs unit-text">BPM</span>
       </div>
       
-      {/* Signal amplification indicator */}
       {confidence > 0 && (
         <div className="mt-1.5 w-full bg-blue-900/20 rounded-full h-0.5 overflow-hidden">
           <div 

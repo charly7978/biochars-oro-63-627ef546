@@ -1,24 +1,21 @@
-
-import React, { useState } from 'react';
+import React from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp, X } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
   value: string | number;
   unit?: string;
   highlighted?: boolean;
-  calibrationProgress?: number;
 }
 
 const VitalSign = ({ 
   label, 
   value, 
   unit, 
-  highlighted = false,
-  calibrationProgress 
+  highlighted = false
 }: VitalSignProps) => {
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
@@ -228,40 +225,20 @@ const VitalSign = ({
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
+        <div className="relative flex flex-col justify-center items-center p-2 text-center cursor-pointer transition-colors duration-200 h-full w-full bg-blue-900/5 rounded-lg">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-blue-100/90 mb-1">
             {label}
           </div>
           
-          <div className="font-bold text-2xl sm:text-3xl transition-all duration-300">
-            <span className="text-gradient-soft drop-shadow-[0_0_8px_rgba(255,255,255,0.25)] animate-subtle-pulse">
+          <div className="font-bold text-3xl sm:text-4xl transition-all duration-300">
+            <span className="text-gradient-soft drop-shadow-[0_0_12px_rgba(140,180,255,0.5)] animate-subtle-pulse">
               {formattedValue}
             </span>
-            {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
+            {unit && <span className="text-xs text-blue-100/90 ml-1">{unit}</span>}
           </div>
-
-          {riskLabel && (
-            <div className={`text-sm font-medium mt-1 ${riskColor}`}>
-              {riskLabel}
-            </div>
-          )}
-          
-          {calibrationProgress !== undefined && (
-            <div className="absolute inset-0 bg-transparent overflow-hidden pointer-events-none border-0">
-              <div 
-                className="h-full bg-blue-500/5 transition-all duration-300 ease-out"
-                style={{ width: `${calibrationProgress}%` }}
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs text-white/80">
-                  {calibrationProgress < 100 ? `${Math.round(calibrationProgress)}%` : '✓'}
-                </span>
-              </div>
-            </div>
-          )}
           
           <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-            <ChevronUp size={16} className="text-gray-400" />
+            <ChevronUp size={16} className="text-blue-400/60" />
           </div>
         </div>
       </SheetTrigger>
