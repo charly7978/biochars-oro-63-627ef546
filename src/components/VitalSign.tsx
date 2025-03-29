@@ -1,8 +1,9 @@
+
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp } from 'lucide-react';
+import { ChevronUp, AlertTriangle } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
@@ -44,21 +45,21 @@ const VitalSign = ({
             const systolic = parseInt(pressureParts[0], 10);
             const diastolic = parseInt(pressureParts[1], 10);
             if (!isNaN(systolic) && !isNaN(diastolic)) {
-              if (systolic >= 140 || diastolic >= 90) return 'Hipertensión';
-              if (systolic < 90 || diastolic < 60) return 'Hipotensión';
+              if (systolic >= 135 || diastolic >= 85) return 'Hipertensión'; // Slightly reduced from 140/90 for earlier detection
+              if (systolic < 95 || diastolic < 65) return 'Hipotensión'; // Slightly increased from 90/60 for earlier detection
             }
           }
           return '';
         case 'COLESTEROL':
           const cholesterol = parseInt(String(value), 10);
           if (!isNaN(cholesterol)) {
-            if (cholesterol > 200) return 'Hipercolesterolemia';
+            if (cholesterol > 190) return 'Hipercolesterolemia'; // Reduced from 200 for earlier detection
           }
           return '';
         case 'TRIGLICÉRIDOS':
           const triglycerides = parseInt(String(value), 10);
           if (!isNaN(triglycerides)) {
-            if (triglycerides > 150) return 'Hipertrigliceridemia';
+            if (triglycerides > 140) return 'Hipertrigliceridemia'; // Reduced from 150 for earlier detection
           }
           return '';
         default:
@@ -214,6 +215,30 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
+    // Enhanced display for blood pressure with improved parsing
+    if (label === 'PRESIÓN ARTERIAL' && typeof value === 'string') {
+      // Handle "--/--" case
+      if (value === "--/--") return value;
+      
+      // Parse for standard format
+      const parts = value.split('/');
+      if (parts.length === 2) {
+        const systolic = parseInt(parts[0], 10);
+        const diastolic = parseInt(parts[1], 10);
+        if (!isNaN(systolic) && !isNaN(diastolic)) {
+          return value; // Return original if valid format
+        }
+      }
+      
+      // Try to extract numbers if format is unusual
+      const numbers = value.match(/\d+/g);
+      if (numbers && numbers.length >= 2) {
+        return `${numbers[0]}/${numbers[1]}`;
+      }
+      
+      return value; // Return original if no parsing worked
+    }
+    
     return value;
   };
 
@@ -221,6 +246,9 @@ const VitalSign = ({
   const riskColor = getRiskColor(riskLabel);
   const detailedInfo = getDetailedInfo(label, value);
   const formattedValue = displayValue(label, value);
+  
+  // Determine if blood pressure is currently being measured (shows "--/--")
+  const isMeasuring = label === 'PRESIÓN ARTERIAL' && value === "--/--";
 
   return (
     <Sheet>
@@ -231,11 +259,20 @@ const VitalSign = ({
           </div>
           
           <div className="font-bold text-3xl sm:text-4xl transition-all duration-300">
-            <span className="text-gradient-soft drop-shadow-[0_0_12px_rgba(140,180,255,0.5)] animate-subtle-pulse">
+            <span className={`text-gradient-soft drop-shadow-[0_0_12px_rgba(140,180,255,0.5)] ${
+              label === 'PRESIÓN ARTERIAL' ? 'animate-pulse-subtle' : 'animate-subtle-pulse'
+            }`}>
               {formattedValue}
             </span>
             {unit && <span className="text-xs text-blue-100/90 ml-1">{unit}</span>}
           </div>
+          
+          {riskLabel && (
+            <div className={`absolute top-1 right-1 flex items-center ${riskColor} text-xs`}>
+              <AlertTriangle size={12} className="mr-1" />
+              <span className="text-[8px] font-medium">{riskLabel}</span>
+            </div>
+          )}
           
           <div className="absolute bottom-0 left-0 right-0 flex justify-center">
             <ChevronUp size={16} className="text-blue-400/60" />
