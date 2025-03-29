@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -223,32 +222,30 @@ const PPGSignalMeter = memo(({
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
   }, []);
 
-  // Función para dibujar circulo de arritmia
   const drawArrhythmiaCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, type: ArrhythmiaEvent['type']) => {
     ctx.beginPath();
     ctx.arc(x, y, 8, 0, 2 * Math.PI);
 
     switch (type) {
       case 'bradycardia':
-        ctx.fillStyle = '#3B82F6'; // azul
+        ctx.fillStyle = '#3B82F6';
         break;
       case 'tachycardia':
-        ctx.fillStyle = '#F97316'; // naranja
+        ctx.fillStyle = '#F97316';
         break;
       case 'extrasystole':
-        ctx.fillStyle = '#EF4444'; // rojo
+        ctx.fillStyle = '#EF4444';
         break;
       case 'irregular':
-        ctx.fillStyle = '#A855F7'; // violeta
+        ctx.fillStyle = '#A855F7';
         break;
       default:
-        ctx.fillStyle = '#9CA3AF'; // gris
+        ctx.fillStyle = '#9CA3AF';
         break;
     }
 
     ctx.fill();
 
-    // Opcional: mostrar texto arriba
     ctx.font = '12px Inter';
     ctx.fillStyle = '#000000';
     ctx.textAlign = 'center';
@@ -396,28 +393,60 @@ const PPGSignalMeter = memo(({
           beepPlayed: false
         });
         
-        // Si encontramos picos válidos, comprobamos arritmias
         if (peaksRef.current.length >= 2) {
           const lastPeak = peaksRef.current[peaksRef.current.length - 2];
           const currentPeak = peaksRef.current[peaksRef.current.length - 1];
           
-          // Calcular intervalo RR en milisegundos
           const rr = currentPeak.time - lastPeak.time;
           
-          // Detectar arritmia con el intervalo RR
           const arrhythmia = arrhythmiaDetectorRef.current.update(rr);
           
           if (arrhythmia) {
             console.log(`Arritmia detectada: ${arrhythmia.type} - BPM: ${arrhythmia.bpm.toFixed(1)}`);
             arrhythmiaEventsRef.current.push(arrhythmia);
             
-            // Mantenemos solo eventos recientes
             if (arrhythmiaEventsRef.current.length > 10) {
               arrhythmiaEventsRef.current.shift();
             }
             
-            // Activar feedback para el tipo específico de arritmia
             triggerHeartbeatFeedback(arrhythmia.type);
+            
+            if (navigator.vibrate) {
+              try {
+                navigator.vibrate([100, 50, 100]);
+                console.log('Vibración de arritmia activada');
+              } catch (err) {
+                console.error('Error al activar vibración:', err);
+              }
+            }
+          } else {
+            if (navigator.vibrate) {
+              try {
+                if (quality < 40) {
+                  navigator.vibrate([30, 30]);
+                  console.log('Vibración de señal débil activada');
+                } else {
+                  let rmssd = 0;
+                  if (peaksRef.current.length >= 6) {
+                    const lastTimes = peaksRef.current.slice(-6).map(p => p.time);
+                    const intervals = lastTimes.slice(1).map((t, i) => t - lastTimes[i]);
+                    const diffs = intervals.slice(1).map((iv, i) => iv - intervals[i]);
+                    const squaredDiffs = diffs.map(d => d * d);
+                    rmssd = Math.sqrt(squaredDiffs.reduce((sum, d) => sum + d, 0) / squaredDiffs.length);
+                  }
+                  
+                  if (rmssd < 20) {
+                    navigator.vibrate([20]);
+                    console.log('Vibración de ritmo tenso activada (rmssd bajo)');
+                  } else {
+                    navigator.vibrate([10]);
+                    console.log('Vibración de latido normal activada');
+                  }
+                }
+              } catch (err) {
+                console.error('Error al activar vibración:', err);
+              }
+            }
           }
         }
       }
@@ -428,7 +457,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, []);
+  }, [quality, triggerHeartbeatFeedback]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -554,7 +583,6 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Dibujar picos detectados
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - peak.value;
@@ -590,10 +618,9 @@ const PPGSignalMeter = memo(({
         }
       });
       
-      // Dibujar eventos de arritmia
       arrhythmiaEventsRef.current.forEach(arrhythmia => {
         const x = canvas.width - ((now - arrhythmia.timestamp) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2; // posición central, podría ajustarse con valor real si es necesario
+        const y = canvas.height / 2;
         
         if (x >= 0 && x <= canvas.width) {
           drawArrhythmiaCircle(renderCtx, x, y, arrhythmia.type);
