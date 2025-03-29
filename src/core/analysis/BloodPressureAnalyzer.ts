@@ -31,10 +31,6 @@ export class BloodPressureAnalyzer {
     this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5;
   }
 
-  public calculateBloodPressure(values: number[]): BloodPressureResult {
-    return this.estimate(values);
-  }
-
   public estimate(values: number[]): BloodPressureResult {
     if (values.length < this.MIN_REQUIRED_SAMPLES) return this.lastEstimate;
 

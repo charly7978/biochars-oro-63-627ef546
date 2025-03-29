@@ -1,3 +1,4 @@
+
 export interface ProcessorConfig {
   // Configuración general
   lowPowerMode: boolean;
@@ -50,9 +51,6 @@ export interface ProcessorConfig {
     glucoseCalibrationFactor: number;
     lipidCalibrationFactor: number;
     hemoglobinCalibrationFactor: number;
-    cholesterolCalibrationFactor: number;
-    triglycerideCalibrationFactor: number;
-    bpCalibrationFactor: number;
     confidenceThreshold: number;
   };
 }
@@ -108,9 +106,6 @@ export const DEFAULT_PROCESSOR_CONFIG: ProcessorConfig = {
     glucoseCalibrationFactor: 1.0,
     lipidCalibrationFactor: 1.0,
     hemoglobinCalibrationFactor: 1.0,
-    cholesterolCalibrationFactor: 1.0,
-    triglycerideCalibrationFactor: 1.0,
-    bpCalibrationFactor: 1.0,
     confidenceThreshold: 0.7,
   }
 };

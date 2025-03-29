@@ -9,8 +9,6 @@ import { useEffect, useRef } from 'react';
 export function useHeartbeatFeedback(enabled: boolean = true) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
-  const lastTriggerTimeRef = useRef<number>(0);
-  const MIN_TRIGGER_INTERVAL = 250; // milisegundos entre vibraciones para evitar sobrecargas
 
   useEffect(() => {
     if (!enabled) return;
@@ -29,37 +27,27 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   }, [enabled]);
 
   const trigger = () => {
-    if (!enabled) return;
+    if (!enabled || !audioCtxRef.current) return;
 
-    const now = Date.now();
-    // Limitar la frecuencia de retroalimentación para evitar vibraciones excesivas
-    if (now - lastTriggerTimeRef.current < MIN_TRIGGER_INTERVAL) {
-      return;
-    }
-    lastTriggerTimeRef.current = now;
-
-    // Vibración táctil siempre que esté disponible
+    // Vibración táctil
     if ('vibrate' in navigator) {
-      navigator.vibrate(50); // vibración corta de 50ms
-      console.log("Vibración activada para latido cardíaco");
+      navigator.vibrate(50); // vibración corta
     }
 
-    // Generar un bip sencillo con oscilador si tenemos contexto de audio
-    if (audioCtxRef.current) {
-      const ctx = audioCtxRef.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+    // Generar un bip sencillo con oscilador
+    const ctx = audioCtxRef.current;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
 
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, ctx.currentTime); // Frecuencia aguda
-      gain.gain.setValueAtTime(0.05, ctx.currentTime); // volumen suave
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // Frecuencia aguda
+    gain.gain.setValueAtTime(0.05, ctx.currentTime); // volumen suave
 
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
 
-      osc.start();
-      osc.stop(ctx.currentTime + 0.1); // corta a los 100ms
-    }
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1); // corta a los 100ms
   };
 
   return trigger;
