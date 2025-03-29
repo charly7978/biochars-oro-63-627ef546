@@ -80,7 +80,7 @@ const PPGSignalMeter = memo(({
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 350;
 
-  const triggerHeartbeatFeedback = useHeartbeatFeedback();
+  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -123,7 +123,6 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      // Usar el hook de retroalimentación en lugar del código anterior
       triggerHeartbeatFeedback();
       
       lastBeepTimeRef.current = now;
@@ -537,7 +536,7 @@ const PPGSignalMeter = memo(({
     
     if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep y activando vibración");
       playBeep(1.0);
     }
     
