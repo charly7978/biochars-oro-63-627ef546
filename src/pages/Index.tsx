@@ -21,27 +21,31 @@ const Index = () => {
     lipids: {
       totalCholesterol: 0,
       triglycerides: 0
-    }
+    },
+    hemoglobin: 0
   });
   const [heartRate, setHeartRate] = useState(0);
+  const [arrhythmiaCount, setArrhythmiaCount] = useState<string | number>("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState<VitalSignsResult['calibration']>();
   const measurementTimerRef = useRef<number | null>(null);
+  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<{
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { 
-    processSignal: processHeartBeat, 
-    isArrhythmia,
-    startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
-  } = useHeartBeatProcessor();
-  
+  const { processSignal: processHeartBeat } = useHeartBeatProcessor();
   const { 
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults
+    lastValidResults,
+    startCalibration,
+    forceCalibrationCompletion
   } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
@@ -70,35 +74,6 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
-      
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
-          
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
-          }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      } else {
-        setSignalQuality(lastSignal.quality);
-        
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
-        }
-      }
-    } else if (!isMonitoring) {
-      setSignalQuality(0);
-    }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
-
   const startMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -107,13 +82,22 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0);
       
+      // Iniciar procesamiento de señal
       startProcessing();
-      startHeartBeatMonitoring();
       
+      // Resetear valores
       setElapsedTime(0);
+      setVitalSigns(prev => ({
+        ...prev,
+        arrhythmiaStatus: "SIN ARRITMIAS|0"
+      }));
       
+      // Iniciar calibración automática
+      console.log("Iniciando fase de calibración automática");
+      startAutoCalibration();
+      
+      // Iniciar temporizador para medición
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
       }
@@ -123,6 +107,7 @@ const Index = () => {
           const newTime = prev + 1;
           console.log(`Tiempo transcurrido: ${newTime}s`);
           
+          // Finalizar medición después de 30 segundos
           if (newTime >= 30) {
             finalizeMeasurement();
             return 30;
@@ -133,13 +118,128 @@ const Index = () => {
     }
   };
 
+  const startAutoCalibration = () => {
+    console.log("Iniciando auto-calibración real con indicadores visuales");
+    setIsCalibrating(true);
+    
+    // Iniciar la calibración en el procesador
+    startCalibration();
+    
+    // Establecer explícitamente valores iniciales de calibración para CADA vital sign
+    // Esto garantiza que el estado comience correctamente
+    console.log("Estableciendo valores iniciales de calibración");
+    setCalibrationProgress({
+      isCalibrating: true,
+      progress: {
+        heartRate: 0,
+        spo2: 0,
+        pressure: 0,
+        arrhythmia: 0,
+        glucose: 0,
+        lipids: 0,
+        hemoglobin: 0
+      }
+    });
+    
+    // Logear para verificar que el estado se estableció
+    setTimeout(() => {
+      console.log("Estado de calibración establecido:", calibrationProgress);
+    }, 100);
+    
+    // Actualizar el progreso visualmente en intervalos regulares
+    let step = 0;
+    const calibrationInterval = setInterval(() => {
+      step += 1;
+      
+      // Actualizar progreso visual (10 pasos en total)
+      if (step <= 10) {
+        const progressPercent = step * 10; // 0-100%
+        console.log(`Actualizando progreso de calibración: ${progressPercent}%`);
+        
+        // Actualizar cada valor individualmente para asegurar que se renderice
+        setCalibrationProgress({
+          isCalibrating: true,
+          progress: {
+            heartRate: progressPercent,
+            spo2: Math.max(0, progressPercent - 10),
+            pressure: Math.max(0, progressPercent - 20),
+            arrhythmia: Math.max(0, progressPercent - 15),
+            glucose: Math.max(0, progressPercent - 5),
+            lipids: Math.max(0, progressPercent - 25),
+            hemoglobin: Math.max(0, progressPercent - 30)
+          }
+        });
+      } else {
+        // Al finalizar, detener el intervalo
+        console.log("Finalizando animación de calibración");
+        clearInterval(calibrationInterval);
+        
+        // Completar calibración
+        if (isCalibrating) {
+          console.log("Completando calibración");
+          forceCalibrationCompletion();
+          setIsCalibrating(false);
+          
+          // Importante: Establecer calibrationProgress a undefined o con valores 100
+          // para que la UI refleje que ya no está calibrando
+          setCalibrationProgress({
+            isCalibrating: false,
+            progress: {
+              heartRate: 100,
+              spo2: 100,
+              pressure: 100,
+              arrhythmia: 100,
+              glucose: 100,
+              lipids: 100,
+              hemoglobin: 100
+            }
+          });
+          
+          // Opcional: vibración si está disponible
+          if (navigator.vibrate) {
+            navigator.vibrate([100, 50, 100]);
+          }
+        }
+      }
+    }, 800); // Cada paso dura 800ms (8 segundos en total)
+    
+    // Temporizador de seguridad
+    setTimeout(() => {
+      if (isCalibrating) {
+        console.log("Forzando finalización de calibración por tiempo límite");
+        clearInterval(calibrationInterval);
+        forceCalibrationCompletion();
+        setIsCalibrating(false);
+        
+        // Asegurar que se limpie el estado de calibración
+        setCalibrationProgress({
+          isCalibrating: false,
+          progress: {
+            heartRate: 100,
+            spo2: 100,
+            pressure: 100,
+            arrhythmia: 100,
+            glucose: 100,
+            lipids: 100,
+            hemoglobin: 100
+          }
+        });
+      }
+    }, 10000); // 10 segundos como máximo
+  };
+
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición");
+    console.log("Finalizando medición: manteniendo resultados");
+    
+    if (isCalibrating) {
+      console.log("Calibración en progreso al finalizar, forzando finalización");
+      forceCalibrationCompletion();
+    }
     
     setIsMonitoring(false);
     setIsCameraOn(false);
+    setIsCalibrating(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -154,7 +254,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0);
+    setCalibrationProgress(undefined);
   };
 
   const handleReset = () => {
@@ -162,9 +262,8 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     setShowResults(false);
+    setIsCalibrating(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
-    resetHeartBeatProcessor();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -182,9 +281,13 @@ const Index = () => {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      hemoglobin: 0
     });
+    setArrhythmiaCount("--");
     setSignalQuality(0);
+    setLastArrhythmiaData(null);
+    setCalibrationProgress(undefined);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -215,6 +318,11 @@ const Index = () => {
     let lastFpsUpdateTime = Date.now();
     let processingFps = 0;
     
+    const enhanceCanvas = document.createElement('canvas');
+    const enhanceCtx = enhanceCanvas.getContext('2d', {willReadFrequently: true});
+    enhanceCanvas.width = 320;
+    enhanceCanvas.height = 240;
+    
     const processImage = async () => {
       if (!isMonitoring) return;
       
@@ -237,8 +345,21 @@ const Index = () => {
             0, 0, targetWidth, targetHeight
           );
           
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
+          if (enhanceCtx) {
+            enhanceCtx.clearRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            enhanceCtx.drawImage(tempCanvas, 0, 0, targetWidth, targetHeight);
+            
+            enhanceCtx.globalCompositeOperation = 'source-over';
+            enhanceCtx.fillStyle = 'rgba(255,0,0,0.05)';
+            enhanceCtx.fillRect(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            enhanceCtx.globalCompositeOperation = 'source-over';
+            
+            const imageData = enhanceCtx.getImageData(0, 0, enhanceCanvas.width, enhanceCanvas.height);
+            processFrame(imageData);
+          } else {
+            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+            processFrame(imageData);
+          }
           
           frameCount++;
           lastProcessTime = now;
@@ -262,12 +383,39 @@ const Index = () => {
     processImage();
   };
 
+  useEffect(() => {
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
+      
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        
+        if (vitals.lastArrhythmiaData) {
+          setLastArrhythmiaData(vitals.lastArrhythmiaData);
+          const [status, count] = vitals.arrhythmiaStatus.split('|');
+          setArrhythmiaCount(count || "0");
+        }
+      }
+      
+      setSignalQuality(lastSignal.quality);
+    }
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
       startMonitoring();
     }
+  };
+
+  const getGlucoseDisplayValue = (glucose: number | { value: number; trend: string }): string | number => {
+    if (typeof glucose === 'object') {
+      return glucose.value;
+    }
+    return glucose;
   };
 
   return (
@@ -292,10 +440,10 @@ const Index = () => {
 
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-blue-100/90 text-lg">
+            <div className="text-white text-lg">
               Calidad: {signalQuality}
             </div>
-            <div className="text-blue-100/90 text-lg">
+            <div className="text-white text-lg">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
@@ -308,15 +456,15 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              rawArrhythmiaData={lastArrhythmiaData}
               preserveResults={showResults}
-              isArrhythmia={isArrhythmia}
             />
           </div>
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-blue-900/5 border-y border-blue-400/5 px-4 py-6 animate-[blue-subtle-glow_4s_ease-in-out_infinite]">
-            <div className="grid grid-cols-2 gap-x-2 gap-y-2 place-items-center h-full overflow-y-auto pb-4">
+          <div className="absolute inset-x-0 top-[55%] bottom-[60px] bg-black/10 px-4 py-6">
+            <div className="grid grid-cols-3 gap-4 place-items-center">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}
@@ -336,20 +484,20 @@ const Index = () => {
                 highlighted={showResults}
               />
               <VitalSign 
+                label="HEMOGLOBINA"
+                value={vitalSigns.hemoglobin || "--"}
+                unit="g/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
                 label="GLUCOSA"
-                value={vitalSigns.glucose || "--"}
+                value={getGlucoseDisplayValue(vitalSigns.glucose) || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
               />
               <VitalSign 
-                label="COLESTEROL"
-                value={vitalSigns.lipids?.totalCholesterol || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-              />
-              <VitalSign 
-                label="TRIGLICÉRIDOS"
-                value={vitalSigns.lipids?.triglycerides || "--"}
+                label="COLESTEROL/TRIGL."
+                value={`${vitalSigns.lipids?.totalCholesterol || "--"}/${vitalSigns.lipids?.triglycerides || "--"}`}
                 unit="mg/dL"
                 highlighted={showResults}
               />

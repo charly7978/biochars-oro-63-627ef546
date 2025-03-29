@@ -1,94 +1,70 @@
 
 /**
- * Interfaz base para los puntos de datos utilizados en el buffer circular
+ * Estructura de datos para un punto de datos PPG
  */
 export interface PPGDataPoint {
-  time: number;  // Timestamp in milliseconds
-  value: number; // Signal value
+  time: number;      // Marca de tiempo en milisegundos
+  value: number;     // Valor de la señal PPG
+  isArrhythmia: boolean; // Indica si este punto coincide con una arritmia detectada
 }
 
 /**
- * Buffer circular para almacenar datos de PPG con eficiencia
- * Mantiene un número fijo de elementos, eliminando los más antiguos
- * cuando se añaden nuevos elementos y se excede la capacidad
+ * Buffer circular para almacenar y gestionar puntos de datos PPG
+ * Mantiene un tamaño fijo y elimina los elementos más antiguos cuando se llena
  */
-export class CircularBuffer<T extends PPGDataPoint> {
-  private buffer: T[];
-  private capacity: number;
-  private head: number = 0;
-  private size: number = 0;
+export class CircularBuffer {
+  private buffer: PPGDataPoint[];
+  private maxSize: number;
 
   /**
-   * Construye un nuevo buffer circular
-   * @param capacity El número máximo de elementos que puede contener el buffer
+   * Crea un nuevo buffer circular
+   * @param size Tamaño máximo del buffer
    */
-  constructor(capacity: number) {
-    this.buffer = new Array<T>(capacity);
-    this.capacity = capacity;
+  constructor(size: number) {
+    this.buffer = [];
+    this.maxSize = size;
   }
 
   /**
-   * Añade un elemento al buffer, desplazando el más antiguo si es necesario
-   * @param item El elemento a añadir
+   * Agrega un nuevo punto al buffer
+   * Si el buffer está lleno, elimina el punto más antiguo
+   * @param point Punto de datos a agregar
    */
-  push(item: T): void {
-    this.buffer[this.head] = item;
-    this.head = (this.head + 1) % this.capacity;
-    this.size = Math.min(this.size + 1, this.capacity);
-  }
-
-  /**
-   * Obtiene todos los elementos actualmente en el buffer, ordenados por tiempo
-   * @returns Array con todos los elementos
-   */
-  getPoints(): T[] {
-    const result: T[] = [];
-    
-    if (this.size === 0) return result;
-    
-    // Si el buffer ha dado la vuelta completa
-    if (this.size === this.capacity) {
-      for (let i = 0; i < this.capacity; i++) {
-        result.push(this.buffer[(this.head + i) % this.capacity]);
-      }
-    } else {
-      // Si el buffer no ha dado la vuelta completa
-      for (let i = 0; i < this.size; i++) {
-        result.push(this.buffer[i]);
-      }
+  push(point: PPGDataPoint): void {
+    this.buffer.push(point);
+    if (this.buffer.length > this.maxSize) {
+      this.buffer.shift();
     }
-    
-    // Ordenar por tiempo para garantizar el orden cronológico
-    return result.sort((a, b) => a.time - b.time);
   }
 
   /**
-   * Limpia el buffer completamente
+   * Obtiene todos los puntos actuales en el buffer
+   * @returns Copia de los puntos en el buffer
+   */
+  getPoints(): PPGDataPoint[] {
+    return [...this.buffer];
+  }
+
+  /**
+   * Vacía el buffer completamente
    */
   clear(): void {
-    this.buffer = new Array<T>(this.capacity);
-    this.head = 0;
-    this.size = 0;
+    this.buffer = [];
   }
-
+  
   /**
-   * Obtiene el número de elementos actualmente en el buffer
+   * Obtiene el tamaño actual del buffer
+   * @returns Número de elementos en el buffer
    */
-  getSize(): number {
-    return this.size;
+  size(): number {
+    return this.buffer.length;
   }
-
+  
   /**
-   * Comprueba si el buffer está vacío
+   * Obtiene el tamaño máximo del buffer
+   * @returns Capacidad máxima del buffer
    */
-  isEmpty(): boolean {
-    return this.size === 0;
-  }
-
-  /**
-   * Comprueba si el buffer está lleno
-   */
-  isFull(): boolean {
-    return this.size === this.capacity;
+  getMaxSize(): number {
+    return this.maxSize;
   }
 }

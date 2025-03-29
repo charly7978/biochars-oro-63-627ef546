@@ -23,18 +23,7 @@ declare global {
   }
 
   interface HTMLElement {
-    requestFullscreen(options?: FullscreenOptions): Promise<void>;
-  }
-  
-  interface FullscreenOptions {
-    navigationUI?: 'auto' | 'hide' | 'show';
-  }
-  
-  // For Android immersive mode via Cordova/Capacitor plugin
-  interface Window {
-    AndroidFullScreen?: {
-      immersiveMode(successCallback: () => void, errorCallback: (error: any) => void): void;
-    };
+    requestFullscreen(): Promise<void>;
   }
 }
 
