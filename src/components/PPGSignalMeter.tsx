@@ -2,9 +2,6 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { ArrhythmiaDetector, ArrhythmiaEvent } from '../modules/heart-beat/ArrhythmiaDetector';
-import { evaluateSignalQuality } from '../core/RealSignalQualityEvaluator';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -52,8 +49,6 @@ const PPGSignalMeter = memo(({
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
-  const arrhythmiaDetectorRef = useRef<ArrhythmiaDetector>(new ArrhythmiaDetector());
-  const arrhythmiaEventsRef = useRef<ArrhythmiaEvent[]>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
@@ -83,8 +78,6 @@ const PPGSignalMeter = memo(({
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 350;
-
-  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -116,7 +109,7 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
-  const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
+  const playBeep = useCallback(async (volume = BEEP_VOLUME) => {
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
@@ -127,9 +120,70 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      const feedbackType: HeartbeatFeedbackType = isArrhythmia ? 'arrhythmia' : 'normal';
-      console.log(`PPGSignalMeter: Activando feedback tipo: ${feedbackType}`);
-      triggerHeartbeatFeedback(feedbackType);
+      if (!audioContextRef.current || audioContextRef.current.state !== 'running') {
+        if (audioContextRef.current) {
+          await audioContextRef.current.resume();
+        } else {
+          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
+        }
+        
+        if (audioContextRef.current.state !== 'running') {
+          console.warn("PPGSignalMeter: No se pudo activar el contexto de audio");
+          return false;
+        }
+      }
+      
+      console.log("PPGSignalMeter: Reproduciendo beep para círculo dibujado, volumen:", volume);
+      
+      const primaryOscillator = audioContextRef.current.createOscillator();
+      const primaryGain = audioContextRef.current.createGain();
+      
+      const secondaryOscillator = audioContextRef.current.createOscillator();
+      const secondaryGain = audioContextRef.current.createGain();
+      
+      primaryOscillator.type = "sine";
+      primaryOscillator.frequency.setValueAtTime(
+        BEEP_PRIMARY_FREQUENCY,
+        audioContextRef.current.currentTime
+      );
+      
+      secondaryOscillator.type = "sine";
+      secondaryOscillator.frequency.setValueAtTime(
+        BEEP_SECONDARY_FREQUENCY,
+        audioContextRef.current.currentTime
+      );
+      
+      const adjustedVolume = Math.min(volume * 2.0, 1.0);
+      
+      primaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+      primaryGain.gain.linearRampToValueAtTime(
+        adjustedVolume,
+        audioContextRef.current.currentTime + 0.0005
+      );
+      primaryGain.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContextRef.current.currentTime + BEEP_DURATION / 1000
+      );
+      
+      secondaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+      secondaryGain.gain.linearRampToValueAtTime(
+        adjustedVolume * 0.8,
+        audioContextRef.current.currentTime + 0.0005
+      );
+      secondaryGain.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContextRef.current.currentTime + BEEP_DURATION / 1000
+      );
+      
+      primaryOscillator.connect(primaryGain);
+      secondaryOscillator.connect(secondaryGain);
+      primaryGain.connect(audioContextRef.current.destination);
+      secondaryGain.connect(audioContextRef.current.destination);
+      
+      primaryOscillator.start(audioContextRef.current.currentTime);
+      secondaryOscillator.start(audioContextRef.current.currentTime);
+      primaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
+      secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -139,7 +193,7 @@ const PPGSignalMeter = memo(({
       console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
     }
-  }, [triggerHeartbeatFeedback]);
+  }, []);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -221,36 +275,6 @@ const PPGSignalMeter = memo(({
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
-  }, []);
-
-  const drawArrhythmiaCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, type: ArrhythmiaEvent['type']) => {
-    ctx.beginPath();
-    ctx.arc(x, y, 8, 0, 2 * Math.PI);
-
-    switch (type) {
-      case 'bradycardia':
-        ctx.fillStyle = '#3B82F6';
-        break;
-      case 'tachycardia':
-        ctx.fillStyle = '#F97316';
-        break;
-      case 'extrasystole':
-        ctx.fillStyle = '#EF4444';
-        break;
-      case 'irregular':
-        ctx.fillStyle = '#A855F7';
-        break;
-      default:
-        ctx.fillStyle = '#9CA3AF';
-        break;
-    }
-
-    ctx.fill();
-
-    ctx.font = '12px Inter';
-    ctx.fillStyle = '#000000';
-    ctx.textAlign = 'center';
-    ctx.fillText(type, x, y - 12);
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -393,26 +417,6 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
-        
-        if (peaksRef.current.length >= 2) {
-          const lastPeak = peaksRef.current[peaksRef.current.length - 2];
-          const currentPeak = peaksRef.current[peaksRef.current.length - 1];
-          
-          const rr = currentPeak.time - lastPeak.time;
-          
-          const arrhythmia = arrhythmiaDetectorRef.current.update(rr);
-          
-          if (arrhythmia) {
-            console.log(`Arritmia detectada: ${arrhythmia.type} - BPM: ${arrhythmia.bpm.toFixed(1)}`);
-            arrhythmiaEventsRef.current.push(arrhythmia);
-            
-            if (arrhythmiaEventsRef.current.length > 10) {
-              arrhythmiaEventsRef.current.shift();
-            }
-            
-            triggerHeartbeatFeedback(arrhythmia.type);
-          }
-        }
       }
     }
     
@@ -581,15 +585,6 @@ const PPGSignalMeter = memo(({
           }
         }
       });
-      
-      arrhythmiaEventsRef.current.forEach(arrhythmia => {
-        const x = canvas.width - ((now - arrhythmia.timestamp) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2;
-        
-        if (x >= 0 && x <= canvas.width) {
-          drawArrhythmiaCircle(renderCtx, x, y, arrhythmia.type);
-        }
-      });
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -602,13 +597,12 @@ const PPGSignalMeter = memo(({
     if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
       console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+      playBeep(1.0);
     }
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, drawArrhythmiaCircle]);
+  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
 
   useEffect(() => {
     renderSignal();
@@ -625,16 +619,11 @@ const PPGSignalMeter = memo(({
     peaksRef.current = [];
     arrhythmiaSegmentsRef.current = [];
     pendingBeepPeakIdRef.current = null;
-    arrhythmiaEventsRef.current = [];
-    arrhythmiaDetectorRef.current.reset();
     onReset();
   }, [onReset]);
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
-  const signalLevel = getAverageQuality();
-  const signalColor = getQualityColor(signalLevel);
-  const signalLabel = getQualityText(signalLevel);
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -650,13 +639,6 @@ const PPGSignalMeter = memo(({
           imageRendering: 'crisp-edges'
         }}
       />
-
-      <div className="absolute top-2 left-2 z-20">
-        <div className="px-2 py-1 text-xs rounded bg-white/80 shadow border border-gray-300 flex items-center gap-2">
-          <div className={`w-3 h-3 rounded-full bg-${signalColor}-500`} />
-          <span className="font-medium text-gray-800">{signalLabel}</span>
-        </div>
-      </div>
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
@@ -679,8 +661,8 @@ const PPGSignalMeter = memo(({
           <Fingerprint
             className={`h-8 w-8 transition-colors duration-300 ${
               !displayFingerDetected ? 'text-gray-400' :
-              signalLevel > 0.85 ? 'text-green-500' :
-              signalLevel > 0.6 ? 'text-yellow-500' :
+              displayQuality > 65 ? 'text-green-500' :
+              displayQuality > 40 ? 'text-yellow-500' :
               'text-red-500'
             }`}
             strokeWidth={1.5}
