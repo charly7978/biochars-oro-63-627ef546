@@ -50,10 +50,6 @@ const Auth = () => {
     }
   };
 
-  const continueAsGuest = () => {
-    navigate("/");
-  };
-
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-8 bg-gray-800 p-6 rounded-lg">
@@ -95,7 +91,6 @@ const Auth = () => {
               : "Iniciar sesión"}
           </Button>
         </form>
-
         <div className="text-center">
           <button
             onClick={() => setIsSignUp(!isSignUp)}
@@ -105,21 +100,6 @@ const Auth = () => {
               ? "¿Ya tienes cuenta? Inicia sesión"
               : "¿No tienes cuenta? Regístrate"}
           </button>
-        </div>
-
-        <div className="pt-2 text-center">
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-gray-600"></div>
-            <span className="flex-shrink mx-4 text-gray-400">o</span>
-            <div className="flex-grow border-t border-gray-600"></div>
-          </div>
-          <Button 
-            onClick={continueAsGuest} 
-            variant="outline" 
-            className="w-full mt-2 border-gray-600 text-white hover:bg-gray-700"
-          >
-            Continuar como invitado
-          </Button>
         </div>
       </div>
     </div>
