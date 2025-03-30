@@ -30,14 +30,14 @@ const ShareButton = () => {
         await navigator.clipboard.writeText(APP_SHARE_URL);
         toast({
           title: "Enlace copiado",
-          description: "El enlace ha sido copiado al portapapeles",
+          description: "El enlace ha sido copiado al portapapeles: " + APP_SHARE_URL,
         });
       }
     } catch (error) {
       console.error("Error sharing: ", error);
       toast({
         title: "Error al compartir",
-        description: "No se pudo compartir el enlace",
+        description: "No se pudo compartir el enlace: " + APP_SHARE_URL,
         variant: "destructive",
       });
     } finally {
@@ -46,15 +46,20 @@ const ShareButton = () => {
   };
 
   return (
-    <Button 
-      onClick={handleShare} 
-      variant="outline" 
-      size="icon" 
-      className="rounded-full bg-black/30 border-none hover:bg-black/50"
-      disabled={isSharing}
-    >
-      <Share2 className="h-5 w-5 text-white" />
-    </Button>
+    <div className="flex flex-col items-center">
+      <Button 
+        onClick={handleShare} 
+        variant="outline" 
+        size="icon" 
+        className="rounded-full bg-black/30 border-none hover:bg-black/50 mb-1"
+        disabled={isSharing}
+      >
+        <Share2 className="h-5 w-5 text-white" />
+      </Button>
+      <span className="text-xs text-white bg-black/50 px-2 py-1 rounded-md">
+        {APP_SHARE_URL}
+      </span>
+    </div>
   );
 };
 
