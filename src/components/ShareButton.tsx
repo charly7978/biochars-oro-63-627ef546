@@ -4,8 +4,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 
-const APP_SHARE_URL = "https://your-actual-app-url.com"; // Replace with YOUR real app URL
-
 const ShareButton = () => {
   const [isSharing, setIsSharing] = useState(false);
 
@@ -15,8 +13,8 @@ const ShareButton = () => {
     try {
       const shareData = {
         title: 'Biochars Health Monitor',
-        text: 'Monitorea tu salud con Biochars Health Monitor',
-        url: APP_SHARE_URL,
+        text: 'Check your vital signs with Biochars Health Monitor!',
+        url: window.location.href,
       };
 
       if (navigator.share && navigator.canShare(shareData)) {
@@ -27,17 +25,17 @@ const ShareButton = () => {
         });
       } else {
         // Fallback to clipboard copy
-        await navigator.clipboard.writeText(APP_SHARE_URL);
+        await navigator.clipboard.writeText(window.location.href);
         toast({
           title: "Enlace copiado",
-          description: "El enlace ha sido copiado al portapapeles: " + APP_SHARE_URL,
+          description: "El enlace ha sido copiado al portapapeles",
         });
       }
     } catch (error) {
       console.error("Error sharing: ", error);
       toast({
         title: "Error al compartir",
-        description: "No se pudo compartir el enlace: " + APP_SHARE_URL,
+        description: "No se pudo compartir el enlace",
         variant: "destructive",
       });
     } finally {
@@ -46,20 +44,15 @@ const ShareButton = () => {
   };
 
   return (
-    <div className="flex flex-col items-center">
-      <Button 
-        onClick={handleShare} 
-        variant="outline" 
-        size="icon" 
-        className="rounded-full bg-black/30 border-none hover:bg-black/50 mb-1"
-        disabled={isSharing}
-      >
-        <Share2 className="h-5 w-5 text-white" />
-      </Button>
-      <span className="text-xs text-white bg-black/50 px-2 py-1 rounded-md">
-        {APP_SHARE_URL}
-      </span>
-    </div>
+    <Button 
+      onClick={handleShare} 
+      variant="outline" 
+      size="icon" 
+      className="rounded-full bg-black/30 border-none hover:bg-black/50"
+      disabled={isSharing}
+    >
+      <Share2 className="h-5 w-5 text-white" />
+    </Button>
   );
 };
 
