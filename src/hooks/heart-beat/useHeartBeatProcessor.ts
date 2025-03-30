@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef } from 'react';
 import { 
   checkWeakSignal, 
@@ -86,14 +87,9 @@ export const useHeartBeatProcessor = () => {
     }
     
     // Process the signal for peak detection
-    const peakResult = handlePeakDetection(
-      signalValue, 
-      peakDetectionState.current.lastPeakTime,
-      peakDetectionState.current.peakTimes,
-      peakDetectionState.current.rrIntervals
-    );
+    const peakResult = handlePeakDetection(signalValue, peakDetectionState.current);
     
-    // Update state with peak detection results
+    // Use values from peakResult
     peakDetectionState.current.lastPeakTime = peakResult.lastPeakTime;
     peakDetectionState.current.peakTimes = peakResult.peakTimes;
     peakDetectionState.current.rrIntervals = peakResult.rrIntervals;
@@ -102,9 +98,9 @@ export const useHeartBeatProcessor = () => {
     let bpm = 0;
     let confidence = 0;
     
-    if (peakResult.rrIntervals.length >= 3) {
+    if (peakDetectionState.current.rrIntervals.length >= 3) {
       // Calculate average RR interval
-      const recentRRs = peakResult.rrIntervals.slice(-5);
+      const recentRRs = peakDetectionState.current.rrIntervals.slice(-5);
       const avgRR = recentRRs.reduce((sum, rr) => sum + rr, 0) / recentRRs.length;
       
       // Convert to BPM
@@ -146,25 +142,22 @@ export const useHeartBeatProcessor = () => {
         // Increment total beats counter
         peakDetectionState.current.totalBeats++;
       }
-    } else if (peakResult.rrIntervals.length > 0) {
+    } else if (peakDetectionState.current.rrIntervals.length > 0) {
       // Limited data available
-      const lastRR = peakResult.rrIntervals[peakResult.rrIntervals.length - 1];
+      const lastRR = peakDetectionState.current.rrIntervals[peakDetectionState.current.rrIntervals.length - 1];
       bpm = Math.round(60000 / lastRR);
       confidence = 0.3;
     }
     
     // Process the result based on confidence
     if (confidence >= MIN_CONFIDENCE_THRESHOLD) {
-      peakDetectionState.current.lastValidBpm = updateLastValidBpm(
-        bpm, 
-        peakDetectionState.current.lastValidBpm
-      );
+      peakDetectionState.current.lastValidBpm = updateLastValidBpm(bpm, peakDetectionState.current.lastValidBpm);
       peakDetectionState.current.consecutiveLowConfidence = 0;
       
       return {
         bpm: peakDetectionState.current.lastValidBpm,
         confidence,
-        rrData: peakResult.rrIntervals.slice(-10),
+        rrData: peakDetectionState.current.rrIntervals.slice(-10),
         timestamp: Date.now()
       };
     } else {
@@ -172,8 +165,7 @@ export const useHeartBeatProcessor = () => {
       const processedResult = processLowConfidenceResult(
         bpm,
         confidence,
-        peakDetectionState.current.lastValidBpm,
-        peakDetectionState.current.consecutiveLowConfidence
+        peakDetectionState.current.lastValidBpm
       );
       
       peakDetectionState.current.consecutiveLowConfidence++;
@@ -181,7 +173,7 @@ export const useHeartBeatProcessor = () => {
       return {
         bpm: processedResult.bpm,
         confidence: processedResult.confidence,
-        rrData: peakResult.rrIntervals.slice(-10),
+        rrData: peakDetectionState.current.rrIntervals.slice(-10),
         timestamp: Date.now()
       };
     }
