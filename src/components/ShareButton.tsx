@@ -1,10 +1,9 @@
-
 import { Share2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 
-const APP_SHARE_URL = "https://your-actual-app-url.com"; // Replace with YOUR real app URL
+const APP_SHARE_URL = "https://lovable.dev/projects/2167cf4a-c624-4a88-bc63-c56d9dfa1dc7"; // Updated to the actual project URL
 
 const ShareButton = () => {
   const [isSharing, setIsSharing] = useState(false);
@@ -64,4 +63,3 @@ const ShareButton = () => {
 };
 
 export default ShareButton;
-
