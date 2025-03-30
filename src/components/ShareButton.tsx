@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 
-const APP_SHARE_URL = "https://healthpulse.app"; // Replace with your actual app URL
+const APP_SHARE_URL = "https://your-actual-app-url.com"; // Replace with YOUR real app URL
 
 const ShareButton = () => {
   const [isSharing, setIsSharing] = useState(false);
@@ -64,3 +64,4 @@ const ShareButton = () => {
 };
 
 export default ShareButton;
+
