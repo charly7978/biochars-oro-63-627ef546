@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 
+const APP_SHARE_URL = "https://healthpulse.app"; // Replace with your actual app URL
+
 const ShareButton = () => {
   const [isSharing, setIsSharing] = useState(false);
 
@@ -13,8 +15,8 @@ const ShareButton = () => {
     try {
       const shareData = {
         title: 'Biochars Health Monitor',
-        text: 'Check your vital signs with Biochars Health Monitor!',
-        url: window.location.href,
+        text: 'Monitorea tu salud con Biochars Health Monitor',
+        url: APP_SHARE_URL,
       };
 
       if (navigator.share && navigator.canShare(shareData)) {
@@ -25,7 +27,7 @@ const ShareButton = () => {
         });
       } else {
         // Fallback to clipboard copy
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(APP_SHARE_URL);
         toast({
           title: "Enlace copiado",
           description: "El enlace ha sido copiado al portapapeles",
@@ -57,4 +59,3 @@ const ShareButton = () => {
 };
 
 export default ShareButton;
-
