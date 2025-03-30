@@ -18,8 +18,11 @@ const ShareButton = () => {
       };
 
       if (navigator.share && navigator.canShare(shareData)) {
-        // Use Web Share API if available
         await navigator.share(shareData);
+        toast({
+          title: "Compartido",
+          description: "Enlace compartido exitosamente",
+        });
       } else {
         // Fallback to clipboard copy
         await navigator.clipboard.writeText(window.location.href);
