@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -31,18 +32,6 @@ export const FeedbackService = {
         navigator.vibrate(pattern);
       } catch (error) {
         console.error('Error al activar vibración:', error);
-      }
-    }
-  },
-
-  // Retroalimentación háptica específica para arritmias
-  vibrateArrhythmia: () => {
-    if ('vibrate' in navigator) {
-      try {
-        // Patrón más distintivo para arritmias (triple pulso con pausa)
-        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
-      } catch (error) {
-        console.error('Error al activar vibración de arritmia:', error);
       }
     }
   },
@@ -108,27 +97,6 @@ export const FeedbackService = {
     FeedbackService.vibrate(500);
     FeedbackService.playSound('error');
     FeedbackService.showToast('Error', message, 'error');
-  },
-
-  // Retroalimentación para arritmia detectada
-  signalArrhythmia: (count: number) => {
-    FeedbackService.vibrateArrhythmia();
-    FeedbackService.playSound('heartbeat');
-    if (count === 1) {
-      FeedbackService.showToast(
-        '¡Atención!', 
-        'Se ha detectado una posible arritmia', 
-        'warning',
-        6000
-      );
-    } else {
-      FeedbackService.showToast(
-        'Arritmia detectada', 
-        `Se ha detectado ${count} posibles arritmias`, 
-        'warning',
-        6000
-      );
-    }
   },
 
   // Retroalimentación para medición completada

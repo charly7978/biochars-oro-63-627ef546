@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
+import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -112,7 +112,7 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
-  const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
+  const playBeep = useCallback(async (volume = BEEP_VOLUME) => {
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
@@ -123,7 +123,8 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      // Usar el hook de retroalimentación en lugar del código anterior
+      triggerHeartbeatFeedback();
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -537,8 +538,7 @@ const PPGSignalMeter = memo(({
     if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
       console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+      playBeep(1.0);
     }
     
     lastRenderTimeRef.current = currentTime;
