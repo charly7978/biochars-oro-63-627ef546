@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { configureCameraForDevice, processFramesControlled } from './CameraFrameCapture';
 
@@ -29,10 +30,12 @@ const CameraView: React.FC<CameraViewProps> = ({
   const processingCallbackRef = useRef<((imageData: ImageData) => void) | null>(null);
   const frameProcessorRef = useRef<() => void | null>(null);
 
+  // Actualizar callback de procesamiento cuando cambie
   useEffect(() => {
     processingCallbackRef.current = onFrameProcessed || null;
   }, [onFrameProcessed]);
 
+  // Detectar plataforma
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
     const androidDetected = /android/i.test(userAgent);
@@ -131,8 +134,10 @@ const CameraView: React.FC<CameraViewProps> = ({
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack) {
+        // Configurar cámara según dispositivo
         await configureCameraForDevice(videoTrack, isAndroid, isIOS);
         
+        // Configurar video
         if (videoRef.current) {
           videoRef.current.srcObject = newStream;
           videoRef.current.style.willChange = 'transform';
@@ -144,13 +149,16 @@ const CameraView: React.FC<CameraViewProps> = ({
 
         setStream(newStream);
         
+        // Configurar procesamiento de frames si se proporcionó un callback
         if (processingCallbackRef.current) {
-          const imageCapture = new (window as any).ImageCapture(videoTrack);
+          const imageCapture = new ImageCapture(videoTrack);
           
+          // Limpiar procesador anterior si existe
           if (frameProcessorRef.current) {
             frameProcessorRef.current();
           }
           
+          // Iniciar nuevo procesador de frames
           frameProcessorRef.current = processFramesControlled(
             imageCapture,
             isMonitoring,
@@ -159,6 +167,7 @@ const CameraView: React.FC<CameraViewProps> = ({
           );
         }
         
+        // Notificar que el stream está listo
         if (onStreamReady) {
           onStreamReady(newStream);
         }
@@ -201,35 +210,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   }, [stream, isFocusing, isAndroid]);
 
-  const handleStreamReady = useCallback((newStream: MediaStream) => {
-    if (!isMonitoring) return;
-    
-    const videoTrack = newStream.getVideoTracks()[0];
-    
-    if (typeof window !== 'undefined' && 'ImageCapture' in window) {
-      const imageCapture = new (window as any).ImageCapture(videoTrack);
-      
-      if (frameProcessorRef.current) {
-        frameProcessorRef.current();
-      }
-      
-      if (processingCallbackRef.current) {
-        frameProcessorRef.current = processFramesControlled(
-          imageCapture,
-          isMonitoring,
-          frameRate,
-          processingCallbackRef.current
-        );
-      }
-    } else {
-      console.warn("ImageCapture API not supported in this browser");
-    }
-    
-    if (onStreamReady) {
-      onStreamReady(newStream);
-    }
-  }, [isMonitoring, frameRate, onStreamReady]);
-
+  // Manejar inicio/detención de cámara según estado de monitoreo
   useEffect(() => {
     if (isMonitoring && !stream) {
       console.log("Starting camera because isMonitoring=true");
@@ -245,6 +226,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     };
   }, [isMonitoring, stream]);
 
+  // Manejar linterna y enfoque cuando se detecta dedo
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
@@ -260,6 +242,7 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
     }
     
+    // Refrescar enfoque periódicamente si se detectó dedo
     if (isFingerDetected && !isAndroid) {
       const focusInterval = setInterval(refreshAutoFocus, 5000);
       return () => clearInterval(focusInterval);

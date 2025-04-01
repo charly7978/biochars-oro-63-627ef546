@@ -13,8 +13,7 @@ export {
   checkWeakSignal, 
   shouldProcessMeasurement, 
   createWeakSignalResult,
-  resetSignalQualityState,
-  isFingerDetected
+  resetSignalQualityState
 } from './signal-quality';
 
 export { 
@@ -25,3 +24,5 @@ export {
   updateLastValidBpm, 
   processLowConfidenceResult 
 } from './result-processor';
+
+// Remove the incorrect exports that reference non-existent files

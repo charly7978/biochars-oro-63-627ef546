@@ -40,5 +40,5 @@ export class SignalProcessor {
   }
 }
 
-// Export as both the class name and the alias expected by importers
+// Export the class with the name expected by the importer
 export { SignalProcessor as SignalProcessingFilters };

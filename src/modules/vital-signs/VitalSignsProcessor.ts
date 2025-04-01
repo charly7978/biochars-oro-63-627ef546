@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -52,21 +53,10 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process data from an object parameter
-   * Added for backward compatibility
-   */
-  public processSignal(data: {
-    value: number, 
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
-  }): VitalSignsResult {
-    return this.process(data.value, data.rrData);
-  }
-  
-  /**
    * Processes the real PPG signal and calculates all vital signs
    * Using ONLY direct measurements with no reference values or simulation
    */
-  public process(
+  public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
