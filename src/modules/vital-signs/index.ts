@@ -7,7 +7,7 @@
 
 // Export the traditional processor
 export { VitalSignsProcessor } from './VitalSignsProcessor';
-export type { VitalSignsResult as TraditionalVitalSignsResult } from './types/vital-signs-result';
+export type { VitalSignsResult } from './types/vital-signs-result';
 
 // Export the new modular processor
 export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
@@ -60,6 +60,7 @@ export {
   // Export peak detection functions
   findPeaksAndValleys,
   calculateAmplitude,
+  // Direct export from enhanced detection modules instead of utils
   findPeaksFourier,
   findPeaksWavelet,
   validateMultiBeatSequence,
@@ -70,6 +71,7 @@ export {
   amplifySignal,
   
   // Export spectral analysis functions
+  // Direct export from spectral analyzer module
   calculateSignalNoiseRatio,
   calculatePulsatilityIndex,
   calculateConsistencyMetrics,
@@ -78,3 +80,15 @@ export {
   // Export perfusion functions
   calculatePerfusionIndex
 } from './utils';
+
+// Re-export the enhanced detection functions to resolve missing exports
+export { findPeaksFourier } from './enhanced-detection/fourier-analyzer';
+export { findPeaksWavelet } from './enhanced-detection/wavelet-analyzer';
+export { validateMultiBeatSequence } from './enhanced-detection/multi-beat-validator';
+export { getAdaptiveThreshold } from './enhanced-detection/adaptive-threshold';
+export { 
+  calculateSignalNoiseRatio,
+  calculatePulsatilityIndex,
+  calculateConsistencyMetrics,
+  performSpectralAnalysis
+} from './enhanced-detection/spectral-analyzer';

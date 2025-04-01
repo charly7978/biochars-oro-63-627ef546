@@ -155,10 +155,10 @@ export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGDat
       const enhancedPoint = { ...point } as U;
       
       // Garantizar que tanto time como timestamp existan
-      if ('timestamp' in point && !('time' in point)) {
-        (enhancedPoint as unknown as { time: number }).time = point.timestamp;
-      } else if ('time' in point && !('timestamp' in point)) {
-        (enhancedPoint as unknown as { timestamp: number }).timestamp = point.time;
+      if ('timestamp' in enhancedPoint && !('time' in enhancedPoint)) {
+        (enhancedPoint as any).time = enhancedPoint.timestamp;
+      } else if ('time' in enhancedPoint && !('timestamp' in enhancedPoint)) {
+        (enhancedPoint as any).timestamp = enhancedPoint.time;
       }
       
       optimizedBuffer.push(enhancedPoint);
@@ -185,10 +185,10 @@ export class CircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPG
     const enhancedItem = { ...item } as T;
     
     // Garantizar que tanto time como timestamp existan
-    if ('timestamp' in item && !('time' in item)) {
-      (enhancedItem as unknown as { time: number }).time = item.timestamp;
-    } else if ('time' in item && !('timestamp' in item)) {
-      (enhancedItem as unknown as { timestamp: number }).timestamp = item.time;
+    if ('timestamp' in enhancedItem && !('time' in enhancedItem)) {
+      (enhancedItem as any).time = enhancedItem.timestamp;
+    } else if ('time' in enhancedItem && !('timestamp' in enhancedItem)) {
+      (enhancedItem as any).timestamp = enhancedItem.time;
     }
     
     super.push(enhancedItem);
