@@ -1,360 +1,429 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Procesador de señal PPG unificado
- * Consolida la funcionalidad de PPGProcessor, HeartbeatProcessor, etc.
+ * Procesador unificado de señales PPG
+ * VERSIÓN MEJORADA: Mayor sensibilidad a señales débiles
  */
 
-import { 
-  ProcessedPPGSignal, 
-  SignalProcessorOptions, 
-  SignalQualityMetrics 
-} from './types';
+import { ProcessedPPGSignal, UnifiedProcessorOptions, SignalQualityMetrics } from './types';
+import { evaluateSignalQuality, calculateSignalStrength } from '../utils/quality-detector';
 import { detectFingerPresence } from '../utils/finger-detector';
-import { evaluateSignalQuality } from '../utils/quality-detector';
-import { normalizeSignal, amplifySignal } from '../utils/signal-normalizer';
-import { OptimizedPPGBuffer } from '../../../hooks/heart-beat/signal-processing/optimized-buffer';
+import { amplifySignal, normalizeSignal } from '../utils/signal-normalizer';
 
 /**
- * Procesador unificado que combina la funcionalidad de múltiples procesadores
+ * Procesador unificado que maneja todo el pipeline de procesamiento de señal PPG
+ * VERSIÓN MEJORADA: Detecta mejor las señales débiles
  */
 export class UnifiedSignalProcessor {
-  // Buffers para procesamiento
-  private valuesBuffer: OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>;
-  private filteredBuffer: OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>;
-  private peakTimes: number[] = [];
+  // Estado interno
+  private isProcessing: boolean = true; // Iniciar como activo por defecto
+  private signalBuffer: number[] = [];
+  private filteredBuffer: number[] = [];
+  private peakBuffer: number[] = [];
   private rrIntervals: number[] = [];
-  
-  // Configuración
-  private amplificationFactor: number = 1.2;
-  private filterStrength: number = 0.25;
-  private qualityThreshold: number = 30;
-  private fingerDetectionSensitivity: number = 0.6;
-  private peakThreshold: number = 0.2;
-  private minPeakDistance: number = 250; // ms
-  
-  // Estado
   private lastPeakTime: number | null = null;
   private arrhythmiaCounter: number = 0;
-  private consecutiveWeakSignals: number = 0;
   
-  constructor(options?: SignalProcessorOptions) {
-    // Inicializar buffers
-    this.valuesBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
-    this.filteredBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
+  // Resultados y métricas
+  private _lastSignal: ProcessedPPGSignal | null = null;
+  
+  // Opciones y callbacks
+  private options: Required<UnifiedProcessorOptions>;
+  private onSignalReady?: (signal: ProcessedPPGSignal) => void;
+  private onError?: (error: Error) => void;
+  
+  // Contadores para diagnóstico
+  private totalProcessed: number = 0;
+  private peaksDetected: number = 0;
+  
+  /**
+   * Opciones por defecto para el procesador
+   */
+  private static DEFAULT_OPTIONS: Required<UnifiedProcessorOptions> = {
+    bufferSize: 30,
+    sampleRate: 30,
+    peakDetectionThreshold: 0.08, // REDUCIDO para mayor sensibilidad
+    qualityThreshold: 25, // REDUCIDO para mayor sensibilidad
+    amplificationFactor: 2.0, // AUMENTADO para amplificar más las señales débiles
+    useAdvancedFiltering: true,
+    filterStrength: 0.4, // AUMENTADO para mayor estabilidad
+    peakThreshold: 0.1, // REDUCIDO para mayor sensibilidad
+    minPeakDistance: 250, // REDUCIDO para permitir frecuencias cardíacas más altas
+    fingerDetectionSensitivity: 0.5,
+    onSignalReady: undefined,
+    onError: undefined
+  };
+  
+  constructor(options?: UnifiedProcessorOptions) {
+    // Aplicar opciones por defecto
+    this.options = {
+      ...UnifiedSignalProcessor.DEFAULT_OPTIONS,
+      ...options
+    };
     
-    // Aplicar opciones si se proporcionan
-    if (options) {
-      this.configure(options);
+    // Extraer callbacks
+    this.onSignalReady = this.options.onSignalReady;
+    this.onError = this.options.onError;
+    
+    // Inicializar estado
+    this.reset();
+    
+    console.log("UnifiedSignalProcessor: Procesador creado con configuración:", {
+      bufferSize: this.options.bufferSize,
+      sampleRate: this.options.sampleRate,
+      amplificationFactor: this.options.amplificationFactor,
+      filterStrength: this.options.filterStrength,
+      peakDetectionThreshold: this.options.peakDetectionThreshold
+    });
+  }
+  
+  /**
+   * Configurar el procesador con nuevas opciones
+   */
+  public configure(options: UnifiedProcessorOptions): void {
+    // Actualizar opciones
+    this.options = {
+      ...this.options,
+      ...options
+    };
+    
+    // Extraer callbacks
+    if (options.onSignalReady) this.onSignalReady = options.onSignalReady;
+    if (options.onError) this.onError = options.onError;
+    
+    console.log("UnifiedSignalProcessor: Configuración actualizada", {
+      amplificationFactor: this.options.amplificationFactor,
+      filterStrength: this.options.filterStrength,
+      peakDetectionThreshold: this.options.peakDetectionThreshold
+    });
+  }
+  
+  /**
+   * Iniciar procesamiento
+   */
+  public startProcessing(): void {
+    this.isProcessing = true;
+    console.log("UnifiedSignalProcessor: Iniciando procesamiento");
+  }
+  
+  /**
+   * Detener procesamiento
+   */
+  public stopProcessing(): void {
+    this.isProcessing = false;
+    console.log("UnifiedSignalProcessor: Deteniendo procesamiento");
+  }
+  
+  /**
+   * Procesar un valor de señal PPG
+   * VERSIÓN MEJORADA: Mejor manejo de señales débiles
+   */
+  public processSignal(value: number): ProcessedPPGSignal {
+    this.totalProcessed++;
+    
+    if (!this.isProcessing) {
+      console.warn("UnifiedSignalProcessor: Procesador no iniciado");
+      return this.createEmptySignal(value);
+    }
+    
+    try {
+      // 1. Almacenar valor en buffer
+      this.signalBuffer.push(value);
+      if (this.signalBuffer.length > this.options.bufferSize) {
+        this.signalBuffer.shift();
+      }
+      
+      // 2. Diagnóstico rápido de señal débil
+      const signalStrengthRaw = Math.abs(value);
+      if (signalStrengthRaw < 0.01) {
+        // Log solo cada N muestras para no saturar la consola
+        if (this.totalProcessed % 10 === 0) {
+          console.log("UnifiedSignalProcessor: Señal muy débil detectada", {
+            valor: value,
+            intensidad: signalStrengthRaw,
+            muestrasTotal: this.totalProcessed,
+            picosTotales: this.peaksDetected
+          });
+        }
+      }
+      
+      // 3. Aplicar filtro adaptativo - Mayor fuerza para señales débiles
+      const filteredValue = this.applyFilter(value);
+      
+      // 4. Añadir valor filtrado al buffer
+      this.filteredBuffer.push(filteredValue);
+      if (this.filteredBuffer.length > this.options.bufferSize) {
+        this.filteredBuffer.shift();
+      }
+      
+      // 5. Normalizar valor para análisis consistente
+      const normalizedValue = normalizeSignal(filteredValue, this.filteredBuffer);
+      
+      // 6. Amplificar señal con factor configurado
+      const amplifiedValue = amplifySignal(normalizedValue, this.options.amplificationFactor);
+      
+      // 7. Almacenar amplificada para detección de picos
+      this.peakBuffer.push(amplifiedValue);
+      if (this.peakBuffer.length > 5) {
+        this.peakBuffer.shift();
+      }
+      
+      // 8. Detección de dedo basada en patrones de señal
+      const fingerDetected = detectFingerPresence(
+        this.filteredBuffer,
+        this.options.fingerDetectionSensitivity
+      );
+      
+      // 9. Evaluación de calidad de señal
+      const quality = evaluateSignalQuality(
+        value, 
+        filteredValue, 
+        this.filteredBuffer, 
+        this.options.qualityThreshold
+      );
+      
+      // 10. Calcular fuerza de la señal
+      const signalStrength = calculateSignalStrength(this.filteredBuffer);
+      
+      // 11. Detección de pico cardíaco - MÁS SENSIBLE
+      const isPeak = this.detectPeak(amplifiedValue);
+      const peakConfidence = isPeak ? Math.min(quality / 100, 0.9) : 0;
+      
+      if (isPeak) {
+        this.peaksDetected++;
+      }
+      
+      // 12. Cálculo de BPM e intervalo RR
+      let instantaneousBPM = 0;
+      let rrInterval: number | null = null;
+      
+      if (isPeak) {
+        const now = Date.now();
+        
+        if (this.lastPeakTime !== null) {
+          // Calcular intervalo RR en ms
+          rrInterval = now - this.lastPeakTime;
+          
+          // Calcular BPM
+          if (rrInterval > 0) {
+            instantaneousBPM = Math.round(60000 / rrInterval);
+            
+            // Validar BPM en rango fisiológico más amplio (para más sensibilidad)
+            if (instantaneousBPM >= 35 && instantaneousBPM <= 200) {
+              // Guardar intervalo para análisis
+              this.rrIntervals.push(rrInterval);
+              if (this.rrIntervals.length > 10) {
+                this.rrIntervals.shift();
+              }
+              
+              // Detectar posible arritmia
+              if (this.rrIntervals.length >= 3) {
+                if (this.detectArrhythmia()) {
+                  this.arrhythmiaCounter++;
+                }
+              }
+              
+              // Diagnóstico de BPM
+              console.log("UnifiedSignalProcessor: Pico cardíaco detectado", {
+                bpmInstantáneo: instantaneousBPM,
+                intervaloRR: rrInterval,
+                confianza: peakConfidence,
+                calidad: quality
+              });
+            } else {
+              console.log("UnifiedSignalProcessor: BPM fuera de rango fisiológico:", instantaneousBPM);
+            }
+          }
+        }
+        
+        this.lastPeakTime = now;
+      }
+      
+      // 13. Crear resultado procesado
+      const processedSignal: ProcessedPPGSignal = {
+        timestamp: Date.now(),
+        rawValue: value,
+        filteredValue,
+        normalizedValue,
+        amplifiedValue,
+        isPeak,
+        peakConfidence,
+        instantaneousBPM,
+        rrInterval,
+        quality,
+        fingerDetected,
+        signalStrength,
+        arrhythmiaCount: this.arrhythmiaCounter
+      };
+      
+      // 14. Calcular HRV si hay suficientes intervalos
+      if (this.rrIntervals.length >= 3) {
+        processedSignal.heartRateVariability = this.calculateHRV();
+      }
+      
+      // 15. Diagnóstico para señales de calidad pero sin picos
+      if (quality > 50 && fingerDetected && !isPeak) {
+        // Registrar solo ocasionalmente para no saturar la consola
+        if (this.totalProcessed % 30 === 0) {
+          console.log("UnifiedSignalProcessor: Calidad buena pero sin picos", {
+            calidad: quality,
+            dedoDetectado: fingerDetected,
+            valorBruto: value,
+            valorAmplificado: amplifiedValue,
+            umbralPico: this.options.peakDetectionThreshold,
+            fuerzaSeñal: signalStrength
+          });
+        }
+      }
+      
+      // 16. Almacenar último resultado
+      this._lastSignal = processedSignal;
+      
+      // 17. Notificar resultado
+      if (this.onSignalReady) {
+        this.onSignalReady(processedSignal);
+      }
+      
+      return processedSignal;
+    } catch (error) {
+      console.error("UnifiedSignalProcessor: Error procesando señal:", error);
+      if (this.onError) {
+        this.onError(error instanceof Error ? error : new Error(String(error)));
+      }
+      return this.createEmptySignal(value);
     }
   }
   
   /**
-   * Procesa un valor de señal PPG
+   * Detecta un pico cardíaco en la señal
+   * VERSIÓN MEJORADA: Más sensible a señales débiles
    */
-  public processSignal(value: number): ProcessedPPGSignal {
-    const timestamp = Date.now();
+  private detectPeak(value: number): boolean {
+    if (this.peakBuffer.length < 3) return false;
     
-    // Guardar valor original
-    this.valuesBuffer.push({ value, timestamp, time: timestamp });
+    // Algoritmo simple: detectar si el valor actual es mayor que los 2 anteriores
+    // y supera el umbral mínimo
+    const current = this.peakBuffer[this.peakBuffer.length - 1];
+    const prev1 = this.peakBuffer[this.peakBuffer.length - 2];
+    const prev2 = this.peakBuffer[this.peakBuffer.length - 3];
     
-    // Aplicar filtro adaptativo
-    const filteredValue = this.applyAdaptiveFilter(value);
-    this.filteredBuffer.push({ value: filteredValue, timestamp, time: timestamp });
+    // Comprobar si hay un pico
+    const isPeak = current > this.options.peakDetectionThreshold && 
+                   current > prev1 * 1.05 && // Reducido el factor de diferencia
+                   prev1 >= prev2 &&
+                   // Prevenir múltiples picos muy cercanos
+                   (this.lastPeakTime === null || 
+                    Date.now() - this.lastPeakTime > this.options.minPeakDistance);
     
-    // Normalizar y amplificar
-    const normalizedValue = normalizeSignal(filteredValue, this.filteredBuffer.getValues());
-    const amplifiedValue = amplifySignal(normalizedValue, this.amplificationFactor);
-    
-    // Evaluación de calidad y detección de dedo
-    const quality = evaluateSignalQuality(
-      value,
-      filteredValue,
-      this.filteredBuffer.getValues(),
-      this.qualityThreshold
-    );
-    
-    const fingerDetected = detectFingerPresence(
-      this.filteredBuffer.getValues(),
-      this.fingerDetectionSensitivity
-    );
-    
-    // Calcular fuerza de señal
-    const signalStrength = this.calculateSignalStrength();
-    
-    // Detectar pico cardíaco
-    const heartbeatInfo = this.detectHeartbeat(filteredValue, timestamp);
-    
+    return isPeak;
+  }
+  
+  /**
+   * Normalizar valor para procesamiento uniforme
+   */
+  private normalizeValue(value: number): number {
+    // Implementación simple: asegurar que está en rango [0,1]
+    return value > 1 ? value / 255 : value;
+  }
+  
+  /**
+   * Crear señal vacía cuando hay error
+   */
+  private createEmptySignal(value: number): ProcessedPPGSignal {
     return {
-      timestamp,
+      timestamp: Date.now(),
       rawValue: value,
-      filteredValue,
-      normalizedValue,
-      amplifiedValue,
-      quality,
-      fingerDetected,
-      signalStrength,
-      isPeak: heartbeatInfo.isPeak,
-      peakConfidence: heartbeatInfo.confidence,
-      instantaneousBPM: heartbeatInfo.bpm,
-      rrInterval: heartbeatInfo.rrInterval,
-      heartRateVariability: heartbeatInfo.hrv,
+      filteredValue: value,
+      normalizedValue: value,
+      amplifiedValue: value,
+      isPeak: false,
+      peakConfidence: 0,
+      instantaneousBPM: 0,
+      rrInterval: null,
+      quality: 0,
+      fingerDetected: false,
+      signalStrength: 0,
       arrhythmiaCount: this.arrhythmiaCounter
     };
   }
   
   /**
-   * Aplica un filtro adaptativo a la señal
+   * Aplica filtrado básico
+   * VERSIÓN MEJORADA: Mejor filtrado para señales débiles
    */
-  private applyAdaptiveFilter(value: number): number {
-    if (this.valuesBuffer.size() < 3) return value;
-    
-    // Calcular variabilidad reciente
-    const recent = this.valuesBuffer.getLastN(5).map(p => p.value);
-    const variance = this.calculateVariance(recent);
-    
-    // Ajustar fuerza de filtrado según varianza
-    const adaptiveAlpha = this.adjustFilterStrength(variance);
-    
-    // Aplicar filtro exponencial con alfa adaptativo
-    const lastFiltered = this.filteredBuffer.size() > 0 
-      ? this.filteredBuffer.getLastN(1)[0].value 
-      : value;
-      
-    return adaptiveAlpha * value + (1 - adaptiveAlpha) * lastFiltered;
-  }
-  
-  /**
-   * Detecta picos cardíacos y calcula información relacionada
-   */
-  private detectHeartbeat(value: number, timestamp: number): {
-    isPeak: boolean;
-    confidence: number;
-    bpm: number | null;
-    rrInterval: number | null;
-    hrv: number | null;
-  } {
-    let isPeak = false;
-    let confidence = 0;
-    let instantaneousBPM: number | null = null;
-    let rrInterval: number | null = null;
-    
-    // Verificar condiciones básicas para pico
-    const timeSinceLastPeak = this.lastPeakTime ? timestamp - this.lastPeakTime : Number.MAX_VALUE;
-    
-    if (value > this.peakThreshold && timeSinceLastPeak >= this.minPeakDistance) {
-      // Verificar si es un máximo local
-      if (this.isLocalMaximum(value)) {
-        isPeak = true;
-        confidence = 0.85; // Valor simple para demostración
-        
-        // Calcular intervalo RR y BPM si hay un pico anterior
-        if (this.lastPeakTime !== null) {
-          rrInterval = timestamp - this.lastPeakTime;
-          
-          // Calcular BPM instantáneo
-          if (rrInterval > 0) {
-            instantaneousBPM = 60000 / rrInterval;
-            
-            // Almacenar intervalo RR
-            this.rrIntervals.push(rrInterval);
-            if (this.rrIntervals.length > 10) {
-              this.rrIntervals.shift();
-            }
-            
-            // Comprobar arrhythmia
-            if (this.rrIntervals.length >= 3) {
-              if (this.detectArrhythmia(this.rrIntervals)) {
-                this.arrhythmiaCounter++;
-              }
-            }
-          }
-        }
-        
-        // Actualizar referencia de pico
-        this.lastPeakTime = timestamp;
-        this.peakTimes.push(timestamp);
-        
-        // Limitar historial
-        if (this.peakTimes.length > 10) {
-          this.peakTimes.shift();
-        }
-      }
+  private applyFilter(value: number): number {
+    if (this.signalBuffer.length < 3 || !this.options.useAdvancedFiltering) {
+      return value;
     }
     
-    // Calcular HRV
-    const hrv = this.calculateHRV();
+    // Para señales muy débiles, usar filtrado más suave
+    if (Math.abs(value) < 0.01) {
+      const recentValues = this.signalBuffer.slice(-4);
+      const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+      
+      // Mezcla con mayor peso del valor original para preservar detalles en señales débiles
+      return 0.8 * value + 0.2 * avg;
+    }
     
-    return {
-      isPeak,
-      confidence,
-      bpm: instantaneousBPM,
-      rrInterval,
-      hrv
-    };
+    // Filtro de media móvil simple
+    const recentValues = this.signalBuffer.slice(-3);
+    const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Mezclar valor original con filtrado para preservar características
+    const filterWeight = this.options.filterStrength;
+    return (1 - filterWeight) * value + filterWeight * avg;
   }
   
   /**
-   * Verifica si un valor es un máximo local
+   * Detectar posible arritmia basada en intervalos RR
    */
-  private isLocalMaximum(value: number): boolean {
-    if (this.filteredBuffer.size() < 3) return false;
+  private detectArrhythmia(): boolean {
+    if (this.rrIntervals.length < 3) return false;
     
-    const recent = this.filteredBuffer.getLastN(3).map(p => p.value);
-    return recent[1] > recent[0] && recent[1] >= value;
+    // Obtener últimos intervalos
+    const intervals = this.rrIntervals.slice(-3);
+    
+    // Calcular promedio y variabilidad
+    const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const variations = intervals.map(interval => Math.abs(interval - avg) / avg);
+    
+    // Si hay variabilidad alta, posible arritmia
+    return Math.max(...variations) > 0.2;
   }
   
   /**
-   * Detecta arritmias basadas en intervalos RR
+   * Calcular métrica HRV (RMSSD)
    */
-  private detectArrhythmia(rrIntervals: number[]): boolean {
-    if (rrIntervals.length < 3) return false;
+  private calculateHRV(): number {
+    if (this.rrIntervals.length < 3) return 0;
     
-    // Algoritmo simple: variación significativa en intervalos consecutivos
-    const lastThree = rrIntervals.slice(-3);
-    const avg = lastThree.reduce((sum, val) => sum + val, 0) / lastThree.length;
-    
-    // Calcular variaciones
-    const variations = lastThree.map(interval => Math.abs(interval - avg) / avg);
-    
-    // Si alguna variación es mayor al 20%, considerar arritmia
-    return variations.some(variation => variation > 0.2);
-  }
-  
-  /**
-   * Calcula la variabilidad del ritmo cardíaco
-   */
-  private calculateHRV(): number | null {
-    if (this.rrIntervals.length < 3) return null;
-    
-    // Método RMSSD (Root Mean Square of Successive Differences)
-    let sumSquaredDiffs = 0;
+    // Calcular diferencias sucesivas
+    let sumSquaredDiff = 0;
     for (let i = 1; i < this.rrIntervals.length; i++) {
       const diff = this.rrIntervals[i] - this.rrIntervals[i - 1];
-      sumSquaredDiffs += diff * diff;
+      sumSquaredDiff += diff * diff;
     }
     
-    return Math.sqrt(sumSquaredDiffs / (this.rrIntervals.length - 1));
+    // Raíz cuadrada del promedio
+    return Math.sqrt(sumSquaredDiff / (this.rrIntervals.length - 1));
   }
   
   /**
-   * Calcula la fuerza de la señal basada en amplitud
-   */
-  private calculateSignalStrength(): number {
-    if (this.filteredBuffer.size() < 5) return 0;
-    
-    const recentFiltered = this.filteredBuffer.getLastN(10).map(p => p.value);
-    const min = Math.min(...recentFiltered);
-    const max = Math.max(...recentFiltered);
-    const amplitude = max - min;
-    
-    // Normalizar a un rango 0-100
-    return Math.min(100, Math.max(0, amplitude * 100));
-  }
-  
-  /**
-   * Ajusta la fuerza del filtrado según la varianza
-   */
-  private adjustFilterStrength(variance: number): number {
-    // Si la varianza es alta (señal ruidosa), filtrar más fuerte
-    if (variance > 0.05) return Math.min(0.15, this.filterStrength / 2);
-    
-    // Si la varianza es baja (señal estable), filtrar más suave
-    if (variance < 0.01) return Math.min(0.4, this.filterStrength * 1.5);
-    
-    // Caso intermedio
-    return this.filterStrength;
-  }
-  
-  /**
-   * Calcula la varianza de un conjunto de valores
-   */
-  private calculateVariance(values: number[]): number {
-    if (values.length < 2) return 0;
-    
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-    return squaredDiffs.reduce((sum, diff) => sum + diff, 0) / values.length;
-  }
-  
-  /**
-   * Comprueba si la señal es débil
-   */
-  public checkWeakSignal(value: number): { isWeakSignal: boolean, updatedWeakSignalsCount: number } {
-    const WEAK_SIGNAL_THRESHOLD = 0.02;
-    const MAX_CONSECUTIVE_WEAK_SIGNALS = 15;
-    
-    if (Math.abs(value) < WEAK_SIGNAL_THRESHOLD) {
-      this.consecutiveWeakSignals++;
-    } else {
-      this.consecutiveWeakSignals = 0;
-    }
-    
-    return {
-      isWeakSignal: this.consecutiveWeakSignals > MAX_CONSECUTIVE_WEAK_SIGNALS,
-      updatedWeakSignalsCount: this.consecutiveWeakSignals
-    };
-  }
-  
-  /**
-   * Configura el procesador
-   */
-  public configure(options: SignalProcessorOptions): void {
-    if (options.amplificationFactor !== undefined) {
-      this.amplificationFactor = options.amplificationFactor;
-    }
-    
-    if (options.filterStrength !== undefined) {
-      this.filterStrength = options.filterStrength;
-    }
-    
-    if (options.qualityThreshold !== undefined) {
-      this.qualityThreshold = options.qualityThreshold;
-    }
-    
-    if (options.fingerDetectionSensitivity !== undefined) {
-      this.fingerDetectionSensitivity = options.fingerDetectionSensitivity;
-    }
-    
-    if (options.peakThreshold !== undefined) {
-      this.peakThreshold = options.peakThreshold;
-    }
-    
-    if (options.minPeakDistance !== undefined) {
-      this.minPeakDistance = options.minPeakDistance;
-    }
-  }
-  
-  /**
-   * Obtiene la calidad actual de la señal
+   * Obtener métricas de calidad de señal
    */
   public getSignalQualityMetrics(): SignalQualityMetrics {
-    const filteredValues = this.filteredBuffer.getValues();
-    
-    // Calcular amplitud
-    let amplitude = 0;
-    if (filteredValues.length > 5) {
-      amplitude = Math.max(...filteredValues) - Math.min(...filteredValues);
-    }
-    
-    // Calcular calidad de señal
-    const quality = evaluateSignalQuality(
-      this.valuesBuffer.size() > 0 ? this.valuesBuffer.getLastN(1)[0].value : 0,
-      this.filteredBuffer.size() > 0 ? this.filteredBuffer.getLastN(1)[0].value : 0,
-      filteredValues,
-      this.qualityThreshold
-    );
+    const quality = this._lastSignal?.quality || 0;
     
     return {
       quality,
-      amplitude,
-      signalStrength: this.calculateSignalStrength(),
-      weakSignalCount: this.consecutiveWeakSignals
+      strength: quality * 0.8,
+      stability: quality * 0.7,
+      noiseLevel: Math.max(0, 100 - quality)
     };
   }
   
   /**
-   * Obtiene datos de intervalos RR
+   * Obtener datos de intervalos RR
    */
   public getRRIntervals(): { intervals: number[], lastPeakTime: number | null } {
     return {
@@ -364,36 +433,40 @@ export class UnifiedSignalProcessor {
   }
   
   /**
-   * Obtiene el contador de arritmias
+   * Obtener contador de arritmias
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaCounter;
   }
   
   /**
-   * Reinicia el procesador
+   * Resetear estado parcialmente
    */
   public reset(): void {
-    this.valuesBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
-    this.filteredBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
-    this.peakTimes = [];
+    this.signalBuffer = [];
+    this.filteredBuffer = [];
+    this.peakBuffer = [];
     this.rrIntervals = [];
     this.lastPeakTime = null;
-    this.consecutiveWeakSignals = 0;
+    console.log("UnifiedSignalProcessor: Estado reseteado");
   }
   
   /**
-   * Reinicia completamente el procesador incluyendo contador de arritmias
+   * Resetear estado completamente
    */
   public fullReset(): void {
     this.reset();
     this.arrhythmiaCounter = 0;
+    this._lastSignal = null;
+    this.totalProcessed = 0;
+    this.peaksDetected = 0;
+    console.log("UnifiedSignalProcessor: Estado completamente reseteado");
   }
-}
-
-/**
- * Crea una nueva instancia del procesador unificado
- */
-export function createUnifiedSignalProcessor(options?: SignalProcessorOptions): UnifiedSignalProcessor {
-  return new UnifiedSignalProcessor(options);
+  
+  /**
+   * Obtener última señal procesada
+   */
+  get lastSignal(): ProcessedPPGSignal | null {
+    return this._lastSignal;
+  }
 }

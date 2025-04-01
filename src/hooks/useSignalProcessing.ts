@@ -9,13 +9,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   PPGSignalProcessor, 
   HeartbeatProcessor,
-  SignalProcessingOptions
-} from '../modules/signal-processing';
-import { 
   ProcessedPPGSignal,
-  ProcessedHeartbeatSignal 
-} from '../modules/signal-processing/types';
-import { resetFingerDetector } from '../modules/signal-processing';
+  ProcessedHeartbeatSignal,
+  SignalProcessingOptions,
+  resetFingerDetector
+} from '../modules/signal-processing';
 
 // Resultado combinado del procesamiento
 export interface ProcessedSignalResult {
@@ -105,7 +103,7 @@ export function useSignalProcessing() {
       setFingerDetected(ppgResult.fingerDetected);
       
       // Calcular BPM promedio
-      if (heartbeatResult.instantaneousBPM !== null && heartbeatResult.confidence > 0.5) {
+      if (heartbeatResult.instantaneousBPM !== null && heartbeatResult.peakConfidence > 0.5) {
         recentBpmValues.current.push(heartbeatResult.instantaneousBPM);
         
         // Mantener solo los valores más recientes
@@ -138,7 +136,7 @@ export function useSignalProcessing() {
         }
       }
       
-      // Generar resultado combinado
+      // Generar resultado combinado - Corrigiendo propiedades según el tipo
       const result: ProcessedSignalResult = {
         timestamp: ppgResult.timestamp,
         
@@ -155,12 +153,24 @@ export function useSignalProcessing() {
         
         // Información cardíaca
         isPeak: heartbeatResult.isPeak,
-        peakConfidence: heartbeatResult.confidence,
+        peakConfidence: heartbeatResult.peakConfidence,
         instantaneousBPM: heartbeatResult.instantaneousBPM,
         averageBPM,
-        rrInterval: heartbeatResult.rrInterval,
-        heartRateVariability: heartbeatResult.heartRateVariability
+        // Corregir estos campos para usar los nombres correctos según el tipo HeartbeatSignal
+        rrInterval: heartbeatResult.rrIntervals.length > 0 ? 
+                    heartbeatResult.rrIntervals[heartbeatResult.rrIntervals.length - 1] : null,
+        heartRateVariability: heartbeatResult.heartRate ? 
+                              Math.abs(heartbeatResult.heartRate - (heartbeatResult.instantaneousBPM || 0)) : null
       };
+      
+      // Añadir diagnóstico para depuración
+      console.log("useSignalProcessing: Resultado procesado", {
+        signalStrength: ppgResult.signalStrength,
+        amplifiedValue: ppgResult.amplifiedValue,
+        isPeak: heartbeatResult.isPeak,
+        peakConfidence: heartbeatResult.peakConfidence,
+        instantaneousBPM: heartbeatResult.instantaneousBPM
+      });
       
       // Actualizar último resultado
       setLastResult(result);

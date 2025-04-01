@@ -7,8 +7,9 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePPGExtraction } from './usePPGExtraction';
-import { useSignalProcessing, ProcessedSignalResult } from './useSignalProcessing';
-import { useVitalSignsProcessor } from './useVitalSignsProcessor';
+import { useUnifiedSignalProcessor } from './useUnifiedSignalProcessor';
+import { useUnifiedVitalSignsAdapter } from './vital-signs/useUnifiedVitalSignsAdapter';
+import { ProcessedPPGSignal } from '../modules/signal-processing/unified/types';
 
 /**
  * Resultado integrado del procesamiento completo
@@ -37,13 +38,13 @@ export interface IntegratedVitalsResult {
 }
 
 /**
- * Hook que integra extracción y procesamiento
+ * Hook que integra extracción y procesamiento con procesadores unificados
  */
 export function useVitalSignsWithProcessing() {
   // Hooks de extracción y procesamiento
   const extraction = usePPGExtraction();
-  const processing = useSignalProcessing();
-  const vitalSigns = useVitalSignsProcessor();
+  const processing = useUnifiedSignalProcessor();
+  const vitalSigns = useUnifiedVitalSignsAdapter();
   
   // Estado integrado
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
@@ -76,32 +77,32 @@ export function useVitalSignsWithProcessing() {
     if (!isMonitoring || !extraction.lastResult) return;
     
     try {
-      // 2. Procesar el valor PPG extraído
-      const processedSignal = processing.processValue(extraction.lastResult.filteredValue);
+      // 2. Procesar el valor PPG extraído con el procesador unificado
+      // La función correcta es processFrame, no processSignal
+      // Debemos extraer un número del objeto ImageData, no pasarlo directamente
+      processing.processFrame(extraction.lastResult.filteredValue);
       
-      if (processedSignal && processedSignal.fingerDetected) {
+      // Verificar si tenemos una señal procesada y hay un dedo detectado
+      if (processing.lastSignal && processing.lastSignal.fingerDetected) {
         // 3. Procesar para obtener signos vitales
         const vitalsResult = vitalSigns.processSignal(
-          processedSignal.filteredValue, 
-          { 
-            intervals: processedSignal.rrInterval ? [processedSignal.rrInterval] : [],
-            lastPeakTime: processedSignal.isPeak ? processedSignal.timestamp : null
-          }
+          processing.lastSignal.filteredValue, 
+          processing.getRRIntervals()
         );
         
         // 4. Crear resultado integrado
         const integratedResult: IntegratedVitalsResult = {
-          timestamp: processedSignal.timestamp,
-          quality: processedSignal.quality,
-          fingerDetected: processedSignal.fingerDetected,
+          timestamp: processing.lastSignal.timestamp,
+          quality: processing.lastSignal.quality,
+          fingerDetected: processing.lastSignal.fingerDetected,
           
-          rawValue: processedSignal.rawValue,
-          filteredValue: processedSignal.filteredValue,
-          amplifiedValue: processedSignal.amplifiedValue,
+          rawValue: processing.lastSignal.rawValue,
+          filteredValue: processing.lastSignal.filteredValue,
+          amplifiedValue: processing.lastSignal.amplifiedValue,
           
-          heartRate: processedSignal.averageBPM || 0,
-          isPeak: processedSignal.isPeak,
-          rrInterval: processedSignal.rrInterval,
+          heartRate: processing.lastSignal.instantaneousBPM || 0,
+          isPeak: processing.lastSignal.isPeak,
+          rrInterval: processing.lastSignal.rrInterval,
           
           spo2: vitalsResult.spo2,
           pressure: vitalsResult.pressure,
@@ -163,11 +164,12 @@ export function useVitalSignsWithProcessing() {
     
     // Reiniciar todos los subsistemas
     extraction.reset();
+    processing.reset();
     vitalSigns.fullReset();
     
     processedFramesRef.current = 0;
     lastProcessTimeRef.current = Date.now();
-  }, [extraction, vitalSigns, stopMonitoring]);
+  }, [extraction, processing, vitalSigns, stopMonitoring]);
   
   return {
     // Estado
@@ -176,9 +178,9 @@ export function useVitalSignsWithProcessing() {
     processedFrames: processedFramesRef.current,
     
     // Métricas de extracción
-    signalQuality: processing.signalQuality,
-    fingerDetected: processing.fingerDetected,
-    heartRate: processing.heartRate,
+    signalQuality: processing.getSignalQuality().quality,
+    fingerDetected: processing.lastSignal?.fingerDetected || false,
+    heartRate: processing.lastSignal?.instantaneousBPM || 0,
     
     // Acciones
     processFrame,

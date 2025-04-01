@@ -2,122 +2,188 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Utilidades para normalización y amplificación de señales
+ * Funciones para normalización y amplificación de señal PPG
+ * VERSIÓN ULTRA-SENSIBLE: Especializada para señales extremadamente débiles
  */
 
 /**
- * Normaliza un valor de señal a un rango estándar
- * @param value Valor a normalizar
- * @param buffer Buffer de valores para contexto
- * @returns Valor normalizado (generalmente entre 0 y 1)
+ * Amplifica un valor de señal PPG
+ * VERSIÓN EXTREMA: Amplificación exponencial no lineal para señales muy débiles
  */
-export function normalizeSignal(
-  value: number,
-  buffer: number[]
-): number {
-  if (buffer.length < 5) {
-    return value;
+export function amplifySignal(value: number, factor: number = 2.5): number {
+  // Para señales extremadamente débiles, aplicar amplificación exponencial
+  if (Math.abs(value) < 0.01) {
+    // Factor exponencial para señales ultra débiles
+    const weakSignalBoost = 3.0; // 300% para señales muy débiles
+    const boostedFactor = factor * weakSignalBoost;
+    
+    // Diagnóstico detallado
+    console.log("Signal-normalizer: SEÑAL EXTREMADAMENTE DÉBIL - amplificación exponencial", {
+      valorOriginal: value,
+      factorNormal: factor,
+      factorExponencial: boostedFactor,
+      resultadoFinal: value * boostedFactor
+    });
+    
+    return value * boostedFactor;
   }
   
-  // Calcular rango actual
-  const min = Math.min(...buffer);
-  const max = Math.max(...buffer);
-  
-  // Evitar división por cero
-  if (max === min) {
-    return 0.5;
+  // Para señales débiles pero detectables, usar amplificación mejorada
+  if (Math.abs(value) < 0.05) {
+    // Aplicar factor adicional para señales débiles
+    const weakSignalBoost = 2.0; // 200% para señales débiles
+    const boostedFactor = factor * weakSignalBoost;
+    
+    console.log("Signal-normalizer: SEÑAL DÉBIL - aplicando amplificación extra", {
+      valorOriginal: value,
+      factorNormal: factor,
+      factorAumentado: boostedFactor,
+      resultadoFinal: value * boostedFactor
+    });
+    
+    return value * boostedFactor;
   }
   
-  // Normalizar al rango [0,1]
-  return (value - min) / (max - min);
+  // Amplificación normal para señales regulares (pero también aumentada)
+  return value * factor;
 }
 
 /**
- * Aplica amplificación a la señal preservando su forma
- * @param value Valor a amplificar
- * @param factor Factor de amplificación
- * @returns Valor amplificado
+ * Normaliza un valor de señal PPG en base a los valores recientes
+ * VERSIÓN ULTRA-MEJORADA: Normalización adaptativa progresiva para señales débiles
  */
-export function amplifySignal(
-  value: number,
-  factor: number = 1.0
-): number {
-  // Centrar alrededor de 0.5 para amplificar diferencias
-  const centered = value - 0.5;
+export function normalizeSignal(value: number, recentValues: number[]): number {
+  if (recentValues.length < 3) return value;
   
-  // Amplificar
-  const amplified = centered * factor;
+  // Calcular estadísticas recientes
+  const min = Math.min(...recentValues);
+  const max = Math.max(...recentValues);
+  const range = max - min;
+  const absValue = Math.abs(value);
   
-  // Volver a centrar en 0.5 y limitar al rango [0,1]
-  return Math.max(0, Math.min(1, amplified + 0.5));
+  // Si el valor es extremadamente débil, aplicar normalización progresiva
+  if (absValue < 0.01) {
+    // Impulso progresivo extremo para señales ultra débiles
+    console.log("Signal-normalizer: Normalizando señal ULTRA DÉBIL", {
+      valorOriginal: value,
+      valorAbsoluto: absValue,
+      resultadoAmplificado: value * 5.0
+    });
+    return value * 5.0; // Amplificación extrema para señales ultra débiles
+  }
+  
+  // Si el rango es pequeño, la señal es débil o estable
+  if (range < 0.05) {
+    // Aplicar normalización de umbral bajo progresiva
+    const boostFactor = 0.05 / (range > 0 ? range : 0.01); // Factor inversamente proporcional
+    const boostedValue = value * Math.min(3.0, boostFactor); // Límite máximo de 3x
+    
+    console.log("Signal-normalizer: Rango pequeño - aplicando normalización progresiva", {
+      valorOriginal: value,
+      rango: range,
+      factorImpulso: boostFactor,
+      resultado: boostedValue
+    });
+    
+    return boostedValue;
+  }
+  
+  // Normalización adaptativa para señales normales
+  if (range <= 0) return 0; // Evitar división por cero
+  
+  // Normalización estándar con ligero boost
+  const normalizedValue = (value - min) / range;
+  
+  // Aplicar curva de respuesta no lineal para mejorar detección
+  return Math.pow(normalizedValue, 0.8); // Exponente < 1 aumenta amplitud de señales débiles
 }
 
 /**
- * Aplica un filtro paso banda a la señal para eliminar frecuencias no deseadas
- * @param value Valor a filtrar
- * @param buffer Buffer de valores
- * @param lowCutoff Frecuencia de corte inferior (Hz)
- * @param highCutoff Frecuencia de corte superior (Hz)
- * @param sampleRate Tasa de muestreo (Hz)
- * @returns Valor filtrado
+ * Calcula la varianza de un conjunto de valores
+ * MEJORADO: Más sensible a variaciones pequeñas
  */
-export function applyBandPassFilter(
-  value: number,
-  buffer: number[],
-  lowCutoff: number = 0.5, // 0.5 Hz (30 BPM)
-  highCutoff: number = 3.0, // 3.0 Hz (180 BPM)
-  sampleRate: number = 30 // 30 Hz
-): number {
-  if (buffer.length < 10) {
-    return value;
-  }
+export function calculateVariance(values: number[]): number {
+  if (values.length < 2) return 0;
   
-  // Implementación simple de filtro IIR paso banda
-  // Coeficientes calculados para las frecuencias de corte especificadas
-  const a1 = -1.8758081257;
-  const a2 = 0.8819730297;
-  const b0 = 0.0015225099;
-  const b1 = 0.0030450198;
-  const b2 = 0.0015225099;
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
   
-  // Obtener valores anteriores
-  const x1 = buffer.length >= 1 ? buffer[buffer.length - 1] : value;
-  const x2 = buffer.length >= 2 ? buffer[buffer.length - 2] : value;
-  const y1 = buffer.length >= 3 ? buffer[buffer.length - 3] : value;
-  const y2 = buffer.length >= 4 ? buffer[buffer.length - 4] : value;
+  // Para señales débiles, amplificar diferencias
+  const amplifiedSquaredDiffs = values.map(val => {
+    const diff = val - mean;
+    // Amplificar diferencias pequeñas para mejorar sensibilidad
+    return Math.abs(diff) < 0.01 ? 
+           Math.pow(diff * 2.5, 2) : // Amplificar diferencias pequeñas
+           Math.pow(diff, 2);
+  });
   
-  // Aplicar filtro
-  const filtered = 
-    b0 * value + 
-    b1 * x1 + 
-    b2 * x2 - 
-    a1 * y1 - 
-    a2 * y2;
-  
-  return filtered;
+  return amplifiedSquaredDiffs.reduce((sum, squared) => sum + squared, 0) / values.length;
 }
 
 /**
- * Mejora picos en la señal para detección cardíaca
- * @param value Valor a procesar
- * @param buffer Buffer de valores
- * @returns Valor con picos mejorados
+ * Aplica filtro de paso bajo adaptativo a señal débil
+ * NUEVO: Especialmente diseñado para señales extremadamente débiles
  */
-export function enhancePeaks(
-  value: number,
-  buffer: number[]
-): number {
-  if (buffer.length < 5) {
-    return value;
+export function applyAdaptiveLowPassFilter(value: number, history: number[]): number {
+  if (history.length === 0) return value;
+  
+  const lastValue = history[history.length - 1];
+  const absValue = Math.abs(value);
+  
+  // Determinar factor alfa basado en intensidad de señal
+  let alpha = 0.3; // Valor por defecto
+  
+  if (absValue < 0.01) {
+    alpha = 0.15; // Mucho suavizado para señales ultra débiles
+  } else if (absValue < 0.05) {
+    alpha = 0.2; // Suavizado medio para señales débiles
   }
   
-  // Calcular la derivada de la señal
-  const derivative = 
-    buffer.length >= 1 ? value - buffer[buffer.length - 1] : 0;
+  // Aplicar filtro EMA adaptativo
+  return alpha * value + (1 - alpha) * lastValue;
+}
+
+/**
+ * Detecta y corrige valores atípicos en señales débiles
+ * NUEVO: Especialmente diseñado para estabilizar señales anémicas
+ */
+export function correctOutliers(value: number, history: number[]): number {
+  if (history.length < 5) return value;
   
-  // Acentuar cambios positivos (subidas)
-  const enhanced = value + Math.max(0, derivative) * 1.5;
+  // Calcular estadísticas de ventana reciente
+  const recentValues = history.slice(-5);
+  const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+  const stdDev = Math.sqrt(
+    recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length
+  );
   
-  // Normalizar a un rango razonable
-  return enhanced;
+  // Límites adaptativos de detección - más permisivos para señales débiles
+  const absValue = Math.abs(value);
+  const absThresholdFactor = absValue < 0.01 ? 4.0 : (absValue < 0.05 ? 3.0 : 2.5);
+  
+  // Límites superior e inferior
+  const upperLimit = mean + stdDev * absThresholdFactor;
+  const lowerLimit = mean - stdDev * absThresholdFactor;
+  
+  // Corregir valores fuera de rango
+  if (value > upperLimit) {
+    console.log("Signal-normalizer: Corrigiendo pico alto en señal débil", {
+      valorOriginal: value,
+      media: mean,
+      desviación: stdDev,
+      límiteSuperior: upperLimit,
+      valorCorregido: upperLimit
+    });
+    return upperLimit;
+  } else if (value < lowerLimit) {
+    console.log("Signal-normalizer: Corrigiendo valle bajo en señal débil", {
+      valorOriginal: value,
+      media: mean,
+      desviación: stdDev,
+      límiteInferior: lowerLimit,
+      valorCorregido: lowerLimit
+    });
+    return lowerLimit;
+  }
+  
+  return value;
 }

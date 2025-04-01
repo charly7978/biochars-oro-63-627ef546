@@ -15,7 +15,7 @@ export interface PPGDataPoint {
 export interface TimestampedPPGData {
   timestamp: number;
   value: number;
-  time: number; // Required to match PPGDataPoint
+  time: number; // Changed from optional to required to match PPGDataPoint
   [key: string]: any;
 }
 
@@ -27,23 +27,19 @@ export interface ProcessedSignal {
   rawValue: number;         // Raw sensor value
   filteredValue: number;    // Filtered value for analysis
   quality: number;          // Signal quality (0-100)
-  fingerDetected: boolean;  // Whether a finger is detected over sensor
+  fingerDetected: boolean;  // Whether a finger is detected on the sensor
   roi: {                    // Region of interest in the image
     x: number;
     y: number;
     width: number;
     height: number;
   };
-  perfusionIndex?: number;  // Perfusion index (optional)
-  spectrumData?: {          // Spectrum data for frequency analysis
+  perfusionIndex?: number;  // Optional perfusion index
+  spectrumData?: {          // Optional frequency spectrum data
     frequencies: number[];
     amplitudes: number[];
     dominantFrequency: number;
   };
-  isPeak?: boolean;         // Whether this signal represents a peak
-  peakConfidence?: number;  // Confidence in peak detection (0-1)
-  arrhythmiaCount?: number; // Count of detected arrhythmias
-  heartRateVariability?: number; // Heart rate variability measurement
 }
 
 /**
@@ -62,8 +58,8 @@ export interface SignalProcessor {
   initialize: () => Promise<void>;                      // Initialization
   start: () => void;                                    // Start processing
   stop: () => void;                                     // Stop processing
-  calibrate: () => Promise<boolean>;                    // Calibrate processor
+  calibrate?: () => Promise<boolean>;                   // Optional calibration
   onSignalReady?: (signal: ProcessedSignal) => void;    // Signal ready callback
   onError?: (error: ProcessingError) => void;           // Error callback
-  processFrame?: (imageData: ImageData) => void;        // Process frame
+  processFrame?: (imageData: ImageData) => void;        // Process image frame
 }

@@ -3,6 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
  * Functions for peak detection logic, working with real data only
+ * VERSIÓN MEJORADA: Más sensible a señales débiles
  */
 
 // Diagnostics channel integration
@@ -23,18 +24,20 @@ const MAX_DIAGNOSTICS_BUFFER = 100;
 /**
  * Determines if a measurement should be processed based on signal strength
  * Only processes real measurements
- * Now with improved prioritization based on signal strength
+ * VERSIÓN MEJORADA: Mucho más sensible
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Añadir diagnóstico sobre decisión de procesamiento
   const signalStrength = Math.abs(value);
-  const processingDecision = signalStrength >= 0.008;
+  
+  // UMBRAL MUCHO MÁS BAJO para aumentar sensibilidad
+  const processingDecision = signalStrength >= 0.0035;
   
   // Determinar prioridad basada en la fuerza de la señal
   let priority: 'high' | 'medium' | 'low' = 'low';
-  if (signalStrength >= 0.05) {
+  if (signalStrength >= 0.03) {
     priority = 'high';
-  } else if (signalStrength >= 0.02) {
+  } else if (signalStrength >= 0.01) {
     priority = 'medium';
   }
   
@@ -45,29 +48,45 @@ export function shouldProcessMeasurement(value: number): boolean {
     signalStrength,
     processorLoad: 0,
     dataPointsProcessed: 1,
-    peakDetectionConfidence: processingDecision ? signalStrength * 10 : 0,
+    peakDetectionConfidence: processingDecision ? signalStrength * 20 : 0, // Aumento de confianza
     processingPriority: priority
   });
   
-  // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return processingDecision; // Reducido aún más para mayor sensibilidad
+  // Diagnóstico de señales débiles
+  if (signalStrength < 0.01 && processingDecision) {
+    console.log("Peak-detection: Procesando señal DÉBIL:", {
+      intensidad: signalStrength,
+      umbralMínimo: 0.0035,
+      prioridad: priority
+    });
+  }
+  
+  // Umbral más sensible para capturar señales reales
+  return processingDecision;
 }
 
 /**
  * Creates default signal processing result when signal is too weak
  * Contains only real data structure with zero values
- * Now includes diagnostics and priority information
+ * VERSIÓN MEJORADA: Incluye diagnóstico detallado para depuración
  */
 export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
+  const now = Date.now();
+  
   // Registrar evento de señal débil en diagnósticos
   addDiagnosticsData({
-    timestamp: Date.now(),
+    timestamp: now,
     processTime: 0,
-    signalStrength: 0.005, // Valor bajo característico
+    signalStrength: 0.003, // Valor muy bajo característico
     processorLoad: 0,
     dataPointsProcessed: 1,
     peakDetectionConfidence: 0,
     processingPriority: 'low'
+  });
+  
+  console.log("Peak-detection: Señal demasiado débil para procesar", {
+    timestamp: new Date(now).toISOString(),
+    arrhythmiaCounter
   });
   
   return {
@@ -95,7 +114,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
  * Handle peak detection with improved natural synchronization
  * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
  * No simulation is used - direct measurement only
- * Now with priority-based processing and diagnostics
+ * VERSIÓN MEJORADA: Mejor diagnóstico y manejo de prioridad
  */
 export function handlePeakDetection(
   result: any, 
@@ -107,28 +126,28 @@ export function handlePeakDetection(
   const startTime = performance.now();
   const now = Date.now();
   
-  // Determinar prioridad basada en la confianza del resultado
+  // Determinar prioridad basada en la confianza del resultado y fuerza de señal
   let priority: 'high' | 'medium' | 'low' = 'low';
-  if (result.confidence > 0.5) {
+  if (result.confidence > 0.4) {
     priority = 'high';
-  } else if (result.confidence > 0.2) {
+  } else if (result.confidence > 0.15) { // Bajado el umbral para medium
     priority = 'medium';
   }
   
   // Solo actualizar tiempo del pico para cálculos de tiempo
-  if (result.isPeak && result.confidence > 0.05) {
+  if (result.isPeak && result.confidence > 0.02) { // Bajado el umbral de confianza
     // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
     // Elevar la prioridad si se detecta un pico
     priority = 'high';
     
-    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
-    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
+    // Diagnóstico más detallado
+    console.log("Peak-detection: PICO DETECTADO (control exclusivo por PPGSignalMeter)", {
       confianza: result.confidence,
       valor: value,
       tiempo: new Date(now).toISOString(),
-      // Log transition state if present
+      valorAbsoluto: Math.abs(value),
       transicion: result.transition ? {
         activa: result.transition.active,
         progreso: result.transition.progress,
@@ -136,6 +155,13 @@ export function handlePeakDetection(
       } : 'no hay transición',
       isArrhythmia: result.isArrhythmia || false,
       prioridad: priority
+    });
+  } else if (Math.abs(value) > 0.01 && result.confidence <= 0.02) {
+    // Diagnóstico para señales con amplitud pero baja confianza
+    console.log("Peak-detection: Señal con amplitud pero baja confianza", {
+      amplitud: Math.abs(value),
+      confianza: result.confidence,
+      tiempo: new Date(now).toISOString()
     });
   }
   
