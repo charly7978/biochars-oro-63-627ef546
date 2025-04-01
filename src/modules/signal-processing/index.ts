@@ -8,7 +8,7 @@
 export * from './ppg-processor';
 export * from './heartbeat-processor';
 
-// Exportar utilidades de procesamiento, evitando duplicados
+// Exportar utilidades de procesamiento, eliminando las exportaciones duplicadas
 export * from './utils/quality-detector';
 export * from './utils/finger-detector';
 export * from './utils/signal-normalizer';
