@@ -6,27 +6,19 @@
 /**
  * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
  */
-export function applySMAFilter(values: number[], windowSize: number): number[] {
-  if (!values || !Array.isArray(values) || values.length === 0) {
-    return [];
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  // Make sure buffer is an array before using spread operator
+  const safeBuffer = Array.isArray(buffer) ? buffer : [];
+  
+  const updatedBuffer = [...safeBuffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
   }
-  
-  const result: number[] = [];
-  
-  for (let i = 0; i < values.length; i++) {
-    let sum = 0;
-    let count = 0;
-    
-    // Take the current value and previous (windowSize-1) values if they exist
-    for (let j = Math.max(0, i - windowSize + 1); j <= i; j++) {
-      sum += values[j];
-      count++;
-    }
-    
-    result.push(sum / count);
-  }
-  
-  return result;
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
 }
 
 /**
@@ -34,7 +26,7 @@ export function applySMAFilter(values: number[], windowSize: number): number[] {
  * Sin uso de datos simulados
  */
 export function amplifySignal(value: number, recentValues: number[]): number {
-  if (!recentValues || !Array.isArray(recentValues) || recentValues.length === 0) return value;
+  if (recentValues.length === 0) return value;
   
   // Calcular la amplitud reciente de datos reales
   const recentMin = Math.min(...recentValues);

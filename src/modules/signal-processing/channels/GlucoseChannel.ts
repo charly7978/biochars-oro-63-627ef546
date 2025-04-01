@@ -1,52 +1,28 @@
 
 /**
- * Specialized channel for glucose processing
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Glucose optimized signal channel
  */
-import { SpecializedChannel } from './SpecializedChannel';
 
+import { SpecializedChannel } from './SpecializedChannel';
+import { VitalSignType, ChannelFeedback } from '../../../types/signal';
+
+/**
+ * Signal channel optimized for glucose processing
+ */
 export class GlucoseChannel extends SpecializedChannel {
-  private glucose: number = 0;
-  private confidence: number = 0;
-  private lastCalculation: number = 0;
+  // Public properties required by OptimizedSignalChannel interface
+  public readonly id: string;
   
   constructor() {
-    super('glucose');
+    super(VitalSignType.GLUCOSE);
+    this.id = `channel_${this.type}`;
   }
   
-  protected processBuffer(): void {
-    if (this.buffer.length < 10) {
-      return;
-    }
-    
-    const now = Date.now();
-    // Only recalculate every 5 seconds
-    if (now - this.lastCalculation < 5000) {
-      return;
-    }
-    
-    // Basic glucose calculation (placeholder implementation)
-    const recentValues = this.buffer.slice(-30);
-    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    
-    // Simple calculation (for demo)
-    const baseGlucose = 85;
-    const glucoseVariation = avgValue * 20;
-    
-    this.glucose = Math.round(baseGlucose + glucoseVariation);
-    this.confidence = 0.7 + (recentValues.length / 100); // Higher confidence with more data
-    this.lastCalculation = now;
-  }
-  
-  public getResults(): { glucose: number; confidence: number } {
-    return {
-      glucose: this.glucose,
-      confidence: Math.min(0.95, this.confidence)
-    };
-  }
-  
-  protected resetChannel(): void {
-    this.glucose = 0;
-    this.confidence = 0;
-    this.lastCalculation = 0;
+  protected processValueImpl(value: number): number {
+    // Placeholder implementation - in a real app, this would contain
+    // specialized filtering and processing for glucose signals
+    return value * 1.2;
   }
 }

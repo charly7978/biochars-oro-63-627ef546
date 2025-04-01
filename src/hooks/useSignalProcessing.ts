@@ -6,68 +6,14 @@
  * Integra los procesadores especializados del módulo signal-processing
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { SignalProcessingOptions } from '../types/signal-processing';
-
-// Define the supported processor types (to be imported from actual implementations)
-class PPGSignalProcessor {
-  processSignal(value: number) {
-    return {
-      timestamp: Date.now(),
-      rawValue: value,
-      filteredValue: value,
-      normalizedValue: value,
-      amplifiedValue: value,
-      quality: 100,
-      fingerDetected: true,
-      signalStrength: 1.0
-    };
-  }
-  
-  reset() {}
-  
-  configure(options: any) {}
-}
-
-class HeartbeatProcessor {
-  processSignal(value: number) {
-    return {
-      isPeak: false,
-      peakConfidence: 1.0,
-      instantaneousBPM: 72,
-      rrInterval: 830,
-      heartRateVariability: 50
-    };
-  }
-  
-  reset() {}
-  
-  configure(options: any) {}
-}
-
-// Define the types for processed signals
-interface ProcessedPPGSignal {
-  timestamp: number;
-  rawValue: number;
-  filteredValue: number;
-  normalizedValue: number;
-  amplifiedValue: number;
-  quality: number;
-  fingerDetected: boolean;
-  signalStrength: number;
-}
-
-interface ProcessedHeartbeatSignal {
-  isPeak: boolean;
-  peakConfidence: number;
-  instantaneousBPM: number | null;
-  rrInterval: number | null;
-  heartRateVariability: number | null;
-}
-
-// Reset the finger detector (placeholder function)
-function resetFingerDetector() {
-  console.log("Finger detector reset");
-}
+import { 
+  PPGSignalProcessor, 
+  HeartbeatProcessor,
+  ProcessedPPGSignal,
+  ProcessedHeartbeatSignal,
+  SignalProcessingOptions,
+  resetFingerDetector
+} from '../modules/signal-processing';
 
 // Resultado combinado del procesamiento
 export interface ProcessedSignalResult {
@@ -272,28 +218,6 @@ export function useSignalProcessing() {
     }
   }, []);
   
-  // Reset function to clear everything
-  const reset = useCallback(() => {
-    console.log("useSignalProcessing: Reset function called");
-    
-    if (ppgProcessorRef.current) {
-      ppgProcessorRef.current.reset();
-    }
-    
-    if (heartbeatProcessorRef.current) {
-      heartbeatProcessorRef.current.reset();
-    }
-    
-    resetFingerDetector();
-    setSignalQuality(0);
-    setFingerDetected(false);
-    setHeartRate(0);
-    recentBpmValues.current = [];
-    processedFramesRef.current = 0;
-    setLastResult(null);
-    setIsProcessing(false);
-  }, []);
-  
   return {
     // Estados
     isProcessing,
@@ -308,7 +232,6 @@ export function useSignalProcessing() {
     startProcessing,
     stopProcessing,
     configureProcessors,
-    reset,
     
     // Procesadores
     ppgProcessor: ppgProcessorRef.current,
