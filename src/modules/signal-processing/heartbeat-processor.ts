@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -5,7 +6,6 @@
  * Se encarga del procesamiento especializado de picos/latidos
  */
 import { ProcessedHeartbeatSignal, SignalProcessor, SignalProcessingOptions } from './types';
-import { AdaptivePredictor, getAdaptivePredictor } from './utils/adaptive-predictor';
 
 /**
  * Clase para el procesamiento avanzado de señales cardíacas
@@ -26,39 +26,14 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
   private adaptiveToPeakHistory: boolean = true;
   private dynamicThresholdFactor: number = 0.6;
   
-  // Predictive modeling and adaptive control
-  private adaptivePredictor: AdaptivePredictor;
-  private useAdaptiveControl: boolean = true;
-  private qualityEnhancedByPrediction: boolean = true;
-  
-  constructor() {
-    this.adaptivePredictor = getAdaptivePredictor();
-  }
-  
   /**
    * Procesa un valor y detecta picos cardíacos con algoritmos avanzados
    */
   public processSignal(value: number): ProcessedHeartbeatSignal {
     const timestamp = Date.now();
     
-    // Apply adaptive prediction and control if enabled
-    let enhancedValue = value;
-    let predictionQuality = 0;
-    
-    if (this.useAdaptiveControl) {
-      // Update the adaptive predictor with the current value
-      this.adaptivePredictor.update(timestamp, value, 1.0);
-      
-      // Get prediction for the current time
-      const prediction = this.adaptivePredictor.predict(timestamp);
-      predictionQuality = prediction.confidence * 100;
-      
-      // Use filtered value from predictor for enhanced peak detection
-      enhancedValue = prediction.predictedValue;
-    }
-    
     // Almacenar valor en buffer
-    this.values.push(enhancedValue);
+    this.values.push(value);
     if (this.values.length > 30) {
       this.values.shift();
     }
@@ -70,9 +45,9 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     let rrInterval: number | null = null;
     
     // Verificar condiciones para detección de pico
-    if (this.isPotentialPeak(enhancedValue, timestamp)) {
+    if (this.isPotentialPeak(value, timestamp)) {
       // Verificar si es un pico válido con análisis de forma de onda
-      const { isValidPeak, confidence } = this.validatePeak(enhancedValue);
+      const { isValidPeak, confidence } = this.validatePeak(value);
       
       if (isValidPeak) {
         isPeak = true;
@@ -96,7 +71,7 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
         
         // Actualizar referencias del pico
         this.lastPeakTime = timestamp;
-        this.lastPeakValue = enhancedValue;
+        this.lastPeakValue = value;
         this.peakTimes.push(timestamp);
         
         // Limitar el historial de tiempos de picos
@@ -114,14 +89,9 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     // Calcular variabilidad del ritmo cardíaco
     const heartRateVariability = this.calculateHRV();
     
-    // Enhance confidence with prediction quality if enabled
-    if (this.qualityEnhancedByPrediction && this.useAdaptiveControl) {
-      peakConfidence = 0.7 * peakConfidence + 0.3 * (predictionQuality / 100);
-    }
-    
     return {
       timestamp,
-      value: enhancedValue,
+      value,
       isPeak,
       peakConfidence,
       instantaneousBPM,
@@ -239,18 +209,6 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
       // Ajustar la distancia mínima entre picos según la fuerza de filtrado
       this.minPeakDistance = 250 + (options.filterStrength * 100);
     }
-    
-    // Configure adaptive control options
-    if (options.useAdaptiveControl !== undefined) {
-      this.useAdaptiveControl = options.useAdaptiveControl;
-    }
-    
-    if (options.qualityEnhancedByPrediction !== undefined) {
-      this.qualityEnhancedByPrediction = options.qualityEnhancedByPrediction;
-    }
-    
-    // Also configure the adaptive predictor
-    this.adaptivePredictor.configure(options);
   }
   
   /**
@@ -263,16 +221,6 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     this.lastPeakTime = null;
     this.lastPeakValue = 0;
     this.peakThreshold = 0.2;
-    
-    // Reset adaptive predictor
-    this.adaptivePredictor.reset();
-  }
-  
-  /**
-   * Get the state of the adaptive predictor for debugging
-   */
-  public getAdaptivePredictorState(): any {
-    return this.adaptivePredictor.getState();
   }
 }
 
