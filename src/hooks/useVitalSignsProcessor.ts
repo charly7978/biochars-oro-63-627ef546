@@ -127,8 +127,8 @@ export function useVitalSignsProcessor() {
     // Medir tiempo de procesamiento para diagnóstico
     const startTime = performance.now();
     
-    // Procesar señal
-    const result = processorRef.current.processSignal(value, rrData);
+    // Procesar señal - fix to use proper arguments (value only)
+    const result = processorRef.current.processSignal(value);
     
     // Calcular tiempo de procesamiento
     const processingTime = performance.now() - startTime;

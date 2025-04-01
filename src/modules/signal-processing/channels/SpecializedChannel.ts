@@ -2,79 +2,89 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Base class for all specialized signal processing channels
+ * Base class for specialized signal processing channels
  */
 
 import { OptimizedSignalChannel } from '../types';
 
 /**
- * Base abstract class for specialized signal channels
- * Each channel handles a specific vital sign processing
+ * Base class for all specialized signal processing channels
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
-  // Channel type identifier - now public to match the interface
-  public readonly type: string;
-  
-  // Common buffer for all channels
+  public type: string;
+  public id: string;
   protected recentValues: number[] = [];
-  protected readonly maxBufferSize: number = 30;
+  protected maxBufferSize: number = 100;
+  protected currentQuality: number = 0;
+  protected isActive: boolean = true;
   
   constructor(type: string) {
     this.type = type;
+    this.id = `${type.toLowerCase()}-${Date.now()}`;
   }
   
   /**
-   * Process a signal value and return channel-specific output
+   * Process a signal value through this channel
    */
   abstract processSignal(signal: number): any;
   
   /**
-   * Calculate quality score for this channel's processing
+   * Process a signal value with optional additional context
    */
-  abstract calculateQuality(signal: number): number;
+  processValue(signal: number): any {
+    return this.processSignal(signal);
+  }
   
   /**
-   * Add value to buffer and maintain buffer size
+   * Calculate signal quality for this channel
    */
-  protected addToBuffer(value: number): void {
-    this.recentValues.push(value);
+  calculateQuality(signal: number): number {
+    // Add to recent values
+    this.recentValues.push(signal);
     if (this.recentValues.length > this.maxBufferSize) {
       this.recentValues.shift();
     }
+    
+    // Simple quality: stable non-zero signal
+    if (this.recentValues.length < 5) {
+      this.currentQuality = 0.5;
+      return this.currentQuality;
+    }
+    
+    // Calculate statistics
+    const mean = this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
+    const variance = this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
+    
+    // Calculate quality metrics
+    const absSignal = Math.abs(signal);
+    const signalPresent = absSignal > 0.01 ? 1 : 0;
+    const stability = Math.max(0, 1 - Math.sqrt(variance) / Math.max(0.01, Math.abs(mean)));
+    
+    // Update quality
+    this.currentQuality = 0.3 * this.currentQuality + 0.7 * (0.7 * stability + 0.3 * signalPresent);
+    
+    return this.currentQuality;
+  }
+
+  /**
+   * Get the current quality value
+   */
+  getQuality(): number {
+    return this.currentQuality;
   }
   
   /**
-   * Reset channel state
+   * Reset the channel state
    */
-  public reset(): void {
+  reset(): void {
     this.recentValues = [];
+    this.currentQuality = 0;
   }
   
   /**
-   * Get variance of recent values
+   * Apply feedback to the channel
    */
-  protected getVariance(): number {
-    if (this.recentValues.length < 2) return 0;
-    
-    const mean = this.getMean();
-    return this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
-  }
-  
-  /**
-   * Get mean of recent values
-   */
-  protected getMean(): number {
-    if (this.recentValues.length === 0) return 0;
-    return this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
-  }
-  
-  /**
-   * Apply basic filtering to smooth values
-   */
-  protected smoothValue(value: number): number {
-    if (this.recentValues.length < 3) return value;
-    
-    const recentValuesCopy = [...this.recentValues, value].slice(-3);
-    return recentValuesCopy.reduce((sum, val) => sum + val, 0) / recentValuesCopy.length;
+  applyFeedback(feedback: any): void {
+    // Base implementation does nothing
   }
 }

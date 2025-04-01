@@ -41,33 +41,30 @@ export * from './specialized/CardiacProcessor';
 export * from './arrhythmia/types';
 export * from './shared-signal-utils';
 
-// Export utility functions from utils.ts
-export {
-  // Export signal processing core functions
+// Export enhanced detection modules directly (without duplicating with the utils exports)
+export * from './enhanced-detection/fourier-analyzer';
+export * from './enhanced-detection/wavelet-analyzer';
+export * from './enhanced-detection/multi-beat-validator';
+export * from './enhanced-detection/adaptive-threshold';
+export * from './enhanced-detection/spectral-analyzer';
+
+// Export core utility functions only (exclude those that would duplicate with enhanced detection exports)
+export { 
+  // Signal processing core functions
   calculateAC,
   calculateDC,
   calculateStandardDeviation,
   calculateEMA,
   normalizeValue,
   
-  // Export peak detection functions
+  // Peak detection functions
   findPeaksAndValleys,
   calculateAmplitude,
   
-  // Export filter functions
+  // Filter functions
   applySMAFilter,
   amplifySignal,
   
-  // Export perfusion functions
-  calculatePerfusionIndex,
-  
-  // Enhanced detection functions
-  findPeaksFourier,
-  findPeaksWavelet,
-  validateMultiBeatSequence,
-  getAdaptiveThreshold,
-  calculateSignalNoiseRatio,
-  calculatePulsatilityIndex,
-  calculateConsistencyMetrics,
-  performSpectralAnalysis
+  // Perfusion functions
+  calculatePerfusionIndex
 } from './utils';

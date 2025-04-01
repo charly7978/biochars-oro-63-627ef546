@@ -14,7 +14,7 @@ export { calculatePerfusionIndex } from './perfusion-utils';
 // Export peak detection utilities
 export { findPeaksAndValleys, calculateAmplitude } from './peak-detection-utils';
 
-// Export enhanced detection utilities
+// Re-export enhanced detection functions for backward compatibility
 export { 
   findPeaksFourier, 
   performFourierAnalysis 
@@ -33,7 +33,7 @@ export {
   getAdaptiveThreshold
 } from '../enhanced-detection/adaptive-threshold';
 
-// Export signal quality utilities
+// Re-export signal quality utilities
 export {
   calculateSignalNoiseRatio,
   calculatePulsatilityIndex,

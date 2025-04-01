@@ -1,95 +1,181 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * PPG Signal Processor Implementation
+ * Implementation of PPG signal processor
  */
 
-import { ProcessedPPGSignal } from './types';
+import { ProcessedPPGSignal, SignalProcessingOptions, SignalProcessor } from './types';
+import { detectFinger } from './finger-detector';
 
 /**
- * Processes PPG signals from raw input
+ * Processes raw PPG signals to extract features
  */
-export class PPGSignalProcessor {
-  private buffer: number[] = [];
-  private readonly maxBufferSize: number = 50;
+export class PPGSignalProcessor implements SignalProcessor {
+  private options: SignalProcessingOptions = {
+    filterStrength: 0.3,
+    qualityThreshold: 0.4,
+    adaptiveFiltering: true,
+    fingerDetectionSensitivity: 1.0,
+    amplificationFactor: 3.0
+  };
+  
+  private lastValues: number[] = [];
+  private filteredValues: number[] = [];
+  private rawBuffer: number[] = [];
+  private smoothedBuffer: number[] = [];
+  private normalizedBuffer: number[] = [];
+  private currentQuality: number = 0;
+  private maxBufferSize: number = 200;
   
   /**
-   * Process a new PPG value
+   * Process a PPG signal value
    */
-  public processValue(value: number): ProcessedPPGSignal {
-    // Add value to buffer
-    this.buffer.push(value);
+  processSignal(value: number): ProcessedPPGSignal {
+    const timestamp = Date.now();
     
-    // Keep buffer size in check
-    if (this.buffer.length > this.maxBufferSize) {
-      this.buffer.shift();
+    // Add to buffers
+    this.rawBuffer.push(value);
+    if (this.rawBuffer.length > this.maxBufferSize) {
+      this.rawBuffer.shift();
     }
     
-    // Calculate signal metrics
-    const filteredValue = this.filterValue(value);
-    const normalizedValue = this.normalizeValue(filteredValue);
-    const quality = this.calculateQuality(normalizedValue);
+    // Apply filtering
+    let filteredValue = this.applyFilter(value);
+    this.filteredValues.push(filteredValue);
+    if (this.filteredValues.length > this.maxBufferSize) {
+      this.filteredValues.shift();
+    }
     
+    // Calculate quality
+    this.currentQuality = this.calculateQuality(filteredValue);
+    
+    // Normalize
+    const normalizedValue = this.normalizeValue(filteredValue);
+    this.normalizedBuffer.push(normalizedValue);
+    if (this.normalizedBuffer.length > this.maxBufferSize) {
+      this.normalizedBuffer.shift();
+    }
+    
+    // Detect finger
+    const fingerDetected = detectFinger(this.currentQuality, filteredValue);
+    
+    // Calculate amplified value for heartbeat processing
+    const amplifiedValue = filteredValue * (this.options.amplificationFactor || 3.0);
+    
+    // Calculate signal strength (absolute amplitude)
+    const signalStrength = Math.abs(filteredValue);
+    
+    // Return processed signal
     return {
-      timestamp: Date.now(),
+      timestamp,
       rawValue: value,
       filteredValue,
       normalizedValue,
-      quality,
-      fingerDetected: quality > 0.2
+      quality: this.currentQuality * 100, // Scale to 0-100 range
+      fingerDetected,
+      amplifiedValue,
+      signalStrength
     };
   }
   
   /**
-   * Apply basic filtering to smooth the signal
+   * Apply signal filter
    */
-  private filterValue(value: number): number {
-    if (this.buffer.length < 3) return value;
+  private applyFilter(value: number): number {
+    // Apply smoothing filter based on settings
+    const alpha = this.options.filterStrength || 0.3;
     
-    // Simple moving average
-    const recentValues = this.buffer.slice(-3);
-    return recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    if (this.lastValues.length === 0) {
+      this.lastValues.push(value);
+      return value;
+    }
+    
+    // Calculate filtered value
+    const lastValue = this.lastValues[this.lastValues.length - 1];
+    const filtered = alpha * value + (1 - alpha) * lastValue;
+    
+    // Update last values
+    this.lastValues.push(filtered);
+    if (this.lastValues.length > 10) {
+      this.lastValues.shift();
+    }
+    
+    return filtered;
   }
   
   /**
-   * Normalize value to a standard range
-   */
-  private normalizeValue(value: number): number {
-    if (this.buffer.length < 5) return value;
-    
-    const recentValues = this.buffer.slice(-10);
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    
-    if (max === min) return 0.5;
-    return (value - min) / (max - min);
-  }
-  
-  /**
-   * Calculate signal quality based on variance and stability
+   * Calculate signal quality
    */
   private calculateQuality(value: number): number {
-    if (this.buffer.length < 10) return 0.5;
+    if (this.filteredValues.length < 10) {
+      return 0.5; // Initial quality
+    }
     
-    const recentValues = this.buffer.slice(-10);
-    
-    // Calculate variance
+    // Calculate signal statistics
+    const recentValues = this.filteredValues.slice(-20);
     const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
+    const stdDev = Math.sqrt(variance);
     
-    // Low variance in a valid range indicates better quality
-    const varianceQuality = Math.max(0, 1 - Math.min(1, variance * 10));
+    // Calculate quality based on metrics
+    const signalPresent = Math.abs(value) > 0.01 ? 1 : 0;
+    const stability = Math.max(0, 1 - stdDev / Math.max(0.01, Math.abs(mean)));
     
-    // Having values in an appropriate range indicates better quality
-    const rangeQuality = value > 0.1 && value < 0.9 ? 1 : 0.5;
+    return 0.4 * stability + 0.6 * signalPresent;
+  }
+  
+  /**
+   * Normalize value
+   */
+  private normalizeValue(value: number): number {
+    if (this.filteredValues.length < 5) return value;
     
-    return varianceQuality * 0.7 + rangeQuality * 0.3;
+    // Find min/max in recent window
+    const recentValues = this.filteredValues.slice(-30);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const range = max - min;
+    
+    if (range < 0.001) return 0.5; // Handle zero or near-zero range
+    
+    return (value - min) / range;
   }
   
   /**
    * Reset the processor state
    */
-  public reset(): void {
-    this.buffer = [];
+  reset(): void {
+    this.lastValues = [];
+    this.filteredValues = [];
+    this.rawBuffer = [];
+    this.smoothedBuffer = [];
+    this.normalizedBuffer = [];
+    this.currentQuality = 0;
+  }
+  
+  /**
+   * Configure the processor
+   */
+  configure(options: Partial<SignalProcessingOptions>): void {
+    if (options.amplificationFactor !== undefined) {
+      this.options.amplificationFactor = options.amplificationFactor;
+    }
+    
+    if (options.filterStrength !== undefined) {
+      this.options.filterStrength = options.filterStrength;
+    }
+    
+    if (options.qualityThreshold !== undefined) {
+      this.options.qualityThreshold = options.qualityThreshold;
+    }
+    
+    if (options.adaptiveFiltering !== undefined) {
+      this.options.adaptiveFiltering = options.adaptiveFiltering;
+    }
+    
+    if (options.fingerDetectionSensitivity !== undefined) {
+      this.options.fingerDetectionSensitivity = options.fingerDetectionSensitivity;
+    }
   }
 }

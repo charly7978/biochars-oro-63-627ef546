@@ -15,6 +15,8 @@ export interface ProcessedPPGSignal {
   normalizedValue: number;
   quality: number;
   fingerDetected: boolean;
+  amplifiedValue: number;
+  signalStrength: number;
 }
 
 /**
@@ -27,6 +29,8 @@ export interface ProcessedHeartbeatSignal {
   bpm: number;
   rrInterval: number | null;
   confidence: number;
+  instantaneousBPM: number | null;
+  heartRateVariability: number | null;
 }
 
 /**
@@ -37,6 +41,11 @@ export interface SignalProcessingOptions {
   qualityThreshold?: number;
   adaptiveFiltering?: boolean;
   fingerDetectionSensitivity?: number;
+  amplificationFactor?: number;
+  useAdaptiveControl?: boolean;
+  qualityEnhancedByPrediction?: boolean;
+  adaptationRate?: number;
+  predictionHorizon?: number;
 }
 
 /**
@@ -44,7 +53,20 @@ export interface SignalProcessingOptions {
  */
 export interface OptimizedSignalChannel {
   type: string;
+  id: string;
   processSignal(signal: number): any;
+  processValue(signal: number): any;
   calculateQuality(signal: number): number;
+  getQuality(): number;
   reset(): void;
+  applyFeedback(feedback: any): void;
+}
+
+/**
+ * Interface for signal processors
+ */
+export interface SignalProcessor {
+  processSignal(signal: number): any;
+  reset(): void;
+  configure(options: Partial<SignalProcessingOptions>): void;
 }

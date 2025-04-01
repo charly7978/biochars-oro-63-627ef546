@@ -103,7 +103,7 @@ export function useSignalProcessing() {
       setFingerDetected(ppgResult.fingerDetected);
       
       // Calcular BPM promedio
-      if (heartbeatResult.instantaneousBPM !== null && heartbeatResult.peakConfidence > 0.5) {
+      if (heartbeatResult.instantaneousBPM !== null && heartbeatResult.confidence > 0.5) {
         recentBpmValues.current.push(heartbeatResult.instantaneousBPM);
         
         // Mantener solo los valores más recientes
@@ -153,7 +153,7 @@ export function useSignalProcessing() {
         
         // Información cardíaca
         isPeak: heartbeatResult.isPeak,
-        peakConfidence: heartbeatResult.peakConfidence,
+        peakConfidence: heartbeatResult.confidence,
         instantaneousBPM: heartbeatResult.instantaneousBPM,
         averageBPM,
         rrInterval: heartbeatResult.rrInterval,
@@ -218,6 +218,27 @@ export function useSignalProcessing() {
     }
   }, []);
   
+  /**
+   * Reset the signal processing state
+   */
+  const reset = useCallback(() => {
+    if (ppgProcessorRef.current) {
+      ppgProcessorRef.current.reset();
+    }
+    
+    if (heartbeatProcessorRef.current) {
+      heartbeatProcessorRef.current.reset();
+    }
+    
+    resetFingerDetector();
+    setSignalQuality(0);
+    setFingerDetected(false);
+    setHeartRate(0);
+    setLastResult(null);
+    recentBpmValues.current = [];
+    processedFramesRef.current = 0;
+  }, []);
+  
   return {
     // Estados
     isProcessing,
@@ -232,6 +253,7 @@ export function useSignalProcessing() {
     startProcessing,
     stopProcessing,
     configureProcessors,
+    reset,
     
     // Procesadores
     ppgProcessor: ppgProcessorRef.current,
