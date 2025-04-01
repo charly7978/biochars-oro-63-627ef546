@@ -5,16 +5,17 @@
  * Central export for vital signs module
  */
 
-// Export the traditional processor
+// Export the VitalSignsProcessor
 export { VitalSignsProcessor } from './VitalSignsProcessor';
-export type { VitalSignsResult } from './VitalSignsProcessor';
 
-// Export the new modular processor
+// Export VitalSignsResult type from types folder
+export type { VitalSignsResult } from './types/vital-signs-result';
+
+// Export the traditional processor
 export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
-export type { VitalSignsResult as ModularVitalSignsResult } from './ModularVitalSignsProcessor';
 
-// Export the new precision processor with advanced features
-export { PrecisionVitalSignsProcessor } from './PrecisionVitalSignsProcessor';
+// Export the precision processor with advanced features
+export { PrecisionVitalSignsProcessor } from './PrecisionVitalSignsProcessor'; 
 export type { PrecisionVitalSignsResult } from './PrecisionVitalSignsProcessor';
 
 // Export calibration module
@@ -64,4 +65,3 @@ export {
 
 // Export the blood pressure processor for direct access
 export { BloodPressureProcessor } from './blood-pressure-processor';
-

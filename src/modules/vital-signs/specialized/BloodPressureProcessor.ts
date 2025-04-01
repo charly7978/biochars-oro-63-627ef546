@@ -7,7 +7,7 @@
  */
 
 import { BaseVitalSignProcessor } from './BaseVitalSignProcessor';
-import { VitalSignType, ChannelFeedback } from '../../../types/signal';
+import { VitalSignType } from '../../../types/signal';
 import { calculateStandardDeviation, applySMAFilter } from '../utils';
 
 /**
@@ -97,8 +97,9 @@ export class BloodPressureProcessor extends BaseVitalSignProcessor<BloodPressure
     }
     
     // Apply SMA filter from utils
-    const recentValues = this.buffer.slice(-5);
-    return applySMAFilter([...recentValues, value], 3)[5];
+    const recentValues = [...this.buffer.slice(-5), value];
+    const smoothedValues = applySMAFilter(recentValues, 3);
+    return smoothedValues[smoothedValues.length - 1];
   }
   
   /**

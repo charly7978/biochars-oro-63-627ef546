@@ -55,7 +55,7 @@ export class BloodPressureProcessor {
       };
     }
 
-    // Apply noise reduction first
+    // Apply noise reduction first - use the updated applySMAFilter
     const filteredValues = applySMAFilter(values, 5);
     
     // Signal quality validation
