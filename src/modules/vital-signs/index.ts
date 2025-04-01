@@ -33,6 +33,10 @@ export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
 export { PrecisionVitalSignsProcessor } from './PrecisionVitalSignsProcessor'; 
 export type { PrecisionVitalSignsResult } from './PrecisionVitalSignsProcessor';
 
+// Export hybrid processor with neural network enhancements
+export { HybridVitalSignsProcessor } from './HybridVitalSignsProcessor';
+export type { HybridProcessingOptions } from './HybridVitalSignsProcessor';
+
 // Export calibration module
 export { CalibrationManager } from './calibration/CalibrationManager';
 export type { CalibrationReference, CalibrationFactors } from './calibration/CalibrationManager';
