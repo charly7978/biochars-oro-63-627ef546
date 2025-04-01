@@ -7,8 +7,14 @@
 
 import { calculateVariance } from './signal-normalizer';
 
+// Variables de estado global para tracking de señal
+let consecutiveWeakSignalsCount = 0;
+const MIN_SIGNAL_STRENGTH = 0.08; // Aumentado el umbral mínimo para señal válida
+const MAX_WEAK_SIGNALS = 4; 
+
 /**
  * Detecta la presencia de un dedo en la señal PPG
+ * Requiere señales más fuertes para considerarse válido
  */
 export function detectFingerPresence(
   buffer: number[],
@@ -24,6 +30,26 @@ export function detectFingerPresence(
   // Varianza como medida secundaria
   const variance = calculateVariance(buffer);
   
+  // Verificar señal anémica (demasiado débil)
+  if (amplitude < MIN_SIGNAL_STRENGTH) {
+    consecutiveWeakSignalsCount++;
+    
+    // Si hay demasiadas señales débiles consecutivas, no hay dedo
+    if (consecutiveWeakSignalsCount > MAX_WEAK_SIGNALS) {
+      console.log("Señal demasiado débil/anémica para detección válida", {
+        amplitude,
+        min,
+        max,
+        variance,
+        consecutiveWeakSignals: consecutiveWeakSignalsCount
+      });
+      return false;
+    }
+  } else {
+    // Señal fuerte, resetear contador
+    consecutiveWeakSignalsCount = Math.max(0, consecutiveWeakSignalsCount - 1);
+  }
+  
   // Criterios combinados para la detección de dedo
   const hasAmplitude = amplitude >= sensitivity * 0.05;
   const hasReasonableVariance = variance < 0.1 && variance > 0.0001;
@@ -33,6 +59,7 @@ export function detectFingerPresence(
 
 /**
  * Evalúa la confianza de la detección de dedo
+ * Incorpora verificación de fuerza mínima de señal
  */
 export function evaluateFingerDetectionConfidence(
   buffer: number[],
@@ -48,7 +75,10 @@ export function evaluateFingerDetectionConfidence(
   const max = Math.max(...buffer);
   const amplitude = max - min;
   
-  if (amplitude < 0.01) {
+  // Verificar señal anémica
+  if (amplitude < MIN_SIGNAL_STRENGTH) {
+    confidence *= 0.3; // Penalizar fuertemente señales muy débiles
+  } else if (amplitude < 0.01) {
     confidence *= 0.5;
   } else if (amplitude > 0.05) {
     confidence *= 1.2;
@@ -62,4 +92,13 @@ export function evaluateFingerDetectionConfidence(
   }
   
   return Math.min(1, Math.max(0, confidence));
+}
+
+/**
+ * Resetear detector de dedo
+ * Incluye reseteo de contador de señales débiles
+ */
+export function resetFingerDetector() {
+  consecutiveWeakSignalsCount = 0;
+  console.log("Detector de dedo reiniciado, contador de señales débiles reseteado");
 }
