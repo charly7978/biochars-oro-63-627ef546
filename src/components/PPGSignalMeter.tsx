@@ -284,7 +284,7 @@ const PPGSignalMeter = memo(({
     gradient.addColorStop(0,'#c1ff82'); // Soft purple (top)
     gradient.addColorStop(0.3, '#ffbddd'); // Soft peach (upper middle)
     gradient.addColorStop(0.5, '#afd7ff'); // Soft green (lower middle)
-    gradient.addColorStop(1, '#4d4c6c'); // Soft blue (bottom)
+    gradient.addColorStop(0.5, '#aeac83'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
