@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -32,7 +31,7 @@ export class HeartbeatProcessorAdapter {
       timestamp: result.timestamp,
       value: result.filteredValue,
       isPeak: result.isPeak,
-      peakConfidence: result.peakConfidence,
+      confidence: result.peakConfidence || result.confidence, // Handle both property names for compatibility
       instantaneousBPM: result.instantaneousBPM,
       rrInterval: result.rrInterval,
       heartRateVariability: result.heartRateVariability

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -57,9 +56,15 @@ export const useSignalProcessor = () => {
     };
 
     // Error callback
-    const onError = (error: ProcessingError) => {
+    const onError = (error: Error) => {
       console.error("useSignalProcessor: Error en procesamiento:", error);
-      setError(error);
+      // Create a properly formatted ProcessingError
+      const processingError: ProcessingError = {
+        code: error.name || 'UNKNOWN_ERROR',
+        message: error.message,
+        timestamp: Date.now()
+      };
+      setError(processingError);
     };
 
     // Cleanup
@@ -130,7 +135,13 @@ export const useSignalProcessor = () => {
       } catch (err) {
         console.error("useSignalProcessor: Error procesando frame:", err);
         if (err instanceof Error) {
-          setError(err as ProcessingError);
+          // Create a properly formatted ProcessingError
+          const processingError: ProcessingError = {
+            code: err.name || 'PROCESSING_ERROR',
+            message: err.message,
+            timestamp: Date.now()
+          };
+          setError(processingError);
         }
       }
     }

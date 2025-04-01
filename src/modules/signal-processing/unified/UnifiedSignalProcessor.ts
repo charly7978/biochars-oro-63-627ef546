@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -21,8 +20,8 @@ import { OptimizedPPGBuffer } from '../../../hooks/heart-beat/signal-processing/
  */
 export class UnifiedSignalProcessor {
   // Buffers para procesamiento
-  private valuesBuffer: OptimizedPPGBuffer<{ value: number, timestamp: number }>;
-  private filteredBuffer: OptimizedPPGBuffer<{ value: number, timestamp: number }>;
+  private valuesBuffer: OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>;
+  private filteredBuffer: OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>;
   private peakTimes: number[] = [];
   private rrIntervals: number[] = [];
   
@@ -41,8 +40,8 @@ export class UnifiedSignalProcessor {
   
   constructor(options?: SignalProcessorOptions) {
     // Inicializar buffers
-    this.valuesBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number }>(30);
-    this.filteredBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number }>(30);
+    this.valuesBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
+    this.filteredBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
     
     // Aplicar opciones si se proporcionan
     if (options) {
@@ -57,11 +56,11 @@ export class UnifiedSignalProcessor {
     const timestamp = Date.now();
     
     // Guardar valor original
-    this.valuesBuffer.push({ value, timestamp });
+    this.valuesBuffer.push({ value, timestamp, time: timestamp });
     
     // Aplicar filtro adaptativo
     const filteredValue = this.applyAdaptiveFilter(value);
-    this.filteredBuffer.push({ value: filteredValue, timestamp });
+    this.filteredBuffer.push({ value: filteredValue, timestamp, time: timestamp });
     
     // Normalizar y amplificar
     const normalizedValue = normalizeSignal(filteredValue, this.filteredBuffer.getValues());
@@ -375,8 +374,8 @@ export class UnifiedSignalProcessor {
    * Reinicia el procesador
    */
   public reset(): void {
-    this.valuesBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number }>(30);
-    this.filteredBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number }>(30);
+    this.valuesBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
+    this.filteredBuffer = new OptimizedPPGBuffer<{ value: number, timestamp: number, time: number }>(30);
     this.peakTimes = [];
     this.rrIntervals = [];
     this.lastPeakTime = null;

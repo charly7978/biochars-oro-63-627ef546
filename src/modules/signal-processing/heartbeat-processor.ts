@@ -123,7 +123,7 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
       timestamp,
       value: enhancedValue,
       isPeak,
-      peakConfidence,
+      confidence: peakConfidence,
       instantaneousBPM,
       rrInterval,
       heartRateVariability
