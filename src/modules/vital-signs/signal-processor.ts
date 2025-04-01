@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -9,7 +10,6 @@ import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
 import { MotionArtifactManager } from './processors/motion-artifact-manager';
 import { evaluateSignalConsistency, detectMotionInSignal } from '../../hooks/heart-beat/signal-quality';
-import { AccelerometerData } from './motion/types';
 
 /**
  * Signal processor for real PPG signals
@@ -48,17 +48,7 @@ export class SignalProcessor extends BaseProcessor {
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
-    
-    // Fix: Pass proper configuration object instead of just sensitivity value
-    this.motionArtifactManager = new MotionArtifactManager({
-      threshold: 3.5,
-      windowSize: 10,
-      recoveryTime: 1500,
-      adaptiveThreshold: true
-    });
-    
-    // Set sensitivity after initialization
-    this.motionArtifactManager.setSensitivity(0.75);
+    this.motionArtifactManager = new MotionArtifactManager(0.75); // 75% sensibilidad
   }
   
   /**
@@ -96,34 +86,33 @@ export class SignalProcessor extends BaseProcessor {
   }
 
   /**
-   * Detectar artefactos de movimiento en la señal
+   * Nuevo: Detectar artefactos de movimiento en la señal
    */
-  public detectMotionArtifacts(value: number, accelerometerData?: AccelerometerData): boolean {
+  public detectMotionArtifacts(value: number, accelerometerData?: {x: number, y: number, z: number}): boolean {
     // Usar el administrador especializado para detección
-    const timestamp = Date.now();
-    const result = this.motionArtifactManager.processValue(value, timestamp, accelerometerData);
+    const motion = this.motionArtifactManager.processValue(value, accelerometerData);
     
     // Actualizar historial
-    this.motionArtifactHistory.push(result.isArtifact);
+    this.motionArtifactHistory.push(motion.motionDetected);
     if (this.motionArtifactHistory.length > this.MOTION_HISTORY_SIZE) {
       this.motionArtifactHistory.shift();
     }
     
     // Actualizar estado
-    if (result.isArtifact) {
+    if (motion.motionDetected) {
       this.lastMotionDetectedTime = Date.now();
       this.motionDetected = true;
     } else if (Date.now() - this.lastMotionDetectedTime > this.MOTION_RECOVERY_TIME) {
       this.motionDetected = false;
     }
     
-    this.motionCompensationActive = result.isArtifact && result.correctedValue !== undefined;
+    this.motionCompensationActive = motion.compensationApplied;
     
     return this.motionDetected;
   }
   
   /**
-   * Obtener métricas sobre la calidad de señal y artefactos
+   * Nuevo: Obtener métricas sobre la calidad de señal y artefactos
    */
   public getSignalMetrics(windowSize: number = 15): {
     quality: number;
@@ -154,7 +143,7 @@ export class SignalProcessor extends BaseProcessor {
    */
   public applyFilters(
     value: number, 
-    accelerometerData?: AccelerometerData,
+    accelerometerData?: {x: number, y: number, z: number},
     irValue?: number
   ): { 
     filteredValue: number, 
