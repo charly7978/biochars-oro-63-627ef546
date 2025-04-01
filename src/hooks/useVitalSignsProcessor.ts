@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -126,7 +127,7 @@ export function useVitalSignsProcessor() {
     // Medir tiempo de procesamiento para diagnóstico
     const startTime = performance.now();
     
-    // FIX: Create a parameter object instead of passing value directly
+    // Process signal with the processor
     const result = processorRef.current.processSignal({
       value: value,
       rrData: rrData
