@@ -37,8 +37,12 @@ interface MediaTrackConstraintSet {
   contrast?: ConstrainDouble;
 }
 
-// Define ImageCapture as a properly exported global class
+// Define ImageCapture globally so it's accessible everywhere
 declare global {
+  interface Window {
+    ImageCapture: typeof ImageCapture;
+  }
+  
   class ImageCapture {
     constructor(track: MediaStreamTrack);
     grabFrame(): Promise<ImageBitmap>;
