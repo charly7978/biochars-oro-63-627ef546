@@ -122,7 +122,7 @@ export const extractFrameData = (
  * Procesa frames de la cámara a una tasa controlada
  */
 export const processFramesControlled = (
-  imageCapture: ImageCapture,
+  imageCapture: any, // Use 'any' here to avoid type issues while ensuring global definition works
   isMonitoring: boolean,
   targetFrameRate: number,
   processCallback: (imageData: ImageData) => void

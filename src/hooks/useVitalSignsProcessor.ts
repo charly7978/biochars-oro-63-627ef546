@@ -1,98 +1,129 @@
-
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Hook for processing vital signs signals
  */
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { VitalSignsProcessor } from '../modules/vital-signs'; // Import from central module
+import type { VitalSignsResult, RRIntervalData } from '../types/vital-signs';
+import type { ArrhythmiaWindow } from './vital-signs/types';
 
-import { useState, useRef, useCallback } from 'react';
-import { VitalSignsProcessor, VitalSignsResult } from '../modules/VitalSignsProcessor';
-
-// Interface for the hook return type
-interface UseVitalSignsProcessorReturn {
-  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
-  reset: () => VitalSignsResult | null;
-  fullReset: () => void;
-  arrhythmiaCounter: number;
-  lastValidResults: VitalSignsResult | null;
-  arrhythmiaWindows: Array<{start: number, end: number}>;
-  debugInfo: any;
-}
-
-/**
- * Hook for processing vital signs with direct algorithms only
- * No simulation or reference values are used
- */
-export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // State management - only direct measurement, no simulation
+export function useVitalSignsProcessor() {
+  const processorRef = useRef<VitalSignsProcessor | null>(null);
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
+  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
+  const debugInfo = useRef({
+    processedSignals: 0,
+    signalLog: [] as { timestamp: number, value: number, result: any }[]
+  });
   
-  // Create processor instance
-  const processorRef = useRef<VitalSignsProcessor>(new VitalSignsProcessor());
+  // Initialize processor on mount
+  const initializeProcessor = useCallback(() => {
+    processorRef.current = new VitalSignsProcessor();
+    console.log("VitalSignsProcessor initialized");
+  }, []);
+
+  // Initialization effect
+  useEffect(() => {
+    if (!processorRef.current) {
+      initializeProcessor();
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (processorRef.current) {
+        console.log("VitalSignsProcessor cleanup");
+        processorRef.current = null;
+      }
+    };
+  }, [initializeProcessor]);
   
-  // Session tracking
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  
-  // Signal quality tracking
-  const weakSignalsCountRef = useRef<number>(0);
-  const processedSignals = useRef<number>(0);
-  
-  // Mock for arrhythmia visualization until we implement it properly
-  const arrhythmiaWindows = useRef<Array<{start: number, end: number}>>([]);
-  
-  /**
-   * Process PPG signal directly
-   * No simulation or reference values
-   */
-  const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
-    // Process signal directly - no simulation
-    const result = processorRef.current.processSignal(value, rrData);
-    processedSignals.current++;
+  // Process signal data
+  const processSignal = useCallback((
+    value: number, 
+    rrData?: RRIntervalData
+  ): VitalSignsResult => {
+    if (!processorRef.current) {
+      console.warn("VitalSignsProcessor not initialized");
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
+    }
+    
+    debugInfo.current.processedSignals++;
+    
+    // Note: Using processSignal instead of process
+    const result = processorRef.current.processSignal({
+      value,
+      rrData
+    });
+    
+    // Log for debugging
+    if (debugInfo.current.processedSignals % 30 === 0) {
+      debugInfo.current.signalLog.push({
+        timestamp: Date.now(),
+        value,
+        result: { ...result }
+      });
+      
+      // Keep log size manageable
+      if (debugInfo.current.signalLog.length > 20) {
+        debugInfo.current.signalLog.shift();
+      }
+    }
+    
+    // Store valid results
+    if (result.spo2 > 0) {
+      setLastValidResults(result);
+    }
+    
+    // Check for arrhythmia and update windows
+    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
+      const now = Date.now();
+      setArrhythmiaWindows(prev => {
+        const newWindow = { start: now, end: now + 5000 };
+        return [...prev, newWindow];
+      });
+    }
     
     return result;
   }, []);
-
-  /**
-   * Reset the processor but keep calibration
-   */
-  const reset = useCallback(() => {
-    console.log("useVitalSignsProcessor: Resetting processor");
-    const savedResults = processorRef.current.reset();
-    setLastValidResults(savedResults);
-    return savedResults;
+  
+  // Reset the processor and return last valid results
+  const reset = useCallback((): VitalSignsResult | null => {
+    if (processorRef.current) {
+      processorRef.current.reset();
+    }
+    return lastValidResults;
+  }, [lastValidResults]);
+  
+  // Completely reset the processor
+  const fullReset = useCallback((): void => {
+    if (processorRef.current) {
+      console.log("Full reset of VitalSignsProcessor");
+      processorRef.current.fullReset();
+      setLastValidResults(null);
+      setArrhythmiaWindows([]);
+      debugInfo.current = {
+        processedSignals: 0,
+        signalLog: []
+      };
+    }
   }, []);
   
-  /**
-   * Perform full reset - clear all data
-   * No simulations or reference values
-   */
-  const fullReset = useCallback(() => {
-    console.log("useVitalSignsProcessor: Full reset");
-    processorRef.current.fullReset();
-    setLastValidResults(null);
-    arrhythmiaWindows.current = [];
-    weakSignalsCountRef.current = 0;
-  }, []);
-
-  /**
-   * Add arrhythmia visualization window
-   */
-  const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    arrhythmiaWindows.current.push({ start, end });
-  }, []);
-
-  /**
-   * Clear all arrhythmia windows
-   */
-  const clearArrhythmiaWindows = useCallback(() => {
-    arrhythmiaWindows.current = [];
-  }, []);
-
   return {
     processSignal,
     reset,
     fullReset,
-    arrhythmiaCounter: processorRef.current.getArrhythmiaCounter(),
+    initializeProcessor,
     lastValidResults,
-    arrhythmiaWindows: arrhythmiaWindows.current,
-    debugInfo: {}
+    arrhythmiaCounter: processorRef.current?.getArrhythmiaCounter() || 0,
+    arrhythmiaWindows,
+    debugInfo: debugInfo.current
   };
-};
+}
