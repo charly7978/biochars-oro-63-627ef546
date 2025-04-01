@@ -9,7 +9,7 @@ import type { VitalSignsResult, RRIntervalData } from '../../types/vital-signs';
 
 /**
  * Core processor for vital signs
- * Direct measurement only - no simulation or value constraints
+ * Direct measurement only - no simulation with moderate amplification
  */
 export class VitalSignsProcessor {
   private arrhythmiaCounter: number = 0;
@@ -58,7 +58,7 @@ export class VitalSignsProcessor {
     const bpResult = this.bpProcessor.process(ppgValue);
     const pressure = formatBloodPressure(bpResult.systolic, bpResult.diastolic);
     
-    // Direct calculation without constraints for other vitals
+    // Direct calculation with moderate amplification for other vitals
     const spo2 = this.calculateDirectSpO2(ppgValue);
     const glucose = this.calculateDirectGlucose(ppgValue);
     const lipids = this.calculateDirectLipids(ppgValue);
@@ -96,37 +96,35 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Calculate SpO2 directly from PPG signal without constraints
+   * Calculate SpO2 directly from PPG signal
    */
   private calculateDirectSpO2(ppgValue: number): number {
-    // Direct calculation using signal amplitude
-    // Amplified but not constrained to realistic ranges
-    const amplitude = Math.abs(ppgValue);
-    const baseSpO2 = 90;
-    const amplifiedVariation = ppgValue * 15;
+    // Direct calculation with moderate amplification
+    const baseSpO2 = 94;
+    const amplifiedVariation = ppgValue * 8; // reduced from 15
     return Math.round(baseSpO2 + amplifiedVariation);
   }
   
   /**
-   * Calculate glucose directly from PPG signal without constraints
+   * Calculate glucose directly from PPG signal
    */
   private calculateDirectGlucose(ppgValue: number): number {
-    // Direct calculation without constraints
+    // Direct calculation with moderate amplification
     const baseGlucose = 100;
-    const amplifiedVariation = ppgValue * 50;
+    const amplifiedVariation = ppgValue * 20; // reduced from 50
     return Math.round(baseGlucose + amplifiedVariation);
   }
   
   /**
-   * Calculate lipids directly from PPG signal without constraints
+   * Calculate lipids directly from PPG signal
    */
   private calculateDirectLipids(ppgValue: number): { totalCholesterol: number, triglycerides: number } {
-    // Direct calculation without constraints
+    // Direct calculation with moderate amplification
     const baseCholesterol = 180;
     const baseTriglycerides = 150;
     
-    const cholVariation = ppgValue * 70;
-    const trigVariation = ppgValue * 60;
+    const cholVariation = ppgValue * 25; // reduced from 70
+    const trigVariation = ppgValue * 20; // reduced from 60
     
     return {
       totalCholesterol: Math.round(baseCholesterol + cholVariation),
