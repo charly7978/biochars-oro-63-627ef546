@@ -1,210 +1,120 @@
+import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
-/**
- * Estimador de lípidos sanguíneos basado en señal PPG
- * Implementación experimental basada en investigaciones recientes
- */
+export interface LipidProfile {
+  totalCholesterol: number;
+  triglycerides: number;
+  confidence: number;
+}
+
 export class LipidEstimator {
-  private readonly config: {
-    glucoseCalibrationFactor: number;
-    lipidCalibrationFactor: number;
-    hemoglobinCalibrationFactor: number;
-    confidenceThreshold: number;
-    cholesterolCalibrationFactor: number; // Factor específico para colesterol
-    triglycerideCalibrationFactor: number; // Factor específico para triglicéridos
+  private readonly DEFAULTS = {
+    cholesterol: 170,
+    triglycerides: 100,
+    minCholesterol: 130,
+    maxCholesterol: 240,
+    minTriglycerides: 50,
+    maxTriglycerides: 300
   };
-  
-  private lastTotalCholesterol: number = 0;
-  private lastTriglycerides: number = 0;
-  private confidenceLevel: number = 0;
-  
-  constructor() {
-    this.config = {
-      glucoseCalibrationFactor: 0.18,
-      lipidCalibrationFactor: 0.12,
-      hemoglobinCalibrationFactor: 0.15,
-      confidenceThreshold: 0.65,
-      cholesterolCalibrationFactor: 0.14, // Inicializado con valor por defecto
-      triglycerideCalibrationFactor: 0.16 // Inicializado con valor por defecto
-    };
+
+  private readonly HISTORY_SIZE = 5;
+  private readonly STABILITY_FACTOR = 0.6;
+
+  private history: LipidProfile[] = [];
+  private lastEstimate: LipidProfile = {
+    totalCholesterol: 170,
+    triglycerides: 100,
+    confidence: 0
+  };
+
+  private cholesterolCalibrationFactor: number;
+  private triglycerideCalibrationFactor: number;
+  private confidenceThreshold: number;
+
+  constructor(config: Partial<ProcessorConfig> = {}) {
+    const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
+    this.cholesterolCalibrationFactor = full.nonInvasiveSettings.cholesterolCalibrationFactor || 1.0;
+    this.triglycerideCalibrationFactor = full.nonInvasiveSettings.triglycerideCalibrationFactor || 1.0;
+    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.7;
+    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
   }
-  
-  /**
-   * Estima niveles de lípidos basados en características PPG
-   * @param signal Señal PPG
-   * @param heartRate Frecuencia cardíaca en BPM
-   * @param spo2 Saturación de oxígeno en sangre (%)
-   * @returns Estimación de lípidos
-   */
-  public estimateLipids(signal: number[], heartRate: number, spo2: number): {
-    totalCholesterol: number;
-    triglycerides: number;
-    confidence: number;
-  } {
-    if (!signal || signal.length < 100 || !heartRate || !spo2) {
-      return {
-        totalCholesterol: this.lastTotalCholesterol,
-        triglycerides: this.lastTriglycerides,
-        confidence: 0
-      };
-    }
-    
-    // Extraer características de la señal
-    const { 
-      amplitude, 
-      riseTime, 
-      fallTime, 
-      width50, 
-      areaUnderCurve 
-    } = this.extractFeatures(signal);
-    
-    // Calcular nivel de confianza basado en la calidad de la señal
-    this.confidenceLevel = this.calculateConfidence(signal, heartRate);
-    
-    if (this.confidenceLevel < this.config.confidenceThreshold) {
-      return {
-        totalCholesterol: this.lastTotalCholesterol,
-        triglycerides: this.lastTriglycerides,
-        confidence: this.confidenceLevel
-      };
-    }
-    
-    // Estimación del colesterol total
-    // Basado en correlaciones con características de la onda PPG
-    const baselineCholesterol = 180; // mg/dL
-    const cholesterolRiseTimeFactor = 10 * (riseTime - 0.15);
-    const cholesterolWidthFactor = 15 * (width50 - 0.3);
-    const cholesterolSpo2Factor = -5 * (spo2 - 97) / 3;
-    
-    const totalCholesterol = Math.round(
-      (baselineCholesterol + cholesterolRiseTimeFactor + cholesterolWidthFactor + cholesterolSpo2Factor) *
-      this.config.cholesterolCalibrationFactor
-    );
-    
-    // Estimación de triglicéridos
-    // Basado en correlaciones con área bajo la curva y tiempo de caída
-    const baselineTriglycerides = 120; // mg/dL
-    const triglycerideFallTimeFactor = 20 * (fallTime - 0.4);
-    const triglycerideAreaFactor = 15 * (areaUnderCurve - 0.5);
-    const triglycerideHRFactor = 0.5 * (heartRate - 70);
-    
-    const triglycerides = Math.round(
-      (baselineTriglycerides + triglycerideFallTimeFactor + triglycerideAreaFactor + triglycerideHRFactor) *
-      this.config.triglycerideCalibrationFactor
-    );
-    
-    // Guardar últimos valores calculados
-    this.lastTotalCholesterol = totalCholesterol;
-    this.lastTriglycerides = triglycerides;
-    
+
+  public estimate(values: number[]): LipidProfile {
+    if (values.length < 120) return this.lastEstimate;
+
+    const segment = values.slice(-120);
+    const { absorptionRatio, peakComplexity, waveformWidth } = this.extractSpectralFeatures(segment);
+
+    let cholesterol = this.DEFAULTS.cholesterol + absorptionRatio * 50 - waveformWidth * 10;
+    let triglycerides = this.DEFAULTS.triglycerides + peakComplexity * 40;
+
+    cholesterol *= this.cholesterolCalibrationFactor;
+    triglycerides *= this.triglycerideCalibrationFactor;
+
+    cholesterol = this.bound(cholesterol, this.DEFAULTS.minCholesterol, this.DEFAULTS.maxCholesterol);
+    triglycerides = this.bound(triglycerides, this.DEFAULTS.minTriglycerides, this.DEFAULTS.maxTriglycerides);
+
+    const confidence = this.calculateConfidence(absorptionRatio, peakComplexity, waveformWidth);
+    const smoothed = this.getSmoothedEstimate({ totalCholesterol: cholesterol, triglycerides, confidence });
+    this.lastEstimate = smoothed;
+    return smoothed;
+  }
+
+  private extractSpectralFeatures(data: number[]) {
+    const peak = Math.max(...data);
+    const valley = Math.min(...data);
+    const absorptionRatio = (peak - valley) / (peak + valley + 1e-5);
+    const zeroCrossings = data.reduce((count, val, i, arr) => {
+      if (i === 0) return count;
+      return count + (Math.sign(val) !== Math.sign(arr[i - 1]) ? 1 : 0);
+    }, 0);
+    const peakComplexity = zeroCrossings / data.length;
+    const waveformWidth = data.filter(v => v > valley + (peak - valley) * 0.5).length;
+
+    return { absorptionRatio, peakComplexity, waveformWidth };
+  }
+
+  private calculateConfidence(a: number, p: number, w: number): number {
+    const score = (a > 0.2 ? 1 : 0.6) * (p > 0.05 ? 1 : 0.7) * (w > 10 ? 1 : 0.8);
+    return Math.min(1, score);
+  }
+
+  private getSmoothedEstimate(current: LipidProfile): LipidProfile {
+    this.history.push(current);
+    if (this.history.length > this.HISTORY_SIZE) this.history.shift();
+
+    const avg = this.history.reduce((acc, val) => {
+      acc.totalCholesterol += val.totalCholesterol;
+      acc.triglycerides += val.triglycerides;
+      acc.confidence += val.confidence;
+      return acc;
+    }, { totalCholesterol: 0, triglycerides: 0, confidence: 0 });
+
+    const n = this.history.length;
     return {
-      totalCholesterol,
-      triglycerides,
-      confidence: this.confidenceLevel
+      totalCholesterol: (avg.totalCholesterol / n) * this.STABILITY_FACTOR + current.totalCholesterol * (1 - this.STABILITY_FACTOR),
+      triglycerides: (avg.triglycerides / n) * this.STABILITY_FACTOR + current.triglycerides * (1 - this.STABILITY_FACTOR),
+      confidence: avg.confidence / n
     };
   }
-  
-  /**
-   * Extrae características relevantes de la forma de onda PPG
-   */
-  private extractFeatures(signal: number[]): {
-    amplitude: number;
-    riseTime: number;
-    fallTime: number;
-    width50: number;
-    areaUnderCurve: number;
-  } {
-    // Simplificación para esta implementación
-    // En una implementación completa, se haría un análisis detallado de la forma de onda
-    
-    const min = Math.min(...signal);
-    const max = Math.max(...signal);
-    const amplitude = max - min;
-    
-    // Normalizar señal para análisis
-    const normalizedSignal = signal.map(v => (v - min) / amplitude);
-    
-    // Encontrar índices relevantes
-    const peakIndex = normalizedSignal.indexOf(1); // Valor máximo normalizado
-    const halfAmpRiseIndex = normalizedSignal.findIndex(v => v >= 0.5);
-    
-    // Buscar índice de caída del 50%
-    let halfAmpFallIndex = -1;
-    for (let i = peakIndex; i < normalizedSignal.length; i++) {
-      if (normalizedSignal[i] <= 0.5) {
-        halfAmpFallIndex = i;
-        break;
-      }
-    }
-    
-    if (halfAmpFallIndex === -1) halfAmpFallIndex = normalizedSignal.length - 1;
-    
-    // Calcular características temporales como fracción de la longitud total
-    const signalLength = normalizedSignal.length;
-    const riseTime = halfAmpRiseIndex / signalLength;
-    const fallTime = (halfAmpFallIndex - peakIndex) / signalLength;
-    const width50 = (halfAmpFallIndex - halfAmpRiseIndex) / signalLength;
-    
-    // Calcular área bajo la curva (normalizada)
-    const areaUnderCurve = normalizedSignal.reduce((sum, val) => sum + val, 0) / signalLength;
-    
-    return {
-      amplitude,
-      riseTime,
-      fallTime,
-      width50,
-      areaUnderCurve
-    };
+
+  private bound(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
   }
-  
-  /**
-   * Calcula nivel de confianza basado en calidad de señal
-   */
-  private calculateConfidence(signal: number[], heartRate: number): number {
-    if (!signal || signal.length < 100 || !heartRate) return 0;
-    
-    // Calcular variabilidad de la señal
-    const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
-    const squaredDiffs = signal.map(val => Math.pow(val - mean, 2));
-    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / signal.length;
-    const stdDev = Math.sqrt(variance);
-    
-    // Coeficiente de variación
-    const cv = stdDev / mean;
-    
-    // Alta variabilidad = baja confianza
-    let confidence = Math.max(0, 1 - cv * 2);
-    
-    // Ajustar por frecuencia cardíaca (frecuencias extremas reducen confianza)
-    if (heartRate < 50 || heartRate > 100) {
-      const hrFactor = 1 - Math.min(Math.abs(heartRate - 75) / 50, 0.5);
-      confidence *= hrFactor;
-    }
-    
-    return Math.min(1, confidence);
+
+  public getConfidence(): number {
+    return this.lastEstimate.confidence;
   }
-  
-  /**
-   * Restablece el estimador
-   */
+
+  public isReliable(): boolean {
+    return this.lastEstimate.confidence >= this.confidenceThreshold;
+  }
+
   public reset(): void {
-    this.lastTotalCholesterol = 0;
-    this.lastTriglycerides = 0;
-    this.confidenceLevel = 0;
-  }
-  
-  /**
-   * Establece factores de calibración personalizados
-   */
-  public setCalibrationFactors(factors: {
-    cholesterolCalibrationFactor?: number;
-    triglycerideCalibrationFactor?: number;
-  }): void {
-    if (factors.cholesterolCalibrationFactor !== undefined) {
-      this.config.cholesterolCalibrationFactor = factors.cholesterolCalibrationFactor;
-    }
-    
-    if (factors.triglycerideCalibrationFactor !== undefined) {
-      this.config.triglycerideCalibrationFactor = factors.triglycerideCalibrationFactor;
-    }
+    this.lastEstimate = {
+      totalCholesterol: this.DEFAULTS.cholesterol,
+      triglycerides: this.DEFAULTS.triglycerides,
+      confidence: 0
+    };
+    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
   }
 }
