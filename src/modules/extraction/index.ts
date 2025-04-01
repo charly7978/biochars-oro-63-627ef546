@@ -5,4 +5,3 @@
  */
 export * from './HeartbeatExtractor';
 export * from './PPGSignalExtractor';
-export * from './CombinedExtractor';

@@ -25,8 +25,7 @@ export {
   processLowConfidenceResult 
 } from './result-processor';
 
-// Export extractors for direct access from modules/extraction
-// These are now properly referenced from the correct path
-export * from '../../../modules/extraction/HeartbeatExtractor';
-export * from '../../../modules/extraction/PPGSignalExtractor';
-export * from '../../../modules/extraction/CombinedExtractor';
+// Export extractors for direct access
+export * from '../../modules/extraction/HeartbeatExtractor';
+export * from '../../modules/extraction/PPGSignalExtractor';
+export * from '../../modules/extraction/CombinedExtractor';
