@@ -1,3 +1,4 @@
+
 /**
  * Hook for processing vital signs signals
  * Modified to use the new refactored blood pressure processing
@@ -10,7 +11,7 @@ import type { ArrhythmiaWindow } from './vital-signs/types';
 import { getDiagnosticsData, clearDiagnosticsData } from '../hooks/heart-beat/signal-processing/peak-detection';
 import { useBloodPressureMonitor } from './useBloodPressureMonitor';
 
-// Interfaz para datos de diagnóstico integral
+// Interface for comprehensive diagnostics data
 interface DiagnosticsInfo {
   processedSignals: number;
   signalLog: Array<{ timestamp: number, value: number, result: any, priority: ProcessingPriority }>;
@@ -86,18 +87,15 @@ export function useVitalSignsProcessor() {
       };
     }
     
-    // Incrementar contador de señales procesadas
+    // Increment processed signals counter
     debugInfo.current.processedSignals++;
     
     // Process blood pressure
     const pressure = await bloodPressureMonitor.processPPG(value);
     
-    // Procesar señal for other vital signs
+    // Process signal for other vital signs
     const startTime = performance.now();
-    const baseResult = processorRef.current.processSignal({
-      value,
-      rrData
-    });
+    const baseResult = processorRef.current.processSignal(value, rrData);
     
     // Replace the blood pressure result with our specialized processor result
     const result: VitalSignsResult = {
@@ -105,7 +103,7 @@ export function useVitalSignsProcessor() {
       pressure
     };
     
-    // Calcular tiempo de procesamiento
+    // Calculate processing time
     const processingTime = performance.now() - startTime;
     
     // Store valid results
@@ -160,7 +158,7 @@ export function useVitalSignsProcessor() {
   const toggleDiagnostics = useCallback((enabled: boolean): void => {
     setDiagnosticsEnabled(enabled);
     if (!enabled) {
-      // Limpiar datos de diagnóstico si se desactiva
+      // Clear diagnostics data if disabled
       clearDiagnosticsData();
     }
     console.log(`Diagnostics channel ${enabled ? 'enabled' : 'disabled'}`);
