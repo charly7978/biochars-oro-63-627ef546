@@ -63,6 +63,7 @@ class PPGSignalProcessor {
 
   /**
    * Process signal with more details for signal processing hooks
+   * This is the method called by the PPG processor components
    */
   processSignal(value: number): {
     timestamp: number;
@@ -73,11 +74,33 @@ class PPGSignalProcessor {
     quality: number;
     fingerDetected: boolean;
     signalStrength: number;
+    value: number; // Add this field for compatibility
+    isPeak: boolean; // Add for heartbeat detection
+    confidence: number; // Add for quality assessment
+    instantaneousBPM: number; // Add for heart rate calculation
+    rrInterval: number | null; // Add for RR interval calculation
+    bpm: number; // Add for BPM tracking
+    heartRateVariability: number; // Add for HRV calculation
   } {
     const timestamp = Date.now();
     const processedValue = this.processValue(value);
     const fingerDetected = isFingerDetected(this.buffer);
     const signalStrength = getSignalStrength(this.buffer);
+    
+    // Calculate quality from signal strength
+    const quality = Math.min(100, Math.round(signalStrength * 100)) / 100;
+    
+    // Determine if this is a peak (simplified for compatibility)
+    const isPeak = false; // Would be determined by peak detection algorithm
+    
+    // Calculate instantaneous BPM (simplified for compatibility)
+    const instantaneousBPM = 0; // Would be calculated from actual peaks
+    
+    // Calculate BPM (simplified for compatibility)
+    const bpm = 0; // Would be calculated from peaks over time
+    
+    // Calculate heart rate variability (simplified for compatibility)
+    const heartRateVariability = 0; // Would be calculated from RR intervals
     
     return {
       timestamp,
@@ -85,9 +108,16 @@ class PPGSignalProcessor {
       filteredValue: processedValue,
       normalizedValue: processedValue,
       amplifiedValue: processedValue * 2,
-      quality: Math.min(100, Math.round(signalStrength * 100)),
+      quality,
       fingerDetected,
-      signalStrength
+      signalStrength,
+      value: processedValue, // Add for compatibility
+      isPeak,
+      confidence: quality,
+      instantaneousBPM,
+      rrInterval: null,
+      bpm,
+      heartRateVariability
     };
   }
 

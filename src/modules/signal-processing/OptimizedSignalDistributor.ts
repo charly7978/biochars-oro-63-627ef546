@@ -43,6 +43,8 @@ export class OptimizedSignalDistributor {
     processingTime: 0,
     adaptationRate: 0.3
   };
+
+  private isProcessing: boolean = false;
   
   /**
    * Create a new signal distributor with default channels
@@ -61,6 +63,42 @@ export class OptimizedSignalDistributor {
       this.registerChannel(new SpO2Channel() as unknown as OptimizedSignalChannel);
       this.registerChannel(new CardiacChannel() as unknown as OptimizedSignalChannel);
     }
+  }
+  
+  /**
+   * Start processing signals
+   */
+  public start(): void {
+    this.isProcessing = true;
+    // Initialize all channels
+    for (const channel of this.channels.values()) {
+      if (typeof channel.start === 'function') {
+        channel.start();
+      }
+    }
+    console.log("OptimizedSignalDistributor: Started processing");
+  }
+  
+  /**
+   * Stop processing signals
+   */
+  public stop(): void {
+    this.isProcessing = false;
+    // Stop all channels
+    for (const channel of this.channels.values()) {
+      if (typeof channel.stop === 'function') {
+        channel.stop();
+      }
+    }
+    console.log("OptimizedSignalDistributor: Stopped processing");
+  }
+  
+  /**
+   * Configure the distributor
+   */
+  public configure(config: SignalDistributorConfig): void {
+    this.config = { ...this.config, ...config };
+    console.log("OptimizedSignalDistributor: Configuration updated", this.config);
   }
   
   /**
@@ -94,7 +132,7 @@ export class OptimizedSignalDistributor {
     
     // Update configuration if provided
     if (config) {
-      this.config = { ...this.config, ...config };
+      this.configure(config);
     }
     
     // Update diagnostics
@@ -194,21 +232,6 @@ export class OptimizedSignalDistributor {
       processingTime: 0,
       adaptationRate: this.config.globalAdaptationRate || 0.3
     };
-  }
-  
-  /**
-   * Start processing - method for compatibility with ModularVitalSignsProcessor
-   */
-  start(): void {
-    // Reset all channels to ensure clean start
-    this.reset();
-  }
-  
-  /**
-   * Stop processing - method for compatibility with ModularVitalSignsProcessor
-   */
-  stop(): void {
-    // No specific action needed for stopping
   }
   
   /**

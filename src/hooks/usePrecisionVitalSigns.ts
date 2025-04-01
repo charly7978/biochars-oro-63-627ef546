@@ -129,9 +129,9 @@ export function usePrecisionVitalSigns() {
         setState(prev => ({
           ...prev,
           lastResult: result,
-          isCalibrated: processorRef.current?.isCalibrated() || false,
+          isCalibrated: processorRef.current?.getCalibrationStatus().isCalibrated || false,
           calibrationStatus: {
-            hasReference: processorRef.current?.isCalibrated() || false,
+            hasReference: processorRef.current?.getCalibrationStatus().hasReference || false,
             confidence: processorRef.current?.getDiagnostics().calibrationFactors.confidence || 0
           },
           environmentalStatus: {
@@ -158,7 +158,7 @@ export function usePrecisionVitalSigns() {
       // Actualizar estado de calibración
       setState(prev => ({
         ...prev,
-        isCalibrated: processorRef.current?.isCalibrated() || false,
+        isCalibrated: processorRef.current?.getCalibrationStatus().isCalibrated || false,
         calibrationStatus: {
           hasReference: true,
           confidence: processorRef.current?.getDiagnostics().calibrationFactors.confidence || 0
@@ -202,11 +202,11 @@ export function usePrecisionVitalSigns() {
     
     setState({
       isProcessing: false,
-      isCalibrated: processorRef.current.isCalibrated(),
+      isCalibrated: processorRef.current.getCalibrationStatus().isCalibrated || false,
       lastResult: null,
       calibrationStatus: {
-        hasReference: processorRef.current.isCalibrated(),
-        confidence: processorRef.current.getDiagnostics().calibrationFactors.confidence
+        hasReference: processorRef.current.getCalibrationStatus().hasReference || false,
+        confidence: processorRef.current.getDiagnostics().calibrationFactors.confidence || 0
       },
       environmentalStatus: {
         lightDetected: 50,

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -128,10 +127,7 @@ export function useVitalSignsProcessor() {
     const startTime = performance.now();
     
     // Process signal with the processor
-    const result = processorRef.current.processSignal({
-      value: value,
-      rrData: rrData
-    });
+    const result = processorRef.current.process(value, rrData);
     
     // Calcular tiempo de procesamiento
     const processingTime = performance.now() - startTime;
