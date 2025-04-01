@@ -8,7 +8,7 @@ import { VitalSignsProcessor } from '../modules/vital-signs';
 import { ProcessingPriority } from '../modules/extraction';
 import type { VitalSignsResult, RRIntervalData } from '../types/vital-signs';
 import type { ArrhythmiaWindow } from './vital-signs/types';
-import { getDiagnosticsData, clearDiagnosticsData } from '../hooks/heart-beat/signal-processing/peak-detection';
+import { getDiagnosticsData, clearDiagnosticsData } from './heart-beat/signal-processing/peak-detection';
 import { useBloodPressureMonitor } from './useBloodPressureMonitor';
 
 // Interface for comprehensive diagnostics data
