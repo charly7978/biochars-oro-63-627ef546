@@ -23,5 +23,5 @@ export function resetFingerDetector() {
   // Actual implementation is in finger-detector.ts
 }
 
-// Export the VitalSignsProcessor for compatibility
-export { VitalSignsProcessor } from './VitalSignsProcessor';
+// Export the VitalSignsProcessor
+export { VitalSignsProcessor } from '../vital-signs/VitalSignsProcessor';

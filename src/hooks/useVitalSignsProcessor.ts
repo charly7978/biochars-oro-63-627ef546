@@ -1,8 +1,9 @@
+
 /**
  * Hook for processing vital signs signals
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { VitalSignsProcessor } from '../modules/signal-processing/VitalSignsProcessor';
+import { VitalSignsProcessor } from '../modules/vital-signs'; // Import from central module
 import type { VitalSignsResult, RRIntervalData } from '../types/vital-signs';
 import type { ArrhythmiaWindow } from './vital-signs/types';
 

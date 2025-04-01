@@ -13,8 +13,16 @@ export type { VitalSignsResult } from './types/vital-signs-result';
 // Export arrhythmia-related types
 export * from './arrhythmia/types';
 
-// Export utility functions
-export * from './utils';
-
 // Export shared signal utils
 export * from './shared-signal-utils';
+
+// Export selected utility functions without ambiguity
+// Instead of exporting all utils which causes ambiguities
+export { 
+  // Export specific functions from utils to avoid ambiguity
+  normalizeSignal,
+  filterSignal,
+  calculateHeartRate,
+  validateSignalQuality,
+  detectPeaks
+} from './utils';

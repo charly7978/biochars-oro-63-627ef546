@@ -3,7 +3,8 @@
  * Type definitions for media stream capabilities
  */
 
-declare interface MediaTrackCapabilities {
+// Extend existing MediaTrackCapabilities interface from lib.dom.d.ts
+interface MediaTrackCapabilities {
   torch?: boolean;
   exposureMode?: string;
   focusMode?: string;
@@ -25,7 +26,8 @@ declare interface MediaTrackCapabilities {
   };
 }
 
-declare interface MediaTrackConstraintSet {
+// Extend existing MediaTrackConstraintSet interface from lib.dom.d.ts
+interface MediaTrackConstraintSet {
   torch?: boolean;
   exposureMode?: ConstrainDOMString;
   focusMode?: ConstrainDOMString;
@@ -35,11 +37,13 @@ declare interface MediaTrackConstraintSet {
   contrast?: ConstrainDouble;
 }
 
-declare class ImageCapture {
-  constructor(track: MediaStreamTrack);
-  grabFrame(): Promise<ImageBitmap>;
-  takePhoto(): Promise<Blob>;
+// Define ImageCapture as a global class
+declare global {
+  class ImageCapture {
+    constructor(track: MediaStreamTrack);
+    grabFrame(): Promise<ImageBitmap>;
+    takePhoto(): Promise<Blob>;
+  }
 }
 
-// Ensure this file is treated as a module
-export {};
+// No export needed for global interfaces

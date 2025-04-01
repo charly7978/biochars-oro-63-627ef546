@@ -10,6 +10,7 @@ export * from './vital-signs';
 // Export signal types
 export * from './signal';
 
-// Re-export other type definitions for convenience
-export * from './media-stream';
+// Export screen orientation types
 export * from './screen-orientation';
+
+// Note: media-stream.d.ts defines global interfaces and doesn't export anything
