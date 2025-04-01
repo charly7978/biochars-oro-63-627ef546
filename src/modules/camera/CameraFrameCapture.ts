@@ -11,6 +11,7 @@ import AdaptiveFrameProcessor from './AdaptiveFrameProcessor';
 // Cache para los procesadores
 let adaptiveProcessorInstance: AdaptiveFrameProcessor | null = null;
 let deviceCapabilitiesInitialized = false;
+let lastProcessTime = 0; // Variable para controlar la tasa de frames
 
 /**
  * Configura la cámara con los parámetros óptimos según el dispositivo
@@ -189,9 +190,13 @@ export const processFramesControlled = (
   processCallback: (imageData: ImageData) => void
 ): () => void => {
   let requestId: number | null = null;
+  let processingActive = false;
+  let batteryAwareThrottling = false;
+  let consecutiveErrors = 0;
+  const maxConsecutiveErrors = 3;
   
   // Inicializar procesador adaptativo si no existe
-  const initializeProcessor = async () => {
+  const initializeProcessor = async (): Promise<AdaptiveFrameProcessor> => {
     if (!adaptiveProcessorInstance) {
       adaptiveProcessorInstance = new AdaptiveFrameProcessor();
       await adaptiveProcessorInstance.initialize();
@@ -202,20 +207,53 @@ export const processFramesControlled = (
   
   // Función para procesar frames de manera adaptativa
   const processFramesAdaptively = async () => {
-    if (!isMonitoring) return;
+    if (!isMonitoring || processingActive) return;
+    
+    processingActive = true;
     
     try {
       // Asegurar que tenemos procesador
       const processor = await initializeProcessor();
       
+      // Obtener información de batería para ajustes de potencia
+      const powerStatus = processor.getPowerStatus();
+      
+      // Aplicar throttling adicional en modo de ahorro de energía
+      if (powerStatus.powerSavingActivated && !batteryAwareThrottling) {
+        batteryAwareThrottling = true;
+        console.log("Aplicando limitación adicional por ahorro de energía");
+      } else if (!powerStatus.powerSavingActivated && batteryAwareThrottling) {
+        batteryAwareThrottling = false;
+        console.log("Desactivando limitación adicional por ahorro de energía");
+      }
+      
       // Capturar frame
       const frame = await imageCapture.grabFrame();
       
       // Procesar frame con optimizaciones adaptativas
-      processor.processFrame(frame, processCallback);
+      const processed = processor.processFrame(frame, processCallback);
+      
+      // Reiniciar contador de errores si todo va bien
+      if (processed) {
+        consecutiveErrors = 0;
+      }
     } catch (error) {
       console.error("Error capturando o procesando frame:", error);
+      
+      // Contar errores consecutivos
+      consecutiveErrors++;
+      
+      // Si hay demasiados errores, reducir aún más la tasa de frames
+      if (consecutiveErrors >= maxConsecutiveErrors) {
+        console.warn(`${consecutiveErrors} errores consecutivos, reduciendo tasa de captura`);
+        if (adaptiveProcessorInstance) {
+          // Activar modo de emergencia para ahorro de energía
+          adaptiveProcessorInstance.setPowerSavingMode(true);
+        }
+      }
     }
+    
+    processingActive = false;
     
     if (isMonitoring) {
       requestId = requestAnimationFrame(processFramesAdaptively);
@@ -228,7 +266,6 @@ export const processFramesControlled = (
     
     const now = Date.now();
     const targetFrameInterval = 1000 / targetFrameRate;
-    static let lastProcessTime = 0;
     
     // Control de tasa de frames
     if (now - lastProcessTime >= targetFrameInterval) {
@@ -289,8 +326,33 @@ export const processFramesControlled = (
   };
 };
 
+/**
+ * Activa o desactiva el modo de ahorro de energía del procesador
+ */
+export const setPowerSavingMode = (enabled: boolean): void => {
+  if (adaptiveProcessorInstance) {
+    adaptiveProcessorInstance.setPowerSavingMode(enabled);
+  }
+};
+
+/**
+ * Obtiene el estado actual del procesador adaptativo
+ */
+export const getAdaptiveProcessorStatus = (): any => {
+  if (adaptiveProcessorInstance) {
+    return {
+      powerStatus: adaptiveProcessorInstance.getPowerStatus(),
+      processingOptions: adaptiveProcessorInstance.getProcessingOptions(),
+      deviceCapabilities: adaptiveProcessorInstance.getDeviceCapabilities()
+    };
+  }
+  return null;
+};
+
 export default {
   configureCameraForDevice,
   extractFrameData,
-  processFramesControlled
+  processFramesControlled,
+  setPowerSavingMode,
+  getAdaptiveProcessorStatus
 };

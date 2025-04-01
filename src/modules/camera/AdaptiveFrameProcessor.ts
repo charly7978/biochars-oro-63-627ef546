@@ -12,6 +12,9 @@ interface FrameProcessingOptions {
   subsamplingFactor: number;
   useGPUAcceleration: boolean;
   useOffscreenCanvas: boolean;
+  powerSavingMode: boolean;
+  dynamicFrameRate: boolean;
+  maxFrameRate: number;
 }
 
 export class AdaptiveFrameProcessor {
@@ -24,6 +27,13 @@ export class AdaptiveFrameProcessor {
   private lastFrameTime: number = 0;
   private frameInterval: number = 0;
   private frameRateThrottle: boolean = false;
+  private batteryLevelThresholds = [0.2, 0.5, 0.8];
+  private batteryLevel: number = 1.0;
+  private isLowPowerMode: boolean = false;
+  private powerSavingActivated: boolean = false;
+  private processingTimeHistory: number[] = [];
+  private lastBatteryCheck: number = 0;
+  private batteryCheckInterval: number = 30000; // Check battery every 30 seconds
   
   /**
    * Constructor del procesador adaptativo
@@ -56,10 +66,160 @@ export class AdaptiveFrameProcessor {
       targetHeight: 480,
       subsamplingFactor: 1,
       useGPUAcceleration: false,
-      useOffscreenCanvas: false
+      useOffscreenCanvas: false,
+      powerSavingMode: false,
+      dynamicFrameRate: true,
+      maxFrameRate: 15
     };
     
     this.frameInterval = 1000 / 15; // Por defecto 15 FPS
+    
+    // Iniciar monitoreo de batería si está disponible
+    this.initBatteryMonitoring();
+  }
+  
+  /**
+   * Inicia el monitoreo de la batería si el API está disponible
+   */
+  private async initBatteryMonitoring(): Promise<void> {
+    try {
+      if ('getBattery' in navigator) {
+        const battery = await (navigator as any).getBattery();
+        
+        // Actualizar nivel inicial
+        this.batteryLevel = battery.level;
+        this.isLowPowerMode = battery.charging === false && battery.level < 0.3;
+        
+        // Escuchar cambios en la batería
+        battery.addEventListener('levelchange', () => {
+          this.batteryLevel = battery.level;
+          this.updatePowerSavingMode();
+        });
+        
+        battery.addEventListener('chargingchange', () => {
+          // Si se conecta a la carga, podemos desactivar el modo de ahorro
+          if (battery.charging) {
+            this.isLowPowerMode = false;
+          } else if (battery.level < 0.3) {
+            this.isLowPowerMode = true;
+          }
+          this.updatePowerSavingMode();
+        });
+        
+        console.log("Monitoreo de batería iniciado:", {
+          level: this.batteryLevel,
+          charging: battery.charging
+        });
+      } else {
+        console.log("API de batería no disponible en este dispositivo");
+      }
+    } catch (error) {
+      console.error("Error al inicializar monitoreo de batería:", error);
+    }
+  }
+  
+  /**
+   * Actualiza el modo de ahorro de energía según el nivel de batería
+   */
+  private updatePowerSavingMode(): void {
+    const shouldActivatePowerSaving = 
+      (this.isLowPowerMode || this.batteryLevel < 0.2) && 
+      this.options.powerSavingMode;
+    
+    if (shouldActivatePowerSaving !== this.powerSavingActivated) {
+      this.powerSavingActivated = shouldActivatePowerSaving;
+      
+      if (shouldActivatePowerSaving) {
+        console.log("Activando modo de ahorro de energía:", {
+          batteryLevel: this.batteryLevel,
+          isLowPowerMode: this.isLowPowerMode
+        });
+        
+        // Reducir tasa de frames
+        this.frameInterval = 1000 / Math.max(5, this.options.maxFrameRate / 2);
+        
+        // Aumentar factor de submuestreo
+        if (this.options.subsamplingFactor < 2) {
+          this.options.subsamplingFactor = 2;
+        } else {
+          this.options.subsamplingFactor += 1;
+        }
+        
+        // Reducir resolución si no es ya la mínima
+        if (this.options.targetWidth > 320) {
+          this.options.targetWidth = 320;
+          this.options.targetHeight = 240;
+          this.initializeResources(); // Reinicializar recursos con nueva resolución
+        }
+      } else {
+        console.log("Desactivando modo de ahorro de energía");
+        
+        // Restaurar configuración basada en capacidades del dispositivo
+        this.configureProcessorOptions();
+        this.initializeResources();
+      }
+    }
+  }
+  
+  /**
+   * Verifica el nivel de batería periódicamente
+   */
+  private checkBatteryStatus(): void {
+    const now = Date.now();
+    
+    // Solo verificar cada cierto intervalo para evitar consumo excesivo
+    if (now - this.lastBatteryCheck >= this.batteryCheckInterval) {
+      this.lastBatteryCheck = now;
+      
+      if ('getBattery' in navigator) {
+        (navigator as any).getBattery().then((battery: any) => {
+          this.batteryLevel = battery.level;
+          this.isLowPowerMode = battery.charging === false && battery.level < 0.3;
+          this.updatePowerSavingMode();
+        }).catch((error: any) => {
+          console.error("Error al obtener nivel de batería:", error);
+        });
+      }
+    }
+  }
+  
+  /**
+   * Adapta la tasa de frames dinámicamente según rendimiento
+   */
+  private adaptFrameRate(processingTime: number): void {
+    if (!this.options.dynamicFrameRate) return;
+    
+    // Mantener historial de tiempos de procesamiento
+    this.processingTimeHistory.push(processingTime);
+    if (this.processingTimeHistory.length > 10) {
+      this.processingTimeHistory.shift();
+    }
+    
+    // Si tenemos suficientes muestras, ajustar tasa de frames
+    if (this.processingTimeHistory.length >= 5) {
+      const avgProcessingTime = this.processingTimeHistory.reduce((sum, time) => sum + time, 0) / 
+                               this.processingTimeHistory.length;
+      
+      // Si el procesamiento toma más del 70% del intervalo de frames, reducir FPS
+      if (avgProcessingTime > this.frameInterval * 0.7) {
+        // Reducir FPS gradualmente (no más del 20% a la vez)
+        const currentFPS = 1000 / this.frameInterval;
+        const targetFPS = Math.max(5, currentFPS * 0.8);
+        this.frameInterval = 1000 / targetFPS;
+        
+        console.log("Reduciendo tasa de frames por rendimiento insuficiente:", {
+          avgProcessingTime,
+          newFPS: targetFPS
+        });
+      } 
+      // Si el procesamiento es rápido y no estamos en modo de ahorro, podemos aumentar FPS
+      else if (avgProcessingTime < this.frameInterval * 0.3 && !this.powerSavingActivated) {
+        const currentFPS = 1000 / this.frameInterval;
+        // Aumentar FPS gradualmente, sin exceder el máximo
+        const targetFPS = Math.min(this.options.maxFrameRate, currentFPS * 1.2);
+        this.frameInterval = 1000 / targetFPS;
+      }
+    }
   }
   
   /**
@@ -105,9 +265,18 @@ export class AdaptiveFrameProcessor {
     this.options.useOffscreenCanvas = !capabilities.isLowEndDevice && 
       typeof OffscreenCanvas !== 'undefined';
     
-    // Configurar intervalo de frames
+    // Activar ahorro de energía para dispositivos de gama baja
+    this.options.powerSavingMode = capabilities.isLowEndDevice || 
+                                  capabilities.shouldUseLowPowerMode;
+    
+    // Tasa de frames y ajuste dinámico
+    this.options.maxFrameRate = capabilities.maxFPS;
     this.frameInterval = 1000 / capabilities.maxFPS;
     this.frameRateThrottle = capabilities.maxFPS < 30;
+    
+    // Activar ajuste dinámico de FPS si es dispositivo de gama baja o media
+    this.options.dynamicFrameRate = capabilities.isLowEndDevice || 
+                                   capabilities.isMidRangeDevice;
   }
   
   /**
@@ -147,6 +316,10 @@ export class AdaptiveFrameProcessor {
     callback: (imageData: ImageData) => void
   ): boolean {
     const now = performance.now();
+    const processStart = now;
+    
+    // Verificar nivel de batería periódicamente
+    this.checkBatteryStatus();
     
     // Control de tasa de frames
     if (this.frameRateThrottle && now - this.lastFrameTime < this.frameInterval) {
@@ -205,6 +378,10 @@ export class AdaptiveFrameProcessor {
         console.error("No hay contexto disponible para procesar el frame");
         return false;
       }
+      
+      // Calcular tiempo de procesamiento para ajuste dinámico
+      const processingTime = performance.now() - processStart;
+      this.adaptFrameRate(processingTime);
       
       return true;
     } catch (error) {
@@ -287,6 +464,19 @@ export class AdaptiveFrameProcessor {
   }
   
   /**
+   * Activa o desactiva el modo de ahorro de energía
+   */
+  public setPowerSavingMode(enabled: boolean): void {
+    if (this.options.powerSavingMode !== enabled) {
+      this.options.powerSavingMode = enabled;
+      console.log(`Modo de ahorro de energía ${enabled ? 'activado' : 'desactivado'}`);
+      
+      // Actualizar configuración si es necesario
+      this.updatePowerSavingMode();
+    }
+  }
+  
+  /**
    * Obtiene las opciones de procesamiento actuales
    */
   public getProcessingOptions(): FrameProcessingOptions {
@@ -298,6 +488,23 @@ export class AdaptiveFrameProcessor {
    */
   public getDeviceCapabilities(): DeviceCapabilities {
     return { ...this.deviceCapabilities };
+  }
+  
+  /**
+   * Obtiene el estado de energía actual
+   */
+  public getPowerStatus(): {
+    batteryLevel: number;
+    isLowPowerMode: boolean;
+    powerSavingActivated: boolean;
+    currentFrameRate: number;
+  } {
+    return {
+      batteryLevel: this.batteryLevel,
+      isLowPowerMode: this.isLowPowerMode,
+      powerSavingActivated: this.powerSavingActivated,
+      currentFrameRate: 1000 / this.frameInterval
+    };
   }
 }
 

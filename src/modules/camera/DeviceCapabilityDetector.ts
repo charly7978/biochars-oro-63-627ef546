@@ -1,4 +1,3 @@
-
 /**
  * Sistema de detección de capacidades del dispositivo
  * Permite optimizar rendimiento según las capacidades disponibles
@@ -27,6 +26,12 @@ export class DeviceCapabilityDetector {
   private static instance: DeviceCapabilityDetector;
   private capabilities: DeviceCapabilities;
   private initialDetectionComplete: boolean = false;
+  private batteryLevel: number = 1.0;
+  private isCharging: boolean = true;
+  private thermalState: string = 'nominal';
+  private lastPerformanceCheck: number = 0;
+  private performanceCheckInterval: number = 60000; // 1 minuto
+  private devicePerformanceHistory: number[] = [];
 
   private constructor() {
     // Valores por defecto conservadores
@@ -70,6 +75,12 @@ export class DeviceCapabilityDetector {
     // Detección básica basada en User Agent
     await this.detectBasicCapabilities();
     
+    // Verificar estado de batería
+    await this.checkBatteryStatus();
+    
+    // Verificar estado térmico si está disponible
+    await this.checkThermalStatus();
+    
     // Detección avanzada basada en benchmarks
     await this.runPerformanceBenchmarks();
     
@@ -81,6 +92,9 @@ export class DeviceCapabilityDetector {
     
     this.initialDetectionComplete = true;
     console.log("Capacidades del dispositivo detectadas:", this.capabilities);
+    
+    // Programar verificaciones periódicas
+    this.schedulePeriodicChecks();
     
     return this.capabilities;
   }
@@ -138,6 +152,127 @@ export class DeviceCapabilityDetector {
       this.capabilities.shouldUsePixelSubsampling = false;
       this.capabilities.subsamplingFactor = 1;
       this.capabilities.performanceScore = 90;
+    }
+  }
+
+  /**
+   * Comprueba el estado de la batería si está disponible
+   */
+  private async checkBatteryStatus(): Promise<void> {
+    try {
+      if ('getBattery' in navigator) {
+        const battery = await (navigator as any).getBattery();
+        
+        this.batteryLevel = battery.level;
+        this.isCharging = battery.charging;
+        
+        // Configurar modo de bajo consumo si la batería está baja y no está cargando
+        if (battery.level < 0.3 && !battery.charging) {
+          this.capabilities.shouldUseLowPowerMode = true;
+        }
+        
+        console.log("Estado de batería detectado:", {
+          level: this.batteryLevel,
+          charging: this.isCharging
+        });
+        
+        // Establecer listeners para cambios futuros
+        battery.addEventListener('levelchange', () => {
+          this.batteryLevel = battery.level;
+          this.updateBatteryBasedCapabilities();
+        });
+        
+        battery.addEventListener('chargingchange', () => {
+          this.isCharging = battery.charging;
+          this.updateBatteryBasedCapabilities();
+        });
+      } else {
+        console.log("API de batería no disponible en este dispositivo");
+      }
+    } catch (error) {
+      console.error("Error al verificar estado de batería:", error);
+    }
+  }
+  
+  /**
+   * Actualiza capacidades basadas en estado de batería
+   */
+  private updateBatteryBasedCapabilities(): void {
+    // Si la batería está baja y no está cargando, activar modo de bajo consumo
+    if (this.batteryLevel < 0.3 && !this.isCharging) {
+      this.capabilities.shouldUseLowPowerMode = true;
+      
+      // Reducir FPS y resolución para ahorrar batería
+      this.capabilities.maxFPS = Math.min(this.capabilities.maxFPS, 10);
+      
+      if (this.capabilities.recommendedResolution.width > 320) {
+        this.capabilities.recommendedResolution = { width: 320, height: 240 };
+      }
+      
+      // Incrementar submuestreo
+      this.capabilities.shouldUsePixelSubsampling = true;
+      this.capabilities.subsamplingFactor = Math.max(2, this.capabilities.subsamplingFactor);
+      
+      console.log("Activadas optimizaciones de bajo consumo por nivel de batería bajo:", {
+        batteryLevel: this.batteryLevel,
+        charging: this.isCharging
+      });
+    } 
+    // Si está cargando o tiene suficiente batería, podemos usar configuración normal
+    else if (this.batteryLevel > 0.5 || this.isCharging) {
+      // Solo actualizar si estaba en modo de bajo consumo por batería
+      if (this.capabilities.shouldUseLowPowerMode) {
+        // Recalcular capacidades basadas en rendimiento
+        this.finalizeCapabilities();
+        
+        console.log("Desactivadas optimizaciones de bajo consumo (batería ok):", {
+          batteryLevel: this.batteryLevel,
+          charging: this.isCharging
+        });
+      }
+    }
+  }
+  
+  /**
+   * Comprueba el estado térmico del dispositivo si está disponible
+   */
+  private async checkThermalStatus(): Promise<void> {
+    try {
+      // API experimental, verificar disponibilidad
+      if ('thermal' in navigator && (navigator as any).thermal) {
+        const thermal = (navigator as any).thermal;
+        
+        // Obtener estado inicial
+        this.thermalState = thermal.state;
+        
+        console.log("Estado térmico detectado:", this.thermalState);
+        
+        // Reducir rendimiento si el dispositivo está sobrecalentado
+        if (this.thermalState === 'critical' || this.thermalState === 'serious') {
+          this.capabilities.shouldUseLowPowerMode = true;
+          this.capabilities.maxFPS = Math.min(this.capabilities.maxFPS, 5);
+          this.capabilities.performanceScore = Math.max(20, this.capabilities.performanceScore - 30);
+          
+          console.log("Activadas optimizaciones de bajo consumo por estado térmico crítico");
+        }
+        
+        // Escuchar cambios en el estado térmico
+        thermal.addEventListener('change', () => {
+          this.thermalState = thermal.state;
+          
+          console.log("Cambio en estado térmico detectado:", this.thermalState);
+          
+          if (this.thermalState === 'critical' || this.thermalState === 'serious') {
+            this.capabilities.shouldUseLowPowerMode = true;
+            this.capabilities.maxFPS = Math.min(this.capabilities.maxFPS, 5);
+          } else if (this.thermalState === 'nominal') {
+            // Recalcular capacidades si el dispositivo se ha enfriado
+            this.finalizeCapabilities();
+          }
+        });
+      }
+    } catch (error) {
+      console.log("API de estado térmico no disponible:", error);
     }
   }
 
@@ -269,6 +404,89 @@ export class DeviceCapabilityDetector {
     } else {
       this.capabilities.shouldUsePixelSubsampling = false;
       this.capabilities.subsamplingFactor = 1;
+    }
+    
+    // Añadir ajustes adicionales basados en batería y temperatura
+    if (this.batteryLevel < 0.3 && !this.isCharging) {
+      this.capabilities.shouldUseLowPowerMode = true;
+      this.capabilities.maxFPS = Math.min(this.capabilities.maxFPS, 10);
+    }
+    
+    if (this.thermalState === 'critical' || this.thermalState === 'serious') {
+      this.capabilities.shouldUseLowPowerMode = true;
+      this.capabilities.maxFPS = Math.min(this.capabilities.maxFPS, 5);
+    }
+  }
+
+  /**
+   * Programa verificaciones periódicas de rendimiento y estado del dispositivo
+   */
+  private schedulePeriodicChecks(): void {
+    // Verificar estado periódicamente
+    setInterval(() => {
+      const now = Date.now();
+      
+      // Verificar rendimiento cada cierto intervalo
+      if (now - this.lastPerformanceCheck >= this.performanceCheckInterval) {
+        this.lastPerformanceCheck = now;
+        this.updateDevicePerformance();
+      }
+    }, 10000); // Cada 10 segundos
+  }
+  
+  /**
+   * Actualiza la evaluación de rendimiento del dispositivo
+   */
+  private async updateDevicePerformance(): Promise<void> {
+    try {
+      // Verificar batería
+      if ('getBattery' in navigator) {
+        const battery = await (navigator as any).getBattery();
+        this.batteryLevel = battery.level;
+        this.isCharging = battery.charging;
+        this.updateBatteryBasedCapabilities();
+      }
+      
+      // Ejecutar mini-benchmark para verificar rendimiento actual
+      const start = performance.now();
+      
+      // Operación sencilla para evaluar rendimiento
+      const arr = new Array(10000).fill(0).map((_, i) => i);
+      arr.filter(x => x % 2 === 0).map(x => x * 2).reduce((a, b) => a + b, 0);
+      
+      const duration = performance.now() - start;
+      
+      // Guardar en historial
+      this.devicePerformanceHistory.push(duration);
+      if (this.devicePerformanceHistory.length > 5) {
+        this.devicePerformanceHistory.shift();
+      }
+      
+      // Si el rendimiento ha bajado significativamente
+      if (this.devicePerformanceHistory.length >= 3) {
+        const avgRecent = this.devicePerformanceHistory.slice(-2).reduce((sum, val) => sum + val, 0) / 2;
+        const avgPrevious = this.devicePerformanceHistory.slice(0, -2).reduce((sum, val) => sum + val, 0) /
+                           (this.devicePerformanceHistory.length - 2);
+        
+        // Si el rendimiento ha bajado más de un 30%
+        if (avgRecent > avgPrevious * 1.3) {
+          console.log("Detectada degradación de rendimiento, ajustando capacidades", {
+            previousAvg: avgPrevious,
+            recentAvg: avgRecent
+          });
+          
+          // Reducir puntuación de rendimiento
+          this.capabilities.performanceScore = Math.max(
+            20, 
+            this.capabilities.performanceScore * 0.8
+          );
+          
+          // Actualizar otras capacidades
+          this.finalizeCapabilities();
+        }
+      }
+    } catch (error) {
+      console.error("Error al actualizar rendimiento del dispositivo:", error);
     }
   }
 
