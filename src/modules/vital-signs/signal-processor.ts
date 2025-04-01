@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -7,18 +8,21 @@ import { SignalFilter } from './processors/signal-filter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
+import { MotionArtifactManager } from './processors/motion-artifact-manager';
+import { evaluateSignalConsistency, detectMotionInSignal } from '../../hooks/heart-beat/signal-quality';
 
 /**
  * Signal processor for real PPG signals
  * Implements filtering and analysis techniques on real data only
  * Enhanced with rhythmic pattern detection for finger presence
- * No simulation or reference values are used
+ * Improved with motion artifact detection and compensation
  */
 export class SignalProcessor extends BaseProcessor {
   private filter: SignalFilter;
   private quality: SignalQuality;
   private heartRateDetector: HeartRateDetector;
   private signalValidator: SignalValidator;
+  private motionArtifactManager: MotionArtifactManager;
   
   // Finger detection state
   private rhythmBasedFingerDetection: boolean = false;
@@ -30,12 +34,21 @@ export class SignalProcessor extends BaseProcessor {
   private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
   private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
   
+  // Nuevo: Variables para monitoreo de artefactos de movimiento
+  private motionDetected: boolean = false;
+  private motionCompensationActive: boolean = false;
+  private motionArtifactHistory: boolean[] = [];
+  private readonly MOTION_HISTORY_SIZE = 10;
+  private lastMotionDetectedTime: number = 0;
+  private readonly MOTION_RECOVERY_TIME = 1500; // ms
+  
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
+    this.motionArtifactManager = new MotionArtifactManager(0.75); // 75% sensibilidad
   }
   
   /**
@@ -61,7 +74,6 @@ export class SignalProcessor extends BaseProcessor {
   
   /**
    * Check if finger is detected based on rhythmic patterns
-   * Uses physiological characteristics (heartbeat rhythm)
    */
   public isFingerDetected(): boolean {
     // If already confirmed through consistent patterns, maintain detection
@@ -72,40 +84,96 @@ export class SignalProcessor extends BaseProcessor {
     // Otherwise, use the validator's pattern detection
     return this.signalValidator.isFingerDetected();
   }
+
+  /**
+   * Nuevo: Detectar artefactos de movimiento en la señal
+   */
+  public detectMotionArtifacts(value: number, accelerometerData?: {x: number, y: number, z: number}): boolean {
+    // Usar el administrador especializado para detección
+    const motion = this.motionArtifactManager.processValue(value, accelerometerData);
+    
+    // Actualizar historial
+    this.motionArtifactHistory.push(motion.motionDetected);
+    if (this.motionArtifactHistory.length > this.MOTION_HISTORY_SIZE) {
+      this.motionArtifactHistory.shift();
+    }
+    
+    // Actualizar estado
+    if (motion.motionDetected) {
+      this.lastMotionDetectedTime = Date.now();
+      this.motionDetected = true;
+    } else if (Date.now() - this.lastMotionDetectedTime > this.MOTION_RECOVERY_TIME) {
+      this.motionDetected = false;
+    }
+    
+    this.motionCompensationActive = motion.compensationApplied;
+    
+    return this.motionDetected;
+  }
   
   /**
-   * Apply combined filtering for real signal processing
-   * No simulation is used
-   * Incorporates rhythmic pattern-based finger detection
+   * Nuevo: Obtener métricas sobre la calidad de señal y artefactos
    */
-  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
+  public getSignalMetrics(windowSize: number = 15): {
+    quality: number;
+    hasMotion: boolean;
+    motionCompensationActive: boolean;
+    consistency: number;
+    fingerDetected: boolean;
+  } {
+    // Evaluando la consistencia de la señal
+    const consistencyResult = evaluateSignalConsistency(this.ppgValues, windowSize);
+    
+    // Calcular porcentaje de detecciones de movimiento recientes
+    const motionPercentage = this.motionArtifactHistory.filter(Boolean).length / 
+                            Math.max(1, this.motionArtifactHistory.length);
+    
+    // Devolver métricas consolidadas
+    return {
+      quality: this.quality.calculateSignalQuality(this.ppgValues),
+      hasMotion: this.motionDetected || motionPercentage > 0.3 || consistencyResult.hasMotion,
+      motionCompensationActive: this.motionCompensationActive,
+      consistency: consistencyResult.consistency,
+      fingerDetected: this.isFingerDetected()
+    };
+  }
+  
+  /**
+   * Apply combined filtering for real signal processing with motion compensation
+   */
+  public applyFilters(
+    value: number, 
+    accelerometerData?: {x: number, y: number, z: number},
+    irValue?: number
+  ): { 
+    filteredValue: number, 
+    quality: number, 
+    fingerDetected: boolean,
+    motionDetected: boolean,
+    motionCompensated: boolean
+  } {
     // Track the signal for pattern detection
     this.signalValidator.trackSignalForPatternDetection(value);
     
-    // Step 1: Median filter to remove outliers
-    const medianFiltered = this.applyMedianFilter(value);
+    // Detect motion artifacts and apply compensation
+    const hasMotionArtifact = this.detectMotionArtifacts(value, accelerometerData);
     
-    // Step 2: Low pass filter to smooth the signal
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered);
-    
-    // Step 3: Moving average for final smoothing
-    const smaFiltered = this.applySMAFilter(lowPassFiltered);
-    
-    // Calculate noise level of real signal
-    this.quality.updateNoiseLevel(value, smaFiltered);
-    
-    // Calculate signal quality (0-100)
-    const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
+    // Apply complete filter pipeline with motion compensation
+    const filterResult = this.filter.applyCompleteFilterWithMotionCompensation(
+      value, 
+      this.ppgValues,
+      accelerometerData,
+      irValue
+    );
     
     // Store the filtered value in the buffer
-    this.ppgValues.push(smaFiltered);
+    this.ppgValues.push(filterResult.filteredValue);
     if (this.ppgValues.length > 30) {
       this.ppgValues.shift();
     }
     
-    // Check finger detection using pattern recognition with a higher quality threshold
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
-                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    // Calculate signal quality
+    const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
     
     // Calculate signal amplitude
     let amplitude = 0;
@@ -114,9 +182,34 @@ export class SignalProcessor extends BaseProcessor {
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
     
+    // Check finger detection using pattern recognition with a higher quality threshold
+    const fingerDetected = this.signalValidator.isFingerDetected() && 
+                          (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    
     // Require minimum amplitude for detection (physiological requirement)
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
     
+    // Update finger detection state
+    this.updateFingerDetectionState(fingerDetected, hasValidAmplitude, qualityValue, amplitude);
+    
+    return { 
+      filteredValue: filterResult.filteredValue,
+      quality: qualityValue,
+      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed,
+      motionDetected: hasMotionArtifact,
+      motionCompensated: filterResult.appliedCompensation
+    };
+  }
+  
+  /**
+   * Actualizar estado de detección de dedo
+   */
+  private updateFingerDetectionState(
+    fingerDetected: boolean, 
+    hasValidAmplitude: boolean,
+    qualityValue: number,
+    amplitude: number
+  ): void {
     // If finger is detected by pattern and has valid amplitude, confirm it
     if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
       const now = Date.now();
@@ -157,12 +250,6 @@ export class SignalProcessor extends BaseProcessor {
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
     }
-    
-    return { 
-      filteredValue: smaFiltered,
-      quality: qualityValue,
-      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
-    };
   }
   
   /**
@@ -180,8 +267,16 @@ export class SignalProcessor extends BaseProcessor {
     super.reset();
     this.quality.reset();
     this.signalValidator.resetFingerDetection();
+    this.filter.reset();
+    this.motionArtifactManager.reset();
+    
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
+    
+    this.motionDetected = false;
+    this.motionCompensationActive = false;
+    this.motionArtifactHistory = [];
+    this.lastMotionDetectedTime = 0;
   }
 }
