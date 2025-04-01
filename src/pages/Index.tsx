@@ -183,14 +183,41 @@ const Index = () => {
     
     const videoTrack = stream.getVideoTracks()[0];
     
-    // Use standard ImageCapture API if available
-    if (typeof window.ImageCapture !== 'undefined') {
-      const imageCapture = new window.ImageCapture(videoTrack);
-      processStreamWithImageCapture(imageCapture);
-    } else {
-      // Fallback to canvas-based capturing
-      processStreamWithCanvas(videoTrack);
-    }
+    // Use createImageBitmap API which is more widely supported
+    const processStreamWithCanvas = (videoTrack) => {
+      // Create a video element to display the stream
+      const videoElement = document.createElement('video');
+      videoElement.srcObject = new MediaStream([videoTrack]);
+      videoElement.autoplay = true;
+      videoElement.style.display = 'none';
+      document.body.appendChild(videoElement);
+      
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      const processFrame = () => {
+        if (!isMonitoring) {
+          document.body.removeChild(videoElement);
+          return;
+        }
+        
+        if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+          tempCanvas.width = videoElement.videoWidth;
+          tempCanvas.height = videoElement.videoHeight;
+          tempCtx.drawImage(videoElement, 0, 0);
+          const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+          processFrame(imageData);
+        }
+        
+        requestAnimationFrame(processFrame);
+      };
+      
+      videoElement.onloadedmetadata = () => {
+        processFrame();
+      };
+    };
+    
+    processStreamWithCanvas(videoTrack);
     
     // Try to enable camera torch if available
     if (videoTrack.getCapabilities) {
@@ -201,72 +228,6 @@ const Index = () => {
         }).catch(err => console.error("Error activando linterna:", err));
       }
     }
-  };
-  
-  const processStreamWithImageCapture = (imageCapture) => {
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
-      
-      try {
-        const frame = await imageCapture.grabFrame();
-        tempCanvas.width = frame.width;
-        tempCanvas.height = frame.height;
-        tempCtx.drawImage(frame, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processFrame(imageData);
-        
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
-      } catch (error) {
-        console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
-      }
-    };
-
-    processImage();
-  };
-  
-  const processStreamWithCanvas = (videoTrack) => {
-    // Create a video element to display the stream
-    const videoElement = document.createElement('video');
-    videoElement.srcObject = new MediaStream([videoTrack]);
-    videoElement.autoplay = true;
-    videoElement.style.display = 'none';
-    document.body.appendChild(videoElement);
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    
-    const processFrame = () => {
-      if (!isMonitoring) {
-        document.body.removeChild(videoElement);
-        return;
-      }
-      
-      if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-        tempCanvas.width = videoElement.videoWidth;
-        tempCanvas.height = videoElement.videoHeight;
-        tempCtx.drawImage(videoElement, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        processFrame(imageData);
-      }
-      
-      requestAnimationFrame(processFrame);
-    };
-    
-    videoElement.onloadedmetadata = () => {
-      processFrame();
-    };
   };
 
   useEffect(() => {
