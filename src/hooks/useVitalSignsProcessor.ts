@@ -1,37 +1,7 @@
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
-
-/**
- * Hook para signos vitales
- * Proporciona interfaz para procesamiento de signos vitales con arquitectura modular
- */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { EventType, eventBus, useEventSubscription } from '../modules/events/EventBus';
-import { VitalSignsResult } from '../modules/results/VitalSignsCalculator';
-import { cameraFrameReader } from '../modules/camera/CameraFrameReader';
-import { heartBeatExtractor } from '../modules/extraction/HeartBeatExtractor';
-import { ppgSignalExtractor } from '../modules/extraction/PPGSignalExtractor';
-import { combinedSignalProvider } from '../modules/extraction/CombinedSignalProvider';
-import { signalProcessor } from '../modules/processing/SignalProcessor';
-import { SignalOptimizer, signalOptimizer } from '../modules/optimization/SignalOptimizer';
-import { vitalSignsCalculator } from '../modules/results/VitalSignsCalculator';
+import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs/VitalSignsProcessor';
 import { updateSignalLog } from '../utils/signalLogUtils';
-
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
 
 interface ArrhythmiaWindow {
   start: number;
@@ -39,37 +9,30 @@ interface ArrhythmiaWindow {
 }
 
 /**
- * Hook para procesamiento integral de signos vitales
- * Utiliza la arquitectura modular para proporcionar una interfaz unificada
+ * Custom hook para procesar signos vitales con algoritmos avanzados
+ * Usa procesamiento de señal mejorado y detección de arritmias basada en investigación médica
  */
 export const useVitalSignsProcessor = () => {
-  // Estado
+  // State
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
   // Referencias para estado interno
+  const processorRef = useRef<VitalSignsProcessor | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
   // Inicialización
   useEffect(() => {
+    processorRef.current = new VitalSignsProcessor();
+    
     console.log("useVitalSignsProcessor: Hook inicializado", {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
     
     return () => {
-      // Detener todos los módulos al desmontar
-      cameraFrameReader.stopFrameReading();
-      cameraFrameReader.stopCamera();
-      heartBeatExtractor.stopExtraction();
-      ppgSignalExtractor.stopExtraction();
-      combinedSignalProvider.stop();
-      signalProcessor.stopProcessing();
-      signalOptimizer.stop();
-      vitalSignsCalculator.stopCalculating();
-      
       console.log("useVitalSignsProcessor: Hook destruido", {
         sessionId: sessionId.current,
         señalesProcesadas: processedSignals.current,
@@ -78,39 +41,20 @@ export const useVitalSignsProcessor = () => {
     };
   }, []);
   
-  // Suscribirse a eventos de resultados
-  useEventSubscription(EventType.VITAL_SIGNS_UPDATED, (result: VitalSignsResult) => {
-    // Actualizar resultados válidos
-    setLastValidResults(result);
-    
-    // Actualizar ventanas de arritmia si hay datos
-    if (result.arrhythmiaData?.windows) {
-      setArrhythmiaWindows(result.arrhythmiaData.windows);
-    }
-    
-    // Actualizar log
-    const currentTime = Date.now();
-    signalLog.current = updateSignalLog(
-      signalLog.current, 
-      currentTime, 
-      result.heartRate, // usando la frecuencia cardíaca como valor de señal
-      result, 
-      processedSignals.current
-    );
+  /**
+   * Procesa la señal con algoritmos mejorados
+   */
+  const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
+    if (!processorRef.current) return {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--"
+    };
     
     processedSignals.current++;
-  });
-  
-  /**
-   * Procesar la señal
-   * Esta función ahora coordina el procesamiento a través del sistema modular
-   */
-  const processSignal = useCallback((value: number, rrData?: { intervals: number[]; lastPeakTime: number | null }) => {
-    // En la nueva arquitectura, el procesamiento ocurre automáticamente
-    // Esta función queda por compatibilidad, pero ya no maneja directamente el procesamiento
     
-    // Registrar procesamiento (para debugging)
-    console.log("useVitalSignsProcessor: Solicitud de procesamiento", {
+    // Registrar procesamiento de señal
+    console.log("useVitalSignsProcessor: Procesando señal", {
       valorEntrada: value,
       rrDataPresente: !!rrData,
       intervalosRR: rrData?.intervals.length || 0,
@@ -120,120 +64,106 @@ export const useVitalSignsProcessor = () => {
       timestamp: new Date().toISOString()
     });
     
-    // Retornar último resultado válido o valores por defecto
-    return lastValidResults || {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--"
-    };
-  }, [lastValidResults]);
-
-  /**
-   * Iniciar el procesamiento completo
-   */
-  const startProcessing = useCallback(async () => {
-    try {
-      // Iniciar cámara
-      const cameraStarted = await cameraFrameReader.startCamera();
-      if (!cameraStarted) {
-        throw new Error("No se pudo iniciar la cámara");
-      }
-      
-      // Iniciar extracción
-      heartBeatExtractor.startExtraction();
-      ppgSignalExtractor.startExtraction();
-      combinedSignalProvider.start();
-      
-      // Iniciar procesamiento
-      signalProcessor.startProcessing();
-      
-      // Iniciar optimización
-      signalOptimizer.start();
-      
-      // Iniciar cálculos
-      vitalSignsCalculator.startCalculating();
-      
-      // Comenzar lectura de frames
-      cameraFrameReader.startFrameReading();
-      
-      console.log("useVitalSignsProcessor: Sistema completo iniciado");
-      return true;
-    } catch (error) {
-      console.error("useVitalSignsProcessor: Error iniciando sistema", error);
-      return false;
-    }
-  }, []);
-  
-  /**
-   * Detener el procesamiento completo
-   */
-  const stopProcessing = useCallback(() => {
-    // Detener en orden inverso
-    vitalSignsCalculator.stopCalculating();
-    signalOptimizer.stop();
-    signalProcessor.stopProcessing();
-    combinedSignalProvider.stop();
-    ppgSignalExtractor.stopExtraction();
-    heartBeatExtractor.stopExtraction();
-    cameraFrameReader.stopFrameReading();
+    // Procesar señal a través del procesador de signos vitales
+    const result = processorRef.current.processSignal(value, rrData);
+    const currentTime = Date.now();
     
-    console.log("useVitalSignsProcessor: Sistema completo detenido");
+    // Si se detectó arritmia y tenemos datos de ventana visual, actualizar ventanas de arritmia
+    if (result.visualWindow) {
+      // Actualizar ventanas de arritmia para visualización
+      setArrhythmiaWindows(prev => {
+        const newWindows = [...prev, { 
+          start: result.visualWindow!.start, 
+          end: result.visualWindow!.end 
+        }];
+        // Solo mantenemos las 3 ventanas más recientes
+        return newWindows.slice(-3);
+      });
+    }
+    
+    // Actualizar log de señales
+    signalLog.current = updateSignalLog(signalLog.current, currentTime, value, result, processedSignals.current);
+    
+    // Si tenemos un resultado válido, guardarlo
+    if (result.spo2 > 0) {
+      console.log("useVitalSignsProcessor: Resultado válido detectado", {
+        spo2: result.spo2,
+        presión: result.pressure,
+        timestamp: new Date().toISOString()
+      });
+      setLastValidResults(result);
+    }
+    
+    return result;
   }, []);
 
   /**
-   * Soft reset: reiniciar los procesadores pero mantener resultados
+   * Soft reset: mantener los resultados pero reiniciar los procesadores
    */
   const reset = useCallback(() => {
+    if (!processorRef.current) return null;
+    
     console.log("useVitalSignsProcessor: Reseteo suave", {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.bloodPressure.display
+          presión: lastValidResults.pressure
         } : null
       },
       timestamp: new Date().toISOString()
     });
     
-    // Reiniciar procesadores pero no resultados
-    signalProcessor.reset();
-    // Quitamos la referencia a resetFilters que no existe
-    signalOptimizer.stop();
-    signalOptimizer.start();
+    const savedResults = processorRef.current.reset();
     setArrhythmiaWindows([]);
     
+    if (savedResults) {
+      console.log("useVitalSignsProcessor: Guardando resultados tras reset", {
+        resultadosGuardados: {
+          spo2: savedResults.spo2,
+          presión: savedResults.pressure,
+          estadoArritmia: savedResults.arrhythmiaStatus
+        },
+        timestamp: new Date().toISOString()
+      });
+      
+      setLastValidResults(savedResults);
+    } else {
+      console.log("useVitalSignsProcessor: No hay resultados para guardar tras reset", {
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     console.log("Reseteo suave completado - manteniendo resultados");
-    return lastValidResults;
+    return savedResults;
   }, [lastValidResults]);
   
   /**
    * Hard reset: borrar todos los resultados y reiniciar
    */
   const fullReset = useCallback(() => {
+    if (!processorRef.current) return;
+    
     console.log("useVitalSignsProcessor: Reseteo completo", {
       estadoAnterior: {
         últimosResultados: lastValidResults ? {
           spo2: lastValidResults.spo2,
-          presión: lastValidResults.bloodPressure.display
+          presión: lastValidResults.pressure
         } : null,
         señalesProcesadas: processedSignals.current
       },
       timestamp: new Date().toISOString()
     });
     
-    // Detener y reiniciar todo el sistema
-    stopProcessing();
+    processorRef.current.fullReset();
     setLastValidResults(null);
     setArrhythmiaWindows([]);
     processedSignals.current = 0;
     signalLog.current = [];
-    
     console.log("Reseteo completo finalizado - borrando todos los resultados");
-  }, [stopProcessing, lastValidResults]);
+  }, [processorRef, lastValidResults]);
 
   return {
     processSignal,
-    startProcessing,
-    stopProcessing,
     reset,
     fullReset,
     lastValidResults,
@@ -244,12 +174,3 @@ export const useVitalSignsProcessor = () => {
     }
   };
 };
-
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
