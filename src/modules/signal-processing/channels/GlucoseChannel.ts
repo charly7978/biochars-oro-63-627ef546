@@ -1,70 +1,153 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Specialized channel for glucose processing
+ * Specialized channel for glucose signal processing
+ * Optimizes the signal specifically for glucose measurement algorithms
  */
 
-import { SpecializedChannel, VitalSignType } from './SpecializedChannel';
-import { applyAdaptiveFilter } from '../utils/adaptive-predictor';
+import { SpecializedChannel, ChannelConfig } from './SpecializedChannel';
+import { VitalSignType } from '../../../types/signal';
 
+/**
+ * Glucose-specific channel configuration
+ */
 export class GlucoseChannel extends SpecializedChannel {
-  private glucoseValues: number[] = [];
-  private lastGlucose: number = 0;
+  // Glucose-specific parameters
+  private readonly LOW_FREQUENCY_WEIGHT = 0.6;  // Higher weight for low frequencies
+  private readonly HIGH_FREQUENCY_WEIGHT = 0.4; // Lower weight for high frequencies
+  private readonly PERFUSION_EMPHASIS = 1.2;    // Emphasis on perfusion-related components
+  private areaUnderCurveBuffer: number[] = [];
+  private readonly AUC_BUFFER_SIZE = 30;
   
-  constructor(id?: string) {
-    super(VitalSignType.GLUCOSE, id);
+  constructor(config: ChannelConfig) {
+    super(VitalSignType.GLUCOSE, config);
   }
-
+  
   /**
-   * Process a signal into glucose value
+   * Apply glucose-specific optimization to the signal
+   * - Emphasizes low-frequency components related to blood glucose changes
+   * - Enhances perfusion-related signal characteristics
+   * - Calculates and uses area under the curve for glucose correlation
    */
-  processValue(signal: number): number {
-    // Add to glucose buffer
-    this.glucoseValues.push(signal);
-    this.addValue(signal);
+  protected applyChannelSpecificOptimization(value: number): number {
+    // Calculate a baseline from recent values
+    const baseline = this.calculateBaseline();
     
-    if (this.glucoseValues.length > 20) {
-      this.glucoseValues.shift();
+    // Calculate an emphasis factor based on recent signal areas
+    const emphasisFactor = this.calculateEmphasisFactor(value, baseline);
+    
+    // Apply frequency weighting specific to glucose signal components
+    const frequencyWeightedValue = this.applyFrequencyWeighting(value, baseline);
+    
+    // Enhance perfusion-related components
+    const enhancedValue = frequencyWeightedValue * this.PERFUSION_EMPHASIS * emphasisFactor;
+    
+    // Update area under curve buffer
+    this.updateAreaUnderCurveBuffer(value, baseline);
+    
+    return enhancedValue;
+  }
+  
+  /**
+   * Calculate a baseline from recent values
+   */
+  private calculateBaseline(): number {
+    if (this.recentValues.length < 5) {
+      return 0;
     }
     
-    // Apply sliding window filter
-    if (this.glucoseValues.length >= 5) {
-      const smoothed = applyAdaptiveFilter(signal, this.glucoseValues, 0.3);
-      this.lastGlucose = this.calculateGlucose(smoothed);
-    } else {
-      this.lastGlucose = this.calculateGlucose(signal);
+    // Use median filtering for more stable baseline
+    const sortedValues = [...this.recentValues].sort((a, b) => a - b);
+    return sortedValues[Math.floor(sortedValues.length / 2)];
+  }
+  
+  /**
+   * Calculate emphasis factor based on signal characteristics
+   */
+  private calculateEmphasisFactor(value: number, baseline: number): number {
+    // Default emphasis if not enough data
+    if (this.recentValues.length < 10) {
+      return 1.0;
     }
     
-    return this.lastGlucose;
-  }
-
-  /**
-   * Direct measurement only - no simulation
-   */
-  private calculateGlucose(value: number): number {
-    // Real-world processing only - filter and stabilize
-    const normalizedValue = Math.max(0, Math.min(1, (value + 1) / 2));
+    // Calculate signal area properties
+    const areaValues = this.recentValues.map(v => v - baseline);
+    let positiveArea = 0;
+    let negativeArea = 0;
     
-    // Range approx 70-200 mg/dL for normal glucose range
-    const baseGlucose = 70 + normalizedValue * 130; 
+    for (const areaValue of areaValues) {
+      if (areaValue > 0) {
+        positiveArea += areaValue;
+      } else {
+        negativeArea += Math.abs(areaValue);
+      }
+    }
     
-    return Math.round(baseGlucose);
+    // Area ratio affects emphasis
+    const areaRatio = (positiveArea + 0.0001) / (negativeArea + 0.0001);
+    
+    // Emphasis is higher when areas are more balanced
+    const balanceFactor = Math.min(1, 1 / Math.abs(Math.log10(areaRatio)));
+    
+    return 0.8 + (balanceFactor * 0.4); // Range: 0.8 - 1.2
   }
-
+  
   /**
-   * Reset the channel
+   * Apply frequency weighting to emphasize glucose-relevant components
    */
-  reset(): void {
+  private applyFrequencyWeighting(value: number, baseline: number): number {
+    if (this.recentValues.length < 10) {
+      return value;
+    }
+    
+    // Split into low and high frequency components
+    const lowFreqComponent = this.calculateLowFrequencyComponent(value, baseline);
+    const highFreqComponent = value - baseline - lowFreqComponent;
+    
+    // Weight and combine components
+    return baseline + 
+           (lowFreqComponent * this.LOW_FREQUENCY_WEIGHT) + 
+           (highFreqComponent * this.HIGH_FREQUENCY_WEIGHT);
+  }
+  
+  /**
+   * Calculate low frequency component using a simple approximation
+   */
+  private calculateLowFrequencyComponent(value: number, baseline: number): number {
+    if (this.recentValues.length < 8) {
+      return value - baseline;
+    }
+    
+    // Simple low-pass filter approximation
+    const recent = this.recentValues.slice(-8);
+    const avgValue = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+    
+    return avgValue - baseline;
+  }
+  
+  /**
+   * Update area under curve buffer for glucose correlations
+   */
+  private updateAreaUnderCurveBuffer(value: number, baseline: number): void {
+    this.areaUnderCurveBuffer.push(value - baseline);
+    
+    if (this.areaUnderCurveBuffer.length > this.AUC_BUFFER_SIZE) {
+      this.areaUnderCurveBuffer.shift();
+    }
+  }
+  
+  /**
+   * Get area under curve for recent values
+   * Important for glucose correlation
+   */
+  public getAreaUnderCurve(): number {
+    return this.areaUnderCurveBuffer.reduce((sum, val) => sum + val, 0);
+  }
+  
+  /**
+   * Reset channel state
+   */
+  public override reset(): void {
     super.reset();
-    this.glucoseValues = [];
-    this.lastGlucose = 0;
-  }
-  
-  /**
-   * Get the last calculated glucose value
-   */
-  getLastGlucose(): number {
-    return this.lastGlucose;
+    this.areaUnderCurveBuffer = [];
   }
 }

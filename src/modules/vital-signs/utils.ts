@@ -34,18 +34,6 @@ export {
   calculatePerfusionIndex
 } from './utils/perfusion-utils';
 
-// Re-export from enhanced detection modules
-export { findPeaksFourier } from './enhanced-detection/fourier-analyzer';
-export { findPeaksWavelet } from './enhanced-detection/wavelet-analyzer';
-export { validateMultiBeatSequence } from './enhanced-detection/multi-beat-validator';
-export { getAdaptiveThreshold } from './enhanced-detection/adaptive-threshold';
-export { 
-  calculateSignalNoiseRatio,
-  calculatePulsatilityIndex,
-  calculateConsistencyMetrics,
-  performSpectralAnalysis
-} from './enhanced-detection/spectral-analyzer';
-
 // Re-export from core utils
 export {
   calculateAC as getAC,
