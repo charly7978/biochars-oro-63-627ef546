@@ -1,99 +1,61 @@
 
 /**
- * Functions for checking signal quality
- * Direct measurement only - NO simulation or data manipulation
+ * Calculate the quality of a PPG signal based on various factors
+ * @param signal The processed signal data
+ * @returns Quality score (0-100)
  */
-
-/**
- * Check if the signal quality is sufficient for processing
- * Uses only real measurements without simulation
- */
-export function checkSignalQuality(
+export function calculateSignalQuality(
   value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number,
-    maxWeakSignalCount: number
+  recentValues: number[] = [],
+  fingerDetected: boolean = false,
+  motionLevel: number = 0
+): number {
+  if (!fingerDetected) {
+    return 0;
   }
-): {
-  isWeakSignal: boolean,
-  updatedWeakSignalsCount: number
-} {
-  // Get actual threshold from config or use default
-  const threshold = config.lowSignalThreshold || 0.05;
-  const maxCount = config.maxWeakSignalCount || 10;
   
-  // Check real signal against threshold
-  const isCurrentlyWeak = Math.abs(value) < threshold;
-  
-  // Update counter based on actual signal strength
-  let updatedCount = isCurrentlyWeak 
-    ? consecutiveWeakSignalsCount + 1 
+  // Calculate basic signal metrics
+  const signalRange = recentValues.length > 0 
+    ? Math.max(...recentValues) - Math.min(...recentValues) 
     : 0;
   
-  // Determine if signal is weak based on consecutive measurements
-  const isWeak = updatedCount >= maxCount;
-  
-  return {
-    isWeakSignal: isWeak,
-    updatedWeakSignalsCount: updatedCount
-  };
-}
-
-/**
- * Reset detection states for fresh measurements
- */
-export function resetDetectionStates() {
-  console.log("Signal quality: Reset detection states");
-  return {
-    consecutiveWeakSignals: 0
-  };
-}
-
-/**
- * Check if finger is detected by identifying rhythmic patterns
- * Works only with real data, no simulation
- */
-export function isFingerDetectedByPattern(
-  signalHistory: Array<{time: number, value: number}>,
-  currentPatternCount: number
-): {
-  isFingerDetected: boolean,
-  patternCount: number
-} {
-  if (signalHistory.length < 10) {
-    return { 
-      isFingerDetected: false, 
-      patternCount: 0 
-    };
+  // If we don't have enough data yet, return a moderate quality
+  if (recentValues.length < 5) {
+    return fingerDetected ? 40 : 0;
   }
   
-  // Look for physiological patterns in real signal
-  let crossings = 0;
-  const recentValues = signalHistory.slice(-10);
-  const mean = recentValues.reduce((sum, point) => sum + point.value, 0) / recentValues.length;
-  
-  // Count zero crossings (signal moving above/below mean)
-  for (let i = 1; i < recentValues.length; i++) {
-    if ((recentValues[i].value > mean && recentValues[i-1].value <= mean) ||
-        (recentValues[i].value <= mean && recentValues[i-1].value > mean)) {
-      crossings++;
+  // Calculate stability score
+  let stabilityScore = 0;
+  if (recentValues.length >= 3) {
+    const recentDiffs = [];
+    for (let i = 1; i < recentValues.length; i++) {
+      recentDiffs.push(Math.abs(recentValues[i] - recentValues[i-1]));
     }
+    
+    const avgDiff = recentDiffs.reduce((sum, diff) => sum + diff, 0) / recentDiffs.length;
+    const maxAllowedDiff = signalRange * 0.5; // 50% of range is max acceptable diff
+    
+    stabilityScore = Math.max(0, 50 * (1 - (avgDiff / maxAllowedDiff)));
   }
   
-  // Physiological heart rate should have 2-5 crossings in this window
-  const hasPhysiologicalPattern = crossings >= 2 && crossings <= 5;
+  // Calculate consistency score based on variation coefficient
+  let consistencyScore = 0;
+  if (recentValues.length >= 5) {
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const squaredDiffs = recentValues.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const stdDev = Math.sqrt(variance);
+    const cv = mean !== 0 ? (stdDev / mean) : 0;
+    
+    consistencyScore = Math.max(0, 50 * (1 - Math.min(1, cv * 5)));
+  }
   
-  // Update pattern detection count
-  let newPatternCount = hasPhysiologicalPattern 
-    ? currentPatternCount + 1 
-    : Math.max(0, currentPatternCount - 1);
+  // Motion penalty (0-30)
+  const motionPenalty = Math.min(30, motionLevel * 30);
   
-  // Only detect finger after consistent pattern detection
-  const isDetected = newPatternCount >= 3;
+  // Final quality score (0-100)
+  const baseQuality = (stabilityScore + consistencyScore) / 2;
+  const finalQuality = Math.max(0, baseQuality - motionPenalty);
   
-  return {
-    isFingerDetected: isDetected,
-    patternCount: newPatternCount
-  };
+  return Math.min(100, Math.round(finalQuality));
 }
