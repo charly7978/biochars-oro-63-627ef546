@@ -43,3 +43,22 @@ export interface SignalProcessor {
   resetToDefault(): void;
   initialize(): Promise<void>;
 }
+
+// Types of vital signs that can be processed
+export enum VitalSignType {
+  HEART_RATE = 'heartRate',
+  SPO2 = 'spo2',
+  BLOOD_PRESSURE = 'bloodPressure',
+  GLUCOSE = 'glucose',
+  LIPIDS = 'lipids',
+  ARRHYTHMIA = 'arrhythmia'
+}
+
+// Feedback from a channel to improve processing
+export interface ChannelFeedback {
+  channelId: string;
+  signalQuality: number;
+  suggestedAdjustments: Record<string, number>;
+  timestamp: number;
+  success: boolean;
+}
