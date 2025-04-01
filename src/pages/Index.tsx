@@ -1,7 +1,8 @@
+
 import React from 'react';
 import DiagnosticsButton from '@/components/DiagnosticsButton';
 
-const Index = () => {
+const Index: React.FC = () => {
   return (
     <div className="relative min-h-screen">
       {/* Add the DiagnosticsButton */}
