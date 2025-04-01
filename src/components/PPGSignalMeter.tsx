@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint } from 'lucide-react';
-import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
-import AppTitle from './AppTitle';
+import { Fingerprint, HeartPulse, AlertTriangle } from 'lucide-react';
+import { CircularBuffer } from '../utils/CircularBuffer';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -14,12 +13,15 @@ interface PPGSignalMeterProps {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
+    severity?: string;
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
 }
 
-interface PPGDataPointExtended extends PPGDataPoint {
+interface PPGDataPoint {
+  time: number;
+  value: number;
   isArrhythmia?: boolean;
 }
 
@@ -30,70 +32,63 @@ const PPGSignalMeter = memo(({
   onStartMeasurement,
   onReset,
   arrhythmiaStatus,
+  rawArrhythmiaData,
   preserveResults = false,
   isArrhythmia = false
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
+  const dataBufferRef = useRef<CircularBuffer<PPGDataPoint> | null>(null);
   const baselineRef = useRef<number | null>(null);
   const lastValueRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number>();
   const lastRenderTimeRef = useRef<number>(0);
-  const peaksRef = useRef<{time: number, value: number, isArrhythmia?: boolean}[]>([]);
+  const lastArrhythmiaTime = useRef<number>(0);
+  const arrhythmiaCountRef = useRef<number>(0);
+  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean}[]>([]);
+  const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const arrhythmiaTransitionRef = useRef<{
-    active: boolean,
-    startTime: number,
-    endTime: number | null
-  }>({ active: false, startTime: 0, endTime: null });
-  
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
-  const lastArrhythmiaTimeRef = useRef<number>(0);
-
-  const WINDOW_WIDTH_MS = 6500;
-  const CANVAS_WIDTH = 1960;
-  const CANVAS_HEIGHT = 1080;
-  const GRID_SIZE_X = 30;
+  
+  const WINDOW_WIDTH_MS = 3500;
+  const CANVAS_WIDTH = 1200;
+  const CANVAS_HEIGHT = 600;
+  const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 40.0;
-  const SMOOTHING_FACTOR = 1.6;
-  const TARGET_FPS = 30;
-  const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = 600;
+  const verticalScale = 35.0;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 2.5;
-  const MIN_PEAK_DISTANCE_MS = 220;
-  const IMMEDIATE_RENDERING = true;
-  const MAX_PEAKS_TO_DISPLAY = 20;
-  const REQUIRED_FINGER_FRAMES = 3;
-  const QUALITY_HISTORY_SIZE = 9;
-  const USE_OFFSCREEN_CANVAS = true;
-  const ARRHYTHMIA_COLOR = '#FF2E2E';
-  const NORMAL_COLOR = '#0EA5E9';
-  const ARRHYTHMIA_INDICATOR_SIZE = 8;
-  const ARRHYTHMIA_PULSE_COLOR = '#FFDA00';
-  const ARRHYTHMIA_DURATION_MS = 800;
+  const PEAK_THRESHOLD = 0.3;
+  const MAX_PEAKS_TO_DISPLAY = 30;
 
   useEffect(() => {
     if (!dataBufferRef.current) {
-      dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
+      dataBufferRef.current = new CircularBuffer<PPGDataPoint>(600);
     }
-    if (preserveResults && !isFingerDetected) {
-      if (dataBufferRef.current) {
-        dataBufferRef.current.clear();
+    
+    const gridCanvas = document.createElement('canvas');
+    gridCanvas.width = CANVAS_WIDTH;
+    gridCanvas.height = CANVAS_HEIGHT;
+    const gridCtx = gridCanvas.getContext('2d', { alpha: false });
+    
+    if (gridCtx) {
+      drawGrid(gridCtx);
+      gridCanvasRef.current = gridCanvas;
+    }
+    
+    renderSignal();
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
-      peaksRef.current = [];
-      baselineRef.current = null;
-      lastValueRef.current = null;
-    }
-  }, [preserveResults, isFingerDetected]);
+    };
+  }, []);
 
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
-    if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
+    if (qualityHistoryRef.current.length > 9) {
       qualityHistoryRef.current.shift();
     }
     
@@ -102,181 +97,91 @@ const PPGSignalMeter = memo(({
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
-  }, [quality, isFingerDetected]);
-
-  useEffect(() => {
-    const offscreen = document.createElement('canvas');
-    offscreen.width = CANVAS_WIDTH;
-    offscreen.height = CANVAS_HEIGHT;
-    offscreenCanvasRef.current = offscreen;
     
-    const gridCanvas = document.createElement('canvas');
-    gridCanvas.width = CANVAS_WIDTH;
-    gridCanvas.height = CANVAS_HEIGHT;
-    const gridCtx = gridCanvas.getContext('2d', { alpha: false });
-    
-    if(gridCtx) {
-      drawGrid(gridCtx);
-      gridCanvasRef.current = gridCanvas;
-    }
-  }, []);
-
-  useEffect(() => {
-    const now = Date.now();
-    
-    if (isArrhythmia && !arrhythmiaTransitionRef.current.active) {
-      arrhythmiaTransitionRef.current = { 
-        active: true, 
-        startTime: now, 
-        endTime: null 
-      };
+    if (isFingerDetected && dataBufferRef.current) {
+      const isCurrentArrhythmia = isArrhythmia || 
+        (arrhythmiaStatus && arrhythmiaStatus.toLowerCase().includes('arritmia'));
       
-      arrhythmiaSegmentsRef.current.push({
-        startTime: now,
-        endTime: null
+      const now = Date.now();
+      dataBufferRef.current.push({
+        time: now,
+        value: value,
+        isArrhythmia: isCurrentArrhythmia
       });
       
-      lastArrhythmiaTimeRef.current = now;
-      
-      console.log('PPGSignalMeter: Nueva arritmia detectada en', new Date(now).toISOString());
-    } 
-    else if (!isArrhythmia && arrhythmiaTransitionRef.current.active) {
-      arrhythmiaTransitionRef.current = {
-        ...arrhythmiaTransitionRef.current,
-        active: false,
-        endTime: now
-      };
-      
-      if (arrhythmiaSegmentsRef.current.length > 0) {
-        const lastIndex = arrhythmiaSegmentsRef.current.length - 1;
-        if (arrhythmiaSegmentsRef.current[lastIndex].endTime === null) {
-          arrhythmiaSegmentsRef.current[lastIndex].endTime = now;
+      if (isCurrentArrhythmia) {
+        setShowArrhythmiaAlert(true);
+        setTimeout(() => setShowArrhythmiaAlert(false), 2000);
+        
+        const lastSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
+        
+        if (!lastSegment || lastSegment.endTime !== null) {
+          arrhythmiaSegmentsRef.current.push({
+            startTime: now,
+            endTime: null
+          });
+          lastArrhythmiaTime.current = now;
+          
+          if (arrhythmiaStatus && arrhythmiaStatus.includes('|')) {
+            const parts = arrhythmiaStatus.split('|');
+            if (parts.length > 1) {
+              arrhythmiaCountRef.current = parseInt(parts[1], 10) || arrhythmiaCountRef.current;
+            } else if (arrhythmiaCountRef.current === 0) {
+              arrhythmiaCountRef.current = 1;
+            }
+          } else if (arrhythmiaCountRef.current === 0) {
+            arrhythmiaCountRef.current = 1;
+          }
+        }
+      } else {
+        const lastSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
+        if (lastSegment && lastSegment.endTime === null) {
+          lastSegment.endTime = now;
         }
       }
-      
-      console.log('PPGSignalMeter: Fin de arritmia en', new Date(now).toISOString());
     }
-    
-    arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(
-      segment => now - (segment.endTime || now) < WINDOW_WIDTH_MS
-    );
-  }, [isArrhythmia]);
-
-  const getAverageQuality = useCallback(() => {
-    if (qualityHistoryRef.current.length === 0) return 0;
-    
-    let weightedSum = 0;
-    let weightSum = 0;
-    
-    qualityHistoryRef.current.forEach((q, index) => {
-      const weight = index + 1;
-      weightedSum += q * weight;
-      weightSum += weight;
-    });
-    
-    return weightSum > 0 ? weightedSum / weightSum : 0;
-  }, []);
-
-  const getQualityColor = useCallback((q: number) => {
-    const avgQuality = getAverageQuality();
-    
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
-    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
-    return 'from-red-500 to-rose-500';
-  }, [getAverageQuality]);
-
-  const getQualityText = useCallback((q: number) => {
-    const avgQuality = getAverageQuality();
-    
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
-    if (avgQuality > 65) return 'Señal óptima';
-    if (avgQuality > 40) return 'Señal aceptable';
-    return 'Señal débil';
-  }, [getAverageQuality]);
-
-  const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
-    if (previousValue === null) return currentValue;
-    return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
-  }, []);
+  }, [value, quality, isFingerDetected, arrhythmiaStatus, rawArrhythmiaData, isArrhythmia]);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E2DCFF');
-    gradient.addColorStop(0.25, '#FFDECF');
-    gradient.addColorStop(0.45, '#F1FBDF');
-    gradient.addColorStop(0.55, '#F1EEE8');
-    gradient.addColorStop(0.75, '#F5EED8');
-    gradient.addColorStop(1, '#F5EED0');
-    
-    ctx.fillStyle = gradient;
+    ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    ctx.globalAlpha = 0.04;
-    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
-      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        const heightRatio = j / CANVAS_HEIGHT;
-        const alphaModifier = 0.01 + (heightRatio * 0.03);
-        
-        ctx.fillStyle = j % 40 === 0 ? 
-          `rgba(0,0,0,${0.2 + alphaModifier})` : 
-          `rgba(255,255,255,${0.2 + alphaModifier})`;
-        ctx.fillRect(i, j, 10, 10);
-      }
-    }
-    ctx.globalAlpha = 1.0;
-    
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.22)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
-      if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
-      }
     }
     
     for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
-      if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'right';
-        ctx.fillText(y.toString(), 15, y + 3);
-      }
     }
     ctx.stroke();
     
-    const centerLineY = (CANVAS_HEIGHT / 2) - 40;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.45)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.4)';
+    ctx.lineWidth = 1;
     ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, centerLineY);
-    ctx.lineTo(CANVAS_WIDTH, centerLineY);
+    ctx.moveTo(0, CANVAS_HEIGHT / 2);
+    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
     ctx.stroke();
     ctx.setLineDash([]);
   }, []);
 
-  const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
+  const detectPeaks = useCallback((points: PPGDataPoint[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
-    
-    const potentialPeaks: {index: number, value: number, time: number, isArrhythmia?: boolean}[] = [];
     
     for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
       
-      const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
+      const alreadyDetected = peaksRef.current.some(peak => 
+        Math.abs(peak.time - currentPoint.time) < 100
       );
       
-      if (recentlyProcessed) continue;
+      if (alreadyDetected) continue;
       
       let isPeak = true;
       
@@ -297,319 +202,202 @@ const PPGSignalMeter = memo(({
       }
       
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
-        const isInArrhythmiaSegment = arrhythmiaSegmentsRef.current.some(segment => {
-          const endTime = segment.endTime || now;
-          return currentPoint.time >= segment.startTime && currentPoint.time <= endTime;
-        });
-        
-        potentialPeaks.push({
-          index: i,
-          value: currentPoint.value,
-          time: currentPoint.time,
-          isArrhythmia: isInArrhythmiaSegment
-        });
-      }
-    }
-    
-    for (const peak of potentialPeaks) {
-      const tooClose = peaksRef.current.some(
-        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
-      );
-      
-      if (!tooClose) {
         peaksRef.current.push({
-          time: peak.time,
-          value: peak.value,
-          isArrhythmia: peak.isArrhythmia
+          time: currentPoint.time,
+          value: currentPoint.value,
+          isArrhythmia: currentPoint.isArrhythmia || false
         });
       }
     }
-    
-    peaksRef.current.sort((a, b) => a.time - b.time);
     
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
-  const isPointInArrhythmiaWindow = useCallback((pointTime: number, now: number): boolean => {
-    const isNearArrhythmicPeak = peaksRef.current.some(peak => 
-      peak.isArrhythmia && 
-      Math.abs(pointTime - peak.time) < ARRHYTHMIA_DURATION_MS
-    );
-    
-    if (isNearArrhythmicPeak) return true;
-    
-    return arrhythmiaSegmentsRef.current.some(segment => {
-      const endTime = segment.endTime || now;
-      return pointTime >= segment.startTime && pointTime <= endTime;
-    });
-  }, []);
-
   const renderSignal = useCallback(() => {
-    if (!canvasRef.current || !dataBufferRef.current) {
-      animationFrameRef.current = requestAnimationFrame(renderSignal);
-      return;
-    }
-    
-    const currentTime = performance.now();
-    const timeSinceLastRender = currentTime - lastRenderTimeRef.current;
-    
-    if (!IMMEDIATE_RENDERING && timeSinceLastRender < FRAME_TIME) {
-      animationFrameRef.current = requestAnimationFrame(renderSignal);
-      return;
-    }
-    
     const canvas = canvasRef.current;
-    const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
-      offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
-      canvas.getContext('2d', { alpha: false });
+    const buffer = dataBufferRef.current;
     
-    if (!renderCtx) {
-      animationFrameRef.current = requestAnimationFrame(renderSignal);
-      return;
-    }
-    
-    const now = Date.now();
-    
-    if (gridCanvasRef.current) {
-      renderCtx.drawImage(gridCanvasRef.current, 0, 0);
-    } else {
-      drawGrid(renderCtx);
-    }
-    
-    if (preserveResults && !isFingerDetected) {
-      if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-        const visibleCtx = canvas.getContext('2d', { alpha: false });
-        if (visibleCtx) {
-          visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+    if (canvas && buffer) {
+      const ctx = canvas.getContext('2d');
+      
+      if (ctx) {
+        const now = Date.now();
+        const points = buffer.getPoints();
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        if (gridCanvasRef.current) {
+          ctx.drawImage(gridCanvasRef.current, 0, 0);
         }
-      }
-      
-      lastRenderTimeRef.current = currentTime;
-      animationFrameRef.current = requestAnimationFrame(renderSignal);
-      return;
-    }
-    
-    if (baselineRef.current === null) {
-      baselineRef.current = value;
-    } else {
-      const adaptationRate = isFingerDetected ? 0.97 : 0.95;
-      baselineRef.current = baselineRef.current * adaptationRate + value * (1 - adaptationRate);
-    }
-    
-    const smoothedValue = smoothValue(value, lastValueRef.current);
-    lastValueRef.current = smoothedValue;
-    
-    const normalizedValue = (baselineRef.current || 0) - smoothedValue;
-    const scaledValue = normalizedValue * verticalScale;
-    
-    const pointIsArrhythmia = isPointInArrhythmiaWindow(now, now);
-    
-    const dataPoint: PPGDataPointExtended = {
-      time: now,
-      value: scaledValue,
-      isArrhythmia: pointIsArrhythmia
-    };
-    
-    dataBufferRef.current.push(dataPoint);
-    
-    const points = dataBufferRef.current.getPoints();
-    detectPeaks(points, now);
-    
-    if (points.length > 1) {
-      let segmentPoints: {x: number, y: number, isArrhythmia: boolean}[] = [];
-      let currentSegmentIsArrhythmia = false;
-      
-      for (let i = 0; i < points.length; i++) {
-        const point = points[i];
         
-        point.isArrhythmia = point.isArrhythmia || isPointInArrhythmiaWindow(point.time, now);
+        detectPeaks(points, now);
         
-        const x = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2) - 40 - point.value;
+        ctx.fillStyle = 'rgba(255, 50, 50, 0.15)';
         
-        if (i === 0 || currentSegmentIsArrhythmia !== !!point.isArrhythmia) {
-          if (segmentPoints.length > 0) {
-            renderCtx.beginPath();
-            renderCtx.strokeStyle = currentSegmentIsArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
-            renderCtx.lineWidth = 2;
-            renderCtx.lineJoin = 'round';
-            renderCtx.lineCap = 'round';
-            
-            for (let j = 0; j < segmentPoints.length; j++) {
-              const segPoint = segmentPoints[j];
-              if (j === 0) {
-                renderCtx.moveTo(segPoint.x, segPoint.y);
-              } else {
-                renderCtx.lineTo(segPoint.x, segPoint.y);
-              }
-            }
-            
-            renderCtx.stroke();
-            segmentPoints = [];
-          }
+        for (const segment of arrhythmiaSegmentsRef.current) {
+          if (now - segment.startTime > WINDOW_WIDTH_MS) continue;
           
-          currentSegmentIsArrhythmia = !!point.isArrhythmia;
+          const startX = canvas.width - ((now - segment.startTime) * canvas.width / WINDOW_WIDTH_MS);
+          const endX = segment.endTime ? 
+            canvas.width - ((now - segment.endTime) * canvas.width / WINDOW_WIDTH_MS) : 
+            canvas.width;
+          
+          ctx.fillRect(startX, 0, endX - startX, canvas.height);
         }
         
-        segmentPoints.push({ x, y, isArrhythmia: !!point.isArrhythmia });
-      }
-      
-      if (segmentPoints.length > 0) {
-        renderCtx.beginPath();
-        renderCtx.strokeStyle = currentSegmentIsArrhythmia ? ARRHYTHMIA_COLOR : NORMAL_COLOR;
-        renderCtx.lineWidth = 2;
-        renderCtx.lineJoin = 'round';
-        renderCtx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(50, 205, 50, 0.8)';
         
-        for (let j = 0; j < segmentPoints.length; j++) {
-          const segPoint = segmentPoints[j];
-          if (j === 0) {
-            renderCtx.moveTo(segPoint.x, segPoint.y);
+        let isFirstPoint = true;
+        let lastX = 0;
+        let lastY = 0;
+        
+        for (let i = 0; i < points.length; i++) {
+          const point = points[i];
+          const age = now - point.time;
+          
+          if (age > WINDOW_WIDTH_MS) continue;
+          
+          const x = canvas.width - (age * canvas.width / WINDOW_WIDTH_MS);
+          const y = canvas.height / 2 - (point.value * verticalScale);
+          
+          if (isFirstPoint) {
+            ctx.moveTo(x, y);
+            isFirstPoint = false;
           } else {
-            renderCtx.lineTo(segPoint.x, segPoint.y);
+            const controlX = (lastX + x) / 2;
+            ctx.quadraticCurveTo(controlX, lastY, x, y);
+          }
+          
+          lastX = x;
+          lastY = y;
+        }
+        
+        ctx.stroke();
+        
+        for (const peak of peaksRef.current) {
+          const age = now - peak.time;
+          if (age > WINDOW_WIDTH_MS) continue;
+          
+          const x = canvas.width - (age * canvas.width / WINDOW_WIDTH_MS);
+          const y = canvas.height / 2 - (peak.value * verticalScale);
+          
+          ctx.beginPath();
+          ctx.arc(x, y, peak.isArrhythmia ? 6 : 4, 0, Math.PI * 2);
+          ctx.fillStyle = peak.isArrhythmia ? '#ff3333' : '#33ff33';
+          ctx.fill();
+        }
+        
+        if (arrhythmiaStatus && arrhythmiaStatus !== "--") {
+          const displayStatus = arrhythmiaStatus.split('|')[0];
+          ctx.font = 'bold 16px Arial';
+          ctx.fillStyle = arrhythmiaStatus.toLowerCase().includes('arritmia') ? '#ff3333' : '#33ff33';
+          ctx.fillText(displayStatus, 20, 30);
+          
+          if (arrhythmiaStatus.toLowerCase().includes('arritmia') && rawArrhythmiaData) {
+            ctx.font = '14px Arial';
+            ctx.fillText(`RMSSD: ${rawArrhythmiaData.rmssd.toFixed(1)}`, 20, 50);
+            ctx.fillText(`Variación: ${rawArrhythmiaData.rrVariation.toFixed(1)}%`, 20, 70);
+            
+            if (rawArrhythmiaData.severity) {
+              ctx.fillText(`Severidad: ${rawArrhythmiaData.severity}`, 20, 90);
+            }
           }
         }
         
-        renderCtx.stroke();
-      }
-      
-      if (peaksRef.current.length > 0) {
-        peaksRef.current.forEach(peak => {
-          const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-          const y = (canvas.height / 2) - 40 - peak.value;
-          
-          if (x >= 0 && x <= canvas.width) {
-            if (peak.isArrhythmia) {
-              renderCtx.fillStyle = ARRHYTHMIA_PULSE_COLOR;
-              renderCtx.beginPath();
-              
-              const pulsePhase = (now % 1500) / 1500;
-              const pulseScale = 1 + 0.15 * Math.sin(pulsePhase * Math.PI * 2);
-              const pulseSize = ARRHYTHMIA_INDICATOR_SIZE * pulseScale;
-              
-              renderCtx.arc(x, y, pulseSize, 0, Math.PI * 2);
-              renderCtx.fill();
-              
-              renderCtx.fillStyle = ARRHYTHMIA_COLOR;
-              renderCtx.beginPath();
-              renderCtx.arc(x, y, ARRHYTHMIA_INDICATOR_SIZE * 0.6, 0, Math.PI * 2);
-              renderCtx.fill();
-            } else {
-              renderCtx.fillStyle = NORMAL_COLOR;
-              renderCtx.beginPath();
-              renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-              renderCtx.fill();
-            }
-            
-            renderCtx.font = 'bold 16px Inter';
-            renderCtx.fillStyle = peak.isArrhythmia ? ARRHYTHMIA_COLOR : '#000000';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-          }
-        });
+        if (arrhythmiaCountRef.current > 0) {
+          ctx.font = 'bold 18px Arial';
+          ctx.fillStyle = '#ff3333';
+          ctx.fillText(`Arritmias detectadas: ${arrhythmiaCountRef.current}`, canvas.width - 250, 30);
+        }
       }
     }
     
-    if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-      const visibleCtx = canvas.getContext('2d', { alpha: false });
-      if (visibleCtx) {
-        visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-      }
-    }
-    
-    lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, isPointInArrhythmiaWindow]);
+  }, [detectPeaks]);
 
-  useEffect(() => {
-    renderSignal();
+  const getQualityColor = useCallback(() => {
+    const avgQuality = qualityHistoryRef.current.length 
+      ? qualityHistoryRef.current.reduce((a, b) => a + b, 0) / qualityHistoryRef.current.length
+      : 0;
     
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [renderSignal]);
+    if (!isFingerDetected || consecutiveFingerFramesRef.current < 3) return 'from-gray-400 to-gray-500';
+    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
+    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
+    return 'from-red-500 to-rose-500';
+  }, [isFingerDetected]);
 
-  const handleReset = useCallback(() => {
-    peaksRef.current = [];
-    arrhythmiaTransitionRef.current = { active: false, startTime: 0, endTime: null };
-    arrhythmiaSegmentsRef.current = [];
-    onReset();
-  }, [onReset]);
-
-  const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+  const getQualityText = useCallback(() => {
+    const avgQuality = qualityHistoryRef.current.length 
+      ? qualityHistoryRef.current.reduce((a, b) => a + b, 0) / qualityHistoryRef.current.length
+      : 0;
+    
+    if (!isFingerDetected || consecutiveFingerFramesRef.current < 3) return 'Sin detección';
+    if (avgQuality > 65) return 'Señal óptima';
+    if (avgQuality > 40) return 'Señal aceptable';
+    return 'Señal débil';
+  }, [isFingerDetected]);
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="w-full h-full absolute inset-0 z-0 object-cover performance-boost"
-        style={{
-          transform: 'translate3d(0,0,0)',
-          backfaceVisibility: 'hidden',
-          contain: 'paint layout size'
-        }}
-      />
-
-      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-1">
-        <div className="flex items-center gap-1 ml-2 mt-0" style={{transform: 'translateY(-2mm)'}}>
-          <div className="w-[120px]">
-            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
-              <div
-                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
-              />
-            </div>
-            <span className="text-[7px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
-              {getQualityText(quality)}
+    <div className="relative w-full h-full flex flex-col justify-center items-center">
+      <div className="absolute top-5 left-5 flex items-center space-x-2">
+        <div className={`w-3 h-3 rounded-full ${isFingerDetected ? 'bg-green-500' : 'bg-red-500'}`} />
+        <span className="text-white text-sm">
+          {isFingerDetected ? 'Dedo detectado' : 'Coloque su dedo en la cámara'}
+        </span>
+      </div>
+      
+      {showArrhythmiaAlert && (
+        <div className="absolute top-5 right-5 flex items-center space-x-2 bg-red-500/20 p-2 rounded">
+          <AlertTriangle className="h-5 w-5 text-red-500" />
+          <span className="text-red-500 font-semibold">Arritmia detectada</span>
+        </div>
+      )}
+      
+      <div className="relative w-full h-3/4 bg-black rounded-lg overflow-hidden border border-gray-700">
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          className="w-full h-full"
+        />
+        
+        <div className="absolute bottom-4 right-4 flex items-center space-x-2">
+          <div className="text-white text-sm">{getQualityText()}</div>
+          <div className={`w-20 h-3 rounded-full bg-gradient-to-r ${getQualityColor()}`} />
+        </div>
+        
+        {arrhythmiaCountRef.current > 0 && (
+          <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/40 p-2 rounded">
+            <HeartPulse className="h-5 w-5 text-red-500" />
+            <span className="text-red-500 font-semibold">
+              {arrhythmiaCountRef.current} {arrhythmiaCountRef.current === 1 ? 'arritmia' : 'arritmias'}
             </span>
           </div>
-          <div style={{ marginLeft: '2mm' }}>
-            <AppTitle />
-          </div>
-        </div>
-
-        <div className="flex flex-col items-center">
-          <Fingerprint
-            className={`h-7 w-7 transition-colors duration-300 ${
-              !displayFingerDetected ? 'text-gray-400' :
-              displayQuality > 65 ? 'text-green-500' :
-              displayQuality > 40 ? 'text-yellow-500' :
-              'text-red-500'
-            }`}
-            strokeWidth={1.5}
-          />
-          <span className="text-[7px] text-center font-medium text-black/80">
-            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
-          </span>
-        </div>
+        )}
       </div>
-
-      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
-        <button 
+      
+      <div className="mt-4 flex space-x-4">
+        <button
           onClick={onStartMeasurement}
-          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2"
         >
-          INICIAR
+          <Fingerprint className="h-5 w-5" />
+          <span>Iniciar medición</span>
         </button>
-        <button 
-          onClick={handleReset}
-          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        
+        <button
+          onClick={onReset}
+          className="px-6 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded-lg"
         >
-          RESET
+          Reset
         </button>
       </div>
     </div>
   );
 });
-
-PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
