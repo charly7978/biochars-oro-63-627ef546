@@ -1,23 +1,31 @@
 
 {
-  "runtime": "full",
+  "runtime": "incremental",
   "resources": [],
-  "use": [],
+  "use": ["@assemblyscript/transform-wasm-simd"],
   "entries": [
     "./assembly/signal-processor.ts"
   ],
   "options": {
-    "transform": ["@assemblyscript/transform-wasm-simd"]
+    "transform": ["@assemblyscript/transform-wasm-simd"],
+    "importMemory": true,
+    "initialMemory": 2,
+    "maximumMemory": 16,
+    "sharedMemory": true,
+    "exportMemory": true,
+    "memoryBase": 0
   },
   "configurations": {
     "debug": {
-      "debug": true
+      "debug": true,
+      "sourceMap": true
     },
     "release": {
       "optimizeLevel": 3,
       "shrinkLevel": 2,
       "converge": false,
-      "noAssert": true
+      "noAssert": true,
+      "bindings": "esm"
     }
   }
 }

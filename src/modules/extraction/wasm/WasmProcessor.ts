@@ -1,471 +1,247 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Procesador WASM para cálculos de alto rendimiento
- * Implementa aceleración por WebAssembly para operaciones críticas
+ * Interfaz para procesador WASM optimizado
  */
 
+export interface WasmProcessor {
+  initialize(): Promise<boolean>;
+  applyKalmanFilter(values: number[], q: number, r: number): number[];
+  findPeaks(values: number[], minDistance: number, threshold: number): number[];
+  calculateStats(values: number[]): {
+    mean: number;
+    variance: number;
+    min: number;
+    max: number;
+  };
+  processSIMD(values: number[], operation: number, param: number): number[];
+}
+
+// Instancia singleton
+let wasmProcessorInstance: WasmProcessor | null = null;
+
 /**
- * Estado del módulo WASM
+ * Obtiene instancia singleton del procesador WASM
  */
-enum WasmState {
-  NOT_INITIALIZED = 'not_initialized',
-  INITIALIZING = 'initializing',
-  READY = 'ready',
-  FAILED = 'failed'
+export function getWasmProcessor(): WasmProcessor {
+  if (!wasmProcessorInstance) {
+    wasmProcessorInstance = createWasmProcessor();
+  }
+  return wasmProcessorInstance;
 }
 
 /**
- * Interfaz de funciones WASM expuestas
+ * Crea un procesador WASM
  */
-interface WasmModule {
-  // Funciones de filtrado
-  applyKalmanFilter(values: Float32Array, 
-                    q: number, 
-                    r: number): Float32Array;
+export function createWasmProcessor(): WasmProcessor {
+  // Definir estado interno
+  let wasmModule: WebAssembly.Module | null = null;
+  let wasmInstance: WebAssembly.Instance | null = null;
+  let isInitialized = false;
+  let memory: WebAssembly.Memory | null = null;
   
-  // Funciones de procesamiento de señal
-  findPeaks(values: Float32Array, 
-            minDistance: number, 
-            threshold: number): Int32Array;
-  
-  // Transformadas
-  applyFastFourierTransform(values: Float32Array): Float32Array;
-  applyWaveletTransform(values: Float32Array, 
-                        waveletType: number): Float32Array;
-}
-
-/**
- * Clase para procesamiento acelerado por WASM
- */
-export class WasmProcessor {
-  private static instance: WasmProcessor | null = null;
-  private state: WasmState = WasmState.NOT_INITIALIZED;
-  private module: WasmModule | null = null;
-  private initPromise: Promise<boolean> | null = null;
-  private wasmInstance: WebAssembly.Instance | null = null;
-  private wasmMemory: WebAssembly.Memory | null = null;
-  
-  // URL del módulo WASM
-  private readonly WASM_URL = '/assets/signal-processor.wasm';
-  
-  /**
-   * Constructor privado (Singleton)
-   */
-  private constructor() {
-    console.log("WasmProcessor: Inicializando módulo WASM real");
-  }
-  
-  /**
-   * Obtiene la instancia única del procesador WASM
-   */
-  public static getInstance(): WasmProcessor {
-    if (!WasmProcessor.instance) {
-      WasmProcessor.instance = new WasmProcessor();
-    }
-    return WasmProcessor.instance;
-  }
-  
-  /**
-   * Inicializa el módulo WASM
-   */
-  public initialize(): Promise<boolean> {
-    if (this.state === WasmState.READY) {
-      return Promise.resolve(true);
-    }
-    
-    if (this.state === WasmState.INITIALIZING && this.initPromise) {
-      return this.initPromise;
-    }
-    
-    this.state = WasmState.INITIALIZING;
-    
-    this.initPromise = new Promise(async (resolve, reject) => {
+  return {
+    /**
+     * Inicializa el procesador WASM
+     */
+    async initialize(): Promise<boolean> {
+      if (isInitialized) return true;
+      
       try {
-        console.log("WasmProcessor: Cargando módulo WASM real desde:", this.WASM_URL);
+        // Crear memoria compartida para WebAssembly
+        memory = new WebAssembly.Memory({
+          initial: 2,  // 2 páginas iniciales (128KB)
+          maximum: 16, // Máximo 16 páginas (1MB)
+          shared: true // Permite multithreading
+        });
         
-        // Crear memoria para WASM
-        this.wasmMemory = new WebAssembly.Memory({ initial: 10, maximum: 100 });
+        // Intentar cargar desde URL primero
+        try {
+          const response = await fetch('/assets/signal-processor.wasm');
+          if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            wasmModule = await WebAssembly.compile(buffer);
+          }
+        } catch (error) {
+          console.warn('Error cargando WASM, usando fallback:', error);
+        }
         
-        // Importaciones para el módulo WASM
-        const importObject = {
+        // Si no se pudo cargar desde URL, usar versión embebida 
+        if (!wasmModule) {
+          // Cargar desde script con fallback
+          if (typeof window !== 'undefined' && 'wasmInstance' in window) {
+            // @ts-ignore
+            wasmModule = await window.wasmInstance.fetchWasmModule();
+          } else {
+            throw new Error('No se pudo cargar el módulo WASM');
+          }
+        }
+        
+        // Instanciar módulo
+        wasmInstance = await WebAssembly.instantiate(wasmModule, {
           env: {
-            memory: this.wasmMemory,
+            memory,
+            performance_now: () => performance.now(),
             abort: (_msg: number, _file: number, line: number, column: number) => {
-              console.error(`WasmProcessor: Error en módulo WASM en línea ${line}:${column}`);
-              throw new Error(`Abortado en línea ${line}, columna ${column}`);
+              console.error(`WASM abortado en línea ${line}:${column}`);
             }
           }
-        };
+        });
         
-        // Cargar el módulo WASM
-        const response = await fetch(this.WASM_URL);
-        if (!response.ok) {
-          throw new Error(`No se pudo cargar el módulo WASM: ${response.statusText}`);
-        }
-        
-        const wasmBytes = await response.arrayBuffer();
-        const wasmResult = await WebAssembly.instantiate(wasmBytes, importObject);
-        this.wasmInstance = wasmResult.instance;
-        
-        // Crear API del módulo
-        this.module = this.createModuleAPI(this.wasmInstance);
-        
-        this.state = WasmState.READY;
-        console.log("WasmProcessor: Módulo WASM cargado y listo para usar");
-        resolve(true);
+        isInitialized = true;
+        console.log('WasmProcessor: Inicializado correctamente');
+        return true;
       } catch (error) {
-        console.error("WasmProcessor: Error cargando módulo WASM", error);
-        this.state = WasmState.FAILED;
-        
-        // Fallback a implementación JS sólo cuando no se puede cargar WASM
-        console.warn("WasmProcessor: Fallback a implementación JavaScript");
-        this.createJavaScriptFallback();
-        resolve(false);
+        console.error('WasmProcessor: Error inicializando', error);
+        isInitialized = false;
+        return false;
       }
-    });
+    },
     
-    return this.initPromise;
-  }
-  
-  /**
-   * Crea la API del módulo a partir de la instancia WASM
-   */
-  private createModuleAPI(instance: WebAssembly.Instance): WasmModule {
-    // Acceder a las funciones exportadas
-    const exports = instance.exports;
-    
-    return {
-      applyKalmanFilter: (values: Float32Array, q: number, r: number): Float32Array => {
-        const length = values.length;
-        
-        // Asignar memoria para entrada y salida
-        const valuesPtr = this.allocateFloat32Array(values);
-        const resultPtr = this.allocateFloat32Array(new Float32Array(length));
-        
-        // Llamar a la función WASM
-        (exports.applyKalmanFilter as Function)(valuesPtr, length, q, r, resultPtr);
-        
-        // Recuperar resultado
-        const result = this.getFloat32ArrayFromMemory(resultPtr, length);
-        
-        return result;
-      },
-      
-      findPeaks: (values: Float32Array, minDistance: number, threshold: number): Int32Array => {
-        const length = values.length;
-        
-        // Asignar memoria
-        const valuesPtr = this.allocateFloat32Array(values);
-        const maxPeaks = Math.ceil(length / minDistance) + 1;
-        const resultPtr = this.allocateInt32Array(new Int32Array(maxPeaks));
-        const resultLengthPtr = this.allocateInt32(0);
-        
-        // Llamar a la función WASM
-        (exports.findPeaks as Function)(valuesPtr, length, minDistance, threshold, resultPtr, resultLengthPtr);
-        
-        // Obtener longitud del resultado
-        const resultLength = this.getInt32FromMemory(resultLengthPtr);
-        
-        // Recuperar resultado
-        const result = this.getInt32ArrayFromMemory(resultPtr, resultLength);
-        
-        return result;
-      },
-      
-      applyFastFourierTransform: (values: Float32Array): Float32Array => {
-        const length = values.length;
-        
-        // Asignar memoria
-        const valuesPtr = this.allocateFloat32Array(values);
-        const resultPtr = this.allocateFloat32Array(new Float32Array(length));
-        
-        // Llamar a la función WASM
-        (exports.applyFastFourierTransform as Function)(valuesPtr, length, resultPtr);
-        
-        // Recuperar resultado
-        const result = this.getFloat32ArrayFromMemory(resultPtr, length);
-        
-        return result;
-      },
-      
-      applyWaveletTransform: (values: Float32Array, waveletType: number): Float32Array => {
-        const length = values.length;
-        
-        // Asignar memoria
-        const valuesPtr = this.allocateFloat32Array(values);
-        const resultPtr = this.allocateFloat32Array(new Float32Array(length));
-        
-        // Llamar a la función WASM
-        (exports.applyWaveletTransform as Function)(valuesPtr, length, waveletType, resultPtr);
-        
-        // Recuperar resultado
-        const result = this.getFloat32ArrayFromMemory(resultPtr, length);
-        
-        return result;
+    /**
+     * Aplica filtro Kalman optimizado con WASM
+     */
+    applyKalmanFilter(values: number[], q: number, r: number): number[] {
+      if (!isInitialized || !wasmInstance || !memory) {
+        console.warn('WasmProcessor: No inicializado, devolviendo valores sin filtrar');
+        return [...values];
       }
-    };
-  }
-  
-  /**
-   * Crea una implementación de JavaScript como fallback (sólo en caso de error WASM)
-   */
-  private createJavaScriptFallback(): void {
-    console.warn("WasmProcessor: Usando implementación JavaScript como fallback (sólo emergencia)");
-    
-    this.module = {
-      applyKalmanFilter: (values, q, r) => {
-        // Implementación JavaScript del filtro Kalman
-        const result = new Float32Array(values.length);
-        let x = 0;
-        let p = 1;
+      
+      try {
+        const { exports } = wasmInstance;
+        const filterSignal = exports.filterSignal as Function;
         
-        for (let i = 0; i < values.length; i++) {
-          // Predicción
-          p = p + q;
-          
-          // Corrección
-          const k = p / (p + r);
-          x = x + k * (values[i] - x);
-          p = (1 - k) * p;
-          
-          result[i] = x;
+        // Copiar datos a memoria WASM
+        const inputArray = new Float32Array(memory.buffer, 0, values.length);
+        values.forEach((v, i) => inputArray[i] = v);
+        
+        // Llamar a función WASM
+        const resultPtr = filterSignal(0, values.length, q, r);
+        
+        // Leer resultados
+        const result = new Float32Array(memory.buffer, resultPtr, values.length);
+        
+        // Devolver copia para evitar problemas de memoria
+        return Array.from(result);
+      } catch (error) {
+        console.error('WasmProcessor: Error en filtro Kalman', error);
+        return [...values];
+      }
+    },
+    
+    /**
+     * Encuentra picos en señal con optimización WASM
+     */
+    findPeaks(values: number[], minDistance: number, threshold: number): number[] {
+      if (!isInitialized || !wasmInstance || !memory) {
+        console.warn('WasmProcessor: No inicializado, detectando picos con JS');
+        return [];
+      }
+      
+      try {
+        const { exports } = wasmInstance;
+        const detectPeaks = exports.detectPeaks as Function;
+        
+        // Copiar datos a memoria WASM
+        const inputArray = new Float32Array(memory.buffer, 0, values.length);
+        values.forEach((v, i) => inputArray[i] = v);
+        
+        // Llamar a función WASM
+        const resultPtr = detectPeaks(0, values.length, threshold, minDistance);
+        
+        // Leer número de picos
+        const resultView = new Int32Array(memory.buffer, resultPtr, 1);
+        const peakCount = resultView[0];
+        
+        // Leer posiciones de picos
+        const peakPositions = new Int32Array(memory.buffer, resultPtr + 4, peakCount);
+        
+        // Devolver copia para evitar problemas de memoria
+        return Array.from(peakPositions);
+      } catch (error) {
+        console.error('WasmProcessor: Error detectando picos', error);
+        return [];
+      }
+    },
+    
+    /**
+     * Calcula estadísticas con optimización WASM
+     */
+    calculateStats(values: number[]): { mean: number; variance: number; min: number; max: number; } {
+      if (!isInitialized || !wasmInstance || !memory) {
+        // Fallback en JS
+        let sum = 0;
+        let sum2 = 0;
+        let min = values[0] || 0;
+        let max = values[0] || 0;
+        
+        for (const v of values) {
+          sum += v;
+          sum2 += v * v;
+          if (v < min) min = v;
+          if (v > max) max = v;
         }
         
-        return result;
-      },
-      
-      findPeaks: (values, minDistance, threshold) => {
-        // Implementación JavaScript para encontrar picos
-        const peaks: number[] = [];
-        const len = values.length;
+        const mean = values.length > 0 ? sum / values.length : 0;
+        const variance = values.length > 0 ? (sum2 / values.length) - (mean * mean) : 0;
         
-        for (let i = 1; i < len - 1; i++) {
-          if (values[i] > values[i - 1] && 
-              values[i] > values[i + 1] && 
-              values[i] > threshold) {
-            
-            // Verificar distancia mínima con el último pico
-            if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDistance) {
-              peaks.push(i);
-            }
-            // Si tenemos un pico cercano, quedarnos con el más alto
-            else if (values[i] > values[peaks[peaks.length - 1]]) {
-              peaks[peaks.length - 1] = i;
-            }
-          }
-        }
-        
-        // Convertir a Int32Array
-        const result = new Int32Array(peaks.length);
-        for (let i = 0; i < peaks.length; i++) {
-          result[i] = peaks[i];
-        }
-        
-        return result;
-      },
-      
-      applyFastFourierTransform: (values) => {
-        // Implementación básica de FFT (fallback)
-        return new Float32Array(values);
-      },
-      
-      applyWaveletTransform: (values, waveletType) => {
-        // Implementación básica de Wavelet (fallback)
-        return new Float32Array(values);
+        return { mean, variance, min, max };
       }
-    };
-  }
-  
-  /**
-   * Gestión de memoria: asigna un Float32Array en memoria WASM
-   */
-  private allocateFloat32Array(array: Float32Array): number {
-    if (!this.wasmMemory) {
-      throw new Error("Memoria WASM no inicializada");
-    }
-    
-    const buffer = this.wasmMemory.buffer;
-    const dataPtr = (this.wasmInstance!.exports.__alloc as Function)(array.length * 4, 4);
-    
-    const targetArray = new Float32Array(buffer, dataPtr, array.length);
-    targetArray.set(array);
-    
-    return dataPtr;
-  }
-  
-  /**
-   * Gestión de memoria: asigna un Int32Array en memoria WASM
-   */
-  private allocateInt32Array(array: Int32Array): number {
-    if (!this.wasmMemory) {
-      throw new Error("Memoria WASM no inicializada");
-    }
-    
-    const buffer = this.wasmMemory.buffer;
-    const dataPtr = (this.wasmInstance!.exports.__alloc as Function)(array.length * 4, 4);
-    
-    const targetArray = new Int32Array(buffer, dataPtr, array.length);
-    targetArray.set(array);
-    
-    return dataPtr;
-  }
-  
-  /**
-   * Gestión de memoria: asigna un entero de 32 bits en memoria WASM
-   */
-  private allocateInt32(value: number): number {
-    if (!this.wasmMemory) {
-      throw new Error("Memoria WASM no inicializada");
-    }
-    
-    const buffer = this.wasmMemory.buffer;
-    const dataPtr = (this.wasmInstance!.exports.__alloc as Function)(4, 4);
-    
-    const view = new Int32Array(buffer, dataPtr, 1);
-    view[0] = value;
-    
-    return dataPtr;
-  }
-  
-  /**
-   * Recupera un Float32Array de la memoria WASM
-   */
-  private getFloat32ArrayFromMemory(ptr: number, length: number): Float32Array {
-    if (!this.wasmMemory) {
-      throw new Error("Memoria WASM no inicializada");
-    }
-    
-    const buffer = this.wasmMemory.buffer;
-    const sourceArray = new Float32Array(buffer, ptr, length);
-    
-    // Copiar a un nuevo array para que sea independiente de la memoria WASM
-    return new Float32Array(sourceArray);
-  }
-  
-  /**
-   * Recupera un Int32Array de la memoria WASM
-   */
-  private getInt32ArrayFromMemory(ptr: number, length: number): Int32Array {
-    if (!this.wasmMemory) {
-      throw new Error("Memoria WASM no inicializada");
-    }
-    
-    const buffer = this.wasmMemory.buffer;
-    const sourceArray = new Int32Array(buffer, ptr, length);
-    
-    // Copiar a un nuevo array para que sea independiente de la memoria WASM
-    return new Int32Array(sourceArray);
-  }
-  
-  /**
-   * Recupera un entero de 32 bits de la memoria WASM
-   */
-  private getInt32FromMemory(ptr: number): number {
-    if (!this.wasmMemory) {
-      throw new Error("Memoria WASM no inicializada");
-    }
-    
-    const buffer = this.wasmMemory.buffer;
-    const view = new Int32Array(buffer, ptr, 1);
-    
-    return view[0];
-  }
-  
-  /**
-   * Verifica si el módulo WASM está listo
-   */
-  public isReady(): boolean {
-    return this.state === WasmState.READY && this.module !== null;
-  }
-  
-  /**
-   * Aplica un filtro Kalman a los valores proporcionados
-   */
-  public applyKalmanFilter(values: number[], q: number = 0.01, r: number = 0.1): number[] {
-    if (!this.isReady() || !this.module) {
-      console.warn("WasmProcessor: Módulo no inicializado para filtro Kalman");
-      return values;
-    }
-    
-    try {
-      // Convertir a Float32Array para proceso WASM
-      const float32Values = new Float32Array(values);
-      const result = this.module.applyKalmanFilter(float32Values, q, r);
       
-      // Convertir de vuelta a Array
-      return Array.from(result);
-    } catch (error) {
-      console.error("WasmProcessor: Error aplicando filtro Kalman", error);
-      return values;
-    }
-  }
-  
-  /**
-   * Encuentra picos en la señal
-   */
-  public findPeaks(values: number[], minDistance: number = 5, threshold: number = 0.5): number[] {
-    if (!this.isReady() || !this.module) {
-      console.warn("WasmProcessor: Módulo no inicializado para detección de picos");
-      return [];
-    }
+      try {
+        const { exports } = wasmInstance;
+        const calculateStats = exports.calculateStats as Function;
+        
+        // Copiar datos a memoria WASM
+        const inputArray = new Float32Array(memory.buffer, 0, values.length);
+        values.forEach((v, i) => inputArray[i] = v);
+        
+        // Llamar a función WASM
+        const resultPtr = calculateStats(0, values.length);
+        
+        // Leer estadísticas
+        const stats = new Float32Array(memory.buffer, resultPtr, 4);
+        
+        return {
+          mean: stats[0],
+          variance: stats[1],
+          min: stats[2],
+          max: stats[3]
+        };
+      } catch (error) {
+        console.error('WasmProcessor: Error calculando estadísticas', error);
+        return { mean: 0, variance: 0, min: 0, max: 0 };
+      }
+    },
     
-    try {
-      const float32Values = new Float32Array(values);
-      const result = this.module.findPeaks(float32Values, minDistance, threshold);
+    /**
+     * Procesa señal con operaciones SIMD
+     */
+    processSIMD(values: number[], operation: number, param: number): number[] {
+      if (!isInitialized || !wasmInstance || !memory) {
+        console.warn('WasmProcessor: No inicializado, procesando con JS');
+        return [...values];
+      }
       
-      return Array.from(result);
-    } catch (error) {
-      console.error("WasmProcessor: Error buscando picos", error);
-      return [];
+      try {
+        const { exports } = wasmInstance;
+        const processSIMD = exports.processSIMD as Function;
+        
+        // Copiar datos a memoria WASM
+        const inputArray = new Float32Array(memory.buffer, 0, values.length);
+        values.forEach((v, i) => inputArray[i] = v);
+        
+        // Llamar a función WASM
+        const resultPtr = processSIMD(0, values.length, operation, param);
+        
+        // Leer resultados
+        const result = new Float32Array(memory.buffer, resultPtr, values.length);
+        
+        // Devolver copia para evitar problemas de memoria
+        return Array.from(result);
+      } catch (error) {
+        console.error('WasmProcessor: Error en procesamiento SIMD', error);
+        return [...values];
+      }
     }
-  }
-  
-  /**
-   * Aplica la Transformada Rápida de Fourier (FFT)
-   */
-  public applyFFT(values: number[]): number[] {
-    if (!this.isReady() || !this.module) {
-      console.warn("WasmProcessor: Módulo no inicializado para FFT");
-      return values;
-    }
-    
-    try {
-      const float32Values = new Float32Array(values);
-      const result = this.module.applyFastFourierTransform(float32Values);
-      
-      return Array.from(result);
-    } catch (error) {
-      console.error("WasmProcessor: Error aplicando FFT", error);
-      return values;
-    }
-  }
-  
-  /**
-   * Aplica una transformada wavelet
-   */
-  public applyWavelet(values: number[], waveletType: number = 0): number[] {
-    if (!this.isReady() || !this.module) {
-      console.warn("WasmProcessor: Módulo no inicializado para Wavelet");
-      return values;
-    }
-    
-    try {
-      const float32Values = new Float32Array(values);
-      const result = this.module.applyWaveletTransform(float32Values, waveletType);
-      
-      return Array.from(result);
-    } catch (error) {
-      console.error("WasmProcessor: Error aplicando Wavelet", error);
-      return values;
-    }
-  }
+  };
 }
-
-/**
- * Obtiene la instancia del procesador WASM
- */
-export const getWasmProcessor = (): WasmProcessor => {
-  return WasmProcessor.getInstance();
-};

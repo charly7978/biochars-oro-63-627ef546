@@ -1,7 +1,13 @@
 
 /**
- * Tipos para el procesamiento avanzado de señales
+ * Tipos de datos para procesamiento de señales
  */
+
+export interface ProcessingError {
+  code: string;
+  message: string;
+  timestamp: number;
+}
 
 export interface MLProcessedSignal {
   timestamp: number;
@@ -9,57 +15,55 @@ export interface MLProcessedSignal {
   enhanced: number;
   confidence: number;
   prediction: number[];
-  featureImportance?: number[];
   processingTime: number;
-  modelVersion?: string;
+  modelVersion: string;
+  quality?: number;
 }
 
-export interface WorkerProcessingResult<T = any> {
+export interface WorkerProcessingResult {
   success: boolean;
-  data: T;
-  processingTime: number;
   error?: string;
-}
-
-export interface WorkerTaskConfig {
-  timeout?: number;
-  priority?: 'high' | 'normal' | 'low';
-  processingMode?: 'sync' | 'async' | 'batch';
-  useWasm?: boolean;
-  useML?: boolean;
-}
-
-export enum OptimizationPhase {
-  MEMORY_OPTIMIZATION = 'memory_optimization',
-  GPU_ACCELERATION = 'gpu_acceleration',
-  MODEL_QUANTIZATION = 'model_quantization',
-  WORKER_OPTIMIZATION = 'worker_optimization',
-  WASM_OPTIMIZATION = 'wasm_optimization',
-  CACHE_STRATEGY = 'cache_strategy'
-}
-
-export enum OptimizationStatus {
-  NOT_STARTED = 'not_started',
-  IN_PROGRESS = 'in_progress',
-  COMPLETED = 'completed',
-  FAILED = 'failed'
-}
-
-export interface OptimizationProgress {
-  phase: OptimizationPhase;
-  status: OptimizationStatus;
-  progress: number; // 0-100
-  metrics?: {
-    before: number;
-    after: number;
-    unit: string;
+  data: {
+    processed?: number;
+    filtered?: number[];
+    peaks?: number[];
+    stats?: {
+      mean: number;
+      variance: number;
+      min: number;
+      max: number;
+    };
   };
 }
 
-export interface PerformanceMetrics {
-  fps: number;
+export enum OptimizationPhase {
+  INITIALIZATION = 'initialization',
+  WASM_COMPILATION = 'wasm_compilation',
+  MODEL_LOADING = 'model_loading',
+  WORKER_SETUP = 'worker_setup',
+  CACHE_SETUP = 'cache_setup',
+  READY = 'ready'
+}
+
+export interface OptimizationStatus {
+  completed: boolean;
+  progress: number;
+  error?: string;
+  details?: string;
+}
+
+export interface OptimizationMetrics {
   processingTime: number;
   memoryUsage: number;
-  gpuUsage?: number;
-  batteryImpact?: number;
+  cpuUsage: number;
+  frameRate: number;
+}
+
+export interface OptimizationSummary {
+  isFullyOptimized: boolean;
+  wasmAvailable: boolean;
+  webglAvailable: boolean;
+  workerCount: number;
+  modelLoaded: boolean;
+  averageProcessingTime: number;
 }

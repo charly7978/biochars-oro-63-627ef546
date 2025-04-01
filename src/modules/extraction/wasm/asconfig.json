@@ -22,9 +22,13 @@
     "importMemory": true,
     "initialMemory": 2,
     "maximumMemory": 16,
-    "noExportMemory": false,
+    "exportMemory": true,
+    "sharedMemory": true,
     "exportTable": true,
     "exportStart": true,
-    "runtime": "incremental"
+    "runtime": "incremental",
+    "transform": ["@assemblyscript/transform-wasm-simd"],
+    "importTable": false,
+    "memoryBase": 0
   }
 }
