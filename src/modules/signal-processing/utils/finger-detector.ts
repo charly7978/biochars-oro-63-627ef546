@@ -9,8 +9,8 @@ import { calculateVariance } from './signal-normalizer';
 
 // Variables de estado global para tracking de señal
 let consecutiveWeakSignalsCount = 0;
-const MIN_SIGNAL_STRENGTH = 0.08; // Aumentado el umbral mínimo para señal válida
-const MAX_WEAK_SIGNALS = 4; 
+const MIN_SIGNAL_STRENGTH = 0.15; // AUMENTADO considerablemente el umbral mínimo para señal válida
+const MAX_WEAK_SIGNALS = 3; // Reducido para detección más rápida de problemas
 
 /**
  * Detecta la presencia de un dedo en la señal PPG
@@ -36,12 +36,13 @@ export function detectFingerPresence(
     
     // Si hay demasiadas señales débiles consecutivas, no hay dedo
     if (consecutiveWeakSignalsCount > MAX_WEAK_SIGNALS) {
-      console.log("Señal demasiado débil/anémica para detección válida", {
+      console.log("ALERTA: Señal EXTREMADAMENTE DÉBIL/ANÉMICA para detección válida", {
         amplitude,
         min,
         max,
         variance,
-        consecutiveWeakSignals: consecutiveWeakSignalsCount
+        consecutiveWeakSignals: consecutiveWeakSignalsCount,
+        threshold: MIN_SIGNAL_STRENGTH
       });
       return false;
     }
@@ -50,9 +51,9 @@ export function detectFingerPresence(
     consecutiveWeakSignalsCount = Math.max(0, consecutiveWeakSignalsCount - 1);
   }
   
-  // Criterios combinados para la detección de dedo
-  const hasAmplitude = amplitude >= sensitivity * 0.05;
-  const hasReasonableVariance = variance < 0.1 && variance > 0.0001;
+  // Criterios combinados para la detección de dedo - REQUIERE MAYOR AMPLITUD
+  const hasAmplitude = amplitude >= sensitivity * 0.1; // Duplicado el requerimiento
+  const hasReasonableVariance = variance < 0.15 && variance > 0.0001;
   
   return hasAmplitude && hasReasonableVariance;
 }
@@ -75,11 +76,17 @@ export function evaluateFingerDetectionConfidence(
   const max = Math.max(...buffer);
   const amplitude = max - min;
   
-  // Verificar señal anémica
+  // Verificar señal anémica - PENALIZACIÓN MUCHO MÁS SEVERA
   if (amplitude < MIN_SIGNAL_STRENGTH) {
-    confidence *= 0.3; // Penalizar fuertemente señales muy débiles
+    confidence *= 0.2; // Penalizar MUY fuertemente señales muy débiles
+    console.log("Confianza severamente reducida por señal anémica", {
+      amplitud: amplitude,
+      umbralMínimo: MIN_SIGNAL_STRENGTH,
+      confianzaOriginal: quality / 100,
+      confianzaReducida: confidence
+    });
   } else if (amplitude < 0.01) {
-    confidence *= 0.5;
+    confidence *= 0.4; // Penalización más fuerte
   } else if (amplitude > 0.05) {
     confidence *= 1.2;
   }

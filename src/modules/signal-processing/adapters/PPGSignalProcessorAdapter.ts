@@ -17,6 +17,15 @@ export class PPGSignalProcessorAdapter {
   
   constructor() {
     this.unifiedProcessor = new UnifiedSignalProcessor();
+    console.log("PPGSignalProcessorAdapter: Adaptador creado con umbrales mejorados");
+    
+    // Configuración inicial con umbrales más estrictos
+    this.configure({
+      amplificationFactor: 1.5, // Mayor amplificación
+      qualityThreshold: 50,     // Umbral de calidad más alto
+      fingerDetectionSensitivity: 0.8, // Mayor sensibilidad para dedo
+      peakDetectionThreshold: 0.3      // Mayor umbral para picos
+    });
   }
   
   /**
@@ -26,6 +35,15 @@ export class PPGSignalProcessorAdapter {
   public processSignal(value: number): ProcessedPPGSignal {
     // Procesar con el nuevo procesador unificado
     const result = this.unifiedProcessor.processSignal(value);
+    
+    // Validar la señal - más estricto
+    if (Math.abs(value) < 0.2) {
+      console.log("PPGSignalProcessorAdapter: Señal muy débil detectada", {
+        valor: value,
+        umbralMínimo: 0.2,
+        esDemasiadoDébil: true
+      });
+    }
     
     // Adaptar al formato anterior
     return {
@@ -47,15 +65,26 @@ export class PPGSignalProcessorAdapter {
   }
   
   /**
-   * Configura el procesador
+   * Configura el procesador con umbrales más estrictos por defecto
    */
   public configure(options: SignalProcessingOptions): void {
+    // Aplicar configuración con valores mejorados por defecto
     this.unifiedProcessor.configure({
-      amplificationFactor: options.amplificationFactor,
-      qualityThreshold: options.qualityThreshold,
-      fingerDetectionSensitivity: options.fingerDetectionSensitivity,
-      peakDetectionThreshold: options.amplificationFactor ? options.amplificationFactor / 3 : undefined
+      amplificationFactor: options.amplificationFactor || 1.5,
+      qualityThreshold: options.qualityThreshold || 50,
+      fingerDetectionSensitivity: options.fingerDetectionSensitivity || 0.8,
+      peakDetectionThreshold: options.peakDetectionThreshold || 0.3,
+      // Usar un valor específico para minPeakDistance
+      minPeakDistance: 300, // 300ms mínimo entre picos (no permitir frecuencias irrealmente altas)
+      // Otras opciones
+      bufferSize: options.bufferSize,
+      sampleRate: options.sampleRate,
+      filterStrength: options.filterStrength,
+      onSignalReady: options.onSignalReady,
+      onError: options.onError
     });
+    
+    console.log("PPGSignalProcessorAdapter: Procesador configurado con umbrales mejorados");
   }
   
   /**
@@ -63,6 +92,7 @@ export class PPGSignalProcessorAdapter {
    */
   public reset(): void {
     this.unifiedProcessor.reset();
+    console.log("PPGSignalProcessorAdapter: Procesador reiniciado");
   }
 }
 

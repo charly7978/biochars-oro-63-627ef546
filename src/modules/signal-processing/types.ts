@@ -1,127 +1,74 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Definiciones de tipos para procesamiento de señal
- */
-
-/**
- * Opciones de configuración para procesadores de señal
- */
-export interface SignalProcessingOptions {
-  // Factor de amplificación de señal
-  amplificationFactor?: number;
-  
-  // Fuerza de filtrado
-  filterStrength?: number;
-  
-  // Umbral de calidad de señal
-  qualityThreshold?: number;
-  
-  // Sensibilidad de detección de dedo
-  fingerDetectionSensitivity?: number;
-  
-  // Nuevos parámetros para control adaptativo
-  useAdaptiveControl?: boolean;
-  
-  // Usar predicción para mejorar calidad
-  qualityEnhancedByPrediction?: boolean;
-  
-  // Horizonte de predicción
-  predictionHorizon?: number;
-  
-  // Tasa de adaptación
-  adaptationRate?: number;
-}
-
-/**
- * Interfaz común para todos los procesadores de señal
- */
-export interface SignalProcessor<T> {
-  // Procesa un valor de señal y devuelve un resultado
-  processSignal(value: number): T;
-  
-  // Configuración del procesador
-  configure(options: SignalProcessingOptions): void;
-  
-  // Reinicia el procesador
-  reset(): void;
-}
-
-/**
- * Resultado del procesamiento de señal PPG
+ * Señal PPG procesada por el procesador unificado
  */
 export interface ProcessedPPGSignal {
-  // Marca de tiempo de la señal
+  // Información temporal
   timestamp: number;
   
-  // Valor sin procesar
+  // Valores de señal
   rawValue: number;
-  
-  // Valor filtrado
   filteredValue: number;
-  
-  // Valor normalizado
+  amplifiedValue: number;
   normalizedValue: number;
   
-  // Valor amplificado
-  amplifiedValue: number;
-  
-  // Calidad de la señal (0-100)
-  quality: number;
-  
-  // Indicador de detección de dedo
-  fingerDetected: boolean;
-  
-  // Fuerza de la señal
-  signalStrength: number;
-}
-
-/**
- * Resultado del procesamiento de señal cardíaca
- */
-export interface ProcessedHeartbeatSignal {
-  // Marca de tiempo de la señal
-  timestamp: number;
-  
-  // Valor de la señal
-  value: number;
-  
-  // Indicador de detección de pico
+  // Análisis de frecuencia cardíaca
   isPeak: boolean;
-  
-  // Confianza en la detección del pico (0-1)
   peakConfidence: number;
-  
-  // BPM instantáneo (basado en intervalo RR)
-  instantaneousBPM: number | null;
-  
-  // Intervalo RR en ms
+  instantaneousBPM: number;
   rrInterval: number | null;
+  heartRateVariability?: number;
   
-  // Variabilidad del ritmo cardíaco
-  heartRateVariability: number | null;
+  // Métricas de calidad
+  quality: number;
+  fingerDetected: boolean;
+  signalStrength: number;
+  
+  // Estado de arritmia
+  arrhythmiaCount: number;
 }
 
 /**
- * Tipos de procesadores disponibles
+ * Error durante el procesamiento
  */
-export enum ProcessorType {
-  PPG = 'ppg',
-  HEARTBEAT = 'heartbeat'
+export interface ProcessingError {
+  code: string;
+  message: string;
+  timestamp: number;
+  name?: string;
 }
 
 /**
- * Opciones para el sistema de procesamiento completo
+ * Opciones de configuración para el procesador unificado
  */
-export interface ProcessingSystemOptions extends SignalProcessingOptions {
-  // Tipo de procesador a utilizar
-  processorType?: ProcessorType;
+export interface SignalProcessingOptions {
+  // Configuración de procesamiento
+  bufferSize?: number;
+  sampleRate?: number;
   
-  // Frecuencia de muestreo objetivo
-  targetSampleRate?: number;
+  // Umbrales y sensibilidad
+  peakDetectionThreshold?: number;
+  qualityThreshold?: number;
   
-  // Funciones de callback
-  onResultsReady?: (result: ProcessedPPGSignal | ProcessedHeartbeatSignal) => void;
+  // Amplificación y filtrado
+  amplificationFactor?: number;
+  useAdvancedFiltering?: boolean;
+  filterStrength?: number;
+  peakThreshold?: number;
+  minPeakDistance?: number;
+  fingerDetectionSensitivity?: number;
+  
+  // Callbacks
+  onSignalReady?: (signal: ProcessedPPGSignal) => void;
   onError?: (error: Error) => void;
+}
+
+/**
+ * Métricas de calidad de señal
+ */
+export interface SignalQualityMetrics {
+  quality: number;
+  strength: number;
+  stability: number;
+  noiseLevel: number;
 }
