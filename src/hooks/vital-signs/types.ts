@@ -1,13 +1,24 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE!
+ * 
+ * This file contains typescript interfaces for the vital signs processor
  */
 
-import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
-
-export interface ArrhythmiaWindow {
-  start: number;
-  end: number;
+export interface VitalSignsResult {
+  spo2: number;
+  pressure: string;
+  arrhythmiaStatus: string;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  lastArrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null;
 }
 
 export interface UseVitalSignsProcessorReturn {
@@ -16,9 +27,9 @@ export interface UseVitalSignsProcessorReturn {
   fullReset: () => void;
   arrhythmiaCounter: number;
   lastValidResults: VitalSignsResult | null;
-  arrhythmiaWindows: ArrhythmiaWindow[];
+  arrhythmiaWindows: Array<{start: number, end: number}>;
   debugInfo: {
     processedSignals: number;
-    signalLog: { timestamp: number, value: number, result: any }[];
+    signalLog: Array<{timestamp: number, value: number, result: any}>;
   };
 }

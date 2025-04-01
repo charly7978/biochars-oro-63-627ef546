@@ -1,99 +1,205 @@
 
 /**
- * Functions for checking signal quality
- * Direct measurement only - NO simulation or data manipulation
+ * Módulo centralizado para la verificación de calidad de señal
+ * Proporciona funciones optimizadas para evaluar la calidad de la señal PPG
  */
 
+export interface SignalQualityOptions {
+  lowSignalThreshold: number;
+  maxWeakSignalCount: number;
+}
+
+const DEFAULT_OPTIONS: SignalQualityOptions = {
+  lowSignalThreshold: 0.15,
+  maxWeakSignalCount: 4
+};
+
 /**
- * Check if the signal quality is sufficient for processing
- * Uses only real measurements without simulation
+ * Verifica la calidad de la señal PPG y determina si es demasiado débil
+ * @param value Valor de la señal PPG
+ * @param currentWeakSignalsCount Contador actual de señales débiles
+ * @param options Opciones para la verificación
+ * @returns Objeto con indicadores de calidad de señal
  */
-export function checkSignalQuality(
+export const checkSignalQuality = (
   value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number,
-    maxWeakSignalCount: number
+  currentWeakSignalsCount: number,
+  options: Partial<SignalQualityOptions> = {}
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } => {
+  // Combinar opciones con valores predeterminados
+  const { lowSignalThreshold, maxWeakSignalCount } = {
+    ...DEFAULT_OPTIONS,
+    ...options
+  };
+
+  // Determinar si la señal es débil basado en su valor absoluto
+  const isCurrentSignalWeak = Math.abs(value) < lowSignalThreshold;
+  
+  // Actualizar el contador de señales débiles
+  let updatedWeakSignalsCount = currentWeakSignalsCount;
+  
+  if (isCurrentSignalWeak) {
+    // Incrementar contador si la señal actual es débil
+    updatedWeakSignalsCount = Math.min(maxWeakSignalCount + 2, currentWeakSignalsCount + 1);
+  } else {
+    // Reducir gradualmente el contador si la señal es fuerte
+    // La reducción es más lenta para mantener estabilidad
+    updatedWeakSignalsCount = Math.max(0, currentWeakSignalsCount - 0.5);
   }
-): {
-  isWeakSignal: boolean,
-  updatedWeakSignalsCount: number
-} {
-  // Get actual threshold from config or use default
-  const threshold = config.lowSignalThreshold || 0.05;
-  const maxCount = config.maxWeakSignalCount || 10;
   
-  // Check real signal against threshold
-  const isCurrentlyWeak = Math.abs(value) < threshold;
+  // La señal se considera débil si hemos acumulado suficientes señales débiles consecutivas
+  const isWeakSignal = updatedWeakSignalsCount >= maxWeakSignalCount;
   
-  // Update counter based on actual signal strength
-  let updatedCount = isCurrentlyWeak 
-    ? consecutiveWeakSignalsCount + 1 
-    : 0;
+  if (updatedWeakSignalsCount === maxWeakSignalCount && isWeakSignal) {
+    console.log('Señal débil detectada, puede indicar dedo removido o mal posicionado');
+  }
   
-  // Determine if signal is weak based on consecutive measurements
-  const isWeak = updatedCount >= maxCount;
-  
-  return {
-    isWeakSignal: isWeak,
-    updatedWeakSignalsCount: updatedCount
-  };
-}
+  return { isWeakSignal, updatedWeakSignalsCount };
+};
 
 /**
- * Reset detection states for fresh measurements
+ * Determinar si debemos procesar la medición basado en la calidad de la señal
+ * @param signalQuality Calidad de la señal (0-100)
+ * @param isFingerDetected Indicador de dedo detectado
+ * @param weakSignalsCount Contador de señales débiles
+ * @returns Verdadero si debemos procesar la medición
  */
-export function resetDetectionStates() {
-  console.log("Signal quality: Reset detection states");
-  return {
-    consecutiveWeakSignals: 0
-  };
-}
-
-/**
- * Check if finger is detected by identifying rhythmic patterns
- * Works only with real data, no simulation
- */
-export function isFingerDetectedByPattern(
-  signalHistory: Array<{time: number, value: number}>,
-  currentPatternCount: number
-): {
+export const shouldProcessMeasurement = (
+  signalQuality: number,
   isFingerDetected: boolean,
-  patternCount: number
-} {
+  weakSignalsCount: number
+): boolean => {
+  // Requisitos para procesamiento:
+  // 1. El dedo debe estar detectado
+  // 2. La calidad de la señal debe ser aceptable (>30)
+  // 3. No demasiadas señales débiles consecutivas
+  return (
+    isFingerDetected &&
+    signalQuality > 30 &&
+    weakSignalsCount < DEFAULT_OPTIONS.maxWeakSignalCount
+  );
+};
+
+/**
+ * Crear un resultado para señal débil (todos los valores en cero/predeterminados)
+ * @returns Objeto con valores de resultado predeterminados
+ */
+export const createWeakSignalResult = () => {
+  return {
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    isArrhythmia: false,
+    arrhythmiaCount: 0,
+    rrData: {
+      intervals: [],
+      lastPeakTime: null
+    }
+  };
+};
+
+/**
+ * Resetear el estado de calidad de señal
+ * @returns Objeto con valores iniciales de calidad de señal
+ */
+export const resetSignalQualityState = () => {
+  return {
+    weakSignalsCount: 0,
+    signalQuality: 0,
+    isFingerDetected: false
+  };
+};
+
+/**
+ * Resetear los estados de detección
+ * Esta función es requerida por HeartBeatProcessor.js
+ */
+export const resetDetectionStates = () => {
+  console.log("Signal quality: Resetting detection states");
+  return resetSignalQualityState();
+};
+
+/**
+ * Detecta si hay un dedo presente basado en patrones rítmicos
+ * @param signalHistory Historial de señales con tiempo y valor
+ * @param currentPatternCount Contador actual de patrones detectados
+ * @returns Objeto con resultado de detección y contador actualizado
+ */
+export const isFingerDetectedByPattern = (
+  signalHistory: Array<{time: number, value: number}>, 
+  currentPatternCount: number
+): { isFingerDetected: boolean; patternCount: number } => {
+  // Implementación básica de detección de ritmo
   if (signalHistory.length < 10) {
-    return { 
-      isFingerDetected: false, 
-      patternCount: 0 
-    };
+    return { isFingerDetected: false, patternCount: 0 };
   }
   
-  // Look for physiological patterns in real signal
-  let crossings = 0;
-  const recentValues = signalHistory.slice(-10);
-  const mean = recentValues.reduce((sum, point) => sum + point.value, 0) / recentValues.length;
+  // Verificar si hay un patrón rítmico en los datos
+  let patternDetected = false;
+  let updatedPatternCount = currentPatternCount;
   
-  // Count zero crossings (signal moving above/below mean)
-  for (let i = 1; i < recentValues.length; i++) {
-    if ((recentValues[i].value > mean && recentValues[i-1].value <= mean) ||
-        (recentValues[i].value <= mean && recentValues[i-1].value > mean)) {
-      crossings++;
+  // Analizar cruces por cero y regularidad para detectar patrón cardíaco
+  const crossings = findZeroCrossings(signalHistory);
+  
+  if (crossings.length >= 3) {
+    const intervals = calculateIntervals(crossings);
+    
+    // Verificar regularidad de intervalos (característica de señal fisiológica)
+    const isRegular = checkRegularity(intervals);
+    
+    if (isRegular) {
+      patternDetected = true;
+      updatedPatternCount = Math.min(10, currentPatternCount + 1);
+    } else {
+      updatedPatternCount = Math.max(0, currentPatternCount - 1);
+    }
+  } else {
+    // Reducir contador gradualmente si no hay suficientes cruces
+    updatedPatternCount = Math.max(0, currentPatternCount - 0.5);
+  }
+  
+  // Se considera que hay un dedo si hemos detectado patrones repetidamente
+  const isFingerDetected = updatedPatternCount >= 3;
+  
+  return { isFingerDetected, patternCount: updatedPatternCount };
+};
+
+// Funciones auxiliares para la detección de patrones
+
+function findZeroCrossings(signalHistory: Array<{time: number, value: number}>): number[] {
+  const crossings: number[] = [];
+  
+  for (let i = 1; i < signalHistory.length; i++) {
+    if ((signalHistory[i-1].value < 0 && signalHistory[i].value >= 0) ||
+        (signalHistory[i-1].value >= 0 && signalHistory[i].value < 0)) {
+      crossings.push(signalHistory[i].time);
     }
   }
   
-  // Physiological heart rate should have 2-5 crossings in this window
-  const hasPhysiologicalPattern = crossings >= 2 && crossings <= 5;
+  return crossings;
+}
+
+function calculateIntervals(crossings: number[]): number[] {
+  const intervals: number[] = [];
   
-  // Update pattern detection count
-  let newPatternCount = hasPhysiologicalPattern 
-    ? currentPatternCount + 1 
-    : Math.max(0, currentPatternCount - 1);
+  for (let i = 1; i < crossings.length; i++) {
+    intervals.push(crossings[i] - crossings[i-1]);
+  }
   
-  // Only detect finger after consistent pattern detection
-  const isDetected = newPatternCount >= 3;
+  return intervals;
+}
+
+function checkRegularity(intervals: number[]): boolean {
+  if (intervals.length < 2) return false;
   
-  return {
-    isFingerDetected: isDetected,
-    patternCount: newPatternCount
-  };
+  // Calcular la desviación estándar de los intervalos
+  const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+  const variance = intervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / intervals.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // Coeficiente de variación (normalizado por la media)
+  const cv = stdDev / mean;
+  
+  // Un CV bajo indica regularidad (característica de señal cardíaca)
+  return cv < 0.5;
 }

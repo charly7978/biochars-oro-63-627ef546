@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { Link } from "react-router-dom";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -7,7 +8,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { VitalSignsResult } from "@/hooks/vital-signs/types";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -65,42 +66,44 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      setVitalSigns(lastValidResults);
-      setShowResults(true);
+      if (lastValidResults) {
+        setVitalSigns(prevState => ({
+          ...prevState,
+          ...lastValidResults
+        }));
+        setShowResults(true);
+      }
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal only if we have good quality and finger detection
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      const minQualityThreshold = 40;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+        if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
-            setVitalSigns(vitals);
+            setVitalSigns(prevState => ({
+              ...prevState,
+              ...vitals
+            }));
           }
         }
         
         setSignalQuality(lastSignal.quality);
       } else {
-        // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
         
-        // If finger not detected for a while, reset heart rate to zero
         if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
-      // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
@@ -113,10 +116,10 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0); // Reset heart rate explicitly
+      setHeartRate(0);
       
       startProcessing();
-      startHeartBeatMonitoring(); // Update the processor state
+      startHeartBeatMonitoring();
       
       setElapsedTime(0);
       
@@ -145,7 +148,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
+    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -154,13 +157,16 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      setVitalSigns(savedResults);
+      setVitalSigns(prevState => ({
+        ...prevState,
+        ...savedResults
+      }));
       setShowResults(true);
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0); // Reset heart rate explicitly
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -277,7 +283,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -287,6 +292,10 @@ const Index = () => {
       paddingTop: 'env(safe-area-inset-top)',
       paddingBottom: 'env(safe-area-inset-bottom)'
     }}>
+      <div className="absolute top-0 left-0 right-0 z-50 bg-blue-600 text-white text-center py-2">
+        Versión Original - <Link to="/optimized" className="underline">Ver Versión Optimizada</Link>
+      </div>
+      
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 

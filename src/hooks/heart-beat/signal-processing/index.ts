@@ -11,16 +11,23 @@ export * from './result-processor';
 // Export specific functions for direct use
 export { 
   checkWeakSignal, 
-  shouldProcessMeasurement, 
+  shouldProcessMeasurement,
+  shouldProcessSimpleMeasurement,
   createWeakSignalResult,
-  resetSignalQualityState
+  resetSignalQualityState,
+  isFingerDetected,
+  isFingerDetectedByPattern,
+  resetDetectionStates
 } from './signal-quality';
 
 export { 
-  handlePeakDetection 
+  handlePeakDetection,
+  shouldAdjustArrhythmiaDetection,
+  processArrhythmiaVisualization
 } from './peak-detection';
 
 export { 
   updateLastValidBpm, 
-  processLowConfidenceResult 
+  processLowConfidenceResult,
+  enhanceArrhythmiaDetection
 } from './result-processor';
