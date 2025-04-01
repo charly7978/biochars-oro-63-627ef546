@@ -41,15 +41,8 @@ export * from './specialized/CardiacProcessor';
 export * from './arrhythmia/types';
 export * from './shared-signal-utils';
 
-// Export enhanced peak detection and signal quality modules
-export * from './enhanced-detection/fourier-analyzer';
-export * from './enhanced-detection/wavelet-analyzer';
-export * from './enhanced-detection/multi-beat-validator';
-export * from './enhanced-detection/adaptive-threshold';
-export * from './enhanced-detection/spectral-analyzer';
-
-// Export specific utility functions
-export { 
+// Export utility functions from utils.ts
+export {
   // Export signal processing core functions
   calculateAC,
   calculateDC,
@@ -60,35 +53,21 @@ export {
   // Export peak detection functions
   findPeaksAndValleys,
   calculateAmplitude,
-  // Direct export from enhanced detection modules instead of utils
-  findPeaksFourier,
-  findPeaksWavelet,
-  validateMultiBeatSequence,
-  getAdaptiveThreshold,
   
   // Export filter functions
   applySMAFilter,
   amplifySignal,
   
-  // Export spectral analysis functions
-  // Direct export from spectral analyzer module
-  calculateSignalNoiseRatio,
-  calculatePulsatilityIndex,
-  calculateConsistencyMetrics,
-  performSpectralAnalysis,
-  
   // Export perfusion functions
-  calculatePerfusionIndex
-} from './utils';
-
-// Re-export the enhanced detection functions to resolve missing exports
-export { findPeaksFourier } from './enhanced-detection/fourier-analyzer';
-export { findPeaksWavelet } from './enhanced-detection/wavelet-analyzer';
-export { validateMultiBeatSequence } from './enhanced-detection/multi-beat-validator';
-export { getAdaptiveThreshold } from './enhanced-detection/adaptive-threshold';
-export { 
+  calculatePerfusionIndex,
+  
+  // Enhanced detection functions
+  findPeaksFourier,
+  findPeaksWavelet,
+  validateMultiBeatSequence,
+  getAdaptiveThreshold,
   calculateSignalNoiseRatio,
   calculatePulsatilityIndex,
   calculateConsistencyMetrics,
   performSpectralAnalysis
-} from './enhanced-detection/spectral-analyzer';
+} from './utils';

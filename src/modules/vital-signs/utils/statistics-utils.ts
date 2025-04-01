@@ -17,6 +17,26 @@ export function calculateStandardDeviation(values: number[]): number {
 }
 
 /**
+ * Calculate simple moving average (SMA)
+ * @param values Array of values
+ * @param period Number of values to average
+ */
+export function calculateSMA(values: number[], period: number = 3): number[] {
+  if (values.length === 0) return [];
+  if (values.length <= period) return [values.reduce((sum, val) => sum + val, 0) / values.length];
+  
+  const sma: number[] = [];
+  
+  for (let i = period - 1; i < values.length; i++) {
+    const window = values.slice(i - period + 1, i + 1);
+    const average = window.reduce((sum, val) => sum + val, 0) / period;
+    sma.push(average);
+  }
+  
+  return sma;
+}
+
+/**
  * Calculate exponential moving average
  * @param values Array of values
  * @param alpha Smoothing factor (0-1)

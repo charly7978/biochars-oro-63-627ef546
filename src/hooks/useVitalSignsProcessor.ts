@@ -1,12 +1,11 @@
-
 /**
  * Hook for processing vital signs signals
  * Now with diagnostics channel and prioritization system
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { VitalSignsProcessor } from '../modules/vital-signs'; // Import from central module
+import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs'; // Import from central module
 import { ProcessingPriority } from '../modules/extraction'; // Import priority enum
-import type { VitalSignsResult, RRIntervalData } from '../types/vital-signs';
+import type { RRIntervalData } from '../types/vital-signs';
 import type { ArrhythmiaWindow } from './vital-signs/types';
 import { getDiagnosticsData, clearDiagnosticsData } from '../hooks/heart-beat/signal-processing/peak-detection';
 
@@ -105,7 +104,8 @@ export function useVitalSignsProcessor() {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
-        }
+        },
+        lastArrhythmiaData: null
       };
     }
     
@@ -128,10 +128,7 @@ export function useVitalSignsProcessor() {
     const startTime = performance.now();
     
     // Procesar señal
-    const result = processorRef.current.processSignal({
-      value,
-      rrData
-    });
+    const result = processorRef.current.processSignal(value, rrData);
     
     // Calcular tiempo de procesamiento
     const processingTime = performance.now() - startTime;

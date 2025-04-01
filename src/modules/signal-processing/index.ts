@@ -10,10 +10,10 @@ export { PPGSignalProcessor } from './PPGSignalProcessor';
 export { HeartbeatProcessor } from './HeartbeatProcessor';
 
 // Export processed signal types
-export { ProcessedPPGSignal, ProcessedHeartbeatSignal } from './types';
+export type { ProcessedPPGSignal, ProcessedHeartbeatSignal } from './types';
 
 // Export configuration types
-export { SignalProcessingOptions } from './types';
+export type { SignalProcessingOptions } from './types';
 
 // Export utility functions
 export { resetFingerDetector } from './finger-detector';

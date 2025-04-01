@@ -1,104 +1,80 @@
 
 /**
- * Base class for all specialized channels
- * Provides common functionality and structure for channel-specific optimizations
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Base class for all specialized signal processing channels
  */
 
-import { OptimizedSignalChannel, ChannelFeedback, VitalSignType } from '../../../types/signal';
-import { v4 as uuidv4 } from 'uuid';
+import { OptimizedSignalChannel } from '../types';
 
 /**
- * Configuration options for specialized channels
- */
-export interface ChannelConfig {
-  initialAmplification: number;
-  initialFilterStrength: number;
-  frequencyBandMin: number;
-  frequencyBandMax: number;
-}
-
-/**
- * Base class for all specialized signal channels
+ * Base abstract class for specialized signal channels
+ * Each channel handles a specific vital sign processing
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
-  public readonly id: string;
-  public readonly type: VitalSignType; // Changed from protected to public to match the interface
-  protected config: ChannelConfig;
-  protected quality: number = 0;
-  protected amplificationFactor: number;
-  protected filterStrength: number;
+  // Channel type identifier - now public to match the interface
+  public readonly type: string;
   
-  constructor(type: VitalSignType, config: ChannelConfig) {
-    this.id = uuidv4();
+  // Common buffer for all channels
+  protected recentValues: number[] = [];
+  protected readonly maxBufferSize: number = 30;
+  
+  constructor(type: string) {
     this.type = type;
-    this.config = config;
-    this.amplificationFactor = config.initialAmplification;
-    this.filterStrength = config.initialFilterStrength;
   }
   
   /**
-   * Process a value for this specific channel
-   * @param value Raw signal value
-   * @returns Processed value optimized for this vital sign
+   * Process a signal value and return channel-specific output
    */
-  public abstract processValue(value: number): number;
+  abstract processSignal(signal: number): any;
   
   /**
-   * Apply feedback from algorithm to optimize channel parameters
-   * @param feedback Feedback data from vital sign algorithm
+   * Calculate quality score for this channel's processing
    */
-  public applyFeedback(feedback: ChannelFeedback): void {
-    if (feedback.channelId !== this.id) return;
-    
-    // Update quality based on feedback
-    this.quality = feedback.signalQuality;
-    
-    // Apply suggested adjustments if provided
-    const { suggestedAdjustments } = feedback;
-    if (suggestedAdjustments) {
-      if (suggestedAdjustments.amplificationFactor !== undefined) {
-        this.amplificationFactor = suggestedAdjustments.amplificationFactor;
-      }
-      
-      if (suggestedAdjustments.filterStrength !== undefined) {
-        this.filterStrength = suggestedAdjustments.filterStrength;
-      }
+  abstract calculateQuality(signal: number): number;
+  
+  /**
+   * Add value to buffer and maintain buffer size
+   */
+  protected addToBuffer(value: number): void {
+    this.recentValues.push(value);
+    if (this.recentValues.length > this.maxBufferSize) {
+      this.recentValues.shift();
     }
-  }
-  
-  /**
-   * Get current channel quality
-   * @returns Quality score between 0-1
-   */
-  public getQuality(): number {
-    return this.quality;
   }
   
   /**
    * Reset channel state
    */
   public reset(): void {
-    this.quality = 0;
-    this.amplificationFactor = this.config.initialAmplification;
-    this.filterStrength = this.config.initialFilterStrength;
+    this.recentValues = [];
   }
   
   /**
-   * Apply bandpass filter for this channel's frequency range
-   * @param value Input value
-   * @returns Filtered value
+   * Get variance of recent values
    */
-  protected applyFilter(value: number): number {
-    // Simple implementation - in practice would use proper bandpass filter
-    return value * (1 - this.filterStrength * 0.5);
+  protected getVariance(): number {
+    if (this.recentValues.length < 2) return 0;
+    
+    const mean = this.getMean();
+    return this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
   }
   
   /**
-   * Apply amplification specific to this channel
-   * @param value Input value
-   * @returns Amplified value
+   * Get mean of recent values
    */
-  protected applyAmplification(value: number): number {
-    return value * this.amplificationFactor;
+  protected getMean(): number {
+    if (this.recentValues.length === 0) return 0;
+    return this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
+  }
+  
+  /**
+   * Apply basic filtering to smooth values
+   */
+  protected smoothValue(value: number): number {
+    if (this.recentValues.length < 3) return value;
+    
+    const recentValuesCopy = [...this.recentValues, value].slice(-3);
+    return recentValuesCopy.reduce((sum, val) => sum + val, 0) / recentValuesCopy.length;
   }
 }
