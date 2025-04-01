@@ -5,8 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UnifiedSignalProcessor } from '../modules/signal-processing/unified/UnifiedSignalProcessor';
-import { ProcessedPPGSignal } from '../modules/signal-processing/unified/types';
-import { ProcessingError } from '../types/signal';
+import { ProcessedPPGSignal, ProcessingError } from '../modules/signal-processing/unified/types';
 
 /**
  * Hook para el procesamiento de señales PPG reales con el procesador unificado
@@ -56,9 +55,17 @@ export const useSignalProcessor = () => {
     };
 
     // Error callback
-    const onError = (error: ProcessingError) => {
+    const onError = (error: Error) => {
       console.error("useSignalProcessor: Error en procesamiento:", error);
-      setError(error);
+      // Convert to ProcessingError if needed
+      const processingError: ProcessingError = error as ProcessingError;
+      if (!('code' in processingError)) {
+        Object.assign(processingError, { 
+          code: 'PROCESSING_ERROR', 
+          timestamp: Date.now() 
+        });
+      }
+      setError(processingError);
     };
 
     // Cleanup
@@ -128,9 +135,17 @@ export const useSignalProcessor = () => {
         });
       } catch (err) {
         console.error("useSignalProcessor: Error procesando frame:", err);
-        if (err instanceof Error) {
-          setError(err as ProcessingError);
-        }
+        // Create processing error
+        const processingError: ProcessingError = err instanceof Error 
+          ? Object.assign(err, { code: 'FRAME_PROCESSING_ERROR', timestamp: Date.now() }) 
+          : { 
+              name: 'Error', 
+              message: String(err), 
+              code: 'UNKNOWN_ERROR', 
+              timestamp: Date.now() 
+            } as ProcessingError;
+        
+        setError(processingError);
       }
     }
   }, [isProcessing, processor]);

@@ -79,3 +79,11 @@ export interface RRIntervalData {
   intervals: number[];
   lastPeakTime: number | null;
 }
+
+/**
+ * Error en el procesamiento de señal
+ */
+export interface ProcessingError extends Error {
+  code: string;
+  timestamp: number;
+}

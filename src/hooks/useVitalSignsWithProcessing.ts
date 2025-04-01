@@ -7,8 +7,8 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePPGExtraction } from './usePPGExtraction';
-import { useSignalProcessing, ProcessedSignalResult } from './useSignalProcessing';
-import { useVitalSignsProcessor } from './useVitalSignsProcessor';
+import { useUnifiedSignalProcessor } from './useUnifiedSignalProcessor';
+import { useUnifiedVitalSignsAdapter } from './vital-signs/useUnifiedVitalSignsAdapter';
 
 /**
  * Resultado integrado del procesamiento completo
@@ -37,13 +37,13 @@ export interface IntegratedVitalsResult {
 }
 
 /**
- * Hook que integra extracción y procesamiento
+ * Hook que integra extracción y procesamiento con procesadores unificados
  */
 export function useVitalSignsWithProcessing() {
   // Hooks de extracción y procesamiento
   const extraction = usePPGExtraction();
-  const processing = useSignalProcessing();
-  const vitalSigns = useVitalSignsProcessor();
+  const processing = useUnifiedSignalProcessor();
+  const vitalSigns = useUnifiedVitalSignsAdapter();
   
   // Estado integrado
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
@@ -76,17 +76,14 @@ export function useVitalSignsWithProcessing() {
     if (!isMonitoring || !extraction.lastResult) return;
     
     try {
-      // 2. Procesar el valor PPG extraído
-      const processedSignal = processing.processValue(extraction.lastResult.filteredValue);
+      // 2. Procesar el valor PPG extraído con el procesador unificado
+      const processedSignal = processing.processFrame(extraction.lastResult.filteredValue);
       
       if (processedSignal && processedSignal.fingerDetected) {
         // 3. Procesar para obtener signos vitales
         const vitalsResult = vitalSigns.processSignal(
           processedSignal.filteredValue, 
-          { 
-            intervals: processedSignal.rrInterval ? [processedSignal.rrInterval] : [],
-            lastPeakTime: processedSignal.isPeak ? processedSignal.timestamp : null
-          }
+          processing.getRRIntervals()
         );
         
         // 4. Crear resultado integrado
@@ -99,7 +96,7 @@ export function useVitalSignsWithProcessing() {
           filteredValue: processedSignal.filteredValue,
           amplifiedValue: processedSignal.amplifiedValue,
           
-          heartRate: processedSignal.averageBPM || 0,
+          heartRate: processedSignal.instantaneousBPM || 0,
           isPeak: processedSignal.isPeak,
           rrInterval: processedSignal.rrInterval,
           
@@ -163,11 +160,12 @@ export function useVitalSignsWithProcessing() {
     
     // Reiniciar todos los subsistemas
     extraction.reset();
+    processing.reset();
     vitalSigns.fullReset();
     
     processedFramesRef.current = 0;
     lastProcessTimeRef.current = Date.now();
-  }, [extraction, vitalSigns, stopMonitoring]);
+  }, [extraction, processing, vitalSigns, stopMonitoring]);
   
   return {
     // Estado
@@ -176,9 +174,9 @@ export function useVitalSignsWithProcessing() {
     processedFrames: processedFramesRef.current,
     
     // Métricas de extracción
-    signalQuality: processing.signalQuality,
-    fingerDetected: processing.fingerDetected,
-    heartRate: processing.heartRate,
+    signalQuality: processing.getSignalQuality().quality,
+    fingerDetected: processing.lastSignal?.fingerDetected || false,
+    heartRate: processing.lastSignal?.instantaneousBPM || 0,
     
     // Acciones
     processFrame,

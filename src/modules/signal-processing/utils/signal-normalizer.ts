@@ -2,122 +2,70 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Utilidades para normalización y amplificación de señales
+ * Utilidades para normalización de señal
  */
 
 /**
- * Normaliza un valor de señal a un rango estándar
- * @param value Valor a normalizar
- * @param buffer Buffer de valores para contexto
- * @returns Valor normalizado (generalmente entre 0 y 1)
+ * Normaliza una señal relativa a su buffer
  */
-export function normalizeSignal(
-  value: number,
-  buffer: number[]
-): number {
-  if (buffer.length < 5) {
-    return value;
-  }
+export function normalizeSignal(value: number, buffer: number[]): number {
+  if (buffer.length < 3) return value;
   
-  // Calcular rango actual
   const min = Math.min(...buffer);
   const max = Math.max(...buffer);
+  const range = max - min;
   
-  // Evitar división por cero
-  if (max === min) {
-    return 0.5;
-  }
+  if (range === 0) return 0;
   
-  // Normalizar al rango [0,1]
-  return (value - min) / (max - min);
+  return (value - min) / range;
 }
 
 /**
- * Aplica amplificación a la señal preservando su forma
- * @param value Valor a amplificar
- * @param factor Factor de amplificación
- * @returns Valor amplificado
+ * Amplifica una señal por un factor
  */
-export function amplifySignal(
-  value: number,
-  factor: number = 1.0
-): number {
-  // Centrar alrededor de 0.5 para amplificar diferencias
-  const centered = value - 0.5;
-  
-  // Amplificar
-  const amplified = centered * factor;
-  
-  // Volver a centrar en 0.5 y limitar al rango [0,1]
-  return Math.max(0, Math.min(1, amplified + 0.5));
+export function amplifySignal(value: number, factor: number = 1.2): number {
+  return value * factor;
 }
 
 /**
- * Aplica un filtro paso banda a la señal para eliminar frecuencias no deseadas
- * @param value Valor a filtrar
- * @param buffer Buffer de valores
- * @param lowCutoff Frecuencia de corte inferior (Hz)
- * @param highCutoff Frecuencia de corte superior (Hz)
- * @param sampleRate Tasa de muestreo (Hz)
- * @returns Valor filtrado
+ * Aplica un filtro adaptativo según la varianza
  */
-export function applyBandPassFilter(
-  value: number,
-  buffer: number[],
-  lowCutoff: number = 0.5, // 0.5 Hz (30 BPM)
-  highCutoff: number = 3.0, // 3.0 Hz (180 BPM)
-  sampleRate: number = 30 // 30 Hz
-): number {
-  if (buffer.length < 10) {
-    return value;
-  }
+export function applyAdaptiveFilter(value: number, buffer: number[], strength: number = 0.25): number {
+  if (buffer.length < 3) return value;
   
-  // Implementación simple de filtro IIR paso banda
-  // Coeficientes calculados para las frecuencias de corte especificadas
-  const a1 = -1.8758081257;
-  const a2 = 0.8819730297;
-  const b0 = 0.0015225099;
-  const b1 = 0.0030450198;
-  const b2 = 0.0015225099;
+  // Calcular variabilidad reciente
+  const variance = calculateVariance(buffer);
   
-  // Obtener valores anteriores
-  const x1 = buffer.length >= 1 ? buffer[buffer.length - 1] : value;
-  const x2 = buffer.length >= 2 ? buffer[buffer.length - 2] : value;
-  const y1 = buffer.length >= 3 ? buffer[buffer.length - 3] : value;
-  const y2 = buffer.length >= 4 ? buffer[buffer.length - 4] : value;
+  // Ajustar fuerza de filtrado según varianza
+  const adaptiveAlpha = adjustFilterStrength(variance, strength);
   
-  // Aplicar filtro
-  const filtered = 
-    b0 * value + 
-    b1 * x1 + 
-    b2 * x2 - 
-    a1 * y1 - 
-    a2 * y2;
+  // Aplicar filtro exponencial con alfa adaptativo
+  const lastValue = buffer[buffer.length - 1];
   
-  return filtered;
+  return adaptiveAlpha * value + (1 - adaptiveAlpha) * lastValue;
 }
 
 /**
- * Mejora picos en la señal para detección cardíaca
- * @param value Valor a procesar
- * @param buffer Buffer de valores
- * @returns Valor con picos mejorados
+ * Ajusta la fuerza del filtrado según la varianza
  */
-export function enhancePeaks(
-  value: number,
-  buffer: number[]
-): number {
-  if (buffer.length < 5) {
-    return value;
-  }
+function adjustFilterStrength(variance: number, baseStrength: number): number {
+  // Si la varianza es alta (señal ruidosa), filtrar más fuerte
+  if (variance > 0.05) return Math.min(0.15, baseStrength / 2);
   
-  // Calcular la derivada de la señal
-  const derivative = 
-    buffer.length >= 1 ? value - buffer[buffer.length - 1] : 0;
+  // Si la varianza es baja (señal estable), filtrar más suave
+  if (variance < 0.01) return Math.min(0.4, baseStrength * 1.5);
   
-  // Acentuar cambios positivos (subidas)
-  const enhanced = value + Math.max(0, derivative) * 1.5;
+  // Caso intermedio
+  return baseStrength;
+}
+
+/**
+ * Calcula la varianza de un conjunto de valores
+ */
+export function calculateVariance(values: number[]): number {
+  if (values.length < 2) return 0;
   
-  // Normalizar a un rango razonable
-  return enhanced;
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+  return squaredDiffs.reduce((sum, diff) => sum + diff, 0) / values.length;
 }
