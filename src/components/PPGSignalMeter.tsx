@@ -281,10 +281,10 @@ const PPGSignalMeter = memo(({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     // Create a more sophisticated gradient background
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#c1ff82'); // Soft purple (top)
-    gradient.addColorStop(0.3, '#ffa6d2'); // Soft peach (upper middle)
-    gradient.addColorStop(0.7, '#afd7ff'); // Soft green (lower middle)
-    gradient.addColorStop(1, '#9f9ecf'); // Soft blue (bottom)
+    gradient.addColorStop(0,'#c1ff82'); // Soft purple (top)
+    gradient.addColorStop(0.3, '#ffbddd'); // Soft peach (upper middle)
+    gradient.addColorStop(0.5, '#afd7ff'); // Soft green (lower middle)
+    gradient.addColorStop(1, '#4d4c6c'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
