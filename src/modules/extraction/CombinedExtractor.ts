@@ -4,6 +4,7 @@
  * 
  * Extractor combinado que integra la extracción de latidos y señal PPG
  * Proporciona una salida unificada con todos los datos extraídos
+ * Versión mejorada con tecnología TensorFlow y procesamiento avanzado
  */
 import { 
   HeartbeatExtractor, 
@@ -15,6 +16,12 @@ import {
   PPGSignalExtractionResult,
   createPPGSignalExtractor
 } from './PPGSignalExtractor';
+import {
+  AdvancedPPGExtractor,
+  AdvancedExtractionResult,
+  createAdvancedPPGExtractor,
+  AdvancedExtractorConfig
+} from './AdvancedPPGExtractor';
 
 // Resultado combinado con datos de ambos extractores
 export interface CombinedExtractionResult {
@@ -43,23 +50,53 @@ export interface CombinedExtractionResult {
 }
 
 /**
+ * Opciones para la inicialización del extractor combinado
+ */
+export interface CombinedExtractorOptions {
+  useAdvancedExtractor: boolean;
+  advancedConfig?: Partial<AdvancedExtractorConfig>;
+}
+
+/**
  * Clase para extracción combinada de datos PPG y latidos
+ * Versión mejorada con procesamiento avanzado de señales
  */
 export class CombinedExtractor {
   private ppgExtractor: PPGSignalExtractor;
   private heartbeatExtractor: HeartbeatExtractor;
+  private advancedExtractor: AdvancedPPGExtractor | null = null;
+  private useAdvanced: boolean;
   
-  constructor() {
+  constructor(options?: CombinedExtractorOptions) {
+    // Default to using advanced extractor
+    this.useAdvanced = options?.useAdvancedExtractor !== false;
+    
+    // Create regular extractors
     this.ppgExtractor = createPPGSignalExtractor();
     this.heartbeatExtractor = createHeartbeatExtractor();
+    
+    // Create advanced extractor if enabled
+    if (this.useAdvanced) {
+      console.log("CombinedExtractor: Creating advanced extractor with TensorFlow");
+      this.advancedExtractor = createAdvancedPPGExtractor(options?.advancedConfig);
+    }
+    
+    console.log(`CombinedExtractor initialized. Using advanced extractor: ${this.useAdvanced}`);
   }
   
   /**
    * Procesa un valor PPG y extrae toda la información disponible
+   * Utiliza el extractor avanzado si está habilitado
    * @param value Valor PPG sin procesar
    * @returns Resultado combinado con todos los datos extraídos
    */
   public processValue(value: number): CombinedExtractionResult {
+    // Usar extractor avanzado si está disponible
+    if (this.useAdvanced && this.advancedExtractor) {
+      return this.advancedExtractor.processValue(value);
+    }
+    
+    // Fallback a procesamiento clásico
     // Primero procesar la señal PPG
     const ppgResult = this.ppgExtractor.processValue(value);
     
@@ -108,19 +145,55 @@ export class CombinedExtractor {
   }
   
   /**
-   * Reinicia ambos extractores
+   * Obtiene el extractor avanzado si está disponible
+   */
+  public getAdvancedExtractor(): AdvancedPPGExtractor | null {
+    return this.advancedExtractor;
+  }
+  
+  /**
+   * Indica si se está utilizando el extractor avanzado
+   */
+  public isUsingAdvancedExtractor(): boolean {
+    return this.useAdvanced && this.advancedExtractor !== null;
+  }
+  
+  /**
+   * Activa o desactiva el extractor avanzado
+   */
+  public setUseAdvancedExtractor(useAdvanced: boolean): void {
+    if (useAdvanced === this.useAdvanced) return;
+    
+    this.useAdvanced = useAdvanced;
+    
+    // Crear el extractor avanzado si se activa y no existe
+    if (useAdvanced && !this.advancedExtractor) {
+      this.advancedExtractor = createAdvancedPPGExtractor();
+    }
+    
+    console.log(`CombinedExtractor: Advanced extractor ${useAdvanced ? 'enabled' : 'disabled'}`);
+  }
+  
+  /**
+   * Reinicia todos los extractores
    */
   public reset(): void {
     this.ppgExtractor.reset();
     this.heartbeatExtractor.reset();
+    
+    if (this.advancedExtractor) {
+      this.advancedExtractor.reset();
+    }
+    
+    console.log("CombinedExtractor: All extractors reset");
   }
 }
 
 /**
  * Crea una instancia de extractor combinado
  */
-export const createCombinedExtractor = (): CombinedExtractor => {
-  return new CombinedExtractor();
+export const createCombinedExtractor = (options?: CombinedExtractorOptions): CombinedExtractor => {
+  return new CombinedExtractor(options);
 };
 
 /**
