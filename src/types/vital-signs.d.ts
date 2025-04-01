@@ -17,6 +17,8 @@ export interface VitalSignsResult {
     triglycerides: number;
   };
   confidence?: {
+    spo2: number;
+    bloodPressure?: number;
     glucose: number;
     lipids: number;
     overall: number;
