@@ -5,109 +5,27 @@
  * Common interfaces for signal processing
  */
 
-import { VitalSignType } from './channels/SpecializedChannel';
+import { ProcessedHeartbeatSignal, ProcessedPPGSignal, SignalProcessingOptions } from './types';
 
 /**
- * Interface for optimized signal channels
+ * Base signal processor interface
  */
-export interface OptimizedSignalChannel {
-  id: string;
-  getId(): string;
-  getType(): VitalSignType;
-  isType(type: VitalSignType): boolean;
-  processValue(signal: number): any;
+export interface SignalProcessor {
+  processSignal(signal: number): any;
   reset(): void;
-  getLatestValue(): number | null;
-  getValues(): number[];
-  getTimestamps(): number[];
+  configure(options: Partial<SignalProcessingOptions>): void;
 }
 
 /**
- * Interface for channel configuration
+ * Specific processor for PPG signals
  */
-export interface ChannelConfiguration {
-  enabled: boolean;
-  sampleRate?: number;
-  adaptationRate?: number;
-  bufferSize?: number;
+export interface PPGSignalProcessor extends SignalProcessor {
+  processSignal(signal: number): ProcessedPPGSignal;
 }
 
 /**
- * Signal distributor configuration
+ * Specific processor for heartbeat signals
  */
-export interface SignalDistributorConfig {
-  channels?: {
-    [key in VitalSignType]?: ChannelConfiguration;
-  };
-  globalAdaptationRate?: number;
-  calibrationMode?: boolean;
-  enableFeedback?: boolean;
-}
-
-/**
- * Signal processing result
- */
-export interface SignalProcessingResult {
-  timestamp: number;
-  channelResults: Map<VitalSignType, any>;
-  diagnostics?: SignalDiagnosticInfo;
-}
-
-/**
- * Signal diagnostic information
- */
-export interface SignalDiagnosticInfo {
-  quality: number;
-  fingerDetected: boolean;
-  signalStrength: number;
-  processingTime: number;
-  adaptationRate: number;
-}
-
-/**
- * Blood pressure result
- */
-export interface BloodPressureResult {
-  systolic: number;
-  diastolic: number;
-  map?: number;
-}
-
-/**
- * Cardiac measurement result
- */
-export interface CardiacResult {
-  bpm: number;
-  confidence: number;
-  isPeak: boolean;
-  rrInterval?: number | null;
-  hrv?: number | null;
-}
-
-/**
- * Interfaces for processors
- */
-export interface PPGSignalProcessor {
-  processValue(value: number): number;
-  reset(): void;
-  startProcessing(): void;
-  stopProcessing(): void;
-  isActive(): boolean;
-  getLastValue(): number;
-}
-
-export interface HeartbeatSignalProcessor {
-  processSignal(value: number): any;
-  reset(): void;
-  configure(options: any): void;
-}
-
-/**
- * Interface for processor options
- */
-export interface ProcessorOptions {
-  adaptationRate?: number;
-  bufferSize?: number;
-  useAdaptiveThresholds?: boolean;
-  sensitivityLevel?: 'low' | 'medium' | 'high';
+export interface HeartbeatSignalProcessor extends SignalProcessor {
+  processSignal(signal: number): ProcessedHeartbeatSignal;
 }

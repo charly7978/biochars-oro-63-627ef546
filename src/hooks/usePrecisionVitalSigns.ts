@@ -7,8 +7,9 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { PrecisionVitalSignsProcessor, PrecisionVitalSignsResult, CalibrationReference } from '../modules/vital-signs/PrecisionVitalSignsProcessor';
-import type { ProcessedSignal } from '../modules/vital-signs/ModularVitalSignsProcessor';
+import { PrecisionVitalSignsProcessor, PrecisionVitalSignsResult } from '../modules/vital-signs/PrecisionVitalSignsProcessor';
+import { CalibrationReference } from '../modules/vital-signs/calibration/CalibrationManager';
+import type { ProcessedSignal } from '../types/signal';
 
 /**
  * Estado del hook de signos vitales de precisión
@@ -66,7 +67,7 @@ export function usePrecisionVitalSigns() {
     
     return () => {
       if (processorRef.current) {
-        processorRef.current.stopProcessing();
+        processorRef.current.stop();
         processorRef.current = null;
       }
     };
@@ -76,7 +77,7 @@ export function usePrecisionVitalSigns() {
   const startProcessing = useCallback(() => {
     if (!processorRef.current) return;
     
-    processorRef.current.startProcessing();
+    processorRef.current.start();
     
     setState(prev => ({
       ...prev,
@@ -90,7 +91,7 @@ export function usePrecisionVitalSigns() {
   const stopProcessing = useCallback(() => {
     if (!processorRef.current) return;
     
-    processorRef.current.stopProcessing();
+    processorRef.current.stop();
     
     setState(prev => ({
       ...prev,
@@ -101,13 +102,7 @@ export function usePrecisionVitalSigns() {
   }, []);
   
   // Procesar señal
-  const processSignal = useCallback((signal: {
-    timestamp: number;
-    rawValue: number;
-    filteredValue: number;
-    quality: number;
-    fingerDetected: boolean;
-  }): PrecisionVitalSignsResult | null => {
+  const processSignal = useCallback((signal: ProcessedSignal): PrecisionVitalSignsResult | null => {
     if (!processorRef.current || !state.isProcessing) {
       return null;
     }
@@ -124,22 +119,20 @@ export function usePrecisionVitalSigns() {
       // Procesar señal con precisión mejorada
       const result = processorRef.current.processSignal(signal);
       
-      if (result) {
-        // Actualizar estado con el resultado
-        setState(prev => ({
-          ...prev,
-          lastResult: result,
-          isCalibrated: processorRef.current?.isCalibrated() || false,
-          calibrationStatus: {
-            hasReference: processorRef.current?.isCalibrated() || false,
-            confidence: processorRef.current?.getDiagnostics().calibrationFactors.confidence || 0
-          },
-          environmentalStatus: {
-            lightDetected: processorRef.current?.getDiagnostics().environmentalConditions.lightLevel || 50,
-            motionDetected: processorRef.current?.getDiagnostics().environmentalConditions.motionLevel || 0
-          }
-        }));
-      }
+      // Actualizar estado con el resultado
+      setState(prev => ({
+        ...prev,
+        lastResult: result,
+        isCalibrated: result.isCalibrated,
+        calibrationStatus: {
+          hasReference: result.isCalibrated,
+          confidence: result.precisionMetrics.calibrationConfidence
+        },
+        environmentalStatus: {
+          lightDetected: processorRef.current?.getDiagnostics().environmentalConditions.lightLevel || 50,
+          motionDetected: processorRef.current?.getDiagnostics().environmentalConditions.motionLevel || 0
+        }
+      }));
       
       return result;
     } catch (error) {

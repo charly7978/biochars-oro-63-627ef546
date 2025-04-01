@@ -1,72 +1,69 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Finger detection utilities
+ * Finger detection helper functions
  */
 
-// Signal strength threshold for finger detection
-const SIGNAL_STRENGTH_THRESHOLD = 0.02;
-const VARIANCE_THRESHOLD = 0.0001;
-
-// State tracking for finger detection
+// Store state information for finger detection
+let fingerBuffer: number[] = [];
+let isFingerDetected = false;
 let consecutiveDetections = 0;
-const REQUIRED_CONSECUTIVE_DETECTIONS = 3;
-let fingerDetected = false;
+let consecutiveNonDetections = 0;
 
 /**
  * Reset the finger detector state
  */
 export function resetFingerDetector(): void {
+  fingerBuffer = [];
+  isFingerDetected = false;
   consecutiveDetections = 0;
-  fingerDetected = false;
+  consecutiveNonDetections = 0;
+  console.log("Finger detector has been reset");
 }
 
 /**
- * Check if a finger is detected based on signal characteristics
+ * Process a signal to detect if a finger is present
  */
-export function isFingerDetected(signalBuffer: number[]): boolean {
-  if (signalBuffer.length < 5) {
+export function detectFinger(signal: number, threshold: number = 0.1): boolean {
+  // Add to buffer
+  fingerBuffer.push(signal);
+  
+  // Keep buffer at reasonable size
+  if (fingerBuffer.length > 20) {
+    fingerBuffer.shift();
+  }
+  
+  // Need minimum data to make a determination
+  if (fingerBuffer.length < 10) {
     return false;
   }
   
-  // Calculate signal statistics
-  const recent = signalBuffer.slice(-5);
-  const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-  const variance = recent.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recent.length;
+  // Check signal stability and strength
+  const mean = fingerBuffer.reduce((sum, val) => sum + val, 0) / fingerBuffer.length;
+  const deviation = fingerBuffer.map(v => Math.abs(v - mean)).reduce((sum, val) => sum + val, 0) / fingerBuffer.length;
   
-  // Check signal strength and variance
-  const signalStrength = Math.abs(mean);
-  const hasSignal = signalStrength > SIGNAL_STRENGTH_THRESHOLD && variance > VARIANCE_THRESHOLD;
+  // Finger detected if signal strength above threshold and there is some variation
+  const signalPresent = Math.abs(mean) > threshold;
+  const variationPresent = deviation > 0.01 && deviation < 0.5;
   
-  // Update consecutive detection counter
-  if (hasSignal) {
+  // Check current detection
+  const currentDetection = signalPresent && variationPresent;
+  
+  // Need several consecutive detections to confirm
+  if (currentDetection) {
     consecutiveDetections++;
+    consecutiveNonDetections = 0;
   } else {
+    consecutiveNonDetections++;
     consecutiveDetections = 0;
   }
   
-  // Update finger detected state
-  if (consecutiveDetections >= REQUIRED_CONSECUTIVE_DETECTIONS) {
-    fingerDetected = true;
-  } else if (consecutiveDetections === 0) {
-    fingerDetected = false;
+  // Update state with hysteresis to prevent rapid toggling
+  if (consecutiveDetections >= 5) {
+    isFingerDetected = true;
+  } else if (consecutiveNonDetections >= 10) {
+    isFingerDetected = false;
   }
   
-  return fingerDetected;
-}
-
-/**
- * Get the current signal strength
- */
-export function getSignalStrength(signalBuffer: number[]): number {
-  if (signalBuffer.length < 5) {
-    return 0;
-  }
-  
-  const recent = signalBuffer.slice(-5);
-  const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-  const variance = recent.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recent.length;
-  
-  return Math.abs(mean) * 10 + variance * 100;
+  return isFingerDetected;
 }

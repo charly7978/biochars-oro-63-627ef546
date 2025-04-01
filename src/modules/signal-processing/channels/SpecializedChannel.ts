@@ -1,136 +1,135 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
  * Base class for specialized signal processing channels
  */
 
-import { v4 as uuidv4 } from 'uuid';
-import { OptimizedSignalChannel } from '../interfaces';
+import { OptimizedSignalChannel } from '../types';
 
 /**
- * Supported vital sign types
+ * Enum for vital sign types
  */
 export enum VitalSignType {
-  CARDIAC = 'cardiac',
-  SPO2 = 'spo2',
-  BLOOD_PRESSURE = 'blood_pressure',
   GLUCOSE = 'glucose',
-  LIPIDS = 'lipids'
+  LIPIDS = 'lipids',
+  BLOOD_PRESSURE = 'blood_pressure',
+  SPO2 = 'spo2',
+  CARDIAC = 'cardiac'
 }
 
 /**
- * Base specialized channel implementation
+ * Base class for all specialized signal processing channels
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
-  /**
-   * Unique channel ID
-   */
+  public type: VitalSignType;
   public id: string;
+  protected recentValues: number[] = [];
+  protected maxBufferSize: number = 100;
+  protected currentQuality: number = 0;
+  protected isActive: boolean = true;
+  
+  constructor(type: VitalSignType) {
+    this.type = type;
+    this.id = `${type.toLowerCase()}-${Date.now()}`;
+  }
+  
+  /**
+   * Process a signal value through this channel
+   */
+  abstract processSignal(signal: number): any;
+  
+  /**
+   * Process a signal value with optional additional context
+   */
+  processValue(signal: number): any {
+    return this.processSignal(signal);
+  }
+  
+  /**
+   * Calculate signal quality for this channel
+   */
+  calculateQuality(signal: number): number {
+    // Add to recent values
+    this.addToBuffer(signal);
+    
+    // Simple quality: stable non-zero signal
+    if (this.recentValues.length < 5) {
+      this.currentQuality = 0.5;
+      return this.currentQuality;
+    }
+    
+    // Calculate statistics
+    const mean = this.getMean();
+    const variance = this.getVariance();
+    
+    // Calculate quality metrics
+    const absSignal = Math.abs(signal);
+    const signalPresent = absSignal > 0.01 ? 1 : 0;
+    const stability = Math.max(0, 1 - Math.sqrt(variance) / Math.max(0.01, Math.abs(mean)));
+    
+    // Update quality
+    this.currentQuality = 0.3 * this.currentQuality + 0.7 * (0.7 * stability + 0.3 * signalPresent);
+    
+    return this.currentQuality;
+  }
 
   /**
-   * Channel type
+   * Get the current quality value
    */
-  protected type: VitalSignType;
-  
-  /**
-   * Values buffer
-   */
-  protected values: number[] = [];
-  
-  /**
-   * Timestamps for values
-   */
-  protected timestamps: number[] = [];
-  
-  /**
-   * Create a new specialized channel
-   */
-  constructor(type: VitalSignType, id?: string) {
-    this.type = type;
-    this.id = id || uuidv4();
+  getQuality(): number {
+    return this.currentQuality;
   }
   
   /**
-   * Get the channel type
+   * Reset the channel state
    */
-  public getType(): VitalSignType {
-    return this.type;
+  reset(): void {
+    this.recentValues = [];
+    this.currentQuality = 0;
   }
   
   /**
-   * Process a new signal value
-   * Each specialized channel needs to implement this
+   * Apply feedback to the channel
    */
-  abstract processValue(signal: number): any;
-  
-  /**
-   * Check if this channel matches a specified type
-   */
-  public isType(type: VitalSignType): boolean {
-    return this.type === type;
+  applyFeedback(feedback: any): void {
+    // Base implementation does nothing
   }
-  
+
   /**
-   * Get the channel ID
+   * Add a value to the buffer
    */
-  public getId(): string {
-    return this.id;
-  }
-  
-  /**
-   * Reset the channel
-   * Should be implemented by subclasses to perform specialized reset
-   */
-  public reset(): void {
-    this.values = [];
-    this.timestamps = [];
-  }
-  
-  /**
-   * Get the latest value
-   */
-  public getLatestValue(): number | null {
-    if (this.values.length === 0) return null;
-    return this.values[this.values.length - 1];
-  }
-  
-  /**
-   * Add a new value to the channel's buffer
-   */
-  protected addValue(value: number): void {
-    this.values.push(value);
-    this.timestamps.push(Date.now());
-    
-    // Keep buffer at reasonable size
-    const MAX_BUFFER_SIZE = 100;
-    if (this.values.length > MAX_BUFFER_SIZE) {
-      this.values.shift();
-      this.timestamps.shift();
+  protected addToBuffer(value: number): void {
+    this.recentValues.push(value);
+    if (this.recentValues.length > this.maxBufferSize) {
+      this.recentValues.shift();
     }
   }
-  
+
   /**
-   * Get channel buffer
+   * Calculate mean of recent values
    */
-  public getValues(): number[] {
-    return [...this.values];
+  protected getMean(): number {
+    if (this.recentValues.length === 0) return 0;
+    return this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
   }
-  
+
   /**
-   * Get value timestamps
+   * Calculate variance of recent values
    */
-  public getTimestamps(): number[] {
-    return [...this.timestamps];
+  protected getVariance(): number {
+    if (this.recentValues.length < 2) return 0;
+    const mean = this.getMean();
+    return this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
   }
-  
+
   /**
-   * Get last N values from buffer
+   * Apply smoothing to the value
    */
-  protected getLastValues(count: number): number[] {
-    if (this.values.length <= count) {
-      return [...this.values];
-    }
+  protected smoothValue(value: number, windowSize: number = 5): number {
+    if (this.recentValues.length < windowSize) return value;
     
-    return this.values.slice(-count);
+    const window = this.recentValues.slice(-windowSize);
+    return window.reduce((sum, val) => sum + val, 0) / windowSize;
   }
 }

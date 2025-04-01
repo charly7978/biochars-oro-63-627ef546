@@ -1,270 +1,329 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Modular Vital Signs Processor implementation
+ * Modular Vital Signs Processor
+ * Uses the OptimizedSignalDistributor to provide dedicated signal channels
+ * for each vital sign algorithm
  */
 
-import { CardiacChannel } from '../signal-processing/channels/CardiacChannel';
-import { SpO2Channel } from '../signal-processing/channels/SpO2Channel';
-import { BloodPressureChannel } from '../signal-processing/channels/BloodPressureChannel';
+import { ProcessedSignal, VitalSignType, ChannelFeedback } from '../../types/signal';
 import { OptimizedSignalDistributor } from '../signal-processing/OptimizedSignalDistributor';
-import { VitalSignType } from '../signal-processing/channels/SpecializedChannel';
-import { SignalDistributorConfig } from '../signal-processing/interfaces';
+import { v4 as uuidv4 } from 'uuid';
 
-// Define tipos para resultados de signos vitales
-export interface ModularVitalSignsResult {
+// Import specialized vital sign processors
+import { GlucoseProcessor } from './specialized/GlucoseProcessor';
+import { LipidsProcessor } from './specialized/LipidsProcessor';
+import { BloodPressureProcessor } from './specialized/BloodPressureProcessor';
+import { SpO2Processor } from './specialized/SpO2Processor';
+import { CardiacProcessor } from './specialized/CardiacProcessor';
+
+/**
+ * Result interface for vital sign measurements
+ */
+export interface VitalSignsResult {
+  // Standard measurements
+  spo2: number;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  bloodPressure: {
+    systolic: number;
+    diastolic: number;
+  };
+  cardiac: {
+    heartRate: number;
+    arrhythmiaDetected: boolean;
+    rhythmRegularity: number;
+  };
+  
+  // Quality and metadata
+  measurementId: string;
   timestamp: number;
   signalQuality: number;
-  
-  heartRate: number;
-  heartRateConfidence: number;
-  spo2Value: number;
-  bloodPressureSystolic: number;
-  bloodPressureDiastolic: number;
-  
-  arrhythmiaStatus: string;
-  lastArrhythmiaData?: any;
-}
-
-// Process signal result
-export interface ProcessedSignal {
-  timestamp: number;
-  value: number;
-  quality: number;
-  fingerDetected: boolean;
-}
-
-// Define tipos para opciones de configuración
-interface ModularProcessorOptions {
-  enableArrhythmiaDetection: boolean;
-  sensibility: 'low' | 'medium' | 'high';
-  enableBloodPressure: boolean;
-  calibrationMode: boolean;
+  confidence: {
+    spo2: number;
+    glucose: number;
+    lipids: number;
+    bloodPressure: number;
+    cardiac: number;
+  };
 }
 
 /**
- * Procesador modular de signos vitales
+ * Modular vital signs processor
+ * Coordinates specialized processors and the optimized signal distributor
  */
 export class ModularVitalSignsProcessor {
+  // Signal distributor for optimized channels
   private signalDistributor: OptimizedSignalDistributor;
-  private options: ModularProcessorOptions;
+  
+  // Specialized processors for each vital sign
+  private glucoseProcessor: GlucoseProcessor;
+  private lipidsProcessor: LipidsProcessor;
+  private bloodPressureProcessor: BloodPressureProcessor;
+  private spo2Processor: SpO2Processor;
+  private cardiacProcessor: CardiacProcessor;
+  
+  // Processing state
   private isProcessing: boolean = false;
-  private lastArrhythmiaStatus: string = "Normal|0";
-  private arrhythmiaCounter: number = 0;
-  private lastResultCache: ModularVitalSignsResult | null = null;
+  private lastProcessedSignal: ProcessedSignal | null = null;
+  private lastResult: VitalSignsResult | null = null;
   
   /**
-   * Constructor del procesador
+   * Constructor
    */
   constructor() {
-    // Inicializar opciones por defecto
-    this.options = {
-      enableArrhythmiaDetection: true,
-      sensibility: 'medium',
-      enableBloodPressure: true,
-      calibrationMode: false
-    };
+    console.log("ModularVitalSignsProcessor: Initializing with specialized processors and optimized signal channels");
     
-    // Crear distribuidor de señales con canales especializados
-    this.signalDistributor = new OptimizedSignalDistributor();
+    // Create signal distributor
+    this.signalDistributor = new OptimizedSignalDistributor({
+      enableFeedback: true,
+      adaptChannels: true,
+      optimizationInterval: 3000 // 3 seconds
+    });
     
-    // Add the default channels
-    this.signalDistributor.registerChannel(new CardiacChannel(VitalSignType.CARDIAC));
-    this.signalDistributor.registerChannel(new SpO2Channel(VitalSignType.SPO2));
-    this.signalDistributor.registerChannel(new BloodPressureChannel(VitalSignType.BLOOD_PRESSURE));
-    
-    // Configurar el distribuidor
-    this.configureDistributor();
+    // Create specialized processors
+    this.glucoseProcessor = new GlucoseProcessor();
+    this.lipidsProcessor = new LipidsProcessor();
+    this.bloodPressureProcessor = new BloodPressureProcessor();
+    this.spo2Processor = new SpO2Processor();
+    this.cardiacProcessor = new CardiacProcessor();
   }
   
   /**
-   * Configura el distribuidor de señales según opciones
+   * Start processing
    */
-  private configureDistributor(): void {
-    const config: SignalDistributorConfig = {
-      channels: {
-        [VitalSignType.CARDIAC]: {
-          enabled: true,
-          adaptationRate: this.options.sensibility === 'high' ? 0.5 : 
-                          this.options.sensibility === 'medium' ? 0.3 : 0.2
-        },
-        [VitalSignType.SPO2]: {
-          enabled: true
-        },
-        [VitalSignType.BLOOD_PRESSURE]: {
-          enabled: this.options.enableBloodPressure
-        }
-      },
-      calibrationMode: this.options.calibrationMode
-    };
+  public start(): void {
+    if (this.isProcessing) return;
     
-    // Apply the configuration directly to the distributor
-    this.signalDistributor.processSignal(0, config); // Pass the config as additional parameter
-  }
-  
-  /**
-   * Start processing signals
-   */
-  start(): void {
-    this.isProcessing = true;
+    // Start signal distributor
     this.signalDistributor.start();
+    
+    // Initialize all processors
+    this.glucoseProcessor.initialize();
+    this.lipidsProcessor.initialize();
+    this.bloodPressureProcessor.initialize();
+    this.spo2Processor.initialize();
+    this.cardiacProcessor.initialize();
+    
+    this.isProcessing = true;
+    console.log("ModularVitalSignsProcessor: Started processing");
   }
   
   /**
-   * Stop processing signals
+   * Stop processing
    */
-  stop(): void {
-    this.isProcessing = false;
+  public stop(): void {
+    if (!this.isProcessing) return;
+    
+    // Stop signal distributor
     this.signalDistributor.stop();
+    
+    this.isProcessing = false;
+    console.log("ModularVitalSignsProcessor: Stopped processing");
   }
   
   /**
-   * Procesa una nueva muestra de señal
+   * Reset processor state
    */
-  processSignal(signal: ProcessedSignal, rrData?: any): ModularVitalSignsResult | null {
+  public reset(): void {
+    // Reset signal distributor
+    this.signalDistributor.reset();
+    
+    // Reset all processors
+    this.glucoseProcessor.reset();
+    this.lipidsProcessor.reset();
+    this.bloodPressureProcessor.reset();
+    this.spo2Processor.reset();
+    this.cardiacProcessor.reset();
+    
+    this.lastProcessedSignal = null;
+    this.lastResult = null;
+    
+    console.log("ModularVitalSignsProcessor: Reset complete");
+  }
+  
+  /**
+   * Process a signal and calculate all vital signs
+   * @param signal Processed PPG signal
+   * @returns Vital signs result
+   */
+  public processSignal(signal: ProcessedSignal): VitalSignsResult {
     if (!this.isProcessing) {
-      return null;
+      console.log("ModularVitalSignsProcessor: Not processing, returning empty result");
+      return this.createEmptyResult();
+    }
+    
+    // Store for later reference
+    this.lastProcessedSignal = signal;
+    
+    // Skip processing if finger is not detected or quality is too low
+    if (!signal.fingerDetected || signal.quality < 20) {
+      console.log("ModularVitalSignsProcessor: Skipping - no finger or low quality", {
+        fingerDetected: signal.fingerDetected,
+        quality: signal.quality
+      });
+      return this.createEmptyResult();
     }
     
     try {
-      // Distribuir señal a todos los canales activos
-      const distributionResult = this.signalDistributor.processSignal(signal.value);
+      // Start performance measurement
+      const startTime = performance.now();
       
-      // Obtener resultados de canales específicos
-      const cardiacChannel = this.signalDistributor.getChannel(VitalSignType.CARDIAC);
-      const spo2Channel = this.signalDistributor.getChannel(VitalSignType.SPO2);
-      const bpChannel = this.signalDistributor.getChannel(VitalSignType.BLOOD_PRESSURE);
+      // Distribute signal to specialized channels
+      const channelValues = this.signalDistributor.processSignal(signal);
       
-      // Verificar si tenemos suficiente calidad para resultados
-      const hasQualitySignal = signal.quality > 30 && signal.fingerDetected;
+      // Process each vital sign with its optimized signal
+      const glucoseValue = this.glucoseProcessor.processValue(channelValues[VitalSignType.GLUCOSE]);
+      const lipidsValues = this.lipidsProcessor.processValue(channelValues[VitalSignType.LIPIDS]);
+      const bloodPressureValues = this.bloodPressureProcessor.processValue(channelValues[VitalSignType.BLOOD_PRESSURE]);
+      const spo2Value = this.spo2Processor.processValue(channelValues[VitalSignType.SPO2]);
+      const cardiacValues = this.cardiacProcessor.processValue(channelValues[VitalSignType.CARDIAC]);
       
-      // Manejar detección de arritmias si está habilitado
-      let arrhythmiaStatus = "Normal|0";
-      let lastArrhythmiaData = null;
-      
-      if (this.options.enableArrhythmiaDetection && rrData && rrData.intervals && rrData.intervals.length > 3) {
-        const { detected, counter, data } = this.detectArrhythmia(rrData.intervals);
-        
-        if (detected) {
-          arrhythmiaStatus = `Detectada|${counter}`;
-          this.arrhythmiaCounter = counter;
-          lastArrhythmiaData = data;
-        } else {
-          arrhythmiaStatus = `Normal|${this.arrhythmiaCounter}`;
-        }
-        
-        this.lastArrhythmiaStatus = arrhythmiaStatus;
-      }
-      
-      // Generar resultado combinando datos de todos los canales
-      const result: ModularVitalSignsResult = {
-        timestamp: signal.timestamp,
-        signalQuality: signal.quality,
-        
-        // Datos cardíacos
-        heartRate: cardiacChannel ? (cardiacChannel as CardiacChannel).getBPM() : 0,
-        heartRateConfidence: hasQualitySignal ? 0.8 : 0.2,
-        
-        // SpO2
-        spo2Value: spo2Channel ? (spo2Channel as SpO2Channel).getLatestValue() || 0 : 0,
-        
-        // Presión arterial
-        bloodPressureSystolic: bpChannel ? (bpChannel as BloodPressureChannel).getSystolic() : 0,
-        bloodPressureDiastolic: bpChannel ? (bpChannel as BloodPressureChannel).getDiastolic() : 0,
-        
-        // Estado de arritmia
-        arrhythmiaStatus,
-        lastArrhythmiaData
+      // Get confidence levels
+      const confidenceLevels = {
+        glucose: this.glucoseProcessor.getConfidence(),
+        lipids: this.lipidsProcessor.getConfidence(),
+        bloodPressure: this.bloodPressureProcessor.getConfidence(),
+        spo2: this.spo2Processor.getConfidence(),
+        cardiac: this.cardiacProcessor.getConfidence()
       };
       
-      // Actualizar caché del último resultado
-      this.lastResultCache = result;
+      // Apply feedback from each processor to its channel
+      this.applyProcessorFeedback();
+      
+      // Create result object
+      const result: VitalSignsResult = {
+        measurementId: uuidv4(),
+        timestamp: Date.now(),
+        signalQuality: signal.quality,
+        
+        // Vital sign values
+        glucose: glucoseValue,
+        lipids: lipidsValues,
+        bloodPressure: bloodPressureValues,
+        spo2: spo2Value,
+        cardiac: cardiacValues,
+        
+        // Confidence levels
+        confidence: confidenceLevels
+      };
+      
+      // Store result
+      this.lastResult = result;
+      
+      // Performance logging
+      const processingTime = performance.now() - startTime;
+      if (processingTime > 10) { // Only log if significant
+        console.log("ModularVitalSignsProcessor: Signal processed", {
+          processingTime,
+          signalQuality: signal.quality,
+          glucose: glucoseValue,
+          systolic: bloodPressureValues.systolic,
+          diastolic: bloodPressureValues.diastolic,
+          spo2: spo2Value,
+          heartRate: cardiacValues.heartRate
+        });
+      }
       
       return result;
     } catch (error) {
-      console.error("Error procesando señal en ModularVitalSignsProcessor:", error);
-      return this.lastResultCache;
+      console.error("ModularVitalSignsProcessor: Error processing signal", error);
+      return this.createEmptyResult();
     }
   }
   
   /**
-   * Detecta posibles arritmias basadas en intervalos RR
+   * Apply feedback from each processor to its channel
+   * Enables bidirectional optimization
    */
-  private detectArrhythmia(rrIntervals: number[]): {
-    detected: boolean;
-    counter: number;
-    data: any;
-  } {
-    if (rrIntervals.length < 3) {
-      return {
-        detected: false,
-        counter: this.arrhythmiaCounter,
-        data: null
-      };
+  private applyProcessorFeedback(): void {
+    // Get feedback from glucose processor and apply to channel
+    const glucoseFeedback = this.glucoseProcessor.getFeedback();
+    if (glucoseFeedback) {
+      this.signalDistributor.applyFeedback(glucoseFeedback);
     }
     
-    // Calcular variabilidad de intervalos RR
-    const avgRR = rrIntervals.reduce((sum, val) => sum + val, 0) / rrIntervals.length;
-    const variances = rrIntervals.map(rr => Math.abs(rr - avgRR) / avgRR);
-    const maxVariance = Math.max(...variances);
-    
-    // Detectar arritmia si la variabilidad es alta
-    const threshold = this.options.sensibility === 'high' ? 0.2 :
-                      this.options.sensibility === 'medium' ? 0.3 : 0.4;
-    
-    const hasArrhythmia = maxVariance > threshold;
-    
-    // Incrementar contador si detectamos arritmia
-    if (hasArrhythmia) {
-      this.arrhythmiaCounter++;
+    // Get feedback from lipids processor and apply to channel
+    const lipidsFeedback = this.lipidsProcessor.getFeedback();
+    if (lipidsFeedback) {
+      this.signalDistributor.applyFeedback(lipidsFeedback);
     }
     
+    // Get feedback from blood pressure processor and apply to channel
+    const bpFeedback = this.bloodPressureProcessor.getFeedback();
+    if (bpFeedback) {
+      this.signalDistributor.applyFeedback(bpFeedback);
+    }
+    
+    // Get feedback from SpO2 processor and apply to channel
+    const spo2Feedback = this.spo2Processor.getFeedback();
+    if (spo2Feedback) {
+      this.signalDistributor.applyFeedback(spo2Feedback);
+    }
+    
+    // Get feedback from cardiac processor and apply to channel
+    const cardiacFeedback = this.cardiacProcessor.getFeedback();
+    if (cardiacFeedback) {
+      this.signalDistributor.applyFeedback(cardiacFeedback);
+    }
+  }
+  
+  /**
+   * Create an empty result for invalid signals or non-processing state
+   */
+  private createEmptyResult(): VitalSignsResult {
     return {
-      detected: hasArrhythmia,
-      counter: this.arrhythmiaCounter,
-      data: {
-        maxVariance,
-        threshold,
-        intervals: rrIntervals
+      measurementId: uuidv4(),
+      timestamp: Date.now(),
+      signalQuality: 0,
+      
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      },
+      bloodPressure: {
+        systolic: 0,
+        diastolic: 0
+      },
+      spo2: 0,
+      cardiac: {
+        heartRate: 0,
+        arrhythmiaDetected: false,
+        rhythmRegularity: 0
+      },
+      
+      confidence: {
+        glucose: 0,
+        lipids: 0,
+        bloodPressure: 0,
+        spo2: 0,
+        cardiac: 0
       }
     };
   }
   
   /**
-   * Reinicia el procesador
+   * Get the last processed result
    */
-  reset(): void {
-    this.isProcessing = false;
-    this.signalDistributor.reset();
-    this.arrhythmiaCounter = 0;
-    this.lastArrhythmiaStatus = "Normal|0";
-    this.lastResultCache = null;
+  public getLastResult(): VitalSignsResult | null {
+    return this.lastResult;
   }
   
   /**
-   * Configura el procesador
+   * Get diagnostics information about the processor and signal distributor
    */
-  configure(options: Partial<ModularProcessorOptions>): void {
-    this.options = { ...this.options, ...options };
-    this.configureDistributor();
-  }
-  
-  /**
-   * Obtiene las opciones actuales
-   */
-  getOptions(): ModularProcessorOptions {
-    return { ...this.options };
-  }
-
-  /**
-   * Get diagnostics information
-   */
-  getDiagnostics(): any {
+  public getDiagnostics(): any {
     return {
       isProcessing: this.isProcessing,
-      arrhythmiaCounter: this.arrhythmiaCounter,
-      lastArrhythmiaStatus: this.lastArrhythmiaStatus,
-      options: { ...this.options }
+      lastSignalTimestamp: this.lastProcessedSignal?.timestamp,
+      lastSignalQuality: this.lastProcessedSignal?.quality,
+      distributorDiagnostics: this.signalDistributor.getDiagnostics(),
+      processorConfidence: this.lastResult?.confidence
     };
   }
 }

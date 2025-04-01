@@ -1,148 +1,181 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * PPG Processor implementation
  */
 
-import { PPGSignalProcessor, ProcessorOptions } from './interfaces';
-import { applyAdaptiveFilter, correctSignalAnomalies } from './utils/adaptive-predictor';
-import { isFingerDetected } from './finger-detector';
+import { ProcessedPPGSignal, SignalProcessingOptions } from './types';
+import { PPGSignalProcessor } from './interfaces';
+import { calculateEMA } from '../vital-signs/utils/statistics-utils';
+import { normalizeValue, amplifySignal } from '../vital-signs/utils/signal-utils';
 
 /**
  * Processor for PPG signals
+ * Direct measurement only, no simulation
  */
 export class PPGProcessor implements PPGSignalProcessor {
-  private buffer: number[] = [];
-  private timestamps: number[] = [];
-  private qualityBuffer: number[] = [];
-  private lastProcessedValue: number = 0;
-  private isProcessing: boolean = false;
-  private options: ProcessorOptions = {
-    adaptationRate: 0.3,
-    bufferSize: 50,
-    useAdaptiveThresholds: true,
-    sensitivityLevel: 'medium'
+  private signalBuffer: number[] = [];
+  private filteredBuffer: number[] = [];
+  private fingerDetected: boolean = false;
+  private signalQuality: number = 0;
+  private lastTimestamp: number = 0;
+  private options: SignalProcessingOptions = {
+    filterStrength: 0.3,
+    qualityThreshold: 0.4,
+    fingerDetectionSensitivity: 0.05,
+    amplificationFactor: 1.2
   };
   
-  constructor() {
-    console.log("PPGProcessor initialized");
-  }
-
   /**
-   * Start processing
+   * Configure the processor with new options
    */
-  startProcessing(): void {
-    this.isProcessing = true;
-    console.log("PPGProcessor: Processing started");
+  configure(options: Partial<SignalProcessingOptions>): void {
+    this.options = { ...this.options, ...options };
+    console.log("PPGProcessor: Configured with options", this.options);
   }
-
+  
   /**
-   * Stop processing
+   * Process a PPG signal and return processed data
    */
-  stopProcessing(): void {
-    this.isProcessing = false;
-    console.log("PPGProcessor: Processing stopped");
-  }
-
-  /**
-   * Process a new signal value
-   */
-  processValue(value: number): number {
-    if (!this.isProcessing) return 0;
-    
-    const now = Date.now();
-    
+  processSignal(signal: number): ProcessedPPGSignal {
     // Add to buffer
-    this.buffer.push(value);
-    this.timestamps.push(now);
+    this.signalBuffer.push(signal);
     
     // Keep buffer at reasonable size
-    if (this.buffer.length > this.options.bufferSize!) {
-      this.buffer.shift();
-      this.timestamps.shift();
+    if (this.signalBuffer.length > 128) {
+      this.signalBuffer.shift();
     }
     
-    // Process value if we have enough data
-    if (this.buffer.length >= 3) {
-      // Calculate basic signal quality
-      const recent = this.buffer.slice(-5);
-      const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-      const stdDev = Math.sqrt(
-        recent.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recent.length
-      );
-      
-      const signalToNoise = mean !== 0 ? Math.abs(mean) / (stdDev + 0.0001) : 0;
-      const quality = Math.min(1, signalToNoise / 10);
-      
-      this.qualityBuffer.push(quality);
-      if (this.qualityBuffer.length > 10) {
-        this.qualityBuffer.shift();
-      }
-      
-      // Apply filtering
-      const processed = applyAdaptiveFilter(value, this.buffer, this.options.adaptationRate || 0.3);
-      
-      // Check for anomalies
-      const corrected = this.buffer.length > 10 ? 
-        correctSignalAnomalies(processed, this.buffer, 0.5) : processed;
-      
-      this.lastProcessedValue = corrected;
-      return corrected;
+    // Apply filtering
+    const filtered = this.applyFiltering(signal);
+    this.filteredBuffer.push(filtered);
+    
+    if (this.filteredBuffer.length > 128) {
+      this.filteredBuffer.shift();
     }
     
-    this.lastProcessedValue = value;
-    return value;
+    // Calculate normalized value
+    const normalized = this.normalizeSignal(filtered);
+    
+    // Detect finger presence
+    this.fingerDetected = this.detectFinger(signal);
+    
+    // Calculate signal quality
+    this.calculateSignalQuality(filtered);
+    
+    // Calculate signal strength
+    const signalStrength = this.calculateSignalStrength(filtered);
+    
+    // Apply amplification
+    const amplified = this.amplifySignal(normalized);
+    
+    // Create result
+    const now = Date.now();
+    this.lastTimestamp = now;
+    
+    return {
+      timestamp: now,
+      rawValue: signal,
+      filteredValue: filtered,
+      normalizedValue: normalized,
+      quality: this.signalQuality,
+      fingerDetected: this.fingerDetected,
+      amplifiedValue: amplified,
+      signalStrength
+    };
   }
-
+  
   /**
    * Reset the processor state
    */
   reset(): void {
-    this.buffer = [];
-    this.timestamps = [];
-    this.qualityBuffer = [];
-    this.lastProcessedValue = 0;
+    this.signalBuffer = [];
+    this.filteredBuffer = [];
+    this.fingerDetected = false;
+    this.signalQuality = 0;
+    this.lastTimestamp = 0;
     console.log("PPGProcessor: Reset complete");
   }
-
+  
   /**
-   * Configure the processor with options
+   * Apply filtering to the input signal
    */
-  configure(options: ProcessorOptions): void {
-    this.options = { ...this.options, ...options };
-    console.log("PPGProcessor: Configured with options", this.options);
+  private applyFiltering(signal: number): number {
+    return calculateEMA(signal, this.signalBuffer, this.options.filterStrength || 0.3);
   }
-
+  
   /**
-   * Get last processed value
+   * Normalize the signal relative to recent history
    */
-  getLastValue(): number {
-    return this.lastProcessedValue;
-  }
-
-  /**
-   * Get processing status
-   */
-  isActive(): boolean {
-    return this.isProcessing;
-  }
-
-  /**
-   * Get signal quality
-   */
-  getSignalQuality(): number {
-    if (this.qualityBuffer.length === 0) return 0;
+  private normalizeSignal(filtered: number): number {
+    if (this.filteredBuffer.length < 5) return 0;
     
-    return this.qualityBuffer.reduce((sum, val) => sum + val, 0) / this.qualityBuffer.length;
+    return normalizeValue(filtered, this.filteredBuffer);
   }
-
+  
   /**
-   * Check if finger is detected
+   * Detect if a finger is present based on signal characteristics
    */
-  isFingerDetected(): boolean {
-    if (this.buffer.length < 10) return false;
+  private detectFinger(signal: number): boolean {
+    if (this.signalBuffer.length < 10) return false;
     
-    // Use the finger detector utility
-    return isFingerDetected(this.buffer);
+    // Calculate signal variation
+    const recentValues = this.signalBuffer.slice(-10);
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const deviation = recentValues.map(v => Math.abs(v - mean)).reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Detect based on absolute signal level and variation
+    const sensitivity = this.options.fingerDetectionSensitivity || 0.05;
+    const signalPresent = Math.abs(mean) > 0.1;
+    const variationPresent = deviation > sensitivity;
+    
+    return signalPresent && variationPresent;
+  }
+  
+  /**
+   * Calculate signal quality based on multiple factors
+   */
+  private calculateSignalQuality(filtered: number): number {
+    if (this.filteredBuffer.length < 10) {
+      this.signalQuality = 0;
+      return this.signalQuality;
+    }
+    
+    // Calculate based on signal stability
+    const recentValues = this.filteredBuffer.slice(-10);
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const maxDev = Math.max(...recentValues.map(v => Math.abs(v - mean)));
+    
+    const threshold = this.options.qualityThreshold || 0.4;
+    const stability = 1 - Math.min(1, maxDev / threshold);
+    
+    // Calculate based on signal presence
+    const signalPresence = Math.min(1, Math.abs(mean) / 0.2);
+    
+    // Combine factors
+    this.signalQuality = Math.round((stability * 0.7 + signalPresence * 0.3) * 100);
+    
+    return this.signalQuality;
+  }
+  
+  /**
+   * Calculate signal strength as a percentage
+   */
+  private calculateSignalStrength(filtered: number): number {
+    if (this.filteredBuffer.length < 5) return 0;
+    
+    const recentValues = this.filteredBuffer.slice(-5);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const amplitude = max - min;
+    
+    // Map amplitude to percentage with reasonable cutoffs
+    return Math.min(100, Math.round(amplitude * 200));
+  }
+  
+  /**
+   * Amplify the signal when needed
+   */
+  private amplifySignal(normalized: number): number {
+    const factor = this.options.amplificationFactor || 1.2;
+    return amplifySignal(normalized, factor);
   }
 }
