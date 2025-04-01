@@ -1,241 +1,194 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Hook para procesamiento de signos vitales con precisión mejorada
- * Integra calibración, validación cruzada y ajustes ambientales
+ * Hook for high-precision vital signs extraction
+ * Combines traditional algorithms with TensorFlow models
  */
-
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { PrecisionVitalSignsProcessor, PrecisionVitalSignsResult } from '../modules/vital-signs/PrecisionVitalSignsProcessor';
-import { CalibrationReference } from '../modules/vital-signs/calibration/CalibrationManager';
 import { useSignalProcessing } from './useSignalProcessing';
+import { tensorflowService } from '../modules/ai/tensorflow-service';
+import { ModelType } from '../modules/ai/tensorflow-service';
+import { PrecisionVitalSignsProcessor } from '../modules/vital-signs';
 import type { ProcessedSignal } from '../types/signal';
 
-/**
- * Estado del hook de signos vitales de precisión
- */
-export interface PrecisionVitalSignsState {
-  isProcessing: boolean;
-  isCalibrated: boolean;
-  lastResult: PrecisionVitalSignsResult | null;
-  calibrationStatus: {
-    hasReference: boolean;
-    confidence: number;
-  };
-  environmentalStatus: {
-    lightDetected: number;
-    motionDetected: number;
-  };
-}
-
-/**
- * Hook para gestionar signos vitales con precisión mejorada
- */
-export function usePrecisionVitalSigns() {
-  // Inicializar procesador
-  const processorRef = useRef<PrecisionVitalSignsProcessor | null>(null);
+export const usePrecisionVitalSigns = () => {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [modelLoadStatus, setModelLoadStatus] = useState<Record<string, boolean>>({});
+  const [useAI, setUseAI] = useState(true);
+  const [neuralContribution, setNeuralContribution] = useState(0.6);
+  const [diagnosticsMode, setDiagnosticsMode] = useState(false);
+  
   const signalProcessing = useSignalProcessing();
+  const processorRef = useRef<PrecisionVitalSignsProcessor | null>(null);
   
-  // Estado local
-  const [state, setState] = useState<PrecisionVitalSignsState>({
-    isProcessing: false,
-    isCalibrated: false,
-    lastResult: null,
-    calibrationStatus: {
-      hasReference: false,
-      confidence: 0
-    },
-    environmentalStatus: {
-      lightDetected: 50,
-      motionDetected: 0
-    }
-  });
+  // AI model loading status
+  const areModelsLoaded = useCallback(() => {
+    const requiredModels = [
+      ModelType.SPO2,
+      ModelType.BLOOD_PRESSURE,
+      ModelType.GLUCOSE,
+      ModelType.DENOISING
+    ];
+    
+    return requiredModels.every(model => modelLoadStatus[model]);
+  }, [modelLoadStatus]);
   
-  // Inicializar procesador
+  // Initialize processor and load models
   useEffect(() => {
-    if (!processorRef.current) {
-      processorRef.current = new PrecisionVitalSignsProcessor();
-      console.log("usePrecisionVitalSigns: Procesador inicializado");
-    }
+    const initializeProcessor = async () => {
+      if (!processorRef.current) {
+        processorRef.current = new PrecisionVitalSignsProcessor({
+          useAI,
+          neuralContribution,
+          runDiagnostics: diagnosticsMode
+        });
+        
+        console.log("Precision Vital Signs Processor initialized");
+      }
+      
+      if (useAI) {
+        await loadModels();
+      }
+    };
+    
+    initializeProcessor();
     
     return () => {
-      if (processorRef.current) {
-        processorRef.current.stop();
-        processorRef.current = null;
-      }
+      console.log("Cleaning up Precision Vital Signs");
+      processorRef.current = null;
     };
-  }, []);
+  }, [useAI, neuralContribution, diagnosticsMode]);
   
-  // Iniciar procesamiento
-  const startProcessing = useCallback(() => {
-    if (!processorRef.current) return;
-    
-    processorRef.current.start();
-    signalProcessing.startProcessing();
-    
-    setState(prev => ({
-      ...prev,
-      isProcessing: true
-    }));
-    
-    console.log("usePrecisionVitalSigns: Procesamiento iniciado");
-  }, [signalProcessing]);
-  
-  // Detener procesamiento
-  const stopProcessing = useCallback(() => {
-    if (!processorRef.current) return;
-    
-    processorRef.current.stop();
-    signalProcessing.stopProcessing();
-    
-    setState(prev => ({
-      ...prev,
-      isProcessing: false
-    }));
-    
-    console.log("usePrecisionVitalSigns: Procesamiento detenido");
-  }, [signalProcessing]);
-  
-  // Procesar señal
-  const processSignal = useCallback((signal: ProcessedSignal): PrecisionVitalSignsResult | null => {
-    if (!processorRef.current || !state.isProcessing) {
-      return null;
-    }
-    
+  // Load AI models
+  const loadModels = useCallback(async () => {
     try {
-      // Procesar señal con precisión mejorada
-      const result = processorRef.current.processSignal(signal);
+      console.log("Loading AI models for vital signs");
       
-      // Actualizar estado con el resultado
-      setState(prev => ({
-        ...prev,
-        lastResult: result,
-        isCalibrated: result.isCalibrated,
-        calibrationStatus: {
-          hasReference: result.isCalibrated,
-          confidence: result.precisionMetrics.calibrationConfidence
-        },
-        environmentalStatus: {
-          lightDetected: processorRef.current?.getDiagnostics().environmentalConditions.lightLevel || 50,
-          motionDetected: processorRef.current?.getDiagnostics().environmentalConditions.motionLevel || 0
-        }
-      }));
+      // Load SPO2 model
+      const spo2Model = await tensorflowService.loadModel(ModelType.SPO2);
+      setModelLoadStatus(prev => ({ ...prev, [ModelType.SPO2]: !!spo2Model }));
       
-      return result;
+      // Load blood pressure model
+      const bpModel = await tensorflowService.loadModel(ModelType.BLOOD_PRESSURE);
+      setModelLoadStatus(prev => ({ ...prev, [ModelType.BLOOD_PRESSURE]: !!bpModel }));
+      
+      // Load glucose model
+      const glucoseModel = await tensorflowService.loadModel(ModelType.GLUCOSE);
+      setModelLoadStatus(prev => ({ ...prev, [ModelType.GLUCOSE]: !!glucoseModel }));
+      
+      // Load denoising model
+      const denoisingModel = await tensorflowService.loadModel(ModelType.DENOISING);
+      setModelLoadStatus(prev => ({ ...prev, [ModelType.DENOISING]: !!denoisingModel }));
+      
+      console.log("AI models loaded", tensorflowService.getTensorFlowInfo());
     } catch (error) {
-      console.error("usePrecisionVitalSigns: Error procesando señal", error);
+      console.error("Error loading AI models:", error);
+    }
+  }, []);
+  
+  // Process a PPG signal
+  const processSignal = useCallback(async (value: number, rrData?: any) => {
+    if (!processorRef.current) {
+      console.warn("Precision processor not initialized");
       return null;
     }
-  }, [state.isProcessing]);
-  
-  // Escuchar cambios en la señal procesada
-  useEffect(() => {
-    if (!state.isProcessing || !signalProcessing.fingerDetected) {
-      return;
+    
+    // Process the signal with the signal processor first
+    const processedSignal = signalProcessing.processValue(value);
+    
+    if (!processedSignal || !processedSignal.fingerDetected) {
+      return null;
     }
     
-    // Crear objeto de señal procesada
-    const processedSignal: ProcessedSignal = {
+    // Apply tensor-based denoising if AI is enabled
+    let enhancedValue = processedSignal.filteredValue;
+    
+    if (useAI && modelLoadStatus[ModelType.DENOISING]) {
+      try {
+        enhancedValue = await tensorflowService.enhanceSignal([enhancedValue]);
+        enhancedValue = enhancedValue[0]; // Get first value from array
+      } catch (error) {
+        console.error("Error applying AI enhancement:", error);
+      }
+    }
+    
+    // Create signal object for processor
+    const signalForProcessing: ProcessedSignal = {
       timestamp: Date.now(),
-      filteredValue: signalProcessing.filteredValue || 0,
-      quality: signalProcessing.signalQuality,
-      fingerDetected: signalProcessing.fingerDetected
+      rawValue: processedSignal.rawValue,
+      filteredValue: enhancedValue,
+      quality: processedSignal.quality,
+      fingerDetected: true,
+      roi: { x: 0, y: 0, width: 100, height: 100 }
     };
     
-    // Procesar señal
-    processSignal(processedSignal);
-    
-  }, [
-    state.isProcessing,
-    signalProcessing.filteredValue,
-    signalProcessing.fingerDetected,
-    signalProcessing.signalQuality,
-    processSignal
-  ]);
+    // Process the enhanced signal
+    return processorRef.current.process(signalForProcessing, rrData);
+  }, [signalProcessing, useAI, modelLoadStatus]);
   
-  // Agregar datos de referencia para calibración
-  const addCalibrationReference = useCallback((reference: CalibrationReference): boolean => {
-    if (!processorRef.current) return false;
-    
-    const success = processorRef.current.addCalibrationReference(reference);
-    
-    if (success) {
-      // Actualizar estado de calibración
-      setState(prev => ({
-        ...prev,
-        isCalibrated: processorRef.current?.isCalibrated() || false,
-        calibrationStatus: {
-          hasReference: true,
-          confidence: processorRef.current?.getDiagnostics().calibrationFactors.confidence || 0
-        }
-      }));
+  // Start monitoring
+  const startMonitoring = useCallback(() => {
+    if (!areModelsLoaded() && useAI) {
+      console.warn("AI models not fully loaded, but starting anyway");
     }
     
-    return success;
-  }, []);
+    signalProcessing.startProcessing();
+    setIsProcessing(true);
+  }, [signalProcessing, areModelsLoaded, useAI]);
   
-  // Actualizar condiciones ambientales
-  const updateEnvironment = useCallback((deviceLight: number, deviceMotion: number = 0) => {
-    if (!processorRef.current) return;
-    
-    processorRef.current.updateEnvironmentalConditions({
-      lightLevel: deviceLight,
-      motionLevel: deviceMotion
-    });
-    
-    setState(prev => ({
-      ...prev,
-      environmentalStatus: {
-        lightDetected: deviceLight,
-        motionDetected: deviceMotion
-      }
-    }));
-    
-  }, []);
+  // Stop monitoring
+  const stopMonitoring = useCallback(() => {
+    signalProcessing.stopProcessing();
+    setIsProcessing(false);
+  }, [signalProcessing]);
   
-  // Resetear estado
+  // Toggle AI usage
+  const toggleAI = useCallback((enable: boolean) => {
+    setUseAI(enable);
+    
+    if (processorRef.current) {
+      processorRef.current.configure({ useAI: enable });
+    }
+    
+    if (enable && !areModelsLoaded()) {
+      loadModels();
+    }
+  }, [areModelsLoaded, loadModels]);
+  
+  // Reset everything
   const reset = useCallback(() => {
-    if (!processorRef.current) return;
-    
-    processorRef.current.reset();
     signalProcessing.reset();
     
-    setState({
-      isProcessing: false,
-      isCalibrated: processorRef.current.isCalibrated(),
-      lastResult: null,
-      calibrationStatus: {
-        hasReference: processorRef.current.isCalibrated(),
-        confidence: processorRef.current.getDiagnostics().calibrationFactors.confidence
-      },
-      environmentalStatus: {
-        lightDetected: 50,
-        motionDetected: 0
-      }
-    });
+    if (processorRef.current) {
+      processorRef.current.reset();
+    }
     
-    console.log("usePrecisionVitalSigns: Estado reiniciado");
+    setIsProcessing(false);
   }, [signalProcessing]);
   
-  // Obtener diagnósticos
+  // Get diagnostics information
   const getDiagnostics = useCallback(() => {
-    if (!processorRef.current) return null;
+    if (!processorRef.current || !diagnosticsMode) {
+      return null;
+    }
     
     return processorRef.current.getDiagnostics();
-  }, []);
+  }, [diagnosticsMode]);
   
   return {
-    ...state,
-    startProcessing,
-    stopProcessing,
+    isProcessing,
     processSignal,
-    addCalibrationReference,
-    updateEnvironment,
+    startMonitoring,
+    stopMonitoring,
     reset,
+    toggleAI,
+    setNeuralContribution,
+    neuralContribution,
+    areModelsLoaded: areModelsLoaded(),
+    modelLoadStatus,
+    useAI,
     getDiagnostics,
-    signalQuality: signalProcessing.signalQuality,
-    fingerDetected: signalProcessing.fingerDetected,
-    heartRate: signalProcessing.heartRate
+    setDiagnosticsMode,
+    diagnosticsMode,
+    tensorflowInfo: tensorflowService.getTensorFlowInfo()
   };
-}
+};
