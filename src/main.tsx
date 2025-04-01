@@ -1,7 +1,8 @@
 
-import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
-import './index.css'
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
 
 // Apply high-resolution interface class to the root element
 const applyHighResolution = () => {
@@ -145,5 +146,15 @@ const setupPerformanceObserver = () => {
 // Start the performance observer after render
 window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
-// Render the app
-createRoot(document.getElementById("root")!).render(<App />);
+// Make sure React is correctly initialized before rendering the app
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  const root = createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+} else {
+  console.error('Root element not found! Cannot mount React application.');
+}
