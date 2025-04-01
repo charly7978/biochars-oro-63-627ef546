@@ -1,5 +1,7 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
  * Sistema de observables para procesamiento de señales
  * Implementa el patrón Observable para desacoplar la producción y el consumo de datos
  */
@@ -24,11 +26,8 @@ export type PredicateFunction<T> = (value: T) => boolean;
  */
 export class Observable<T> {
   private observers: ObserverFunction<T>[] = [];
-  private subscribeHandler?: (observer: ObserverFunction<T>) => () => void;
   
-  constructor(subscribeHandler?: (observer: ObserverFunction<T>) => () => void) {
-    this.subscribeHandler = subscribeHandler;
-  }
+  constructor(private subscribe?: (observer: ObserverFunction<T>) => () => void) {}
   
   /**
    * Método para crear un nuevo Observable a partir de un valor o array
@@ -74,8 +73,8 @@ export class Observable<T> {
     this.observers.push(observer);
     
     // Si hay función de suscripción personalizada, usarla
-    if (this.subscribeHandler) {
-      return this.subscribeHandler(observer);
+    if (this.subscribe) {
+      return this.subscribe(observer);
     }
     
     // Devolver función para desuscribirse
