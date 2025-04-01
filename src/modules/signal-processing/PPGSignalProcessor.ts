@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -5,6 +6,7 @@
  */
 
 import { applyAdaptiveFilter } from './utils/adaptive-predictor';
+import { isFingerDetected, getSignalStrength } from './finger-detector';
 
 class PPGSignalProcessor {
   private buffer: number[] = [];
@@ -60,6 +62,27 @@ class PPGSignalProcessor {
   }
 
   /**
+   * Process signal with more details for signal processing hooks
+   */
+  processSignal(value: number): any {
+    const timestamp = Date.now();
+    const processedValue = this.processValue(value);
+    const fingerDetected = isFingerDetected(this.buffer);
+    const signalStrength = getSignalStrength(this.buffer);
+    
+    return {
+      timestamp,
+      rawValue: value,
+      filteredValue: processedValue,
+      normalizedValue: processedValue,
+      amplifiedValue: processedValue * 2,
+      quality: Math.min(100, Math.round(signalStrength * 100)),
+      fingerDetected,
+      signalStrength
+    };
+  }
+
+  /**
    * Reset the processor state
    */
   reset(): void {
@@ -81,6 +104,13 @@ class PPGSignalProcessor {
    */
   isActive(): boolean {
     return this.isProcessing;
+  }
+
+  /**
+   * Get the current buffer
+   */
+  getBuffer(): number[] {
+    return [...this.buffer];
   }
 }
 
