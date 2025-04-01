@@ -136,7 +136,7 @@ export function useSignalProcessing() {
         }
       }
       
-      // Generar resultado combinado - Corrigiendo propiedades según el tipo
+      // Generar resultado combinado
       const result: ProcessedSignalResult = {
         timestamp: ppgResult.timestamp,
         
@@ -156,21 +156,9 @@ export function useSignalProcessing() {
         peakConfidence: heartbeatResult.peakConfidence,
         instantaneousBPM: heartbeatResult.instantaneousBPM,
         averageBPM,
-        // Corregir estos campos para usar los nombres correctos según el tipo HeartbeatSignal
-        rrInterval: heartbeatResult.rrIntervals.length > 0 ? 
-                    heartbeatResult.rrIntervals[heartbeatResult.rrIntervals.length - 1] : null,
-        heartRateVariability: heartbeatResult.heartRate ? 
-                              Math.abs(heartbeatResult.heartRate - (heartbeatResult.instantaneousBPM || 0)) : null
+        rrInterval: heartbeatResult.rrInterval,
+        heartRateVariability: heartbeatResult.heartRateVariability
       };
-      
-      // Añadir diagnóstico para depuración
-      console.log("useSignalProcessing: Resultado procesado", {
-        signalStrength: ppgResult.signalStrength,
-        amplifiedValue: ppgResult.amplifiedValue,
-        isPeak: heartbeatResult.isPeak,
-        peakConfidence: heartbeatResult.peakConfidence,
-        instantaneousBPM: heartbeatResult.instantaneousBPM
-      });
       
       // Actualizar último resultado
       setLastResult(result);
