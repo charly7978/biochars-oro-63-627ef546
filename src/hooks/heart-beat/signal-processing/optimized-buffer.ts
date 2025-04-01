@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -39,12 +38,15 @@ export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGDat
    * Si el buffer está lleno, sobrescribe el dato más antiguo
    */
   public push(item: T): void {
-    // Ensure time property exists for all items
-    if (!('time' in item) && 'timestamp' in item) {
-      (item as any).time = item.timestamp;
+    // Ensure both time and timestamp exist
+    const enhancedItem = {...item} as any;
+    if (!('time' in enhancedItem) && 'timestamp' in enhancedItem) {
+      enhancedItem.time = enhancedItem.timestamp;
+    } else if (!('timestamp' in enhancedItem) && 'time' in enhancedItem) {
+      enhancedItem.timestamp = enhancedItem.time;
     }
 
-    this.buffer[this.head] = item;
+    this.buffer[this.head] = enhancedItem as T;
     this.head = (this.head + 1) % this.capacity;
     
     if (this._size === this.capacity) {
@@ -157,12 +159,15 @@ export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGDat
     const optimizedBuffer = new OptimizedPPGBuffer<U>(Math.max(points.length, 10));
     
     // Transferir los datos al nuevo buffer
-    points.forEach(point => {
-      // Ensure point has time property
+    points.forEach((point: any) => {
+      // Ensure both time and timestamp properties exist
       const enhancedPoint = {...point} as any;
       if (!('time' in enhancedPoint) && 'timestamp' in enhancedPoint) {
         enhancedPoint.time = enhancedPoint.timestamp;
+      } else if (!('timestamp' in enhancedPoint) && 'time' in enhancedPoint) {
+        enhancedPoint.timestamp = enhancedPoint.time;
       }
+      
       optimizedBuffer.push(enhancedPoint as U);
     });
     

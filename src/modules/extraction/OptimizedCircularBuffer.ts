@@ -36,7 +36,15 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
    * Si el buffer está lleno, sobrescribe el dato más antiguo
    */
   public push(item: T): void {
-    this.buffer[this.head] = item;
+    // Ensure both time and timestamp properties exist
+    const enhancedItem = {...item} as any;
+    if (!('time' in enhancedItem) && 'timestamp' in enhancedItem) {
+      enhancedItem.time = enhancedItem.timestamp;
+    } else if (!('timestamp' in enhancedItem) && 'time' in enhancedItem) {
+      enhancedItem.timestamp = enhancedItem.time;
+    }
+    
+    this.buffer[this.head] = enhancedItem as T;
     this.head = (this.head + 1) % this.capacity;
     
     if (this._size === this.capacity) {
@@ -149,11 +157,13 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     const optimizedBuffer = new OptimizedCircularBuffer<U>(Math.max(points.length, 10));
     
     // Transferir los datos al nuevo buffer
-    points.forEach((point: U) => {
-      // Ensure point has time property if needed
-      const enhancedPoint = {...point} as U & { time: number; timestamp: number };
+    points.forEach((point: any) => {
+      // Ensure both time and timestamp properties
+      const enhancedPoint = {...point} as any;
       if (!('time' in enhancedPoint) && 'timestamp' in enhancedPoint) {
         enhancedPoint.time = enhancedPoint.timestamp;
+      } else if (!('timestamp' in enhancedPoint) && 'time' in enhancedPoint) {
+        enhancedPoint.timestamp = enhancedPoint.time;
       }
       optimizedBuffer.push(enhancedPoint as U);
     });
