@@ -1,4 +1,9 @@
-import { calculateAmplitude, findPeaksAndValleys } from './utils';
+/**
+ * NOTA IMPORTANTE: Este es un módulo de procesamiento para presión arterial.
+ * Utiliza el optimizador de señal central de 6 canales para sus cálculos.
+ */
+
+import { calculateAmplitude, findPeaksAndValleys } from '../../utils/vitalSignsUtils';
 
 export class BloodPressureProcessor {
   // Tamaño de buffer ampliado para mayor estabilidad
@@ -23,7 +28,6 @@ export class BloodPressureProcessor {
 
   /**
    * Calcula la presión arterial utilizando características de la señal PPG
-   * Implementa un enfoque de mediana y promedio ponderado para mayor precisión
    */
   public calculateBloodPressure(values: number[]): {
     systolic: number;
@@ -179,7 +183,7 @@ export class BloodPressureProcessor {
   }
   
   /**
-   * Reinicia el estado del procesador de presión arterial
+   * Reinicia el procesador
    */
   public reset(): void {
     this.systolicBuffer = [];

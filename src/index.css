@@ -1,30 +1,10 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --radius-sm: 0.25rem;
-    --radius-md: 0.5rem;
-    --radius-lg: 0.75rem;
-    --radius-xl: 1rem;
-    
-    --space-xs: 0.25rem;
-    --space-sm: 0.5rem; 
-    --space-md: 1rem;
-    --space-lg: 1.5rem;
-    --space-xl: 2rem;
-    --space-2xl: 4rem;
-    
-    --duration-fast: 150ms;
-    --duration-normal: 300ms;
-    --duration-slow: 500ms;
-    
-    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-    --ease-out: cubic-bezier(0, 0, 0.2, 1);
-    --ease-in: cubic-bezier(0.4, 0, 1, 1);
-    --ease-bounce: cubic-bezier(0.2, 0.8, 0.2, 1);
-    
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -56,34 +36,20 @@
     --radius: 0.5rem;
 
     --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
 
-    --medical-bg: 220 33% 98%;
-    --medical-card: 220 25% 97%;
-    --medical-panel: 215 30% 95%;
-    --medical-text: 220 40% 15%;
-    --medical-subdued: 220 10% 40%;
-    --medical-accent: 220 70% 55%;
-    --medical-success: 142 70% 45%;
-    --medical-warning: 35 90% 55%;
-    --medical-danger: 0 70% 55%;
-    --medical-info: 210 90% 60%;
-    --medical-border: 220 20% 90%;
-    
-    --medical-success-direct: #22c55e;
-    --medical-warning-direct: #f97316;
-    --medical-danger-direct: #ea384c;
-    --medical-info-direct: #3b82f6;
-    --medical-success-dark: #34d872;
-    --medical-warning-dark: #ff9c40;
-    --medical-danger-dark: #ff4c5e;
-    --medical-info-dark: #5a9bff;
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
@@ -114,7 +80,6 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
-    
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -123,18 +88,6 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
-    
-    --medical-bg: 224 30% 10%;
-    --medical-card: 225 25% 12%;
-    --medical-panel: 220 20% 14%;
-    --medical-text: 210 30% 95%;
-    --medical-subdued: 220 15% 70%;
-    --medical-accent: 210 80% 60%;
-    --medical-success: 142 60% 45%;
-    --medical-warning: 35 90% 55%;
-    --medical-danger: 0 70% 50%;
-    --medical-info: 210 90% 60%;
-    --medical-border: 220 20% 18%;
   }
 }
 
@@ -146,198 +99,70 @@
   body {
     @apply bg-background text-foreground;
   }
-  
-  @media (prefers-reduced-motion: reduce) {
-    *, ::before, ::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
-    
-    .animate-exception {
-      animation-duration: inherit !important;
-      animation-iteration-count: inherit !important;
-      transition-duration: inherit !important;
-    }
-  }
 }
 
-@layer utilities {
-  .precision-text {
-    letter-spacing: -0.01em;
-    text-rendering: optimizeLegibility;
-  }
-  
-  .high-res-optimized {
+/* High-density screen optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  html, body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: geometricPrecision;
   }
   
-  .gpu-accelerated {
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    will-change: transform;
+  .precision-text {
+    letter-spacing: -0.01em;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* Screen size specific scaling */
+@media screen and (min-width: 2048px) {
+  .high-res-interface {
+    transform-origin: top left;
+    transform: scale(0.5);
+    width: 200%;
+    height: 200%;
+    max-width: 200vw;
+    max-height: 200vh;
   }
   
-  .rendering-optimized {
+  .crisp-graphics {
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
+  }
+}
+
+/* Retina/high-DPI specific optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  svg, img, canvas {
+    image-rendering: -webkit-optimize-contrast;
     shape-rendering: crispEdges;
   }
   
-  .animation-hardware-accelerated {
+  .graph-container {
     transform: translateZ(0);
-    will-change: transform, opacity;
     backface-visibility: hidden;
-  }
-  
-  .animation-optimized {
-    transition-timing-function: var(--ease-out);
-    transform: translateZ(0);
     will-change: transform;
-  }
-  
-  .animation-smooth {
-    transition-duration: var(--duration-normal);
-    transition-timing-function: var(--ease-in-out);
-  }
-  
-  .dark-adaptive-text {
-    @apply text-foreground dark:text-opacity-90;
-    font-weight: 400;
-  }
-  
-  .dark:dark-adaptive-text {
-    font-weight: 300;
-    letter-spacing: 0.01em;
-  }
-  
-  .contrast-boost {
-    @apply dark:text-opacity-100 dark:font-medium;
-  }
-  
-  .medical-card-dark {
-    @apply dark:bg-[hsl(var(--medical-card))] dark:text-[hsl(var(--medical-text))] 
-    dark:border-[hsl(var(--medical-border))];
-  }
-  
-  .medical-text-dark {
-    @apply dark:text-[hsl(var(--medical-text))];
-  }
-  
-  .medical-subdued-dark {
-    @apply dark:text-[hsl(var(--medical-subdued))];
-  }
-  
-  .medical-critical-text {
-    color: var(--medical-danger-direct);
-  }
-  
-  .dark .medical-critical-text {
-    color: var(--medical-danger-dark);
-  }
-  
-  .medical-warning-text {
-    color: var(--medical-warning-direct);
-  }
-  
-  .dark .medical-warning-text {
-    color: var(--medical-warning-dark);
-  }
-  
-  .medical-normal-text {
-    color: var(--medical-success-direct);
-  }
-  
-  .dark .medical-normal-text {
-    color: var(--medical-success-dark);
-  }
-  
-  .medical-info-text {
-    color: var(--medical-info-direct);
-  }
-  
-  .dark .medical-info-text {
-    color: var(--medical-info-dark);
-  }
-}
-
-@media (min-resolution: 192dpi), (-webkit-min-device-pixel-ratio: 2) {
-  html, body {
-    @apply high-res-optimized;
-  }
-  
-  svg, img, canvas {
-    @apply rendering-optimized;
-  }
-  
-  .graph-container, .ppg-graph {
-    @apply gpu-accelerated;
     contain: layout paint style;
   }
   
-  .precision-text {
-    letter-spacing: -0.01em;
-    font-feature-settings: "kern", "liga", "calt";
+  .ppg-graph {
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    contain: strict;
+    will-change: transform;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-@media (min-resolution: 300dpi), (-webkit-min-device-pixel-ratio: 3) {
-  html, body {
-    -webkit-font-smoothing: subpixel-antialiased;
-    letter-spacing: -0.02em;
-  }
-  
-  .precision-text {
-    letter-spacing: -0.02em;
-  }
-}
-
-@media screen {
-  @media (min-width: 2048px) {
-    .high-res-interface {
-      transform-origin: top left;
-      transform: scale(0.5);
-      width: 200%;
-      height: 200%;
-      max-width: 200vw;
-      max-height: 200vh;
-    }
-  }
-  
-  @media (min-width: 3840px) {
-    .high-res-interface {
-      transform: scale(0.25);
-      width: 400%;
-      height: 400%;
-      max-width: 400vw;
-      max-height: 400vh;
-    }
-  }
-  
-  @media (min-width: 5120px) {
-    .high-res-interface {
-      transform: scale(0.2);
-      width: 500%;
-      height: 500%;
-      max-width: 500vw;
-      max-height: 500vh;
-    }
-    
-    body {
-      image-rendering: high-quality;
-    }
-  }
-  
-  @media (min-width: 7680px) {
-    .high-res-interface {
-      transform: scale(0.125);
-      width: 800%;
-      height: 800%;
-      max-width: 800vw;
-      max-height: 800vh;
-    }
+/* 4K and higher resolution displays */
+@media screen and (min-width: 3840px) {
+  .high-res-interface {
+    transform: scale(0.25);
+    width: 400%;
+    height: 400%;
+    max-width: 400vw;
+    max-height: 400vh;
   }
 }

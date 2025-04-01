@@ -1,61 +1,70 @@
 
+/**
+ * Estructura de datos para un punto de datos PPG
+ */
 export interface PPGDataPoint {
-  time: number;
-  value: number;
+  time: number;      // Marca de tiempo en milisegundos
+  value: number;     // Valor de la señal PPG
+  isArrhythmia: boolean; // Indica si este punto coincide con una arritmia detectada
 }
 
-export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
-  private buffer: T[];
-  private capacity: number;
-  private index: number;
-  private isFull: boolean;
+/**
+ * Buffer circular para almacenar y gestionar puntos de datos PPG
+ * Mantiene un tamaño fijo y elimina los elementos más antiguos cuando se llena
+ */
+export class CircularBuffer {
+  private buffer: PPGDataPoint[];
+  private maxSize: number;
 
-  constructor(capacity: number) {
-    this.buffer = new Array<T>(capacity);
-    this.capacity = capacity;
-    this.index = 0;
-    this.isFull = false;
+  /**
+   * Crea un nuevo buffer circular
+   * @param size Tamaño máximo del buffer
+   */
+  constructor(size: number) {
+    this.buffer = [];
+    this.maxSize = size;
   }
 
-  public push(item: T): void {
-    this.buffer[this.index] = item;
-    this.index = (this.index + 1) % this.capacity;
-    if (this.index === 0) {
-      this.isFull = true;
+  /**
+   * Agrega un nuevo punto al buffer
+   * Si el buffer está lleno, elimina el punto más antiguo
+   * @param point Punto de datos a agregar
+   */
+  push(point: PPGDataPoint): void {
+    this.buffer.push(point);
+    if (this.buffer.length > this.maxSize) {
+      this.buffer.shift();
     }
   }
 
-  public get(index: number): T | undefined {
-    if (!this.isFull && index >= this.index) {
-      return undefined;
-    }
-    
-    const adjustedIndex = (this.index + index) % this.capacity;
-    return this.buffer[adjustedIndex];
+  /**
+   * Obtiene todos los puntos actuales en el buffer
+   * @returns Copia de los puntos en el buffer
+   */
+  getPoints(): PPGDataPoint[] {
+    return [...this.buffer];
   }
 
-  public getPoints(): T[] {
-    if (this.isFull) {
-      return [
-        ...this.buffer.slice(this.index),
-        ...this.buffer.slice(0, this.index)
-      ].filter(p => p !== undefined);
-    }
-    
-    return this.buffer.slice(0, this.index).filter(p => p !== undefined);
+  /**
+   * Vacía el buffer completamente
+   */
+  clear(): void {
+    this.buffer = [];
   }
-
-  public clear(): void {
-    this.buffer = new Array<T>(this.capacity);
-    this.index = 0;
-    this.isFull = false;
+  
+  /**
+   * Obtiene el tamaño actual del buffer
+   * @returns Número de elementos en el buffer
+   */
+  size(): number {
+    return this.buffer.length;
   }
-
-  public size(): number {
-    return this.isFull ? this.capacity : this.index;
-  }
-
-  public isEmpty(): boolean {
-    return this.index === 0 && !this.isFull;
+  
+  /**
+   * Obtiene el tamaño máximo del buffer
+   * @returns Capacidad máxima del buffer
+   */
+  getMaxSize(): number {
+    return this.maxSize;
   }
 }

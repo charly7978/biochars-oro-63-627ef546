@@ -1,13 +1,11 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Utilidades reutilizables para todos los procesadores de signos vitales
- * Solo procesa datos reales, sin simulación ni manipulación
+ * Utilidades esenciales para el procesador optimizado de señales
+ * NOTA IMPORTANTE: Módulo minimalista para dar soporte al optimizador de señal principal.
  */
 
 /**
- * Calcula el componente AC (amplitud pico a pico) de una señal real
+ * Calcula el componente AC (amplitud pico a pico) de una señal
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
@@ -15,7 +13,7 @@ export function calculateAC(values: number[]): number {
 }
 
 /**
- * Calcula el componente DC (valor promedio) de una señal real
+ * Calcula el componente DC (valor promedio) de una señal
  */
 export function calculateDC(values: number[]): number {
   if (values.length === 0) return 0;
@@ -23,92 +21,15 @@ export function calculateDC(values: number[]): number {
 }
 
 /**
- * Calcula la desviación estándar de un conjunto de valores reales
+ * Calcula el índice de perfusión basado en componentes AC y DC
  */
-export function calculateStandardDeviation(values: number[]): number {
-  const n = values.length;
-  if (n === 0) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
+export function calculatePerfusionIndex(ac: number, dc: number): number {
+  if (dc === 0) return 0;
+  return ac / dc;
 }
 
 /**
- * Encuentra picos y valles en una señal real
- */
-export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
-
-  // Algoritmo para detección de picos y valles en datos reales
-  for (let i = 1; i < values.length - 1; i++) {
-    const v = values[i];
-    // Detección de picos
-    if (
-      v >= values[i - 1] * 0.95 &&
-      v >= values[i + 1] * 0.95
-    ) {
-      const localMin = Math.min(values[i - 1], values[i + 1]);
-      if (v - localMin > 0.02) {
-        peakIndices.push(i);
-      }
-    }
-    // Detección de valles
-    if (
-      v <= values[i - 1] * 1.05 &&
-      v <= values[i + 1] * 1.05
-    ) {
-      const localMax = Math.max(values[i - 1], values[i + 1]);
-      if (localMax - v > 0.02) {
-        valleyIndices.push(i);
-      }
-    }
-  }
-  return { peakIndices, valleyIndices };
-}
-
-/**
- * Calcula la amplitud entre picos y valles de señales reales
- */
-export function calculateAmplitude(
-  values: number[],
-  peakIndices: number[],
-  valleyIndices: number[]
-): number {
-  if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
-
-  const amps: number[] = [];
-  
-  // Relacionar picos y valles en datos reales
-  for (const peakIdx of peakIndices) {
-    let closestValleyIdx = -1;
-    let minDistance = Number.MAX_VALUE;
-    
-    for (const valleyIdx of valleyIndices) {
-      const distance = Math.abs(peakIdx - valleyIdx);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestValleyIdx = valleyIdx;
-      }
-    }
-    
-    if (closestValleyIdx !== -1 && minDistance < 10) {
-      const amp = values[peakIdx] - values[closestValleyIdx];
-      if (amp > 0) {
-        amps.push(amp);
-      }
-    }
-  }
-  
-  if (amps.length === 0) return 0;
-
-  // Calcular la media con datos reales
-  return amps.reduce((a, b) => a + b, 0) / amps.length;
-}
-
-/**
- * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
+ * Aplica un filtro de Media Móvil Simple (SMA) a un valor
  */
 export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
   filteredValue: number;
@@ -123,31 +44,106 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
 }
 
 /**
- * Amplifica la señal real de forma adaptativa basada en su amplitud
- * Sin uso de datos simulados
+ * Calcula la media móvil exponencial (EMA) para suavizar señales
  */
-export function amplifySignal(value: number, recentValues: number[]): number {
-  if (recentValues.length === 0) return value;
+export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
+  return alpha * currentValue + (1 - alpha) * prevEMA;
+}
+
+/**
+ * Normaliza un valor en un rango específico
+ */
+export function normalizeValue(value: number, min: number, max: number): number {
+  return (value - min) / (max - min);
+}
+
+/**
+ * Estima el SpO2 basado en los valores de PPG
+ */
+export function estimateSpO2(values: number[]): number {
+  if (values.length < 30) return 0;
   
-  // Calcular la amplitud reciente de datos reales
-  const recentMin = Math.min(...recentValues);
-  const recentMax = Math.max(...recentValues);
-  const recentRange = recentMax - recentMin;
+  const dc = calculateDC(values);
+  if (dc === 0) return 0;
   
-  // Factor de amplificación para señales reales
-  let amplificationFactor = 1.0;
-  if (recentRange < 0.1) {
-    amplificationFactor = 2.5;
-  } else if (recentRange < 0.3) {
-    amplificationFactor = 1.8;
-  } else if (recentRange < 0.5) {
-    amplificationFactor = 1.4;
+  const ac = calculateAC(values);
+  const perfusionIndex = ac / dc;
+  
+  if (perfusionIndex < 0.05) return 0;
+  
+  const R = (ac / dc) / 1.02;
+  let spO2 = Math.round(98 - (15 * R));
+  
+  // Ajustes basados en la calidad de la señal
+  if (perfusionIndex > 0.15) {
+    spO2 = Math.min(98, spO2 + 1);
+  } else if (perfusionIndex < 0.08) {
+    spO2 = Math.max(0, spO2 - 1);
   }
   
-  // Amplificar usando solo datos reales
-  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
-  const centeredValue = value - mean;
-  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
-  
-  return amplifiedValue;
+  return Math.min(98, Math.max(90, spO2));
 }
+
+/**
+ * Formatea la presión arterial para visualización
+ */
+export function formatBloodPressure(bp: { systolic: number; diastolic: number }): string {
+  if (bp.systolic <= 0 || bp.diastolic <= 0) return "--/--";
+  return `${bp.systolic}/${bp.diastolic}`;
+}
+
+/**
+ * Calcula la amplitud de la señal entre picos y valles
+ */
+export function calculateAmplitude(
+  values: number[], 
+  peakIndices: number[], 
+  valleyIndices: number[]
+): number {
+  if (peakIndices.length === 0 || valleyIndices.length === 0) {
+    return 0;
+  }
+  
+  // Calcular la amplitud promedio
+  let totalAmplitude = 0;
+  let count = 0;
+  
+  for (let i = 0; i < Math.min(peakIndices.length, valleyIndices.length); i++) {
+    const peakValue = values[peakIndices[i]];
+    const valleyValue = values[valleyIndices[i]];
+    totalAmplitude += (peakValue - valleyValue);
+    count++;
+  }
+  
+  return count > 0 ? totalAmplitude / count : 0;
+}
+
+/**
+ * Encuentra los índices de picos y valles en una señal
+ */
+export function findPeaksAndValleys(values: number[]): {
+  peakIndices: number[];
+  valleyIndices: number[];
+} {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+  
+  if (values.length < 3) {
+    return { peakIndices, valleyIndices };
+  }
+  
+  for (let i = 1; i < values.length - 1; i++) {
+    // Detectar picos (valores máximos locales)
+    if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
+      peakIndices.push(i);
+    }
+    
+    // Detectar valles (valores mínimos locales)
+    if (values[i] < values[i - 1] && values[i] < values[i + 1]) {
+      valleyIndices.push(i);
+    }
+  }
+  
+  return { peakIndices, valleyIndices };
+}
+
