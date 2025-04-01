@@ -6,8 +6,8 @@
  */
 
 // Export core signal processors
-export { PPGSignalProcessor } from './PPGSignalProcessor';
-export { HeartbeatProcessor } from './HeartbeatProcessor';
+export { PPGProcessor as PPGSignalProcessor } from './ppg-processor';
+export { HeartbeatProcessor } from './heartbeat-processor';
 
 // Export processed signal types
 export type { ProcessedPPGSignal, ProcessedHeartbeatSignal } from './types';
@@ -19,7 +19,7 @@ export type { SignalProcessingOptions } from './types';
 export { resetFingerDetector } from './finger-detector';
 
 // Export channels
-export { SpecializedChannel } from './channels/SpecializedChannel';
+export { SpecializedChannel, VitalSignType } from './channels/SpecializedChannel';
 export { GlucoseChannel } from './channels/GlucoseChannel';
 export { LipidsChannel } from './channels/LipidsChannel';
 export { BloodPressureChannel } from './channels/BloodPressureChannel';
@@ -28,3 +28,6 @@ export { CardiacChannel } from './channels/CardiacChannel';
 
 // Export signal distributor
 export { OptimizedSignalDistributor } from './OptimizedSignalDistributor';
+
+// Export interfaces
+export * from './interfaces';

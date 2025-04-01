@@ -5,6 +5,8 @@
  * Type definitions for signal processing
  */
 
+import { VitalSignType } from "./channels/SpecializedChannel";
+
 /**
  * Processed PPG signal data
  */
@@ -31,6 +33,10 @@ export interface ProcessedHeartbeatSignal {
   confidence: number;
   instantaneousBPM: number | null;
   heartRateVariability: number | null;
+  rrData?: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
 }
 
 /**
@@ -52,7 +58,7 @@ export interface SignalProcessingOptions {
  * Interface for optimized signal channels
  */
 export interface OptimizedSignalChannel {
-  type: string;
+  type: VitalSignType;
   id: string;
   processSignal(signal: number): any;
   processValue(signal: number): any;
@@ -70,3 +76,6 @@ export interface SignalProcessor {
   reset(): void;
   configure(options: Partial<SignalProcessingOptions>): void;
 }
+
+// Export the types
+export { VitalSignType };

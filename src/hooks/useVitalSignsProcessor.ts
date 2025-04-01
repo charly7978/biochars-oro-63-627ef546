@@ -1,10 +1,9 @@
 /**
- * Hook for processing vital signs signals
- * Now with diagnostics channel and prioritization system
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsProcessor, VitalSignsResult } from '../modules/vital-signs'; // Import from central module
-import { ProcessingPriority } from '../modules/extraction'; // Import priority enum
 import type { RRIntervalData } from '../types/vital-signs';
 import type { ArrhythmiaWindow } from './vital-signs/types';
 import { getDiagnosticsData, clearDiagnosticsData } from '../hooks/heart-beat/signal-processing/peak-detection';
@@ -12,7 +11,7 @@ import { getDiagnosticsData, clearDiagnosticsData } from '../hooks/heart-beat/si
 // Interfaz para datos de diagnóstico integral
 interface DiagnosticsInfo {
   processedSignals: number;
-  signalLog: Array<{ timestamp: number, value: number, result: any, priority: ProcessingPriority }>;
+  signalLog: Array<{ timestamp: number, value: number, result: any, priority: string }>;
   performanceMetrics: {
     avgProcessTime: number;
     highPriorityPercentage: number;
@@ -113,22 +112,25 @@ export function useVitalSignsProcessor() {
     debugInfo.current.processedSignals++;
     
     // Determinar prioridad de la señal basada en su amplitud
-    let priority: ProcessingPriority;
+    let priority: string;
     const signalStrength = Math.abs(value);
     
     if (signalStrength >= 0.05) {
-      priority = 'high' as ProcessingPriority;
+      priority = 'high';
     } else if (signalStrength >= 0.02) {
-      priority = 'medium' as ProcessingPriority;
+      priority = 'medium';
     } else {
-      priority = 'low' as ProcessingPriority;
+      priority = 'low';
     }
     
     // Medir tiempo de procesamiento para diagnóstico
     const startTime = performance.now();
     
-    // Procesar señal - fix to use proper arguments (value only)
-    const result = processorRef.current.processSignal(value);
+    // FIX: Create a parameter object instead of passing value directly
+    const result = processorRef.current.processSignal({
+      value: value,
+      rrData: rrData
+    });
     
     // Calcular tiempo de procesamiento
     const processingTime = performance.now() - startTime;

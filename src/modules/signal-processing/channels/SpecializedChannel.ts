@@ -8,17 +8,28 @@
 import { OptimizedSignalChannel } from '../types';
 
 /**
+ * Enum for vital sign types
+ */
+export enum VitalSignType {
+  GLUCOSE = 'glucose',
+  LIPIDS = 'lipids',
+  BLOOD_PRESSURE = 'blood_pressure',
+  SPO2 = 'spo2',
+  CARDIAC = 'cardiac'
+}
+
+/**
  * Base class for all specialized signal processing channels
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
-  public type: string;
+  public type: VitalSignType;
   public id: string;
   protected recentValues: number[] = [];
   protected maxBufferSize: number = 100;
   protected currentQuality: number = 0;
   protected isActive: boolean = true;
   
-  constructor(type: string) {
+  constructor(type: VitalSignType) {
     this.type = type;
     this.id = `${type.toLowerCase()}-${Date.now()}`;
   }
@@ -40,10 +51,7 @@ export abstract class SpecializedChannel implements OptimizedSignalChannel {
    */
   calculateQuality(signal: number): number {
     // Add to recent values
-    this.recentValues.push(signal);
-    if (this.recentValues.length > this.maxBufferSize) {
-      this.recentValues.shift();
-    }
+    this.addToBuffer(signal);
     
     // Simple quality: stable non-zero signal
     if (this.recentValues.length < 5) {
@@ -52,8 +60,8 @@ export abstract class SpecializedChannel implements OptimizedSignalChannel {
     }
     
     // Calculate statistics
-    const mean = this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
-    const variance = this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
+    const mean = this.getMean();
+    const variance = this.getVariance();
     
     // Calculate quality metrics
     const absSignal = Math.abs(signal);
@@ -86,5 +94,42 @@ export abstract class SpecializedChannel implements OptimizedSignalChannel {
    */
   applyFeedback(feedback: any): void {
     // Base implementation does nothing
+  }
+
+  /**
+   * Add a value to the buffer
+   */
+  protected addToBuffer(value: number): void {
+    this.recentValues.push(value);
+    if (this.recentValues.length > this.maxBufferSize) {
+      this.recentValues.shift();
+    }
+  }
+
+  /**
+   * Calculate mean of recent values
+   */
+  protected getMean(): number {
+    if (this.recentValues.length === 0) return 0;
+    return this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
+  }
+
+  /**
+   * Calculate variance of recent values
+   */
+  protected getVariance(): number {
+    if (this.recentValues.length < 2) return 0;
+    const mean = this.getMean();
+    return this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
+  }
+
+  /**
+   * Apply smoothing to the value
+   */
+  protected smoothValue(value: number, windowSize: number = 5): number {
+    if (this.recentValues.length < windowSize) return value;
+    
+    const window = this.recentValues.slice(-windowSize);
+    return window.reduce((sum, val) => sum + val, 0) / windowSize;
   }
 }
