@@ -7,7 +7,7 @@
 
 // Export the traditional processor
 export { VitalSignsProcessor } from './VitalSignsProcessor';
-export type { VitalSignsResult as TraditionalVitalSignsResult } from './types/vital-signs-result';
+export type { VitalSignsResult } from './VitalSignsProcessor';
 
 // Export the new modular processor
 export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
@@ -61,3 +61,7 @@ export {
   // Export perfusion functions
   calculatePerfusionIndex
 } from './utils';
+
+// Export the blood pressure processor for direct access
+export { BloodPressureProcessor } from './blood-pressure-processor';
+

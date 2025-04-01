@@ -138,12 +138,9 @@ export function usePrecisionVitalSigns() {
     // Crear objeto de señal procesada
     const processedSignal: ProcessedSignal = {
       timestamp: Date.now(),
-      rawValue: signalProcessing.rawValue || 0,
       filteredValue: signalProcessing.filteredValue || 0,
       quality: signalProcessing.signalQuality,
-      fingerDetected: signalProcessing.fingerDetected,
-      perfusionIndex: 0,
-      roi: { x: 0, y: 0, width: 0, height: 0 }
+      fingerDetected: signalProcessing.fingerDetected
     };
     
     // Procesar señal

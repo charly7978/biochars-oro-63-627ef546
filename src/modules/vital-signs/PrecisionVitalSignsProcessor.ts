@@ -10,7 +10,9 @@ import { ProcessedSignal, VitalSignType } from '../../types/signal';
 import { CalibrationManager, CalibrationReference } from './calibration/CalibrationManager';
 import { CrossValidator, MeasurementsToValidate } from './correlation/CrossValidator';
 import { EnvironmentalAdjuster } from './environment/EnvironmentalAdjuster';
-import { ModularVitalSignsProcessor, VitalSignsResult } from './ModularVitalSignsProcessor';
+import { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
+import { VitalSignsResult } from './VitalSignsProcessor';
+import { BloodPressureProcessor } from './blood-pressure-processor';
 
 /**
  * Resultado de medición con precisión mejorada
@@ -36,6 +38,7 @@ export class PrecisionVitalSignsProcessor {
   private calibrationManager: CalibrationManager;
   private crossValidator: CrossValidator;
   private environmentalAdjuster: EnvironmentalAdjuster;
+  private bloodPressureProcessor: BloodPressureProcessor;
   
   // Almacenamiento de señal reciente
   private recentSignals: ProcessedSignal[] = [];
@@ -54,6 +57,7 @@ export class PrecisionVitalSignsProcessor {
     this.calibrationManager = CalibrationManager.getInstance();
     this.crossValidator = CrossValidator.getInstance();
     this.environmentalAdjuster = EnvironmentalAdjuster.getInstance();
+    this.bloodPressureProcessor = new BloodPressureProcessor();
     
     console.log("PrecisionVitalSignsProcessor: Inicializado con sistemas de precisión mejorada");
   }
@@ -63,9 +67,6 @@ export class PrecisionVitalSignsProcessor {
    */
   public start(): void {
     if (this.isProcessing) return;
-    
-    // Iniciar procesador base
-    this.baseProcessor.start();
     
     this.isProcessing = true;
     console.log("PrecisionVitalSignsProcessor: Iniciado");
@@ -77,9 +78,6 @@ export class PrecisionVitalSignsProcessor {
   public stop(): void {
     if (!this.isProcessing) return;
     
-    // Detener procesador base
-    this.baseProcessor.stop();
-    
     this.isProcessing = false;
     console.log("PrecisionVitalSignsProcessor: Detenido");
   }
@@ -88,8 +86,8 @@ export class PrecisionVitalSignsProcessor {
    * Restablecer todos los subsistemas
    */
   public reset(): void {
-    // Restablecer procesador base
-    this.baseProcessor.reset();
+    // Restablecer procesadores
+    this.bloodPressureProcessor.reset();
     
     // Reiniciar sistemas de precisión
     this.environmentalAdjuster.reset();
@@ -146,82 +144,77 @@ export class PrecisionVitalSignsProcessor {
       
       // 3. Aplicar ajustes ambientales a la señal
       const environmentalConfidence = this.environmentalAdjuster.getAdjustmentFactors().confidence;
-      const adjustedSignal = { ...signal };
-      adjustedSignal.filteredValue = this.environmentalAdjuster.applySignalAdjustment(signal.filteredValue);
+      const adjustedValue = this.environmentalAdjuster.applySignalAdjustment(signal.filteredValue);
       
-      // 4. Procesar señal ajustada con el procesador base
-      const baseResult = this.baseProcessor.processSignal(adjustedSignal);
+      // 4. Process blood pressure with dedicated processor
+      const bpBuffer = this.recentSignals.slice(-30).map(s => s.filteredValue);
+      const bpResult = this.bloodPressureProcessor.processValue(adjustedValue);
       
-      // 5. Convertir a formato para validación cruzada
+      // 5. Create base result
+      const baseResult: VitalSignsResult = {
+        spo2: 0, // These would normally come from other processors
+        pressure: `${bpResult.systolic}/${bpResult.diastolic}`,
+        arrhythmiaStatus: "NORMAL",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
+      
+      // 6. Convertir a formato para validación cruzada
       const measurements: MeasurementsToValidate = {
         spo2: baseResult.spo2,
-        systolic: baseResult.bloodPressure.systolic,
-        diastolic: baseResult.bloodPressure.diastolic,
-        heartRate: baseResult.cardiac.heartRate,
+        systolic: bpResult.systolic,
+        diastolic: bpResult.diastolic,
+        heartRate: 0, // This would come from heart rate processor
         glucose: baseResult.glucose,
         cholesterol: baseResult.lipids.totalCholesterol,
         triglycerides: baseResult.lipids.triglycerides
       };
       
-      // 6. Realizar validación cruzada
+      // 7. Realizar validación cruzada
       const validationResult = this.crossValidator.validateMeasurements(measurements);
       
-      // 7. Aplicar ajustes de la validación si es necesario
+      // 8. Aplicar ajustes de la validación si es necesario
       let adjustedMeasurements = measurements;
-      let correlationConfidence = 1.0;
+      let correlationConfidence = validationResult.confidence;
       
       if (!validationResult.isValid) {
         // Aplicar correcciones de la validación
         adjustedMeasurements = this.crossValidator.applyAdjustments(measurements, validationResult);
-        correlationConfidence = validationResult.confidence;
       }
       
-      // 8. Aplicar calibración individual a cada valor
+      // 9. Aplicar calibración individual a cada valor
       const calibrationConfidence = this.calibrationManager.getCalibrationConfidence();
       let calibratedValues = { ...adjustedMeasurements };
       
       if (this.calibrationManager.isSystemCalibrated()) {
-        calibratedValues.spo2 = this.calibrationManager.applyCalibration(VitalSignType.SPO2, adjustedMeasurements.spo2 || 0);
-        calibratedValues.glucose = this.calibrationManager.applyCalibration(VitalSignType.GLUCOSE, adjustedMeasurements.glucose || 0);
-        calibratedValues.cholesterol = this.calibrationManager.applyCalibration(VitalSignType.LIPIDS, adjustedMeasurements.cholesterol || 0);
-        calibratedValues.triglycerides = this.calibrationManager.applyCalibration(VitalSignType.LIPIDS, adjustedMeasurements.triglycerides || 0);
+        calibratedValues.systolic = this.calibrationManager.applyCalibration(
+          VitalSignType.BLOOD_PRESSURE, 
+          adjustedMeasurements.systolic || 0
+        );
         
-        if (adjustedMeasurements.systolic && adjustedMeasurements.diastolic) {
-          calibratedValues.systolic = this.calibrationManager.applyCalibration(VitalSignType.BLOOD_PRESSURE, adjustedMeasurements.systolic);
-          calibratedValues.diastolic = this.calibrationManager.applyCalibration(VitalSignType.BLOOD_PRESSURE, adjustedMeasurements.diastolic);
-        }
-        
-        if (adjustedMeasurements.heartRate) {
-          calibratedValues.heartRate = this.calibrationManager.applyCalibration(VitalSignType.CARDIAC, adjustedMeasurements.heartRate);
-        }
+        calibratedValues.diastolic = this.calibrationManager.applyCalibration(
+          VitalSignType.BLOOD_PRESSURE, 
+          adjustedMeasurements.diastolic || 0
+        );
       }
       
-      // 9. Calcular precisión general
+      // 10. Calcular precisión general
       const overallPrecision = (
         calibrationConfidence * 0.4 + 
         correlationConfidence * 0.3 + 
-        environmentalConfidence * 0.3
-      );
+        environmentalConfidence * 0.3 + 
+        bpResult.precision * 0.4
+      ) / 1.4; // Weighted average with extra weight for BP precision
       
-      // 10. Crear resultado final con todos los ajustes aplicados
+      // 11. Crear resultado final con todos los ajustes aplicados
       const result: PrecisionVitalSignsResult = {
         ...baseResult,
         
-        // Reemplazar valores con los ajustados
-        spo2: Math.round(calibratedValues.spo2 || baseResult.spo2),
-        glucose: Math.round(calibratedValues.glucose || baseResult.glucose),
-        lipids: {
-          totalCholesterol: Math.round(calibratedValues.cholesterol || baseResult.lipids.totalCholesterol),
-          triglycerides: Math.round(calibratedValues.triglycerides || baseResult.lipids.triglycerides)
-        },
-        bloodPressure: {
-          systolic: Math.round(calibratedValues.systolic || baseResult.bloodPressure.systolic),
-          diastolic: Math.round(calibratedValues.diastolic || baseResult.bloodPressure.diastolic)
-        },
-        cardiac: {
-          ...baseResult.cardiac,
-          heartRate: Math.round(calibratedValues.heartRate || baseResult.cardiac.heartRate)
-        },
+        // Replace with calibrated BP values
+        pressure: `${Math.round(calibratedValues.systolic || bpResult.systolic)}/${Math.round(calibratedValues.diastolic || bpResult.diastolic)}`,
         
         // Agregar información de precisión
         isCalibrated: this.calibrationManager.isSystemCalibrated(),
@@ -239,9 +232,7 @@ export class PrecisionVitalSignsProcessor {
       this.lastResult = result;
       
       console.log("PrecisionVitalSignsProcessor: Resultado procesado con precisión mejorada", {
-        spo2: result.spo2,
-        bloodPressure: `${result.bloodPressure.systolic}/${result.bloodPressure.diastolic}`,
-        heartRate: result.cardiac.heartRate,
+        pressure: result.pressure,
         calibrated: result.isCalibrated,
         precision: result.precisionMetrics.overallPrecision.toFixed(2)
       });
@@ -257,20 +248,15 @@ export class PrecisionVitalSignsProcessor {
    * Crear resultado vacío para cuando no hay procesamiento válido
    */
   private createEmptyResult(): PrecisionVitalSignsResult {
-    const baseEmpty = {
-      ...this.baseProcessor.processSignal({
-        timestamp: Date.now(),
-        rawValue: 0,
-        filteredValue: 0,
-        quality: 0,
-        fingerDetected: false,
-        perfusionIndex: 0,
-        roi: { x: 0, y: 0, width: 0, height: 0 }
-      })
-    };
-    
     return {
-      ...baseEmpty,
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      },
       isCalibrated: this.calibrationManager.isSystemCalibrated(),
       correlationValidated: false,
       environmentallyAdjusted: false,
@@ -284,7 +270,7 @@ export class PrecisionVitalSignsProcessor {
   }
   
   /**
-   * Verificar si el sistema está calibrado
+   * Check if the system is calibrated
    */
   public isCalibrated(): boolean {
     return this.calibrationManager.isSystemCalibrated();
@@ -308,7 +294,7 @@ export class PrecisionVitalSignsProcessor {
       calibrationFactors: this.calibrationManager.getCalibrationFactors(),
       environmentalConditions: this.environmentalAdjuster.getCurrentConditions(),
       adjustmentFactors: this.environmentalAdjuster.getAdjustmentFactors(),
-      baseProcessorDiagnostics: this.baseProcessor.getDiagnostics()
+      bloodPressureQuality: this.bloodPressureProcessor.getConfidence()
     };
   }
 }
