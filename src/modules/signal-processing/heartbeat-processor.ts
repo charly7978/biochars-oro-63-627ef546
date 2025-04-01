@@ -10,15 +10,15 @@ import { HeartbeatProcessorAdapter } from './adapters/HeartbeatProcessorAdapter'
  */
 export class HeartbeatProcessor {
   // Umbral de pico mucho más sensible para señales débiles
-  private readonly MIN_PEAK_AMPLITUDE = 0.0035; // Reducido a 0.35% para detectar señales muy débiles
+  private readonly MIN_PEAK_AMPLITUDE = 0.0015; // Reducido aún más para mayor sensibilidad
   // Changed from readonly to private to allow configuration
-  private minPeakIntervalMs = 250; // Revisado para permitir latidos más frecuentes
+  private minPeakIntervalMs = 200; // Reducido para permitir latidos más frecuentes
   private readonly MAX_PEAK_INTERVAL_MS = 1500;
-  private readonly CONFIDENCE_THRESHOLD = 0.10; // Reducido para ser más sensible
+  private readonly CONFIDENCE_THRESHOLD = 0.05; // Reducido para ser mucho más sensible
   
   // Calibración automática para mejor sensibilidad en señales débiles
-  private dynamicThreshold = 0.008; // Comenzar con un umbral bajo
-  private adaptationRate = 0.15; // Tasa de adaptación del umbral
+  private dynamicThreshold = 0.003; // Umbral inicial mucho más bajo
+  private adaptationRate = 0.25; // Tasa de adaptación más agresiva
   private peakBuffer: number[] = [];
   private signalHistory: number[] = [];
   private timeHistory: number[] = [];
@@ -29,7 +29,7 @@ export class HeartbeatProcessor {
   private bpmValues: number[] = [];
   
   // Suavizado y filtrado
-  private readonly SMOOTHING_FACTOR = 0.3; // Mayor suavizado para señales débiles
+  private readonly SMOOTHING_FACTOR = 0.5; // Menor suavizado para preservar picos pequeños
   private lastFilteredValue = 0;
   
   // Adaptador para salida compatible
@@ -37,12 +37,21 @@ export class HeartbeatProcessor {
   
   // Diagnóstico y depuración
   private consecutiveWeakSignals = 0;
-  private readonly MAX_WEAK_SIGNALS = 12; // Aumentar para mayor estabilidad con señales débiles
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.004; // Umbral muy bajo para detectar débiles
+  private readonly MAX_WEAK_SIGNALS = 5; // Reducido para mayor sensibilidad
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.001; // Umbral extremadamente bajo para detección
+  
+  // Amplificación dinámica para señales débiles
+  private signalAmplification = 5.0; // Factor de amplificación alto para señales débiles
+  private readonly MAX_AMPLIFICATION = 10.0;
+  private readonly MIN_AMPLIFICATION = 1.0;
   
   constructor() {
     this.adapter = new HeartbeatProcessorAdapter();
-    console.log("HeartbeatProcessor: Instanciado con configuración HIPER-SENSIBLE");
+    console.log("HeartbeatProcessor: Instanciado con configuración ULTRA-SENSIBLE", {
+      umbralPico: this.dynamicThreshold,
+      factorAmplificacion: this.signalAmplification,
+      suavizado: this.SMOOTHING_FACTOR
+    });
   }
   
   /**
@@ -50,28 +59,38 @@ export class HeartbeatProcessor {
    * OPTIMIZADO PARA SEÑALES EXTREMADAMENTE DÉBILES
    */
   processSignal(value: number): ProcessedHeartbeatSignal {
+    // Amplificar señal inmediatamente antes de cualquier procesamiento
+    const amplifiedValue = this.amplifySignal(value);
+    
     // Diagnóstico de señal débil
-    const signalStrength = Math.abs(value);
+    const signalStrength = Math.abs(amplifiedValue);
     if (signalStrength < this.WEAK_SIGNAL_THRESHOLD) {
       this.consecutiveWeakSignals++;
       
-      // Registrar para depuración cada 10 muestras
-      if (this.consecutiveWeakSignals % 10 === 0) {
-        console.log("HeartbeatProcessor: Señal EXTREMADAMENTE débil", {
-          valor: value,
-          intensidadAbsoluta: signalStrength,
-          umbralMinimo: this.WEAK_SIGNAL_THRESHOLD,
-          señalesDebilesSeguidas: this.consecutiveWeakSignals,
+      // Aumentar amplificación para señales muy débiles
+      this.adjustAmplification(true);
+      
+      // Registrar para depuración cada 5 muestras
+      if (this.consecutiveWeakSignals % 5 === 0) {
+        console.log("HeartbeatProcessor: Señal EXTREMADAMENTE débil - aumentando amplificación", {
+          valorOriginal: value,
+          valorAmplificado: amplifiedValue,
+          factorAmplificacion: this.signalAmplification,
           umbralActualPicos: this.dynamicThreshold
         });
       }
     } else {
       // Reducir contador de señales débiles
       this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 2);
+      
+      // Ajustar amplificación gradualmente hacia abajo
+      if (this.consecutiveWeakSignals === 0) {
+        this.adjustAmplification(false);
+      }
     }
     
     // Aplicar filtro de paso bajo para señales débiles
-    const filteredValue = this.applyLowPassFilter(value);
+    const filteredValue = this.applyLowPassFilter(amplifiedValue);
     
     // Actualizar historial (para detección dinámica)
     const now = Date.now();
@@ -89,12 +108,14 @@ export class HeartbeatProcessor {
       
       // Diagnóstico de pico detectado
       console.log("HeartbeatProcessor: PICO DETECTADO en señal", {
+        valorOriginal: value,
+        valorAmplificado: amplifiedValue,
         valorFiltrado: filteredValue,
         umbralActual: this.dynamicThreshold,
         confianza: confidence,
+        factorAmplificacion: this.signalAmplification,
         tiempoTranscurrido: this.lastPeakTime ? now - this.lastPeakTime : null,
-        totalPicos: this.peakCount,
-        bpm: this.calculateInstantaneousBPM(now)
+        totalPicos: this.peakCount
       });
     }
     
@@ -112,17 +133,43 @@ export class HeartbeatProcessor {
   }
   
   /**
+   * Amplifica señales débiles dinámicamente
+   */
+  private amplifySignal(value: number): number {
+    return value * this.signalAmplification;
+  }
+  
+  /**
+   * Ajusta dinámicamente el factor de amplificación
+   */
+  private adjustAmplification(increase: boolean): void {
+    if (increase) {
+      // Aumentar amplificación para señales débiles
+      this.signalAmplification = Math.min(
+        this.MAX_AMPLIFICATION,
+        this.signalAmplification * 1.05
+      );
+    } else {
+      // Reducir gradualmente la amplificación
+      this.signalAmplification = Math.max(
+        this.MIN_AMPLIFICATION,
+        this.signalAmplification * 0.98
+      );
+    }
+  }
+  
+  /**
    * Filtro de paso bajo más agresivo para señales débiles
    */
   private applyLowPassFilter(value: number): number {
     // Determinar factor dinámico de suavizado basado en la fuerza de señal
     const signalStrength = Math.abs(value);
     
-    // Más suavizado para señales extremadamente débiles
+    // Menos suavizado para preservar características de picos pequeños
     let smoothingFactor = this.SMOOTHING_FACTOR;
     
     if (signalStrength < 0.01) {
-      smoothingFactor = 0.15; // Más suavizado para señales muy débiles
+      smoothingFactor = 0.7; // Menos suavizado para señales muy débiles
     }
     
     // Aplicar filtro con factor dinámico
@@ -159,14 +206,14 @@ export class HeartbeatProcessor {
     const range = max - min;
     
     // Para señales extremadamente débiles, usar umbral absoluto muy bajo
-    if (range < 0.02) {
+    if (range < 0.01) {
       // Reducir umbral para señales muy débiles
-      this.dynamicThreshold = Math.max(0.0025, this.dynamicThreshold * 0.9);
+      this.dynamicThreshold = Math.max(0.001, this.dynamicThreshold * 0.8);
       return;
     }
     
     // Calcular nuevo umbral dinámico como % del rango (más bajo para señales débiles)
-    const newThreshold = range * 0.15; // 15% del rango como umbral
+    const newThreshold = range * 0.10; // 10% del rango como umbral (reducido)
     
     // Actualizar gradualmente
     this.dynamicThreshold = 
@@ -174,7 +221,7 @@ export class HeartbeatProcessor {
       this.adaptationRate * newThreshold;
     
     // Asegurar umbral mínimo para detectar señales extremadamente débiles
-    this.dynamicThreshold = Math.max(0.0035, this.dynamicThreshold);
+    this.dynamicThreshold = Math.max(0.001, this.dynamicThreshold);
   }
   
   /**
@@ -197,17 +244,17 @@ export class HeartbeatProcessor {
     const currentValue = recentValues[recentValues.length - 1];
     const previousValue = recentValues[recentValues.length - 2] || 0;
     
-    // Condiciones para pico:
-    // 1. Valor actual mayor que umbral
+    // Condiciones para pico - CRITERIOS ULTRA SENSIBLES:
+    // 1. Valor actual mayor que umbral o si tenemos muchas señales débiles consecutivas
     const aboveThreshold = Math.abs(currentValue) > this.dynamicThreshold ||
-                          (this.consecutiveWeakSignals > 10 && Math.abs(currentValue) > this.WEAK_SIGNAL_THRESHOLD);
+                          (this.consecutiveWeakSignals > 5 && Math.abs(currentValue) > this.WEAK_SIGNAL_THRESHOLD);
     
-    // 2. Señal en punto de inflexión
+    // 2. Señal en punto de inflexión - más sensible
     const isPeaking = currentValue < previousValue && 
                      previousValue > (recentValues[recentValues.length - 3] || 0);
     
-    // 3. Verificación adicional para evitar falsos positivos
-    const isLocalMaximum = previousValue === Math.max(...recentValues);
+    // 3. Verificación adicional menos estricta
+    const isLocalMaximum = previousValue >= Math.max(...recentValues.slice(0, -1));
     
     // Determinar si es un pico - CRITERIOS MÁS SENSIBLES
     const isPeak = aboveThreshold && (isPeaking || isLocalMaximum);
@@ -216,24 +263,9 @@ export class HeartbeatProcessor {
     let confidence = 0;
     
     if (isPeak) {
-      // Calcular confianza basada en amplitud relativa
-      const minValue = Math.min(...this.signalHistory.slice(-10));
-      const maxValue = Math.max(...this.signalHistory.slice(-10));
-      const range = maxValue - minValue;
-      
-      // Para señales débiles, calcular confianza normalizada al rango
-      if (range > 0) {
-        const normalizedAmplitude = (previousValue - minValue) / range;
-        confidence = Math.min(1, normalizedAmplitude * 1.5); // Boost para confianza
-      } else {
-        // Si no hay rango, confianza mínima pero suficiente para registrar
-        confidence = 0.15;
-      }
-      
-      // Para señales extremadamente débiles, asignar confianza mínima
-      if (this.consecutiveWeakSignals > 8) {
-        confidence = Math.max(0.15, confidence * 0.8);
-      }
+      // Calcular confianza basada en amplitud relativa con umbral mínimo más bajo
+      confidence = Math.max(0.15, Math.min(1.0, 
+                            Math.abs(currentValue) / (this.dynamicThreshold * 2)));
     }
     
     return { isPeak, confidence };
@@ -330,10 +362,18 @@ export class HeartbeatProcessor {
       this.minPeakIntervalMs = options.minPeakDistance;
     }
     
+    // Nuevo: configuración de amplificación
+    if (options.signalAmplification !== undefined) {
+      this.signalAmplification = Math.max(this.MIN_AMPLIFICATION, 
+                                         Math.min(this.MAX_AMPLIFICATION, 
+                                                 options.signalAmplification));
+    }
+    
     console.log("HeartbeatProcessor: Configurado con opciones personalizadas", {
       umbralPico: this.dynamicThreshold,
       tasaAdaptacion: this.adaptationRate,
-      distanciaMinimaPicos: this.minPeakIntervalMs
+      distanciaMinimaPicos: this.minPeakIntervalMs,
+      amplificacion: this.signalAmplification
     });
   }
   
@@ -341,7 +381,8 @@ export class HeartbeatProcessor {
    * Resetea el procesador
    */
   reset(): void {
-    this.dynamicThreshold = 0.008;
+    this.dynamicThreshold = 0.003;
+    this.signalAmplification = 5.0;
     this.peakBuffer = [];
     this.signalHistory = [];
     this.timeHistory = [];
@@ -352,6 +393,9 @@ export class HeartbeatProcessor {
     this.consecutiveWeakSignals = 0;
     this.adapter.reset();
     
-    console.log("HeartbeatProcessor: Reseteado a valores iniciales");
+    console.log("HeartbeatProcessor: Reseteado a valores iniciales", {
+      umbralInicial: this.dynamicThreshold,
+      amplificacionInicial: this.signalAmplification
+    });
   }
 }
