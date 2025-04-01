@@ -7,8 +7,6 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
-import MultiCameraPPGView from "@/components/MultiCameraPPGView";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 const Index = () => {
@@ -24,7 +22,6 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState("standard");
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -35,18 +32,14 @@ const Index = () => {
     const elem = document.documentElement;
     try {
       if (elem.requestFullscreen) {
-        await elem.requestFullscreen({ navigationUI: "hide" });
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
-      } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen({ navigationUI: "hide" });
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen({ navigationUI: "hide" });
+        await elem.requestFullscreen();
       }
       
+      // Try to activate Android immersive mode if available
       if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.AndroidFullScreen) {
-          window.AndroidFullScreen.immersiveMode(
+        if (window.hasOwnProperty('AndroidFullScreen')) {
+          const AndroidFullScreen = (window as any).AndroidFullScreen;
+          AndroidFullScreen.immersiveMode(
             function() { console.log('Immersive mode enabled'); },
             function() { console.log('Failed to enable immersive mode'); }
           );
@@ -72,7 +65,7 @@ const Index = () => {
     
     const setMaxResolution = () => {
       if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = 1 / window.devicePixelRatio;
+        document.body.style.zoom = (1 / window.devicePixelRatio).toString();
       }
     };
     
@@ -189,24 +182,28 @@ const Index = () => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
     
-    const capabilities = videoTrack.getCapabilities();
-    if (capabilities.width && capabilities.height) {
-      const maxWidth = capabilities.width.max;
-      const maxHeight = capabilities.height.max;
-      
-      videoTrack.applyConstraints({
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
-        torch: true
-      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities()?.torch) {
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
+    // Use standard ImageCapture API if available
+    if (typeof window.ImageCapture !== 'undefined') {
+      const imageCapture = new window.ImageCapture(videoTrack);
+      processStreamWithImageCapture(imageCapture);
+    } else {
+      // Fallback to canvas-based capturing
+      processStreamWithCanvas(videoTrack);
     }
     
+    // Try to enable camera torch if available
+    if (videoTrack.getCapabilities) {
+      const capabilities = videoTrack.getCapabilities();
+      if (capabilities && capabilities.torch) {
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error activando linterna:", err));
+      }
+    }
+  };
+  
+  const processStreamWithImageCapture = (imageCapture) => {
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) {
@@ -238,6 +235,39 @@ const Index = () => {
 
     processImage();
   };
+  
+  const processStreamWithCanvas = (videoTrack) => {
+    // Create a video element to display the stream
+    const videoElement = document.createElement('video');
+    videoElement.srcObject = new MediaStream([videoTrack]);
+    videoElement.autoplay = true;
+    videoElement.style.display = 'none';
+    document.body.appendChild(videoElement);
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    const processFrame = () => {
+      if (!isMonitoring) {
+        document.body.removeChild(videoElement);
+        return;
+      }
+      
+      if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+        tempCanvas.width = videoElement.videoWidth;
+        tempCanvas.height = videoElement.videoHeight;
+        tempCtx.drawImage(videoElement, 0, 0);
+        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        processFrame(imageData);
+      }
+      
+      requestAnimationFrame(processFrame);
+    };
+    
+    videoElement.onloadedmetadata = () => {
+      processFrame();
+    };
+  };
 
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
@@ -246,22 +276,17 @@ const Index = () => {
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        setVitalSigns(vitals);
+        setVitalSigns({
+          spo2: vitals.spo2,
+          pressure: vitals.pressure,
+          arrhythmiaStatus: vitals.arrhythmiaStatus,
+        });
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
       setSignalQuality(lastSignal.quality);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
-
-  const handleTabChange = (value) => {
-    setActiveTab(value);
-    if (isMonitoring && value === "experimental") {
-      // Stop standard monitoring when switching to experimental
-      stopMonitoring();
-      toast.info("Standard monitoring stopped to switch to experimental mode");
-    }
-  };
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -277,95 +302,77 @@ const Index = () => {
         touchAction: 'none',
         userSelect: 'none',
       }}>
-      
-      <Tabs 
-        defaultValue="standard" 
-        value={activeTab}
-        onValueChange={handleTabChange} 
-        className="w-full h-full flex flex-col">
-        <div className="bg-gray-900/80 px-2">
-          <TabsList className="w-full">
-            <TabsTrigger value="standard" className="flex-1">Standard PPG</TabsTrigger>
-            <TabsTrigger value="experimental" className="flex-1">Experimental</TabsTrigger>
-          </TabsList>
+      <div className="flex-1 relative">
+        <div className="absolute inset-0">
+          <CameraView 
+            onStreamReady={handleStreamReady}
+            isMonitoring={isCameraOn}
+            isFingerDetected={lastSignal?.fingerDetected}
+            signalQuality={signalQuality}
+          />
         </div>
 
-        <TabsContent value="standard" className="flex-1 relative overflow-hidden">
-          <div className="absolute inset-0">
-            <CameraView 
-              onStreamReady={handleStreamReady}
-              isMonitoring={isCameraOn}
-              isFingerDetected={lastSignal?.fingerDetected}
-              signalQuality={signalQuality}
+        <div className="relative z-10 h-full flex flex-col">
+          <div className="flex-1">
+            <PPGSignalMeter 
+              value={lastSignal?.filteredValue || 0}
+              quality={lastSignal?.quality || 0}
+              isFingerDetected={lastSignal?.fingerDetected || false}
+              onStartMeasurement={startMonitoring}
+              onReset={stopMonitoring}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              rawArrhythmiaData={null}
             />
           </div>
 
-          <div className="relative z-10 h-full flex flex-col">
-            <div className="flex-1">
-              <PPGSignalMeter 
-                value={lastSignal?.filteredValue || 0}
-                quality={lastSignal?.quality || 0}
-                isFingerDetected={lastSignal?.fingerDetected || false}
-                onStartMeasurement={startMonitoring}
-                onReset={stopMonitoring}
-                arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-                rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
-              />
-            </div>
-
-            <div className="absolute bottom-[200px] left-0 right-0 px-4">
-              <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-                <div className="grid grid-cols-4 gap-2">
-                  <VitalSign 
-                    label="FRECUENCIA CARDÍACA"
-                    value={heartRate || "--"}
-                    unit="BPM"
-                  />
-                  <VitalSign 
-                    label="SPO2"
-                    value={vitalSigns.spo2 || "--"}
-                    unit="%"
-                  />
-                  <VitalSign 
-                    label="PRESIÓN ARTERIAL"
-                    value={vitalSigns.pressure}
-                    unit="mmHg"
-                  />
-                  <VitalSign 
-                    label="ARRITMIAS"
-                    value={vitalSigns.arrhythmiaStatus}
-                  />
-                </div>
+          <div className="absolute bottom-[200px] left-0 right-0 px-4">
+            <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
+              <div className="grid grid-cols-4 gap-2">
+                <VitalSign 
+                  label="FRECUENCIA CARDÍACA"
+                  value={heartRate || "--"}
+                  unit="BPM"
+                />
+                <VitalSign 
+                  label="SPO2"
+                  value={vitalSigns.spo2 || "--"}
+                  unit="%"
+                />
+                <VitalSign 
+                  label="PRESIÓN ARTERIAL"
+                  value={vitalSigns.pressure}
+                  unit="mmHg"
+                />
+                <VitalSign 
+                  label="ARRITMIAS"
+                  value={vitalSigns.arrhythmiaStatus}
+                />
               </div>
-            </div>
-
-            {isMonitoring && (
-              <div className="absolute bottom-40 left-0 right-0 text-center">
-                <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
-              </div>
-            )}
-
-            <div className="h-[80px] grid grid-cols-2 gap-px bg-gray-900 mt-auto">
-              <button 
-                onClick={startMonitoring}
-                className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
-              >
-                INICIAR
-              </button>
-              <button 
-                onClick={stopMonitoring}
-                className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
-              >
-                RESET
-              </button>
             </div>
           </div>
-        </TabsContent>
 
-        <TabsContent value="experimental" className="flex-1 relative overflow-hidden p-4">
-          <MultiCameraPPGView />
-        </TabsContent>
-      </Tabs>
+          {isMonitoring && (
+            <div className="absolute bottom-40 left-0 right-0 text-center">
+              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+            </div>
+          )}
+
+          <div className="h-[80px] grid grid-cols-2 gap-px bg-gray-900 mt-auto">
+            <button 
+              onClick={startMonitoring}
+              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
+            >
+              INICIAR
+            </button>
+            <button 
+              onClick={stopMonitoring}
+              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
+            >
+              RESET
+            </button>
+          </div>
+        </div>
+      </div>
 
       <MeasurementConfirmationDialog
         open={showConfirmDialog}

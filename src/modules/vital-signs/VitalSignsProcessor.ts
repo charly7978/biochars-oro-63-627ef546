@@ -118,10 +118,8 @@ export class VitalSignsProcessor {
     // Use the process method with proper handling of the async result
     let pressure = "--/--";
     try {
-      // We use the synchronous processSync method or we handle the async nature properly
-      const bpResult = this.bpProcessor.processSync ? 
-        this.bpProcessor.processSync(filtered) : 
-        { systolic: 120, diastolic: 80 }; // Fallback if async-only
+      // We use the synchronous processSync method for direct real-time processing
+      const bpResult = this.bpProcessor.processSync(filtered);
 
       if (bpResult && bpResult.systolic > 0 && bpResult.diastolic > 0) {
         pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
