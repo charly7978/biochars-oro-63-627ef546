@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -10,6 +9,7 @@ import { SpO2Channel } from '../signal-processing/channels/SpO2Channel';
 import { BloodPressureChannel } from '../signal-processing/channels/BloodPressureChannel';
 import { OptimizedSignalDistributor } from '../signal-processing/OptimizedSignalDistributor';
 import { VitalSignType } from '../signal-processing/channels/SpecializedChannel';
+import { SignalDistributorConfig } from '../signal-processing/interfaces';
 
 // Define tipos para resultados de signos vitales
 export interface ModularVitalSignsResult {
@@ -66,11 +66,12 @@ export class ModularVitalSignsProcessor {
     };
     
     // Crear distribuidor de señales con canales especializados
-    this.signalDistributor = new OptimizedSignalDistributor([
-      new CardiacChannel('cardiac'),
-      new SpO2Channel('spo2'),
-      new BloodPressureChannel('bp')
-    ]);
+    this.signalDistributor = new OptimizedSignalDistributor();
+    
+    // Add the default channels
+    this.signalDistributor.registerChannel(new CardiacChannel(VitalSignType.CARDIAC));
+    this.signalDistributor.registerChannel(new SpO2Channel(VitalSignType.SPO2));
+    this.signalDistributor.registerChannel(new BloodPressureChannel(VitalSignType.BLOOD_PRESSURE));
     
     // Configurar el distribuidor
     this.configureDistributor();
@@ -80,7 +81,7 @@ export class ModularVitalSignsProcessor {
    * Configura el distribuidor de señales según opciones
    */
   private configureDistributor(): void {
-    const config = {
+    const config: SignalDistributorConfig = {
       channels: {
         [VitalSignType.CARDIAC]: {
           enabled: true,
@@ -97,10 +98,24 @@ export class ModularVitalSignsProcessor {
       calibrationMode: this.options.calibrationMode
     };
     
-    // Intentar aplicar configuración si existe el método
-    if (typeof this.signalDistributor.setConfiguration === 'function') {
-      this.signalDistributor.setConfiguration(config);
-    }
+    // Apply the configuration directly to the distributor
+    this.signalDistributor.processSignal(0, config); // Pass the config as additional parameter
+  }
+  
+  /**
+   * Start processing signals
+   */
+  start(): void {
+    this.isProcessing = true;
+    this.signalDistributor.start();
+  }
+  
+  /**
+   * Stop processing signals
+   */
+  stop(): void {
+    this.isProcessing = false;
+    this.signalDistributor.stop();
   }
   
   /**
@@ -113,12 +128,12 @@ export class ModularVitalSignsProcessor {
     
     try {
       // Distribuir señal a todos los canales activos
-      const distributionResult = this.signalDistributor.distributeSignal(signal.value);
+      const distributionResult = this.signalDistributor.processSignal(signal.value);
       
       // Obtener resultados de canales específicos
-      const cardiacChannel = this.signalDistributor.getChannel('cardiac');
-      const spo2Channel = this.signalDistributor.getChannel('spo2');
-      const bpChannel = this.signalDistributor.getChannel('bp');
+      const cardiacChannel = this.signalDistributor.getChannel(VitalSignType.CARDIAC);
+      const spo2Channel = this.signalDistributor.getChannel(VitalSignType.SPO2);
+      const bpChannel = this.signalDistributor.getChannel(VitalSignType.BLOOD_PRESSURE);
       
       // Verificar si tenemos suficiente calidad para resultados
       const hasQualitySignal = signal.quality > 30 && signal.fingerDetected;
@@ -213,21 +228,6 @@ export class ModularVitalSignsProcessor {
         intervals: rrIntervals
       }
     };
-  }
-  
-  /**
-   * Inicia el procesamiento
-   */
-  start(): void {
-    this.isProcessing = true;
-    this.signalDistributor.reset();
-  }
-  
-  /**
-   * Detiene el procesamiento
-   */
-  stop(): void {
-    this.isProcessing = false;
   }
   
   /**

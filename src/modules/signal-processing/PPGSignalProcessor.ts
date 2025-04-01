@@ -53,7 +53,7 @@ class PPGSignalProcessor {
     
     // Process value if we have enough data
     if (this.buffer.length >= 3) {
-      // Fixed: Pass the entire buffer to applyAdaptiveFilter instead of a single value
+      // Pass the entire buffer to applyAdaptiveFilter
       this.lastProcessedValue = applyAdaptiveFilter(value, this.buffer, 0.3);
       return this.lastProcessedValue;
     }
@@ -64,7 +64,16 @@ class PPGSignalProcessor {
   /**
    * Process signal with more details for signal processing hooks
    */
-  processSignal(value: number): any {
+  processSignal(value: number): {
+    timestamp: number;
+    rawValue: number;
+    filteredValue: number;
+    normalizedValue: number;
+    amplifiedValue: number;
+    quality: number;
+    fingerDetected: boolean;
+    signalStrength: number;
+  } {
     const timestamp = Date.now();
     const processedValue = this.processValue(value);
     const fingerDetected = isFingerDetected(this.buffer);

@@ -47,18 +47,20 @@ export class OptimizedSignalDistributor {
   /**
    * Create a new signal distributor with default channels
    */
-  constructor(config?: SignalDistributorConfig) {
-    // Apply configuration if provided
-    if (config) {
-      this.config = { ...this.config, ...config };
+  constructor(channels?: OptimizedSignalChannel[]) {
+    // If channels provided, register them
+    if (channels && channels.length > 0) {
+      for (const channel of channels) {
+        this.registerChannel(channel);
+      }
+    } else {
+      // Initialize default channels
+      this.registerChannel(new GlucoseChannel() as unknown as OptimizedSignalChannel);
+      this.registerChannel(new LipidsChannel() as unknown as OptimizedSignalChannel);
+      this.registerChannel(new BloodPressureChannel() as unknown as OptimizedSignalChannel);
+      this.registerChannel(new SpO2Channel() as unknown as OptimizedSignalChannel);
+      this.registerChannel(new CardiacChannel() as unknown as OptimizedSignalChannel);
     }
-    
-    // Initialize default channels
-    this.registerChannel(new GlucoseChannel() as unknown as OptimizedSignalChannel);
-    this.registerChannel(new LipidsChannel() as unknown as OptimizedSignalChannel);
-    this.registerChannel(new BloodPressureChannel() as unknown as OptimizedSignalChannel);
-    this.registerChannel(new SpO2Channel() as unknown as OptimizedSignalChannel);
-    this.registerChannel(new CardiacChannel() as unknown as OptimizedSignalChannel);
   }
   
   /**
@@ -86,12 +88,17 @@ export class OptimizedSignalDistributor {
   /**
    * Process a signal through all channels
    */
-  processPPGSignal(signal: number, quality?: number): SignalProcessingResult {
+  processSignal(signal: number, config?: SignalDistributorConfig): SignalProcessingResult {
     const startTime = Date.now();
     const channelResults = new Map<VitalSignType, any>();
     
+    // Update configuration if provided
+    if (config) {
+      this.config = { ...this.config, ...config };
+    }
+    
     // Update diagnostics
-    this.diagnostics.quality = quality || 0;
+    this.diagnostics.quality = 0;
     this.diagnostics.signalStrength = Math.abs(signal);
     
     // Process signal through all channels
@@ -190,6 +197,21 @@ export class OptimizedSignalDistributor {
   }
   
   /**
+   * Start processing - method for compatibility with ModularVitalSignsProcessor
+   */
+  start(): void {
+    // Reset all channels to ensure clean start
+    this.reset();
+  }
+  
+  /**
+   * Stop processing - method for compatibility with ModularVitalSignsProcessor
+   */
+  stop(): void {
+    // No specific action needed for stopping
+  }
+  
+  /**
    * Get diagnostic information
    */
   getDiagnostics(): SignalDiagnosticInfo {
@@ -197,21 +219,8 @@ export class OptimizedSignalDistributor {
   }
   
   /**
-   * Methods for ModularVitalSignsProcessor compatibility
+   * Apply feedback to channels
    */
-  start(): void {
-    // Reset all channels to ensure clean start
-    this.reset();
-  }
-  
-  stop(): void {
-    // No specific action needed
-  }
-  
-  processSignal(signal: number, quality?: number): SignalProcessingResult {
-    return this.processPPGSignal(signal, quality);
-  }
-  
   applyFeedback(type: VitalSignType, feedback: any): void {
     // Implementation for feedback mechanism
     console.log(`Feedback received for ${type}:`, feedback);

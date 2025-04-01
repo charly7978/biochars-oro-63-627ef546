@@ -14,3 +14,9 @@ export {
   type PrecisionVitalSignsResult, 
   type PrecisionProcessorOptions 
 } from './PrecisionVitalSignsProcessor';
+
+// Export types from vital-signs-result
+export { VitalSignsResult } from './types/vital-signs-result';
+
+// Export base processor
+export { VitalSignsProcessor } from '../VitalSignsProcessor';
