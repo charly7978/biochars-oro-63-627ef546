@@ -2,126 +2,80 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Definiciones de tipos para procesamiento de señal
+ * Type definitions for signal processing
  */
 
-/**
- * Opciones de configuración para procesadores de señal
- */
-export interface SignalProcessingOptions {
-  // Factor de amplificación de señal
-  amplificationFactor?: number;
-  
-  // Fuerza de filtrado
-  filterStrength?: number;
-  
-  // Umbral de calidad de señal
-  qualityThreshold?: number;
-  
-  // Sensibilidad de detección de dedo
-  fingerDetectionSensitivity?: number;
-  
-  // Nuevos parámetros para control adaptativo
-  useAdaptiveControl?: boolean;
-  
-  // Usar predicción para mejorar calidad
-  qualityEnhancedByPrediction?: boolean;
-  
-  // Horizonte de predicción
-  predictionHorizon?: number;
-  
-  // Tasa de adaptación
-  adaptationRate?: number;
-}
+import { VitalSignType } from "./channels/SpecializedChannel";
 
 /**
- * Interfaz común para todos los procesadores de señal
- */
-export interface SignalProcessor<T> {
-  // Procesa un valor de señal y devuelve un resultado
-  processSignal(value: number): T;
-  
-  // Configuración del procesador
-  configure(options: SignalProcessingOptions): void;
-  
-  // Reinicia el procesador
-  reset(): void;
-}
-
-/**
- * Resultado del procesamiento de señal PPG
+ * Processed PPG signal data
  */
 export interface ProcessedPPGSignal {
-  // Marca de tiempo de la señal
   timestamp: number;
-  
-  // Valor sin procesar
   rawValue: number;
-  
-  // Valor filtrado
   filteredValue: number;
-  
-  // Valor normalizado
   normalizedValue: number;
-  
-  // Valor amplificado
-  amplifiedValue: number;
-  
-  // Calidad de la señal (0-100)
   quality: number;
-  
-  // Indicador de detección de dedo
   fingerDetected: boolean;
-  
-  // Fuerza de la señal
+  amplifiedValue: number;
   signalStrength: number;
 }
 
 /**
- * Resultado del procesamiento de señal cardíaca
+ * Processed heartbeat signal data
  */
 export interface ProcessedHeartbeatSignal {
-  // Marca de tiempo de la señal
   timestamp: number;
-  
-  // Valor de la señal
   value: number;
-  
-  // Indicador de detección de pico
   isPeak: boolean;
-  
-  // Confianza en la detección del pico (0-1)
-  peakConfidence: number;
-  
-  // BPM instantáneo (basado en intervalo RR)
-  instantaneousBPM: number | null;
-  
-  // Intervalo RR en ms
+  bpm: number;
   rrInterval: number | null;
-  
-  // Variabilidad del ritmo cardíaco
+  confidence: number;
+  instantaneousBPM: number | null;
   heartRateVariability: number | null;
+  rrData?: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
 }
 
 /**
- * Tipos de procesadores disponibles
+ * Configuration options for signal processing
  */
-export enum ProcessorType {
-  PPG = 'ppg',
-  HEARTBEAT = 'heartbeat'
+export interface SignalProcessingOptions {
+  filterStrength?: number;
+  qualityThreshold?: number;
+  adaptiveFiltering?: boolean;
+  fingerDetectionSensitivity?: number;
+  amplificationFactor?: number;
+  useAdaptiveControl?: boolean;
+  qualityEnhancedByPrediction?: boolean;
+  adaptationRate?: number;
+  predictionHorizon?: number;
 }
 
 /**
- * Opciones para el sistema de procesamiento completo
+ * Interface for optimized signal channels
  */
-export interface ProcessingSystemOptions extends SignalProcessingOptions {
-  // Tipo de procesador a utilizar
-  processorType?: ProcessorType;
-  
-  // Frecuencia de muestreo objetivo
-  targetSampleRate?: number;
-  
-  // Funciones de callback
-  onResultsReady?: (result: ProcessedPPGSignal | ProcessedHeartbeatSignal) => void;
-  onError?: (error: Error) => void;
+export interface OptimizedSignalChannel {
+  type: VitalSignType;
+  id: string;
+  processSignal(signal: number): any;
+  processValue(signal: number): any;
+  calculateQuality(signal: number): number;
+  getQuality(): number;
+  reset(): void;
+  applyFeedback(feedback: any): void;
 }
+
+/**
+ * Interface for signal processors
+ */
+export interface SignalProcessor {
+  processSignal(signal: number): any;
+  reset(): void;
+  configure(options: Partial<SignalProcessingOptions>): void;
+}
+
+// Export the types
+export { VitalSignType };

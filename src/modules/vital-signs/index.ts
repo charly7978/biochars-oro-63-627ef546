@@ -7,7 +7,7 @@
 
 // Export the traditional processor
 export { VitalSignsProcessor } from './VitalSignsProcessor';
-export type { VitalSignsResult as TraditionalVitalSignsResult } from './types/vital-signs-result';
+export type { VitalSignsResult } from './types/vital-signs-result';
 
 // Export the new modular processor
 export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
@@ -41,40 +41,30 @@ export * from './specialized/CardiacProcessor';
 export * from './arrhythmia/types';
 export * from './shared-signal-utils';
 
-// Export enhanced peak detection and signal quality modules
+// Export enhanced detection modules directly (without duplicating with the utils exports)
 export * from './enhanced-detection/fourier-analyzer';
 export * from './enhanced-detection/wavelet-analyzer';
 export * from './enhanced-detection/multi-beat-validator';
 export * from './enhanced-detection/adaptive-threshold';
 export * from './enhanced-detection/spectral-analyzer';
 
-// Export specific utility functions
+// Export core utility functions only (exclude those that would duplicate with enhanced detection exports)
 export { 
-  // Export signal processing core functions
+  // Signal processing core functions
   calculateAC,
   calculateDC,
   calculateStandardDeviation,
   calculateEMA,
   normalizeValue,
   
-  // Export peak detection functions
+  // Peak detection functions
   findPeaksAndValleys,
   calculateAmplitude,
-  findPeaksFourier,
-  findPeaksWavelet,
-  validateMultiBeatSequence,
-  getAdaptiveThreshold,
   
-  // Export filter functions
+  // Filter functions
   applySMAFilter,
   amplifySignal,
   
-  // Export spectral analysis functions
-  calculateSignalNoiseRatio,
-  calculatePulsatilityIndex,
-  calculateConsistencyMetrics,
-  performSpectralAnalysis,
-  
-  // Export perfusion functions
+  // Perfusion functions
   calculatePerfusionIndex
 } from './utils';
