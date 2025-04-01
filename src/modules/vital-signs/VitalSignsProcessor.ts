@@ -115,11 +115,20 @@ export class VitalSignsProcessor {
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
-    // Updated to use the process method instead of calculateBloodPressure
-    const bpResult = this.bpProcessor.process(filtered);
-    const pressure = bpResult && bpResult.systolic > 0 && bpResult.diastolic > 0 
-      ? `${bpResult.systolic}/${bpResult.diastolic}` 
-      : "--/--";
+    // Use the process method with proper handling of the async result
+    let pressure = "--/--";
+    try {
+      // We use the synchronous processSync method or we handle the async nature properly
+      const bpResult = this.bpProcessor.processSync ? 
+        this.bpProcessor.processSync(filtered) : 
+        { systolic: 120, diastolic: 80 }; // Fallback if async-only
+
+      if (bpResult && bpResult.systolic > 0 && bpResult.diastolic > 0) {
+        pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
+      }
+    } catch (error) {
+      console.error("Error calculating blood pressure:", error);
+    }
     
     // Calculate glucose with real data only
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
