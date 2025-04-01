@@ -19,7 +19,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
-  // Hooks para procesamiento y detección, sin funcionalidad de beep
   const { 
     requestImmediateBeep, 
     processBeepQueue, 
@@ -93,7 +92,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Esta función ahora no hace nada, el beep está centralizado en PPGSignalMeter
   const requestBeep = useCallback((value: number): boolean => {
     console.log('useHeartBeatProcessor: Beep ELIMINADO - Todo el sonido SOLO en PPGSignalMeter', {
       value,
@@ -119,14 +117,13 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    // Pass all required parameters to processSignalInternal
     const result = processSignalInternal(
       value, 
       currentBPM, 
       confidence, 
       processorRef.current, 
       requestBeep, 
-      isMonitoringRef.current,  // <-- Changed from isMonitoringRef to isMonitoringRef.current
+      isMonitoringRef.current,  
       lastRRIntervalsRef.current,
       currentBeatIsArrhythmiaRef.current
     );
@@ -163,7 +160,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       isMonitoringRef.current = false;
       
       processorRef.current.reset();
-      // No iniciamos audio aquí, está centralizado en PPGSignalMeter
     }
     
     setCurrentBPM(0);
@@ -190,8 +186,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       lastProcessedPeakTimeRef.current = 0;
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
-      
-      // No iniciamos audio ni test beep aquí, está centralizado en PPGSignalMeter
       
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
