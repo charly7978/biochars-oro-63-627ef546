@@ -7,7 +7,6 @@
 
 import { SpecializedChannel } from './SpecializedChannel';
 import { VitalSignType } from '../../../types/signal';
-import { applySMAFilter } from '../../vital-signs/utils';
 
 /**
  * Signal channel optimized for blood pressure processing
@@ -75,9 +74,20 @@ export class BloodPressureChannel extends SpecializedChannel {
     }
     
     // Apply moving average filter
-    let filtered = applySMAFilter([...this.buffer.slice(-5), value], 3);
+    let filtered = this.applySMAFilter([...this.buffer.slice(-5), value], 3);
     
     return filtered;
+  }
+  
+  /**
+   * Apply Simple Moving Average filter
+   */
+  private applySMAFilter(values: number[], windowSize: number): number {
+    if (values.length === 0) return 0;
+    
+    const length = Math.min(windowSize, values.length);
+    const sum = values.slice(-length).reduce((a, b) => a + b, 0);
+    return sum / length;
   }
   
   /**

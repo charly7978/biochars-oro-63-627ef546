@@ -129,12 +129,13 @@ export interface SignalValidationConfig {
  * Specialized signal channels for different vital signs
  */
 export interface OptimizedSignalChannel {
-  id: string;                     // Unique identifier
-  type: VitalSignType;            // Type of vital sign
+  readonly id: string;                  // Unique identifier
+  readonly type: VitalSignType;         // Type of vital sign
   processValue: (value: number) => number;  // Process value for this specific channel
   applyFeedback: (feedback: ChannelFeedback) => void;  // Apply feedback from algorithm
-  getQuality: () => number;       // Get channel quality (0-1)
-  reset: () => void;              // Reset channel state
+  getQuality: () => number;             // Get channel quality (0-1)
+  reset: () => void;                    // Reset channel state
+  getId: () => string;                  // Get channel ID
 }
 
 /**

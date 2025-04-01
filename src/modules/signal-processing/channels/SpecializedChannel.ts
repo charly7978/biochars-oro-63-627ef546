@@ -14,6 +14,9 @@ export abstract class SpecializedChannel implements OptimizedSignalChannel {
   // The type of vital sign this channel processes
   public readonly type: VitalSignType;
   
+  // Channel ID
+  public readonly id: string;
+  
   // Channel quality (0-1)
   protected confidence: number = 0;
   
@@ -26,6 +29,7 @@ export abstract class SpecializedChannel implements OptimizedSignalChannel {
    */
   constructor(type: VitalSignType) {
     this.type = type;
+    this.id = `channel_${this.type}`;
   }
   
   /**
@@ -76,6 +80,6 @@ export abstract class SpecializedChannel implements OptimizedSignalChannel {
    * Get channel ID
    */
   public getId(): string {
-    return `channel_${this.type}`;
+    return this.id;
   }
 }

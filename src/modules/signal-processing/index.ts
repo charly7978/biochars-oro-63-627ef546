@@ -19,9 +19,9 @@ export { VitalSignType } from '../../types/signal';
 export type { ChannelFeedback, OptimizedSignalChannel } from '../../types/signal';
 
 // Export specialized channels
-export * from './channels/GlucoseChannel';
-export * from './channels/LipidsChannel';
-export * from './channels/BloodPressureChannel';
-export * from './channels/SpO2Channel';
-export * from './channels/CardiacChannel';
-export * from './channels/SpecializedChannel';
+export { GlucoseChannel } from './channels/GlucoseChannel';
+export { LipidsChannel } from './channels/LipidsChannel';
+export { BloodPressureChannel } from './channels/BloodPressureChannel';
+export { SpO2Channel } from './channels/SpO2Channel';
+export { CardiacChannel } from './channels/CardiacChannel';
+export { SpecializedChannel } from './channels/SpecializedChannel';

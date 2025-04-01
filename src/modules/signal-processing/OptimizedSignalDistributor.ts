@@ -143,7 +143,7 @@ export class OptimizedSignalDistributor {
    */
   private findChannelById(channelId: string): OptimizedSignalChannel | undefined {
     for (const channel of this.channels.values()) {
-      if ((channel as any).getId() === channelId) {
+      if (channel.getId() === channelId) {
         return channel;
       }
     }

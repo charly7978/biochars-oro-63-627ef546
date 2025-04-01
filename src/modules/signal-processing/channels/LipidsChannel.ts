@@ -6,14 +6,18 @@
  */
 
 import { SpecializedChannel } from './SpecializedChannel';
-import { VitalSignType } from '../../../types/signal';
+import { VitalSignType, ChannelFeedback } from '../../../types/signal';
 
 /**
  * Signal channel optimized for lipids processing
  */
 export class LipidsChannel extends SpecializedChannel {
+  // Public properties required by OptimizedSignalChannel interface
+  public readonly id: string;
+  
   constructor() {
     super(VitalSignType.LIPIDS);
+    this.id = `channel_${this.type}`;
   }
   
   protected processValueImpl(value: number): number {
