@@ -1,12 +1,11 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera } from 'react-camera-pro';
-import { useInterval } from '@uidotdev/usehooks';
 import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
 import { useSignalProcessor } from '../hooks/useSignalProcessor';
 import { useHapticFeedback } from '../hooks/useHapticFeedback';
 import { useAudioFeedback } from '../hooks/useAudioFeedback';
 import { ProcessedSignal } from '../types/signal';
-import { calculateSignalQuality } from '../modules/heart-beat/signal-quality';
 
 interface PPGSignalMeterProps {
   isMeasuring: boolean;
@@ -24,7 +23,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   onCameraError
 }) => {
   const [cameraResolution, setCameraResolution] = useState({ width: 256, height: 256 });
-  const camera = useRef<Camera>(null);
+  const camera = useRef<any>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [lastImageData, setLastImageData] = useState<ImageData | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -42,22 +41,19 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   } = useSignalProcessor();
   
   // Fix for feedback trigger error
-  const { trigger, updateSignalQuality } = useHeartbeatFeedback({
-    enabled: isMeasuring,
-    hapticEnabled: hapticFeedback,
-    audioEnabled: audioFeedback,
-    bpm: processedSignal?.heartRate || 0,
-    signalQuality: processedSignal?.quality || 0,
-    isFingerDetected: processedSignal?.fingerDetected || false,
-    motionDetected: processedSignal?.motionDetected || false,
-    motionCompensationActive: processedSignal?.motionCompensated || false
-  });
+  const { trigger, updateSignalQuality } = useHeartbeatFeedback(
+    isMeasuring, 
+    {
+      hapticEnabled: hapticFeedback,
+      audioEnabled: audioFeedback
+    }
+  );
   
   const { playHaptic } = useHapticFeedback();
   const { playAudio } = useAudioFeedback();
   
   // Interval to process camera frames
-  useInterval(() => {
+  const processFrameWithInterval = () => {
     if (isMeasuring && camera.current && isCameraActive) {
       camera.current.takePhoto()
         .then(imageData => {
@@ -70,7 +66,22 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           onCameraError("Error al tomar la foto: " + error.message);
         });
     }
-  }, isMeasuring && isCameraActive ? 100 : null);
+  };
+  
+  // Use setInterval instead of useInterval hook
+  useEffect(() => {
+    let intervalId: number | null = null;
+    
+    if (isMeasuring && isCameraActive) {
+      intervalId = window.setInterval(processFrameWithInterval, 100);
+    }
+    
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isMeasuring, isCameraActive]);
   
   // Start/stop processing based on isMeasuring prop
   useEffect(() => {
@@ -115,8 +126,8 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       } catch (err) {
         console.error("PPGSignalMeter: Error checking camera permission:", err);
         setCameraPermission(false);
-        setCameraError("Error al verificar el permiso de la cámara: " + err.message);
-        onCameraError("Error al verificar el permiso de la cámara: " + err.message);
+        setCameraError("Error al verificar el permiso de la cámara: " + (err as Error).message);
+        onCameraError("Error al verificar el permiso de la cámara: " + (err as Error).message);
       }
     };
     
@@ -164,7 +175,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       
       <Camera
         ref={camera}
-        resolution={cameraResolution}
         facingMode="environment"
         className="camera-pro"
         onCameraError={handleCameraError}
