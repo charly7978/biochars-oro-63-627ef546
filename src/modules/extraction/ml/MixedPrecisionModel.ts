@@ -62,6 +62,7 @@ export class MixedPrecisionModel {
       // Configurar precisión mixta si está habilitada
       if (this.config.useFloat16) {
         console.log("MixedPrecisionModel: Habilitando política de precisión mixta");
+        // Usar config moderna de TensorFlow.js
         tf.ENV.set('WEBGL_FORCE_F16_TEXTURES', true);
       }
       
@@ -87,7 +88,8 @@ export class MixedPrecisionModel {
       }).apply(x2);
       
       // Decodificador para reconstruir señal original (limpia)
-      const x4 = tf.layers.upSampling1d({size: 2}).apply(x3);
+      // Fix: reemplazar upSampling1d con implementación compatible
+      const x4 = this.createUpsamplingLayer(x3, 2);
       
       const output = tf.layers.conv1d({
         filters: 1,
@@ -116,6 +118,32 @@ export class MixedPrecisionModel {
       console.error("MixedPrecisionModel: Error inicializando modelo", error);
       return false;
     }
+  }
+  
+  /**
+   * Implementación personalizada de upsampling ya que upSampling1d puede no estar disponible
+   * en todas las versiones de TensorFlow.js
+   */
+  private createUpsamplingLayer(input: tf.SymbolicTensor, size: number): tf.SymbolicTensor {
+    return tf.layers.lambda({
+      outputShape: (inputShape: any) => {
+        return [inputShape[0], inputShape[1] * size, inputShape[2]];
+      },
+      lambda: (x: tf.Tensor) => {
+        // Implementamos upsampling mediante repetición de valores
+        const inputShape = x.shape;
+        const batchSize = inputShape[0] as number;
+        const steps = inputShape[1] as number;
+        const features = inputShape[2] as number;
+        
+        // Reshape para preparar repetición
+        const reshaped = x.reshape([batchSize, steps, 1, features]);
+        // Repetir valores
+        const repeated = reshaped.tile([1, 1, size, 1]);
+        // Reshape de vuelta a la forma adecuada
+        return repeated.reshape([batchSize, steps * size, features]);
+      }
+    }).apply(input);
   }
   
   /**
@@ -156,12 +184,19 @@ export class MixedPrecisionModel {
         // Usar precisión mixta: float16 para inferencia
         let processedSignal;
         if (this.config.useFloat16) {
-          // Convertir a float16 para inferencia
-          const inputF16 = scaled.cast('float16');
-          // Predicción (inferencia)
-          processedSignal = this.model!.predict(inputF16) as tf.Tensor;
-          // Convertir resultado de vuelta a float32
-          processedSignal = processedSignal.cast('float32');
+          // Fix: Manejar posible falta de soporte para float16
+          try {
+            // Intentar usar float16 si está disponible
+            const inputF16 = tf.cast(scaled, 'float16');
+            // Predicción (inferencia)
+            processedSignal = this.model!.predict(inputF16) as tf.Tensor;
+            // Convertir resultado de vuelta a float32
+            processedSignal = tf.cast(processedSignal, 'float32');
+          } catch (error) {
+            console.warn("MixedPrecisionModel: Float16 no soportado, usando float32", error);
+            // Fallback a float32
+            processedSignal = this.model!.predict(scaled) as tf.Tensor;
+          }
         } else {
           // Usar float32 para todo si la precisión mixta está desactivada
           processedSignal = this.model!.predict(scaled) as tf.Tensor;

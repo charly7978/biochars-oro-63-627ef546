@@ -15,8 +15,25 @@ import { createMLSignalProcessor } from './MLSignalProcessor';
 import { createMixedPrecisionModel } from './MixedPrecisionModel';
 import { createDataTransformer } from './DataTransformer';
 
+// Exportar nuevos módulos de optimización
+export * from '../wasm/WasmProcessor';
+export * from '../workers/SignalWorker';
+export * from '../filters/KalmanFilter';
+
+// Reexportar funciones de creación
 export {
   createMLSignalProcessor,
   createMixedPrecisionModel,
   createDataTransformer
+};
+
+// Exportar funciones de utilidad nuevas
+import { getWasmProcessor } from '../wasm/WasmProcessor';
+import { createSignalWorker } from '../workers/SignalWorker';
+import { createKalmanFilter } from '../filters/KalmanFilter';
+
+export {
+  getWasmProcessor,
+  createSignalWorker,
+  createKalmanFilter
 };

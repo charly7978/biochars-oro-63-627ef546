@@ -4,7 +4,7 @@
  * 
  * Extractor combinado que integra la extracción de latidos y señal PPG
  * Proporciona una salida unificada con todos los datos extraídos
- * Mejorado con procesamiento ML de precisión mixta
+ * Mejorado con procesamiento avanzado: WASM, Web Worker, ML, Kalman
  */
 import { 
   HeartbeatExtractor, 
@@ -17,10 +17,10 @@ import {
   createPPGSignalExtractor
 } from './PPGSignalExtractor';
 import {
-  MLSignalProcessor,
-  createMLSignalProcessor,
-  MLProcessedSignal
-} from './ml';
+  createAdvancedSignalProcessor,
+  AdvancedSignalProcessor,
+  AdvancedProcessedSignal
+} from './AdvancedSignalProcessor';
 
 // Resultado combinado con datos de ambos extractores
 export interface CombinedExtractionResult {
@@ -47,51 +47,86 @@ export interface CombinedExtractionResult {
   averageBPM: number | null;
   heartRateVariability: number | null;
   
-  // Nuevos campos: ML enhancement
+  // Campos avanzados: ML enhancement y aceleración
   mlEnhanced: boolean;
   mlConfidence: number;
   enhancedValue: number;
+  
+  // Nuevos campos: información de rendimiento
+  processingTime: number;
+  samplingRate: number;
+  errorEstimate: number;
+}
+
+/**
+ * Opciones de configuración
+ */
+export interface CombinedExtractorConfig {
+  enableAdvancedProcessing: boolean;
+  enableWasm: boolean;
+  enableWorkers: boolean;
+  enableML: boolean;
+  enableAdaptiveKalman: boolean;
+  enableAdaptiveSampling: boolean;
 }
 
 /**
  * Clase para extracción combinada de datos PPG y latidos
- * Mejorada con procesamiento ML de precisión mixta
+ * Mejorada con procesamiento avanzado: WASM, Web Worker, ML, Kalman
  */
 export class CombinedExtractor {
   private ppgExtractor: PPGSignalExtractor;
   private heartbeatExtractor: HeartbeatExtractor;
-  private mlProcessor: MLSignalProcessor | null = null;
+  private advancedProcessor: AdvancedSignalProcessor;
   
-  // Configuración de ML
-  private enableMLProcessing: boolean = true;
-  private mlProcessorInitialized: boolean = false;
-  private mlConfidenceThreshold: number = 0.6;
+  // Configuración avanzada
+  private config: CombinedExtractorConfig;
+  private advancedProcessingInitialized: boolean = false;
+  private processingConfidenceThreshold: number = 0.6;
   
-  constructor(enableMLProcessing: boolean = true) {
+  // Valores por defecto
+  private readonly DEFAULT_CONFIG: CombinedExtractorConfig = {
+    enableAdvancedProcessing: true,
+    enableWasm: true,
+    enableWorkers: true,
+    enableML: true,
+    enableAdaptiveKalman: true,
+    enableAdaptiveSampling: true
+  };
+  
+  constructor(config?: Partial<CombinedExtractorConfig>) {
+    // Inicializar configuración
+    this.config = {
+      ...this.DEFAULT_CONFIG,
+      ...config
+    };
+    
+    // Crear extractores básicos
     this.ppgExtractor = createPPGSignalExtractor();
     this.heartbeatExtractor = createHeartbeatExtractor();
-    this.enableMLProcessing = enableMLProcessing;
     
-    // Inicializar ML processor si está habilitado
-    if (this.enableMLProcessing) {
+    // Inicializar procesador avanzado si está habilitado
+    if (this.config.enableAdvancedProcessing) {
       try {
-        console.log("CombinedExtractor: Inicializando procesador ML");
-        this.mlProcessor = createMLSignalProcessor({
-          enableMLProcessing: true,
-          windowSize: 30,
-          minBufferSize: 45
+        console.log("CombinedExtractor: Inicializando procesador avanzado");
+        this.advancedProcessor = createAdvancedSignalProcessor({
+          enableWasm: this.config.enableWasm,
+          enableWorkers: this.config.enableWorkers, 
+          enableMLProcessing: this.config.enableML,
+          enableAdaptiveKalman: this.config.enableAdaptiveKalman,
+          enableAdaptiveSampling: this.config.enableAdaptiveSampling
         });
-        this.mlProcessorInitialized = true;
+        this.advancedProcessingInitialized = true;
       } catch (error) {
-        console.error("CombinedExtractor: Error inicializando procesador ML, continuando sin ML", error);
-        this.mlProcessorInitialized = false;
+        console.error("CombinedExtractor: Error inicializando procesador avanzado, continuando sin él", error);
+        this.advancedProcessingInitialized = false;
       }
     }
   }
   
   /**
    * Procesa un valor PPG y extrae toda la información disponible
-   * Ahora con mejora opcional de ML
+   * Ahora con mejora avanzada: WASM, Web Worker, ML, Kalman
    * @param value Valor PPG sin procesar
    * @returns Resultado combinado con todos los datos extraídos
    */
@@ -99,15 +134,15 @@ export class CombinedExtractor {
     // Primero procesar la señal PPG
     const ppgResult = this.ppgExtractor.processValue(value);
     
-    // Procesar con ML si está habilitado
-    let mlResult: MLProcessedSignal | null = null;
-    if (this.enableMLProcessing && this.mlProcessorInitialized && this.mlProcessor) {
-      mlResult = this.mlProcessor.processValue(ppgResult.filteredValue);
+    // Procesar con avanzado si está habilitado
+    let advancedResult: AdvancedProcessedSignal | null = null;
+    if (this.config.enableAdvancedProcessing && this.advancedProcessingInitialized) {
+      advancedResult = this.advancedProcessor.processValue(ppgResult.filteredValue);
     }
     
-    // Usar valor mejorado por ML si hay suficiente confianza, sino usar filtrado normal
-    const valueToProcess = (mlResult && mlResult.confidence >= this.mlConfidenceThreshold) 
-      ? mlResult.enhanced 
+    // Usar valor mejorado si hay suficiente confianza, sino usar filtrado normal
+    const valueToProcess = (advancedResult && advancedResult.confidence >= this.processingConfidenceThreshold) 
+      ? advancedResult.enhanced 
       : ppgResult.filteredValue;
     
     // Luego extraer información de latidos del valor procesado
@@ -138,36 +173,64 @@ export class CombinedExtractor {
       averageBPM: this.heartbeatExtractor.getAverageBPM(),
       heartRateVariability: this.heartbeatExtractor.getHeartRateVariability(),
       
-      // Nuevos campos: ML enhancement
-      mlEnhanced: !!(mlResult && mlResult.confidence >= this.mlConfidenceThreshold),
-      mlConfidence: mlResult ? mlResult.confidence : 0,
-      enhancedValue: mlResult ? mlResult.enhanced : ppgResult.filteredValue
+      // Campos avanzados: ML enhancement
+      mlEnhanced: !!(advancedResult && advancedResult.confidence >= this.processingConfidenceThreshold),
+      mlConfidence: advancedResult ? advancedResult.confidence : 0,
+      enhancedValue: advancedResult ? advancedResult.enhanced : ppgResult.filteredValue,
+      
+      // Información de rendimiento
+      processingTime: advancedResult ? advancedResult.processingTime : 0,
+      samplingRate: advancedResult ? advancedResult.samplingRate : 30,
+      errorEstimate: advancedResult ? advancedResult.errorEstimate : 0.2
     };
   }
   
   /**
-   * Configura el procesamiento ML
+   * Configura el procesamiento avanzado
    */
-  public configureMLProcessing(enable: boolean, confidenceThreshold?: number): void {
-    this.enableMLProcessing = enable;
+  public configureAdvancedProcessing(config: Partial<CombinedExtractorConfig>, confidenceThreshold?: number): void {
+    // Actualizar configuración
+    this.config = {
+      ...this.config,
+      ...config
+    };
     
     if (confidenceThreshold !== undefined) {
-      this.mlConfidenceThreshold = Math.max(0, Math.min(1, confidenceThreshold));
+      this.processingConfidenceThreshold = Math.max(0, Math.min(1, confidenceThreshold));
     }
     
-    // Si estamos habilitando ML y no existe el procesador, crearlo
-    if (this.enableMLProcessing && !this.mlProcessor) {
+    // Actualizar configuración del procesador si existe
+    if (this.advancedProcessingInitialized && this.advancedProcessor) {
+      this.advancedProcessor.configure({
+        enableWasm: this.config.enableWasm,
+        enableWorkers: this.config.enableWorkers,
+        enableMLProcessing: this.config.enableML,
+        enableAdaptiveKalman: this.config.enableAdaptiveKalman,
+        enableAdaptiveSampling: this.config.enableAdaptiveSampling
+      });
+    }
+    // Si estamos habilitando procesamiento avanzado y no existe, crearlo
+    else if (this.config.enableAdvancedProcessing && !this.advancedProcessor) {
       try {
-        this.mlProcessor = createMLSignalProcessor();
-        this.mlProcessorInitialized = true;
+        this.advancedProcessor = createAdvancedSignalProcessor({
+          enableWasm: this.config.enableWasm,
+          enableWorkers: this.config.enableWorkers,
+          enableMLProcessing: this.config.enableML,
+          enableAdaptiveKalman: this.config.enableAdaptiveKalman,
+          enableAdaptiveSampling: this.config.enableAdaptiveSampling
+        });
+        this.advancedProcessingInitialized = true;
       } catch (error) {
-        console.error("CombinedExtractor: Error iniciando procesador ML", error);
+        console.error("CombinedExtractor: Error iniciando procesador avanzado", error);
       }
     }
     
-    console.log("CombinedExtractor: ML procesamiento configurado", {
-      habilitado: this.enableMLProcessing,
-      umbralConfianza: this.mlConfidenceThreshold
+    console.log("CombinedExtractor: Procesamiento avanzado configurado", {
+      habilitado: this.config.enableAdvancedProcessing,
+      umbralConfianza: this.processingConfidenceThreshold,
+      wasm: this.config.enableWasm,
+      workers: this.config.enableWorkers,
+      ml: this.config.enableML
     });
   }
   
@@ -186,10 +249,10 @@ export class CombinedExtractor {
   }
   
   /**
-   * Obtiene el procesador ML si está disponible
+   * Obtiene el procesador avanzado si está disponible
    */
-  public getMLProcessor(): MLSignalProcessor | null {
-    return this.mlProcessor;
+  public getAdvancedProcessor(): AdvancedSignalProcessor | null {
+    return this.advancedProcessingInitialized ? this.advancedProcessor : null;
   }
   
   /**
@@ -199,8 +262,8 @@ export class CombinedExtractor {
     this.ppgExtractor.reset();
     this.heartbeatExtractor.reset();
     
-    if (this.mlProcessor) {
-      this.mlProcessor.reset();
+    if (this.advancedProcessingInitialized && this.advancedProcessor) {
+      this.advancedProcessor.reset();
     }
   }
   
@@ -210,10 +273,9 @@ export class CombinedExtractor {
   public dispose(): void {
     this.reset();
     
-    if (this.mlProcessor) {
-      this.mlProcessor.dispose();
-      this.mlProcessor = null;
-      this.mlProcessorInitialized = false;
+    if (this.advancedProcessingInitialized && this.advancedProcessor) {
+      this.advancedProcessor.dispose();
+      this.advancedProcessingInitialized = false;
     }
   }
 }
@@ -221,18 +283,8 @@ export class CombinedExtractor {
 /**
  * Crea una instancia de extractor combinado
  */
-export const createCombinedExtractor = (enableMLProcessing: boolean = true): CombinedExtractor => {
-  return new CombinedExtractor(enableMLProcessing);
+export const createCombinedExtractor = (
+  config?: Partial<CombinedExtractorConfig>
+): CombinedExtractor => {
+  return new CombinedExtractor(config);
 };
-
-/**
- * Procesa un valor PPG con un extractor combinado
- * (Función de utilidad para uso directo)
- */
-export const extractCombinedData = (
-  value: number, 
-  extractor: CombinedExtractor
-): CombinedExtractionResult => {
-  return extractor.processValue(value);
-};
-
