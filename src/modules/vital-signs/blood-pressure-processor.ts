@@ -168,4 +168,18 @@ export class BloodPressureProcessor {
   public updateOptions(options: Partial<typeof this.processingOptions>): void {
     this.processingOptions = { ...this.processingOptions, ...options };
   }
+
+  /**
+   * Calculate blood pressure from a PPG value (wrapper for process)
+   */
+  public calculateBloodPressure(value: number): Promise<BloodPressureResult> {
+    return this.process(value);
+  }
+
+  /**
+   * Reset the processor to initial state
+   */
+  public reset(): void {
+    this.lastValidResult = null;
+  }
 }

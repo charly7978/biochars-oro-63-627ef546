@@ -26,6 +26,19 @@ export interface ProcessedSignal {
   fingerDetected: boolean;
   roi: ROI;
   perfusionIndex?: number;
+  spectrumData?: {
+    frequencies: number[];
+    amplitudes: number[];
+    dominantFrequency: number;
+  };
+  diagnosticInfo?: {
+    processingStage: string;
+    validationPassed: boolean;
+    errorCode?: string;
+    errorMessage?: string;
+    processingTimeMs?: number;
+    timestamp?: number;
+  };
 }
 
 // Error in signal processing
@@ -33,6 +46,10 @@ export interface ProcessingError {
   code: string;
   message: string;
   timestamp: number;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  recoverable?: boolean;
+  component?: string;
+  suggestions?: string[];
 }
 
 // Interface for signal processor
@@ -51,7 +68,8 @@ export enum VitalSignType {
   BLOOD_PRESSURE = 'bloodPressure',
   GLUCOSE = 'glucose',
   LIPIDS = 'lipids',
-  ARRHYTHMIA = 'arrhythmia'
+  ARRHYTHMIA = 'arrhythmia',
+  CARDIAC = 'cardiac'
 }
 
 // Feedback from a channel to improve processing
@@ -61,4 +79,56 @@ export interface ChannelFeedback {
   suggestedAdjustments: Record<string, number>;
   timestamp: number;
   success: boolean;
+}
+
+// Additional interfaces needed by various modules
+export interface PPGDataPoint {
+  value: number;
+  timestamp: number;
+  quality?: number;
+}
+
+export interface TimestampedPPGData {
+  values: number[];
+  timestamp: number;
+  quality?: number;
+}
+
+export interface SignalDiagnosticInfo {
+  processingStage: string;
+  validationPassed: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+  processingTimeMs?: number;
+  timestamp?: number;
+}
+
+export interface SignalValidationResult {
+  isValid: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface SignalValidationConfig {
+  qualityThreshold: number;
+  validateAmplitude: boolean;
+  minAmplitude: number;
+  maxAmplitude: number;
+  validateFrequency: boolean;
+  minFrequency: number;
+  maxFrequency: number;
+}
+
+export interface ErrorHandlerConfig {
+  logErrors: boolean;
+  throwOnCritical: boolean;
+  recoveryAttempts: number;
+  debugMode: boolean;
+}
+
+export interface SignalDistributorConfig {
+  channelCount: number;
+  bufferSize: number;
+  processingInterval: number;
+  autoStart: boolean;
 }

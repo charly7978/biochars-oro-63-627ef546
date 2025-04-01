@@ -55,3 +55,22 @@ export interface VitalSignsProcessorConfig {
     lipids?: string;
   };
 }
+
+// Interface for arrhythmia processing result
+export interface ArrhythmiaProcessingResult {
+  arrhythmiaStatus: string;
+  lastArrhythmiaData: { 
+    timestamp: number; 
+    rmssd: number; 
+    rrVariation: number; 
+  } | null;
+}
+
+// Options for hybrid processing
+export interface HybridProcessingOptions {
+  useNeuralModels: boolean;
+  traditionalWeight: number;
+  neuralWeight: number;
+  confidenceThreshold: number;
+  useEnhancement: boolean;
+}
