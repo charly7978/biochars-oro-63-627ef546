@@ -78,28 +78,30 @@ export function useVitalSignsWithProcessing() {
     
     try {
       // 2. Procesar el valor PPG extraído con el procesador unificado
-      const processedSignal = processing.processSignal(extraction.lastResult.filteredValue);
+      // La función correcta es processFrame, no processSignal
+      const processedSignal = processing.processFrame(extraction.lastResult.filteredValue);
       
-      if (processedSignal && processedSignal.fingerDetected) {
+      // Verificar si tenemos una señal procesada y hay un dedo detectado
+      if (processedSignal && processing.lastSignal && processing.lastSignal.fingerDetected) {
         // 3. Procesar para obtener signos vitales
         const vitalsResult = vitalSigns.processSignal(
-          processedSignal.filteredValue, 
+          processing.lastSignal.filteredValue, 
           processing.getRRIntervals()
         );
         
         // 4. Crear resultado integrado
         const integratedResult: IntegratedVitalsResult = {
-          timestamp: processedSignal.timestamp,
-          quality: processedSignal.quality,
-          fingerDetected: processedSignal.fingerDetected,
+          timestamp: processing.lastSignal.timestamp,
+          quality: processing.lastSignal.quality,
+          fingerDetected: processing.lastSignal.fingerDetected,
           
-          rawValue: processedSignal.rawValue,
-          filteredValue: processedSignal.filteredValue,
-          amplifiedValue: processedSignal.amplifiedValue,
+          rawValue: processing.lastSignal.rawValue,
+          filteredValue: processing.lastSignal.filteredValue,
+          amplifiedValue: processing.lastSignal.amplifiedValue,
           
-          heartRate: processedSignal.instantaneousBPM || 0,
-          isPeak: processedSignal.isPeak,
-          rrInterval: processedSignal.rrInterval,
+          heartRate: processing.lastSignal.instantaneousBPM || 0,
+          isPeak: processing.lastSignal.isPeak,
+          rrInterval: processing.lastSignal.rrInterval,
           
           spo2: vitalsResult.spo2,
           pressure: vitalsResult.pressure,
