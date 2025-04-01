@@ -43,8 +43,8 @@ export class BaseProcessor {
       this.lastResults.shift();
     }
     
-    // Also add the value to PPG values
-    this.addPPGValue(result.combined.value);
+    // Also add the filtered value to PPG values
+    this.addPPGValue(result.filteredValue);
   }
   
   /**

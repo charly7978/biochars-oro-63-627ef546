@@ -1,260 +1,182 @@
 
 /**
- * Procesador de señal PPG
- * Extrae, filtra y normaliza señales PPG
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Procesador avanzado de señal PPG
+ * Se encarga del procesamiento especializado de señales PPG
  */
+import { ProcessedPPGSignal, SignalProcessor, SignalProcessingOptions } from './types';
+import { detectFingerPresence } from './utils/finger-detector';
+import { evaluateSignalQuality } from './utils/quality-detector';
+import { normalizeSignal, amplifySignal } from './utils/signal-normalizer';
 
-import { ProcessedPPGSignal } from './types';
-import { SignalProcessor } from './types';
-
-export class PPGProcessor implements SignalProcessor {
-  private buffer: number[] = [];
-  private bufferSize = 50;
-  private initialized = false;
-  private lastRawValue = 0;
-  private lastNormalizedValue = 0;
-  private signalQualityEstimate = 0;
-  private fingerDetected = false;
+/**
+ * Clase para el procesamiento avanzado de señales PPG
+ */
+export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
+  // Buffer de valores para análisis
+  private readonly VALUES_BUFFER_SIZE = 30;
+  private valuesBuffer: number[] = [];
   
-  constructor() {
-    this.reset();
-  }
+  // Buffer de valores filtrados
+  private filteredBuffer: number[] = [];
   
-  /**
-   * Inicializa el procesador
-   */
-  public initialize(): void {
-    this.reset();
-    this.initialized = true;
-  }
+  // Configuración del procesador
+  private amplificationFactor: number = 1.2;
+  private filterStrength: number = 0.25;
+  private qualityThreshold: number = 30;
+  private fingerDetectionSensitivity: number = 0.6;
   
   /**
-   * Procesa un valor de entrada y produce una señal PPG procesada
+   * Procesa una señal PPG y aplica algoritmos avanzados
    */
-  public processSignal(input: number): ProcessedPPGSignal {
-    // Verificar inicialización
-    if (!this.initialized) {
-      this.initialize();
+  public processSignal(value: number): ProcessedPPGSignal {
+    const timestamp = Date.now();
+    
+    // Almacenar valor bruto en buffer
+    this.valuesBuffer.push(value);
+    if (this.valuesBuffer.length > this.VALUES_BUFFER_SIZE) {
+      this.valuesBuffer.shift();
     }
     
-    // Añadir a buffer
-    this.buffer.push(input);
-    if (this.buffer.length > this.bufferSize) {
-      this.buffer.shift();
+    // Aplicar filtrado adaptativo
+    const filteredValue = this.applyAdaptiveFilter(value);
+    
+    // Añadir a buffer de filtrados
+    this.filteredBuffer.push(filteredValue);
+    if (this.filteredBuffer.length > this.VALUES_BUFFER_SIZE) {
+      this.filteredBuffer.shift();
     }
     
-    // Detectar presencia de dedo (señal significativa)
-    this.detectFinger(input);
+    // Normalizar señal
+    const normalizedValue = normalizeSignal(filteredValue, this.filteredBuffer);
     
-    // Calcular calidad de señal
-    this.calculateSignalQuality();
+    // Amplificar señal
+    const amplifiedValue = amplifySignal(normalizedValue, this.amplificationFactor);
     
-    // Normalizar valor
-    const normalizedValue = this.normalizeValue(input);
-    
-    // Amplificar valor si es necesario
-    const amplifiedValue = this.amplifyValue(normalizedValue);
-    
-    // Filtrar señal
-    const filteredValue = this.filterValue(amplifiedValue);
-    
-    // Crear resultado
-    const result: ProcessedPPGSignal = {
-      timestamp: Date.now(),
-      rawValue: input,
-      normalizedValue: normalizedValue,
-      amplifiedValue: amplifiedValue,
-      filteredValue: filteredValue,
-      quality: this.signalQualityEstimate,
-      fingerDetected: this.fingerDetected,
-      signalStrength: this.calculateSignalStrength(input),
-      isPeak: false // Se establecerá en otro procesador
-    };
-    
-    // Actualizar últimos valores
-    this.lastRawValue = input;
-    this.lastNormalizedValue = normalizedValue;
-    
-    return result;
-  }
-  
-  /**
-   * Iniciar el procesador
-   */
-  public start(): void {
-    this.initialized = true;
-  }
-  
-  /**
-   * Detener el procesador
-   */
-  public stop(): void {
-    this.initialized = false;
-  }
-  
-  /**
-   * Resetear el procesador
-   */
-  public reset(): void {
-    this.buffer = [];
-    this.initialized = false;
-    this.lastRawValue = 0;
-    this.lastNormalizedValue = 0;
-    this.signalQualityEstimate = 0;
-    this.fingerDetected = false;
-  }
-  
-  /**
-   * Calibrar el procesador con valores de referencia
-   */
-  public calibrate(referenceValues: number[]): void {
-    if (referenceValues && referenceValues.length > 0) {
-      // Usar valores de referencia para mejorar normalización
-      const min = Math.min(...referenceValues);
-      const max = Math.max(...referenceValues);
-      const range = max - min;
-      
-      // Actualizar buffer con valores calibrados
-      this.buffer = referenceValues.slice(-this.bufferSize);
-    }
-  }
-  
-  /**
-   * Detecta si hay un dedo presente basado en la señal
-   */
-  private detectFinger(value: number): void {
-    if (this.buffer.length < 10) {
-      this.fingerDetected = value > 0.1; // Umbral mínimo
-      return;
-    }
-    
-    // Calcular variación de señal
-    const recentValues = this.buffer.slice(-10);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-    
-    // Hay dedo si hay señal significativa con cierta variación
-    this.fingerDetected = mean > 0.1 && variance > 0.0001 && variance < 0.1;
-  }
-  
-  /**
-   * Calcula la calidad estimada de la señal [0-100]
-   */
-  private calculateSignalQuality(): void {
-    if (this.buffer.length < 10 || !this.fingerDetected) {
-      this.signalQualityEstimate = 0;
-      return;
-    }
-    
-    // Factores que afectan calidad
-    const recentValues = this.buffer.slice(-10);
-    
-    // 1. Variabilidad adecuada (ni muy alta ni muy baja)
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-    const cv = Math.sqrt(variance) / mean; // Coeficiente de variación
-    
-    // Calidad óptima en rangos adecuados de variación
-    let variabilityScore = 0;
-    if (cv > 0.05 && cv < 0.5) {
-      variabilityScore = 100 - Math.abs((cv - 0.2) * 200);
-    }
-    
-    // 2. Amplitud suficiente
-    const range = Math.max(...recentValues) - Math.min(...recentValues);
-    const amplitudeScore = Math.min(100, range * 200);
-    
-    // 3. Continuidad (sin saltos bruscos)
-    const deltas = [];
-    for (let i = 1; i < recentValues.length; i++) {
-      deltas.push(Math.abs(recentValues[i] - recentValues[i-1]));
-    }
-    const maxDelta = Math.max(...deltas);
-    const continuityScore = 100 - Math.min(100, maxDelta * 200);
-    
-    // Calidad combinada
-    this.signalQualityEstimate = Math.round(
-      variabilityScore * 0.4 + 
-      amplitudeScore * 0.3 + 
-      continuityScore * 0.3
+    // Detección de dedo basada en patrones de señal
+    const fingerDetected = detectFingerPresence(
+      this.filteredBuffer,
+      this.fingerDetectionSensitivity
     );
     
-    // Asegurar rango 0-100
-    this.signalQualityEstimate = Math.max(0, Math.min(100, this.signalQualityEstimate));
+    // Evaluación de calidad de señal
+    const quality = evaluateSignalQuality(
+      value,
+      filteredValue,
+      this.filteredBuffer,
+      this.qualityThreshold
+    );
+    
+    // Calcular fuerza de señal
+    const signalStrength = this.calculateSignalStrength();
+    
+    return {
+      timestamp,
+      rawValue: value,
+      filteredValue,
+      normalizedValue,
+      amplifiedValue,
+      quality,
+      fingerDetected,
+      signalStrength
+    };
   }
   
   /**
-   * Normaliza el valor de entrada [0-1]
+   * Aplica un filtro adaptativo que se ajusta según características de la señal
    */
-  private normalizeValue(value: number): number {
-    // Si el buffer está vacío, normalización simple
-    if (this.buffer.length < 5) {
-      return Math.max(0, Math.min(1, value));
-    }
+  private applyAdaptiveFilter(value: number): number {
+    if (this.valuesBuffer.length < 3) return value;
     
-    // Normalizar con min-max del buffer reciente
-    const min = Math.min(...this.buffer);
-    const max = Math.max(...this.buffer);
+    // Calcular variabilidad reciente
+    const recent = this.valuesBuffer.slice(-5);
+    const variance = this.calculateVariance(recent);
     
-    // Evitar división por cero
-    if (max === min) return 0.5;
+    // Ajustar fuerza de filtrado según varianza
+    const adaptiveAlpha = this.adjustFilterStrength(variance);
     
-    // Normalizar a 0-1
-    return (value - min) / (max - min);
+    // Aplicar filtro exponencial con alfa adaptativo
+    const lastFiltered = this.filteredBuffer.length > 0 
+      ? this.filteredBuffer[this.filteredBuffer.length - 1] 
+      : value;
+      
+    return adaptiveAlpha * value + (1 - adaptiveAlpha) * lastFiltered;
   }
   
   /**
-   * Amplifica el valor normalizado para resaltar cambios
+   * Ajusta la fuerza del filtrado según la varianza
    */
-  private amplifyValue(value: number): number {
-    // Amplificar señal débil
-    if (value < 0.3) {
-      return value * 1.5;
-    }
+  private adjustFilterStrength(variance: number): number {
+    // Si la varianza es alta (señal ruidosa), filtrar más fuerte
+    if (variance > 0.05) return Math.min(0.15, this.filterStrength / 2);
     
-    // Mantener señal media
-    if (value < 0.7) {
-      return value;
-    }
+    // Si la varianza es baja (señal estable), filtrar más suave
+    if (variance < 0.01) return Math.min(0.4, this.filterStrength * 1.5);
     
-    // Comprimir señal fuerte
-    return 0.7 + (value - 0.7) * 0.7;
+    // Caso intermedio
+    return this.filterStrength;
   }
   
   /**
-   * Filtra el valor para reducir ruido
+   * Calcula la varianza de un conjunto de valores
    */
-  private filterValue(value: number): number {
-    // Si no hay suficiente historial, devolver sin cambios
-    if (this.buffer.length < 3) {
-      return value;
-    }
+  private calculateVariance(values: number[]): number {
+    if (values.length < 2) return 0;
     
-    // Filtro paso-bajo simple (promedio móvil)
-    const recentValues = this.buffer.slice(-3);
-    const average = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    
-    // Mezclar valor actual con promedio (suavizado)
-    const filterStrength = 0.3; // 0-1 (mayor = más suavizado)
-    return value * (1 - filterStrength) + average * filterStrength;
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+    return squaredDiffs.reduce((sum, diff) => sum + diff, 0) / values.length;
   }
   
   /**
-   * Calcula la intensidad de la señal [0-100]
+   * Calcula la fuerza de la señal basada en amplitud
    */
-  private calculateSignalStrength(value: number): number {
-    // Algoritmo simple: usar amplitud
-    const recentValues = this.buffer.slice(-10);
+  private calculateSignalStrength(): number {
+    if (this.filteredBuffer.length < 5) return 0;
     
-    if (recentValues.length < 3) {
-      return value > 0.1 ? 50 : 0;
+    const recentFiltered = this.filteredBuffer.slice(-10);
+    const min = Math.min(...recentFiltered);
+    const max = Math.max(...recentFiltered);
+    const amplitude = max - min;
+    
+    // Normalizar a un rango 0-100
+    return Math.min(100, Math.max(0, amplitude * 100));
+  }
+  
+  /**
+   * Configura el procesador con opciones personalizadas
+   */
+  public configure(options: SignalProcessingOptions): void {
+    if (options.amplificationFactor !== undefined) {
+      this.amplificationFactor = options.amplificationFactor;
     }
     
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    const range = max - min;
+    if (options.filterStrength !== undefined) {
+      this.filterStrength = options.filterStrength;
+    }
     
-    // Convertir a porcentaje
-    return Math.min(100, range * 100 * 5);
+    if (options.qualityThreshold !== undefined) {
+      this.qualityThreshold = options.qualityThreshold;
+    }
+    
+    if (options.fingerDetectionSensitivity !== undefined) {
+      this.fingerDetectionSensitivity = options.fingerDetectionSensitivity;
+    }
   }
+  
+  /**
+   * Reinicia el procesador y todos sus buffers
+   */
+  public reset(): void {
+    this.valuesBuffer = [];
+    this.filteredBuffer = [];
+  }
+}
+
+/**
+ * Crea una nueva instancia del procesador de señal PPG
+ */
+export function createPPGSignalProcessor(): PPGSignalProcessor {
+  return new PPGSignalProcessor();
 }

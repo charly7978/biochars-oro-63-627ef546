@@ -1,161 +1,208 @@
 
 /**
- * Utilidades para detección de dedo en señal PPG
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Utilidades para detección de presencia de dedo
  */
 
-/**
- * Detecta la presencia de un dedo basado en características de la señal
- */
-export function detectFinger(
-  values: number[], 
-  stabilityCounter: number,
-  options: {
-    threshold?: number,
-    stabilityThreshold?: number,
-    minStdDev?: number,
-    maxStdDev?: number,
-    minAmplitude?: number
-  } = {}
-): { detected: boolean, updatedCounter: number } {
-  // Parámetros con valores por defecto
-  const {
-    threshold = 0.1,
-    stabilityThreshold = 5,
-    minStdDev = 0.01,
-    maxStdDev = 0.5,
-    minAmplitude = 0.05
-  } = options;
-  
-  // Si no hay suficientes valores, no podemos detectar el dedo
-  if (values.length < 5) {
-    return { detected: false, updatedCounter: 0 };
-  }
-  
-  // Calcular estadísticas de la señal
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  const stdDev = Math.sqrt(variance);
-  
-  // Calcular rango de señal
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min;
-  
-  // Criterios para detección de dedo:
-  // 1. Variabilidad adecuada (ni demasiado estable ni demasiado ruidosa)
-  const variabilityCriterion = stdDev >= minStdDev && stdDev <= maxStdDev;
-  
-  // 2. Amplitud suficiente
-  const amplitudeCriterion = range >= minAmplitude;
-  
-  // 3. Criterio de periodicidad o patrón
-  const recentValues = values.slice(-10);
-  const patternCriterion = detectFingerPattern(recentValues);
-  
-  // Combinamos criterios para decisión final
-  const fingerDetected = (variabilityCriterion && amplitudeCriterion) || patternCriterion;
-  
-  // Manejamos estabilidad mediante contador
-  let updatedCounter = stabilityCounter;
-  
-  if (fingerDetected) {
-    updatedCounter = Math.min(stabilityCounter + 1, stabilityThreshold + 5);
-  } else {
-    updatedCounter = Math.max(stabilityCounter - 1, 0);
-  }
-  
-  // La detección final depende del contador de estabilidad
-  return {
-    detected: updatedCounter >= stabilityThreshold,
-    updatedCounter
-  };
-}
+// Almacenamiento para detección de patrones rítmicos
+let rhythmDetectionHistory: Array<{time: number, value: number}> = [];
+let confirmedFingerPresence: boolean = false;
+let lastPeakTimes: number[] = [];
+let consistentPatternsCount: number = 0;
+
+// Constantes para detección de patrones
+const PATTERN_WINDOW_MS = 3000; // Ventana de 3 segundos
+const MIN_PEAKS_FOR_PATTERN = 3; // Mínimo 3 picos para confirmar patrón
+const PEAK_DETECTION_THRESHOLD = 0.2; // Umbral para detección de picos
+const REQUIRED_CONSISTENT_PATTERNS = 3; // Patrones requeridos para confirmación
+const MAX_CONSISTENT_PATTERNS = 10; // Máximo contador de patrones para evitar overflow
 
 /**
- * Detecta patrones específicos de PPG que indican presencia de dedo
+ * Detecta la presencia de un dedo basado en análisis de patrones de la señal PPG
+ * @param signalBuffer Buffer de señal filtrada
+ * @param sensitivity Factor de sensibilidad (0-1)
+ * @returns true si se detecta presencia de dedo
  */
-function detectFingerPattern(values: number[]): boolean {
-  if (values.length < 8) return false;
-  
-  // Contamos cambios de dirección (picos y valles)
-  let directionChanges = 0;
-  for (let i = 2; i < values.length; i++) {
-    const prev_diff = values[i-1] - values[i-2];
-    const curr_diff = values[i] - values[i-1];
+export function detectFingerPresence(
+  signalBuffer: number[],
+  sensitivity: number = 0.6
+): boolean {
+  // Si ya confirmamos la presencia, mantenerla a menos que se pierda el patrón
+  if (confirmedFingerPresence) {
+    // Verificar si aún tenemos un patrón válido
+    const stillValid = validateOngoingPattern(signalBuffer);
     
-    if ((prev_diff >= 0 && curr_diff < 0) || (prev_diff < 0 && curr_diff >= 0)) {
-      directionChanges++;
-    }
-  }
-  
-  // Patrón típico de PPG: al menos 2-3 cambios en 10 puntos
-  const hasRhythmicPattern = directionChanges >= 2 && directionChanges <= 6;
-  
-  // Verificamos amplitud en relación a la media
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-  const deviations = values.map(v => Math.abs(v - mean));
-  const avgDeviation = deviations.reduce((sum, val) => sum + val, 0) / deviations.length;
-  
-  // Más confianza si hay desviación significativa respecto a la media
-  const hasAmplitude = avgDeviation > 0.02;
-  
-  return hasRhythmicPattern && hasAmplitude;
-}
-
-/**
- * Detecta contacto de dedo con análisis específico para calidad PPG
- */
-export function detectFingerContact(values: number[]): boolean {
-  if (values.length < 10) return false;
-  
-  // Implementación avanzada para detección de contacto real de dedo
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  
-  // Criterios para contacto de dedo:
-  // 1. Señal debe tener varianza no nula (no estática)
-  if (variance < 0.00001) return false;
-  
-  // 2. Debe tener componente periódica
-  const periodicityScore = assessPeriodicity(values);
-  
-  // 3. Amplitud adecuada
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min;
-  
-  return periodicityScore > 0.5 && range > 0.03;
-}
-
-/**
- * Evalúa la periodicidad de una señal
- */
-function assessPeriodicity(values: number[]): number {
-  if (values.length < 20) return 0;
-  
-  // Simplificado: contamos cambios de dirección y evaluamos si son regulares
-  const directionChanges: number[] = [];
-  let lastChangeIndex = -1;
-  
-  for (let i = 2; i < values.length; i++) {
-    const prev_diff = values[i-1] - values[i-2];
-    const curr_diff = values[i] - values[i-1];
-    
-    if ((prev_diff >= 0 && curr_diff < 0) || (prev_diff < 0 && curr_diff >= 0)) {
-      if (lastChangeIndex >= 0) {
-        directionChanges.push(i - lastChangeIndex);
+    if (!stillValid) {
+      // Si se pierde el patrón, reducir contador de consistencia
+      consistentPatternsCount = Math.max(0, consistentPatternsCount - 1);
+      
+      // Si perdimos demasiados patrones, quitar la confirmación
+      if (consistentPatternsCount < 1) {
+        confirmedFingerPresence = false;
       }
-      lastChangeIndex = i;
+    }
+    
+    return confirmedFingerPresence;
+  }
+  
+  // Agregar nuevo valor al historial
+  if (signalBuffer.length > 0) {
+    const now = Date.now();
+    rhythmDetectionHistory.push({
+      time: now,
+      value: signalBuffer[signalBuffer.length - 1]
+    });
+    
+    // Mantener solo valores recientes
+    rhythmDetectionHistory = rhythmDetectionHistory
+      .filter(point => now - point.time < PATTERN_WINDOW_MS * 2);
+  }
+  
+  // Detectar patrones rítmicos
+  const hasRhythmicPattern = detectRhythmicPattern(sensitivity);
+  
+  // Si detectamos patrón, incrementar contador
+  if (hasRhythmicPattern) {
+    consistentPatternsCount = Math.min(
+      MAX_CONSISTENT_PATTERNS, 
+      consistentPatternsCount + 1
+    );
+    
+    // Si tenemos suficientes patrones consecutivos, confirmar presencia
+    if (consistentPatternsCount >= REQUIRED_CONSISTENT_PATTERNS) {
+      confirmedFingerPresence = true;
+      console.log("Dedo detectado por patrón rítmico consistente");
+    }
+  } else {
+    // Reducir contador si no hay patrón
+    consistentPatternsCount = Math.max(0, consistentPatternsCount - 0.5);
+  }
+  
+  return confirmedFingerPresence;
+}
+
+/**
+ * Detecta patrones rítmicos en la señal
+ */
+function detectRhythmicPattern(sensitivity: number): boolean {
+  const now = Date.now();
+  
+  if (rhythmDetectionHistory.length < 15) {
+    return false;
+  }
+  
+  // Ajustar umbral según sensibilidad
+  const adjustedThreshold = PEAK_DETECTION_THRESHOLD * (1.2 - sensitivity);
+  
+  // Buscar picos en la señal reciente
+  const recentSignals = rhythmDetectionHistory
+    .filter(point => now - point.time < PATTERN_WINDOW_MS);
+  
+  if (recentSignals.length < 10) {
+    return false;
+  }
+  
+  // Detectar picos
+  const peaks: number[] = [];
+  
+  for (let i = 2; i < recentSignals.length - 2; i++) {
+    const current = recentSignals[i];
+    const prev1 = recentSignals[i - 1];
+    const prev2 = recentSignals[i - 2];
+    const next1 = recentSignals[i + 1];
+    const next2 = recentSignals[i + 2];
+    
+    // Verificar si este punto es un pico
+    if (current.value > prev1.value && 
+        current.value > prev2.value &&
+        current.value > next1.value && 
+        current.value > next2.value &&
+        current.value > adjustedThreshold) {
+      peaks.push(current.time);
     }
   }
   
-  if (directionChanges.length < 2) return 0;
+  // Verificar si tenemos suficientes picos
+  if (peaks.length < MIN_PEAKS_FOR_PATTERN) {
+    return false;
+  }
   
-  // Calcular regularidad de cambios
-  const mean = directionChanges.reduce((sum, val) => sum + val, 0) / directionChanges.length;
-  const variance = directionChanges.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / directionChanges.length;
-  const cv = Math.sqrt(variance) / mean;
+  // Calcular intervalos entre picos
+  const intervals: number[] = [];
+  for (let i = 1; i < peaks.length; i++) {
+    intervals.push(peaks[i] - peaks[i - 1]);
+  }
   
-  // Menor coeficiente de variación = más regular = más periódica
-  return Math.max(0, 1 - cv);
+  // Filtrar intervalos fisiológicamente plausibles (40-180 BPM)
+  const validIntervals = intervals.filter(interval => 
+    interval >= 333 && interval <= 1500
+  );
+  
+  if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+    // Menos del 70% de intervalos son plausibles
+    return false;
+  }
+  
+  // Verificar consistencia en intervalos
+  let consistentIntervals = 0;
+  const maxDeviation = 200; // ms
+  
+  for (let i = 1; i < validIntervals.length; i++) {
+    if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
+      consistentIntervals++;
+    }
+  }
+  
+  // Si tenemos intervalos consistentes, confirmar patrón
+  const hasPattern = consistentIntervals >= MIN_PEAKS_FOR_PATTERN - 1;
+  
+  if (hasPattern) {
+    lastPeakTimes = peaks;
+  }
+  
+  return hasPattern;
+}
+
+/**
+ * Valida si el patrón rítmico continúa presente
+ */
+function validateOngoingPattern(signalBuffer: number[]): boolean {
+  // Si el buffer es muy pequeño, no podemos validar
+  if (signalBuffer.length < 10) {
+    return true; // Asumir que sigue siendo válido por falta de datos
+  }
+  
+  // Verificar que la señal sigue teniendo variaciones 
+  // (evitar señales planas que podrían falsamente parecer estables)
+  const min = Math.min(...signalBuffer);
+  const max = Math.max(...signalBuffer);
+  const amplitude = max - min;
+  
+  // Si la amplitud es muy baja, no hay dedo
+  if (amplitude < 0.05) {
+    return false;
+  }
+  
+  // Si hemos perdido los patrones rítmicos por completo
+  const now = Date.now();
+  const lastPatternTime = lastPeakTimes.length > 0 ? 
+    lastPeakTimes[lastPeakTimes.length - 1] : 0;
+  
+  // Si ha pasado mucho tiempo desde el último patrón detectado
+  if (now - lastPatternTime > 5000) {
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Reinicia el detector de dedo
+ */
+export function resetFingerDetector(): void {
+  rhythmDetectionHistory = [];
+  confirmedFingerPresence = false;
+  lastPeakTimes = [];
+  consistentPatternsCount = 0;
 }

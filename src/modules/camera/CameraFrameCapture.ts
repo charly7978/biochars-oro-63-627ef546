@@ -1,117 +1,192 @@
 
 /**
- * Módulo de captura de frames de cámara
- * Proporciona funciones para configurar la cámara y procesar frames
+ * Captura de frames de la cámara
+ * Proporciona funcionalidades para la captura y procesamiento inicial de imágenes
  */
 
 /**
- * Configura la cámara para el dispositivo específico
+ * Configura la cámara con los parámetros óptimos según el dispositivo
  */
-export async function configureCameraForDevice(
+export const configureCameraForDevice = (
   videoTrack: MediaStreamTrack,
-  isAndroid: boolean,
-  isIOS: boolean
-): Promise<void> {
-  try {
-    const capabilities = videoTrack.getCapabilities();
-    console.log("CameraFrameCapture: Capacidades de la cámara:", capabilities);
-    
-    const advancedConstraints: MediaTrackConstraintSet[] = [];
-    
-    if (isAndroid) {
-      if (capabilities.torch) {
-        console.log("CameraFrameCapture: Activando linterna en Android");
-        await videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        });
-      }
-    } else {
-      if (capabilities.exposureMode) {
-        const exposureConstraint: MediaTrackConstraintSet = { 
-          exposureMode: 'continuous' 
-        };
-        
-        if (capabilities.exposureCompensation?.max) {
-          exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+  isAndroid: boolean = false, 
+  isIOS: boolean = false
+): Promise<void> => {
+  return new Promise<void>(async (resolve, reject) => {
+    try {
+      const capabilities = videoTrack.getCapabilities();
+      console.log("Capacidades de la cámara:", capabilities);
+      
+      const advancedConstraints: MediaTrackConstraintSet[] = [];
+      
+      // Configuración según plataforma
+      if (isAndroid) {
+        if (capabilities.torch) {
+          console.log("Activando linterna en Android");
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          });
+        }
+      } else {
+        // Configuración para otras plataformas
+        if (capabilities.exposureMode) {
+          const exposureConstraint: MediaTrackConstraintSet = { 
+            exposureMode: 'continuous' 
+          };
+          
+          if (capabilities.exposureCompensation?.max) {
+            exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+          }
+          
+          advancedConstraints.push(exposureConstraint);
         }
         
-        advancedConstraints.push(exposureConstraint);
-      }
-      
-      if (capabilities.focusMode) {
-        advancedConstraints.push({ focusMode: 'continuous' });
-      }
-      
-      if (capabilities.whiteBalanceMode) {
-        advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-      }
-      
-      if (advancedConstraints.length > 0) {
-        console.log("CameraFrameCapture: Aplicando configuraciones avanzadas:", advancedConstraints);
-        await videoTrack.applyConstraints({
-          advanced: advancedConstraints
-        });
-      }
+        if (capabilities.focusMode) {
+          advancedConstraints.push({ focusMode: 'continuous' });
+        }
+        
+        if (capabilities.whiteBalanceMode) {
+          advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+        }
+        
+        if (capabilities.brightness && capabilities.brightness.max) {
+          const maxBrightness = capabilities.brightness.max;
+          advancedConstraints.push({ brightness: maxBrightness * 0.2 });
+        }
+        
+        if (capabilities.contrast && capabilities.contrast.max) {
+          const maxContrast = capabilities.contrast.max;
+          advancedConstraints.push({ contrast: maxContrast * 0.6 });
+        }
 
-      if (capabilities.torch) {
-        console.log("CameraFrameCapture: Activando linterna para mejorar la señal PPG");
-        await videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        });
+        if (advancedConstraints.length > 0) {
+          console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+          await videoTrack.applyConstraints({
+            advanced: advancedConstraints
+          });
+        }
+
+        // Activar linterna para todas las plataformas si está disponible
+        if (capabilities.torch) {
+          console.log("Activando linterna para mejorar la señal PPG");
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          });
+        } else {
+          console.log("La linterna no está disponible en este dispositivo");
+        }
       }
+      
+      resolve();
+    } catch (error) {
+      console.error("Error al configurar la cámara:", error);
+      // Resolver de todos modos para no bloquear el flujo
+      resolve();
     }
-  } catch (error) {
-    console.error("CameraFrameCapture: Error configurando cámara:", error);
-  }
-}
+  });
+};
 
 /**
- * Procesa frames de cámara con control de tasa
- * Devuelve una función para detener el procesamiento
+ * Extrae datos de un frame de la cámara para procesamiento
  */
-export function processFramesControlled(
+export const extractFrameData = (
+  frame: ImageBitmap, 
+  canvas: HTMLCanvasElement, 
+  ctx: CanvasRenderingContext2D,
+  targetWidth: number = 320,
+  targetHeight: number = 240
+): ImageData | null => {
+  try {
+    // Ajustar tamaño del canvas si es necesario
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+    
+    // Dibujar el frame en el canvas con el tamaño objetivo
+    ctx.drawImage(
+      frame, 
+      0, 0, frame.width, frame.height, 
+      0, 0, targetWidth, targetHeight
+    );
+    
+    // Obtener los datos de imagen para procesamiento
+    return ctx.getImageData(0, 0, targetWidth, targetHeight);
+  } catch (error) {
+    console.error("Error al extraer datos del frame:", error);
+    return null;
+  }
+};
+
+/**
+ * Procesa frames de la cámara a una tasa controlada
+ */
+export const processFramesControlled = (
   imageCapture: ImageCapture,
-  isEnabled: boolean,
-  frameRate: number,
-  onFrameProcessed: (imageData: ImageData) => void
-): () => void {
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d', { willReadFrequently: true });
+  isMonitoring: boolean,
+  targetFrameRate: number,
+  processCallback: (imageData: ImageData) => void
+): () => void => {
+  let lastProcessTime = 0;
+  const targetFrameInterval = 1000 / targetFrameRate;
+  let frameCount = 0;
+  let lastFpsUpdateTime = Date.now();
+  let processingFps = 0;
+  let requestId: number | null = null;
   
-  if (!context) {
-    console.error("CameraFrameCapture: No se pudo obtener contexto 2D");
+  // Canvas para procesamiento de frames
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+  
+  if (!tempCtx) {
+    console.error("No se pudo obtener el contexto 2D para procesamiento de frames");
     return () => {};
   }
   
-  let running = true;
-  const interval = Math.floor(1000 / frameRate);
-  
-  console.log(`CameraFrameCapture: Iniciando procesamiento controlado de frames a ${frameRate} FPS (intervalo: ${interval}ms)`);
-  
-  const processFrame = async () => {
-    if (!running || !isEnabled) return;
+  const processImage = async () => {
+    if (!isMonitoring) return;
     
-    try {
-      const frame = await imageCapture.grabFrame();
-      canvas.width = frame.width;
-      canvas.height = frame.height;
-      context.drawImage(frame, 0, 0);
-      
-      const imageData = context.getImageData(0, 0, frame.width, frame.height);
-      onFrameProcessed(imageData);
-    } catch (error) {
-      console.error("CameraFrameCapture: Error capturando frame:", error);
+    const now = Date.now();
+    const timeSinceLastProcess = now - lastProcessTime;
+    
+    // Control de tasa de frames
+    if (timeSinceLastProcess >= targetFrameInterval) {
+      try {
+        const frame = await imageCapture.grabFrame();
+        
+        const imageData = extractFrameData(frame, tempCanvas, tempCtx);
+        if (imageData) {
+          processCallback(imageData);
+        }
+        
+        frameCount++;
+        lastProcessTime = now;
+        
+        // Log de rendimiento cada segundo
+        if (now - lastFpsUpdateTime > 1000) {
+          processingFps = frameCount;
+          frameCount = 0;
+          lastFpsUpdateTime = now;
+          console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+        }
+      } catch (error) {
+        console.error("Error capturando frame:", error);
+      }
     }
     
-    if (running) {
-      setTimeout(processFrame, interval);
+    if (isMonitoring) {
+      requestId = requestAnimationFrame(processImage);
     }
   };
   
-  processFrame();
+  // Iniciar procesamiento
+  requestId = requestAnimationFrame(processImage);
   
+  // Retornar función para cancelar el procesamiento
   return () => {
-    running = false;
-    console.log("CameraFrameCapture: Procesamiento de frames detenido");
+    if (requestId !== null) {
+      cancelAnimationFrame(requestId);
+      requestId = null;
+    }
   };
-}
+};

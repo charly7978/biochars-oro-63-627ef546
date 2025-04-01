@@ -1,186 +1,135 @@
 
 /**
- * Extractor combinado de señales
- * Integra los extractores específicos y proporciona una salida unificada
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Extractor combinado que integra la extracción de latidos y señal PPG
+ * Proporciona una salida unificada con todos los datos extraídos
  */
+import { 
+  HeartbeatExtractor, 
+  HeartbeatExtractionResult, 
+  createHeartbeatExtractor 
+} from './HeartbeatExtractor';
+import { 
+  PPGSignalExtractor, 
+  PPGSignalExtractionResult,
+  createPPGSignalExtractor
+} from './PPGSignalExtractor';
 
-import { HeartbeatExtractor } from './HeartbeatExtractor';
-import { PPGSignalExtractor } from './PPGSignalExtractor';
-
+// Resultado combinado con datos de ambos extractores
 export interface CombinedExtractionResult {
-  // Salida del extractor de latidos
-  heartbeat: {
-    isPeak: boolean;
-    timestamp: number;
-    rawPeakValue: number;
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
+  // Datos básicos
+  timestamp: number;
+  rawValue: number;
+  filteredValue: number;
   
-  // Salida del extractor de señal PPG
-  ppg: {
-    rawValue: number;
-    timestamp: number;
-    signalStrength: number;
-    fingerDetected: boolean;
-  };
+  // Información de señal
+  quality: number;
+  fingerDetected: boolean;
+  amplitude: number;
+  baseline: number;
   
-  // Salida balanceada (combinación de ambos)
-  combined: {
-    value: number;
-    isPeak: boolean;
-    signalStrength: number;
-    fingerDetected: boolean;
-    timestamp: number;
-    rrIntervals: number[];
-  };
-
-  // Metadatos adicionales para integración
-  quality?: number;
-  averageBPM?: number;
-  confidence?: number;
+  // Información de latidos
+  hasPeak: boolean;
+  peakTime: number | null;
+  peakValue: number | null;
+  confidence: number;
+  instantaneousBPM: number | null;
+  rrInterval: number | null;
+  
+  // Estadísticas calculadas
+  averageBPM: number | null;
+  heartRateVariability: number | null;
 }
 
+/**
+ * Clase para extracción combinada de datos PPG y latidos
+ */
 export class CombinedExtractor {
-  private heartbeatExtractor: HeartbeatExtractor;
   private ppgExtractor: PPGSignalExtractor;
-  private lastResult: CombinedExtractionResult | null = null;
-  private avgBPMBuffer: number[] = [];
-  private readonly MAX_BPM_BUFFER = 10;
+  private heartbeatExtractor: HeartbeatExtractor;
   
   constructor() {
-    this.heartbeatExtractor = new HeartbeatExtractor();
-    this.ppgExtractor = new PPGSignalExtractor();
-    
-    console.log("CombinedExtractor: Inicializado con extractores específicos");
+    this.ppgExtractor = createPPGSignalExtractor();
+    this.heartbeatExtractor = createHeartbeatExtractor();
   }
   
   /**
-   * Procesa un valor único PPG y extrae información combinada
-   * Método principal de entrada para la extracción de datos
+   * Procesa un valor PPG y extrae toda la información disponible
+   * @param value Valor PPG sin procesar
+   * @returns Resultado combinado con todos los datos extraídos
    */
   public processValue(value: number): CombinedExtractionResult {
-    return this.extract(value);
-  }
-  
-  /**
-   * Extrae información combinada de la señal
-   * Proporciona tres salidas: heartbeat, ppg y combined
-   */
-  public extract(value: number): CombinedExtractionResult {
-    // Extraer información de latidos
-    const heartbeatResult = this.heartbeatExtractor.extract(value);
+    // Primero procesar la señal PPG
+    const ppgResult = this.ppgExtractor.processValue(value);
     
-    // Extraer información de señal PPG
-    const ppgResult = this.ppgExtractor.extract(value);
+    // Luego extraer información de latidos del valor filtrado
+    const heartbeatResult = this.heartbeatExtractor.processValue(ppgResult.filteredValue);
     
-    // Calcular BPM promedio si hay suficientes intervalos
-    let avgBPM = 0;
-    let confidence = 0;
-    
-    if (heartbeatResult.intervals.length > 2) {
-      // Calcular BPM basado en intervalos
-      const validIntervals = heartbeatResult.intervals.filter(i => i > 300 && i < 2000);
+    // Combinar resultados
+    return {
+      // Datos básicos
+      timestamp: ppgResult.timestamp,
+      rawValue: ppgResult.rawValue,
+      filteredValue: ppgResult.filteredValue,
       
-      if (validIntervals.length > 0) {
-        const avgInterval = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
-        avgBPM = Math.round(60000 / avgInterval);
-        
-        // Calcular confianza basada en estabilidad de intervalos
-        const stdDev = Math.sqrt(
-          validIntervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / validIntervals.length
-        );
-        
-        // Menor desviación = mayor confianza
-        confidence = Math.max(0, Math.min(1, 1 - (stdDev / avgInterval / 0.5)));
-        
-        // Actualizar buffer de BPM para estabilidad
-        this.avgBPMBuffer.push(avgBPM);
-        if (this.avgBPMBuffer.length > this.MAX_BPM_BUFFER) {
-          this.avgBPMBuffer.shift();
-        }
-        
-        // Suavizar BPM con promedio móvil
-        if (this.avgBPMBuffer.length > 1) {
-          avgBPM = Math.round(
-            this.avgBPMBuffer.reduce((a, b) => a + b, 0) / this.avgBPMBuffer.length
-          );
-        }
-      }
-    }
-    
-    // Calcular calidad de señal
-    const signalQuality = ppgResult.signalStrength * (heartbeatResult.intervals.length > 3 ? 1 : 0.5);
-    
-    // Crear salida combinada
-    const combinedResult = {
-      value,
-      isPeak: heartbeatResult.isPeak,
-      signalStrength: ppgResult.signalStrength,
+      // Información de señal
+      quality: ppgResult.quality,
       fingerDetected: ppgResult.fingerDetected,
-      timestamp: Date.now(),
-      rrIntervals: heartbeatResult.intervals
+      amplitude: ppgResult.amplitude,
+      baseline: ppgResult.baseline,
+      
+      // Información de latidos
+      hasPeak: heartbeatResult.hasPeak,
+      peakTime: heartbeatResult.peakTime,
+      peakValue: heartbeatResult.hasPeak ? heartbeatResult.peakValue : null,
+      confidence: heartbeatResult.confidence,
+      instantaneousBPM: heartbeatResult.instantaneousBPM,
+      rrInterval: heartbeatResult.rrInterval,
+      
+      // Estadísticas calculadas
+      averageBPM: this.heartbeatExtractor.getAverageBPM(),
+      heartRateVariability: this.heartbeatExtractor.getHeartRateVariability()
     };
-    
-    // Resultado final
-    const result: CombinedExtractionResult = {
-      heartbeat: heartbeatResult,
-      ppg: ppgResult,
-      combined: combinedResult,
-      quality: signalQuality,
-      averageBPM: avgBPM > 30 && avgBPM < 220 ? avgBPM : null,
-      confidence
-    };
-    
-    this.lastResult = result;
-    return result;
   }
   
   /**
-   * Reinicia los extractores
+   * Obtiene el extractor de señal PPG interno
+   */
+  public getPPGExtractor(): PPGSignalExtractor {
+    return this.ppgExtractor;
+  }
+  
+  /**
+   * Obtiene el extractor de latidos interno
+   */
+  public getHeartbeatExtractor(): HeartbeatExtractor {
+    return this.heartbeatExtractor;
+  }
+  
+  /**
+   * Reinicia ambos extractores
    */
   public reset(): void {
-    this.heartbeatExtractor.reset();
     this.ppgExtractor.reset();
-    this.lastResult = null;
-    this.avgBPMBuffer = [];
-  }
-  
-  /**
-   * Configura parámetros de los extractores
-   */
-  public configure(config: {
-    heartbeat?: {
-      peakThreshold?: number;
-      minPeakDistance?: number;
-      maxIntervals?: number;
-    };
-    ppg?: {
-      minSignalThreshold?: number;
-      stableCountThreshold?: number;
-      maxRecentValues?: number;
-    };
-  }): void {
-    if (config.heartbeat) {
-      this.heartbeatExtractor.configure(config.heartbeat);
-    }
-    
-    if (config.ppg) {
-      this.ppgExtractor.configure(config.ppg);
-    }
-  }
-  
-  /**
-   * Obtiene el último resultado procesado
-   */
-  public getLastResult(): CombinedExtractionResult | null {
-    return this.lastResult;
+    this.heartbeatExtractor.reset();
   }
 }
 
 /**
- * Crea una nueva instancia del extractor combinado
+ * Crea una instancia de extractor combinado
  */
-export function createCombinedExtractor(): CombinedExtractor {
+export const createCombinedExtractor = (): CombinedExtractor => {
   return new CombinedExtractor();
-}
+};
+
+/**
+ * Procesa un valor PPG con un extractor combinado
+ * (Función de utilidad para uso directo)
+ */
+export const extractCombinedData = (
+  value: number, 
+  extractor: CombinedExtractor
+): CombinedExtractionResult => {
+  return extractor.processValue(value);
+};

@@ -1,13 +1,17 @@
 
 /**
- * Módulo de procesamiento de señal - Punto de entrada
- * Exporta procesadores y utilidades para el procesamiento de señal
+ * Módulo central de procesamiento de señal
+ * Proporciona funcionalidades avanzadas para el procesamiento de señales PPG y cardíacas
  */
 
-export * from './types';
+// Exportar procesadores principales
 export * from './ppg-processor';
 export * from './heartbeat-processor';
-export * from './combined-processor';
-export * from './utils/finger-detector';
+
+// Exportar utilidades de procesamiento
 export * from './utils/quality-detector';
+export * from './utils/finger-detector';
 export * from './utils/signal-normalizer';
+
+// Exportar tipos
+export * from './types';

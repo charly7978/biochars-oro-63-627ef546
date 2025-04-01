@@ -1,71 +1,50 @@
 
 /**
- * Tipos para el módulo de procesamiento de señal
+ * Tipos para el procesamiento central de señales
  */
 
+/**
+ * Resultado del procesamiento de señal PPG
+ */
 export interface ProcessedPPGSignal {
-  // Valor raw original
-  rawValue: number;
-  
-  // Valor filtrado
-  filteredValue: number;
-  
-  // Marca de tiempo
   timestamp: number;
-  
-  // Calidad de señal (0-100)
+  rawValue: number;
+  filteredValue: number;
+  normalizedValue: number;
+  amplifiedValue: number;
   quality: number;
-  
-  // Detección de dedo
   fingerDetected: boolean;
-  
-  // Metadata de procesamiento
-  isPeak?: boolean;
-  lastPeakTime?: number | null;
-  rrIntervals?: number[];
-  
-  // Valor normalizado (agregado para compatibilidad)
-  normalizedValue?: number;
-  
-  // Valor amplificado (agregado para compatibilidad)
-  amplifiedValue?: number;
-  
-  // Intensidad de señal
-  signalStrength?: number;
-  
-  // Metadatos adicionales
-  metadata?: Record<string, any>;
+  signalStrength: number;
 }
 
-// Modos de procesamiento de señal
-export type SignalProcessingMode = 'standard' | 'adaptive' | 'highSensitivity' | 'lowNoise';
+/**
+ * Resultado del procesamiento de señal cardíaca
+ */
+export interface ProcessedHeartbeatSignal {
+  timestamp: number;
+  value: number;
+  isPeak: boolean;
+  peakConfidence: number;
+  instantaneousBPM: number | null;
+  rrInterval: number | null;
+  heartRateVariability: number | null;
+}
 
-// Opciones de configuración para procesador
-export interface PPGProcessingOptions {
-  // Umbral para detección de dedo
-  fingerDetectionThreshold?: number;
-  
-  // Umbral para detección de picos
-  peakDetectionThreshold?: number;
-  
-  // Tamaño de ventana para filtros
-  filterWindowSize?: number;
-  
-  // Modo de procesamiento
-  mode?: SignalProcessingMode;
-  
-  // Factor de amplificación
+/**
+ * Opciones de configuración para el procesamiento de señal
+ */
+export interface SignalProcessingOptions {
   amplificationFactor?: number;
+  filterStrength?: number;
+  qualityThreshold?: number;
+  fingerDetectionSensitivity?: number;
 }
 
-// Interfaces base para los procesadores de señal
-export interface SignalProcessor {
-  processSignal(input: number): ProcessedPPGSignal;
+/**
+ * Interfaz para todos los procesadores de señal
+ */
+export interface SignalProcessor<T> {
+  processSignal(value: number): T;
   reset(): void;
-}
-
-export interface SignalProcessorConfig {
-  mode?: SignalProcessingMode;
-  filterWindowSize?: number;
-  amplificationFactor?: number;
+  configure(options: SignalProcessingOptions): void;
 }
