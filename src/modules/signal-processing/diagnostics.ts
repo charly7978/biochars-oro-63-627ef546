@@ -49,13 +49,13 @@ export class SignalProcessingDiagnostics {
     if (!this.enabled) return;
 
     // Add timestamp if not present
-    const diagnosticInfo = {
+    const enhancedInfo: SignalDiagnosticInfo = {
       ...info,
       timestamp: info.timestamp || Date.now()
     };
 
     // Add to history
-    this.diagnosticHistory.push(diagnosticInfo);
+    this.diagnosticHistory.push(enhancedInfo);
     
     // Trim history if needed
     if (this.diagnosticHistory.length > this.MAX_HISTORY_SIZE) {
@@ -74,7 +74,7 @@ export class SignalProcessingDiagnostics {
     }
 
     // Notify subscribers
-    this.notifySubscribers(diagnosticInfo);
+    this.notifySubscribers(enhancedInfo);
   }
 
   /**

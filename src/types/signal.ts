@@ -1,4 +1,3 @@
-
 /**
  * Interface for PPG data point with timestamp
  */
@@ -60,7 +59,7 @@ export interface SignalDiagnosticInfo {
     snr?: number;                      // Signal-to-noise ratio if available
   };
   fingerDetectionConfidence?: number;   // Confidence level in finger detection
-  timestamp?: number;                   // Added timestamp field to fix error
+  timestamp?: number;                   // Added timestamp field for diagnostics
 }
 
 /**
@@ -72,7 +71,6 @@ export interface ProcessingError {
   timestamp: number;             // Error timestamp
   component?: string;            // Component where error occurred
   severity: 'low' | 'medium' | 'high' | 'critical';  // Error severity
-  data?: any;                    // Any relevant data for debugging
   recoverable: boolean;          // Whether system can recover from this error
   suggestions?: string[];        // Suggested remediation steps
 }
@@ -124,4 +122,3 @@ export interface SignalValidationConfig {
   maxVariance: number;
   requiredSampleSize: number;
 }
-

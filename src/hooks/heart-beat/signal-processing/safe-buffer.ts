@@ -1,4 +1,3 @@
-
 /**
  * Buffer seguro con validación de datos y manejo de errores
  * Encapsula el buffer optimizado con protecciones adicionales
@@ -55,9 +54,19 @@ export class SafePPGBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
    */
   public push(item: T): void {
     try {
+      // Asegurarse de que el punto tenga todas las propiedades necesarias
+      const enhancedItem = { ...item } as TimestampedPPGData & Partial<T>;
+      
+      // Garantizar que tanto time como timestamp existan
+      if ('timestamp' in item && !('time' in item)) {
+        enhancedItem.time = item.timestamp;
+      } else if ('time' in item && !('timestamp' in item)) {
+        enhancedItem.timestamp = item.time;
+      }
+      
       // Validar el punto antes de añadirlo
       const validationStart = performance.now();
-      const validationResult: SignalValidationResult = this.validator.validatePPGDataPoint(item);
+      const validationResult: SignalValidationResult = this.validator.validatePPGDataPoint(enhancedItem);
       const validationTimeMs = performance.now() - validationStart;
       
       // Registrar diagnóstico de validación
@@ -109,7 +118,7 @@ export class SafePPGBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
       this.errorHandler.registerGoodValue(this.componentName, item);
       
       // Añadir al buffer
-      this.buffer.push(item);
+      this.buffer.push(enhancedItem as T);
       
     } catch (error) {
       // Capturar errores inesperados
@@ -298,4 +307,3 @@ export function createSafeCircularBufferAdapter<U extends TimestampedPPGData>(
 ): SafeCircularBufferAdapter<U> {
   return new SafeCircularBufferAdapter<U>(capacity, componentName);
 }
-
