@@ -16,7 +16,12 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--" 
+    arrhythmiaStatus: "--",
+    glucose: 0,
+    lipids: {
+      totalCholesterol: 0,
+      triglycerides: 0
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
@@ -33,6 +38,12 @@ const Index = () => {
     try {
       if (elem.requestFullscreen) {
         await elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        await elem.webkitRequestFullscreen();
+      } else if (elem.mozRequestFullScreen) {
+        await elem.mozRequestFullScreen();
+      } else if (elem.msRequestFullscreen) {
+        await elem.msRequestFullscreen();
       }
       
       // Try to activate Android immersive mode if available
@@ -146,7 +157,12 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -167,7 +183,12 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -184,40 +205,36 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     
     // Use createImageBitmap API which is more widely supported
-    const processStreamWithCanvas = (videoTrack) => {
-      // Create a video element to display the stream
-      const videoElement = document.createElement('video');
-      videoElement.srcObject = new MediaStream([videoTrack]);
-      videoElement.autoplay = true;
-      videoElement.style.display = 'none';
-      document.body.appendChild(videoElement);
+    // Create a video element to display the stream
+    const videoElement = document.createElement('video');
+    videoElement.srcObject = new MediaStream([videoTrack]);
+    videoElement.autoplay = true;
+    videoElement.style.display = 'none';
+    document.body.appendChild(videoElement);
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    const processVideoFrame = () => {
+      if (!isMonitoring) {
+        document.body.removeChild(videoElement);
+        return;
+      }
       
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
+      if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+        tempCanvas.width = videoElement.videoWidth;
+        tempCanvas.height = videoElement.videoHeight;
+        tempCtx.drawImage(videoElement, 0, 0);
+        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        processFrame(imageData);
+      }
       
-      const processFrame = () => {
-        if (!isMonitoring) {
-          document.body.removeChild(videoElement);
-          return;
-        }
-        
-        if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-          tempCanvas.width = videoElement.videoWidth;
-          tempCanvas.height = videoElement.videoHeight;
-          tempCtx.drawImage(videoElement, 0, 0);
-          const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-          processFrame(imageData);
-        }
-        
-        requestAnimationFrame(processFrame);
-      };
-      
-      videoElement.onloadedmetadata = () => {
-        processFrame();
-      };
+      requestAnimationFrame(processVideoFrame);
     };
     
-    processStreamWithCanvas(videoTrack);
+    videoElement.onloadedmetadata = () => {
+      processVideoFrame();
+    };
     
     // Try to enable camera torch if available
     if (videoTrack.getCapabilities) {
@@ -241,6 +258,8 @@ const Index = () => {
           spo2: vitals.spo2,
           pressure: vitals.pressure,
           arrhythmiaStatus: vitals.arrhythmiaStatus,
+          glucose: vitals.glucose,
+          lipids: vitals.lipids
         });
         setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
@@ -288,7 +307,7 @@ const Index = () => {
 
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-6 gap-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
@@ -307,6 +326,16 @@ const Index = () => {
                 <VitalSign 
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
+                />
+                <VitalSign 
+                  label="GLUCOSA"
+                  value={vitalSigns.glucose || "--"}
+                  unit="mg/dL"
+                />
+                <VitalSign 
+                  label="COLESTEROL"
+                  value={vitalSigns.lipids?.totalCholesterol || "--"}
+                  unit="mg/dL"
                 />
               </div>
             </div>
