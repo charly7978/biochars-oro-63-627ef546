@@ -9,6 +9,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { PrecisionVitalSignsProcessor, PrecisionVitalSignsResult } from '../modules/vital-signs/PrecisionVitalSignsProcessor';
 import { CalibrationReference } from '../modules/vital-signs/calibration/CalibrationManager';
+import { useSignalProcessing } from './useSignalProcessing';
 import type { ProcessedSignal } from '../types/signal';
 
 /**
@@ -34,6 +35,7 @@ export interface PrecisionVitalSignsState {
 export function usePrecisionVitalSigns() {
   // Inicializar procesador
   const processorRef = useRef<PrecisionVitalSignsProcessor | null>(null);
+  const signalProcessing = useSignalProcessing();
   
   // Estado local
   const [state, setState] = useState<PrecisionVitalSignsState>({
@@ -48,14 +50,6 @@ export function usePrecisionVitalSigns() {
       lightDetected: 50,
       motionDetected: 0
     }
-  });
-  
-  // Access to raw and filtered signal data
-  const [signalData, setSignalData] = useState({
-    rawValue: 0,
-    filteredValue: 0,
-    signalQuality: 0,
-    fingerDetected: false
   });
   
   // Inicializar procesador
@@ -78,6 +72,7 @@ export function usePrecisionVitalSigns() {
     if (!processorRef.current) return;
     
     processorRef.current.start();
+    signalProcessing.startProcessing();
     
     setState(prev => ({
       ...prev,
@@ -85,13 +80,14 @@ export function usePrecisionVitalSigns() {
     }));
     
     console.log("usePrecisionVitalSigns: Procesamiento iniciado");
-  }, []);
+  }, [signalProcessing]);
   
   // Detener procesamiento
   const stopProcessing = useCallback(() => {
     if (!processorRef.current) return;
     
     processorRef.current.stop();
+    signalProcessing.stopProcessing();
     
     setState(prev => ({
       ...prev,
@@ -99,7 +95,7 @@ export function usePrecisionVitalSigns() {
     }));
     
     console.log("usePrecisionVitalSigns: Procesamiento detenido");
-  }, []);
+  }, [signalProcessing]);
   
   // Procesar señal
   const processSignal = useCallback((signal: ProcessedSignal): PrecisionVitalSignsResult | null => {
@@ -108,14 +104,6 @@ export function usePrecisionVitalSigns() {
     }
     
     try {
-      // Update signal data state
-      setSignalData({
-        rawValue: signal.rawValue,
-        filteredValue: signal.filteredValue,
-        signalQuality: signal.quality,
-        fingerDetected: signal.fingerDetected
-      });
-      
       // Procesar señal con precisión mejorada
       const result = processorRef.current.processSignal(signal);
       
@@ -140,6 +128,34 @@ export function usePrecisionVitalSigns() {
       return null;
     }
   }, [state.isProcessing]);
+  
+  // Escuchar cambios en la señal procesada
+  useEffect(() => {
+    if (!state.isProcessing || !signalProcessing.fingerDetected) {
+      return;
+    }
+    
+    // Crear objeto de señal procesada
+    const processedSignal: ProcessedSignal = {
+      timestamp: Date.now(),
+      rawValue: signalProcessing.rawValue || 0,
+      filteredValue: signalProcessing.filteredValue || 0,
+      quality: signalProcessing.signalQuality,
+      fingerDetected: signalProcessing.fingerDetected,
+      perfusionIndex: 0,
+      roi: { x: 0, y: 0, width: 0, height: 0 }
+    };
+    
+    // Procesar señal
+    processSignal(processedSignal);
+    
+  }, [
+    state.isProcessing,
+    signalProcessing.filteredValue,
+    signalProcessing.fingerDetected,
+    signalProcessing.signalQuality,
+    processSignal
+  ]);
   
   // Agregar datos de referencia para calibración
   const addCalibrationReference = useCallback((reference: CalibrationReference): boolean => {
@@ -186,12 +202,7 @@ export function usePrecisionVitalSigns() {
     if (!processorRef.current) return;
     
     processorRef.current.reset();
-    setSignalData({
-      rawValue: 0,
-      filteredValue: 0,
-      signalQuality: 0,
-      fingerDetected: false
-    });
+    signalProcessing.reset();
     
     setState({
       isProcessing: false,
@@ -208,7 +219,7 @@ export function usePrecisionVitalSigns() {
     });
     
     console.log("usePrecisionVitalSigns: Estado reiniciado");
-  }, []);
+  }, [signalProcessing]);
   
   // Obtener diagnósticos
   const getDiagnostics = useCallback(() => {
@@ -219,13 +230,15 @@ export function usePrecisionVitalSigns() {
   
   return {
     ...state,
-    ...signalData,
     startProcessing,
     stopProcessing,
     processSignal,
     addCalibrationReference,
     updateEnvironment,
     reset,
-    getDiagnostics
+    getDiagnostics,
+    signalQuality: signalProcessing.signalQuality,
+    fingerDetected: signalProcessing.fingerDetected,
+    heartRate: signalProcessing.heartRate
   };
 }

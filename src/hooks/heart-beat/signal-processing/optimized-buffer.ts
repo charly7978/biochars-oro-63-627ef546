@@ -1,174 +1,140 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Optimized buffer implementation for signal processing
+ * Buffer circular optimizado para procesamiento de señales PPG
+ * Mejora el rendimiento y reduce la presión sobre el recolector de basura
  */
 
-// Define the signal data shape clearly to resolve type issues
-export interface SignalDataPoint {
-  value: number;
-  timestamp: number;
-  time: number;
-  quality?: number;
-}
+import { CircularBuffer } from '../../../utils/CircularBuffer';
+import { PPGDataPoint, TimestampedPPGData } from '../../../types/signal';
 
 /**
- * Optimized circular buffer for signal data
+ * Buffer circular optimizado para datos PPG
+ * Implementa un buffer de tamaño fijo preasignado en memoria
  */
-export class OptimizedBuffer<T extends SignalDataPoint> {
-  private buffer: T[];
+export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
+  private buffer: Array<T | null>;
   private head: number = 0;
   private tail: number = 0;
-  private size: number = 0;
+  private _size: number = 0;
   private readonly capacity: number;
   
   /**
-   * Create a new buffer with the specified capacity
+   * Constructor del buffer optimizado
+   * @param capacity Capacidad máxima del buffer
    */
   constructor(capacity: number) {
+    if (capacity <= 0) {
+      throw new Error('La capacidad del buffer debe ser mayor que cero');
+    }
+    
+    // Preasignar el array completo
+    this.buffer = new Array<T | null>(capacity).fill(null);
     this.capacity = capacity;
-    this.buffer = new Array<T>(capacity);
   }
   
   /**
-   * Add an item to the buffer
+   * Añade un dato al buffer
+   * Si el buffer está lleno, sobrescribe el dato más antiguo
    */
-  push(item: T): void {
-    this.buffer[this.tail] = item;
-    this.tail = (this.tail + 1) % this.capacity;
+  public push(item: T): void {
+    this.buffer[this.head] = item;
+    this.head = (this.head + 1) % this.capacity;
     
-    if (this.size < this.capacity) {
-      this.size++;
+    if (this._size === this.capacity) {
+      this.tail = (this.tail + 1) % this.capacity;
     } else {
-      this.head = (this.head + 1) % this.capacity;
+      this._size++;
     }
   }
   
   /**
-   * Get all items in the buffer
+   * Obtiene un elemento en una posición específica
+   * @param index Índice relativo al elemento más antiguo (0 es el más antiguo)
    */
-  getAll(): T[] {
-    const result = new Array<T>(this.size);
+  public get(index: number): T | null {
+    if (index < 0 || index >= this._size) {
+      return null;
+    }
     
-    for (let i = 0; i < this.size; i++) {
-      const pos = (this.head + i) % this.capacity;
-      result[i] = this.buffer[pos];
+    const actualIndex = (this.tail + index) % this.capacity;
+    return this.buffer[actualIndex];
+  }
+  
+  /**
+   * Obtiene todos los elementos válidos del buffer como un array
+   */
+  public getPoints(): T[] {
+    const result: T[] = [];
+    let current = this.tail;
+    
+    for (let i = 0; i < this._size; i++) {
+      const item = this.buffer[current];
+      if (item !== null) {
+        result.push(item);
+      }
+      current = (current + 1) % this.capacity;
     }
     
     return result;
   }
   
   /**
-   * Get the specified number of most recent items
+   * Limpia el buffer
    */
-  getRecent(count: number): T[] {
-    const n = Math.min(count, this.size);
-    const result = new Array<T>(n);
-    
-    for (let i = 0; i < n; i++) {
-      const pos = (this.tail - i - 1 + this.capacity) % this.capacity;
-      result[i] = this.buffer[pos];
-    }
-    
-    return result;
-  }
-  
-  /**
-   * Clear the buffer
-   */
-  clear(): void {
+  public clear(): void {
+    this.buffer.fill(null);
     this.head = 0;
     this.tail = 0;
-    this.size = 0;
+    this._size = 0;
   }
   
   /**
-   * Get the item at the specified index
+   * Retorna el número de elementos en el buffer
    */
-  at(index: number): T | null {
-    if (index < 0 || index >= this.size) return null;
-    const pos = (this.head + index) % this.capacity;
-    return this.buffer[pos];
+  public size(): number {
+    return this._size;
   }
   
   /**
-   * Get the current size of the buffer
+   * Comprueba si el buffer está vacío
    */
-  getSize(): number {
-    return this.size;
+  public isEmpty(): boolean {
+    return this._size === 0;
   }
   
   /**
-   * Get all values in the buffer as a number array
+   * Comprueba si el buffer está lleno
    */
-  getValues(): number[] {
-    const result = new Array<number>(this.size);
-    
-    for (let i = 0; i < this.size; i++) {
-      const pos = (this.head + i) % this.capacity;
-      result[i] = this.buffer[pos]?.value || 0;
-    }
-    
-    return result;
+  public isFull(): boolean {
+    return this._size === this.capacity;
   }
   
   /**
-   * Get all timestamps in the buffer as a number array
+   * Obtiene la capacidad del buffer
    */
-  getTimestamps(): number[] {
-    const result = new Array<number>(this.size);
-    
-    for (let i = 0; i < this.size; i++) {
-      const pos = (this.head + i) % this.capacity;
-      result[i] = this.buffer[pos]?.timestamp || 0;
-    }
-    
-    return result;
+  public getCapacity(): number {
+    return this.capacity;
   }
   
   /**
-   * Get all time values in the buffer as a number array
+   * Obtiene los valores de los datos en el buffer como un array
    */
-  getTimes(): number[] {
-    const result = new Array<number>(this.size);
-    
-    for (let i = 0; i < this.size; i++) {
-      const pos = (this.head + i) % this.capacity;
-      result[i] = this.buffer[pos]?.time || 0;
-    }
-    
-    return result;
+  public getValues(): number[] {
+    return this.getPoints().map(point => point.value);
   }
   
   /**
-   * Get the most recent item in the buffer
+   * Obtiene los últimos N elementos del buffer
    */
-  getLast(): T | null {
-    if (this.size === 0) return null;
-    const pos = (this.tail - 1 + this.capacity) % this.capacity;
-    return this.buffer[pos];
-  }
-  
-  /**
-   * Get the oldest item in the buffer
-   */
-  getFirst(): T | null {
-    if (this.size === 0) return null;
-    return this.buffer[this.head];
-  }
-  
-  /**
-   * Get values in a specific time window
-   */
-  getInTimeWindow(startTime: number, endTime: number): T[] {
+  public getLastN(n: number): T[] {
+    const count = Math.min(n, this._size);
     const result: T[] = [];
     
-    for (let i = 0; i < this.size; i++) {
-      const pos = (this.head + i) % this.capacity;
-      const item = this.buffer[pos];
-      if (item && item.timestamp >= startTime && item.timestamp <= endTime) {
-        result.push(item);
+    for (let i = 0; i < count; i++) {
+      const index = (this.head - 1 - i + this.capacity) % this.capacity;
+      const item = this.buffer[index];
+      if (item !== null) {
+        result.unshift(item); // Añadir al principio para mantener el orden
       }
     }
     
@@ -176,19 +142,84 @@ export class OptimizedBuffer<T extends SignalDataPoint> {
   }
   
   /**
-   * Filter items based on a predicate
+   * Crea un buffer optimizado a partir de un buffer circular estándar
+   * @param circularBuffer Buffer circular estándar
    */
-  filter(predicate: (item: T) => boolean): T[] {
-    const result: T[] = [];
+  public static fromCircularBuffer<U extends TimestampedPPGData>(circularBuffer: CircularBuffer<U>): OptimizedPPGBuffer<U> {
+    const points = circularBuffer.getPoints();
+    const optimizedBuffer = new OptimizedPPGBuffer<U>(Math.max(points.length, 10));
     
-    for (let i = 0; i < this.size; i++) {
-      const pos = (this.head + i) % this.capacity;
-      const item = this.buffer[pos];
-      if (item && predicate(item)) {
-        result.push(item);
+    // Transferir los datos al nuevo buffer
+    points.forEach(point => {
+      // Ensure point has all required properties
+      const enhancedPoint = { ...point } as U;
+      
+      // Garantizar que tanto time como timestamp existan
+      if ('timestamp' in point && !('time' in point)) {
+        (enhancedPoint as unknown as { time: number }).time = point.timestamp;
+      } else if ('time' in point && !('timestamp' in point)) {
+        (enhancedPoint as unknown as { timestamp: number }).timestamp = point.time;
       }
+      
+      optimizedBuffer.push(enhancedPoint);
+    });
+    
+    return optimizedBuffer;
+  }
+}
+
+/**
+ * Adaptador para compatibilidad con CircularBuffer existente
+ * Permite una transición gradual al nuevo buffer optimizado
+ */
+export class CircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPGData> extends CircularBuffer<T> {
+  private optimizedBuffer: OptimizedPPGBuffer<T>;
+  
+  constructor(capacity: number) {
+    super(capacity);
+    this.optimizedBuffer = new OptimizedPPGBuffer<T>(capacity);
+  }
+  
+  public override push(item: T): void {
+    // Ensure item has all required properties
+    const enhancedItem = { ...item } as T;
+    
+    // Garantizar que tanto time como timestamp existan
+    if ('timestamp' in item && !('time' in item)) {
+      (enhancedItem as unknown as { time: number }).time = item.timestamp;
+    } else if ('time' in item && !('timestamp' in item)) {
+      (enhancedItem as unknown as { timestamp: number }).timestamp = item.time;
     }
     
-    return result;
+    super.push(enhancedItem);
+    this.optimizedBuffer.push(enhancedItem);
+  }
+  
+  public override get(index: number): T | undefined {
+    return this.optimizedBuffer.get(index) || undefined;
+  }
+  
+  public override getPoints(): T[] {
+    return this.optimizedBuffer.getPoints();
+  }
+  
+  public override clear(): void {
+    super.clear();
+    this.optimizedBuffer.clear();
+  }
+  
+  public override size(): number {
+    return this.optimizedBuffer.size();
+  }
+  
+  public override isEmpty(): boolean {
+    return this.optimizedBuffer.isEmpty();
+  }
+  
+  /**
+   * Obtiene el buffer optimizado interno
+   */
+  public getOptimizedBuffer(): OptimizedPPGBuffer<T> {
+    return this.optimizedBuffer;
   }
 }
