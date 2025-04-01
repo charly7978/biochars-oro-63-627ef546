@@ -12,7 +12,6 @@ export * from './heartbeat-processor';
 export * from './utils/quality-detector';
 export * from './utils/finger-detector';
 export * from './utils/signal-normalizer';
-export * from './utils/adaptive-predictor';
 
 // Exportar tipos
 export * from './types';
