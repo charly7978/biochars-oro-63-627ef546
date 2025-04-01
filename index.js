@@ -1,10 +1,9 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
-import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
+import { useUnifiedHeartBeatAdapter } from "@/hooks/heart-beat/useUnifiedHeartBeatAdapter";
+import { useUnifiedVitalSignsAdapter } from "@/hooks/vital-signs/useUnifiedVitalSignsAdapter";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
 import { toast } from "sonner";
@@ -25,8 +24,8 @@ const Index = () => {
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat } = useHeartBeatProcessor();
-  const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
+  const { processSignal: processHeartBeat } = useUnifiedHeartBeatAdapter();
+  const { processSignal: processVitalSigns, reset: resetVitalSigns } = useUnifiedVitalSignsAdapter();
 
   const enterFullScreen = async () => {
     const elem = document.documentElement;

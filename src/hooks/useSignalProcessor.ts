@@ -4,11 +4,12 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PPGSignalProcessor } from '../modules/SignalProcessor';
-import { ProcessedSignal, ProcessingError } from '../types/signal';
+import { UnifiedSignalProcessor } from '../modules/signal-processing/unified/UnifiedSignalProcessor';
+import { ProcessedPPGSignal } from '../modules/signal-processing/unified/types';
+import { ProcessingError } from '../types/signal';
 
 /**
- * Hook para el procesamiento de señales PPG reales
+ * Hook para el procesamiento de señales PPG reales con el procesador unificado
  * No se permite ninguna simulación o datos sintéticos
  */
 export const useSignalProcessor = () => {
@@ -19,12 +20,12 @@ export const useSignalProcessor = () => {
       sessionId: Math.random().toString(36).substring(2, 9)
     });
     
-    return new PPGSignalProcessor();
+    return new UnifiedSignalProcessor();
   });
   
   // Basic state
   const [isProcessing, setIsProcessing] = useState(false);
-  const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
+  const [lastSignal, setLastSignal] = useState<ProcessedPPGSignal | null>(null);
   const [error, setError] = useState<ProcessingError | null>(null);
   const [framesProcessed, setFramesProcessed] = useState(0);
   const [signalStats, setSignalStats] = useState({
@@ -37,7 +38,7 @@ export const useSignalProcessor = () => {
   // Set up processor callbacks and cleanup
   useEffect(() => {
     // Signal callback
-    processor.onSignalReady = (signal: ProcessedSignal) => {
+    const onSignalReady = (signal: ProcessedPPGSignal) => {
       // Pass through without modifications - quality and detection handled by PPGSignalMeter
       setLastSignal(signal);
       setError(null);
@@ -55,19 +56,14 @@ export const useSignalProcessor = () => {
     };
 
     // Error callback
-    processor.onError = (error: ProcessingError) => {
+    const onError = (error: ProcessingError) => {
       console.error("useSignalProcessor: Error en procesamiento:", error);
       setError(error);
     };
 
-    // Initialize processor
-    processor.initialize().catch(error => {
-      console.error("useSignalProcessor: Error de inicialización:", error);
-    });
-
     // Cleanup
     return () => {
-      processor.stop();
+      processor.reset();
     };
   }, [processor]);
 
@@ -85,9 +81,7 @@ export const useSignalProcessor = () => {
       avgValue: 0,
       totalValues: 0
     });
-    
-    processor.start();
-  }, [processor]);
+  }, []);
 
   /**
    * Stop processing signals
@@ -96,7 +90,7 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Deteniendo procesamiento");
     
     setIsProcessing(false);
-    processor.stop();
+    processor.reset();
   }, [processor]);
 
   /**
@@ -105,9 +99,38 @@ export const useSignalProcessor = () => {
   const processFrame = useCallback((imageData: ImageData) => {
     if (isProcessing) {
       try {
-        processor.processFrame(imageData);
+        // Extract red channel average from image data
+        const data = imageData.data;
+        let redSum = 0;
+        const pixelCount = data.length / 4;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          redSum += data[i];
+        }
+        
+        const redAvg = redSum / pixelCount / 255; // Normalize to 0-1
+        
+        // Process the signal
+        const signal = processor.processSignal(redAvg);
+        
+        // Update state
+        setLastSignal(signal);
+        setFramesProcessed(prev => prev + 1);
+        
+        // Update signal statistics
+        setSignalStats(prev => {
+          return {
+            minValue: Math.min(prev.minValue, signal.filteredValue),
+            maxValue: Math.max(prev.maxValue, signal.filteredValue),
+            avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
+            totalValues: prev.totalValues + 1
+          };
+        });
       } catch (err) {
         console.error("useSignalProcessor: Error procesando frame:", err);
+        if (err instanceof Error) {
+          setError(err as ProcessingError);
+        }
       }
     }
   }, [isProcessing, processor]);
