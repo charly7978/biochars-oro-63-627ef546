@@ -14,7 +14,7 @@ import { CombinedExtractionResult } from './CombinedExtractor';
 async function initializeTensorFlow() {
   try {
     // Check for WebGPU support (faster than WebGL)
-    if ('WebGPU' in window && tf.backend.webgpu && tf.engine().backendNames().includes('webgpu')) {
+    if ('WebGPU' in window && await tf.test_util.await_is_webgpu_supported()) {
       console.log('Using WebGPU backend (faster GPU acceleration)');
       await tf.setBackend('webgpu');
       // Enable XLA optimization for WebGPU
@@ -257,8 +257,14 @@ export class AdvancedPPGExtractor {
         metrics: ['accuracy']
       });
       
-      // Store the model directly without quantization (not supported in this version)
-      this.peakDetectionModel = model;
+      // Optionally quantize the model if configured
+      if (this.config.modelQuantization) {
+        console.log('Quantizing peak detection model for efficiency');
+        const quantizedModel = await tf.quantization.quantizeModel(model);
+        this.peakDetectionModel = quantizedModel;
+      } else {
+        this.peakDetectionModel = model;
+      }
       
       console.log('Peak detection CNN model created successfully');
     } catch (error) {

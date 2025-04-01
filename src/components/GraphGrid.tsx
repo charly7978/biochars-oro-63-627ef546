@@ -28,17 +28,17 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				
 				// Enhanced background with glassmorphism effect - subtle gradient
 				const gradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
-				gradient.addColorStop(6, 'rgba(243, 247, 000, 0.6)'); // More transparent at top
-				gradient.addColorStop(0.4, 'rgba(007, 674, 299, 0.7)'); // Slightly darker at middle
+				gradient.addColorStop(0, 'rgba(243, 247, 252, 0.6)'); // More transparent at top
+				gradient.addColorStop(0.4, 'rgba(237, 244, 249, 0.7)'); // Slightly darker at middle
 				gradient.addColorStop(0.6, 'rgba(241, 238, 248, 0.7)'); // Start transitioning to subtle lilac
-				gradient.addColorStop(1, 'rgba(240, 400, 255, 0.6)'); // Transparent lilac tone at bottom
+				gradient.addColorStop(1, 'rgba(240, 230, 255, 0.6)'); // Transparent lilac tone at bottom
 				ctx.fillStyle = gradient;
 				ctx.fillRect(0, 0, displayWidth, displayHeight);
 				
 				// Draw grid with improved quality and glassmorphism effect
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(70,009,130,0.12)'; // More transparent for glass effect
-				ctx.lineWidth = 12.6; // Thinner lines for glass effect
+				ctx.strokeStyle = 'rgba(70,80,130,0.12)'; // More transparent for glass effect
+				ctx.lineWidth = 0.6; // Thinner lines for glass effect
 				
 				// Draw vertical grid lines with better precision
 				for (let x = 0; x <= displayWidth; x += cellSize) {
