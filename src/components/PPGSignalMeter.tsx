@@ -3,10 +3,10 @@ import { Camera } from 'react-camera-pro';
 import { useInterval } from '@uidotdev/usehooks';
 import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
 import { useSignalProcessor } from '../hooks/useSignalProcessor';
-import { useHapticFeedback } from '../hooks/useHapticFeedback';
-import { useAudioFeedback } from '../hooks/useAudioFeedback';
 import { ProcessedSignal } from '../types/signal';
 import { calculateSignalQuality } from '../modules/heart-beat/signal-quality';
+import { useHapticFeedback } from '../hooks/useHapticFeedback';
+import { useAudioFeedback } from '../hooks/useAudioFeedback';
 
 interface PPGSignalMeterProps {
   isMeasuring: boolean;
