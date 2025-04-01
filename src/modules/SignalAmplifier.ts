@@ -1,13 +1,12 @@
-
 /**
  * SignalAmplifier.ts
  * 
- * Este módulo optimiza la señal PPG extraída del dedo para mejorar la detección de latidos
- * utilizando técnicas de amplificación adaptativa, filtrado de ruido y detección de periodicidad.
+ * This module optimizes the PPG signal extracted from the finger to improve heartbeat detection
+ * using adaptive amplification, noise filtering, and periodicity detection techniques.
  */
 
 export class SignalAmplifier {
-  // Parámetros de amplificación
+  // Amplification parameters
   private readonly MIN_GAIN = 1.2;
   private readonly MAX_GAIN = 4.5;
   private readonly NOISE_THRESHOLD = 0.15;
@@ -21,7 +20,7 @@ export class SignalAmplifier {
     HIGH: 0.8
   };
 
-  // Buffers y estado
+  // Buffers and state
   private signalBuffer: number[] = [];
   private longTermBuffer: number[] = [];
   private baselineValue = 0;
@@ -37,18 +36,18 @@ export class SignalAmplifier {
   }
 
   /**
-   * Procesa y amplifica un valor PPG crudo
+   * Process and amplify a raw PPG value
    */
   public processValue(rawValue: number): { 
     amplifiedValue: number; 
     quality: number;
     dominantFrequency: number;
   } {
-    // Normalizar el valor respecto a la línea base
+    // Normalize value relative to baseline
     this.updateBaseline(rawValue);
     const normalizedValue = rawValue - this.baselineValue;
     
-    // Almacenar en buffer para análisis
+    // Store in buffer for analysis
     this.signalBuffer.push(normalizedValue);
     this.longTermBuffer.push(normalizedValue);
     
@@ -60,27 +59,27 @@ export class SignalAmplifier {
       this.longTermBuffer.shift();
     }
     
-    // Mantener los últimos valores crudos para análisis
+    // Keep track of recent raw values for analysis
     this.lastValues.push(rawValue);
     if (this.lastValues.length > this.LAST_VALUES_SIZE) {
       this.lastValues.shift();
     }
     
-    // Analizar calidad de señal
+    // Analyze signal quality
     const signalQuality = this.calculateSignalQuality();
     
-    // Ajustar ganancia dinámicamente según calidad
+    // Dynamically adjust gain based on quality
     this.adjustGain(signalQuality);
     
-    // Detectar periodicidad y calcular frecuencia dominante 
+    // Detect periodicity and calculate dominant frequency 
     if (this.longTermBuffer.length > 30) {
       this.dominantFrequency = this.detectDominantFrequency();
     }
     
-    // Aplicar amplificación adaptativa, enfatizando componentes periódicas
+    // Apply adaptive amplification, emphasizing periodic components
     const amplifiedValue = this.applyAdaptiveAmplification(normalizedValue);
     
-    // Actualizar histórico de valores amplificados
+    // Update amplified values history
     this.lastAmplifiedValues.push(amplifiedValue);
     if (this.lastAmplifiedValues.length > this.LAST_VALUES_SIZE) {
       this.lastAmplifiedValues.shift();
@@ -94,66 +93,66 @@ export class SignalAmplifier {
   }
 
   /**
-   * Actualiza la línea base con adaptación lenta
+   * Update baseline with slow adaptation
    */
   private updateBaseline(value: number): void {
     if (this.baselineValue === 0) {
       this.baselineValue = value;
     } else {
-      const adaptationRate = 0.005; // Muy lento para estabilidad
+      const adaptationRate = 0.005; // Very slow for stability
       this.baselineValue = this.baselineValue * (1 - adaptationRate) + value * adaptationRate;
     }
   }
 
   /**
-   * Calcula la calidad de la señal basada en múltiples factores
+   * Calculate signal quality based on multiple factors
    */
   private calculateSignalQuality(): number {
     if (this.signalBuffer.length < 10) {
-      return this.lastQuality; // Mantener la última calidad hasta tener suficientes datos
+      return this.lastQuality; // Maintain last quality until enough data
     }
     
-    // Calcular rango de amplitud (min a max)
+    // Calculate amplitude range (min to max)
     const max = Math.max(...this.signalBuffer);
     const min = Math.min(...this.signalBuffer);
     const range = max - min;
     
-    // Calcular variabilidad a corto plazo (diferencias entre muestras consecutivas)
+    // Calculate short-term variability (differences between consecutive samples)
     let variabilitySum = 0;
     for (let i = 1; i < this.signalBuffer.length; i++) {
       variabilitySum += Math.abs(this.signalBuffer[i] - this.signalBuffer[i-1]);
     }
     const avgVariability = variabilitySum / (this.signalBuffer.length - 1);
     
-    // Calcular periodicidad (autocorrelación simple)
+    // Calculate periodicity (simple autocorrelation)
     const periodicityScore = this.calculatePeriodicityScore();
     
-    // Calcular ruido (componentes de alta frecuencia)
+    // Calculate noise (high-frequency components)
     const noiseScore = this.calculateNoiseScore();
     
-    // Calcular estabilidad de línea base
+    // Calculate baseline stability
     const baselineStability = this.calculateBaselineStability();
     
-    // Ponderar factores para calidad final
-    // Mayor peso a periodicidad y menor a ruido
+    // Weight factors for final quality
+    // Greater weight to periodicity and less to noise
     const rawQuality = (
-      (range * 0.3) +                 // 30% amplitud 
-      (periodicityScore * 0.4) +      // 40% periodicidad
-      ((1 - noiseScore) * 0.2) +      // 20% ausencia de ruido
-      (baselineStability * 0.1)       // 10% estabilidad
+      (range * 0.3) +                 // 30% amplitude 
+      (periodicityScore * 0.4) +      // 40% periodicity
+      ((1 - noiseScore) * 0.2) +      // 20% absence of noise
+      (baselineStability * 0.1)       // 10% stability
     );
     
-    // Normalizar a 0-1
+    // Normalize to 0-1
     const normalizedQuality = Math.min(1, Math.max(0, rawQuality));
     
-    // Aplicar suavizado para evitar cambios bruscos
+    // Apply smoothing to avoid sudden changes
     this.lastQuality = this.lastQuality * 0.7 + normalizedQuality * 0.3;
     
     return this.lastQuality;
   }
 
   /**
-   * Calcula puntuación de periodicidad basada en autocorrelación
+   * Calculate periodicity score based on autocorrelation
    */
   private calculatePeriodicityScore(): number {
     if (this.signalBuffer.length < 10) return 0;
@@ -161,13 +160,13 @@ export class SignalAmplifier {
     const buffer = [...this.signalBuffer];
     const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
     
-    // Normalizar el buffer
+    // Normalize the buffer
     const normalizedBuffer = buffer.map(v => v - mean);
     
     let maxCorrelation = 0;
     
-    // Buscar correlaciones en rangos de latidos normales (40-180 BPM)
-    // Esto equivale aproximadamente a periodos de 15-30 muestras a 30fps
+    // Search for correlations in normal heartbeat ranges (40-180 BPM)
+    // This corresponds approximately to periods of 15-30 samples at 30fps
     const minLag = 4;
     const maxLag = 20;
     
@@ -182,12 +181,12 @@ export class SignalAmplifier {
         norm2 += normalizedBuffer[i + lag] * normalizedBuffer[i + lag];
       }
       
-      // Normalizar la correlación a [-1, 1]
+      // Normalize correlation to [-1, 1]
       const normalizedCorrelation = norm1 > 0 && norm2 > 0 ? 
         correlation / Math.sqrt(norm1 * norm2) : 0;
       
-      // Tomamos el valor absoluto ya que nos interesa la correlación
-      // independientemente del signo
+      // We take the absolute value because we're interested in correlation
+      // regardless of sign
       const absCorrelation = Math.abs(normalizedCorrelation);
       
       if (absCorrelation > maxCorrelation) {
@@ -195,35 +194,35 @@ export class SignalAmplifier {
       }
     }
     
-    // Transformar a una puntuación no lineal que premie correlaciones altas
+    // Transform to a non-linear score that rewards high correlations
     return Math.pow(maxCorrelation, 1.5);
   }
 
   /**
-   * Estima nivel de ruido en la señal
+   * Estimate noise level in the signal
    */
   private calculateNoiseScore(): number {
     if (this.signalBuffer.length < 10) return 1.0;
     
-    // Calcular primera derivada (cambios entre muestras)
+    // Calculate first derivative (changes between samples)
     const derivatives: number[] = [];
     for (let i = 1; i < this.signalBuffer.length; i++) {
       derivatives.push(this.signalBuffer[i] - this.signalBuffer[i-1]);
     }
     
-    // Calcular segunda derivada (cambios en los cambios)
+    // Calculate second derivative (changes in changes)
     const secondDerivatives: number[] = [];
     for (let i = 1; i < derivatives.length; i++) {
       secondDerivatives.push(derivatives[i] - derivatives[i-1]);
     }
     
-    // El ruido se manifiesta como cambios rápidos en la segunda derivada
-    // Calculamos la media absoluta de la segunda derivada
+    // Noise manifests as rapid changes in the second derivative
+    // Calculate mean absolute value of second derivative
     const meanAbsSecondDerivative = secondDerivatives.reduce(
       (sum, val) => sum + Math.abs(val), 0
     ) / secondDerivatives.length;
     
-    // Normalizar a [0,1] usando un umbral adaptativo
+    // Normalize to [0,1] using an adaptive threshold
     const normalizedNoise = Math.min(
       1.0, 
       meanAbsSecondDerivative / (this.NOISE_THRESHOLD * Math.max(0.2, this.currentGain))
@@ -233,49 +232,49 @@ export class SignalAmplifier {
   }
 
   /**
-   * Calcula estabilidad de la línea base
+   * Calculate baseline stability
    */
   private calculateBaselineStability(): number {
     if (this.lastValues.length < this.LAST_VALUES_SIZE) return 0.5;
     
-    // Calcular desviación estándar de los valores originales
+    // Calculate standard deviation of original values
     const mean = this.lastValues.reduce((a, b) => a + b, 0) / this.lastValues.length;
     const variance = this.lastValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / this.lastValues.length;
     const stdDev = Math.sqrt(variance);
     
-    // Normalizar: menor desviación = mayor estabilidad
-    // Usamos un umbral adaptativo basado en la ganancia actual
+    // Normalize: lower deviation = greater stability
+    // Use an adaptive threshold based on current gain
     const normalizedStability = Math.max(0, 1 - (stdDev / (10 * this.currentGain)));
     
     return normalizedStability;
   }
 
   /**
-   * Ajusta la ganancia dinámicamente basada en calidad de señal
+   * Dynamically adjust gain based on signal quality
    */
   private adjustGain(quality: number): void {
-    // Si la calidad es muy baja, aumentar ganancia
-    // Si la calidad es buena, podemos reducir la ganancia
+    // If quality is very low, increase gain
+    // If quality is good, we can reduce gain
     let targetGain = this.currentGain;
     
     if (quality < this.QUALITY_THRESHOLDS.LOW) {
-      // Calidad baja, aumentar ganancia gradualmente
+      // Low quality, gradually increase gain
       targetGain = Math.min(this.MAX_GAIN, this.currentGain * 1.05);
     } else if (quality < this.QUALITY_THRESHOLDS.MEDIUM) {
-      // Calidad media, aumentar ligeramente
+      // Medium quality, slightly increase
       targetGain = Math.min(this.MAX_GAIN, this.currentGain * 1.01);
     } else if (quality > this.QUALITY_THRESHOLDS.HIGH) {
-      // Calidad alta, reducir para evitar saturación
+      // High quality, reduce to avoid saturation
       targetGain = Math.max(this.MIN_GAIN, this.currentGain * 0.99);
     }
     
-    // Aplicar cambio suavizado
+    // Apply smoothed change
     this.currentGain = this.currentGain * (1 - this.ADAPTATION_RATE) + 
                       targetGain * this.ADAPTATION_RATE;
   }
 
   /**
-   * Detecta la frecuencia dominante (ritmo cardíaco) en la señal
+   * Detect dominant frequency (heart rate) in the signal
    */
   private detectDominantFrequency(): number {
     if (this.longTermBuffer.length < 30) return 0;
@@ -284,18 +283,18 @@ export class SignalAmplifier {
     const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
     const normalized = buffer.map(v => v - mean);
     
-    // Simulación simplificada de análisis de frecuencia
-    // Examinar correlación en distintas bandas de frecuencia típicas de ritmo cardíaco
+    // Simplified simulation of frequency analysis
+    // Examine correlation at different frequency bands typical of heart rate
     const freqScores: {freq: number, score: number}[] = [];
     
     for (const freq of this.FREQUENCY_BANDS) {
-      // Convertir frecuencia (Hz) a periodo en muestras (asumiendo ~30fps)
+      // Convert frequency (Hz) to period in samples (assuming ~30fps)
       const period = Math.round(30 / freq);
       if (period < 4 || period > buffer.length / 2) continue;
       
       let score = 0;
       
-      // Examinar correlación a la frecuencia actual
+      // Examine correlation at current frequency
       for (let lag = period - 1; lag <= period + 1; lag++) {
         if (lag >= buffer.length - 5) continue;
         
@@ -310,7 +309,7 @@ export class SignalAmplifier {
       freqScores.push({freq, score});
     }
     
-    // Encontrar la frecuencia con mayor puntuación
+    // Find frequency with highest score
     let maxScore = 0;
     let dominantFreq = 0;
     
@@ -325,24 +324,24 @@ export class SignalAmplifier {
   }
 
   /**
-   * Aplica amplificación adaptativa considerando componentes periódicas
+   * Apply adaptive amplification considering periodic components
    */
   private applyAdaptiveAmplification(normalizedValue: number): number {
-    // Amplificación básica
+    // Basic amplification
     let amplifiedValue = normalizedValue * this.currentGain;
     
-    // Si tenemos una frecuencia dominante, aplicar realce selectivo
+    // Apply selective enhancement if we have a dominant frequency
     if (this.dominantFrequency > 0 && this.lastQuality > this.QUALITY_THRESHOLDS.LOW) {
-      // Calculamos periodo aproximado en muestras
+      // Calculate approximate period in samples
       const dominantPeriod = Math.round(30 / this.dominantFrequency);
       
-      // Si tenemos suficientes valores en el buffer
+      // If we have enough values in the buffer
       if (this.signalBuffer.length >= dominantPeriod) {
-        // Predecir componente periódica basada en muestras anteriores
+        // Predict periodic component based on previous samples
         let periodicComponent = 0;
         let count = 0;
         
-        // Promediamos valores a distancias de múltiplos del periodo
+        // Average values at distances of multiples of the period
         for (let k = 1; k <= 3; k++) {
           const idx = this.signalBuffer.length - k * dominantPeriod;
           if (idx >= 0) {
@@ -354,7 +353,7 @@ export class SignalAmplifier {
         if (count > 0) {
           periodicComponent /= count;
           
-          // Realzar componentes periódicas
+          // Enhance periodic components
           const emphasisFactor = 0.3 * Math.min(1.0, this.lastQuality * 1.5);
           amplifiedValue = amplifiedValue * (1 - emphasisFactor) + 
                           periodicComponent * this.currentGain * emphasisFactor;
@@ -362,7 +361,7 @@ export class SignalAmplifier {
       }
     }
     
-    // Aplicar limitación suave para evitar valores extremos
+    // Apply soft limiting to avoid extreme values
     const softLimit = (x: number, limit: number): number => {
       if (Math.abs(x) < limit) return x;
       const sign = x >= 0 ? 1 : -1;
@@ -376,7 +375,7 @@ export class SignalAmplifier {
   }
 
   /**
-   * Reiniciar estado del amplificador
+   * Reset amplifier state
    */
   public reset(): void {
     this.signalBuffer = [];
@@ -390,7 +389,7 @@ export class SignalAmplifier {
   }
 
   /**
-   * Obtener ganancia actual
+   * Get current gain
    */
   public getCurrentGain(): number {
     return this.currentGain;

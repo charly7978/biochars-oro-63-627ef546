@@ -1,39 +1,38 @@
 
 import React from 'react';
+import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 
 interface MonitorButtonProps {
   isMonitoring: boolean;
   onToggle: () => void;
   variant?: "monitor" | "reset";
-  disabled?: boolean;
-  extraClasses?: string;
 }
 
 const MonitorButton: React.FC<MonitorButtonProps> = ({ 
   isMonitoring, 
   onToggle, 
-  variant = "monitor",
-  disabled = false,
-  extraClasses = ""
+  variant = "monitor" 
 }) => {
-  // Determine text and color based on variant and state
-  const buttonText = variant === "monitor" 
-    ? (isMonitoring ? 'Detener' : 'Iniciar') 
-    : 'Reset';
+  const baseClass = "w-full animation-smooth";
   
-  const buttonVariant = variant === "monitor"
-    ? (isMonitoring ? "destructive" : "default")
-    : "secondary";
-
+  // Get the button variant accepted by shadcn/ui Button component
+  const getButtonVariant = () => {
+    if (variant === "reset") return "secondary";
+    return isMonitoring ? "destructive" : "default"; // Using 'default' instead of 'primary'
+  };
+  
   return (
     <Button 
       onClick={onToggle} 
-      variant={buttonVariant as any}
-      disabled={disabled}
-      className={`w-full font-bold ${extraClasses}`}
+      variant={getButtonVariant()}
+      className={cn(
+        baseClass,
+        isMonitoring && variant === "monitor" && "bg-[var(--medical-danger-direct)] hover:bg-[var(--medical-danger-direct)]/90",
+        !isMonitoring && variant === "monitor" && "bg-[var(--medical-info-direct)] hover:bg-[var(--medical-info-direct)]/90"
+      )}
     >
-      {buttonText}
+      {variant === "monitor" ? (isMonitoring ? 'Detener' : 'Iniciar') : 'Reset'}
     </Button>
   );
 };
