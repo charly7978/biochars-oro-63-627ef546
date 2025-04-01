@@ -8,8 +8,23 @@
 // Export the VitalSignsProcessor
 export { VitalSignsProcessor } from './VitalSignsProcessor';
 
-// Export VitalSignsResult type from types folder
-export type { VitalSignsResult } from './types/vital-signs-result';
+// Create a type definition for VitalSignsResult
+export interface VitalSignsResult {
+  spo2: number;
+  pressure: string;
+  arrhythmiaStatus: string;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  lastArrhythmiaData?: any;
+  confidence?: {
+    glucose: number;
+    lipids: number;
+    overall: number;
+  };
+}
 
 // Export the traditional processor
 export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';

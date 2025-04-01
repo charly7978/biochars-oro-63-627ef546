@@ -7,7 +7,7 @@
  * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
  */
 export function applySMAFilter(values: number[], windowSize: number): number[] {
-  if (!values || values.length === 0) {
+  if (!values || !Array.isArray(values) || values.length === 0) {
     return [];
   }
   
@@ -34,7 +34,7 @@ export function applySMAFilter(values: number[], windowSize: number): number[] {
  * Sin uso de datos simulados
  */
 export function amplifySignal(value: number, recentValues: number[]): number {
-  if (recentValues.length === 0) return value;
+  if (!recentValues || !Array.isArray(recentValues) || recentValues.length === 0) return value;
   
   // Calcular la amplitud reciente de datos reales
   const recentMin = Math.min(...recentValues);
