@@ -7,5 +7,5 @@ export interface BloodPressureResult {
   diastolic: number;
   map: number;
   confidence: number;
-  category?: string;
+  category: string;
 }
