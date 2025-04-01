@@ -9,11 +9,13 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   PPGSignalProcessor, 
   HeartbeatProcessor,
-  ProcessedPPGSignal,
-  ProcessedHeartbeatSignal,
-  SignalProcessingOptions,
-  resetFingerDetector
+  SignalProcessingOptions
 } from '../modules/signal-processing';
+import { 
+  ProcessedPPGSignal,
+  ProcessedHeartbeatSignal 
+} from '../modules/signal-processing/types';
+import { resetFingerDetector } from '../modules/signal-processing';
 
 // Resultado combinado del procesamiento
 export interface ProcessedSignalResult {
@@ -103,7 +105,7 @@ export function useSignalProcessing() {
       setFingerDetected(ppgResult.fingerDetected);
       
       // Calcular BPM promedio
-      if (heartbeatResult.instantaneousBPM !== null && heartbeatResult.peakConfidence > 0.5) {
+      if (heartbeatResult.instantaneousBPM !== null && heartbeatResult.confidence > 0.5) {
         recentBpmValues.current.push(heartbeatResult.instantaneousBPM);
         
         // Mantener solo los valores más recientes
@@ -153,7 +155,7 @@ export function useSignalProcessing() {
         
         // Información cardíaca
         isPeak: heartbeatResult.isPeak,
-        peakConfidence: heartbeatResult.peakConfidence,
+        peakConfidence: heartbeatResult.confidence,
         instantaneousBPM: heartbeatResult.instantaneousBPM,
         averageBPM,
         rrInterval: heartbeatResult.rrInterval,

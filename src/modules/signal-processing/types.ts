@@ -21,6 +21,19 @@ export interface SignalProcessingOptions {
   // Sensibilidad de detección de dedo
   fingerDetectionSensitivity?: number;
   
+  // Umbral para detección de picos
+  peakDetectionThreshold?: number;
+  
+  // Tamaño del buffer
+  bufferSize?: number;
+  
+  // Tasa de muestreo
+  sampleRate?: number;
+  
+  // Callbacks
+  onSignalReady?: (signal: any) => void;
+  onError?: (error: Error) => void;
+  
   // Nuevos parámetros para control adaptativo
   useAdaptiveControl?: boolean;
   
@@ -91,7 +104,7 @@ export interface ProcessedHeartbeatSignal {
   isPeak: boolean;
   
   // Confianza en la detección del pico (0-1)
-  peakConfidence: number;
+  confidence: number;
   
   // BPM instantáneo (basado en intervalo RR)
   instantaneousBPM: number | null;

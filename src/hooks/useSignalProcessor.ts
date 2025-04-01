@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UnifiedSignalProcessor } from '../modules/signal-processing/unified/UnifiedSignalProcessor';
+import { SignalProcessingOptions } from '../modules/signal-processing/types';
 import { ProcessedPPGSignal } from '../modules/signal-processing/unified/types';
 import { ProcessingError } from '../types/signal';
 
