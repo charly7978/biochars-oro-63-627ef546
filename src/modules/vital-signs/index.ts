@@ -13,6 +13,22 @@ export type { VitalSignsResult as TraditionalVitalSignsResult } from './types/vi
 export { ModularVitalSignsProcessor } from './ModularVitalSignsProcessor';
 export type { VitalSignsResult as ModularVitalSignsResult } from './ModularVitalSignsProcessor';
 
+// Export the new precision processor with advanced features
+export { PrecisionVitalSignsProcessor } from './PrecisionVitalSignsProcessor';
+export type { PrecisionVitalSignsResult } from './PrecisionVitalSignsProcessor';
+
+// Export calibration module
+export { CalibrationManager } from './calibration/CalibrationManager';
+export type { CalibrationReference, CalibrationFactors } from './calibration/CalibrationManager';
+
+// Export cross-validation module
+export { CrossValidator } from './correlation/CrossValidator';
+export type { MeasurementsToValidate, ValidationResult } from './correlation/CrossValidator';
+
+// Export environmental adjuster
+export { EnvironmentalAdjuster } from './environment/EnvironmentalAdjuster';
+export type { EnvironmentalConditions, AdjustmentFactors } from './environment/EnvironmentalAdjuster';
+
 // Export specialized processors
 export * from './specialized/BaseVitalSignProcessor';
 export * from './specialized/GlucoseProcessor';
