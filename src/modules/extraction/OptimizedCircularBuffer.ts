@@ -4,14 +4,7 @@
  * Mejora el rendimiento y reduce la presión sobre el recolector de basura
  */
 
-/**
- * Interfaz para datos PPG con timestamp
- */
-export interface TimestampedPPGData {
-  timestamp: number;
-  value: number;
-  [key: string]: any;
-}
+import { PPGDataPoint, TimestampedPPGData } from '../../types/signal';
 
 /**
  * Buffer circular optimizado para datos PPG
@@ -156,8 +149,20 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     const optimizedBuffer = new OptimizedCircularBuffer<U>(Math.max(points.length, 10));
     
     // Transferir los datos al nuevo buffer
-    points.forEach((point: U) => {
-      optimizedBuffer.push(point);
+    points.forEach((point: any) => {
+      if (!point) return;
+      
+      // Ensure point has all required properties
+      const enhancedPoint = { ...point } as U;
+      
+      // Garantizar que tanto time como timestamp existan
+      if ('timestamp' in point && !('time' in point)) {
+        (enhancedPoint as unknown as { time: number }).time = point.timestamp;
+      } else if ('time' in point && !('timestamp' in point)) {
+        (enhancedPoint as unknown as { timestamp: number }).timestamp = point.time;
+      }
+      
+      optimizedBuffer.push(enhancedPoint);
     });
     
     return optimizedBuffer;
@@ -212,7 +217,8 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     for (let i = 0; i < view.length / 2; i++) {
       const point = {
         timestamp: view[i * 2],
-        value: view[i * 2 + 1]
+        value: view[i * 2 + 1],
+        time: view[i * 2] // Add time property to satisfy PPGDataPoint constraint
       } as T;
       
       const index = (result.tail + i) % result.capacity;

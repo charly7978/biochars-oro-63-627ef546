@@ -1,31 +1,27 @@
 
 /**
- * Módulo central de procesamiento de señal
- * Proporciona funcionalidades avanzadas para el procesamiento de señales PPG y cardíacas
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ *
+ * Exports for signal processing module
  */
 
-// Exportar procesadores principales
-export * from './ppg-processor';
-export * from './heartbeat-processor';
+// Export classes, types and interfaces
+export { PPGSignalProcessor } from './PPGSignalProcessor';
+export { HeartbeatProcessor } from './HeartbeatProcessor';
+export type { ProcessedPPGSignal, ProcessedHeartbeatSignal, SignalProcessingOptions } from './types';
+export { resetFingerDetector } from './utils/finger-detection';
 
-// Exportar utilidades de procesamiento
-export * from './utils/quality-detector';
-export * from './utils/finger-detector';
-export * from './utils/signal-normalizer';
-export * from './utils/adaptive-predictor';
-export * from './utils/bayesian-optimization';
-export * from './utils/gaussian-process';
-export * from './utils/mixed-model';
+// Export signal channel-related components
+export { OptimizedSignalDistributor } from './OptimizedSignalDistributor';
 
-// Exportar tipos
-export * from './types';
+// Export channel types
+export { VitalSignType } from '../../types/signal';
+export type { ChannelFeedback, OptimizedSignalChannel } from '../../types/signal';
 
-// Export a function to reset finger detector 
-export function resetFingerDetector() {
-  console.log("Finger detector has been reset");
-  // This function exists to satisfy imports
-  // Actual implementation is in finger-detector.ts
-}
-
-// Export the VitalSignsProcessor
-export { VitalSignsProcessor } from '../vital-signs/VitalSignsProcessor';
+// Export specialized channels
+export { GlucoseChannel } from './channels/GlucoseChannel';
+export { LipidsChannel } from './channels/LipidsChannel';
+export { BloodPressureChannel } from './channels/BloodPressureChannel';
+export { SpO2Channel } from './channels/SpO2Channel';
+export { CardiacChannel } from './channels/CardiacChannel';
+export { SpecializedChannel } from './channels/SpecializedChannel';
