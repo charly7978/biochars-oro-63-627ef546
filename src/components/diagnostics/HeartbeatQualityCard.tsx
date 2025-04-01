@@ -25,7 +25,7 @@ const HeartbeatQualityCard: React.FC<HeartbeatQualityCardProps> = ({
       case 'strong': return 'text-green-600';
       case 'moderate': return 'text-yellow-600';
       case 'weak': return 'text-red-600';
-      default: return 'text-gray-600';
+      default: return 'text-gray-500';
     }
   };
 
@@ -42,7 +42,7 @@ const HeartbeatQualityCard: React.FC<HeartbeatQualityCardProps> = ({
         <CardTitle className="text-lg flex items-center justify-between">
           Cardiac Signal
           <span className={`text-sm font-normal ${getSignalStrengthColor()}`}>
-            {signalStrength.toUpperCase()}
+            {typeof signalStrength === 'string' ? signalStrength.toUpperCase() : 'UNKNOWN'}
           </span>
         </CardTitle>
         <CardDescription>

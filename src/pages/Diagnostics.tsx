@@ -68,21 +68,17 @@ const Diagnostics = () => {
             currentBPM={diagnosticsData.heartbeatMetrics.currentBPM}
             confidence={diagnosticsData.heartbeatMetrics.confidence}
             arrhythmiaDetected={diagnosticsData.heartbeatMetrics.arrhythmiaDetected}
-            signalStrength={
-              diagnosticsData.heartbeatMetrics.signalStrength > 80 ? 'strong' :
-              diagnosticsData.heartbeatMetrics.signalStrength > 50 ? 'moderate' :
-              diagnosticsData.heartbeatMetrics.signalStrength > 20 ? 'weak' : 'unknown'
-            }
+            signalStrength={diagnosticsData.heartbeatMetrics.signalStrength > 80 ? 'strong' : 
+                           diagnosticsData.heartbeatMetrics.signalStrength > 50 ? 'moderate' : 
+                           diagnosticsData.heartbeatMetrics.signalStrength > 20 ? 'weak' : 'unknown'}
             rrIntervalQuality={diagnosticsData.heartbeatMetrics.rrIntervalQuality}
           />
           
           {/* Calibration Status */}
           <CalibrationCard 
             active={diagnosticsData.calibration.active}
-            status={
-              diagnosticsData.calibration.status === 'uncalibrated' ? 
-              'not_calibrated' : diagnosticsData.calibration.status
-            }
+            status={diagnosticsData.calibration.status === 'uncalibrated' ? 
+                  'not_calibrated' : diagnosticsData.calibration.status}
             progress={diagnosticsData.calibration.progress}
             lastCalibrated={diagnosticsData.calibration.lastCalibrated}
           />

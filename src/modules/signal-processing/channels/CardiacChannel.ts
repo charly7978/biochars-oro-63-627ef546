@@ -1,3 +1,4 @@
+
 import { VitalSignType, ChannelFeedback } from '../../../types/signal';
 import { SpecializedChannel } from './SpecializedChannel';
 
@@ -6,6 +7,13 @@ import { SpecializedChannel } from './SpecializedChannel';
  * Implements specialized filters for heart rate detection
  */
 export class CardiacChannel extends SpecializedChannel {
+  private signalBuffer: number[] = [];
+  private baselineValue: number = 0;
+  private bandpassLowCutoff: number = 0.5;
+  private bandpassHighCutoff: number = 4.0;
+  private amplificationFactor: number = 1.2;
+  private quality: number = 0.5;
+  
   /**
    * Create a new cardiac channel processor
    * @param id Unique channel identifier
@@ -15,16 +23,14 @@ export class CardiacChannel extends SpecializedChannel {
   }
 
   /**
-   * Process a value through the cardiac channel
-   * @param value Raw signal value
-   * @returns Processed value optimized for cardiac detection
+   * Implementation of the abstract method for processing values
    */
-  public override processValue(value: number): number {
+  protected processValueImpl(value: number): number {
     // Apply cardiac-specific bandpass filter (0.5-4Hz for heart rate)
-    const bandpassFiltered = this.applyBandpassFilter(value, 0.5, 4.0);
+    const bandpassFiltered = this.applyBandpassFilter(value, this.bandpassLowCutoff, this.bandpassHighCutoff);
     
     // Apply cardiac-specific amplification
-    const amplified = bandpassFiltered * this.amplificationFactor * 1.2;
+    const amplified = bandpassFiltered * this.amplificationFactor;
     
     // Apply baseline correction for cardiac signal
     const baselineCorrected = this.correctBaseline(amplified);
