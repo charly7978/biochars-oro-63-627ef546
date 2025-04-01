@@ -1,7 +1,5 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
  * Buffer circular optimizado para procesamiento de señales PPG
  * Mejora el rendimiento y reduce la presión sobre el recolector de basura
  */
@@ -153,12 +151,14 @@ export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGDat
     
     // Transferir los datos al nuevo buffer
     points.forEach(point => {
-      // Ensure point has time property if needed for backward compatibility
-      const enhancedPoint = {...point};
-      if (!('time' in enhancedPoint) && 'timestamp' in enhancedPoint) {
+      // Ensure point has all required properties
+      const enhancedPoint = {...point} as U;
+      if ('timestamp' in enhancedPoint && !('time' in enhancedPoint)) {
         enhancedPoint.time = enhancedPoint.timestamp;
+      } else if ('time' in enhancedPoint && !('timestamp' in enhancedPoint)) {
+        enhancedPoint.timestamp = enhancedPoint.time;
       }
-      optimizedBuffer.push(enhancedPoint as U);
+      optimizedBuffer.push(enhancedPoint);
     });
     
     return optimizedBuffer;
@@ -178,14 +178,16 @@ export class CircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPG
   }
   
   public override push(item: T): void {
-    // Ensure item has time property if not present
-    const enhancedItem = {...item};
-    if (!('time' in enhancedItem) && 'timestamp' in enhancedItem) {
+    // Ensure item has all required properties
+    const enhancedItem = {...item} as T;
+    if ('timestamp' in enhancedItem && !('time' in enhancedItem)) {
       enhancedItem.time = enhancedItem.timestamp;
+    } else if ('time' in enhancedItem && !('timestamp' in enhancedItem)) {
+      enhancedItem.timestamp = enhancedItem.time;
     }
     
-    super.push(enhancedItem as T);
-    this.optimizedBuffer.push(enhancedItem as T);
+    super.push(enhancedItem);
+    this.optimizedBuffer.push(enhancedItem);
   }
   
   public override get(index: number): T | undefined {

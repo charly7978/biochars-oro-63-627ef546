@@ -60,6 +60,7 @@ export interface SignalDiagnosticInfo {
     snr?: number;                      // Signal-to-noise ratio if available
   };
   fingerDetectionConfidence?: number;   // Confidence level in finger detection
+  timestamp?: number;                   // Added timestamp field to fix error
 }
 
 /**
