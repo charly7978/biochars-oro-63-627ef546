@@ -1,10 +1,21 @@
+
 /**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
  * Buffer circular optimizado para procesamiento de señales PPG
  * Mejora el rendimiento y reduce la presión sobre el recolector de basura
  */
 
 import { CircularBuffer } from '../../../utils/CircularBuffer';
-import { PPGDataPoint, TimestampedPPGData } from '../../../types/signal';
+
+/**
+ * Interfaz para datos PPG con timestamp
+ */
+export interface TimestampedPPGData {
+  timestamp: number;
+  value: number;
+  [key: string]: any;
+}
 
 /**
  * Buffer circular optimizado para datos PPG
@@ -150,17 +161,7 @@ export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGDat
     
     // Transferir los datos al nuevo buffer
     points.forEach(point => {
-      // Ensure point has all required properties
-      const enhancedPoint = { ...point } as TimestampedPPGData & Partial<U>;
-      
-      // Garantizar que tanto time como timestamp existan
-      if ('timestamp' in point && !('time' in point)) {
-        enhancedPoint.time = point.timestamp;
-      } else if ('time' in point && !('timestamp' in point)) {
-        enhancedPoint.timestamp = point.time;
-      }
-      
-      optimizedBuffer.push(enhancedPoint as U);
+      optimizedBuffer.push(point);
     });
     
     return optimizedBuffer;
@@ -180,18 +181,8 @@ export class CircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPG
   }
   
   public override push(item: T): void {
-    // Ensure item has all required properties
-    const enhancedItem = { ...item } as TimestampedPPGData & Partial<T>;
-    
-    // Garantizar que tanto time como timestamp existan
-    if ('timestamp' in item && !('time' in item)) {
-      enhancedItem.time = item.timestamp;
-    } else if ('time' in item && !('timestamp' in item)) {
-      enhancedItem.timestamp = item.time;
-    }
-    
-    super.push(enhancedItem as T);
-    this.optimizedBuffer.push(enhancedItem as T);
+    super.push(item);
+    this.optimizedBuffer.push(item);
   }
   
   public override get(index: number): T | undefined {
