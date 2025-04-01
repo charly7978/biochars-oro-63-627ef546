@@ -1,161 +1,211 @@
-import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
-export interface BloodPressureResult {
-  systolic: number;
-  diastolic: number;
-  map: number;
-  confidence: number;
-  isReliable: boolean;
-}
-
+/**
+ * Analizador de presión arterial basado en señal PPG
+ * Implementa técnicas avanzadas de estimación
+ */
 export class BloodPressureAnalyzer {
-  private readonly MIN_REQUIRED_SAMPLES = 60;
-  private readonly history: BloodPressureResult[] = [];
-  private readonly HISTORY_SIZE = 5;
-
-  private calibrationFactor: number;
-  private confidenceThreshold: number;
-  private freezeCounter = 0;
-
-  private lastEstimate: BloodPressureResult = {
-    systolic: 120,
-    diastolic: 80,
-    map: 93,
-    confidence: 0,
-    isReliable: false
+  private readonly config: {
+    glucoseCalibrationFactor: number;
+    lipidCalibrationFactor: number;
+    hemoglobinCalibrationFactor: number;
+    confidenceThreshold: number;
+    bpCalibrationFactor: number; // Añadido el factor de calibración para BP
   };
-
-  constructor(config: Partial<ProcessorConfig> = {}) {
-    const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    this.calibrationFactor = full.nonInvasiveSettings.bpCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5;
-  }
-
-  public estimate(values: number[]): BloodPressureResult {
-    if (values.length < this.MIN_REQUIRED_SAMPLES) return this.lastEstimate;
-
-    const segment = values.slice(-this.MIN_REQUIRED_SAMPLES);
-    const { amplitude, slopeRatio, width, dicroticDrop } = this.extractFeatures(segment);
-
-    // Fórmulas adaptativas SIN valores fijos base
-    let systolic = amplitude * 160 + slopeRatio * 20;
-    let diastolic = dicroticDrop * 90 - width * 15;
-
-    systolic *= this.calibrationFactor;
-    diastolic *= this.calibrationFactor;
-
-    const map = diastolic + (systolic - diastolic) / 3;
-
-    let confidence = this.calculateConfidence(amplitude, slopeRatio, width, dicroticDrop);
-    if (isNaN(confidence)) confidence = 0;
-
-    const isReliable = confidence >= this.confidenceThreshold;
-
-    const estimate: BloodPressureResult = {
-      systolic: Math.round(this.bound(systolic, 90, 180)),
-      diastolic: Math.round(this.bound(diastolic, 55, 120)),
-      map: Math.round(map),
-      confidence,
-      isReliable
+  
+  private lastSystolic: number = 0;
+  private lastDiastolic: number = 0;
+  private confidenceLevel: number = 0;
+  private ppgFeatures: {
+    amplitude: number;
+    peakInterval: number;
+    dicroticNotchTime: number;
+  } | null = null;
+  
+  constructor() {
+    this.config = {
+      glucoseCalibrationFactor: 0.18,
+      lipidCalibrationFactor: 0.12,
+      hemoglobinCalibrationFactor: 0.15,
+      confidenceThreshold: 0.65,
+      bpCalibrationFactor: 0.2 // Inicializado con valor por defecto
     };
-
-    this.pushToHistory(estimate);
-    this.lastEstimate = this.getUnfrozenEstimate(estimate);
-
-    console.log('[BP DEBUG]', {
-      amplitude: amplitude.toFixed(4),
-      slopeRatio: slopeRatio.toFixed(4),
-      width,
-      dicroticDrop: dicroticDrop.toFixed(4),
-      confidence: confidence.toFixed(3),
-      systolic: estimate.systolic,
-      diastolic: estimate.diastolic
-    });
-
-    return this.lastEstimate;
   }
-
-  private extractFeatures(data: number[]) {
-    const peak = Math.max(...data);
-    const valley = Math.min(...data);
-    const amplitude = peak - valley;
-
-    const riseIndex = data.findIndex(v => v === peak);
-    const slopeRise = (peak - valley) / (riseIndex + 1);
-    const slopeFall = (peak - valley) / (data.length - riseIndex);
-    const slopeRatio = slopeRise / (slopeFall + 1e-5);
-
-    const width = data.filter(v => v > valley + amplitude * 0.5).length;
-
-    const dicroticDrop = (peak - data[data.length - 1]) / amplitude;
-
-    return { amplitude, slopeRatio, width, dicroticDrop };
-  }
-
-  private calculateConfidence(a: number, s: number, w: number, d: number): number {
-    const score = (a > 0.02 ? 1 : 0.6) * (s > 1 ? 1 : 0.8) * (w > 10 ? 1 : 0.8) * (d > 0.1 ? 1 : 0.7);
-    return Math.min(1, score);
-  }
-
-  private bound(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  private pushToHistory(val: BloodPressureResult) {
-    this.history.push(val);
-    if (this.history.length > this.HISTORY_SIZE) this.history.shift();
-  }
-
-  private getUnfrozenEstimate(current: BloodPressureResult): BloodPressureResult {
-    const last = this.lastEstimate;
-    const diffSys = Math.abs(current.systolic - last.systolic);
-    const diffDia = Math.abs(current.diastolic - last.diastolic);
-
-    if (diffSys < 1 && diffDia < 1) {
-      this.freezeCounter++;
-    } else {
-      this.freezeCounter = 0;
+  
+  /**
+   * Analiza características de la onda PPG para extraer características
+   * relacionadas con la presión arterial
+   */
+  public analyzeWaveform(signal: number[], peakIndices: number[]): void {
+    if (!signal || !peakIndices || peakIndices.length < 2) {
+      this.confidenceLevel = 0;
+      return;
     }
-
-    if (this.freezeCounter >= 1) {
-      const delta = (Math.random() - 0.5) * 4;
+    
+    // Extraer características de la forma de onda PPG
+    const amplitudes: number[] = [];
+    const intervals: number[] = [];
+    const notchTimes: number[] = [];
+    
+    for (let i = 0; i < peakIndices.length - 1; i++) {
+      const peakIndex = peakIndices[i];
+      const nextPeakIndex = peakIndices[i + 1];
+      
+      // Medir amplitud (altura del pico)
+      if (peakIndex < signal.length) {
+        const valley = Math.min(...signal.slice(peakIndex, nextPeakIndex));
+        const amplitude = signal[peakIndex] - valley;
+        amplitudes.push(amplitude);
+      }
+      
+      // Calcular intervalo entre picos
+      intervals.push(nextPeakIndex - peakIndex);
+      
+      // Intentar detectar muesca dicrotic
+      const segmentLength = nextPeakIndex - peakIndex;
+      if (segmentLength > 10) {
+        // Buscar muesca en el primer tercio de la caída
+        const searchStart = peakIndex + Math.floor(segmentLength * 0.3);
+        const searchEnd = peakIndex + Math.floor(segmentLength * 0.6);
+        
+        if (searchStart < signal.length && searchEnd < signal.length) {
+          const segment = signal.slice(searchStart, searchEnd);
+          // Buscar punto de inflexión (aproximación simple)
+          let notchIndex = -1;
+          for (let j = 1; j < segment.length - 1; j++) {
+            if (segment[j] < segment[j-1] && segment[j] <= segment[j+1]) {
+              notchIndex = j;
+              break;
+            }
+          }
+          
+          if (notchIndex !== -1) {
+            notchTimes.push(notchIndex / segmentLength);
+          }
+        }
+      }
+    }
+    
+    // Calcular promedios si hay suficientes datos
+    if (amplitudes.length > 0 && intervals.length > 0) {
+      this.ppgFeatures = {
+        amplitude: this.calculateMean(amplitudes),
+        peakInterval: this.calculateMean(intervals),
+        dicroticNotchTime: notchTimes.length > 0 ? this.calculateMean(notchTimes) : 0.45
+      };
+      
+      // Confianza basada en la variabilidad de las características
+      const ampStdDev = this.calculateStdDev(amplitudes);
+      const intervalStdDev = this.calculateStdDev(intervals);
+      
+      // Menor variabilidad = mayor confianza
+      this.confidenceLevel = Math.max(
+        0, 
+        1 - (ampStdDev / Math.max(1, this.ppgFeatures.amplitude) * 0.5 +
+             intervalStdDev / Math.max(1, this.ppgFeatures.peakInterval) * 0.5)
+      );
+    } else {
+      this.ppgFeatures = null;
+      this.confidenceLevel = 0;
+    }
+  }
+  
+  /**
+   * Estima la presión arterial basada en las características PPG y HR
+   */
+  public calculateBloodPressure(heartRate: number, age: number = 30): {
+    systolic: number;
+    diastolic: number;
+    confidence: number;
+  } {
+    if (!this.ppgFeatures || this.confidenceLevel < this.config.confidenceThreshold) {
+      // Si no hay confianza suficiente, devolver la última estimación o valores predeterminados
       return {
-        systolic: Math.round(current.systolic + delta),
-        diastolic: Math.round(current.diastolic + delta),
-        map: Math.round(current.map + delta * 0.5),
-        confidence: current.confidence,
-        isReliable: current.isReliable
+        systolic: this.lastSystolic || 120,
+        diastolic: this.lastDiastolic || 80,
+        confidence: this.confidenceLevel
       };
     }
-
-    const factor = current.confidence < 0.4 ? 0.3 : 0.15;
-
+    
+    // Modelo basado en características PPG y frecuencia cardíaca
+    // Esta es una aproximación basada en investigación de la relación PPG-BP
+    
+    // Factor de edad (presión aumenta con la edad)
+    const ageFactor = 1 + Math.max(0, age - 30) / 100;
+    
+    // La amplitud PPG tiene correlación inversa con la presión sistólica
+    // El intervalo de pico tiene correlación con la presión diastólica
+    // La posición de la muesca dicrotic se relaciona con la elasticidad arterial
+    
+    // Estimación sistólica
+    const baselineSystolic = 120;
+    const systolicAmplitudeFactor = 30 * (1 - (this.ppgFeatures.amplitude / 2));
+    const systolicHRFactor = 0.3 * (heartRate - 70);
+    
+    // Estimación diastólica
+    const baselineDiastolic = 80;
+    const diastolicIntervalFactor = -15 * (this.ppgFeatures.peakInterval / 30 - 1);
+    const diastolicNotchFactor = -10 * (this.ppgFeatures.dicroticNotchTime - 0.45);
+    const diastolicHRFactor = 0.2 * (heartRate - 70);
+    
+    // Calcular presiones finales con factor de calibración
+    const systolic = Math.round(
+      (baselineSystolic + systolicAmplitudeFactor + systolicHRFactor) * 
+      ageFactor * this.config.bpCalibrationFactor
+    );
+    
+    const diastolic = Math.round(
+      (baselineDiastolic + diastolicIntervalFactor + diastolicNotchFactor + diastolicHRFactor) * 
+      ageFactor * this.config.bpCalibrationFactor
+    );
+    
+    // Guardar valores para próxima llamada
+    this.lastSystolic = systolic;
+    this.lastDiastolic = diastolic;
+    
     return {
-      systolic: Math.round(last.systolic * factor + current.systolic * (1 - factor)),
-      diastolic: Math.round(last.diastolic * factor + current.diastolic * (1 - factor)),
-      map: Math.round(last.map * factor + current.map * (1 - factor)),
-      confidence: current.confidence,
-      isReliable: current.isReliable
+      systolic,
+      diastolic,
+      confidence: this.confidenceLevel
     };
   }
-
-  public getConfidence(): number {
-    return this.lastEstimate.confidence;
+  
+  /**
+   * Calcula la media de un array de valores
+   */
+  private calculateMean(values: number[]): number {
+    if (values.length === 0) return 0;
+    return values.reduce((sum, val) => sum + val, 0) / values.length;
   }
-
-  public isReliable(): boolean {
-    return this.lastEstimate.isReliable;
+  
+  /**
+   * Calcula la desviación estándar
+   */
+  private calculateStdDev(values: number[]): number {
+    if (values.length <= 1) return 0;
+    const mean = this.calculateMean(values);
+    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+    return Math.sqrt(variance);
   }
-
+  
+  /**
+   * Restablece el analizador
+   */
   public reset(): void {
-    this.history.length = 0;
-    this.freezeCounter = 0;
-    this.lastEstimate = {
-      systolic: 120,
-      diastolic: 80,
-      map: 93,
-      confidence: 0,
-      isReliable: false
-    };
+    this.lastSystolic = 0;
+    this.lastDiastolic = 0;
+    this.confidenceLevel = 0;
+    this.ppgFeatures = null;
+  }
+  
+  /**
+   * Establece factores de calibración personalizados
+   */
+  public setCalibrationFactors(factors: {
+    bpCalibrationFactor?: number;
+  }): void {
+    if (factors.bpCalibrationFactor !== undefined) {
+      this.config.bpCalibrationFactor = factors.bpCalibrationFactor;
+    }
   }
 }
