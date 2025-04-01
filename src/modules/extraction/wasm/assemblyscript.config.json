@@ -1,0 +1,24 @@
+
+{
+  "targets": {
+    "debug": {
+      "binaryFile": "build/debug.wasm",
+      "textFile": "build/debug.wat"
+    },
+    "release": {
+      "binaryFile": "build/release.wasm",
+      "textFile": "build/release.wat"
+    }
+  },
+  "options": {
+    "bindings": "esm",
+    "importMemory": true,
+    "initialMemory": 16,
+    "maximumMemory": 64,
+    "noExportMemory": false,
+    "exportTable": false,
+    "exportStart": "_start",
+    "runtime": "incremental",
+    "enable": ["simd"]
+  }
+}
