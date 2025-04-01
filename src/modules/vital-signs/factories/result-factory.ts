@@ -3,7 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { VitalSignsResult } from '../types/vital-signs-result';
+import type { VitalSignsResult } from '../../../types/vital-signs';
 
 /**
  * Factory for creating consistent VitalSignsResult objects
@@ -23,11 +23,6 @@ export class ResultFactory {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
       }
     };
   }
@@ -42,18 +37,23 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
-    confidence: { glucose: number; lipids: number; overall: number },
+    confidence?: { glucose: number; lipids: number; overall: number },
     lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
-    return {
+    const result: VitalSignsResult = {
       spo2,
       pressure,
       arrhythmiaStatus,
       glucose,
       lipids,
-      confidence,
       lastArrhythmiaData
     };
+    
+    // Add confidence if provided
+    if (confidence) {
+      result.confidence = confidence;
+    }
+    
+    return result;
   }
 }
-

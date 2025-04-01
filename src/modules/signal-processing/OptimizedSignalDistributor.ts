@@ -2,181 +2,220 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Optimized Signal Distributor
- * Routes signals to specialized channels and collects results
+ * Signal distributor that optimizes signal processing across specialized channels
  */
 
 import { 
   OptimizedSignalChannel, 
-  VitalSignType, 
-  ChannelFeedback,
-  SignalDistributorConfig
-} from '../../types/signal';
+  SignalDistributorConfig,
+  SignalProcessingResult,
+  SignalDiagnosticInfo,
+  BloodPressureResult,
+  CardiacResult
+} from './interfaces';
 
+import { VitalSignType } from './channels/SpecializedChannel';
 import { GlucoseChannel } from './channels/GlucoseChannel';
 import { LipidsChannel } from './channels/LipidsChannel';
 import { BloodPressureChannel } from './channels/BloodPressureChannel';
 import { SpO2Channel } from './channels/SpO2Channel';
 import { CardiacChannel } from './channels/CardiacChannel';
+import { LipidsResult } from './channels/LipidsChannel';
 
 /**
- * Default configuration
- */
-const DEFAULT_CONFIG: SignalDistributorConfig = {
-  enableFeedback: true,
-  adaptChannels: true,
-  optimizationInterval: 5000,
-  channels: {
-    [VitalSignType.GLUCOSE]: {
-      initialAmplification: 1.2,
-      initialFilterStrength: 0.3,
-      frequencyBandMin: 0.1,
-      frequencyBandMax: 1.0
-    },
-    [VitalSignType.LIPIDS]: {
-      initialAmplification: 1.4,
-      initialFilterStrength: 0.4,
-      frequencyBandMin: 0.1,
-      frequencyBandMax: 0.8
-    },
-    [VitalSignType.BLOOD_PRESSURE]: {
-      initialAmplification: 1.5,
-      initialFilterStrength: 0.5,
-      frequencyBandMin: 0.5,
-      frequencyBandMax: 4.0
-    },
-    [VitalSignType.SPO2]: {
-      initialAmplification: 1.1,
-      initialFilterStrength: 0.6,
-      frequencyBandMin: 0.5,
-      frequencyBandMax: 3.5
-    },
-    [VitalSignType.CARDIAC]: {
-      initialAmplification: 1.3,
-      initialFilterStrength: 0.7,
-      frequencyBandMin: 0.8,
-      frequencyBandMax: 5.0
-    }
-  }
-};
-
-/**
- * Optimized Signal Distributor
- * Routes PPG signal to specialized channels for different vital signs
+ * Class for optimized signal distribution to specialized channels
  */
 export class OptimizedSignalDistributor {
-  private config: SignalDistributorConfig;
-  private channels: Map<VitalSignType, OptimizedSignalChannel> = new Map();
-  private lastOptimizationTime: number = 0;
+  // Active channels by type
+  private channels = new Map<VitalSignType, OptimizedSignalChannel>();
+  
+  // Processing configuration
+  private config: SignalDistributorConfig = { 
+    globalAdaptationRate: 0.3,
+    calibrationMode: false
+  };
+  
+  // Processing diagnostics
+  private diagnostics: SignalDiagnosticInfo = {
+    quality: 0,
+    fingerDetected: false,
+    signalStrength: 0,
+    processingTime: 0,
+    adaptationRate: 0.3
+  };
   
   /**
-   * Constructor
+   * Create a new signal distributor with default channels
    */
-  constructor(config: Partial<SignalDistributorConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
-    this.initializeChannels();
-  }
-  
-  /**
-   * Initialize all channels
-   */
-  private initializeChannels(): void {
-    // Create channels
-    const glucoseChannel = new GlucoseChannel();
-    const lipidsChannel = new LipidsChannel();
-    const bloodPressureChannel = new BloodPressureChannel();
-    const spo2Channel = new SpO2Channel();
-    const cardiacChannel = new CardiacChannel();
-    
-    // Add to map
-    this.addChannel(glucoseChannel);
-    this.addChannel(lipidsChannel);
-    this.addChannel(bloodPressureChannel);
-    this.addChannel(spo2Channel);
-    this.addChannel(cardiacChannel);
-  }
-  
-  /**
-   * Add a channel to the distributor
-   */
-  private addChannel(channel: OptimizedSignalChannel): void {
-    this.channels.set(channel.type, channel);
-  }
-  
-  /**
-   * Process a PPG value through all channels
-   */
-  public processValue(value: number): Map<VitalSignType, number> {
-    const results = new Map<VitalSignType, number>();
-    
-    // Process through each channel
-    this.channels.forEach((channel, type) => {
-      const processedValue = channel.processValue(value);
-      results.set(type, processedValue);
-    });
-    
-    // Check if optimization is due
-    const currentTime = Date.now();
-    if (this.config.adaptChannels && 
-        currentTime - this.lastOptimizationTime > this.config.optimizationInterval) {
-      this.optimizeChannels();
-      this.lastOptimizationTime = currentTime;
+  constructor(config?: SignalDistributorConfig) {
+    // Apply configuration if provided
+    if (config) {
+      this.config = { ...this.config, ...config };
     }
     
-    return results;
+    // Initialize default channels
+    this.registerChannel(new GlucoseChannel() as unknown as OptimizedSignalChannel);
+    this.registerChannel(new LipidsChannel() as unknown as OptimizedSignalChannel);
+    this.registerChannel(new BloodPressureChannel() as unknown as OptimizedSignalChannel);
+    this.registerChannel(new SpO2Channel() as unknown as OptimizedSignalChannel);
+    this.registerChannel(new CardiacChannel() as unknown as OptimizedSignalChannel);
   }
   
   /**
-   * Apply feedback to channels
+   * Register a new channel
    */
-  public applyFeedback(feedback: ChannelFeedback): void {
-    if (!this.config.enableFeedback) return;
+  registerChannel(channel: OptimizedSignalChannel): void {
+    this.channels.set(channel.getType(), channel);
+  }
+  
+  /**
+   * Remove a channel
+   */
+  removeChannel(type: VitalSignType): void {
+    this.channels.delete(type);
+  }
+  
+  /**
+   * Get a channel by type
+   */
+  getChannel<T extends OptimizedSignalChannel>(type: VitalSignType): T | null {
+    const channel = this.channels.get(type);
+    return channel as T || null;
+  }
+  
+  /**
+   * Process a signal through all channels
+   */
+  processPPGSignal(signal: number, quality?: number): SignalProcessingResult {
+    const startTime = Date.now();
+    const channelResults = new Map<VitalSignType, any>();
     
-    const channel = this.findChannelById(feedback.channelId);
-    if (channel) {
-      channel.applyFeedback(feedback);
-    }
-  }
-  
-  /**
-   * Find a channel by its ID
-   */
-  private findChannelById(channelId: string): OptimizedSignalChannel | undefined {
-    for (const channel of this.channels.values()) {
-      if (channel.getId() === channelId) {
-        return channel;
+    // Update diagnostics
+    this.diagnostics.quality = quality || 0;
+    this.diagnostics.signalStrength = Math.abs(signal);
+    
+    // Process signal through all channels
+    for (const [type, channel] of this.channels.entries()) {
+      try {
+        const result = channel.processValue(signal);
+        channelResults.set(type, result);
+      } catch (error) {
+        console.error(`Error processing signal in ${type} channel:`, error);
       }
     }
-    return undefined;
+    
+    // Calculate processing time
+    this.diagnostics.processingTime = Date.now() - startTime;
+    
+    // Return results
+    return {
+      timestamp: Date.now(),
+      channelResults,
+      diagnostics: { ...this.diagnostics }
+    };
   }
   
   /**
-   * Optimize channels based on their quality scores
+   * Get glucose value
    */
-  private optimizeChannels(): void {
-    // This would contain adaptive algorithms to improve channel processing
-    // based on feedback and quality scores
-    console.log("OptimizedSignalDistributor: Optimizing channels");
+  getGlucose(): number {
+    const glucoseChannel = this.getChannel<GlucoseChannel>(VitalSignType.GLUCOSE);
+    if (!glucoseChannel) return 0;
+    
+    return (glucoseChannel as unknown as GlucoseChannel).getLastGlucose();
   }
   
   /**
-   * Get quality scores for all channels
+   * Get lipids values
    */
-  public getQualityScores(): Map<VitalSignType, number> {
-    const scores = new Map<VitalSignType, number>();
+  getLipids(): LipidsResult {
+    const lipidsChannel = this.getChannel<LipidsChannel>(VitalSignType.LIPIDS);
+    if (!lipidsChannel) {
+      return { totalCholesterol: 0, triglycerides: 0 };
+    }
     
-    this.channels.forEach((channel, type) => {
-      scores.set(type, channel.getQuality());
-    });
+    return (lipidsChannel as unknown as LipidsChannel).getLastResult();
+  }
+  
+  /**
+   * Get blood pressure values
+   */
+  getBloodPressure(): BloodPressureResult {
+    const bpChannel = this.getChannel<BloodPressureChannel>(VitalSignType.BLOOD_PRESSURE);
+    if (!bpChannel) {
+      return { systolic: 0, diastolic: 0 };
+    }
     
-    return scores;
+    return (bpChannel as unknown as BloodPressureChannel).getLastResult();
+  }
+  
+  /**
+   * Get SpO2 value
+   */
+  getSpO2(): number {
+    const spo2Channel = this.getChannel<SpO2Channel>(VitalSignType.SPO2);
+    if (!spo2Channel) return 0;
+    
+    return (spo2Channel as unknown as SpO2Channel).getLastSpO2();
+  }
+  
+  /**
+   * Get cardiac values
+   */
+  getCardiac(): CardiacResult {
+    const cardiacChannel = this.getChannel<CardiacChannel>(VitalSignType.CARDIAC);
+    if (!cardiacChannel) {
+      return { bpm: 0, confidence: 0, isPeak: false };
+    }
+    
+    return (cardiacChannel as unknown as CardiacChannel).getLastResult();
   }
   
   /**
    * Reset all channels
    */
-  public reset(): void {
-    this.channels.forEach(channel => channel.reset());
-    this.lastOptimizationTime = 0;
+  reset(): void {
+    for (const channel of this.channels.values()) {
+      channel.reset();
+    }
+    
+    // Reset diagnostics
+    this.diagnostics = {
+      quality: 0,
+      fingerDetected: false,
+      signalStrength: 0,
+      processingTime: 0,
+      adaptationRate: this.config.globalAdaptationRate || 0.3
+    };
+  }
+  
+  /**
+   * Get diagnostic information
+   */
+  getDiagnostics(): SignalDiagnosticInfo {
+    return { ...this.diagnostics };
+  }
+  
+  /**
+   * Methods for ModularVitalSignsProcessor compatibility
+   */
+  start(): void {
+    // Reset all channels to ensure clean start
+    this.reset();
+  }
+  
+  stop(): void {
+    // No specific action needed
+  }
+  
+  processSignal(signal: number, quality?: number): SignalProcessingResult {
+    return this.processPPGSignal(signal, quality);
+  }
+  
+  applyFeedback(type: VitalSignType, feedback: any): void {
+    // Implementation for feedback mechanism
+    console.log(`Feedback received for ${type}:`, feedback);
+    
+    // Future implementation could update channel parameters based on feedback
   }
 }

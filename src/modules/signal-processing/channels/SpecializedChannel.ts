@@ -1,85 +1,136 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Base class for all specialized signal channels
+ * Base class for specialized signal processing channels
  */
 
-import { VitalSignType, ChannelFeedback, OptimizedSignalChannel } from '../../../types/signal';
+import { v4 as uuidv4 } from 'uuid';
+import { OptimizedSignalChannel } from '../interfaces';
 
 /**
- * Abstract base class for all specialized signal channels
+ * Supported vital sign types
+ */
+export enum VitalSignType {
+  CARDIAC = 'cardiac',
+  SPO2 = 'spo2',
+  BLOOD_PRESSURE = 'blood_pressure',
+  GLUCOSE = 'glucose',
+  LIPIDS = 'lipids'
+}
+
+/**
+ * Base specialized channel implementation
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
-  // The type of vital sign this channel processes
-  public readonly type: VitalSignType;
-  
-  // Channel ID
-  public readonly id: string;
-  
-  // Channel quality (0-1)
-  protected confidence: number = 0;
-  
-  // Signal buffer
-  protected buffer: number[] = [];
-  protected readonly MAX_BUFFER_SIZE = 30;
+  /**
+   * Unique channel ID
+   */
+  public id: string;
+
+  /**
+   * Channel type
+   */
+  protected type: VitalSignType;
   
   /**
-   * Constructor
+   * Values buffer
    */
-  constructor(type: VitalSignType) {
+  protected values: number[] = [];
+  
+  /**
+   * Timestamps for values
+   */
+  protected timestamps: number[] = [];
+  
+  /**
+   * Create a new specialized channel
+   */
+  constructor(type: VitalSignType, id?: string) {
     this.type = type;
-    this.id = `channel_${this.type}`;
+    this.id = id || uuidv4();
   }
   
   /**
-   * Process a value for this specific channel
+   * Get the channel type
    */
-  public processValue(value: number): number {
-    // Store value in buffer
-    this.buffer.push(value);
-    if (this.buffer.length > this.MAX_BUFFER_SIZE) {
-      this.buffer.shift();
-    }
-    
-    // Process value (implemented by subclasses)
-    return this.processValueImpl(value);
+  public getType(): VitalSignType {
+    return this.type;
   }
   
   /**
-   * Implementation of value processing (must be implemented by subclasses)
+   * Process a new signal value
+   * Each specialized channel needs to implement this
    */
-  protected abstract processValueImpl(value: number): number;
+  abstract processValue(signal: number): any;
   
   /**
-   * Apply feedback from algorithm
+   * Check if this channel matches a specified type
    */
-  public applyFeedback(feedback: ChannelFeedback): void {
-    // Update quality based on feedback
-    if (feedback.channelId === this.getId()) {
-      this.confidence = feedback.signalQuality;
-    }
+  public isType(type: VitalSignType): boolean {
+    return this.type === type;
   }
   
   /**
-   * Get channel quality
-   */
-  public getQuality(): number {
-    return this.confidence;
-  }
-  
-  /**
-   * Reset channel state
-   */
-  public reset(): void {
-    this.buffer = [];
-    this.confidence = 0;
-  }
-  
-  /**
-   * Get channel ID
+   * Get the channel ID
    */
   public getId(): string {
     return this.id;
+  }
+  
+  /**
+   * Reset the channel
+   * Should be implemented by subclasses to perform specialized reset
+   */
+  public reset(): void {
+    this.values = [];
+    this.timestamps = [];
+  }
+  
+  /**
+   * Get the latest value
+   */
+  public getLatestValue(): number | null {
+    if (this.values.length === 0) return null;
+    return this.values[this.values.length - 1];
+  }
+  
+  /**
+   * Add a new value to the channel's buffer
+   */
+  protected addValue(value: number): void {
+    this.values.push(value);
+    this.timestamps.push(Date.now());
+    
+    // Keep buffer at reasonable size
+    const MAX_BUFFER_SIZE = 100;
+    if (this.values.length > MAX_BUFFER_SIZE) {
+      this.values.shift();
+      this.timestamps.shift();
+    }
+  }
+  
+  /**
+   * Get channel buffer
+   */
+  public getValues(): number[] {
+    return [...this.values];
+  }
+  
+  /**
+   * Get value timestamps
+   */
+  public getTimestamps(): number[] {
+    return [...this.timestamps];
+  }
+  
+  /**
+   * Get last N values from buffer
+   */
+  protected getLastValues(count: number): number[] {
+    if (this.values.length <= count) {
+      return [...this.values];
+    }
+    
+    return this.values.slice(-count);
   }
 }

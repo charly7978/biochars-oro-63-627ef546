@@ -1,27 +1,33 @@
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- *
- * Exports for signal processing module
+ * 
+ * Central export point for signal processing
  */
 
-// Export classes, types and interfaces
-export { PPGSignalProcessor } from './PPGSignalProcessor';
-export { HeartbeatProcessor } from './HeartbeatProcessor';
-export type { ProcessedPPGSignal, ProcessedHeartbeatSignal, SignalProcessingOptions } from './types';
-export { resetFingerDetector } from './utils/finger-detection';
+// Export core signal processors
+export { PPGProcessor as PPGSignalProcessor } from './ppg-processor';
+export { HeartbeatProcessor } from './heartbeat-processor';
 
-// Export signal channel-related components
-export { OptimizedSignalDistributor } from './OptimizedSignalDistributor';
+// Export processed signal types
+export type { ProcessedPPGSignal, ProcessedHeartbeatSignal } from './types';
 
-// Export channel types
-export { VitalSignType } from '../../types/signal';
-export type { ChannelFeedback, OptimizedSignalChannel } from '../../types/signal';
+// Export configuration types
+export type { SignalProcessingOptions } from './types';
 
-// Export specialized channels
+// Export utility functions
+export { resetFingerDetector } from './finger-detector';
+
+// Export channels
+export { SpecializedChannel, VitalSignType } from './channels/SpecializedChannel';
 export { GlucoseChannel } from './channels/GlucoseChannel';
 export { LipidsChannel } from './channels/LipidsChannel';
 export { BloodPressureChannel } from './channels/BloodPressureChannel';
 export { SpO2Channel } from './channels/SpO2Channel';
 export { CardiacChannel } from './channels/CardiacChannel';
-export { SpecializedChannel } from './channels/SpecializedChannel';
+
+// Export signal distributor
+export { OptimizedSignalDistributor } from './OptimizedSignalDistributor';
+
+// Export interfaces
+export * from './interfaces';
