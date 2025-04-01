@@ -1,12 +1,12 @@
-
 import { useState, useCallback, useRef } from 'react';
+import { HeartBeatConfig } from '../../modules/heart-beat/config';
 
 export function useBeepProcessor() {
   const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
   const beepProcessorTimeoutRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  const MIN_BEEP_INTERVAL_MS = 500;
+  const MIN_BEEP_INTERVAL_MS = HeartBeatConfig.MIN_BEEP_INTERVAL_MS;
   
   const processBeepQueue = useCallback((
     isMonitoringRef: React.MutableRefObject<boolean>,
@@ -16,12 +16,62 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ) => {
-    // Todo el procesamiento de beeps ha sido eliminado
-    // El sonido es manejado exclusivamente por PPGSignalMeter
-    console.log("BeepProcessor: Completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
-    pendingBeepsQueue.current = []; // Vaciar cola
-    return;
-  }, []);
+    if (!isMonitoringRef.current) {
+      pendingBeepsQueue.current = [];
+      return;
+    }
+    
+    if (pendingBeepsQueue.current.length === 0) return;
+    
+    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE) {
+      pendingBeepsQueue.current = [];
+      return;
+    }
+    
+    if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
+      pendingBeepsQueue.current = [];
+      return;
+    }
+    
+    const now = Date.now();
+    
+    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS) {
+      try {
+        pendingBeepsQueue.current.sort((a, b) => a.time - b.time);
+        
+        if (pendingBeepsQueue.current.length > 1) {
+          pendingBeepsQueue.current = [pendingBeepsQueue.current[0]];
+        }
+        
+        if (isMonitoringRef.current) {
+          playBeep(0.7);
+          lastBeepTimeRef.current = now;
+        }
+        pendingBeepsQueue.current.shift();
+        missedBeepsCounter.current = 0;
+      } catch (err) {
+        console.error('Error playing beep from queue:', err);
+        pendingBeepsQueue.current.shift();
+      }
+    }
+    
+    if (pendingBeepsQueue.current.length > 0) {
+      if (beepProcessorTimeoutRef.current) {
+        clearTimeout(beepProcessorTimeoutRef.current);
+      }
+      beepProcessorTimeoutRef.current = window.setTimeout(
+        () => processBeepQueue(
+          isMonitoringRef, 
+          lastSignalQualityRef, 
+          consecutiveWeakSignalsRef, 
+          MAX_CONSECUTIVE_WEAK_SIGNALS, 
+          missedBeepsCounter, 
+          playBeep
+        ), 
+        MIN_BEEP_INTERVAL_MS * 0.5
+      );
+    }
+  }, [MIN_BEEP_INTERVAL_MS]);
 
   const requestImmediateBeep = useCallback((
     value: number,
@@ -32,11 +82,56 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ): boolean => {
-    // Todo el código de beep ha sido eliminado
-    // El sonido es manejado exclusivamente por PPGSignalMeter
-    console.log("BeepProcessor: Beep completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
+    if (!isMonitoringRef.current) return false;
+    
+    if (lastSignalQualityRef.current < HeartBeatConfig.MIN_CONFIDENCE || 
+        consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS) {
+      return false;
+    }
+    
+    const now = Date.now();
+    
+    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS) {
+      try {
+        console.log("Requesting immediate beep, time since last:", now - lastBeepTimeRef.current);
+        
+        const success = playBeep(0.7);
+        
+        if (success) {
+          lastBeepTimeRef.current = now;
+          missedBeepsCounter.current = 0;
+          return true;
+        } else {
+          console.warn('useHeartBeatProcessor: Beep failed to play immediately');
+          missedBeepsCounter.current++;
+        }
+      } catch (err) {
+        console.error('Error playing immediate beep:', err);
+        missedBeepsCounter.current++;
+      }
+    } else {
+      if (pendingBeepsQueue.current.length === 0 && 
+          (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS * 0.5)) {
+        pendingBeepsQueue.current.push({ time: now, value });
+      
+        if (!beepProcessorTimeoutRef.current) {
+          beepProcessorTimeoutRef.current = window.setTimeout(
+            () => processBeepQueue(
+              isMonitoringRef, 
+              lastSignalQualityRef, 
+              consecutiveWeakSignalsRef, 
+              MAX_CONSECUTIVE_WEAK_SIGNALS, 
+              missedBeepsCounter, 
+              playBeep
+            ), 
+            MIN_BEEP_INTERVAL_MS - (now - lastBeepTimeRef.current)
+          );
+        }
+      }
+    }
+    
     return false;
-  }, []);
+  }, [MIN_BEEP_INTERVAL_MS, processBeepQueue]);
 
   const cleanup = useCallback(() => {
     pendingBeepsQueue.current = [];
