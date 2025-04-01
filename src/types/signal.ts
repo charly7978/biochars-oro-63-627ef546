@@ -40,15 +40,50 @@ export interface ProcessedSignal {
     amplitudes: number[];
     dominantFrequency: number;
   };
+  // New diagnostic info field for error tracking
+  diagnosticInfo?: SignalDiagnosticInfo;
 }
 
 /**
- * Processing error structure
+ * Diagnostic information for signal processing
+ * Added for better error tracking and debugging
+ */
+export interface SignalDiagnosticInfo {
+  processingStage: string;              // Where in the pipeline processing occurred
+  validationPassed: boolean;            // Whether signal passed validation
+  errorCode?: string;                   // Optional error code if validation failed
+  errorMessage?: string;                // Optional error message
+  processingTimeMs?: number;            // Time taken to process
+  signalQualityMetrics?: {              // Detailed quality metrics
+    amplitude?: number;
+    variance?: number;
+    snr?: number;                      // Signal-to-noise ratio if available
+  };
+  fingerDetectionConfidence?: number;   // Confidence level in finger detection
+}
+
+/**
+ * Processing error structure - Enhanced with more details
  */
 export interface ProcessingError {
-  code: string;       // Error code
-  message: string;    // Descriptive message
-  timestamp: number;  // Error timestamp
+  code: string;                  // Error code
+  message: string;               // Descriptive message
+  timestamp: number;             // Error timestamp
+  component?: string;            // Component where error occurred
+  severity: 'low' | 'medium' | 'high' | 'critical';  // Error severity
+  data?: any;                    // Any relevant data for debugging
+  recoverable: boolean;          // Whether system can recover from this error
+  suggestions?: string[];        // Suggested remediation steps
+}
+
+/**
+ * Result of signal validation
+ */
+export interface SignalValidationResult {
+  isValid: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+  diagnosticInfo?: Record<string, any>;
 }
 
 /**
@@ -62,4 +97,30 @@ export interface SignalProcessor {
   onSignalReady?: (signal: ProcessedSignal) => void;    // Signal ready callback
   onError?: (error: ProcessingError) => void;           // Error callback
   processFrame?: (imageData: ImageData) => void;        // Process image frame
+  // New methods for error handling
+  validateSignal?: (signal: any) => SignalValidationResult;  // Validate incoming signal
+  getDiagnosticInfo?: () => SignalDiagnosticInfo;            // Get diagnostic information
 }
+
+/**
+ * Error handler configuration
+ */
+export interface ErrorHandlerConfig {
+  logErrors: boolean;
+  retryOnError: boolean;
+  maxRetries: number;
+  notifyUser: boolean;
+  fallbackToLastGoodValue: boolean;
+}
+
+/**
+ * Signal validation configuration
+ */
+export interface SignalValidationConfig {
+  minAmplitude: number;
+  maxAmplitude: number;
+  minVariance: number;
+  maxVariance: number;
+  requiredSampleSize: number;
+}
+
