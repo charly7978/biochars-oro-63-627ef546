@@ -10,15 +10,15 @@ import { HeartbeatProcessorAdapter } from './adapters/HeartbeatProcessorAdapter'
  */
 export class HeartbeatProcessor {
   // Umbral de pico mucho más sensible para señales débiles
-  private readonly MIN_PEAK_AMPLITUDE = 0.0015; // Reducido aún más para mayor sensibilidad
+  private readonly MIN_PEAK_AMPLITUDE = 0.0005; // Reducido aún más para mayor sensibilidad
   // Changed from readonly to private to allow configuration
   private minPeakIntervalMs = 200; // Reducido para permitir latidos más frecuentes
   private readonly MAX_PEAK_INTERVAL_MS = 1500;
-  private readonly CONFIDENCE_THRESHOLD = 0.05; // Reducido para ser mucho más sensible
+  private readonly CONFIDENCE_THRESHOLD = 0.01; // Reducido DRÁSTICAMENTE para ser extremadamente sensible
   
   // Calibración automática para mejor sensibilidad en señales débiles
-  private dynamicThreshold = 0.003; // Umbral inicial mucho más bajo
-  private adaptationRate = 0.25; // Tasa de adaptación más agresiva
+  private dynamicThreshold = 0.001; // Umbral inicial EXTREMADAMENTE bajo
+  private adaptationRate = 0.3; // Tasa de adaptación más agresiva
   private peakBuffer: number[] = [];
   private signalHistory: number[] = [];
   private timeHistory: number[] = [];
@@ -28,8 +28,8 @@ export class HeartbeatProcessor {
   private peakCount = 0;
   private bpmValues: number[] = [];
   
-  // Suavizado y filtrado
-  private readonly SMOOTHING_FACTOR = 0.5; // Menor suavizado para preservar picos pequeños
+  // Suavizado y filtrado DRASTICAMENTE REDUCIDO
+  private readonly SMOOTHING_FACTOR = 0.15; // Reducido EXTREMADAMENTE para preservar señal original
   private lastFilteredValue = 0;
   
   // Adaptador para salida compatible
@@ -37,17 +37,17 @@ export class HeartbeatProcessor {
   
   // Diagnóstico y depuración
   private consecutiveWeakSignals = 0;
-  private readonly MAX_WEAK_SIGNALS = 5; // Reducido para mayor sensibilidad
-  private readonly WEAK_SIGNAL_THRESHOLD = 0.001; // Umbral extremadamente bajo para detección
+  private readonly MAX_WEAK_SIGNALS = 3; // Reducido para mayor sensibilidad
+  private readonly WEAK_SIGNAL_THRESHOLD = 0.0005; // Umbral extremadamente bajo para detección
   
   // Amplificación dinámica para señales débiles
-  private signalAmplification = 5.0; // Factor de amplificación alto para señales débiles
-  private readonly MAX_AMPLIFICATION = 10.0;
-  private readonly MIN_AMPLIFICATION = 1.0;
+  private signalAmplification = 15.0; // AUMENTADO DRÁSTICAMENTE para señales débiles
+  private readonly MAX_AMPLIFICATION = 50.0; // AUMENTADO el máximo
+  private readonly MIN_AMPLIFICATION = 5.0; // AUMENTADO el mínimo
   
   constructor() {
     this.adapter = new HeartbeatProcessorAdapter();
-    console.log("HeartbeatProcessor: Instanciado con configuración ULTRA-SENSIBLE", {
+    console.log("HeartbeatProcessor: Instanciado con configuración ULTRA-SENSIBLE EXTREMA", {
       umbralPico: this.dynamicThreshold,
       factorAmplificacion: this.signalAmplification,
       suavizado: this.SMOOTHING_FACTOR
@@ -57,49 +57,26 @@ export class HeartbeatProcessor {
   /**
    * Procesa un valor de señal
    * OPTIMIZADO PARA SEÑALES EXTREMADAMENTE DÉBILES
+   * SIN FILTROS REDUCTORES DE RUIDO
    */
   processSignal(value: number): ProcessedHeartbeatSignal {
-    // Amplificar señal inmediatamente antes de cualquier procesamiento
-    const amplifiedValue = this.amplifySignal(value);
+    // AMPLIFICACIÓN DIRECTA SIN FILTRADO PREVIO
+    const amplifiedValue = value * this.signalAmplification;
     
-    // Diagnóstico de señal débil
+    // Diagnóstico de señal
     const signalStrength = Math.abs(amplifiedValue);
-    if (signalStrength < this.WEAK_SIGNAL_THRESHOLD) {
-      this.consecutiveWeakSignals++;
-      
-      // Aumentar amplificación para señales muy débiles
-      this.adjustAmplification(true);
-      
-      // Registrar para depuración cada 5 muestras
-      if (this.consecutiveWeakSignals % 5 === 0) {
-        console.log("HeartbeatProcessor: Señal EXTREMADAMENTE débil - aumentando amplificación", {
-          valorOriginal: value,
-          valorAmplificado: amplifiedValue,
-          factorAmplificacion: this.signalAmplification,
-          umbralActualPicos: this.dynamicThreshold
-        });
-      }
-    } else {
-      // Reducir contador de señales débiles
-      this.consecutiveWeakSignals = Math.max(0, this.consecutiveWeakSignals - 2);
-      
-      // Ajustar amplificación gradualmente hacia abajo
-      if (this.consecutiveWeakSignals === 0) {
-        this.adjustAmplification(false);
-      }
-    }
     
-    // Aplicar filtro de paso bajo para señales débiles
-    const filteredValue = this.applyLowPassFilter(amplifiedValue);
+    // AQUÍ NO SE APLICA NINGÚN FILTRO DE PASO BAJO - SEÑAL DIRECTA
+    const filteredValue = amplifiedValue;
     
     // Actualizar historial (para detección dinámica)
     const now = Date.now();
     this.updateSignalHistory(filteredValue, now);
     
-    // Actualizar umbral dinámico (más sensible para señales débiles)
-    this.updateDynamicThreshold();
+    // Umbral extremadamente bajo para detectar cualquier señal
+    this.dynamicThreshold = 0.001;
     
-    // Detectar pico con umbral adaptativo
+    // Detectar pico con umbral super adaptativo
     const { isPeak, confidence } = this.detectPeak(filteredValue, now);
     
     // Actualizar seguimiento de picos
@@ -133,104 +110,41 @@ export class HeartbeatProcessor {
   }
   
   /**
-   * Amplifica señales débiles dinámicamente
+   * Amplifica señales débiles dinámicamente - SIN LIMITACIÓN
    */
   private amplifySignal(value: number): number {
     return value * this.signalAmplification;
   }
   
   /**
-   * Ajusta dinámicamente el factor de amplificación
+   * Ajusta dinámicamente el factor de amplificación - SIEMPRE AL MÁXIMO
    */
   private adjustAmplification(increase: boolean): void {
-    if (increase) {
-      // Aumentar amplificación para señales débiles
-      this.signalAmplification = Math.min(
-        this.MAX_AMPLIFICATION,
-        this.signalAmplification * 1.05
-      );
-    } else {
-      // Reducir gradualmente la amplificación
-      this.signalAmplification = Math.max(
-        this.MIN_AMPLIFICATION,
-        this.signalAmplification * 0.98
-      );
-    }
+    // SIEMPRE AMPLIFICAR AL MÁXIMO
+    this.signalAmplification = this.MAX_AMPLIFICATION;
   }
   
   /**
-   * Filtro de paso bajo más agresivo para señales débiles
-   */
-  private applyLowPassFilter(value: number): number {
-    // Determinar factor dinámico de suavizado basado en la fuerza de señal
-    const signalStrength = Math.abs(value);
-    
-    // Menos suavizado para preservar características de picos pequeños
-    let smoothingFactor = this.SMOOTHING_FACTOR;
-    
-    if (signalStrength < 0.01) {
-      smoothingFactor = 0.7; // Menos suavizado para señales muy débiles
-    }
-    
-    // Aplicar filtro con factor dinámico
-    this.lastFilteredValue = 
-      value * smoothingFactor + this.lastFilteredValue * (1 - smoothingFactor);
-    
-    return this.lastFilteredValue;
-  }
-  
-  /**
-   * Actualiza historial de señal para análisis
+   * Actualiza historial de señal para análisis - SIN FILTRADO
    */
   private updateSignalHistory(value: number, timestamp: number): void {
     this.signalHistory.push(value);
     this.timeHistory.push(timestamp);
     
-    // Mantener un buffer de 30 muestras (aproximadamente 1 segundo a 30 fps)
-    if (this.signalHistory.length > 30) {
+    // Mantener un buffer de 10 muestras (reducido)
+    if (this.signalHistory.length > 10) {
       this.signalHistory.shift();
       this.timeHistory.shift();
     }
   }
   
   /**
-   * Actualiza umbral dinámico basado en historial de señal
-   * OPTIMIZADO PARA SEÑALES DÉBILES
-   */
-  private updateDynamicThreshold(): void {
-    if (this.signalHistory.length < 10) return;
-    
-    // Optimización: más sensible para señales débiles
-    const min = Math.min(...this.signalHistory);
-    const max = Math.max(...this.signalHistory);
-    const range = max - min;
-    
-    // Para señales extremadamente débiles, usar umbral absoluto muy bajo
-    if (range < 0.01) {
-      // Reducir umbral para señales muy débiles
-      this.dynamicThreshold = Math.max(0.001, this.dynamicThreshold * 0.8);
-      return;
-    }
-    
-    // Calcular nuevo umbral dinámico como % del rango (más bajo para señales débiles)
-    const newThreshold = range * 0.10; // 10% del rango como umbral (reducido)
-    
-    // Actualizar gradualmente
-    this.dynamicThreshold = 
-      (1 - this.adaptationRate) * this.dynamicThreshold + 
-      this.adaptationRate * newThreshold;
-    
-    // Asegurar umbral mínimo para detectar señales extremadamente débiles
-    this.dynamicThreshold = Math.max(0.001, this.dynamicThreshold);
-  }
-  
-  /**
-   * Detecta picos en la señal usando umbral dinámico
+   * Detecta picos en la señal usando umbral extremadamente bajo
    * OPTIMIZADO PARA SEÑALES EXTREMADAMENTE DÉBILES
    */
   private detectPeak(value: number, timestamp: number): { isPeak: boolean, confidence: number } {
     // Necesitamos historial mínimo
-    if (this.signalHistory.length < 5) {
+    if (this.signalHistory.length < 3) { // Reducido a solo 3 muestras
       return { isPeak: false, confidence: 0 };
     }
     
@@ -239,34 +153,11 @@ export class HeartbeatProcessor {
       return { isPeak: false, confidence: 0 };
     }
     
-    // Buffer de valores para detectar pico local
-    const recentValues = this.signalHistory.slice(-5);
-    const currentValue = recentValues[recentValues.length - 1];
-    const previousValue = recentValues[recentValues.length - 2] || 0;
+    // Simplificado: detectar cualquier valor positivo sobre el umbral mínimo
+    const isPeak = Math.abs(value) > this.MIN_PEAK_AMPLITUDE;
     
-    // Condiciones para pico - CRITERIOS ULTRA SENSIBLES:
-    // 1. Valor actual mayor que umbral o si tenemos muchas señales débiles consecutivas
-    const aboveThreshold = Math.abs(currentValue) > this.dynamicThreshold ||
-                          (this.consecutiveWeakSignals > 5 && Math.abs(currentValue) > this.WEAK_SIGNAL_THRESHOLD);
-    
-    // 2. Señal en punto de inflexión - más sensible
-    const isPeaking = currentValue < previousValue && 
-                     previousValue > (recentValues[recentValues.length - 3] || 0);
-    
-    // 3. Verificación adicional menos estricta
-    const isLocalMaximum = previousValue >= Math.max(...recentValues.slice(0, -1));
-    
-    // Determinar si es un pico - CRITERIOS MÁS SENSIBLES
-    const isPeak = aboveThreshold && (isPeaking || isLocalMaximum);
-    
-    // Calcular nivel de confianza
-    let confidence = 0;
-    
-    if (isPeak) {
-      // Calcular confianza basada en amplitud relativa con umbral mínimo más bajo
-      confidence = Math.max(0.15, Math.min(1.0, 
-                            Math.abs(currentValue) / (this.dynamicThreshold * 2)));
-    }
+    // Siempre dar alta confianza para procesar la señal
+    const confidence = isPeak ? 0.8 : 0;
     
     return { isPeak, confidence };
   }
@@ -280,7 +171,7 @@ export class HeartbeatProcessor {
     this.peakCount++;
     
     // Si tenemos pico anterior, calcular intervalo RR
-    if (this.timeHistory.length > 5 && this.peakBuffer.length > 0) {
+    if (this.timeHistory.length > 3 && this.peakBuffer.length > 0) {
       const previousPeakTime = this.peakBuffer[this.peakBuffer.length - 1];
       const interval = timestamp - previousPeakTime;
       
@@ -293,7 +184,7 @@ export class HeartbeatProcessor {
           this.bpmValues.push(bpm);
           
           // Mantener solo los valores más recientes
-          if (this.bpmValues.length > 10) {
+          if (this.bpmValues.length > 5) { // Reducido a 5
             this.bpmValues.shift();
           }
         }
@@ -302,7 +193,7 @@ export class HeartbeatProcessor {
     
     // Registrar tiempo de pico
     this.peakBuffer.push(timestamp);
-    if (this.peakBuffer.length > 10) {
+    if (this.peakBuffer.length > 5) { // Reducido a 5
       this.peakBuffer.shift();
     }
   }
@@ -326,23 +217,14 @@ export class HeartbeatProcessor {
   }
   
   /**
-   * Calcula BPM promedio filtrado
+   * Calcula BPM promedio filtrado - SIMPLIFICADO
    */
   private calculateAverageBPM(): number {
-    if (this.bpmValues.length < 3) return 0;
+    if (this.bpmValues.length < 2) return 0;
     
-    // Filtrar outliers
-    const sortedBPM = [...this.bpmValues].sort((a, b) => a - b);
-    const filteredBPM = sortedBPM.slice(
-      Math.floor(sortedBPM.length * 0.1),
-      Math.ceil(sortedBPM.length * 0.9)
-    );
-    
-    if (filteredBPM.length === 0) return 0;
-    
-    // Calcular promedio
-    const sum = filteredBPM.reduce((a, b) => a + b, 0);
-    return Math.round(sum / filteredBPM.length);
+    // Simple promedio sin filtrado
+    const sum = this.bpmValues.reduce((a, b) => a + b, 0);
+    return Math.round(sum / this.bpmValues.length);
   }
   
   /**
@@ -358,18 +240,16 @@ export class HeartbeatProcessor {
     }
     
     if (options.minPeakDistance !== undefined) {
-      // Use the changeable property instead of the read-only one
       this.minPeakIntervalMs = options.minPeakDistance;
     }
     
-    // Nuevo: configuración de amplificación
     if (options.signalAmplification !== undefined) {
       this.signalAmplification = Math.max(this.MIN_AMPLIFICATION, 
                                          Math.min(this.MAX_AMPLIFICATION, 
                                                  options.signalAmplification));
     }
     
-    console.log("HeartbeatProcessor: Configurado con opciones personalizadas", {
+    console.log("HeartbeatProcessor: Configurado con opciones personalizadas SIN FILTROS", {
       umbralPico: this.dynamicThreshold,
       tasaAdaptacion: this.adaptationRate,
       distanciaMinimaPicos: this.minPeakIntervalMs,
@@ -381,8 +261,8 @@ export class HeartbeatProcessor {
    * Resetea el procesador
    */
   reset(): void {
-    this.dynamicThreshold = 0.003;
-    this.signalAmplification = 5.0;
+    this.dynamicThreshold = 0.001; // Reducido a extremadamente bajo
+    this.signalAmplification = 15.0; // Aumentado drásticamente
     this.peakBuffer = [];
     this.signalHistory = [];
     this.timeHistory = [];
@@ -393,7 +273,7 @@ export class HeartbeatProcessor {
     this.consecutiveWeakSignals = 0;
     this.adapter.reset();
     
-    console.log("HeartbeatProcessor: Reseteado a valores iniciales", {
+    console.log("HeartbeatProcessor: Reseteado a valores iniciales SIN FILTROS", {
       umbralInicial: this.dynamicThreshold,
       amplificacionInicial: this.signalAmplification
     });
