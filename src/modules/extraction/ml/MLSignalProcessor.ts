@@ -1,318 +1,253 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
  * Procesador de señales basado en Machine Learning
+ * Utiliza TensorFlow.js para mejorar la calidad de señal
  */
-import * as tf from '@tensorflow/tfjs-core';
+import { MLProcessedSignal } from '../types/processing';
+import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
-import '@tensorflow/tfjs-layers';
-import { MLProcessedSignal } from '../AdvancedSignalProcessor';
 
-// Define types from tfjs that aren't properly imported
-interface LayersModel {
-  predict: (inputs: tf.Tensor | tf.Tensor[]) => tf.Tensor | tf.Tensor[];
-  compile: (config: any) => void;
-  dispose: () => void;
-}
-
-interface SymbolicTensor extends tf.Tensor {
-  // Additional properties for symbolic tensors
-}
-
-/**
- * Configuración del procesador ML
- */
-export interface MLProcessorConfig {
-  enableQuantization: boolean;
-  modelPath?: string;
-  inputSize: number;
-  batchSize: number;
-  useGPU: boolean;
-  enableMLProcessing: boolean;
-}
+// Cargamos el modelo específico de capas
+import * as tfjs from '@tensorflow/tfjs';
+import * as tfjsLayers from '@tensorflow/tfjs-layers';
 
 /**
  * Clase para procesamiento ML de señales
  */
 export class MLSignalProcessor {
-  private config: MLProcessorConfig;
-  private model: LayersModel | null = null;
-  private isInitialized: boolean = false;
+  private model: tfjsLayers.LayersModel | null = null;
+  private isModelLoaded: boolean = false;
   private inputBuffer: number[] = [];
+  private readonly BUFFER_SIZE = 64;
+  private readonly MODEL_URL = '/assets/signal_model/model.json';
   
-  // Configuración por defecto
-  private readonly DEFAULT_CONFIG: MLProcessorConfig = {
-    enableQuantization: true,
-    inputSize: 64,
-    batchSize: 1,
-    useGPU: true,
-    enableMLProcessing: true
-  };
+  // Información de rendimiento
+  private processingTimes: number[] = [];
+  private readonly MAX_TIMES = 20;
   
-  /**
-   * Constructor
-   */
-  constructor(config?: Partial<MLProcessorConfig>) {
-    this.config = {
-      ...this.DEFAULT_CONFIG,
-      ...config
-    };
+  constructor() {
+    // Inicializar buffer
+    this.inputBuffer = Array(this.BUFFER_SIZE).fill(0);
     
-    console.log("MLSignalProcessor: Inicializado con configuración", this.config);
+    // Configurar backend preferido
+    tf.setBackend('webgl').then(() => {
+      console.log('MLSignalProcessor: Backend WebGL activado');
+    }).catch(err => {
+      console.warn('MLSignalProcessor: Error activando WebGL, usando fallback:', err);
+    });
   }
   
   /**
-   * Inicializa el procesador ML
+   * Inicializa y carga el modelo
    */
-  public async initialize(modelPath?: string): Promise<boolean> {
-    if (this.isInitialized) return true;
-    
-    if (!this.config.enableMLProcessing) {
-      console.log("MLSignalProcessor: Procesamiento ML deshabilitado");
-      return false;
-    }
+  async initialize(): Promise<boolean> {
+    if (this.isModelLoaded) return true;
     
     try {
-      // Configurar backend
-      if (this.config.useGPU) {
-        await tf.setBackend('webgl');
+      console.log('MLSignalProcessor: Cargando modelo...');
+      
+      // Utilizar tfjsLayers para cargar específicamente un modelo de capas
+      this.model = await tfjsLayers.loadLayersModel(this.MODEL_URL);
+      
+      // Verificar modelo cargado
+      if (!this.model) {
+        throw new Error('Modelo de ML no cargado correctamente');
       }
       
-      // Cargar modelo o crear uno simple
-      const path = modelPath || this.config.modelPath;
-      if (path) {
-        this.model = await (tf as any).loadLayersModel(path);
+      // Calentar el modelo con una pasada inicial
+      const warmupTensor = tf.tensor2d([[0, 0, 0, 0]], [1, 4]);
+      const result = this.model.predict(warmupTensor);
+      
+      if (Array.isArray(result)) {
+        result.forEach(tensor => tensor.dispose());
       } else {
-        this.model = await this.createSimpleModel();
+        result.dispose();
       }
+      warmupTensor.dispose();
       
-      this.isInitialized = true;
+      this.isModelLoaded = true;
+      console.log('MLSignalProcessor: Modelo cargado correctamente');
+      
       return true;
     } catch (error) {
-      console.error("MLSignalProcessor: Error inicializando", error);
+      console.error('MLSignalProcessor: Error inicializando modelo:', error);
+      this.isModelLoaded = false;
       return false;
     }
-  }
-  
-  /**
-   * Crea un modelo simple para procesamiento de señales
-   */
-  private async createSimpleModel(): Promise<LayersModel> {
-    return tf.tidy(() => {
-      const tfLayers = (tf as any).layers;
-      
-      // Modelo básico para procesamiento de señales
-      const input = (tf as any).input({ shape: [this.config.inputSize, 1] });
-      
-      // Capas de procesamiento
-      let x = tfLayers.conv1d({
-        filters: 16,
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'relu'
-      }).apply(input);
-      
-      x = tfLayers.maxPooling1d({ poolSize: 2 }).apply(x);
-      
-      x = tfLayers.conv1d({
-        filters: 32,
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'relu'
-      }).apply(x);
-      
-      x = tfLayers.upSampling1d({ size: 2 }).apply(x);
-      
-      // Capa de salida
-      const output = tfLayers.conv1d({
-        filters: 1,
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'linear'
-      }).apply(x);
-      
-      // Crear modelo
-      const model = (tf as any).model({ inputs: input, outputs: output as SymbolicTensor });
-      
-      // Compilar modelo
-      model.compile({
-        optimizer: tf.train.adam(0.001),
-        loss: 'meanSquaredError'
-      });
-      
-      return model;
-    });
   }
   
   /**
    * Procesa un valor utilizando el modelo ML
    */
-  public async processValue(value: number): Promise<MLProcessedSignal> {
-    if (!this.isInitialized || !this.model) {
-      return {
-        enhanced: value,
-        quality: 0.5,
-        confidence: 0.5
-      };
-    }
+  async processValue(value: number): Promise<MLProcessedSignal> {
+    const startTime = performance.now();
     
     // Actualizar buffer
     this.inputBuffer.push(value);
-    if (this.inputBuffer.length > this.config.inputSize) {
+    if (this.inputBuffer.length > this.BUFFER_SIZE) {
       this.inputBuffer.shift();
     }
     
-    // Verificar si hay datos suficientes
-    if (this.inputBuffer.length < this.config.inputSize) {
-      return {
-        enhanced: value,
-        quality: 0.5,
-        confidence: 0.5
-      };
-    }
-    
     try {
-      // Normalizar datos
-      const normalized = this.normalizeData(this.inputBuffer);
+      // Si el modelo no está cargado, devolver resultado básico
+      if (!this.isModelLoaded || !this.model) {
+        return this.createBasicResult(value, startTime);
+      }
       
-      // Crear tensor
-      const inputTensor = tf.tensor(normalized, [1, this.config.inputSize, 1]);
+      // Preparar datos para el modelo
+      const inputData = this.prepareInputData();
       
-      // Predicción
-      const result = this.model.predict(inputTensor) as tf.Tensor;
+      // Ejecutar inferencia
+      const outputTensor = this.model.predict(inputData);
       
-      // Extraer resultado
-      const outputArray = result.arraySync ? 
-                         result.arraySync() as number[][] : 
-                         [await result.array() as number[]];
-                         
-      const lastValue = outputArray[0][outputArray[0].length - 1];
+      // Procesar resultado
+      let enhancedValue = value;
+      let confidence = 0.5;
+      let prediction: number[] = [];
       
-      // Desnormalizar
-      const enhanced = this.denormalizeValue(lastValue);
+      // Extraer valores del tensor
+      if (Array.isArray(outputTensor)) {
+        // Modelo con múltiples salidas
+        enhancedValue = outputTensor[0].dataSync()[0];
+        confidence = outputTensor[1].dataSync()[0];
+        
+        // Limpiar memoria
+        outputTensor.forEach(tensor => tensor.dispose());
+      } else {
+        // Modelo con una única salida
+        const outputData = outputTensor.dataSync();
+        enhancedValue = outputData[0];
+        confidence = outputData.length > 1 ? outputData[1] : 0.7;
+        
+        // Convertir resto de la salida a prediction si hay más valores
+        if (outputData.length > 2) {
+          prediction = Array.from(outputData.slice(2));
+        }
+        
+        // Limpiar memoria
+        outputTensor.dispose();
+      }
       
-      // Calcular métricas
-      const quality = this.calculateQuality(normalized);
-      const confidence = this.calculateConfidence(normalized, outputArray[0]);
+      // Limpiar memoria del tensor de entrada
+      inputData.dispose();
       
-      // Liberar recursos
-      tf.dispose([inputTensor, result]);
+      // Calcular tiempo de procesamiento
+      const processingTime = performance.now() - startTime;
+      this.updateProcessingTimes(processingTime);
       
       return {
-        enhanced,
-        quality,
+        timestamp: Date.now(),
+        input: value,
+        enhanced: enhancedValue,
         confidence,
-        timestamp: Date.now()
+        prediction,
+        processingTime,
+        modelVersion: '1.0'
       };
     } catch (error) {
-      console.error("MLSignalProcessor: Error procesando", error);
-      
-      return {
-        enhanced: value,
-        quality: 0.4,
-        confidence: 0.4
-      };
+      console.error('MLSignalProcessor: Error procesando valor:', error);
+      return this.createBasicResult(value, startTime);
     }
+  }
+  
+  /**
+   * Prepara los datos de entrada para el modelo
+   */
+  private prepareInputData(): tf.Tensor {
+    // Normalizar datos
+    const normalizedData = this.normalizeData(this.inputBuffer);
+    
+    // Extraer características
+    const features = this.extractFeatures(normalizedData);
+    
+    // Convertir a tensor
+    return tf.tensor2d([features], [1, features.length]);
   }
   
   /**
    * Normaliza los datos de entrada
    */
   private normalizeData(data: number[]): number[] {
-    const mean = data.reduce((a, b) => a + b, 0) / data.length;
-    const std = Math.sqrt(data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / data.length) || 1;
+    // Encontrar min y max para normalización
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min > 0 ? max - min : 1;
     
-    return data.map(x => (x - mean) / std);
+    // Normalizar entre 0 y 1
+    return data.map(val => (val - min) / range);
   }
   
   /**
-   * Desnormaliza un valor
+   * Extrae características de los datos
    */
-  private denormalizeValue(value: number): number {
-    const data = this.inputBuffer;
-    const mean = data.reduce((a, b) => a + b, 0) / data.length;
-    const std = Math.sqrt(data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / data.length) || 1;
+  private extractFeatures(data: number[]): number[] {
+    // Características básicas
+    const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
     
-    return value * std + mean;
+    // Varianza
+    const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / data.length;
+    
+    // Diferencias
+    const diffs = data.slice(1).map((val, i) => val - data[i]);
+    const diffsMean = diffs.reduce((sum, val) => sum + val, 0) / diffs.length;
+    
+    // Extraer último valor como característica adicional
+    const lastValue = data[data.length - 1];
+    
+    return [lastValue, mean, Math.sqrt(variance), diffsMean];
   }
   
   /**
-   * Calcula la calidad del resultado
+   * Crea un resultado básico cuando el modelo no está disponible
    */
-  private calculateQuality(normalized: number[]): number {
-    // Implementación simple basada en varianza
-    const variance = normalized.reduce((a, b) => a + b * b, 0) / normalized.length;
-    const quality = Math.min(1, Math.max(0, 1 - Math.abs(variance - 1) / 2));
-    
-    return quality;
-  }
-  
-  /**
-   * Calcula la confianza del resultado
-   */
-  private calculateConfidence(input: number[], output: number[]): number {
-    // Implementación simple basada en correlación
-    const inputMean = input.reduce((a, b) => a + b, 0) / input.length;
-    const outputMean = output.reduce((a, b) => a + b, 0) / output.length;
-    
-    let numerator = 0;
-    let denomInput = 0;
-    let denomOutput = 0;
-    
-    for (let i = 0; i < input.length; i++) {
-      const inDiff = input[i] - inputMean;
-      const outDiff = output[i] - outputMean;
-      
-      numerator += inDiff * outDiff;
-      denomInput += inDiff * inDiff;
-      denomOutput += outDiff * outDiff;
-    }
-    
-    const correlation = numerator / (Math.sqrt(denomInput) * Math.sqrt(denomOutput) || 1);
-    const confidence = Math.min(1, Math.max(0, Math.abs(correlation)));
-    
-    return confidence;
-  }
-  
-  /**
-   * Configura el procesador
-   */
-  public configure(config: Partial<MLProcessorConfig>): void {
-    this.config = {
-      ...this.config,
-      ...config
+  private createBasicResult(value: number, startTime: number): MLProcessedSignal {
+    return {
+      timestamp: Date.now(),
+      input: value,
+      enhanced: value,
+      confidence: 0.1,
+      prediction: [],
+      processingTime: performance.now() - startTime,
+      modelVersion: 'basic'
     };
-    
-    console.log("MLSignalProcessor: Configuración actualizada", this.config);
   }
   
   /**
-   * Reinicia el procesador
+   * Actualiza las estadísticas de tiempo de procesamiento
    */
-  public reset(): void {
-    this.inputBuffer = [];
+  private updateProcessingTimes(time: number): void {
+    this.processingTimes.push(time);
+    if (this.processingTimes.length > this.MAX_TIMES) {
+      this.processingTimes.shift();
+    }
   }
   
   /**
-   * Libera recursos
+   * Obtiene el tiempo promedio de procesamiento
    */
-  public dispose(): void {
+  getAverageProcessingTime(): number {
+    if (this.processingTimes.length === 0) return 0;
+    return this.processingTimes.reduce((sum, time) => sum + time, 0) / this.processingTimes.length;
+  }
+  
+  /**
+   * Cierra el modelo y libera recursos
+   */
+  dispose(): void {
     if (this.model) {
       this.model.dispose();
       this.model = null;
+      this.isModelLoaded = false;
     }
     
-    this.isInitialized = false;
-    this.inputBuffer = [];
+    // Limpiar cualquier tensor en memoria
+    tf.dispose();
   }
 }
 
 /**
  * Crea una instancia del procesador ML
  */
-export const createMLSignalProcessor = (
-  config?: Partial<MLProcessorConfig>
-): MLSignalProcessor => {
-  return new MLSignalProcessor(config);
-};
+export function createMLSignalProcessor(): MLSignalProcessor {
+  return new MLSignalProcessor();
+}

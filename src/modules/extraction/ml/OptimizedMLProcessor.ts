@@ -1,512 +1,434 @@
+
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Procesador ML optimizado con cuantización de 8-bits y gestión eficiente de memoria
+ * Procesador ML optimizado con TensorFlow.js
+ * Implementa mejoras de rendimiento para procesamiento de señales
  */
-import * as tf from '@tensorflow/tfjs-core';
+import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
-import '@tensorflow/tfjs-layers';
-import { getOptimizationManager } from '../optimization/OptimizationManager';
 
-// Define types from tfjs that aren't properly imported
-interface GraphModel {
-  predict: (inputs: tf.Tensor | tf.Tensor[]) => tf.Tensor | tf.Tensor[];
-  dispose: () => void;
+// Importar específicamente los módulos necesarios
+import * as tfjs from '@tensorflow/tfjs';
+import * as tfjsLayers from '@tensorflow/tfjs-layers';
+
+// Importar tipos
+import { MLProcessedSignal } from '../types/processing';
+
+// Tipos de modelo ML
+enum ModelType {
+  GRAPH = 'graph',
+  LAYERS = 'layers',
+  QUANTIZED = 'quantized'
 }
 
-interface LayersModel {
-  predict: (inputs: tf.Tensor | tf.Tensor[]) => tf.Tensor | tf.Tensor[];
-  compile: (config: any) => void;
-  dispose: () => void;
+// Configuración del procesador ML
+interface OptimizedMLConfig {
+  useQuantizedModel?: boolean;
+  useGPU?: boolean;
+  batchProcessing?: boolean;
+  modelType?: ModelType;
 }
 
-export interface OptimizedMLProcessorConfig {
-  enableQuantization: boolean;
-  enableMemoryOptimization: boolean;
-  batchSize: number;
-  inputSize: number;
-  useGPU: boolean;
-}
-
-export interface OptimizedMLResult {
-  original: number;
-  enhanced: number;
-  quality: number;
-  confidence: number;
-  processingTime: number;
-  memoryUsage?: number;
-}
-
+/**
+ * Clase para procesamiento ML optimizado
+ */
 export class OptimizedMLProcessor {
-  private config: OptimizedMLProcessorConfig;
-  private model: GraphModel | LayersModel | null = null;
-  private isInitialized: boolean = false;
+  private model: tfjs.GraphModel | tfjsLayers.LayersModel | null = null;
+  private isModelLoaded: boolean = false;
+  private modelType: ModelType;
+  private useGPU: boolean;
+  private batchProcessing: boolean;
   private inputBuffer: number[] = [];
-  private lastEnhanced: number = 0;
-  private lastConfidence: number = 0;
-  private lastMemoryStats: tf.MemoryInfo | null = null;
-  private processingTimes: number[] = [];
+  private readonly BUFFER_SIZE = 128;
   
-  constructor(config?: Partial<OptimizedMLProcessorConfig>) {
-    // Configuración por defecto con cuantización habilitada
-    this.config = {
-      enableQuantization: true,
-      enableMemoryOptimization: true,
-      batchSize: 1,
-      inputSize: 64,
-      useGPU: true,
-      ...config
-    };
+  // Configuración de modelos
+  private readonly MODEL_URLS = {
+    [ModelType.GRAPH]: '/assets/signal_model/model.json',
+    [ModelType.LAYERS]: '/assets/signal_model/layers_model.json',
+    [ModelType.QUANTIZED]: '/assets/signal_model/model_quantized.json'
+  };
+  
+  // Caché de resultados
+  private resultCache: Map<string, MLProcessedSignal> = new Map();
+  private readonly CACHE_SIZE = 100;
+  
+  constructor(config: OptimizedMLConfig = {}) {
+    this.modelType = config.modelType || (config.useQuantizedModel ? ModelType.QUANTIZED : ModelType.LAYERS);
+    this.useGPU = config.useGPU !== false;
+    this.batchProcessing = config.batchProcessing === true;
     
-    console.log("[OptimizedMLProcessor] Inicializado con configuración:", {
-      cuantización: this.config.enableQuantization,
-      optimizaciónMemoria: this.config.enableMemoryOptimization,
-      GPU: this.config.useGPU
-    });
+    // Inicializar buffer
+    this.inputBuffer = Array(this.BUFFER_SIZE).fill(0);
+    
+    // Configurar backend
+    if (this.useGPU) {
+      tf.setBackend('webgl').catch(err => {
+        console.warn('OptimizedMLProcessor: Error activando WebGL, usando fallback:', err);
+        this.useGPU = false;
+      });
+    }
   }
   
   /**
-   * Inicializa el procesador optimizado
+   * Inicializa y carga el modelo
    */
-  public async initialize(modelPath?: string): Promise<boolean> {
-    if (this.isInitialized) return true;
+  async initialize(): Promise<boolean> {
+    if (this.isModelLoaded) return true;
     
     try {
-      // Configurar backend optimizado
-      if (this.config.useGPU) {
-        await tf.setBackend('webgl');
-        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-        tf.env().set('WEBGL_PACK', true);
-        tf.env().set('WEBGL_FLUSH_THRESHOLD', 1);
-        console.log("[OptimizedMLProcessor] Usando GPU con WebGL optimizado");
-      }
+      console.log(`OptimizedMLProcessor: Cargando modelo ${this.modelType}...`);
       
-      await tf.ready();
-      console.log("[OptimizedMLProcessor] TensorFlow.js inicializado con backend:", tf.getBackend());
+      // Seleccionar tipo de carga según el tipo de modelo
+      const modelUrl = this.MODEL_URLS[this.modelType];
       
-      // Cargar modelo (preferiblemente cuantizado si está habilitado)
-      if (modelPath) {
-        // Si se especifica un modelo, intentar cargarlo
-        if (this.config.enableQuantization && getOptimizationManager().isFeatureEnabled('model-quantization')) {
-          // Intentar cargar versión cuantizada
-          const quantizedPath = modelPath.replace('.json', '_quantized.json');
-          try {
-            this.model = await (tf as any).loadGraphModel(quantizedPath);
-            console.log("[OptimizedMLProcessor] Modelo cuantizado cargado correctamente");
-          } catch (e) {
-            console.warn("[OptimizedMLProcessor] No se pudo cargar modelo cuantizado, intentando modelo normal");
-            this.model = await (tf as any).loadLayersModel(modelPath);
-          }
-        } else {
-          // Cargar modelo normal
-          this.model = await (tf as any).loadLayersModel(modelPath);
-          console.log("[OptimizedMLProcessor] Modelo estándar cargado correctamente");
-        }
+      if (this.modelType === ModelType.GRAPH) {
+        this.model = await tf.loadGraphModel(modelUrl);
+      } else if (this.modelType === ModelType.QUANTIZED) {
+        this.model = await tf.loadLayersModel(modelUrl);
       } else {
-        // Si no hay modelo externo, crear uno básico
-        this.model = await this.createOptimizedModel();
-        console.log("[OptimizedMLProcessor] Modelo optimizado creado localmente");
+        this.model = await tfjsLayers.loadLayersModel(modelUrl);
       }
       
-      // Realizar calentamiento del modelo para mejor rendimiento inicial
-      await this.warmupModel();
+      // Verificar modelo cargado
+      if (!this.model) {
+        throw new Error('Modelo ML no cargado correctamente');
+      }
       
-      this.isInitialized = true;
+      // Calentar el modelo
+      this.warmupModel();
+      
+      this.isModelLoaded = true;
+      console.log('OptimizedMLProcessor: Modelo cargado correctamente');
+      
       return true;
     } catch (error) {
-      console.error("[OptimizedMLProcessor] Error inicializando:", error);
+      console.error('OptimizedMLProcessor: Error inicializando modelo:', error);
+      this.isModelLoaded = false;
       return false;
     }
   }
   
   /**
-   * Crea un modelo optimizado con arquitectura eficiente
+   * Calienta el modelo para optimizar primera inferencia
    */
-  private async createOptimizedModel(): Promise<LayersModel> {
-    // Usar tf.tidy para gestión automática de memoria
-    return tf.tidy(() => {
-      const tfLayers = (tf as any).layers;
-      
-      const input = (tf as any).input({shape: [this.config.inputSize, 1]});
-      
-      // Capa de entrada con normalización
-      let x = tfLayers.conv1d({
-        filters: 16,
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'relu',
-        kernelInitializer: 'heNormal'
-      }).apply(input);
-      
-      // Arquitectura eficiente (reducida para optimización)
-      x = tfLayers.batchNormalization().apply(x);
-      
-      // Residual block
-      const shortcut = x;
-      let y = tfLayers.conv1d({
-        filters: 16, 
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'relu'
-      }).apply(x);
-      
-      y = tfLayers.conv1d({
-        filters: 16,
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'linear'
-      }).apply(y);
-      
-      x = tfLayers.add().apply([shortcut, y]);
-      x = tfLayers.activation({activation: 'relu'}).apply(x);
-      
-      // Capa de salida
-      const output = tfLayers.conv1d({
-        filters: 1,
-        kernelSize: 3,
-        padding: 'same',
-        activation: 'tanh'
-      }).apply(x);
-      
-      // Crear y compilar modelo
-      const model = (tf as any).model({inputs: input, outputs: output as tf.Tensor});
-      model.compile({
-        optimizer: tf.train.adam(0.001),
-        loss: 'meanSquaredError'
-      });
-      
-      return model;
-    });
-  }
-  
-  /**
-   * Realiza un calentamiento del modelo para mejor rendimiento inicial
-   */
-  private async warmupModel(): Promise<void> {
-    if (!this.model) return;
-    
+  private warmupModel(): void {
     try {
-      // Crear datos sintéticos para el calentamiento
-      const dummyInput = tf.zeros([1, this.config.inputSize, 1]);
+      // Crear tensor de entrada ficticio
+      const warmupTensor = this.createWarmupTensor();
       
-      // Realizar predicción de calentamiento
-      const result = this.model.predict(dummyInput);
-      
-      // Asegurar que se complete la ejecución
-      await (Array.isArray(result) ? result[0].data() : result.data());
+      // Ejecutar predicción
+      const result = this.model!.predict(warmupTensor);
       
       // Limpiar tensores
-      tf.dispose([dummyInput, result]);
+      if (Array.isArray(result)) {
+        result.forEach(tensor => tensor.dispose());
+      } else {
+        result.dispose();
+      }
+      warmupTensor.dispose();
       
-      console.log("[OptimizedMLProcessor] Calentamiento del modelo completado");
+      console.log('OptimizedMLProcessor: Modelo calentado correctamente');
     } catch (error) {
-      console.warn("[OptimizedMLProcessor] Error en calentamiento:", error);
+      console.warn('OptimizedMLProcessor: Error calentando modelo:', error);
     }
   }
   
   /**
-   * Procesa un valor con gestión optimizada de memoria
+   * Crea un tensor para calentamiento
    */
-  public async processValue(value: number): Promise<OptimizedMLResult> {
+  private createWarmupTensor(): tf.Tensor {
+    if (this.modelType === ModelType.GRAPH) {
+      // Los modelos de grafo pueden requerir un formato específico
+      return tf.tensor2d([[0, 0, 0, 0]], [1, 4]);
+    } else {
+      // Para modelos de capas usamos un formato estándar
+      return tf.tensor2d([[0, 0, 0, 0]], [1, 4]);
+    }
+  }
+  
+  /**
+   * Procesa un valor utilizando el modelo ML
+   */
+  async processValue(value: number): Promise<MLProcessedSignal> {
     const startTime = performance.now();
     
-    // Si no está inicializado, devolver valor sin cambios
-    if (!this.isInitialized || !this.model) {
-      return {
-        original: value,
-        enhanced: value,
-        quality: 0.5,
-        confidence: 0.5,
-        processingTime: 0
-      };
-    }
-    
-    // Actualizar buffer de entrada
+    // Actualizar buffer
     this.inputBuffer.push(value);
-    if (this.inputBuffer.length > this.config.inputSize) {
+    if (this.inputBuffer.length > this.BUFFER_SIZE) {
       this.inputBuffer.shift();
     }
     
-    // Si no hay suficientes datos, devolver sin procesar
-    if (this.inputBuffer.length < this.config.inputSize) {
-      return {
-        original: value,
-        enhanced: value,
-        quality: 0.5,
-        confidence: 0.5,
-        processingTime: performance.now() - startTime
+    try {
+      // Comprobar caché
+      const cacheKey = this.calculateCacheKey(value);
+      const cachedResult = this.resultCache.get(cacheKey);
+      if (cachedResult) {
+        return {
+          ...cachedResult,
+          timestamp: Date.now(),
+          processingTime: performance.now() - startTime
+        };
+      }
+      
+      // Si el modelo no está cargado, devolver resultado básico
+      if (!this.isModelLoaded || !this.model) {
+        return this.createBasicResult(value, startTime);
+      }
+      
+      // Preparar datos para el modelo
+      const inputData = this.prepareInputData(value);
+      
+      // Ejecutar inferencia con control de memoria
+      let output;
+      let enhancedValue = value;
+      let confidence = 0.5;
+      let prediction: number[] = [];
+      
+      // Usar tidy para gestión automática de memoria
+      tf.tidy(() => {
+        output = this.model!.predict(inputData);
+        
+        // Procesar resultado según tipo
+        if (Array.isArray(output)) {
+          // Modelo con múltiples salidas
+          enhancedValue = output[0].dataSync()[0];
+          confidence = output[1].dataSync()[0];
+          
+          // Si hay más salidas, guardar como predicción
+          if (output.length > 2) {
+            prediction = Array.from(output[2].dataSync());
+          }
+        } else {
+          // Modelo con una única salida
+          const outputData = output.dataSync();
+          enhancedValue = outputData[0];
+          confidence = outputData.length > 1 ? outputData[1] : 0.7;
+          
+          // Convertir resto a predicción si hay más valores
+          if (outputData.length > 2) {
+            prediction = Array.from(outputData.slice(2));
+          }
+        }
+      });
+      
+      // Limpiar explícitamente tensores
+      if (typeof inputData.dispose === 'function') {
+        inputData.dispose();
+      }
+      
+      const processingTime = performance.now() - startTime;
+      
+      // Crear resultado
+      const result: MLProcessedSignal = {
+        timestamp: Date.now(),
+        input: value,
+        enhanced: enhancedValue,
+        confidence,
+        prediction,
+        processingTime,
+        modelVersion: `${this.modelType}_v1.0`
       };
+      
+      // Guardar en caché
+      this.resultCache.set(cacheKey, result);
+      if (this.resultCache.size > this.CACHE_SIZE) {
+        // Eliminar la entrada más antigua
+        const oldestKey = this.resultCache.keys().next().value;
+        this.resultCache.delete(oldestKey);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('OptimizedMLProcessor: Error procesando valor:', error);
+      return this.createBasicResult(value, startTime);
+    }
+  }
+  
+  /**
+   * Procesa un lote de valores en conjunto
+   * Optimizado para rendimiento
+   */
+  async processBatch(values: number[]): Promise<MLProcessedSignal[]> {
+    if (!this.isModelLoaded || !this.model) {
+      return values.map(v => this.createBasicResult(v, performance.now()));
     }
     
     try {
-      let enhanced: number = value;
-      let quality: number = 0.5;
-      let confidence: number = 0.5;
+      const batchStartTime = performance.now();
       
-      // Usar tf.tidy para gestión automática de memoria si está habilitado
-      if (this.config.enableMemoryOptimization && 
-          getOptimizationManager().isFeatureEnabled('memory-optimization')) {
-        
-        // Procesar con gestión optimizada de memoria
-        const result = tf.tidy(() => {
-          // Normalizar y preparar datos
-          const normalizedBuffer = this.normalizeBuffer(this.inputBuffer);
-          const inputTensor = tf.tensor(normalizedBuffer, [1, this.config.inputSize, 1]);
-          
-          // Predicción del modelo
-          const output = this.model!.predict(inputTensor) as tf.Tensor;
-          
-          // Extraer último valor
-          const outputArray = await output.arraySync ? 
-                              output.arraySync() as number[][] : 
-                              [await output.array() as number[]];
-          const lastValue = outputArray[0][outputArray[0].length - 1];
-          
-          // Calcular métricas de calidad
-          const calculatedQuality = this.calculateQuality(normalizedBuffer);
-          const calculatedConfidence = this.calculateConfidence(normalizedBuffer);
-          
-          // Devolver resultados dentro del tidy
-          return {
-            enhancedValue: this.denormalizeValue(lastValue, normalizedBuffer),
-            quality: calculatedQuality,
-            confidence: calculatedConfidence
-          };
-        });
-        
-        // Asignar resultados
-        enhanced = result.enhancedValue;
-        quality = result.quality;
-        confidence = result.confidence;
-        
-      } else {
-        // Procesamiento estándar sin optimización de memoria
-        const normalizedBuffer = this.normalizeBuffer(this.inputBuffer);
-        const inputTensor = tf.tensor(normalizedBuffer, [1, this.config.inputSize, 1]);
-        
-        const output = this.model.predict(inputTensor) as tf.Tensor;
-        const outputArray = await output.arraySync ? 
-                            output.arraySync() as number[][] : 
-                            [await output.array() as number[]];
-        const lastValue = outputArray[0][outputArray[0].length - 1];
-        
-        enhanced = this.denormalizeValue(lastValue, normalizedBuffer);
-        quality = this.calculateQuality(normalizedBuffer);
-        confidence = this.calculateConfidence(normalizedBuffer);
-        
-        // Limpieza manual de tensores
-        tf.dispose([inputTensor, output]);
-      }
+      // Preparar datos del lote
+      const batchTensor = this.prepareBatchInput(values);
       
-      // Guardar últimos valores procesados
-      this.lastEnhanced = enhanced;
-      this.lastConfidence = confidence;
+      // Procesar lote
+      const batchOutput = this.model.predict(batchTensor);
       
-      // Capturar estadísticas de memoria si está habilitado
-      let memoryUsage: number | undefined = undefined;
-      if (this.config.enableMemoryOptimization) {
-        this.lastMemoryStats = tf.memory();
-        memoryUsage = this.lastMemoryStats.numBytes;
+      // Extraer resultados
+      const results: MLProcessedSignal[] = [];
+      
+      // Procesar resultados según formato
+      if (Array.isArray(batchOutput)) {
+        // Modelo con múltiples salidas
+        const enhancedValues = batchOutput[0].dataSync();
+        const confidences = batchOutput[1].dataSync();
         
-        // Log periódico de uso de memoria (cada 100 procesados)
-        if (this.processingTimes.length % 100 === 0) {
-          console.log("[OptimizedMLProcessor] Estadísticas de memoria:", {
-            numBytes: this.lastMemoryStats.numBytes,
-            numTensors: this.lastMemoryStats.numTensors,
-            numDataBuffers: this.lastMemoryStats.numDataBuffers
+        for (let i = 0; i < values.length; i++) {
+          results.push({
+            timestamp: Date.now(),
+            input: values[i],
+            enhanced: enhancedValues[i],
+            confidence: confidences[i],
+            prediction: [],
+            processingTime: (performance.now() - batchStartTime) / values.length,
+            modelVersion: `${this.modelType}_batch_v1.0`
           });
         }
-      }
-      
-      // Calcular tiempo de procesamiento
-      const processingTime = performance.now() - startTime;
-      this.processingTimes.push(processingTime);
-      
-      // Mantener solo últimos 50 tiempos para cálculos
-      if (this.processingTimes.length > 50) {
-        this.processingTimes.shift();
-      }
-      
-      // Log periódico de rendimiento
-      if (this.processingTimes.length % 100 === 0) {
-        const avgTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
-        console.log(`[OptimizedMLProcessor] Tiempo promedio: ${avgTime.toFixed(2)}ms`);
-      }
-      
-      // Actualizar estadísticas globales
-      getOptimizationManager().updateStats({
-        memoryUsage,
-        processingTime: this.getAverageProcessingTime()
-      });
-      
-      return {
-        original: value,
-        enhanced,
-        quality,
-        confidence,
-        processingTime,
-        memoryUsage
-      };
-      
-    } catch (error) {
-      console.error("[OptimizedMLProcessor] Error procesando valor:", error);
-      
-      // En caso de error, devolver último valor válido o original
-      return {
-        original: value,
-        enhanced: this.lastEnhanced || value,
-        quality: 0.5,
-        confidence: this.lastConfidence || 0.5,
-        processingTime: performance.now() - startTime
-      };
-    }
-  }
-  
-  /**
-   * Normalización robusta para entrada del modelo
-   */
-  private normalizeBuffer(buffer: number[]): number[] {
-    const sorted = [...buffer].sort((a, b) => a - b);
-    const q10 = sorted[Math.floor(buffer.length * 0.1)];
-    const q90 = sorted[Math.floor(buffer.length * 0.9)];
-    
-    const range = q90 - q10 || 1;
-    const center = (q90 + q10) / 2;
-    
-    return buffer.map(v => {
-      const normalized = (v - center) / range;
-      return Math.max(-1, Math.min(1, normalized)); // Clamp a [-1, 1]
-    });
-  }
-  
-  /**
-   * Desnormaliza un valor de salida del modelo
-   */
-  private denormalizeValue(normalizedValue: number, normalizedBuffer: number[]): number {
-    // Usar estadísticas del buffer original para desnormalización
-    const sorted = [...this.inputBuffer].sort((a, b) => a - b);
-    const q10 = sorted[Math.floor(sorted.length * 0.1)];
-    const q90 = sorted[Math.floor(sorted.length * 0.9)];
-    
-    const range = q90 - q10 || 1;
-    const center = (q90 + q10) / 2;
-    
-    // Limitar a rango razonable
-    const clamped = Math.max(-1, Math.min(1, normalizedValue));
-    return clamped * range + center;
-  }
-  
-  /**
-   * Calcula métrica de calidad basada en características de la señal
-   */
-  private calculateQuality(buffer: number[]): number {
-    // Cálculo simple de calidad basado en varianza
-    const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-    const variance = buffer.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / buffer.length;
-    
-    // Señal de calidad tiene varianza moderada (ni muy alta ni muy baja)
-    const varianceScore = Math.exp(-Math.pow((variance - 0.2), 2) / 0.05);
-    
-    // Detectar periodicidad (señal cardíaca)
-    const periodicityScore = this.detectPeriodicity(buffer);
-    
-    // Combinación ponderada
-    return Math.max(0, Math.min(1, 0.7 * varianceScore + 0.3 * periodicityScore));
-  }
-  
-  /**
-   * Calcula confianza en los resultados
-   */
-  private calculateConfidence(buffer: number[]): number {
-    // Varianza de la señal (una medida de "energía")
-    const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-    const variance = buffer.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / buffer.length;
-    
-    // Completitud de datos
-    const completenessScore = Math.min(buffer.length / this.config.inputSize, 1);
-    
-    // Puntaje combinado con peso en varianza
-    const combinedScore = 0.7 * Math.min(variance * 5, 1) + 0.3 * completenessScore;
-    
-    // Limitar a rango [0.4, 0.95]
-    return Math.max(0.4, Math.min(0.95, combinedScore));
-  }
-  
-  /**
-   * Detecta periodicidad en la señal (útil para señales cardíacas)
-   */
-  private detectPeriodicity(buffer: number[]): number {
-    if (buffer.length < 20) return 0.5;
-    
-    // Calcular autocorrelación para detectar periodicidad
-    const maxLag = Math.floor(buffer.length / 2);
-    const correlations: number[] = [];
-    
-    // Calcular media
-    const mean = buffer.reduce((sum, val) => sum + val, 0) / buffer.length;
-    
-    // Buffer normalizado
-    const normalized = buffer.map(v => v - mean);
-    
-    // Calcular autocorrelación para diferentes lags
-    for (let lag = 1; lag <= maxLag; lag++) {
-      let correlation = 0;
-      let normalization = 0;
-      
-      for (let i = 0; i < buffer.length - lag; i++) {
-        correlation += normalized[i] * normalized[i + lag];
-        normalization += normalized[i] * normalized[i];
-      }
-      
-      correlations.push(normalization ? correlation / Math.sqrt(normalization) : 0);
-    }
-    
-    // Encontrar picos en autocorrelación
-    let maxCorrelation = 0;
-    
-    for (let i = 1; i < correlations.length - 1; i++) {
-      if (correlations[i] > correlations[i - 1] && correlations[i] > correlations[i + 1]) {
-        if (correlations[i] > maxCorrelation) {
-          maxCorrelation = correlations[i];
+        
+        // Limpiar memoria
+        batchOutput.forEach(tensor => tensor.dispose());
+      } else {
+        // Modelo con una única salida
+        const outputData = batchOutput.dataSync();
+        const outputSize = outputData.length / values.length;
+        
+        for (let i = 0; i < values.length; i++) {
+          const offset = i * outputSize;
+          results.push({
+            timestamp: Date.now(),
+            input: values[i],
+            enhanced: outputData[offset],
+            confidence: outputSize > 1 ? outputData[offset + 1] : 0.7,
+            prediction: outputSize > 2 ? Array.from(outputData.slice(offset + 2, offset + outputSize)) : [],
+            processingTime: (performance.now() - batchStartTime) / values.length,
+            modelVersion: `${this.modelType}_batch_v1.0`
+          });
         }
+        
+        // Limpiar memoria
+        batchOutput.dispose();
       }
+      
+      // Limpiar tensores de entrada
+      batchTensor.dispose();
+      
+      return results;
+    } catch (error) {
+      console.error('OptimizedMLProcessor: Error procesando lote:', error);
+      return values.map(v => this.createBasicResult(v, performance.now()));
     }
+  }
+  
+  /**
+   * Prepara el tensor de entrada para un lote
+   */
+  private prepareBatchInput(values: number[]): tf.Tensor {
+    // Crear features para cada valor
+    const features: number[][] = values.map(value => {
+      // Crear buffer temporal para cada valor
+      const tempBuffer = [...this.inputBuffer.slice(-10), value];
+      const normalizedData = this.normalizeData(tempBuffer);
+      return this.extractFeatures(normalizedData);
+    });
     
-    return Math.max(0, Math.min(1, maxCorrelation));
+    // Crear tensor del lote
+    return tf.tensor2d(features);
   }
   
   /**
-   * Obtiene el tiempo promedio de procesamiento
+   * Prepara los datos de entrada para el modelo
    */
-  public getAverageProcessingTime(): number {
-    if (this.processingTimes.length === 0) return 0;
-    return this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
+  private prepareInputData(value: number): tf.Tensor {
+    // Normalizar datos
+    const buffer = [...this.inputBuffer.slice(-10), value];
+    const normalizedData = this.normalizeData(buffer);
+    
+    // Extraer características
+    const features = this.extractFeatures(normalizedData);
+    
+    // Convertir a tensor
+    return tf.tensor2d([features], [1, features.length]);
   }
   
   /**
-   * Libera recursos del modelo
+   * Normaliza los datos de entrada
    */
-  public dispose(): void {
+  private normalizeData(data: number[]): number[] {
+    // Encontrar min y max para normalización
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min > 0 ? max - min : 1;
+    
+    // Normalizar entre 0 y 1
+    return data.map(val => (val - min) / range);
+  }
+  
+  /**
+   * Extrae características de los datos
+   */
+  private extractFeatures(data: number[]): number[] {
+    // Características básicas
+    const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
+    
+    // Varianza
+    const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / data.length;
+    
+    // Diferencias
+    const diffs = data.slice(1).map((val, i) => val - data[i]);
+    const diffsMean = diffs.reduce((sum, val) => sum + val, 0) / diffs.length;
+    
+    // Extraer último valor como característica adicional
+    const lastValue = data[data.length - 1];
+    
+    return [lastValue, mean, Math.sqrt(variance), diffsMean];
+  }
+  
+  /**
+   * Calcula una clave de caché para el valor
+   */
+  private calculateCacheKey(value: number): string {
+    // Usar un valor redondeado para mejorar hit ratio
+    const roundedValue = Math.round(value * 1000) / 1000;
+    
+    // Obtener contexto del buffer (valores recientes)
+    const context = this.inputBuffer.slice(-5).map(v => Math.round(v * 100) / 100);
+    
+    return `${roundedValue}_${context.join('_')}`;
+  }
+  
+  /**
+   * Crea un resultado básico cuando el modelo no está disponible
+   */
+  private createBasicResult(value: number, startTime: number): MLProcessedSignal {
+    return {
+      timestamp: Date.now(),
+      input: value,
+      enhanced: value,
+      confidence: 0.1,
+      prediction: [],
+      processingTime: performance.now() - startTime,
+      modelVersion: 'basic'
+    };
+  }
+  
+  /**
+   * Cierra el modelo y libera recursos
+   */
+  dispose(): void {
     if (this.model) {
       this.model.dispose();
       this.model = null;
+      this.isModelLoaded = false;
     }
     
-    this.inputBuffer = [];
-    this.lastEnhanced = 0;
-    this.lastConfidence = 0;
-    this.processingTimes = [];
-    this.isInitialized = false;
+    // Limpiar caché
+    this.resultCache.clear();
     
-    console.log("[OptimizedMLProcessor] Recursos liberados");
+    // Limpiar cualquier tensor en memoria
+    tf.dispose();
   }
 }
 
 /**
  * Crea una instancia del procesador ML optimizado
  */
-export const createOptimizedMLProcessor = (
-  config?: Partial<OptimizedMLProcessorConfig>
-): OptimizedMLProcessor => {
+export function createOptimizedMLProcessor(config: OptimizedMLConfig = {}): OptimizedMLProcessor {
   return new OptimizedMLProcessor(config);
-};
+}

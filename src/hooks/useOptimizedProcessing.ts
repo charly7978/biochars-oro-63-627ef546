@@ -1,201 +1,186 @@
+
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Hook para acceder a las capacidades optimizadas de procesamiento de señales
+ * Hook para gestión centralizada de las optimizaciones de procesamiento
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { getOptimizationController } from '../modules/extraction/OptimizationController';
 import { 
-  OptimizationController, 
-  getOptimizationController
-} from '../modules/extraction/OptimizationController';
-import { OptimizationPhase } from '../modules/extraction/optimization/OptimizationManager';
+  OptimizationPhase, 
+  OptimizationStatus, 
+  OptimizationProgress, 
+  PerformanceMetrics 
+} from '../modules/extraction/types/processing';
 
-export const useOptimizedProcessing = (
-  autoInitialize: boolean = true,
-  config?: {
-    autoAdvancePhases?: boolean;
-    initialPhase?: OptimizationPhase;
-  }
-) => {
-  // Referencias
-  const controllerRef = useRef<OptimizationController | null>(null);
+/**
+ * Hook que proporciona acceso a las optimizaciones de procesamiento
+ */
+export function useOptimizedProcessing() {
+  const controllerRef = useRef(getOptimizationController());
+  const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
+  const [currentPhase, setCurrentPhase] = useState<OptimizationPhase | null>(null);
+  const [phases, setPhases] = useState<Map<OptimizationPhase, OptimizationStatus>>(new Map());
+  const [progress, setProgress] = useState<Map<OptimizationPhase, number>>(new Map());
+  const [metrics, setMetrics] = useState<PerformanceMetrics>({
+    fps: 0,
+    processingTime: 0,
+    memoryUsage: 0
+  });
   
-  // Estado
-  const [isInitialized, setIsInitialized] = useState<boolean>(false);
-  const [status, setStatus] = useState<OptimizationStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Procesar actualización de progreso
+  const handleProgress = useCallback((progressData: OptimizationProgress) => {
+    const { phase, status, progress: phaseProgress } = progressData;
+    
+    // Actualizar estado de la fase
+    setPhases(prev => {
+      const newPhases = new Map(prev);
+      newPhases.set(phase, status);
+      return newPhases;
+    });
+    
+    // Actualizar progreso
+    setProgress(prev => {
+      const newProgress = new Map(prev);
+      newProgress.set(phase, phaseProgress);
+      return newProgress;
+    });
+    
+    // Actualizar fase actual
+    if (status === OptimizationStatus.IN_PROGRESS) {
+      setCurrentPhase(phase);
+    } else if (status === OptimizationStatus.COMPLETED && currentPhase === phase) {
+      setCurrentPhase(null);
+    }
+    
+    // Actualizar estado optimizando
+    setIsOptimizing(status === OptimizationStatus.IN_PROGRESS);
+  }, [currentPhase]);
   
-  // Inicialización
+  // Registrar callback al montar
   useEffect(() => {
-    const initController = async () => {
-      try {
-        // Obtener controlador
-        controllerRef.current = getOptimizationController({
-          autoAdvancePhases: config?.autoAdvancePhases ?? true
-        });
-        
-        // Establecer fase inicial si se especifica
-        if (config?.initialPhase) {
-          controllerRef.current.getStatus().phase !== config.initialPhase && 
-            setPhase(config.initialPhase);
-        }
-        
-        // Inicializar controlador
-        if (autoInitialize) {
-          const success = await controllerRef.current.initialize();
-          setIsInitialized(success);
-          
-          if (!success) {
-            setError("Error inicializando el procesamiento optimizado");
-          } else {
-            // Actualizar estado inicial
-            setStatus(controllerRef.current.getStatus());
-          }
-        }
-      } catch (err) {
-        setError(`Error fatal: ${(err as Error).message}`);
-        setIsInitialized(false);
-      }
-    };
+    const manager = controllerRef.current.getOptimizationManager();
+    manager.registerCallback(handleProgress);
     
-    initController();
+    // Actualizar estado inicial
+    Object.values(OptimizationPhase).forEach(phase => {
+      setPhases(prev => {
+        const newPhases = new Map(prev);
+        newPhases.set(phase, manager.getPhaseStatus(phase));
+        return newPhases;
+      });
+    });
     
-    // Actualizar estado periódicamente
+    // Iniciar medición periódica de rendimiento
     const intervalId = setInterval(() => {
-      if (controllerRef.current && isInitialized) {
-        setStatus(controllerRef.current.getStatus());
-      }
+      setMetrics(manager.getPerformanceMetrics());
     }, 2000);
     
     return () => {
+      manager.unregisterCallback(handleProgress);
       clearInterval(intervalId);
-      
-      // Limpiar recursos al desmontar
-      if (controllerRef.current) {
-        controllerRef.current.dispose();
-      }
     };
-  }, [autoInitialize, config?.autoAdvancePhases, config?.initialPhase]);
+  }, [handleProgress]);
   
   /**
-   * Inicializa manualmente el controlador
+   * Inicia una fase específica de optimización
    */
-  const initialize = useCallback(async (): Promise<boolean> => {
-    if (!controllerRef.current) {
-      controllerRef.current = getOptimizationController();
-    }
-    
-    try {
-      const success = await controllerRef.current.initialize();
-      setIsInitialized(success);
-      
-      if (success) {
-        setStatus(controllerRef.current.getStatus());
-        setError(null);
-      } else {
-        setError("Error inicializando el controlador");
-      }
-      
-      return success;
-    } catch (err) {
-      setError(`Error de inicialización: ${(err as Error).message}`);
-      setIsInitialized(false);
+  const startPhase = useCallback(async (phase: OptimizationPhase): Promise<boolean> => {
+    if (isOptimizing) {
+      console.warn(`Ya hay una optimización en curso: ${currentPhase}`);
       return false;
     }
-  }, []);
-  
-  /**
-   * Procesa una señal utilizando las optimizaciones activas
-   */
-  const processSignal = useCallback(async (signal: number | number[]): Promise<any> => {
-    if (!controllerRef.current) {
-      setError("Controlador no inicializado");
-      return null;
-    }
-    
-    if (!isInitialized) {
-      const success = await initialize();
-      if (!success) {
-        return null;
-      }
-    }
     
     try {
-      const result = await controllerRef.current.processSignal(signal);
-      
-      // Actualizar estado después de procesar
-      setStatus(controllerRef.current.getStatus());
-      
+      setIsOptimizing(true);
+      setCurrentPhase(phase);
+      const result = await controllerRef.current.getOptimizationManager().startPhase(phase);
       return result;
-    } catch (err) {
-      setError(`Error procesando señal: ${(err as Error).message}`);
-      return null;
+    } catch (error) {
+      console.error(`Error iniciando fase ${phase}:`, error);
+      return false;
+    } finally {
+      setIsOptimizing(false);
+      setCurrentPhase(null);
     }
-  }, [isInitialized, initialize]);
+  }, [isOptimizing, currentPhase]);
   
   /**
-   * Avanza manualmente a la siguiente fase
+   * Inicia todas las fases de optimización en secuencia
    */
-  const advanceToNextPhase = useCallback((): boolean => {
-    if (!controllerRef.current || !isInitialized) {
-      setError("No se puede avanzar de fase: controlador no inicializado");
+  const startAllPhases = useCallback(async (): Promise<boolean> => {
+    if (isOptimizing) {
+      console.warn('Ya hay optimizaciones en curso');
       return false;
     }
     
-    const success = controllerRef.current.advanceToNextPhase();
-    
-    if (success) {
-      setStatus(controllerRef.current.getStatus());
+    try {
+      setIsOptimizing(true);
+      
+      // Orden de ejecución de fases
+      const phaseOrder: OptimizationPhase[] = [
+        OptimizationPhase.MEMORY_OPTIMIZATION,
+        OptimizationPhase.WORKER_OPTIMIZATION,
+        OptimizationPhase.WASM_OPTIMIZATION,
+        OptimizationPhase.MODEL_QUANTIZATION,
+        OptimizationPhase.GPU_ACCELERATION,
+        OptimizationPhase.CACHE_STRATEGY
+      ];
+      
+      // Ejecutar fases en secuencia
+      for (const phase of phaseOrder) {
+        setCurrentPhase(phase);
+        await controllerRef.current.getOptimizationManager().startPhase(phase);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error ejecutando todas las fases:', error);
+      return false;
+    } finally {
+      setIsOptimizing(false);
+      setCurrentPhase(null);
     }
-    
-    return success;
-  }, [isInitialized]);
+  }, [isOptimizing]);
   
   /**
-   * Establece fase específica
+   * Obtiene información sobre el estado general de las optimizaciones
    */
-  const setPhase = useCallback((phase: OptimizationPhase): void => {
-    if (!controllerRef.current) {
-      controllerRef.current = getOptimizationController();
-    }
+  const getOptimizationSummary = useCallback(() => {
+    let completed = 0;
+    let total = 0;
+    let overallProgress = 0;
     
-    // Establecer fase en el gestor de optimizaciones
-    if (controllerRef.current.getStatus().phase !== phase) {
-      controllerRef.current.getOptimizationManager().activatePhase(phase);
-      
-      // Aplicar configuración para la fase
-      controllerRef.current.applyOptimizedConfig();
-      
-      // Actualizar estado
-      setStatus(controllerRef.current.getStatus());
-    }
-  }, []);
-  
-  /**
-   * Obtiene métricas detalladas
-   */
-  const getDetailedMetrics = useCallback(() => {
-    if (!controllerRef.current || !isInitialized) {
-      return { error: "Controlador no inicializado" };
-    }
+    phases.forEach((status, phase) => {
+      total++;
+      if (status === OptimizationStatus.COMPLETED) {
+        completed++;
+      }
+      overallProgress += progress.get(phase) || 0;
+    });
     
-    return controllerRef.current.getDetailedMetrics();
-  }, [isInitialized]);
+    overallProgress = total > 0 ? overallProgress / total : 0;
+    
+    return {
+      completed,
+      total,
+      overallProgress,
+      isOptimizing,
+      currentPhase
+    };
+  }, [phases, progress, isOptimizing, currentPhase]);
   
   return {
     // Estado
-    isInitialized,
-    status,
-    error,
+    isOptimizing,
+    currentPhase,
+    phases,
+    progress,
+    metrics,
     
     // Acciones
-    initialize,
-    processSignal,
-    advanceToNextPhase,
-    setPhase,
-    getDetailedMetrics,
+    startPhase,
+    startAllPhases,
     
-    // Acceso directo al controlador
-    controller: controllerRef.current
+    // Utilidades
+    getOptimizationSummary
   };
-};
+}

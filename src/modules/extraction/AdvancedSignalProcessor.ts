@@ -1,13 +1,10 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Procesador avanzado de señales que integra todas las tecnologías optimizadas:
- * - Aceleración WASM para rendimiento crítico
- * - Procesamiento en Web Workers en segundo plano
- * - Modelo ML con precisión mixta para mejora de señal
- * - Filtros Kalman adaptativos avanzados
- * - Muestreo adaptativo para eficiencia
+ * Procesador avanzado de señales con múltiples técnicas
+ * Combina filtros, ML y WebAssembly para procesamiento óptimo
  */
+
 import { 
   createKalmanFilter, 
   KalmanFilter, 
@@ -52,20 +49,16 @@ export interface AdvancedProcessorConfig {
  * Resultado del procesamiento avanzado
  */
 export interface AdvancedProcessedSignal {
-  // Valores de señal
-  original: number;
+  timestamp: number;
+  raw: number;
   filtered: number;
   enhanced: number;
-  
-  // Información de calidad
-  quality: number;
   confidence: number;
-  errorEstimate: number;
-  
-  // Información de estado
-  timestamp: number;
-  samplingRate: number;
+  isPeak: boolean;
+  peakConfidence?: number;
   processingTime: number;
+  samplingRate: number;
+  errorEstimate: number;
 }
 
 /**
@@ -219,15 +212,15 @@ export class AdvancedSignalProcessor {
       this.lastProcessingTime = Date.now() - startTime;
       
       return {
-        original: value,
+        timestamp: Date.now(),
+        raw: value,
         filtered,
         enhanced: filtered,
-        quality: 0.6,
         confidence: 0.6,
-        errorEstimate: 0.2,
-        timestamp: Date.now(),
+        isPeak: false,
+        processingTime: this.lastProcessingTime,
         samplingRate: this.currentSamplingRate,
-        processingTime: this.lastProcessingTime
+        errorEstimate: 0.2
       };
     }
     
@@ -270,15 +263,15 @@ export class AdvancedSignalProcessor {
     
     // Crear resultado
     return {
-      original: value,
+      timestamp: Date.now(),
+      raw: value,
       filtered,
       enhanced,
-      quality,
       confidence,
-      errorEstimate,
-      timestamp: Date.now(),
+      isPeak: false,
+      processingTime: this.lastProcessingTime,
       samplingRate: this.currentSamplingRate,
-      processingTime: this.lastProcessingTime
+      errorEstimate
     };
   }
   
@@ -313,15 +306,15 @@ export class AdvancedSignalProcessor {
    */
   private createResultWithLastValues(newValue: number): AdvancedProcessedSignal {
     return {
-      original: newValue,
+      timestamp: Date.now(),
+      raw: newValue,
       filtered: newValue, // Sin filtrado para muestras no procesadas
       enhanced: newValue, // Sin mejora para muestras no procesadas
-      quality: 0.5, // Calidad reducida para muestras interpoladas
-      confidence: 0.5,
-      errorEstimate: 0.3,
-      timestamp: Date.now(),
+      confidence: 0.5, // Calidad reducida para muestras interpoladas
+      isPeak: false,
+      processingTime: 0, // No hubo procesamiento real
       samplingRate: this.currentSamplingRate,
-      processingTime: 0 // No hubo procesamiento real
+      errorEstimate: 0.3
     };
   }
   
