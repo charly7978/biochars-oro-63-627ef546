@@ -65,7 +65,7 @@ const requestFullscreenMode = () => {
         'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi');
     }
     
-    // Force immersive fullscreen mode
+    // Request fullscreen appropriately
     const docElem = document.documentElement;
     if (docElem.requestFullscreen) {
       docElem.requestFullscreen();
@@ -73,24 +73,6 @@ const requestFullscreenMode = () => {
       (docElem as any).webkitRequestFullscreen();
     } else if ((docElem as any).msRequestFullscreen) {
       (docElem as any).msRequestFullscreen();
-    }
-    
-    // Apply high performance hints
-    if ('devicePixelRatio' in window) {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.imageSmoothingEnabled = false;
-      }
-    }
-    
-    // Optimize for high DPI displays
-    if (window.devicePixelRatio > 1) {
-      document.body.classList.add('high-dpi');
-      // Apply specific optimizations for extremely high resolution displays
-      if (window.devicePixelRatio > 2) {
-        document.body.classList.add('ultra-high-dpi');
-      }
     }
   } catch (err) {
     console.error('Fullscreen API not supported:', err);
@@ -137,9 +119,7 @@ const setupPerformanceObserver = () => {
             const graphElements = node.querySelectorAll('.ppg-signal-meter, canvas, svg');
             graphElements.forEach((el) => {
               if (el instanceof HTMLElement) {
-                el.classList.add('ppg-graph', 'performance-boost');
-                el.style.transform = 'translate3d(0, 0, 0)';
-                el.style.backfaceVisibility = 'hidden';
+                el.classList.add('ppg-graph', 'gpu-accelerated', 'rendering-optimized');
                 if (el instanceof HTMLCanvasElement) {
                   const ctx = el.getContext('2d');
                   if (ctx) {

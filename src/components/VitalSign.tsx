@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -9,13 +10,15 @@ interface VitalSignProps {
   value: string | number;
   unit?: string;
   highlighted?: boolean;
+  calibrationProgress?: number;
 }
 
 const VitalSign = ({ 
   label, 
   value, 
   unit, 
-  highlighted = false
+  highlighted = false,
+  calibrationProgress 
 }: VitalSignProps) => {
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
@@ -26,10 +29,6 @@ const VitalSign = ({
           return '';
         case 'SPO2':
           if (value < 95) return 'Hipoxemia';
-          return '';
-        case 'HEMOGLOBINA':
-          if (value < 12) return 'Anemia';
-          if (value > 16) return 'Policitemia';
           return '';
         case 'GLUCOSA':
           if (value > 126) return 'Hiperglucemia';
@@ -53,32 +52,16 @@ const VitalSign = ({
             }
           }
           return '';
-        case 'COLESTEROL/TRIGL.':
-          const lipidParts = value.split('/');
-          if (lipidParts.length === 2) {
-            const cholesterol = parseInt(lipidParts[0], 10);
-            const triglycerides = parseInt(lipidParts[1], 10);
-            if (!isNaN(cholesterol)) {
-              if (cholesterol > 200) return 'Hipercolesterolemia';
-            }
-            if (!isNaN(triglycerides)) {
-              if (triglycerides > 150) return 'Hipertrigliceridemia';
-            }
+        case 'COLESTEROL':
+          const cholesterol = parseInt(String(value), 10);
+          if (!isNaN(cholesterol)) {
+            if (cholesterol > 200) return 'Hipercolesterolemia';
           }
           return '';
-        case 'ARRITMIAS':
-          const arrhythmiaParts = value.split('|');
-          if (arrhythmiaParts.length === 2) {
-            const status = arrhythmiaParts[0];
-            const count = arrhythmiaParts[1];
-            
-            if (status === "ARRITMIA DETECTADA" && parseInt(count) > 1) {
-              return `Arritmias: ${count}`;
-            } else if (status === "SIN ARRITMIAS") {
-              return 'Normal';
-            } else if (status === "CALIBRANDO...") {
-              return 'Calibrando';
-            }
+        case 'TRIGLICÉRIDOS':
+          const triglycerides = parseInt(String(value), 10);
+          if (!isNaN(triglycerides)) {
+            if (triglycerides > 150) return 'Hipertrigliceridemia';
           }
           return '';
         default:
@@ -102,45 +85,9 @@ const VitalSign = ({
       case 'Hipoglucemia':
       case 'Hipotensión':
         return 'text-[#F97316]';
-      case 'Anemia':
-        return 'text-[#FEF7CD]';
-      case 'Policitemia':
-        return 'text-[#F2FCE2]';
       default:
         return '';
     }
-  };
-
-  const getArrhythmiaDisplay = (value: string | number) => {
-    if (typeof value !== 'string') return null;
-    
-    const arrhythmiaData = value.split('|');
-    if (arrhythmiaData.length !== 2) return null;
-    
-    const status = arrhythmiaData[0];
-    const count = arrhythmiaData[1];
-    
-    if (status === "ARRITMIA DETECTADA" && parseInt(count) > 1) {
-      return (
-        <div className="text-xl font-medium mt-2 text-[#ea384c]">
-          Arritmias: {count}
-        </div>
-      );
-    } else if (status === "SIN ARRITMIAS") {
-      return (
-        <div className="text-sm font-medium mt-2 text-green-500">
-          Normal
-        </div>
-      );
-    } else if (status === "CALIBRANDO...") {
-      return (
-        <div className="text-sm font-medium mt-2 text-blue-400">
-          Calibrando...
-        </div>
-      );
-    }
-    
-    return null;
   };
 
   const getDetailedInfo = (label: string, value: string | number) => {
@@ -198,21 +145,6 @@ const VitalSign = ({
           'Dieta alta en sodio'
         ];
         break;
-      case 'HEMOGLOBINA':
-        info.normalRange = '12-16 g/dL (mujeres), 14-17 g/dL (hombres)';
-        info.description = 'La hemoglobina es una proteína en los glóbulos rojos que transporta oxígeno desde los pulmones al resto del cuerpo. Niveles bajos pueden indicar anemia.';
-        info.recommendations = [
-          'Consumir alimentos ricos en hierro',
-          'Incluir vitamina C para mejor absorción del hierro',
-          'Consultar al médico para suplementos si es necesario'
-        ];
-        info.riskFactors = [
-          'Deficiencia de hierro',
-          'Pérdida crónica de sangre',
-          'Enfermedades crónicas',
-          'Malnutrición'
-        ];
-        break;
       case 'GLUCOSA':
         info.normalRange = '70-100 mg/dL en ayunas';
         info.description = 'La glucosa es el principal azúcar en la sangre y la fuente de energía del cuerpo. Niveles altos persistentes pueden indicar diabetes.';
@@ -229,9 +161,25 @@ const VitalSign = ({
           'Síndrome metabólico'
         ];
         break;
-      case 'COLESTEROL/TRIGL.':
-        info.normalRange = 'Colesterol total: <200 mg/dL, Triglicéridos: <150 mg/dL';
-        info.description = 'El colesterol y los triglicéridos son grasas en la sangre. Niveles elevados pueden aumentar el riesgo de enfermedad cardíaca.';
+      case 'COLESTEROL':
+        info.normalRange = 'Colesterol total: <200 mg/dL';
+        info.description = 'El colesterol es una de las grasas en la sangre. Niveles elevados pueden aumentar el riesgo de enfermedad cardíaca.';
+        info.recommendations = [
+          'Consumir menos grasas saturadas y trans',
+          'Aumentar el consumo de fibra',
+          'Hacer ejercicio regularmente',
+          'Limitar el consumo de alcohol'
+        ];
+        info.riskFactors = [
+          'Obesidad',
+          'Dieta alta en grasas',
+          'Sedentarismo',
+          'Genética'
+        ];
+        break;
+      case 'TRIGLICÉRIDOS':
+        info.normalRange = 'Triglicéridos: <150 mg/dL';
+        info.description = 'Los triglicéridos son otras grasas en la sangre. Niveles elevados pueden aumentar el riesgo de enfermedad cardíaca.';
         info.recommendations = [
           'Consumir menos grasas saturadas y trans',
           'Aumentar el consumo de fibra',
@@ -269,40 +217,48 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
-    if (label === 'HEMOGLOBINA' && typeof value === 'number') {
-      return Math.round(value);
-    }
     return value;
   };
 
   const riskLabel = getRiskLabel(label, value);
   const riskColor = getRiskColor(riskLabel);
-  const isArrhytmia = label === 'ARRITMIAS';
   const detailedInfo = getDetailedInfo(label, value);
   const formattedValue = displayValue(label, value);
 
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200">
+        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full">
           <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
             {label}
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
             <span className="text-gradient-soft">
-              {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
+              {formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
           </div>
 
-          {!isArrhytmia && riskLabel && (
+          {riskLabel && (
             <div className={`text-sm font-medium mt-1 ${riskColor}`}>
               {riskLabel}
             </div>
           )}
           
-          {isArrhytmia && getArrhythmiaDisplay(value)}
+          {calibrationProgress !== undefined && (
+            <div className="absolute inset-0 bg-transparent overflow-hidden pointer-events-none border-0">
+              <div 
+                className="h-full bg-blue-500/5 transition-all duration-300 ease-out"
+                style={{ width: `${calibrationProgress}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs text-white/80">
+                  {calibrationProgress < 100 ? `${Math.round(calibrationProgress)}%` : '✓'}
+                </span>
+              </div>
+            </div>
+          )}
           
           <div className="absolute bottom-0 left-0 right-0 flex justify-center">
             <ChevronUp size={16} className="text-gray-400" />
@@ -321,7 +277,7 @@ const VitalSign = ({
               <span className={`text-xl px-3 py-1 rounded-full ${
                 riskLabel ? riskColor.replace('text-', 'bg-').replace('[#', 'rgba(').replace(']', ', 0.1)') : 'bg-green-500/10'
               }`}>
-                {isArrhytmia && typeof formattedValue === 'string' ? formattedValue.split('|')[0] : formattedValue}
+                {formattedValue}
                 {unit && unit}
               </span>
             </div>
