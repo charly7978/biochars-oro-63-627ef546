@@ -1,189 +1,187 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Cardiac measurement channel
+ * Specialized channel for cardiac signal processing
  */
 
-import { SpecializedChannel } from './SpecializedChannel';
+import { SpecializedChannel, VitalSignType } from './SpecializedChannel';
+import { applyAdaptiveFilter } from '../utils/adaptive-predictor';
 
-/**
- * Channel for processing cardiac measurements
- */
+export interface CardiacResult {
+  bpm: number;
+  arrhythmiaStatus: string;
+  rmssd?: number;
+  rrVariation?: number;
+}
+
 export class CardiacChannel extends SpecializedChannel {
-  private lastPeakTime: number | null = null;
-  private peakCount: number = 0;
-  private rrIntervals: number[] = [];
-  private readonly maxIntervals: number = 10;
-  private lastResultBpm: number = 0;
+  private cardiacBuffer: number[] = [];
+  private peakTimes: number[] = [];
+  private lastPeakTime: number = 0;
+  private lastResult: CardiacResult = { 
+    bpm: 0, 
+    arrhythmiaStatus: "--" 
+  };
+  private arrhythmiaCount: number = 0;
+  private consecutiveNormalBeats: number = 0;
   
-  constructor() {
-    super('cardiac');
+  constructor(id?: string) {
+    super(VitalSignType.CARDIAC, id);
   }
-  
+
   /**
-   * Process signal to derive cardiac measurements
+   * Process a cardiac signal
    */
-  public processSignal(signal: number): {
-    bpm: number;
-    rrInterval: number | null;
-    isPeak: boolean;
-  } {
-    // Add to buffer for analysis
-    this.addToBuffer(signal);
-    const currentTime = Date.now();
-    
-    // Detect peak
-    const isPeak = this.detectPeak(signal, currentTime);
-    
-    // Calculate BPM from RR intervals
-    const bpm = this.calculateBPM();
-    
-    // Get most recent RR interval
-    const rrInterval = this.rrIntervals.length > 0 ? 
-      this.rrIntervals[this.rrIntervals.length - 1] : null;
-    
-    // Save result
-    this.lastResultBpm = bpm;
-    
-    return {
-      bpm,
-      rrInterval,
-      isPeak
-    };
-  }
-  
-  /**
-   * Detect if current value is a peak
-   */
-  private detectPeak(value: number, timestamp: number): boolean {
-    if (this.recentValues.length < 3) {
-      return false;
+  processValue(signal: number): CardiacResult {
+    // Add to buffer
+    this.cardiacBuffer.push(signal);
+    if (this.cardiacBuffer.length > 30) {
+      this.cardiacBuffer.shift();
     }
     
-    const prev = this.recentValues[this.recentValues.length - 2];
-    const prevPrev = this.recentValues[this.recentValues.length - 3];
+    // Filter signal
+    let processedValue = signal;
+    if (this.cardiacBuffer.length >= 5) {
+      processedValue = applyAdaptiveFilter(signal, this.cardiacBuffer, 0.3);
+    }
     
-    const isPotentialPeak = value > prev && prev >= prevPrev && value > 0.1;
+    // Process cardiac data
+    this.processCardiacData(processedValue);
     
-    // Enforce minimum time between peaks (300ms)
-    const minPeakInterval = 300;
-    const enoughTimePassed = !this.lastPeakTime || (timestamp - this.lastPeakTime) > minPeakInterval;
+    return this.lastResult;
+  }
+
+  /**
+   * Process cardiac data and update result
+   */
+  private processCardiacData(value: number): void {
+    const now = Date.now();
     
-    if (isPotentialPeak && enoughTimePassed) {
-      if (this.lastPeakTime) {
-        const interval = timestamp - this.lastPeakTime;
-        this.rrIntervals.push(interval);
-        
-        // Keep interval buffer size in check
-        if (this.rrIntervals.length > this.maxIntervals) {
-          this.rrIntervals.shift();
-        }
+    // Check if this is a peak
+    let isPeak = false;
+    if (this.cardiacBuffer.length >= 5) {
+      const recent = this.cardiacBuffer.slice(-5);
+      const midIndex = Math.floor(recent.length / 2);
+      
+      isPeak = recent.every((v, i) => {
+        if (i === midIndex) return true;
+        return recent[midIndex] > v;
+      });
+      
+      // Ensure minimum peak interval (250ms) to prevent double-counting
+      if (isPeak && now - this.lastPeakTime < 250) {
+        isPeak = false;
+      }
+    }
+    
+    // If peak detected, calculate heart rate and arrhythmia metrics
+    if (isPeak) {
+      this.lastPeakTime = now;
+      this.peakTimes.push(now);
+      
+      // Keep reasonable history
+      if (this.peakTimes.length > 10) {
+        this.peakTimes.shift();
       }
       
-      this.lastPeakTime = timestamp;
-      this.peakCount++;
-      return true;
+      // Calculate BPM
+      if (this.peakTimes.length >= 2) {
+        const intervals = [];
+        for (let i = 1; i < this.peakTimes.length; i++) {
+          intervals.push(this.peakTimes[i] - this.peakTimes[i-1]);
+        }
+        
+        // Calculate average interval
+        const avgInterval = intervals.reduce((sum, i) => sum + i, 0) / intervals.length;
+        const bpm = Math.round(60000 / avgInterval);
+        
+        // Only accept physiologically plausible values
+        if (bpm >= 40 && bpm <= 200) {
+          // Calculate RMSSD for arrhythmia detection
+          let rmssd = 0;
+          let rrVariation = 0;
+          
+          if (intervals.length >= 2) {
+            const differences = [];
+            for (let i = 1; i < intervals.length; i++) {
+              differences.push(intervals[i] - intervals[i-1]);
+            }
+            
+            // Calculate RMSSD
+            const squaredDiffs = differences.map(d => d * d);
+            const meanSquaredDiff = squaredDiffs.reduce((sum, d) => sum + d, 0) / squaredDiffs.length;
+            rmssd = Math.sqrt(meanSquaredDiff);
+            
+            // Calculate RR variation as coefficient of variation
+            const rrStd = Math.sqrt(
+              intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length
+            );
+            rrVariation = (rrStd / avgInterval) * 100;
+            
+            // Check for arrhythmia
+            const hasArrhythmia = this.detectArrhythmia(rmssd, rrVariation);
+            
+            if (hasArrhythmia) {
+              this.arrhythmiaCount++;
+              this.consecutiveNormalBeats = 0;
+            } else {
+              this.consecutiveNormalBeats++;
+              // Reset arrhythmia count after significant normal beats
+              if (this.consecutiveNormalBeats > 20) {
+                this.arrhythmiaCount = 0;
+              }
+            }
+          }
+          
+          // Update result
+          this.lastResult = {
+            bpm,
+            arrhythmiaStatus: this.getArrhythmiaStatus(),
+            rmssd,
+            rrVariation
+          };
+        }
+      }
+    }
+  }
+
+  /**
+   * Detect arrhythmia based on HRV metrics
+   */
+  private detectArrhythmia(rmssd: number, rrVariation: number): boolean {
+    // Direct measurement metrics only - no simulation
+    const highRMSSD = rmssd > 50;
+    const highVariation = rrVariation > 15;
+    
+    return highRMSSD && highVariation;
+  }
+
+  /**
+   * Get formatted arrhythmia status
+   */
+  private getArrhythmiaStatus(): string {
+    if (this.lastResult.bpm === 0) {
+      return "--";
     }
     
-    return false;
-  }
-  
-  /**
-   * Calculate heart rate (BPM) from RR intervals
-   */
-  private calculateBPM(): number {
-    if (this.rrIntervals.length < 2) {
-      return this.lastResultBpm;
+    let status = "Normal";
+    if (this.arrhythmiaCount > 0) {
+      status = "Detected";
     }
     
-    // Filter out outliers
-    const filteredIntervals = this.filterOutliers(this.rrIntervals);
-    
-    if (filteredIntervals.length < 2) {
-      return this.lastResultBpm;
-    }
-    
-    // Calculate average interval
-    const avgInterval = filteredIntervals.reduce((sum, interval) => sum + interval, 0) / 
-                        filteredIntervals.length;
-    
-    // Convert to BPM (60,000 ms in a minute)
-    return Math.round(60000 / avgInterval);
+    return `${status}|${this.arrhythmiaCount}`;
   }
-  
+
   /**
-   * Filter outliers using IQR method
+   * Reset the channel
    */
-  private filterOutliers(intervals: number[]): number[] {
-    if (intervals.length < 4) {
-      return intervals;
-    }
-    
-    const sorted = [...intervals].sort((a, b) => a - b);
-    
-    const q1Index = Math.floor(sorted.length * 0.25);
-    const q3Index = Math.floor(sorted.length * 0.75);
-    
-    const q1 = sorted[q1Index];
-    const q3 = sorted[q3Index];
-    const iqr = q3 - q1;
-    
-    const lowerBound = q1 - 1.5 * iqr;
-    const upperBound = q3 + 1.5 * iqr;
-    
-    return intervals.filter(val => val >= lowerBound && val <= upperBound);
-  }
-  
-  /**
-   * Calculate quality of the cardiac measurement
-   */
-  public calculateQuality(signal: number): number {
-    if (this.recentValues.length < 5 || this.rrIntervals.length < 3) {
-      return 0.5;
-    }
-    
-    // Calculate RR interval consistency
-    const rrVariance = this.getVarianceOfArray(this.rrIntervals);
-    const meanRR = this.getMeanOfArray(this.rrIntervals);
-    const rrConsistency = Math.max(0, 1 - (Math.sqrt(rrVariance) / meanRR) * 2);
-    
-    // Signal quality factors
-    const signalVariance = this.getVariance();
-    const signalQuality = Math.max(0, 1 - signalVariance * 10);
-    
-    // Peak detection quality
-    const peakQuality = Math.min(1, this.peakCount / 10);
-    
-    // Combined score
-    return (rrConsistency * 0.5) + (signalQuality * 0.3) + (peakQuality * 0.2);
-  }
-  
-  /**
-   * Helper to get variance of an array
-   */
-  private getVarianceOfArray(arr: number[]): number {
-    if (arr.length < 2) return 0;
-    
-    const mean = this.getMeanOfArray(arr);
-    return arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
-  }
-  
-  /**
-   * Helper to get mean of an array
-   */
-  private getMeanOfArray(arr: number[]): number {
-    if (arr.length === 0) return 0;
-    return arr.reduce((sum, val) => sum + val, 0) / arr.length;
-  }
-  
-  /**
-   * Reset channel state
-   */
-  public override reset(): void {
+  reset(): void {
     super.reset();
-    this.lastPeakTime = null;
-    this.peakCount = 0;
-    this.rrIntervals = [];
-    this.lastResultBpm = 0;
+    this.cardiacBuffer = [];
+    this.peakTimes = [];
+    this.lastPeakTime = 0;
+    this.lastResult = { bpm: 0, arrhythmiaStatus: "--" };
+    this.arrhythmiaCount = 0;
+    this.consecutiveNormalBeats = 0;
   }
 }

@@ -51,7 +51,7 @@ export class HeartbeatProcessor implements SignalProcessor {
     // Apply adaptive filtering if enabled
     let processedValue = value;
     if (this.options.useAdaptiveControl) {
-      processedValue = applyAdaptiveFilter(value, this.valueBuffer, this.options);
+      processedValue = applyAdaptiveFilter(value, this.valueBuffer, this.options.filterStrength);
     }
     
     // Add to buffer
@@ -114,7 +114,7 @@ export class HeartbeatProcessor implements SignalProcessor {
       // Fallback to simple threshold for small buffers
       const lastValue = this.valueBuffer[this.valueBuffer.length - 1];
       const prevValue = this.valueBuffer[this.valueBuffer.length - 2] || 0;
-      const nextValuePrediction = predictNextValue(this.valueBuffer, this.options);
+      const nextValuePrediction = predictNextValue(this.valueBuffer);
       
       isPeak = lastValue > this.adaptiveThreshold && 
                lastValue > prevValue && 
@@ -190,7 +190,11 @@ export class HeartbeatProcessor implements SignalProcessor {
       rrInterval: this.lastRR,
       confidence: this.currentConfidence,
       instantaneousBPM,
-      heartRateVariability: hrv
+      heartRateVariability: hrv,
+      rrData: {
+        intervals: this.recentRRs,
+        lastPeakTime: this.lastPeakTime
+      }
     };
   }
   
@@ -230,5 +234,13 @@ export class HeartbeatProcessor implements SignalProcessor {
     if (options.adaptiveFiltering !== undefined) {
       this.options.adaptiveFiltering = options.adaptiveFiltering;
     }
+    
+    if (options.filterStrength !== undefined) {
+      this.options.filterStrength = options.filterStrength;
+    }
+  }
+  
+  private get lastPeakTime(): number | null {
+    return this.peakTimes.length > 0 ? this.peakTimes[this.peakTimes.length - 1] : null;
   }
 }

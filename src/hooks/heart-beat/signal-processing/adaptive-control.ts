@@ -8,32 +8,16 @@
 import { 
   getAdaptivePredictor, 
   resetAdaptivePredictor, 
-  AdaptiveModelState 
+  AdaptiveModelState,
+  applyAdaptiveFilter,
+  predictNextValue,
+  correctSignalAnomalies,
+  updateQualityWithPrediction
 } from '../../../modules/signal-processing/utils/adaptive-predictor';
-import {
-  getMixedModel,
-  resetMixedModel,
-  MixedModelPrediction
-} from '../../../modules/signal-processing/utils/mixed-model';
-import {
-  BayesianOptimizer,
-  createDefaultPPGOptimizer,
-  OptimizationResult
-} from '../../../modules/signal-processing/utils/bayesian-optimization';
-import {
-  GaussianProcessModel,
-  GPPrediction
-} from '../../../modules/signal-processing/utils/gaussian-process';
 
 // Keep history of signal values for processing
 const signalHistory: {time: number, value: number, quality: number}[] = [];
 const MAX_HISTORY_LENGTH = 30;
-
-// Bayesian optimization for parameter tuning
-let bayesianOptimizer: BayesianOptimizer | null = null;
-
-// Gaussian process model for uncertainty estimation
-let gaussianProcess: GaussianProcessModel | null = null;
 
 // Window-based statistics
 let windowMean = 0;
@@ -51,15 +35,6 @@ export function resetAdaptiveControl(): void {
   lastAnomalyDetectionTime = 0;
   
   resetAdaptivePredictor();
-  resetMixedModel();
-  
-  if (bayesianOptimizer) {
-    bayesianOptimizer.reset();
-  }
-  
-  if (gaussianProcess) {
-    gaussianProcess.reset();
-  }
   
   console.log("AdaptiveControl: System reset");
 }
@@ -254,72 +229,4 @@ export function updateQualityWithPrediction(
   }
   
   return quality;
-}
-
-/**
- * Apply Bayesian optimization to signal processing parameters
- */
-export function applyBayesianOptimization(
-  parameters: Record<string, number>,
-  qualityScore: number
-): OptimizationResult {
-  if (!bayesianOptimizer) {
-    // Create optimizer with default parameters
-    bayesianOptimizer = createDefaultPPGOptimizer();
-  }
-  
-  // Add observation to optimizer
-  bayesianOptimizer.addObservation(parameters, qualityScore);
-  
-  // Get suggestion for next parameters
-  return bayesianOptimizer.suggestNextParameters();
-}
-
-/**
- * Apply Gaussian process modeling to the signal
- */
-export function applyGaussianProcessModeling(
-  time: number, 
-  value: number, 
-  uncertainty: number
-): GPPrediction {
-  if (!gaussianProcess) {
-    gaussianProcess = new GaussianProcessModel();
-  }
-  
-  // Add observation to GP model
-  gaussianProcess.addObservation({
-    time,
-    value,
-    uncertainty
-  });
-  
-  // Update GP parameters periodically
-  if (signalHistory.length % 5 === 0) {
-    gaussianProcess.updateParameters();
-  }
-  
-  // Predict using GP
-  return gaussianProcess.predict(time);
-}
-
-/**
- * Apply the mixed model (deep learning + Bayesian) to signal processing
- */
-export function applyMixedModelPrediction(
-  features: number[],
-  targetTime: number
-): Promise<MixedModelPrediction> {
-  const mixedModel = getMixedModel();
-  
-  // If we have a recent value to train with
-  if (signalHistory.length > 0) {
-    const lastPoint = signalHistory[signalHistory.length - 1];
-    mixedModel.update(features, lastPoint.value).catch(err => {
-      console.error("Error updating mixed model:", err);
-    });
-  }
-  
-  // Make prediction
-  return mixedModel.predict(features);
 }

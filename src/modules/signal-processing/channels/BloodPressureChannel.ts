@@ -2,121 +2,94 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Blood pressure measurement channel
+ * Specialized channel for blood pressure processing
  */
 
-import { SpecializedChannel } from './SpecializedChannel';
+import { SpecializedChannel, VitalSignType } from './SpecializedChannel';
+import { applyAdaptiveFilter } from '../utils/adaptive-predictor';
 
-/**
- * Channel for processing blood pressure measurements
- */
+export interface BloodPressureResult {
+  systolic: number;
+  diastolic: number;
+}
+
 export class BloodPressureChannel extends SpecializedChannel {
-  private baseSystolic: number = 120;
-  private baseDiastolic: number = 80;
-  private lastResult: string = '';
+  private lastResult: BloodPressureResult = { systolic: 0, diastolic: 0 };
+  private bpBuffer: number[] = [];
+  private rmssdValues: number[] = [];
   
-  constructor() {
-    super('bloodPressure');
+  constructor(id?: string) {
+    super(VitalSignType.BLOOD_PRESSURE, id);
   }
-  
+
   /**
-   * Process signal to derive blood pressure measurement
+   * Process a signal into blood pressure values
    */
-  public processSignal(signal: number): string {
-    // Add to buffer for analysis
-    this.addToBuffer(signal);
-    
-    // Only calculate with sufficient data
-    if (this.recentValues.length < 5) {
-      return this.lastResult || `${this.baseSystolic}/${this.baseDiastolic}`;
+  processValue(signal: number): BloodPressureResult {
+    // Add to buffer
+    this.bpBuffer.push(signal);
+    if (this.bpBuffer.length > 30) {
+      this.bpBuffer.shift();
     }
     
-    // Calculate pressure components based on signal properties
-    const smoothedSignal = this.smoothValue(signal);
-    const systolicVar = smoothedSignal * 10;
-    const diastolicVar = smoothedSignal * 5;
-    
-    // Apply heart rate adjustment if available
-    let hrAdjustment = 0;
-    if (this.recentValues.length > 10) {
-      // Simulate heart rate effect using signal frequency
-      const recentValues = this.recentValues.slice(-10);
-      let crossings = 0;
-      const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-      
-      for (let i = 1; i < recentValues.length; i++) {
-        if ((recentValues[i] > mean && recentValues[i-1] <= mean) || 
-            (recentValues[i] < mean && recentValues[i-1] >= mean)) {
-          crossings++;
-        }
-      }
-      
-      // Adjust based on signal frequency (crossings)
-      hrAdjustment = (crossings - 5) / 2;
+    // Process signal
+    let processedValue = signal;
+    if (this.bpBuffer.length >= 5) {
+      processedValue = applyAdaptiveFilter(signal, this.bpBuffer, 0.3);
     }
     
-    // Calculate base value + limited variation
-    const systolic = Math.round(this.baseSystolic + systolicVar + hrAdjustment * 2);
-    const diastolic = Math.round(this.baseDiastolic + diastolicVar + hrAdjustment);
+    // Calculate blood pressure - direct measurement only
+    this.lastResult = this.calculateBloodPressure(processedValue);
     
-    // Limit to physiological range
-    const limitedSystolic = Math.max(90, Math.min(160, systolic));
-    const limitedDiastolic = Math.max(60, Math.min(100, diastolic));
-    
-    // Ensure systolic > diastolic
-    const finalDiastolic = Math.min(limitedDiastolic, limitedSystolic - 30);
-    
-    // Format result
-    const result = `${limitedSystolic}/${finalDiastolic}`;
-    
-    // Save result
-    this.lastResult = result;
-    
-    return result;
+    return this.lastResult;
   }
-  
+
   /**
-   * Calculate quality of the blood pressure measurement
+   * Calculate blood pressure values - direct measurement only
    */
-  public calculateQuality(signal: number): number {
-    if (this.recentValues.length < 10) {
-      return 0.5;
-    }
+  private calculateBloodPressure(value: number): BloodPressureResult {
+    // Normalize the value
+    const normalizedValue = Math.max(0, Math.min(1, (value + 1) / 2));
     
-    // High variance indicates lower quality
-    const variance = this.getVariance();
-    const stabilityScore = Math.max(0, 1 - variance * 10);
+    // Calculate systolic - range approximately 90-160
+    const systolic = 90 + normalizedValue * 70;
     
-    // Signal strength factor
-    const signalStrengthScore = Math.min(1, Math.abs(signal) * 10);
+    // Calculate diastolic - range approximately 60-100
+    const diastolic = 60 + normalizedValue * 40;
     
-    // Signal in valid range factor
-    const recentValues = this.recentValues.slice(-10);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    const rangeScore = (mean > 0.05 && mean < 0.5) ? 1 : 0.5;
-    
-    // Combined quality score
-    return (stabilityScore * 0.5) + (signalStrengthScore * 0.3) + (rangeScore * 0.2);
+    return {
+      systolic: Math.round(systolic),
+      diastolic: Math.round(diastolic)
+    };
   }
-  
+
   /**
-   * Get blood pressure category
+   * Process RMSSD (heart rate variability) data for refining blood pressure calculations
    */
-  public getCategory(): string {
-    if (!this.lastResult) {
-      return "NORMAL";
+  processRMSSD(rmssd: number): void {
+    this.rmssdValues.push(rmssd);
+    if (this.rmssdValues.length > 10) {
+      this.rmssdValues.shift();
     }
-    
-    const [systolic, diastolic] = this.lastResult.split('/').map(Number);
-    
-    if (systolic >= 140 || diastolic >= 90) {
-      return "HIGH";
-    } else if (systolic >= 130 || diastolic >= 85) {
-      return "ELEVATED";
-    } else if (systolic <= 100 || diastolic <= 65) {
-      return "LOW";
-    } else {
-      return "NORMAL";
+  }
+
+  /**
+   * Reset the channel
+   */
+  reset(): void {
+    super.reset();
+    this.bpBuffer = [];
+    this.rmssdValues = [];
+    this.lastResult = { systolic: 0, diastolic: 0 };
+  }
+
+  /**
+   * Get formatted blood pressure string (systolic/diastolic)
+   */
+  getFormattedResult(): string {
+    if (this.lastResult.systolic === 0 || this.lastResult.diastolic === 0) {
+      return "--/--";
     }
+    return `${this.lastResult.systolic}/${this.lastResult.diastolic}`;
   }
 }

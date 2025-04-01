@@ -4,132 +4,109 @@
  * 
  * Base class for specialized signal processing channels
  */
-
 import { OptimizedSignalChannel } from '../types';
+import { applyAdaptiveFilter } from '../utils/adaptive-predictor';
 
 /**
- * Enum for vital sign types
+ * Types of vital signs processed by channels
  */
 export enum VitalSignType {
   GLUCOSE = 'glucose',
   LIPIDS = 'lipids',
-  BLOOD_PRESSURE = 'blood_pressure',
+  BLOOD_PRESSURE = 'bloodPressure',
   SPO2 = 'spo2',
   CARDIAC = 'cardiac'
 }
 
 /**
- * Base class for all specialized signal processing channels
+ * Implements a base specialized channel for processing specific vital signs
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
-  public type: VitalSignType;
-  public id: string;
-  protected recentValues: number[] = [];
-  protected maxBufferSize: number = 100;
-  protected currentQuality: number = 0;
-  protected isActive: boolean = true;
-  
-  constructor(type: VitalSignType) {
-    this.type = type;
-    this.id = `${type.toLowerCase()}-${Date.now()}`;
-  }
-  
-  /**
-   * Process a signal value through this channel
-   */
-  abstract processSignal(signal: number): any;
-  
-  /**
-   * Process a signal value with optional additional context
-   */
-  processValue(signal: number): any {
-    return this.processSignal(signal);
-  }
-  
-  /**
-   * Calculate signal quality for this channel
-   */
-  calculateQuality(signal: number): number {
-    // Add to recent values
-    this.addToBuffer(signal);
-    
-    // Simple quality: stable non-zero signal
-    if (this.recentValues.length < 5) {
-      this.currentQuality = 0.5;
-      return this.currentQuality;
-    }
-    
-    // Calculate statistics
-    const mean = this.getMean();
-    const variance = this.getVariance();
-    
-    // Calculate quality metrics
-    const absSignal = Math.abs(signal);
-    const signalPresent = absSignal > 0.01 ? 1 : 0;
-    const stability = Math.max(0, 1 - Math.sqrt(variance) / Math.max(0.01, Math.abs(mean)));
-    
-    // Update quality
-    this.currentQuality = 0.3 * this.currentQuality + 0.7 * (0.7 * stability + 0.3 * signalPresent);
-    
-    return this.currentQuality;
+  protected values: number[] = [];
+  protected maxValues: number = 100;
+  protected quality: number = 0;
+  protected id: string;
+  protected lastProcessedValue: number = 0;
+
+  constructor(
+    public readonly type: VitalSignType,
+    id?: string
+  ) {
+    this.id = id || `channel-${Math.random().toString(36).substring(2, 9)}`;
   }
 
   /**
-   * Get the current quality value
+   * Process a signal and store in buffer
+   */
+  processSignal(signal: number): number {
+    // Add to history
+    this.values.push(signal);
+    if (this.values.length > this.maxValues) {
+      this.values.shift();
+    }
+    
+    // Calculate quality
+    this.quality = this.calculateQuality(signal);
+    
+    // Process and store
+    const result = this.processValue(signal);
+    this.lastProcessedValue = result;
+    
+    return result;
+  }
+
+  /**
+   * Process a signal value
+   */
+  abstract processValue(signal: number): number;
+
+  /**
+   * Calculate quality metric
+   */
+  calculateQuality(signal: number): number {
+    // Base implementation - measure stability
+    if (this.values.length < 5) return 0.5;
+    
+    const recent = this.values.slice(-5);
+    const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+    
+    // Calculate average deviation
+    const avgDeviation = recent.reduce((sum, val) => sum + Math.abs(val - mean), 0) / recent.length;
+    
+    // Normalize to quality score
+    const stability = Math.max(0, 1 - (avgDeviation / (Math.abs(mean) + 0.01)));
+    
+    return stability * 0.8 + 0.2; // Minimum quality of 0.2
+  }
+
+  /**
+   * Get the current quality score
    */
   getQuality(): number {
-    return this.currentQuality;
+    return this.quality;
   }
-  
+
   /**
-   * Reset the channel state
+   * Reset the channel
    */
   reset(): void {
-    this.recentValues = [];
-    this.currentQuality = 0;
+    this.values = [];
+    this.quality = 0;
+    this.lastProcessedValue = 0;
   }
-  
+
   /**
-   * Apply feedback to the channel
+   * Apply feedback to improve channel performance
    */
   applyFeedback(feedback: any): void {
     // Base implementation does nothing
+    console.log(`Channel ${this.id} (${this.type}) received feedback:`, feedback);
   }
 
   /**
-   * Add a value to the buffer
+   * Get channel ID
    */
-  protected addToBuffer(value: number): void {
-    this.recentValues.push(value);
-    if (this.recentValues.length > this.maxBufferSize) {
-      this.recentValues.shift();
-    }
-  }
-
-  /**
-   * Calculate mean of recent values
-   */
-  protected getMean(): number {
-    if (this.recentValues.length === 0) return 0;
-    return this.recentValues.reduce((sum, val) => sum + val, 0) / this.recentValues.length;
-  }
-
-  /**
-   * Calculate variance of recent values
-   */
-  protected getVariance(): number {
-    if (this.recentValues.length < 2) return 0;
-    const mean = this.getMean();
-    return this.recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.recentValues.length;
-  }
-
-  /**
-   * Apply smoothing to the value
-   */
-  protected smoothValue(value: number, windowSize: number = 5): number {
-    if (this.recentValues.length < windowSize) return value;
-    
-    const window = this.recentValues.slice(-windowSize);
-    return window.reduce((sum, val) => sum + val, 0) / windowSize;
+  getId(): string {
+    return this.id;
   }
 }

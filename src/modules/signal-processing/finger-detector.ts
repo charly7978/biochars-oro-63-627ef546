@@ -1,69 +1,101 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Finger detection helper functions
+ * Finger detection for PPG signals
  */
 
-// Store state information for finger detection
-let fingerBuffer: number[] = [];
-let isFingerDetected = false;
-let consecutiveDetections = 0;
-let consecutiveNonDetections = 0;
+// Buffer to track detection history
+let detectionHistory: boolean[] = [];
+const HISTORY_SIZE = 10;
+let lastDetectionTime = 0;
+const DEBOUNCE_TIME = 300; // ms
 
-/**
- * Reset the finger detector state
- */
-export function resetFingerDetector(): void {
-  fingerBuffer = [];
-  isFingerDetected = false;
-  consecutiveDetections = 0;
-  consecutiveNonDetections = 0;
-  console.log("Finger detector has been reset");
-}
+// Parameters to tune detection
+let stableCount = 0;
+const STABILITY_THRESHOLD = 3;
+let wasFingerDetected = false;
 
 /**
- * Process a signal to detect if a finger is present
+ * Check if a finger is detected based on signal characteristics
  */
-export function detectFinger(signal: number, threshold: number = 0.1): boolean {
-  // Add to buffer
-  fingerBuffer.push(signal);
+export function isFingerDetected(
+  currentValue: number, 
+  signalBuffer: number[], 
+  sensitivity: number = 1.0
+): boolean {
+  const now = Date.now();
   
-  // Keep buffer at reasonable size
-  if (fingerBuffer.length > 20) {
-    fingerBuffer.shift();
-  }
-  
-  // Need minimum data to make a determination
-  if (fingerBuffer.length < 10) {
+  // Not enough signal yet
+  if (signalBuffer.length < 5) {
     return false;
   }
   
-  // Check signal stability and strength
-  const mean = fingerBuffer.reduce((sum, val) => sum + val, 0) / fingerBuffer.length;
-  const deviation = fingerBuffer.map(v => Math.abs(v - mean)).reduce((sum, val) => sum + val, 0) / fingerBuffer.length;
+  // Calculate signal statistics
+  const recent = signalBuffer.slice(-5);
+  const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+  const variance = recent.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recent.length;
+  const range = Math.max(...recent) - Math.min(...recent);
   
-  // Finger detected if signal strength above threshold and there is some variation
-  const signalPresent = Math.abs(mean) > threshold;
-  const variationPresent = deviation > 0.01 && deviation < 0.5;
+  // Detection criteria - adjusted by sensitivity parameter
+  const hasSignal = mean > 0.1 * sensitivity;
+  const hasVariability = variance > 0.001 * sensitivity && variance < 0.5 / sensitivity;
+  const hasAdequateRange = range > 0.05 * sensitivity && range < 2.0 / sensitivity;
   
-  // Check current detection
-  const currentDetection = signalPresent && variationPresent;
+  // Combine criteria
+  const isDetected = hasSignal && hasVariability && hasAdequateRange;
   
-  // Need several consecutive detections to confirm
-  if (currentDetection) {
-    consecutiveDetections++;
-    consecutiveNonDetections = 0;
+  // Debounce rapid changes
+  if (now - lastDetectionTime < DEBOUNCE_TIME) {
+    return wasFingerDetected;
+  }
+  
+  // Update history
+  detectionHistory.push(isDetected);
+  if (detectionHistory.length > HISTORY_SIZE) {
+    detectionHistory.shift();
+  }
+  
+  // Count number of positive detections in history
+  const positiveCount = detectionHistory.filter(Boolean).length;
+  const detectionRatio = positiveCount / detectionHistory.length;
+  
+  // Hysteresis for detection state change
+  if (wasFingerDetected) {
+    // Currently detecting - require several consecutive non-detections to stop
+    if (detectionRatio < 0.3) {
+      stableCount++;
+      if (stableCount >= STABILITY_THRESHOLD) {
+        wasFingerDetected = false;
+        stableCount = 0;
+        lastDetectionTime = now;
+      }
+    } else {
+      stableCount = 0;
+    }
   } else {
-    consecutiveNonDetections++;
-    consecutiveDetections = 0;
+    // Currently not detecting - require several consecutive detections to start
+    if (detectionRatio > 0.7) {
+      stableCount++;
+      if (stableCount >= STABILITY_THRESHOLD) {
+        wasFingerDetected = true;
+        stableCount = 0;
+        lastDetectionTime = now;
+      }
+    } else {
+      stableCount = 0;
+    }
   }
   
-  // Update state with hysteresis to prevent rapid toggling
-  if (consecutiveDetections >= 5) {
-    isFingerDetected = true;
-  } else if (consecutiveNonDetections >= 10) {
-    isFingerDetected = false;
-  }
-  
-  return isFingerDetected;
+  return wasFingerDetected;
+}
+
+/**
+ * Reset finger detector state
+ */
+export function resetFingerDetector(): void {
+  detectionHistory = [];
+  stableCount = 0;
+  wasFingerDetected = false;
+  lastDetectionTime = 0;
 }
