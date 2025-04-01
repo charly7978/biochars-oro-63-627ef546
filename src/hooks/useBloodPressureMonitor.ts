@@ -3,7 +3,7 @@
  * Hook for monitoring blood pressure using the BloodPressureProcessor
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { BloodPressureProcessor, BloodPressureResult } from '../modules/vital-signs';
+import { BloodPressureProcessor } from '../modules/vital-signs';
 import { formatBloodPressure } from '../modules/vital-signs/blood-pressure/BloodPressureUtils';
 
 interface BloodPressureMonitorOptions {
@@ -18,7 +18,7 @@ export function useBloodPressureMonitor(options?: BloodPressureMonitorOptions) {
   const [confidence, setConfidence] = useState<number>(0);
   const [currentOptions, setCurrentOptions] = useState<BloodPressureMonitorOptions>(
     options || { 
-      useAI: true, 
+      useAI: false, 
       confidenceThreshold: 0.5, 
       useEnhancement: true 
     }
@@ -50,7 +50,6 @@ export function useBloodPressureMonitor(options?: BloodPressureMonitorOptions) {
     }
     
     try {
-      console.log("Processing blood pressure with PPG value:", ppgValue);
       const result = await processorRef.current.process(ppgValue);
       setConfidence(result.confidence);
       
