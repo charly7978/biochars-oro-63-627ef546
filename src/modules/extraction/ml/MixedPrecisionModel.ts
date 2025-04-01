@@ -1,10 +1,20 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
  * Implementación de modelo de precisión mixta para inferencia optimizada
  */
 import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-backend-webgl';
+import '@tensorflow/tfjs-layers';
+
+// Define types from tfjs-layers that aren't properly imported
+interface LayersModel {
+  predict: (inputs: tf.Tensor | tf.Tensor[]) => tf.Tensor | tf.Tensor[];
+  layers: any[];
+  inputs: any[];
+  outputs: any[];
+  dispose: () => void;
+}
 
 /**
  * Configuración del modelo de precisión mixta
@@ -21,7 +31,7 @@ export interface MixedPrecisionConfig {
  * Clase para gestionar modelos con precisión mixta
  */
 export class MixedPrecisionModel {
-  private model: tf.LayersModel | null = null;
+  private model: LayersModel | null = null;
   private config: MixedPrecisionConfig;
   private isInitialized: boolean = false;
   
@@ -37,7 +47,7 @@ export class MixedPrecisionModel {
   /**
    * Constructor
    */
-  constructor(model?: tf.LayersModel | null, config?: Partial<MixedPrecisionConfig>) {
+  constructor(model?: LayersModel | null, config?: Partial<MixedPrecisionConfig>) {
     this.model = model || null;
     
     this.config = {
@@ -51,7 +61,7 @@ export class MixedPrecisionModel {
   /**
    * Inicializa el modelo
    */
-  public async initialize(modelOrPath: tf.LayersModel | string): Promise<boolean> {
+  public async initialize(modelOrPath: LayersModel | string): Promise<boolean> {
     if (this.isInitialized) return true;
     
     try {
@@ -60,7 +70,7 @@ export class MixedPrecisionModel {
       
       // Cargar o asignar modelo
       if (typeof modelOrPath === 'string') {
-        this.model = await tf.loadLayersModel(modelOrPath);
+        this.model = await (tf as any).loadLayersModel(modelOrPath);
       } else {
         this.model = modelOrPath;
       }
@@ -242,7 +252,7 @@ export class MixedPrecisionModel {
  * Crea una instancia del modelo de precisión mixta
  */
 export const createMixedPrecisionModel = (
-  model?: tf.LayersModel | null,
+  model?: LayersModel | null,
   config?: Partial<MixedPrecisionConfig>
 ): MixedPrecisionModel => {
   return new MixedPrecisionModel(model, config);
