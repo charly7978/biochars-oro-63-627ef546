@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -6,7 +5,7 @@
  * Se encarga del procesamiento especializado de picos/latidos
  */
 import { ProcessedHeartbeatSignal, SignalProcessor, SignalProcessingOptions } from './types';
-import { AdaptivePredictor, createAdaptivePredictor } from './utils/adaptive-predictor';
+import { AdaptivePredictor, getAdaptivePredictor } from './utils/adaptive-predictor';
 
 /**
  * Clase para el procesamiento avanzado de señales cardíacas
@@ -33,7 +32,7 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
   private qualityEnhancedByPrediction: boolean = true;
   
   constructor() {
-    this.adaptivePredictor = createAdaptivePredictor();
+    this.adaptivePredictor = getAdaptivePredictor();
   }
   
   /**
@@ -47,11 +46,15 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     let predictionQuality = 0;
     
     if (this.useAdaptiveControl) {
-      const prediction = this.adaptivePredictor.processValue(value);
-      predictionQuality = prediction.signalQuality;
+      // Update the adaptive predictor with the current value
+      this.adaptivePredictor.update(timestamp, value, 1.0);
+      
+      // Get prediction for the current time
+      const prediction = this.adaptivePredictor.predict(timestamp);
+      predictionQuality = prediction.confidence * 100;
       
       // Use filtered value from predictor for enhanced peak detection
-      enhancedValue = prediction.filteredValue;
+      enhancedValue = prediction.predictedValue;
     }
     
     // Almacenar valor en buffer
@@ -245,6 +248,9 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     if (options.qualityEnhancedByPrediction !== undefined) {
       this.qualityEnhancedByPrediction = options.qualityEnhancedByPrediction;
     }
+    
+    // Also configure the adaptive predictor
+    this.adaptivePredictor.configure(options);
   }
   
   /**
