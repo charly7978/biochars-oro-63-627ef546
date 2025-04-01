@@ -7,16 +7,14 @@
  */
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
+import '@tensorflow/tfjs-backend-webgpu';
 import { CombinedExtractionResult } from './CombinedExtractor';
-import { ProcessingPriority } from './CombinedExtractor';
 
 // Initialize TensorFlow with optimizations
 async function initializeTensorFlow() {
   try {
     // Check for WebGPU support (faster than WebGL)
-    if ('WebGPU' in window && 
-        tf.findBackend('webgpu') && 
-        tf.engine().backendNames().includes('webgpu')) {
+    if ('WebGPU' in window && await tf.test_util.await_is_webgpu_supported()) {
       console.log('Using WebGPU backend (faster GPU acceleration)');
       await tf.setBackend('webgpu');
       // Enable XLA optimization for WebGPU
@@ -259,8 +257,14 @@ export class AdvancedPPGExtractor {
         metrics: ['accuracy']
       });
       
-      // Store the model directly without quantization (not supported in this version)
-      this.peakDetectionModel = model;
+      // Optionally quantize the model if configured
+      if (this.config.modelQuantization) {
+        console.log('Quantizing peak detection model for efficiency');
+        const quantizedModel = await tf.quantization.quantizeModel(model);
+        this.peakDetectionModel = quantizedModel;
+      } else {
+        this.peakDetectionModel = model;
+      }
       
       console.log('Peak detection CNN model created successfully');
     } catch (error) {
@@ -547,10 +551,7 @@ export class AdvancedPPGExtractor {
       heartRateRecovery: null, // Would need longer time series
       adaptiveConfidence: confidence * signalQuality / 100,
       noiseLevel: this.noiseEstimate,
-      spectrumPeaks,
-      
-      // Required by CombinedExtractionResult
-      priority: ProcessingPriority.MEDIUM // Default priority
+      spectrumPeaks
     };
     
     // Update last timestamp

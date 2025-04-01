@@ -55,10 +55,10 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
-  const WINDOW_WIDTH_MS = 5500;
+  const WINDOW_WIDTH_MS = 3500;
   const CANVAS_WIDTH = 1200;
-  const CANVAS_HEIGHT = 900;
-  const GRID_SIZE_X = 5;
+  const CANVAS_HEIGHT = 600;
+  const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
   const verticalScale = 35.0;
   const SMOOTHING_FACTOR = 1.5;
@@ -281,10 +281,10 @@ const PPGSignalMeter = memo(({
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     // Create a more sophisticated gradient background
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0,'#c1ff82'); // Soft purple (top)
-    gradient.addColorStop(0.3, '#ffbddd'); // Soft peach (upper middle)
-    gradient.addColorStop(0.5, '#afd7ff'); // Soft green (lower middle)
-    gradient.addColorStop(1, '#4d4c6c'); // Soft blue (bottom)
+    gradient.addColorStop(0, '#E5DEFF'); // Soft purple (top)
+    gradient.addColorStop(0.3, '#FDE1D3'); // Soft peach (upper middle)
+    gradient.addColorStop(0.7, '#F2FCE2'); // Soft green (lower middle)
+    gradient.addColorStop(1, '#D3E4FD'); // Soft blue (bottom)
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
