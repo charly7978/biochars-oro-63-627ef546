@@ -1,10 +1,12 @@
 
 /**
- * Functions for checking signal quality and weak signals
+ * Functions for checking signal quality
+ * Direct measurement only - NO simulation or data manipulation
  */
 
 /**
- * Checks if a PPG signal is of good quality for heartbeat detection
+ * Check if the signal quality is sufficient for processing
+ * Uses only real measurements without simulation
  */
 export function checkSignalQuality(
   value: number,
@@ -17,66 +19,81 @@ export function checkSignalQuality(
   isWeakSignal: boolean,
   updatedWeakSignalsCount: number
 } {
-  // Check if the signal is too weak
-  const isValueWeak = Math.abs(value) < config.lowSignalThreshold;
+  // Get actual threshold from config or use default
+  const threshold = config.lowSignalThreshold || 0.05;
+  const maxCount = config.maxWeakSignalCount || 10;
   
-  // Asymmetric counter: increase slowly but decrease quickly
-  // This helps prevent false positives by requiring sustained strong signals
-  let updatedCount = consecutiveWeakSignalsCount;
+  // Check real signal against threshold
+  const isCurrentlyWeak = Math.abs(value) < threshold;
   
-  if (isValueWeak) {
-    // Increment by 1 for weak signals (slow increase)
-    updatedCount++;
-  } else {
-    // Decrease by 3 for strong signals (rapid recovery)
-    updatedCount = Math.max(0, updatedCount - 3);
-  }
+  // Update counter based on actual signal strength
+  let updatedCount = isCurrentlyWeak 
+    ? consecutiveWeakSignalsCount + 1 
+    : 0;
   
-  // Signal is considered weak if we've had too many consecutive weak readings
-  const isWeakSignal = updatedCount >= config.maxWeakSignalCount;
+  // Determine if signal is weak based on consecutive measurements
+  const isWeak = updatedCount >= maxCount;
   
   return {
-    isWeakSignal,
+    isWeakSignal: isWeak,
     updatedWeakSignalsCount: updatedCount
   };
 }
 
 /**
- * Resets detection state when signal quality is poor
+ * Reset detection states for fresh measurements
  */
 export function resetDetectionStates() {
-  console.log("Signal quality: reset detection states (low signal)");
+  console.log("Signal quality: Reset detection states");
   return {
-    lastPeakTime: null,
-    previousPeakTime: null,
-    lastConfirmedPeak: false,
-    peakConfirmationBuffer: []
+    consecutiveWeakSignals: 0
   };
 }
 
 /**
- * Calculate weighted signal quality score based on amplitude and stability
+ * Check if finger is detected by identifying rhythmic patterns
+ * Works only with real data, no simulation
  */
-export function calculateWeightedQuality(ppgValues: number[]): number {
-  if (ppgValues.length < 10) return 0;
+export function isFingerDetectedByPattern(
+  signalHistory: Array<{time: number, value: number}>,
+  currentPatternCount: number
+): {
+  isFingerDetected: boolean,
+  patternCount: number
+} {
+  if (signalHistory.length < 10) {
+    return { 
+      isFingerDetected: false, 
+      patternCount: 0 
+    };
+  }
   
-  // Calculate signal statistics
-  const recentValues = ppgValues.slice(-15);
-  const min = Math.min(...recentValues);
-  const max = Math.max(...recentValues);
-  const amplitude = max - min;
+  // Look for physiological patterns in real signal
+  let crossings = 0;
+  const recentValues = signalHistory.slice(-10);
+  const mean = recentValues.reduce((sum, point) => sum + point.value, 0) / recentValues.length;
   
-  // Calculate stability (coefficient of variation)
-  const sum = recentValues.reduce((a, b) => a + b, 0);
-  const mean = sum / recentValues.length;
-  const squaredDiffs = recentValues.map(v => Math.pow(v - mean, 2));
-  const variance = squaredDiffs.reduce((a, b) => a + b, 0) / recentValues.length;
-  const stdDev = Math.sqrt(variance);
-  const cv = mean !== 0 ? stdDev / Math.abs(mean) : 999;
+  // Count zero crossings (signal moving above/below mean)
+  for (let i = 1; i < recentValues.length; i++) {
+    if ((recentValues[i].value > mean && recentValues[i-1].value <= mean) ||
+        (recentValues[i].value <= mean && recentValues[i-1].value > mean)) {
+      crossings++;
+    }
+  }
   
-  // Base quality on amplitude and stability
-  const amplitudeQuality = Math.min(100, amplitude * 400);
-  const stabilityPenalty = Math.min(amplitudeQuality * 0.8, cv * 150);
+  // Physiological heart rate should have 2-5 crossings in this window
+  const hasPhysiologicalPattern = crossings >= 2 && crossings <= 5;
   
-  return Math.max(0, Math.min(100, amplitudeQuality - stabilityPenalty));
+  // Update pattern detection count
+  let newPatternCount = hasPhysiologicalPattern 
+    ? currentPatternCount + 1 
+    : Math.max(0, currentPatternCount - 1);
+  
+  // Only detect finger after consistent pattern detection
+  const isDetected = newPatternCount >= 3;
+  
+  return {
+    isFingerDetected: isDetected,
+    patternCount: newPatternCount
+  };
 }

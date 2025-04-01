@@ -1,64 +1,60 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Helper functions for optimizing display in PPG signal visualization
  */
 
 /**
- * Get appropriate color for signal visualization
- * Direct visualization only - no simulation or manipulation
+ * Get the appropriate color for signal path based on arrhythmia status
  */
-export const getSignalColor = (isArrhythmia: boolean): string => {
-  return isArrhythmia ? '#FF2E2E' : '#0EA5E9';
-};
+export function getSignalColor(isArrhythmia: boolean): string {
+  return isArrhythmia ? '#DC2626' : '#0EA5E9';
+}
 
 /**
- * Check if a time point is within an arrhythmia window
- * Direct visualization only - no simulation or manipulation
+ * Check if a point is within an arrhythmia window
  */
-export const isPointInArrhythmiaWindow = (
+export function isPointInArrhythmiaWindow(
   pointTime: number, 
-  arrhythmiaWindows: {start: number, end: number}[]
-): boolean => {
-  return arrhythmiaWindows.some(window => 
-    pointTime >= window.start && pointTime <= window.end
-  );
-};
+  arrhythmiaWindows: Array<{ start: number, end: number }>,
+  now: number
+): boolean {
+  return arrhythmiaWindows.some(window => {
+    // Consider the window active if it's recent (within 3 seconds)
+    const windowAge = now - window.end;
+    const isRecentWindow = windowAge < 3000;
+    
+    return isRecentWindow && pointTime >= window.start && pointTime <= window.end;
+  });
+}
 
 /**
- * Optimizes canvas for high DPI displays
- * No data manipulation, just display optimization
+ * Optimize canvas for device pixel ratio
  */
-export const optimizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number): void => {
+export function optimizeCanvas(canvas: HTMLCanvasElement, width: number, height: number): void {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
   
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.scale(dpr, dpr);
   }
-};
+}
 
 /**
- * Optimizes DOM element for high performance rendering
- * No data manipulation, just display optimization
+ * Optimize HTML element for better rendering
  */
-export const optimizeElement = (element: HTMLElement): void => {
-  element.style.transform = 'translate3d(0,0,0)';
+export function optimizeElement(element: HTMLElement): void {
+  element.style.transform = 'translateZ(0)';
   element.style.backfaceVisibility = 'hidden';
-  element.style.willChange = 'transform';
-  
-  // Using standard properties only
-  element.style.textRendering = 'optimizeSpeed';
-};
+  element.style.perspective = '1000px';
+}
 
 /**
- * Check if device is mobile
- * For display optimization only
+ * Check if the current device is mobile
  */
-export const isMobileDevice = (): boolean => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
-};
+export function isMobileDevice(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+}

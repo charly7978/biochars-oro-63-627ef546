@@ -2,6 +2,7 @@
 /**
  * Base signal processor with common functionality
  * Provides core methods for all specialized processors
+ * ÚNICAMENTE PARA PROCESAMIENTO DE DATOS REALES DE PPG
  */
 export class BaseProcessor {
   protected ppgValues: number[] = [];

@@ -3,18 +3,17 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { checkSignalQuality, calculateWeightedQuality } from '../../../modules/heart-beat/signal-quality';
+import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 /**
  * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
  * All methods work with real data only, no simulation
- * Greatly improved to eliminate false positives
+ * Improved to reduce false positives
  */
 export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3
-  private readonly AMPLITUDE_THRESHOLD = 0.05; // Increased from 0.02
+  private readonly MIN_STRONG_SIGNALS_REQUIRED = 3;
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
@@ -24,8 +23,8 @@ export class SignalQuality {
     const instantNoise = Math.abs(rawValue - filteredValue);
     
     // Update noise level with exponential smoothing
-    // Even slower adaptation to reduce impact of transient noise
-    this.noiseLevel = 0.05 * instantNoise + 0.95 * this.noiseLevel; // More smoothing (0.08/0.92 previously)
+    // Slower adaptation to reduce impact of transient noise
+    this.noiseLevel = 0.08 * instantNoise + 0.92 * this.noiseLevel;
   }
   
   /**
@@ -36,24 +35,24 @@ export class SignalQuality {
   }
   
   /**
-   * Calculate signal quality - forwards to centralized implementation
+   * Calculate signal quality - using only real data with improved validation
    * Adds validation to reduce false positives
    */
   public calculateSignalQuality(ppgValues: number[]): number {
-    if (ppgValues.length < 8) return 0; // Increased from 5
+    if (ppgValues.length < 5) return 0;
     
     // Calculate amplitude and standard deviation
-    const min = Math.min(...ppgValues.slice(-15)); // Use more data points
-    const max = Math.max(...ppgValues.slice(-15));
+    const min = Math.min(...ppgValues.slice(-10));
+    const max = Math.max(...ppgValues.slice(-10));
     const amplitude = max - min;
     
     // Only consider valid signals with sufficient amplitude
-    if (amplitude < this.AMPLITUDE_THRESHOLD) {
+    if (amplitude < 0.02) {
       this.consecutiveStrongSignals = 0;
       return 0;
     } else {
       this.consecutiveStrongSignals = Math.min(
-        this.MIN_STRONG_SIGNALS_REQUIRED + 3, 
+        this.MIN_STRONG_SIGNALS_REQUIRED + 2, 
         this.consecutiveStrongSignals + 1
       );
     }
@@ -63,24 +62,72 @@ export class SignalQuality {
       return 0;
     }
     
-    // Calculate stability (coefficient of variation)
-    const values = ppgValues.slice(-10);
-    const sum = values.reduce((a, b) => a + b, 0);
-    const mean = sum / values.length;
-    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
-    const cv = mean !== 0 ? stdDev / Math.abs(mean) : 999;
-    
-    // If signal is unstable, return lower quality
-    if (cv > 0.3) {
-      return Math.min(40, calculateWeightedQuality(ppgValues));
-    }
-    
-    return calculateWeightedQuality(ppgValues);
+    // Calculate quality based on real signal properties
+    return this.calculateWeightedQuality(ppgValues);
   }
   
   /**
-   * Reset noise level and signal quality counters
+   * Calculate weighted quality score based on real signal properties only
+   * No simulation or manipulation, only direct measurement analysis
+   */
+  private calculateWeightedQuality(ppgValues: number[]): number {
+    if (ppgValues.length < 10) return 0;
+    
+    // Get recent values for analysis
+    const recentValues = ppgValues.slice(-10);
+    
+    // Calculate signal amplitude (min to max) - real data only
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const amplitude = max - min;
+    
+    // Calculate average and standard deviation - real data only
+    const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const stdDev = Math.sqrt(
+      recentValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / recentValues.length
+    );
+    
+    // Calculate noise to signal ratio - real data only
+    const noiseToSignalRatio = this.noiseLevel / (amplitude + 0.001);
+    
+    // Calculate consistency of peak spacing - real data only
+    let peakConsistency = 0;
+    let lastPeakIndex = -1;
+    let peakSpacings = [];
+    
+    for (let i = 1; i < recentValues.length - 1; i++) {
+      if (recentValues[i] > recentValues[i-1] && recentValues[i] > recentValues[i+1]) {
+        if (lastPeakIndex !== -1) {
+          peakSpacings.push(i - lastPeakIndex);
+        }
+        lastPeakIndex = i;
+      }
+    }
+    
+    if (peakSpacings.length >= 2) {
+      const avgSpacing = peakSpacings.reduce((sum, val) => sum + val, 0) / peakSpacings.length;
+      const spacingVariance = peakSpacings.reduce((sum, val) => sum + Math.pow(val - avgSpacing, 2), 0) / peakSpacings.length;
+      const spacingCoeffOfVar = Math.sqrt(spacingVariance) / avgSpacing;
+      peakConsistency = Math.max(0, 1 - spacingCoeffOfVar);
+    }
+    
+    // Calculate overall quality score with weighted components - real data only
+    const amplitudeScore = Math.min(1, amplitude / 0.5);  // Normalize amplitude
+    const stdDevScore = Math.min(1, Math.max(0, 1 - noiseToSignalRatio));  // Lower noise is better
+    
+    // Weight the factors to get overall quality
+    const weightedScore = (
+      amplitudeScore * 0.4 +          // 40% amplitude
+      stdDevScore * 0.4 +             // 40% signal-to-noise
+      peakConsistency * 0.2           // 20% peak consistency
+    );
+    
+    // Normalize to 0-1 range
+    return Math.max(0, Math.min(1, weightedScore));
+  }
+  
+  /**
+   * Reset quality tracking state
    */
   public reset(): void {
     this.noiseLevel = 0;

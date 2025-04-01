@@ -1,4 +1,3 @@
-
 export const keyframes = {
   "heart-beat": {
     "0%, 100%": { transform: "scale(1)" },
@@ -22,8 +21,8 @@ export const keyframes = {
     "50%": { height: "0.5rem" }
   },
   "value-glow": {
-    "0%, 100%": { textShadow: "0 0 1px rgba(255,255,255,0.2)" },
-    "50%": { textShadow: "0 0 20px rgba(255,255,255,0.9), 0 0 10px rgba(255,255,255,0.6)" }
+    "0%, 100%": { textShadow: "0 0 2px rgba(255,255,255,0.3)" },
+    "50%": { textShadow: "0 0 25px rgba(255,255,255,0.9), 0 0 15px rgba(255,255,255,0.7)" }
   },
   "arrhythmia-pulse": {
     "0%": { transform: "scale(1)", opacity: "0.9" },
@@ -31,10 +30,9 @@ export const keyframes = {
     "100%": { transform: "scale(1)", opacity: "0.9" }
   },
   "dark-glow": {
-    "0%, 100%": { textShadow: "0 0 1px rgba(180,200,255,0.2)" },
-    "50%": { textShadow: "0 0 20px rgba(140,180,255,0.9), 0 0 10px rgba(120,160,255,0.6)" }
+    "0%, 100%": { textShadow: "0 0 2px rgba(180,200,255,0.3)" },
+    "50%": { textShadow: "0 0 25px rgba(140,180,255,0.9), 0 0 15px rgba(120,160,255,0.6)" }
   },
-  // Optimized animations with reduced changes
   "vital-sign-update": {
     "0%": { transform: "scale(0.98)", opacity: "0.9" },
     "100%": { transform: "scale(1)", opacity: "1" }
@@ -49,7 +47,26 @@ export const keyframes = {
     "100%": { opacity: "1", transform: "translateY(0)" }
   },
   "subtle-pulse": {
-    "0%, 100%": { opacity: "0.95" },
-    "50%": { opacity: "1" }
+    "0%, 100%": { opacity: "0.95", textShadow: "0 0 3px rgba(140,180,255,0.2)" },
+    "50%": { opacity: "1", textShadow: "0 0 12px rgba(140,180,255,0.5), 0 0 4px rgba(120,160,255,0.4)" }
+  },
+  "blue-subtle-glow": {
+    "0%, 100%": { 
+      boxShadow: "0 0 5px rgba(100,140,240,0.15)" 
+    },
+    "50%": { 
+      boxShadow: "0 0 15px rgba(100,140,255,0.3)" 
+    }
+  },
+  "display-panel-pulse": {
+    "0%": { 
+      backgroundColor: "rgba(15,25,50,0.05)" 
+    },
+    "50%": { 
+      backgroundColor: "rgba(20,35,60,0.08)" 
+    },
+    "100%": { 
+      backgroundColor: "rgba(15,25,50,0.05)" 
+    }
   }
 };

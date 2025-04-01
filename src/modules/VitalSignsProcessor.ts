@@ -9,37 +9,38 @@ import { checkSignalQuality } from './heart-beat/signal-quality';
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
  * No simulation or data manipulation allowed.
- * Greatly improved resistance to false positives
+ * Improved resistance to false positives
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
   // Signal measurement parameters
-  private readonly WINDOW_SIZE = 300;
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.05; // Increased from 0.035
-  private readonly SPO2_WINDOW = 5;
-  private readonly SMA_WINDOW = 5;
-  private readonly RR_WINDOW_SIZE = 6;
-  private readonly RMSSD_THRESHOLD = 15;
-  private readonly PEAK_THRESHOLD = 0.35; // Increased from 0.25
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
+  private readonly PEAK_THRESHOLD = 0.30; // Increased from 0.25
   
-  // Much longer guard period to prevent false positives
+  // Extended guard period to prevent false positives
   private readonly FALSE_POSITIVE_GUARD_PERIOD = 1200; // Increased from 800ms
   private lastDetectionTime: number = 0;
   
-  // Improved counter for weak signals with much higher thresholds
-  private readonly LOW_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
+  // Improved counter for weak signals with higher thresholds
+  private readonly LOW_SIGNAL_THRESHOLD = 0.20; // Increased from 0.15
   private readonly MAX_WEAK_SIGNALS = 6; // Increased from 5
   private weakSignalsCount: number = 0;
   
-  // Signal stability tracking to eliminate false positives
+  // Signal stability tracking to reduce false positives
   private signalHistory: number[] = [];
   private readonly HISTORY_SIZE = 15; // Increased from 10
-  private readonly STABILITY_THRESHOLD = 0.15; // Decreased from 0.2 (stricter)
+  private readonly STABILITY_THRESHOLD = 0.15; // Reduced from 0.2 (more strict)
   
-  // Added requirements for minimum consecutive strong signals
-  private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3
+  // Frame rate tracking for consistency check
+  private lastFrameTime: number = 0;
+  private frameRateHistory: number[] = [];
+  private readonly MIN_FRAME_RATE = 15; // Minimum frames per second
+  private readonly FRAME_CONSISTENCY_THRESHOLD = 0.5; // Maximum allowed variation in frame times
+  
+  // Physiological validation
+  private validPhysiologicalSignalsCount: number = 0;
+  private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
   
   /**
    * Constructor that initializes the processor
@@ -50,7 +51,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process a PPG signal with greatly improved false positive detection
+   * Process a PPG signal with improved false positive detection
    */
   public processSignal(
     ppgValue: number,
@@ -59,6 +60,39 @@ export class VitalSignsProcessor {
     // Apply enhanced verification
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
+    
+    // Track frame rate for consistency
+    if (this.lastFrameTime > 0) {
+      const frameDelta = now - this.lastFrameTime;
+      this.frameRateHistory.push(frameDelta);
+      if (this.frameRateHistory.length > 10) {
+        this.frameRateHistory.shift();
+      }
+    }
+    this.lastFrameTime = now;
+    
+    // Check if frame rate is consistent enough for reliable detection
+    let frameRateConsistent = true;
+    if (this.frameRateHistory.length >= 5) {
+      const avgDelta = this.frameRateHistory.reduce((sum, delta) => sum + delta, 0) / this.frameRateHistory.length;
+      const fps = 1000 / avgDelta;
+      
+      // Calculate frame rate variance
+      const variance = this.frameRateHistory.reduce((sum, delta) => sum + Math.pow(delta - avgDelta, 2), 0) / this.frameRateHistory.length;
+      const normalizedVariance = variance / (avgDelta * avgDelta);
+      
+      frameRateConsistent = fps >= this.MIN_FRAME_RATE && normalizedVariance <= this.FRAME_CONSISTENCY_THRESHOLD;
+      
+      if (!frameRateConsistent) {
+        console.log("Frame rate inconsistency detected - possible false positive condition", {
+          fps,
+          normalizedVariance,
+          frameDeltas: this.frameRateHistory
+        });
+        // Reset detection if frame rate becomes inconsistent
+        this.validPhysiologicalSignalsCount = 0;
+      }
+    }
     
     // Update signal history for stability analysis
     this.updateSignalHistory(ppgValue);
@@ -78,30 +112,25 @@ export class VitalSignsProcessor {
     // Additional stability check to prevent false positives
     const isStable = this.checkSignalStability();
     
-    // Only count as strong signal if signal passes all checks
-    if (!isWeakSignal && Math.abs(ppgValue) > this.PEAK_THRESHOLD && isStable) {
-      this.consecutiveStrongSignals = Math.min(
-        this.MIN_STRONG_SIGNALS_REQUIRED + 3, 
-        this.consecutiveStrongSignals + 1
-      );
+    // Physiological validation - add more checks for real signals
+    if (!isWeakSignal && isStable && frameRateConsistent && Math.abs(ppgValue) > 0) {
+      // Signal appears valid from physiological perspective
+      this.validPhysiologicalSignalsCount = Math.min(this.MIN_PHYSIOLOGICAL_SIGNALS + 10, this.validPhysiologicalSignalsCount + 1);
     } else {
-      // Reset counter more quickly for weak signals
-      this.consecutiveStrongSignals = Math.max(0, this.consecutiveStrongSignals - 2);
+      // Reduce counter more slowly to maintain stability
+      this.validPhysiologicalSignalsCount = Math.max(0, this.validPhysiologicalSignalsCount - 0.5);
     }
     
-    // Enhanced verification requiring minimum consecutive strong signals
-    const signalVerified = 
-      !isWeakSignal && 
-      Math.abs(ppgValue) > this.PEAK_THRESHOLD && 
-      isStable && 
-      this.consecutiveStrongSignals >= this.MIN_STRONG_SIGNALS_REQUIRED;
+    // Enhanced verification with stability requirement
+    const hasPhysiologicalValidation = this.validPhysiologicalSignalsCount >= this.MIN_PHYSIOLOGICAL_SIGNALS;
+    const signalVerified = !isWeakSignal && Math.abs(ppgValue) > 0 && isStable && frameRateConsistent;
     
     if (signalVerified) {
       this.lastDetectionTime = now;
     }
     
     // Only process verified and stable signals or within guard period
-    if (signalVerified || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
+    if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
       return this.processor.processSignal(ppgValue, rrData);
     } else {
       // Return empty result without processing when signal is uncertain
@@ -131,28 +160,38 @@ export class VitalSignsProcessor {
   /**
    * Check signal stability to prevent false positives
    * Returns true if signal is stable enough to process
-   * Enhanced with longer history and stricter thresholds
    */
   private checkSignalStability(): boolean {
     if (this.signalHistory.length < this.HISTORY_SIZE / 2) {
       return false;
     }
     
-    // Calculate signal variation with improved method
-    const values = this.signalHistory.slice(-8); // Use more recent values for stability check
+    // Calculate signal variation with more rigorous method
+    const values = this.signalHistory.slice(-10);
+    
+    // Check if we have a reasonable min/max range (too small = not physiological)
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    
+    if (range < 0.10) { // Minimum physiological range
+      return false;
+    }
+    
+    // Calculate variance normalized by the mean to detect inconsistent signals
     const sum = values.reduce((a, b) => a + b, 0);
     const mean = sum / values.length;
     
-    // Calculate variance and standard deviation
+    // Skip very low signals
+    if (mean < 0.05) {
+      return false;
+    }
+    
     const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
+    const normalizedVariance = variance / (mean * mean);
     
-    // Calculate coefficient of variation (normalized standard deviation)
-    const coefficientOfVariation = mean !== 0 ? stdDev / Math.abs(mean) : 999;
-    
-    // Check if stability is within acceptable range
-    // Using coefficient of variation for better normalization
-    return coefficientOfVariation < this.STABILITY_THRESHOLD;
+    // Check if normalized variance is within physiological range (not too stable, not too chaotic)
+    return normalizedVariance > 0.05 && normalizedVariance < this.STABILITY_THRESHOLD;
   }
   
   /**
@@ -175,19 +214,23 @@ export class VitalSignsProcessor {
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
     this.signalHistory = [];
-    this.consecutiveStrongSignals = 0;
+    this.frameRateHistory = [];
+    this.lastFrameTime = 0;
+    this.validPhysiologicalSignalsCount = 0;
     return this.processor.reset();
   }
   
   /**
-   * Completely reset the processor
+   * Completely reset the processor and all its data
    */
   public fullReset(): void {
     console.log("VitalSignsProcessor: Full reset - removing all data history");
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
     this.signalHistory = [];
-    this.consecutiveStrongSignals = 0;
+    this.frameRateHistory = [];
+    this.lastFrameTime = 0;
+    this.validPhysiologicalSignalsCount = 0;
     this.processor.fullReset();
   }
   

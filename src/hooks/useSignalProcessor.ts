@@ -8,7 +8,8 @@ import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
- * Simplified hook that defers to PPGSignalMeter for quality and detection
+ * Hook para el procesamiento de señales PPG reales
+ * No se permite ninguna simulación o datos sintéticos
  */
 export const useSignalProcessor = () => {
   // Create processor instance
