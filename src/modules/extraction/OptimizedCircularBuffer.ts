@@ -6,15 +6,6 @@
 import { PPGDataPoint, TimestampedPPGData } from '../../types/signal';
 
 /**
- * Interfaz para datos PPG con timestamp
- */
-export interface TimestampedPPGData {
-  timestamp: number;
-  value: number;
-  [key: string]: any;
-}
-
-/**
  * Buffer circular optimizado para datos PPG
  * Implementa un buffer de tamaño fijo preasignado en memoria
  */

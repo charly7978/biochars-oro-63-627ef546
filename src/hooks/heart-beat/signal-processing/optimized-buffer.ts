@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -7,15 +8,6 @@
 
 import { CircularBuffer } from '../../../utils/CircularBuffer';
 import { PPGDataPoint, TimestampedPPGData } from '../../../types/signal';
-
-/**
- * Interfaz para datos PPG con timestamp
- */
-export interface TimestampedPPGData {
-  timestamp: number;
-  value: number;
-  [key: string]: any;
-}
 
 /**
  * Buffer circular optimizado para datos PPG
@@ -186,8 +178,14 @@ export class CircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPG
   }
   
   public override push(item: T): void {
-    super.push(item);
-    this.optimizedBuffer.push(item);
+    // Ensure item has time property if not present
+    const enhancedItem = {...item};
+    if (!('time' in enhancedItem) && 'timestamp' in enhancedItem) {
+      enhancedItem.time = enhancedItem.timestamp;
+    }
+    
+    super.push(enhancedItem as T);
+    this.optimizedBuffer.push(enhancedItem as T);
   }
   
   public override get(index: number): T | undefined {
