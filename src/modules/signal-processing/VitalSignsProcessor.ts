@@ -8,6 +8,7 @@ import type { VitalSignsResult, RRIntervalData } from '../../types/vital-signs';
 // Main vital signs processor 
 export class VitalSignsProcessor {
   private arrhythmiaCounter: number = 0;
+  private signalHistory: number[] = [];
 
   constructor() {
     console.log("VitalSignsProcessor initialized");
@@ -121,6 +122,43 @@ export class VitalSignsProcessor {
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaCounter;
+  }
+
+  /**
+   * Process signal directly - no simulation
+   * This method is added for compatibility with the new interface
+   */
+  public processSignal(value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult {
+    return this.process({
+      value,
+      rrData: rrData ? { 
+        intervals: rrData.intervals,
+        lastPeakTime: rrData.lastPeakTime
+      } : undefined
+    });
+  }
+
+  /**
+   * Reset function for compatibility with new interface
+   */
+  public reset(): VitalSignsResult | null {
+    this.signalHistory = [];
+    return null;
+  }
+
+  /**
+   * Full reset function for compatibility with new interface
+   */
+  public fullReset(): void {
+    this.signalHistory = [];
+    this.arrhythmiaCounter = 0;
+  }
+
+  /**
+   * Get last valid results - always returns null for direct measurement
+   */
+  public getLastValidResults(): VitalSignsResult | null {
+    return null;
   }
 }
 
