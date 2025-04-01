@@ -1,115 +1,120 @@
+import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
-import { UserProfile } from '../types';
-import { LipidResult } from '../types/vital-signs-results';
-import { ProcessorConfig } from '../config/ProcessorConfig';
+export interface LipidProfile {
+  totalCholesterol: number;
+  triglycerides: number;
+  confidence: number;
+}
 
 export class LipidEstimator {
-  private dataPoints: number[] = [];
-  private readonly MIN_DATA_POINTS = 120;
-  private readonly DEFAULT_TOTAL_CHOLESTEROL = 185;
-  private readonly DEFAULT_TRIGLYCERIDES = 150;
-  private readonly BASE_CONFIDENCE = 0.6;
-  
-  constructor(private config: ProcessorConfig, private userProfile?: UserProfile) {}
-  
-  public addDataPoint(value: number): void {
-    if (value !== 0) {
-      this.dataPoints.push(value);
-      
-      if (this.dataPoints.length > this.MIN_DATA_POINTS * 2) {
-        this.dataPoints.shift();
-      }
-    }
+  private readonly DEFAULTS = {
+    cholesterol: 170,
+    triglycerides: 100,
+    minCholesterol: 130,
+    maxCholesterol: 240,
+    minTriglycerides: 50,
+    maxTriglycerides: 300
+  };
+
+  private readonly HISTORY_SIZE = 5;
+  private readonly STABILITY_FACTOR = 0.6;
+
+  private history: LipidProfile[] = [];
+  private lastEstimate: LipidProfile = {
+    totalCholesterol: 170,
+    triglycerides: 100,
+    confidence: 0
+  };
+
+  private cholesterolCalibrationFactor: number;
+  private triglycerideCalibrationFactor: number;
+  private confidenceThreshold: number;
+
+  constructor(config: Partial<ProcessorConfig> = {}) {
+    const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
+    this.cholesterolCalibrationFactor = full.nonInvasiveSettings.cholesterolCalibrationFactor || 1.0;
+    this.triglycerideCalibrationFactor = full.nonInvasiveSettings.triglycerideCalibrationFactor || 1.0;
+    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.7;
+    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
   }
-  
-  public estimateLipids(): LipidResult {
-    if (this.dataPoints.length < this.MIN_DATA_POINTS) {
-      return {
-        totalCholesterol: 0,
-        triglycerides: 0,
-        ldl: 0,
-        hdl: 0,
-        confidence: 0
-      };
-    }
-    
-    try {
-      // Calcular características de la señal
-      const variance = this.calculateVariance(this.dataPoints);
-      const frequencyFeatures = this.calculateFrequencyFeatures(this.dataPoints);
-      
-      // Aplicar factores de calibración
-      const cholesterolCalibration = this.config.lipidCalibrationFactor;
-      const triglycerideCalibration = this.config.lipidCalibrationFactor;
-      
-      // Estimar colesterol total basado en características de la señal
-      const totalCholesterolRaw = this.DEFAULT_TOTAL_CHOLESTEROL +
-        (variance * 15 * cholesterolCalibration) +
-        (frequencyFeatures.highRatio * 30 * cholesterolCalibration);
-      
-      // Estimar triglicéridos
-      const triglyceridesRaw = this.DEFAULT_TRIGLYCERIDES +
-        (variance * 25 * triglycerideCalibration) +
-        (frequencyFeatures.lowRatio * 40 * triglycerideCalibration);
-      
-      // Límites fisiológicos
-      const totalCholesterol = Math.max(140, Math.min(300, Math.round(totalCholesterolRaw)));
-      const triglycerides = Math.max(70, Math.min(400, Math.round(triglyceridesRaw)));
-      
-      // Calcular HDL y LDL
-      const hdl = Math.round(Math.max(25, Math.min(80, 50 - (variance * 5))));
-      const ldl = Math.round(totalCholesterol - hdl - (triglycerides / 5));
-      
-      // Calcular confianza
-      const confidenceFactor = Math.min(1, this.dataPoints.length / (this.MIN_DATA_POINTS * 1.5));
-      const confidence = this.BASE_CONFIDENCE * confidenceFactor;
-      
-      return {
-        totalCholesterol,
-        triglycerides,
-        ldl,
-        hdl,
-        confidence
-      };
-    } catch (error) {
-      console.error('Error estimando lípidos:', error);
-      return {
-        totalCholesterol: 0,
-        triglycerides: 0,
-        ldl: 0,
-        hdl: 0,
-        confidence: 0
-      };
-    }
+
+  public estimate(values: number[]): LipidProfile {
+    if (values.length < 120) return this.lastEstimate;
+
+    const segment = values.slice(-120);
+    const { absorptionRatio, peakComplexity, waveformWidth } = this.extractSpectralFeatures(segment);
+
+    let cholesterol = this.DEFAULTS.cholesterol + absorptionRatio * 50 - waveformWidth * 10;
+    let triglycerides = this.DEFAULTS.triglycerides + peakComplexity * 40;
+
+    cholesterol *= this.cholesterolCalibrationFactor;
+    triglycerides *= this.triglycerideCalibrationFactor;
+
+    cholesterol = this.bound(cholesterol, this.DEFAULTS.minCholesterol, this.DEFAULTS.maxCholesterol);
+    triglycerides = this.bound(triglycerides, this.DEFAULTS.minTriglycerides, this.DEFAULTS.maxTriglycerides);
+
+    const confidence = this.calculateConfidence(absorptionRatio, peakComplexity, waveformWidth);
+    const smoothed = this.getSmoothedEstimate({ totalCholesterol: cholesterol, triglycerides, confidence });
+    this.lastEstimate = smoothed;
+    return smoothed;
   }
-  
-  private calculateVariance(data: number[]): number {
-    const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
-    const squaredDiffs = data.map(val => Math.pow(val - mean, 2));
-    return Math.sqrt(squaredDiffs.reduce((sum, val) => sum + val, 0) / data.length);
+
+  private extractSpectralFeatures(data: number[]) {
+    const peak = Math.max(...data);
+    const valley = Math.min(...data);
+    const absorptionRatio = (peak - valley) / (peak + valley + 1e-5);
+    const zeroCrossings = data.reduce((count, val, i, arr) => {
+      if (i === 0) return count;
+      return count + (Math.sign(val) !== Math.sign(arr[i - 1]) ? 1 : 0);
+    }, 0);
+    const peakComplexity = zeroCrossings / data.length;
+    const waveformWidth = data.filter(v => v > valley + (peak - valley) * 0.5).length;
+
+    return { absorptionRatio, peakComplexity, waveformWidth };
   }
-  
-  private calculateFrequencyFeatures(data: number[]): { lowRatio: number, highRatio: number } {
-    // Simplificación: calcular proporción de amplitud en diferentes bandas de frecuencia
-    const segment1 = data.slice(0, Math.floor(data.length / 3));
-    const segment2 = data.slice(Math.floor(data.length / 3), Math.floor(2 * data.length / 3));
-    const segment3 = data.slice(Math.floor(2 * data.length / 3));
-    
-    const amp1 = Math.max(...segment1) - Math.min(...segment1);
-    const amp2 = Math.max(...segment2) - Math.min(...segment2);
-    const amp3 = Math.max(...segment3) - Math.min(...segment3);
-    
-    const totalAmp = amp1 + amp2 + amp3;
-    
-    if (totalAmp === 0) return { lowRatio: 0, highRatio: 0 };
-    
+
+  private calculateConfidence(a: number, p: number, w: number): number {
+    const score = (a > 0.2 ? 1 : 0.6) * (p > 0.05 ? 1 : 0.7) * (w > 10 ? 1 : 0.8);
+    return Math.min(1, score);
+  }
+
+  private getSmoothedEstimate(current: LipidProfile): LipidProfile {
+    this.history.push(current);
+    if (this.history.length > this.HISTORY_SIZE) this.history.shift();
+
+    const avg = this.history.reduce((acc, val) => {
+      acc.totalCholesterol += val.totalCholesterol;
+      acc.triglycerides += val.triglycerides;
+      acc.confidence += val.confidence;
+      return acc;
+    }, { totalCholesterol: 0, triglycerides: 0, confidence: 0 });
+
+    const n = this.history.length;
     return {
-      lowRatio: amp1 / totalAmp,
-      highRatio: amp3 / totalAmp
+      totalCholesterol: (avg.totalCholesterol / n) * this.STABILITY_FACTOR + current.totalCholesterol * (1 - this.STABILITY_FACTOR),
+      triglycerides: (avg.triglycerides / n) * this.STABILITY_FACTOR + current.triglycerides * (1 - this.STABILITY_FACTOR),
+      confidence: avg.confidence / n
     };
   }
-  
+
+  private bound(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  public getConfidence(): number {
+    return this.lastEstimate.confidence;
+  }
+
+  public isReliable(): boolean {
+    return this.lastEstimate.confidence >= this.confidenceThreshold;
+  }
+
   public reset(): void {
-    this.dataPoints = [];
+    this.lastEstimate = {
+      totalCholesterol: this.DEFAULTS.cholesterol,
+      triglycerides: this.DEFAULTS.triglycerides,
+      confidence: 0
+    };
+    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
   }
 }

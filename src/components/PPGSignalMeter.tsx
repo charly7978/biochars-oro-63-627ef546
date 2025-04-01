@@ -1,10 +1,8 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { ArrhythmiaDetector, ArrhythmiaEvent } from '../modules/heart-beat/ArrhythmiaDetector';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -52,8 +50,6 @@ const PPGSignalMeter = memo(({
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
-  const arrhythmiaDetectorRef = useRef<ArrhythmiaDetector>(new ArrhythmiaDetector());
-  const arrhythmiaEventsRef = useRef<ArrhythmiaEvent[]>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
@@ -84,7 +80,7 @@ const PPGSignalMeter = memo(({
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 350;
 
-  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
+  const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
   useEffect(() => {
     const initAudio = async () => {
@@ -127,9 +123,7 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      const feedbackType: HeartbeatFeedbackType = isArrhythmia ? 'arrhythmia' : 'normal';
-      console.log(`PPGSignalMeter: Activando feedback tipo: ${feedbackType}`);
-      triggerHeartbeatFeedback(feedbackType);
+      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -221,38 +215,6 @@ const PPGSignalMeter = memo(({
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
-  }, []);
-
-  // Función para dibujar circulo de arritmia
-  const drawArrhythmiaCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, type: ArrhythmiaEvent['type']) => {
-    ctx.beginPath();
-    ctx.arc(x, y, 8, 0, 2 * Math.PI);
-
-    switch (type) {
-      case 'bradycardia':
-        ctx.fillStyle = '#3B82F6'; // azul
-        break;
-      case 'tachycardia':
-        ctx.fillStyle = '#F97316'; // naranja
-        break;
-      case 'extrasystole':
-        ctx.fillStyle = '#EF4444'; // rojo
-        break;
-      case 'irregular':
-        ctx.fillStyle = '#A855F7'; // violeta
-        break;
-      default:
-        ctx.fillStyle = '#9CA3AF'; // gris
-        break;
-    }
-
-    ctx.fill();
-
-    // Opcional: mostrar texto arriba
-    ctx.font = '12px Inter';
-    ctx.fillStyle = '#000000';
-    ctx.textAlign = 'center';
-    ctx.fillText(type, x, y - 12);
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -395,31 +357,6 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
-        
-        // Si encontramos picos válidos, comprobamos arritmias
-        if (peaksRef.current.length >= 2) {
-          const lastPeak = peaksRef.current[peaksRef.current.length - 2];
-          const currentPeak = peaksRef.current[peaksRef.current.length - 1];
-          
-          // Calcular intervalo RR en milisegundos
-          const rr = currentPeak.time - lastPeak.time;
-          
-          // Detectar arritmia con el intervalo RR
-          const arrhythmia = arrhythmiaDetectorRef.current.update(rr);
-          
-          if (arrhythmia) {
-            console.log(`Arritmia detectada: ${arrhythmia.type} - BPM: ${arrhythmia.bpm.toFixed(1)}`);
-            arrhythmiaEventsRef.current.push(arrhythmia);
-            
-            // Mantenemos solo eventos recientes
-            if (arrhythmiaEventsRef.current.length > 10) {
-              arrhythmiaEventsRef.current.shift();
-            }
-            
-            // Activar feedback para el tipo específico de arritmia
-            triggerHeartbeatFeedback(arrhythmia.type);
-          }
-        }
       }
     }
     
@@ -554,7 +491,6 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Dibujar picos detectados
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - peak.value;
@@ -589,16 +525,6 @@ const PPGSignalMeter = memo(({
           }
         }
       });
-      
-      // Dibujar eventos de arritmia
-      arrhythmiaEventsRef.current.forEach(arrhythmia => {
-        const x = canvas.width - ((now - arrhythmia.timestamp) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2; // posición central, podría ajustarse con valor real si es necesario
-        
-        if (x >= 0 && x <= canvas.width) {
-          drawArrhythmiaCircle(renderCtx, x, y, arrhythmia.type);
-        }
-      });
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -617,7 +543,7 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, drawArrhythmiaCircle]);
+  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
 
   useEffect(() => {
     renderSignal();
@@ -634,8 +560,6 @@ const PPGSignalMeter = memo(({
     peaksRef.current = [];
     arrhythmiaSegmentsRef.current = [];
     pendingBeepPeakIdRef.current = null;
-    arrhythmiaEventsRef.current = [];
-    arrhythmiaDetectorRef.current.reset();
     onReset();
   }, [onReset]);
 
