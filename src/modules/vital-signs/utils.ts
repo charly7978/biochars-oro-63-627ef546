@@ -1,43 +1,74 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
 /**
- * Re-export utilities from individual files to maintain compatibility
- * All functions process only real data without simulation.
+ * Utilidades compartidas para procesamiento de señales vitales
  */
 
-// Re-export signal processing utilities
-export {
-  calculateAC,
-  calculateDC,
-  calculateStandardDeviation,
-  calculateEMA,
-  normalizeValue
-} from './utils/signal-processing-utils';
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
 
-// Re-export peak detection utilities
-export {
-  findPeaksAndValleys,
-  calculateAmplitude
-} from './utils/peak-detection-utils';
+/**
+ * Calcula la varianza de un conjunto de valores
+ */
+export function calculateVariance(values: number[]): number {
+  if (values.length === 0) return 0;
+  
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+  return squaredDiffs.reduce((a, b) => a + b, 0) / values.length;
+}
 
-// Re-export filter utilities
-export {
-  applySMAFilter,
-  amplifySignal
-} from './utils/filter-utils';
+/**
+ * Calcula la desviación estándar de un conjunto de valores
+ */
+export function calculateStandardDeviation(values: number[]): number {
+  return Math.sqrt(calculateVariance(values));
+}
 
-// Re-export perfusion utilities
-export {
-  calculatePerfusionIndex
-} from './utils/perfusion-utils';
+/**
+ * Calcular el componente AC (amplitud) de una señal
+ */
+export function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
 
-// Re-export from core utils
-export {
-  calculateAC as getAC,
-  calculateDC as getDC,
-  calculateStandardDeviation as getStandardDeviation,
-  amplifySignal as getAmplifiedSignal
-} from '../../utils/vitalSignsUtils';
+/**
+ * Calcular el componente DC (valor promedio) de una señal
+ */
+export function calculateDC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, val) => sum + val, 0) / values.length;
+}
+
+/**
+ * Calcula el índice de perfusión (PI) de una señal PPG
+ */
+export function calculatePerfusionIndex(values: number[]): number {
+  const ac = calculateAC(values);
+  const dc = calculateDC(values);
+  return dc !== 0 ? ac / dc : 0;
+}
+
+/**
+ * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
+ * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * 
+ * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
+ * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
+ * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ */
