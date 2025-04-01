@@ -1,23 +1,24 @@
 
 /**
- * Buffer circular optimizado para procesamiento de señales PPG
- * Mejora el rendimiento y reduce la presión sobre el recolector de basura
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Buffer circular optimizado para el módulo de extracción
+ * Reduce la presión sobre el recolector de basura y mejora el rendimiento en tiempo real
  */
 
 /**
- * Interfaz para datos PPG con timestamp
+ * Interfaz para elementos con timestamp
  */
-export interface TimestampedPPGData {
+export interface TimestampedData {
   timestamp: number;
-  value: number;
   [key: string]: any;
 }
 
 /**
- * Buffer circular optimizado para datos PPG
- * Implementa un buffer de tamaño fijo preasignado en memoria
+ * Buffer circular optimizado para datos de señal
+ * Preasigna la memoria y evita creaciones/destrucciones continuas de arrays
  */
-export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
+export class OptimizedCircularBuffer<T extends TimestampedData = TimestampedData> {
   private buffer: Array<T | null>;
   private head: number = 0;
   private tail: number = 0;
@@ -25,30 +26,35 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
   private readonly capacity: number;
   
   /**
-   * Constructor del buffer optimizado
-   * @param capacity Capacidad máxima del buffer
+   * Constructor del buffer circular
+   * @param capacity Tamaño máximo del buffer
    */
   constructor(capacity: number) {
     if (capacity <= 0) {
       throw new Error('La capacidad del buffer debe ser mayor que cero');
     }
     
-    // Preasignar el array completo
+    // Preasignar el array completo con valores null
     this.buffer = new Array<T | null>(capacity).fill(null);
     this.capacity = capacity;
   }
   
   /**
-   * Añade un dato al buffer
-   * Si el buffer está lleno, sobrescribe el dato más antiguo
+   * Añade un elemento al buffer
+   * Sobrescribe el elemento más antiguo si el buffer está lleno
    */
   public push(item: T): void {
+    // Almacenar el elemento en la posición actual del head
     this.buffer[this.head] = item;
+    
+    // Actualizar el head
     this.head = (this.head + 1) % this.capacity;
     
+    // Si el buffer está lleno, mover también el tail
     if (this._size === this.capacity) {
       this.tail = (this.tail + 1) % this.capacity;
     } else {
+      // Incrementar el tamaño si aún no está lleno
       this._size++;
     }
   }
@@ -69,7 +75,7 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
   /**
    * Obtiene todos los elementos válidos del buffer como un array
    */
-  public getPoints(): T[] {
+  public getItems(): T[] {
     const result: T[] = [];
     let current = this.tail;
     
@@ -79,6 +85,24 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
         result.push(item);
       }
       current = (current + 1) % this.capacity;
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Obtiene los últimos N elementos del buffer
+   */
+  public getLastN(n: number): T[] {
+    const count = Math.min(n, this._size);
+    const result: T[] = [];
+    
+    for (let i = 0; i < count; i++) {
+      const index = (this.head - 1 - i + this.capacity) % this.capacity;
+      const item = this.buffer[index];
+      if (item !== null) {
+        result.unshift(item); // Añadir al principio para mantener el orden
+      }
     }
     
     return result;
@@ -123,102 +147,41 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
   }
   
   /**
-   * Obtiene los valores de los datos en el buffer como un array
+   * Ejecuta una función para cada elemento del buffer
    */
-  public getValues(): number[] {
-    return this.getPoints().map(point => point.value);
+  public forEach(callback: (item: T, index: number) => void): void {
+    let current = this.tail;
+    
+    for (let i = 0; i < this._size; i++) {
+      const item = this.buffer[current];
+      if (item !== null) {
+        callback(item, i);
+      }
+      current = (current + 1) % this.capacity;
+    }
   }
   
   /**
-   * Obtiene los últimos N elementos del buffer
+   * Transforma el buffer a un nuevo array aplicando una función
    */
-  public getLastN(n: number): T[] {
-    const count = Math.min(n, this._size);
-    const result: T[] = [];
-    
-    for (let i = 0; i < count; i++) {
-      const index = (this.head - 1 - i + this.capacity) % this.capacity;
-      const item = this.buffer[index];
-      if (item !== null) {
-        result.unshift(item); // Añadir al principio para mantener el orden
-      }
-    }
-    
+  public map<U>(callback: (item: T, index: number) => U): U[] {
+    const result: U[] = [];
+    this.forEach((item, index) => {
+      result.push(callback(item, index));
+    });
     return result;
   }
   
   /**
-   * Crea un buffer optimizado a partir de un buffer circular estándar
-   * @param circularBuffer Buffer circular estándar
+   * Filtra los elementos del buffer según un predicado
    */
-  public static fromCircularBuffer<U extends TimestampedPPGData>(circularBuffer: any): OptimizedCircularBuffer<U> {
-    const points = circularBuffer.getPoints ? circularBuffer.getPoints() : [];
-    const optimizedBuffer = new OptimizedCircularBuffer<U>(Math.max(points.length, 10));
-    
-    // Transferir los datos al nuevo buffer
-    points.forEach((point: U) => {
-      optimizedBuffer.push(point);
-    });
-    
-    return optimizedBuffer;
-  }
-  
-  /**
-   * Transfiere los datos del buffer a un ArrayBuffer para transferencia eficiente
-   * Implementa el patrón Transferable Objects para mejorar rendimiento
-   */
-  public toTransferable(): { buffer: ArrayBuffer, metadata: { head: number, tail: number, size: number, capacity: number } } {
-    const points = this.getPoints();
-    
-    // Crear un buffer tipado para la transferencia
-    const bufferSize = points.length * 2; // 2 valores por punto (timestamp y value)
-    const buffer = new ArrayBuffer(bufferSize * Float64Array.BYTES_PER_ELEMENT);
-    const view = new Float64Array(buffer);
-    
-    // Llenar el buffer con los datos
-    points.forEach((point, i) => {
-      view[i * 2] = point.timestamp;
-      view[i * 2 + 1] = point.value;
-    });
-    
-    // Devolver el buffer y metadata para reconstrucción
-    return {
-      buffer,
-      metadata: {
-        head: this.head,
-        tail: this.tail,
-        size: this._size,
-        capacity: this.capacity
+  public filter(predicate: (item: T, index: number) => boolean): T[] {
+    const result: T[] = [];
+    this.forEach((item, index) => {
+      if (predicate(item, index)) {
+        result.push(item);
       }
-    };
-  }
-  
-  /**
-   * Crea un buffer a partir de un ArrayBuffer transferido
-   */
-  public static fromTransferable<T extends TimestampedPPGData>(
-    buffer: ArrayBuffer, 
-    metadata: { head: number, tail: number, size: number, capacity: number }
-  ): OptimizedCircularBuffer<T> {
-    const view = new Float64Array(buffer);
-    const result = new OptimizedCircularBuffer<T>(metadata.capacity);
-    
-    // Reconstruir el estado
-    result.head = metadata.head;
-    result.tail = metadata.tail;
-    result._size = metadata.size;
-    
-    // Llenar el buffer con los datos del ArrayBuffer
-    for (let i = 0; i < view.length / 2; i++) {
-      const point = {
-        timestamp: view[i * 2],
-        value: view[i * 2 + 1]
-      } as T;
-      
-      const index = (result.tail + i) % result.capacity;
-      result.buffer[index] = point;
-    }
-    
+    });
     return result;
   }
 }
