@@ -1,142 +1,82 @@
+
 /**
- * Signal Log Utilities
- * Helper functions for logging and analyzing signal data
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Utilidades para el registro y análisis de señales
+ * Solo registra datos reales, sin simulación ni manipulación artificial
  */
 
 /**
- * Update signal log with a new entry
+ * Actualiza el registro de señales, manteniendo un tamaño manejable
+ * Solo registra datos reales
  */
-export const updateSignalLog = <T extends object>(
-  logArray: { timestamp: number; value: number; result: T }[],
+export function updateSignalLog(
+  signalLog: {timestamp: number, value: number, result: any}[],
   currentTime: number,
   value: number,
-  result: T,
+  result: any,
   processedSignals: number
-): { timestamp: number; value: number; result: T }[] => {
-  // Add new entry
-  const newLog = [...logArray, { timestamp: currentTime, value, result }];
-  
-  // Keep log at a reasonable size
-  if (newLog.length > 100) {
-    return newLog.slice(-100);
+): {timestamp: number, value: number, result: any}[] {
+  // Solo registrar cada X señales para no sobrecargar la memoria
+  if (processedSignals % 30 !== 0) {
+    return signalLog;
   }
   
-  return newLog;
-};
-
-/**
- * Extract a specific property from signal log entries
- */
-export const extractLogProperty = <T extends object, K extends keyof T>(
-  logArray: { timestamp: number; value: number; result: T }[],
-  property: K
-): { timestamp: number; value: T[K] }[] => {
-  return logArray.map(entry => ({
-    timestamp: entry.timestamp,
-    value: entry.result[property]
-  }));
-};
-
-/**
- * Calculate statistics for a signal log property
- */
-export const calculateLogStatistics = <T>(
-  values: T[]
-): { min: T; max: T; avg: number; count: number } | null => {
-  if (values.length === 0 || typeof values[0] !== 'number') {
-    return null;
-  }
-  
-  const numericValues = values as unknown as number[];
-  const min = Math.min(...numericValues);
-  const max = Math.max(...numericValues);
-  const avg = numericValues.reduce((sum, val) => sum + val, 0) / numericValues.length;
-  
-  return {
-    min: min as unknown as T,
-    max: max as unknown as T,
-    avg,
-    count: values.length
-  };
-};
-
-/**
- * Create a circular buffer for signal data
- */
-export class CircularBuffer<T> {
-  private buffer: T[] = [];
-  private maxSize: number;
-  
-  constructor(size: number) {
-    this.maxSize = size;
-  }
-  
-  /**
-   * Add an item to the buffer
-   */
-  push(item: T): void {
-    this.buffer.push(item);
-    if (this.buffer.length > this.maxSize) {
-      this.buffer.shift();
+  const updatedLog = [
+    ...signalLog,
+    {
+      timestamp: currentTime,
+      value,
+      result: {...result}
     }
-  }
+  ];
   
-  /**
-   * Get all values in the buffer
-   */
-  getValues(): T[] {
-    return [...this.buffer];
-  }
+  // Mantener el log a un tamaño manejable
+  const trimmedLog = updatedLog.length > 40 ? updatedLog.slice(-40) : updatedLog;
   
-  /**
-   * Get the most recent value
-   */
-  getLatest(): T | undefined {
-    if (this.buffer.length === 0) return undefined;
-    return this.buffer[this.buffer.length - 1];
-  }
+  // Logging with real detection information
+  const fingerDetected = result.fingerDetected ? "SI" : "NO";
+  const quality = result.quality || 0;
   
-  /**
-   * Clear the buffer
-   */
-  clear(): void {
-    this.buffer = [];
-  }
+  console.log(`SignalLog: Calidad: ${quality}, Dedo: ${fingerDetected}, Valor: ${Math.round(value)}`);
   
-  /**
-   * Get the current size of the buffer
-   */
-  size(): number {
-    return this.buffer.length;
-  }
-  
-  /**
-   * Check if the buffer is full
-   */
-  isFull(): boolean {
-    return this.buffer.length === this.maxSize;
-  }
+  return trimmedLog;
 }
 
 /**
- * Format a timestamp for logging
+ * Analiza un registro de señales para detectar falsos positivos
+ * Solo utiliza datos reales, sin simulación
+ * @param signalLog Registro de señales a analizar
+ * @returns Información de análisis
  */
-export const formatTimestamp = (timestamp: number): string => {
-  return new Date(timestamp).toISOString();
-};
-
-/**
- * Calculate the time difference between log entries
- */
-export const calculateTimeDifferences = (
-  logArray: { timestamp: number; value: any }[]
-): number[] => {
-  if (logArray.length < 2) return [];
-  
-  const differences: number[] = [];
-  for (let i = 1; i < logArray.length; i++) {
-    differences.push(logArray[i].timestamp - logArray[i-1].timestamp);
+export function analyzeSignalLog(
+  signalLog: {timestamp: number, value: number, result: any}[]
+): { falsePositives: number, stability: number } {
+  if (signalLog.length < 10) {
+    return { falsePositives: 0, stability: 0 };
   }
   
-  return differences;
-};
+  // Detectar cambios en la detección
+  let detectionChanges = 0;
+  let lastDetection = false;
+  
+  signalLog.forEach(entry => {
+    const currentDetection = entry.result.fingerDetected;
+    if (currentDetection !== lastDetection) {
+      detectionChanges++;
+      lastDetection = currentDetection;
+    }
+  });
+  
+  // Calcular estabilidad de la señal con datos reales
+  const values = signalLog.map(entry => entry.value);
+  const sum = values.reduce((a, b) => a + b, 0);
+  const mean = sum / values.length;
+  const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+  const stability = Math.max(0, 100 - Math.min(100, variance));
+  
+  return {
+    falsePositives: detectionChanges / 2,
+    stability
+  };
+}

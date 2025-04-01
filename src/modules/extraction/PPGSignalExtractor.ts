@@ -1,186 +1,191 @@
 
 /**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ * Extractor de señal PPG - especializado en la extracción y limpieza básica
+ * Solo trabaja con datos reales sin simulaciones
  */
 
 /**
- * Extractor de Señal PPG
- * Se enfoca exclusivamente en la extracción de la señal PPG sin procesamiento complejo
+ * Resultado de la extracción de señal PPG
  */
-
-import { EventType, eventBus } from '../events/EventBus';
-import { RawFrame } from '../camera/CameraFrameReader';
-
-export interface PPGSignalData {
-  redChannel: number;
-  greenChannel: number;
-  blueChannel: number;
+export interface PPGSignalExtractionResult {
+  // Información de tiempo
   timestamp: number;
-  rawValues: number[];
-  combinedValue: number;
+  
+  // Valores de señal
+  rawValue: number;
+  filteredValue: number;
+  
+  // Métricas de señal
+  quality: number;
+  fingerDetected: boolean;
+  amplitude: number;
+  baseline: number;
 }
 
+/**
+ * Clase para la extracción especializada de señal PPG
+ */
 export class PPGSignalExtractor {
-  private recentRedValues: number[] = [];
-  private recentGreenValues: number[] = [];
-  private recentBlueValues: number[] = [];
-  private isExtracting: boolean = false;
-  private readonly BUFFER_SIZE = 50;
+  // Almacenamiento de valores
+  private rawValues: number[] = [];
+  private filteredValues: number[] = [];
+  
+  // Línea base y amplitud
+  private baselineValue: number = 0;
+  private signalAmplitude: number = 0;
+  
+  // Factores de filtrado
+  private readonly ALPHA_EMA = 0.2; // Factor de suavizado exponencial
+  private readonly RECENT_WINDOW_SIZE = 30; // Tamaño de ventana para análisis
   
   /**
-   * Iniciar extracción
+   * Procesa un valor PPG crudo y extrae una señal limpia
+   * @param value Valor PPG sin procesar
+   * @returns Resultado de la extracción con señal procesada
    */
-  startExtraction(): void {
-    if (this.isExtracting) return;
+  public processValue(value: number): PPGSignalExtractionResult {
+    const now = Date.now();
     
-    this.isExtracting = true;
-    this.reset();
-    
-    // Suscribirse a frames de cámara
-    eventBus.subscribe(EventType.CAMERA_FRAME, this.processFrame.bind(this));
-    console.log('Extracción de señal PPG iniciada');
-  }
-  
-  /**
-   * Detener extracción
-   */
-  stopExtraction(): void {
-    this.isExtracting = false;
-    this.reset();
-    console.log('Extracción de señal PPG detenida');
-  }
-  
-  /**
-   * Reiniciar buffers y estados
-   */
-  reset(): void {
-    this.recentRedValues = [];
-    this.recentGreenValues = [];
-    this.recentBlueValues = [];
-  }
-  
-  /**
-   * Procesar un frame para extraer señal PPG
-   */
-  private processFrame(frame: RawFrame): void {
-    if (!this.isExtracting) return;
-    
-    try {
-      // Extraer valores RGB
-      const { red, green, blue } = this.extractRGBValues(frame.imageData);
-      
-      // Añadir a buffers
-      this.recentRedValues.push(red);
-      this.recentGreenValues.push(green);
-      this.recentBlueValues.push(blue);
-      
-      // Mantener tamaño de buffer
-      if (this.recentRedValues.length > this.BUFFER_SIZE) {
-        this.recentRedValues.shift();
-        this.recentGreenValues.shift();
-        this.recentBlueValues.shift();
-      }
-      
-      // Calcular valor combinado (principalmente para visualización)
-      // En PPG, el canal rojo es el más importante, pero consideramos todos
-      const combinedValue = (red * 0.7) + (green * 0.2) + (blue * 0.1);
-      
-      // Crear datos de señal PPG
-      const ppgData: PPGSignalData = {
-        redChannel: red,
-        greenChannel: green,
-        blueChannel: blue,
-        timestamp: frame.timestamp,
-        rawValues: [...this.recentRedValues], // Para análisis de tendencia
-        combinedValue
-      };
-      
-      // Publicar datos para que otros módulos los procesen
-      eventBus.publish(EventType.PPG_SIGNAL_EXTRACTED, ppgData);
-      
-      // También publicar señal combinada
-      eventBus.publish(EventType.SIGNAL_EXTRACTED, {
-        value: combinedValue,
-        timestamp: frame.timestamp,
-        type: 'combined'
-      });
-      
-    } catch (error) {
-      console.error('Error en extracción de señal PPG:', error);
-    }
-  }
-  
-  /**
-   * Extraer valores RGB promedio
-   */
-  private extractRGBValues(imageData: ImageData): {
-    red: number;
-    green: number;
-    blue: number;
-  } {
-    const data = imageData.data;
-    let redSum = 0;
-    let greenSum = 0;
-    let blueSum = 0;
-    let count = 0;
-    
-    // Extraer del centro de la imagen (30%)
-    const startX = Math.floor(imageData.width * 0.35);
-    const endX = Math.floor(imageData.width * 0.65);
-    const startY = Math.floor(imageData.height * 0.35);
-    const endY = Math.floor(imageData.height * 0.65);
-    
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i];       // Canal rojo
-        greenSum += data[i + 1]; // Canal verde
-        blueSum += data[i + 2];  // Canal azul
-        count++;
-      }
+    // Almacenar valor crudo
+    this.rawValues.push(value);
+    if (this.rawValues.length > this.RECENT_WINDOW_SIZE * 2) {
+      this.rawValues.shift();
     }
     
-    // Normalizar a 0-1
-    const avgRed = count > 0 ? (redSum / count) / 255 : 0;
-    const avgGreen = count > 0 ? (greenSum / count) / 255 : 0;
-    const avgBlue = count > 0 ? (blueSum / count) / 255 : 0;
+    // Aplicar filtrado básico (EMA - Exponential Moving Average)
+    const filteredValue = this.applyBasicFiltering(value);
+    
+    // Almacenar valor filtrado
+    this.filteredValues.push(filteredValue);
+    if (this.filteredValues.length > this.RECENT_WINDOW_SIZE * 2) {
+      this.filteredValues.shift();
+    }
+    
+    // Actualizar línea base y amplitud
+    this.updateBaselineAndAmplitude();
+    
+    // Calcular calidad de señal y detección de dedo
+    const quality = this.calculateSignalQuality();
+    const fingerDetected = this.isFingerDetected();
     
     return {
-      red: avgRed,
-      green: avgGreen,
-      blue: avgBlue
+      timestamp: now,
+      rawValue: value,
+      filteredValue,
+      quality,
+      fingerDetected,
+      amplitude: this.signalAmplitude,
+      baseline: this.baselineValue
     };
   }
   
   /**
-   * Obtener datos actuales
+   * Aplica filtrado básico al valor crudo
    */
-  getCurrentData(): {
-    redValues: number[];
-    greenValues: number[];
-    blueValues: number[];
-  } {
-    return {
-      redValues: [...this.recentRedValues],
-      greenValues: [...this.recentGreenValues],
-      blueValues: [...this.recentBlueValues]
-    };
+  private applyBasicFiltering(value: number): number {
+    // Si no hay valores previos, devolver valor actual
+    if (this.filteredValues.length === 0) {
+      return value;
+    }
+    
+    // Filtro EMA (Exponential Moving Average)
+    const lastFilteredValue = this.filteredValues[this.filteredValues.length - 1];
+    return this.ALPHA_EMA * value + (1 - this.ALPHA_EMA) * lastFilteredValue;
+  }
+  
+  /**
+   * Actualiza la línea base y amplitud de la señal
+   */
+  private updateBaselineAndAmplitude(): void {
+    if (this.filteredValues.length < 5) return;
+    
+    // Usar solo los valores recientes
+    const recentValues = this.filteredValues.slice(-this.RECENT_WINDOW_SIZE);
+    
+    // Calcular min y max para amplitud
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    
+    // Actualizar amplitud
+    this.signalAmplitude = max - min;
+    
+    // Línea base como promedio
+    this.baselineValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+  }
+  
+  /**
+   * Calcula la calidad de la señal (0-100)
+   */
+  private calculateSignalQuality(): number {
+    if (this.filteredValues.length < 10) return 0;
+    
+    // Ventana reciente para análisis
+    const recentValues = this.filteredValues.slice(-this.RECENT_WINDOW_SIZE);
+    const recentRawValues = this.rawValues.slice(-this.RECENT_WINDOW_SIZE);
+    
+    // Factores de calidad
+    
+    // 1. Amplitud de señal (peso: 40%)
+    const amplitudeScore = Math.min(1, this.signalAmplitude / 0.4);
+    
+    // 2. Relación señal-ruido (peso: 40%)
+    // Calculamos la variabilidad entre crudo y filtrado
+    let noiseSum = 0;
+    for (let i = 0; i < recentValues.length && i < recentRawValues.length; i++) {
+      noiseSum += Math.abs(recentValues[i] - recentRawValues[i]);
+    }
+    const avgNoise = noiseSum / recentValues.length;
+    const snrScore = Math.max(0, 1 - (avgNoise / (this.signalAmplitude + 0.001)));
+    
+    // 3. Estabilidad de la línea base (peso: 20%)
+    // Desviación estándar de la señal normalizada
+    const normalizedValues = recentValues.map(v => (v - this.baselineValue) / (this.signalAmplitude + 0.001));
+    const mean = normalizedValues.reduce((sum, val) => sum + val, 0) / normalizedValues.length;
+    const variance = normalizedValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / normalizedValues.length;
+    const stdDev = Math.sqrt(variance);
+    const stabilityScore = Math.max(0, 1 - stdDev);
+    
+    // Calidad ponderada total (0-1)
+    const weightedQuality = 
+      0.4 * amplitudeScore + 
+      0.4 * snrScore + 
+      0.2 * stabilityScore;
+    
+    // Convertir a escala 0-100
+    return Math.round(weightedQuality * 100);
+  }
+  
+  /**
+   * Determina si un dedo está detectado basado en la calidad de la señal
+   */
+  private isFingerDetected(): boolean {
+    // Criterios para la detección del dedo:
+    // 1. Amplitud mínima
+    const hasMinimumAmplitude = this.signalAmplitude > 0.05;
+    
+    // 2. Calidad mínima
+    const quality = this.calculateSignalQuality();
+    const hasMinimumQuality = quality > 20;
+    
+    return hasMinimumAmplitude && hasMinimumQuality;
+  }
+  
+  /**
+   * Reinicia el extractor
+   */
+  public reset(): void {
+    this.rawValues = [];
+    this.filteredValues = [];
+    this.baselineValue = 0;
+    this.signalAmplitude = 0;
   }
 }
 
 /**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
+ * Crea una instancia de extractor de señal PPG
  */
-
-// Exportar instancia singleton
-export const ppgSignalExtractor = new PPGSignalExtractor();
+export const createPPGSignalExtractor = (): PPGSignalExtractor => {
+  return new PPGSignalExtractor();
+};

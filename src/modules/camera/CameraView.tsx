@@ -1,41 +1,89 @@
 
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
-
-import React, { useRef, useEffect, useState } from 'react';
-import { Fingerprint } from 'lucide-react';
-import { eventBus, EventType } from '../events/EventBus';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { configureCameraForDevice, processFramesControlled } from './CameraFrameCapture';
 
 interface CameraViewProps {
-  onStreamReady: (stream: MediaStream) => void;
+  onStreamReady?: (stream: MediaStream) => void;
+  onFrameProcessed?: (imageData: ImageData) => void;
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
-  buttonPosition?: {
-    x?: number;
-    y?: number;
-  };
+  frameRate?: number;
 }
 
 const CameraView: React.FC<CameraViewProps> = ({ 
   onStreamReady, 
+  onFrameProcessed,
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
-  buttonPosition = { x: 0, y: 0 }
+  frameRate = 30
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  
-  /**
-   * Iniciar cámara con configuración óptima para PPG
-   */
+  const [torchEnabled, setTorchEnabled] = useState(false);
+  const [isFocusing, setIsFocusing] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [isIOS, setIsWindows] = useState(false);
+  const retryAttemptsRef = useRef<number>(0);
+  const maxRetryAttempts = 3;
+  const processingCallbackRef = useRef<((imageData: ImageData) => void) | null>(null);
+  const frameProcessorRef = useRef<() => void | null>(null);
+
+  // Actualizar callback de procesamiento cuando cambie
+  useEffect(() => {
+    processingCallbackRef.current = onFrameProcessed || null;
+  }, [onFrameProcessed]);
+
+  // Detectar plataforma
+  useEffect(() => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const androidDetected = /android/i.test(userAgent);
+    const iosDetected = /ipad|iphone|ipod/i.test(userAgent);
+    
+    console.log("Plataforma detectada:", {
+      userAgent,
+      isAndroid: androidDetected,
+      isIOS: iosDetected,
+      isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
+    });
+    
+    setIsAndroid(androidDetected);
+    setIsWindows(iosDetected);
+  }, []);
+
+  const stopCamera = async () => {
+    if (frameProcessorRef.current) {
+      frameProcessorRef.current();
+      frameProcessorRef.current = null;
+    }
+    
+    if (stream) {
+      console.log("Stopping camera stream and turning off torch");
+      stream.getTracks().forEach(track => {
+        try {
+          if (track.kind === 'video' && track.getCapabilities()?.torch) {
+            track.applyConstraints({
+              advanced: [{ torch: false }]
+            }).catch(err => console.error("Error desactivando linterna:", err));
+          }
+          
+          track.stop();
+        } catch (err) {
+          console.error("Error al detener track:", err);
+        }
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      
+      setStream(null);
+      setTorchEnabled(false);
+      retryAttemptsRef.current = 0;
+    }
+  };
+
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -43,173 +91,179 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
 
       const isAndroid = /android/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
-        height: { ideal: 480 }
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       };
 
       if (isAndroid) {
+        console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 25 },
-          resizeMode: 'crop-and-scale'
+          frameRate: { ideal: 30, max: 60 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        });
+      } else if (isIOS) {
+        console.log("Configurando para iOS");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
+      } else {
+        console.log("Configurando para escritorio con máxima resolución");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         });
       }
 
       const constraints: MediaStreamConstraints = {
-        video: baseVideoConstraints
+        video: baseVideoConstraints,
+        audio: false
       };
 
+      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Cámara inicializada correctamente");
+      
       const videoTrack = newStream.getVideoTracks()[0];
 
-      if (videoTrack && isAndroid) {
-        try {
-          const capabilities = videoTrack.getCapabilities();
-          const advancedConstraints: MediaTrackConstraintSet[] = [];
-          
-          if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
-          }
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-
-          if (advancedConstraints.length > 0) {
-            await videoTrack.applyConstraints({
-              advanced: advancedConstraints
-            });
-          }
-
-          if (videoRef.current) {
-            videoRef.current.style.transform = 'translateZ(0)';
-            videoRef.current.style.backfaceVisibility = 'hidden';
-          }
-        } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
-        }
-      }
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
-        if (isAndroid) {
+      if (videoTrack) {
+        // Configurar cámara según dispositivo
+        await configureCameraForDevice(videoTrack, isAndroid, isIOS);
+        
+        // Configurar video
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
           videoRef.current.style.willChange = 'transform';
           videoRef.current.style.transform = 'translateZ(0)';
+          videoRef.current.style.imageRendering = 'crisp-edges';
+          videoRef.current.style.backfaceVisibility = 'hidden';
+          videoRef.current.style.perspective = '1000px';
         }
+
+        setStream(newStream);
+        
+        // Configurar procesamiento de frames si se proporcionó un callback
+        if (processingCallbackRef.current) {
+          const imageCapture = new ImageCapture(videoTrack);
+          
+          // Limpiar procesador anterior si existe
+          if (frameProcessorRef.current) {
+            frameProcessorRef.current();
+          }
+          
+          // Iniciar nuevo procesador de frames
+          frameProcessorRef.current = processFramesControlled(
+            imageCapture,
+            isMonitoring,
+            frameRate,
+            processingCallbackRef.current
+          );
+        }
+        
+        // Notificar que el stream está listo
+        if (onStreamReady) {
+          onStreamReady(newStream);
+        }
+        
+        retryAttemptsRef.current = 0;
       }
-      
-      setStream(newStream);
-      if (onStreamReady) {
-        onStreamReady(newStream);
-      }
-      
-      // Notificar que la cámara está lista
-      eventBus.publish(EventType.CAMERA_READY, { stream: newStream });
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
-      eventBus.publish(EventType.CAMERA_ERROR, { error: err });
-    }
-  };
-
-  /**
-   * Detener todas las pistas de la cámara y limpiar
-   */
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      
+      retryAttemptsRef.current++;
+      if (retryAttemptsRef.current <= maxRetryAttempts) {
+        console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
+        setTimeout(startCamera, 1000);
+      } else {
+        console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
-      setStream(null);
     }
   };
 
-  // Iniciar/detener cámara según prop isMonitoring
+  const refreshAutoFocus = useCallback(async () => {
+    if (stream && !isFocusing && !isAndroid) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.focusMode) {
+        try {
+          setIsFocusing(true);
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'manual' }]
+          });
+          await new Promise(resolve => setTimeout(resolve, 100));
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'continuous' }]
+          });
+          console.log("Auto-enfoque refrescado con éxito");
+        } catch (err) {
+          console.error("Error al refrescar auto-enfoque:", err);
+        } finally {
+          setIsFocusing(false);
+        }
+      }
+    }
+  }, [stream, isFocusing, isAndroid]);
+
+  // Manejar inicio/detención de cámara según estado de monitoreo
   useEffect(() => {
     if (isMonitoring && !stream) {
+      console.log("Starting camera because isMonitoring=true");
       startCamera();
     } else if (!isMonitoring && stream) {
+      console.log("Stopping camera because isMonitoring=false");
       stopCamera();
     }
+    
     return () => {
+      console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
   }, [isMonitoring, stream]);
 
-  // Calcular estilos de posición del botón
-  const getFingerButtonStyle = () => {
-    const defaultStyle = "absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center";
-    
-    if (!buttonPosition || (buttonPosition.x === undefined && buttonPosition.y === undefined)) {
-      return defaultStyle;
+  // Manejar linterna y enfoque cuando se detecta dedo
+  useEffect(() => {
+    if (stream && isFingerDetected && !torchEnabled) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna después de detectar dedo");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => {
+          setTorchEnabled(true);
+        }).catch(err => {
+          console.error("Error activando linterna:", err);
+        });
+      }
     }
     
-    let customStyle = "absolute z-20 flex flex-col items-center";
-    
-    if (buttonPosition.x !== undefined) {
-      customStyle += ` left-[${buttonPosition.x}px]`;
-    } else {
-      customStyle += " left-1/2 transform -translate-x-1/2";
+    // Refrescar enfoque periódicamente si se detectó dedo
+    if (isFingerDetected && !isAndroid) {
+      const focusInterval = setInterval(refreshAutoFocus, 5000);
+      return () => clearInterval(focusInterval);
     }
-    
-    if (buttonPosition.y !== undefined) {
-      customStyle += ` bottom-[${buttonPosition.y}px]`;
-    } else {
-      customStyle += " bottom-24";
-    }
-    
-    return customStyle;
-  };
+  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
   return (
-    <>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
-        style={{
-          willChange: 'transform',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden'
-        }}
-      />
-      {isMonitoring && (
-        <div className={getFingerButtonStyle()}>
-          <Fingerprint
-            size={48}
-            className={`transition-colors duration-300 ${
-              !isFingerDetected ? 'text-gray-400' :
-              signalQuality > 75 ? 'text-green-500' :
-              signalQuality > 50 ? 'text-yellow-500' :
-              'text-red-500'
-            }`}
-          />
-          <span className={`text-xs mt-2 transition-colors duration-300 ${
-            isFingerDetected ? 'text-green-500' : 'text-gray-400'
-          }`}>
-            {isFingerDetected ? "dedo detectado" : "ubique su dedo en el lente"}
-          </span>
-        </div>
-      )}
-    </>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className="absolute top-0 left-0 min-w-full min-h-full w-auto h-auto z-0 object-cover"
+      style={{
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        imageRendering: 'crisp-edges'
+      }}
+    />
   );
 };
-
-/**
- * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
- * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
- * 
- * YO, AI LOVABLE, TENGO TERMINANTEMENTE PROHIBIDO, APARTE DE IMPLEMENTAR FUNCIONES O MECANISMOS DE SIMULACION, 
- * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
- * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
- */
 
 export default CameraView;

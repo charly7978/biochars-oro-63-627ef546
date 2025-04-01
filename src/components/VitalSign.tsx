@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -227,7 +228,7 @@ const VitalSign = ({
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200">
+        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full">
           <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
             {label}
           </div>
