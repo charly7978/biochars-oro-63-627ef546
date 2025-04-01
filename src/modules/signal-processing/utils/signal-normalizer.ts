@@ -2,61 +2,57 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Utilidades para normalización de señal
+ * Funciones para normalización y amplificación de señal PPG
+ * VERSIÓN MEJORADA: Mejor manejo de señales débiles
  */
 
 /**
- * Normaliza una señal relativa a su buffer
+ * Amplifica un valor de señal PPG
+ * VERSIÓN MEJORADA: Amplificación no lineal para señales débiles
  */
-export function normalizeSignal(value: number, buffer: number[]): number {
-  if (buffer.length < 3) return value;
+export function amplifySignal(value: number, factor: number = 1.5): number {
+  // Para señales muy débiles, aplicar amplificación no lineal adicional
+  if (Math.abs(value) < 0.05) {
+    // Aplicar factor adicional para señales débiles
+    const weakSignalBoost = 1.5; // 50% extra para señales débiles
+    const boostedFactor = factor * weakSignalBoost;
+    
+    console.log("Signal-normalizer: SEÑAL DÉBIL - aplicando amplificación extra", {
+      valorOriginal: value,
+      factorNormal: factor,
+      factorAumentado: boostedFactor,
+      resultadoFinal: value * boostedFactor
+    });
+    
+    return value * boostedFactor;
+  }
   
-  const min = Math.min(...buffer);
-  const max = Math.max(...buffer);
-  const range = max - min;
-  
-  if (range === 0) return 0;
-  
-  return (value - min) / range;
-}
-
-/**
- * Amplifica una señal por un factor
- */
-export function amplifySignal(value: number, factor: number = 1.2): number {
+  // Amplificación normal para señales regulares
   return value * factor;
 }
 
 /**
- * Aplica un filtro adaptativo según la varianza
+ * Normaliza un valor de señal PPG en base a los valores recientes
+ * VERSIÓN MEJORADA: Normalización adaptativa para señales débiles
  */
-export function applyAdaptiveFilter(value: number, buffer: number[], strength: number = 0.25): number {
-  if (buffer.length < 3) return value;
+export function normalizeSignal(value: number, recentValues: number[]): number {
+  if (recentValues.length < 3) return value;
   
-  // Calcular variabilidad reciente
-  const variance = calculateVariance(buffer);
+  // Calcular estadísticas recientes
+  const min = Math.min(...recentValues);
+  const max = Math.max(...recentValues);
+  const range = max - min;
   
-  // Ajustar fuerza de filtrado según varianza
-  const adaptiveAlpha = adjustFilterStrength(variance, strength);
+  // Si el rango es pequeño, la señal es débil o estable
+  if (range < 0.05) {
+    // Aplicar normalización de umbral bajo 
+    return value * 2.0; // Aumentar el valor para señales débiles
+  }
   
-  // Aplicar filtro exponencial con alfa adaptativo
-  const lastValue = buffer[buffer.length - 1];
+  // Normalización estándar para señales normales
+  if (range <= 0) return 0; // Evitar división por cero
   
-  return adaptiveAlpha * value + (1 - adaptiveAlpha) * lastValue;
-}
-
-/**
- * Ajusta la fuerza del filtrado según la varianza
- */
-function adjustFilterStrength(variance: number, baseStrength: number): number {
-  // Si la varianza es alta (señal ruidosa), filtrar más fuerte
-  if (variance > 0.05) return Math.min(0.15, baseStrength / 2);
-  
-  // Si la varianza es baja (señal estable), filtrar más suave
-  if (variance < 0.01) return Math.min(0.4, baseStrength * 1.5);
-  
-  // Caso intermedio
-  return baseStrength;
+  return (value - min) / range;
 }
 
 /**
@@ -67,5 +63,5 @@ export function calculateVariance(values: number[]): number {
   
   const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
   const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-  return squaredDiffs.reduce((sum, diff) => sum + diff, 0) / values.length;
+  return squaredDiffs.reduce((sum, squared) => sum + squared, 0) / values.length;
 }

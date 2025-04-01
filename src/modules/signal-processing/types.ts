@@ -29,6 +29,33 @@ export interface ProcessedPPGSignal {
 }
 
 /**
+ * Señal de latido cardíaco procesada
+ */
+export interface ProcessedHeartbeatSignal {
+  // Información temporal
+  timestamp: number;
+  
+  // Valores de señal
+  rawValue: number;
+  filteredValue: number;
+  amplifiedValue: number;
+  
+  // Análisis de latido
+  isPeak: boolean;
+  peakConfidence: number;
+  instantaneousBPM: number;
+  heartRate: number;
+  
+  // Métricas de calidad
+  quality: number;
+  rrIntervals: number[];
+  
+  // Estado de arritmia
+  isArrhythmia: boolean;
+  arrhythmiaCount: number;
+}
+
+/**
  * Error durante el procesamiento
  */
 export interface ProcessingError {
@@ -36,6 +63,15 @@ export interface ProcessingError {
   message: string;
   timestamp: number;
   name?: string;
+}
+
+/**
+ * Interfaz para procesadores de señal
+ */
+export interface SignalProcessor<T> {
+  processSignal(value: number): T;
+  configure(options: SignalProcessingOptions): void;
+  reset(): void;
 }
 
 /**
@@ -58,8 +94,14 @@ export interface SignalProcessingOptions {
   minPeakDistance?: number;
   fingerDetectionSensitivity?: number;
   
+  // Control adaptativo
+  useAdaptiveControl?: boolean;
+  qualityEnhancedByPrediction?: boolean;
+  adaptationRate?: number;
+  predictionHorizon?: number;
+  
   // Callbacks
-  onSignalReady?: (signal: ProcessedPPGSignal) => void;
+  onSignalReady?: (signal: any) => void;
   onError?: (error: Error) => void;
 }
 
@@ -71,4 +113,11 @@ export interface SignalQualityMetrics {
   strength: number;
   stability: number;
   noiseLevel: number;
+}
+
+/**
+ * Opciones para el procesador unificado
+ */
+export interface UnifiedProcessorOptions extends SignalProcessingOptions {
+  // Opciones adicionales específicas
 }

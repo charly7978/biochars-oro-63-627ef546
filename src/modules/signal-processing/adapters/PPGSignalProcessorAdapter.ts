@@ -19,29 +19,46 @@ export class PPGSignalProcessorAdapter {
     this.unifiedProcessor = new UnifiedSignalProcessor();
     console.log("PPGSignalProcessorAdapter: Adaptador creado con umbrales mejorados");
     
-    // Configuración inicial con umbrales más estrictos
+    // Configuración inicial con umbrales más sensibles para señales débiles
     this.configure({
-      amplificationFactor: 1.5, // Mayor amplificación
-      qualityThreshold: 50,     // Umbral de calidad más alto
-      fingerDetectionSensitivity: 0.8, // Mayor sensibilidad para dedo
-      peakDetectionThreshold: 0.3      // Mayor umbral para picos
+      amplificationFactor: 2.0,         // Mucho mayor amplificación
+      qualityThreshold: 30,             // Umbral de calidad más permisivo
+      fingerDetectionSensitivity: 0.5,  // Mayor sensibilidad para dedo
+      peakDetectionThreshold: 0.12      // Umbral más bajo para detectar picos
     });
   }
   
   /**
    * Procesa una señal PPG y devuelve un resultado compatible
-   * con el formato original
+   * con el formato original. Ahora con diagnóstico mejorado
    */
   public processSignal(value: number): ProcessedPPGSignal {
     // Procesar con el nuevo procesador unificado
     const result = this.unifiedProcessor.processSignal(value);
     
-    // Validar la señal - más estricto
-    if (Math.abs(value) < 0.2) {
+    // Validar la señal - más sensible
+    if (Math.abs(value) < 0.05) {
       console.log("PPGSignalProcessorAdapter: Señal muy débil detectada", {
         valor: value,
-        umbralMínimo: 0.2,
+        umbralMínimo: 0.05,
         esDemasiadoDébil: true
+      });
+    }
+    
+    // Diagnóstico de picos
+    if (result.isPeak) {
+      console.log("PPGSignalProcessorAdapter: PICO DETECTADO", {
+        confianza: result.peakConfidence,
+        bpmInstantáneo: result.instantaneousBPM,
+        calidad: result.quality
+      });
+    } else if (result.fingerDetected && result.quality > 30) {
+      // Si hay dedo pero no detecta picos, puede ser señal anémica
+      console.log("PPGSignalProcessorAdapter: Dedo detectado PERO NO HAY PICOS", {
+        calidad: result.quality,
+        fuerzaSeñal: result.signalStrength,
+        valorFiltrado: result.filteredValue,
+        valorAmplificado: result.amplifiedValue
       });
     }
     
@@ -65,26 +82,26 @@ export class PPGSignalProcessorAdapter {
   }
   
   /**
-   * Configura el procesador con umbrales más estrictos por defecto
+   * Configura el procesador con umbrales más sensibles por defecto
    */
   public configure(options: SignalProcessingOptions): void {
-    // Aplicar configuración con valores mejorados por defecto
+    // Aplicar configuración con valores más sensibles por defecto
     this.unifiedProcessor.configure({
-      amplificationFactor: options.amplificationFactor || 1.5,
-      qualityThreshold: options.qualityThreshold || 50,
-      fingerDetectionSensitivity: options.fingerDetectionSensitivity || 0.8,
-      peakDetectionThreshold: options.peakDetectionThreshold || 0.3,
+      amplificationFactor: options.amplificationFactor || 2.0,
+      qualityThreshold: options.qualityThreshold || 30,
+      fingerDetectionSensitivity: options.fingerDetectionSensitivity || 0.5,
+      peakDetectionThreshold: options.peakDetectionThreshold || 0.12,
       // Usar un valor específico para minPeakDistance
-      minPeakDistance: 300, // 300ms mínimo entre picos (no permitir frecuencias irrealmente altas)
+      minPeakDistance: 250, // 250ms mínimo entre picos (permite frecuencias más altas)
       // Otras opciones
       bufferSize: options.bufferSize,
       sampleRate: options.sampleRate,
-      filterStrength: options.filterStrength,
+      filterStrength: options.filterStrength || 0.4, // Mayor fortaleza de filtro
       onSignalReady: options.onSignalReady,
       onError: options.onError
     });
     
-    console.log("PPGSignalProcessorAdapter: Procesador configurado con umbrales mejorados");
+    console.log("PPGSignalProcessorAdapter: Procesador configurado con umbrales más sensibles");
   }
   
   /**

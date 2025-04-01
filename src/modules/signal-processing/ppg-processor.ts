@@ -6,7 +6,7 @@
  * Se encarga del procesamiento especializado de señales PPG
  */
 import { ProcessedPPGSignal, SignalProcessor, SignalProcessingOptions } from './types';
-import { detectFingerPresence } from './utils/finger-detector';
+import { detectFingerPresence, evaluateFingerDetectionConfidence } from './utils/finger-detector';
 import { evaluateSignalQuality } from './utils/quality-detector';
 import { normalizeSignal, amplifySignal } from './utils/signal-normalizer';
 
@@ -21,11 +21,18 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
   // Buffer de valores filtrados
   private filteredBuffer: number[] = [];
   
+  // Variables de estado para detección de picos
+  private peakBuffer: number[] = [];
+  private lastPeakTime: number | null = null;
+  private rrIntervals: number[] = [];
+  private arrhythmiaCounter: number = 0;
+  
   // Configuración del procesador
-  private amplificationFactor: number = 1.2;
+  private amplificationFactor: number = 1.5; // AUMENTADO para captar señales más débiles
   private filterStrength: number = 0.25;
   private qualityThreshold: number = 30;
   private fingerDetectionSensitivity: number = 0.6;
+  private peakDetectionThreshold: number = 0.15; // REDUCIDO para mejor sensibilidad
   
   /**
    * Procesa una señal PPG y aplica algoritmos avanzados
@@ -51,8 +58,14 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
     // Normalizar señal
     const normalizedValue = normalizeSignal(filteredValue, this.filteredBuffer);
     
-    // Amplificar señal
+    // Amplificar señal - AUMENTO SIGNIFICATIVO
     const amplifiedValue = amplifySignal(normalizedValue, this.amplificationFactor);
+    
+    // Almacenar amplificada para detección de picos
+    this.peakBuffer.push(amplifiedValue);
+    if (this.peakBuffer.length > 5) {
+      this.peakBuffer.shift();
+    }
     
     // Detección de dedo basada en patrones de señal
     const fingerDetected = detectFingerPresence(
@@ -71,16 +84,145 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
     // Calcular fuerza de señal
     const signalStrength = this.calculateSignalStrength();
     
+    // Detección de pico cardíaco
+    const isPeak = this.detectPeak(amplifiedValue);
+    const peakConfidence = isPeak ? Math.min(quality / 100, 0.9) : 0;
+    
+    // Cálculo de BPM e intervalo RR
+    let instantaneousBPM = 0;
+    let rrInterval: number | null = null;
+    
+    if (isPeak) {
+      const now = Date.now();
+      
+      if (this.lastPeakTime !== null) {
+        // Calcular intervalo RR en ms
+        rrInterval = now - this.lastPeakTime;
+        
+        // Calcular BPM instantáneo
+        if (rrInterval > 0) {
+          instantaneousBPM = Math.round(60000 / rrInterval);
+          
+          // Validar BPM en rango fisiológico
+          if (instantaneousBPM >= 40 && instantaneousBPM <= 200) {
+            // Guardar intervalo para análisis
+            this.rrIntervals.push(rrInterval);
+            if (this.rrIntervals.length > 10) {
+              this.rrIntervals.shift();
+            }
+            
+            // Detectar posible arritmia
+            if (this.rrIntervals.length >= 3) {
+              if (this.detectArrhythmia()) {
+                this.arrhythmiaCounter++;
+              }
+            }
+          } else {
+            console.log("PPGProcessor: BPM fuera de rango fisiológico:", instantaneousBPM);
+          }
+        }
+      }
+      
+      this.lastPeakTime = now;
+    }
+    
+    // Calcular variabilidad cardíaca si hay suficientes datos
+    let heartRateVariability: number | undefined;
+    if (this.rrIntervals.length >= 3) {
+      heartRateVariability = this.calculateHRV();
+    }
+    
+    // Loggear diagnóstico si la calidad es buena pero no detecta picos
+    if (quality > 60 && fingerDetected && signalStrength > 20 && !isPeak) {
+      console.log("ALERTA PPG: Calidad buena pero no se detectan picos", {
+        calidad: quality,
+        dedoDetectado: fingerDetected, 
+        fuerzaSeñal: signalStrength,
+        valorAmplificado: amplifiedValue,
+        umbralPico: this.peakDetectionThreshold
+      });
+    }
+    
     return {
       timestamp,
       rawValue: value,
       filteredValue,
       normalizedValue,
       amplifiedValue,
+      isPeak,
+      peakConfidence,
+      instantaneousBPM,
+      rrInterval,
       quality,
       fingerDetected,
-      signalStrength
+      signalStrength,
+      arrhythmiaCount: this.arrhythmiaCounter,
+      heartRateVariability
     };
+  }
+  
+  /**
+   * Detecta un pico cardíaco en la señal
+   */
+  private detectPeak(value: number): boolean {
+    if (this.peakBuffer.length < 3) return false;
+    
+    // Algoritmo simple: detectar si el valor actual es mayor que los 2 anteriores
+    // y supera el umbral mínimo
+    const current = this.peakBuffer[this.peakBuffer.length - 1];
+    const prev1 = this.peakBuffer[this.peakBuffer.length - 2];
+    const prev2 = this.peakBuffer[this.peakBuffer.length - 3];
+    
+    // Comprobar si hay un pico (más sensible ahora)
+    const isPeak = current > this.peakDetectionThreshold && 
+                   current > prev1 && 
+                   prev1 > prev2 &&
+                   // Prevenir múltiples picos muy cercanos
+                   (this.lastPeakTime === null || 
+                    Date.now() - this.lastPeakTime > 300);
+    
+    if (isPeak) {
+      console.log("PPGProcessor: Pico detectado", { 
+        valor: current, 
+        umbral: this.peakDetectionThreshold 
+      });
+    }
+    
+    return isPeak;
+  }
+  
+  /**
+   * Detecta posible arritmia basada en intervalos RR
+   */
+  private detectArrhythmia(): boolean {
+    if (this.rrIntervals.length < 3) return false;
+    
+    // Obtener últimos intervalos
+    const intervals = this.rrIntervals.slice(-3);
+    
+    // Calcular promedio y variabilidad
+    const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const variations = intervals.map(interval => Math.abs(interval - avg) / avg);
+    
+    // Si hay variabilidad alta, posible arritmia
+    return Math.max(...variations) > 0.2;
+  }
+  
+  /**
+   * Calcular métrica HRV (RMSSD)
+   */
+  private calculateHRV(): number {
+    if (this.rrIntervals.length < 3) return 0;
+    
+    // Calcular diferencias sucesivas
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < this.rrIntervals.length; i++) {
+      const diff = this.rrIntervals[i] - this.rrIntervals[i - 1];
+      sumSquaredDiff += diff * diff;
+    }
+    
+    // Raíz cuadrada del promedio
+    return Math.sqrt(sumSquaredDiff / (this.rrIntervals.length - 1));
   }
   
   /**
@@ -112,7 +254,7 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
     if (variance > 0.05) return Math.min(0.15, this.filterStrength / 2);
     
     // Si la varianza es baja (señal estable), filtrar más suave
-    if (variance < 0.01) return Math.min(0.4, this.filterStrength * 1.5);
+    if (variance < 0.01) return Math.min(0.5, this.filterStrength * 2.0); // Aumentado para ser más sensible
     
     // Caso intermedio
     return this.filterStrength;
@@ -140,8 +282,8 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
     const max = Math.max(...recentFiltered);
     const amplitude = max - min;
     
-    // Normalizar a un rango 0-100
-    return Math.min(100, Math.max(0, amplitude * 100));
+    // Normalizar a un rango 0-100 - MÁS SENSIBLE A CAMBIOS PEQUEÑOS
+    return Math.min(100, Math.max(0, amplitude * 150)); // Aumentado de 100 a 150
   }
   
   /**
@@ -163,6 +305,18 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
     if (options.fingerDetectionSensitivity !== undefined) {
       this.fingerDetectionSensitivity = options.fingerDetectionSensitivity;
     }
+    
+    if (options.peakDetectionThreshold !== undefined) {
+      this.peakDetectionThreshold = options.peakDetectionThreshold;
+    }
+    
+    console.log("PPGProcessor: Configuración actualizada", {
+      amplificación: this.amplificationFactor,
+      filtroPotencia: this.filterStrength,
+      umbralCalidad: this.qualityThreshold,
+      sensibilidadDedo: this.fingerDetectionSensitivity,
+      umbralPico: this.peakDetectionThreshold
+    });
   }
   
   /**
@@ -171,6 +325,10 @@ export class PPGSignalProcessor implements SignalProcessor<ProcessedPPGSignal> {
   public reset(): void {
     this.valuesBuffer = [];
     this.filteredBuffer = [];
+    this.peakBuffer = [];
+    this.lastPeakTime = null;
+    this.rrIntervals = [];
+    console.log("PPGProcessor: Estado reseteado completamente");
   }
 }
 
