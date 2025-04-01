@@ -16,13 +16,15 @@ export class SignalFilter {
    * Apply Moving Average filter to real values
    */
   public applySMAFilter(value: number, values: number[]): number {
+    // Ensure values is an array
+    const safeValues = Array.isArray(values) ? values : [];
     const windowSize = this.SMA_WINDOW_SIZE;
     
-    if (values.length < windowSize) {
+    if (safeValues.length < windowSize) {
       return value;
     }
     
-    const recentValues = values.slice(-windowSize);
+    const recentValues = safeValues.slice(-windowSize);
     const sum = recentValues.reduce((acc, val) => acc + val, 0);
     return (sum + value) / (windowSize + 1);
   }
@@ -31,11 +33,14 @@ export class SignalFilter {
    * Apply Exponential Moving Average filter to real data
    */
   public applyEMAFilter(value: number, values: number[], alpha: number = this.LOW_PASS_ALPHA): number {
-    if (values.length === 0) {
+    // Ensure values is an array
+    const safeValues = Array.isArray(values) ? values : [];
+    
+    if (safeValues.length === 0) {
       return value;
     }
     
-    const lastValue = values[values.length - 1];
+    const lastValue = safeValues[safeValues.length - 1];
     return alpha * value + (1 - alpha) * lastValue;
   }
   
@@ -43,11 +48,14 @@ export class SignalFilter {
    * Apply median filter to real data
    */
   public applyMedianFilter(value: number, values: number[]): number {
-    if (values.length < this.MEDIAN_WINDOW_SIZE) {
+    // Ensure values is an array
+    const safeValues = Array.isArray(values) ? values : [];
+    
+    if (safeValues.length < this.MEDIAN_WINDOW_SIZE) {
       return value;
     }
     
-    const valuesForMedian = [...values.slice(-this.MEDIAN_WINDOW_SIZE), value];
+    const valuesForMedian = [...safeValues.slice(-this.MEDIAN_WINDOW_SIZE), value];
     valuesForMedian.sort((a, b) => a - b);
     
     return valuesForMedian[Math.floor(valuesForMedian.length / 2)];

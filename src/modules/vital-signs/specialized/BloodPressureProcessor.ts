@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -8,7 +9,10 @@
 
 import { BaseVitalSignProcessor } from './BaseVitalSignProcessor';
 import { VitalSignType, ChannelFeedback } from '../../../types/signal';
-import { calculateStandardDeviation, applySMAFilter } from '../utils';
+import { calculateStandardDeviation } from '../utils';
+
+// Import the fixed applySMAFilter function
+import { applySMAFilter } from '../utils/filter-utils';
 
 /**
  * Result interface for blood pressure measurements
@@ -40,6 +44,9 @@ export class BloodPressureProcessor extends BaseVitalSignProcessor<BloodPressure
   private diastolicBuffer: number[] = [];
   private readonly BUFFER_SIZE = 12; // Increased for better stability
   
+  // Filter buffer for SMA
+  private filterBuffer: number[] = [];
+  
   // Improved factors for calculation
   private readonly SYSTOLIC_WEIGHT = 0.6;
   private readonly DIASTOLIC_WEIGHT = 0.4;
@@ -63,8 +70,10 @@ export class BloodPressureProcessor extends BaseVitalSignProcessor<BloodPressure
       };
     }
     
-    // Apply smoothing filter to stabilize input signal
-    const smoothedValue = this.applySmoothingFilter(value);
+    // Apply smoothing filter to stabilize input signal - fixed to handle filtering correctly
+    const result = applySMAFilter(value, this.filterBuffer, 5);
+    const smoothedValue = result.filteredValue;
+    this.filterBuffer = result.updatedBuffer;
     
     // Calculate pulse characteristics from buffer
     const pulseAmplitude = this.calculatePulseAmplitude();
