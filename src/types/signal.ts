@@ -1,3 +1,4 @@
+
 /**
  * Interface for PPG data point with timestamp
  */
@@ -59,7 +60,7 @@ export interface SignalDiagnosticInfo {
     snr?: number;                      // Signal-to-noise ratio if available
   };
   fingerDetectionConfidence?: number;   // Confidence level in finger detection
-  timestamp?: number;                   // Added timestamp field for diagnostics
+  timestamp?: number;                   // Added timestamp field for diagnostics (now optional but exists)
 }
 
 /**

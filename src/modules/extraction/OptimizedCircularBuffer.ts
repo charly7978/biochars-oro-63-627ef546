@@ -150,17 +150,19 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     
     // Transferir los datos al nuevo buffer
     points.forEach((point: any) => {
+      if (!point) return;
+      
       // Ensure point has all required properties
-      const enhancedPoint = { ...point } as TimestampedPPGData & Partial<U>;
+      const enhancedPoint = { ...point } as U;
       
       // Garantizar que tanto time como timestamp existan
-      if (point && 'timestamp' in point && !('time' in point)) {
-        enhancedPoint.time = point.timestamp;
-      } else if (point && 'time' in point && !('timestamp' in point)) {
-        enhancedPoint.timestamp = point.time;
+      if ('timestamp' in point && !('time' in point)) {
+        (enhancedPoint as unknown as { time: number }).time = point.timestamp;
+      } else if ('time' in point && !('timestamp' in point)) {
+        (enhancedPoint as unknown as { timestamp: number }).timestamp = point.time;
       }
       
-      optimizedBuffer.push(enhancedPoint as U);
+      optimizedBuffer.push(enhancedPoint);
     });
     
     return optimizedBuffer;

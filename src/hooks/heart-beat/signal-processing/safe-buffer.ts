@@ -1,3 +1,4 @@
+
 /**
  * Buffer seguro con validación de datos y manejo de errores
  * Encapsula el buffer optimizado con protecciones adicionales
@@ -55,13 +56,13 @@ export class SafePPGBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
   public push(item: T): void {
     try {
       // Asegurarse de que el punto tenga todas las propiedades necesarias
-      const enhancedItem = { ...item } as TimestampedPPGData & Partial<T>;
+      const enhancedItem = { ...item } as T;
       
       // Garantizar que tanto time como timestamp existan
       if ('timestamp' in item && !('time' in item)) {
-        enhancedItem.time = item.timestamp;
+        (enhancedItem as unknown as { time: number }).time = item.timestamp;
       } else if ('time' in item && !('timestamp' in item)) {
-        enhancedItem.timestamp = item.time;
+        (enhancedItem as unknown as { timestamp: number }).timestamp = item.time;
       }
       
       // Validar el punto antes de añadirlo
@@ -112,13 +113,13 @@ export class SafePPGBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
       }
       
       // Si pasa la validación, guardar como último valor válido
-      this.lastValidPoint = item;
+      this.lastValidPoint = enhancedItem;
       
       // Registrar como valor bueno para futuros fallbacks
-      this.errorHandler.registerGoodValue(this.componentName, item);
+      this.errorHandler.registerGoodValue(this.componentName, enhancedItem);
       
       // Añadir al buffer
-      this.buffer.push(enhancedItem as T);
+      this.buffer.push(enhancedItem);
       
     } catch (error) {
       // Capturar errores inesperados
