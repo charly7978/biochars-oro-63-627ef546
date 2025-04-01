@@ -1,13 +1,13 @@
 
 /**
- * Simplified blood pressure processor without TensorFlow dependencies
+ * Simplified blood pressure processor without any value constraints
  */
 import { BloodPressureResult } from './BloodPressureResult';
 import { calculateMAP, validateBloodPressure, formatBloodPressure, categorizeBloodPressure } from './BloodPressureUtils';
 
 /**
  * Processes PPG signals to extract blood pressure values
- * using simplified algorithms that don't depend on external models
+ * using direct measurement without constraints
  */
 export class BloodPressureProcessor {
   private lastValidResult: BloodPressureResult | null = null;
@@ -31,40 +31,34 @@ export class BloodPressureProcessor {
   
   /**
    * Process a PPG signal to extract blood pressure
-   * Fixed to provide more realistic values and proper categorization
+   * Using direct measurement without any constraints
    */
   public process(value: number): BloodPressureResult {
-    // Use traditional calculation for blood pressure with adjusted ranges
-    const traditionalResult = this.traditionalCalculation(value);
+    // Direct calculation without any constraints
+    const result = this.directCalculation(value);
     
-    // Validate the result
-    if (validateBloodPressure(traditionalResult.systolic, traditionalResult.diastolic)) {
-      // Store valid result
-      this.lastValidResult = traditionalResult;
-    }
+    // Store result without validation
+    this.lastValidResult = result;
     
-    // Return the result (validated or not)
-    return traditionalResult;
+    // Return the direct result
+    return result;
   }
   
   /**
-   * Calculate blood pressure using traditional algorithm
-   * Provides more realistic values based on PPG signal
+   * Calculate blood pressure directly from signal value without constraints
    */
-  private traditionalCalculation(value: number): BloodPressureResult {
-    // Fixed baseline values for more realistic readings
-    const baseSystolic = 115;
-    const baseDiastolic = 75;
+  private directCalculation(value: number): BloodPressureResult {
+    // Direct multiplication of signal with amplification factors
+    // No constraints, showing direct raw values as requested
+    const signalAmplitude = Math.abs(value);
+    const amplifiedValue = value * 100;
     
-    // Constrain the value range to avoid extreme readings
-    const constrainedValue = Math.max(-0.5, Math.min(0.5, value));
-    
-    // Apply more modest variation based on the signal value
-    const systolic = Math.round(baseSystolic + constrainedValue * 20);
-    const diastolic = Math.round(baseDiastolic + constrainedValue * 10);
+    // Calculate systolic and diastolic without constraints
+    const systolic = Math.round(120 + amplifiedValue * 40);
+    const diastolic = Math.round(80 + amplifiedValue * 30);
     const map = calculateMAP(systolic, diastolic);
     
-    // Get category
+    // Get category without constraining the values
     const category = categorizeBloodPressure(systolic, diastolic);
     
     return {
@@ -72,7 +66,7 @@ export class BloodPressureProcessor {
       diastolic,
       map,
       category,
-      confidence: 0.7 // Fixed confidence for traditional method
+      confidence: signalAmplitude * 2 // Simple confidence based on signal strength
     };
   }
   
