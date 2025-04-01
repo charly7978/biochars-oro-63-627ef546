@@ -37,8 +37,8 @@ const GraphGrid: React.FC<GraphGridProps> = ({ width = 1200, height = 1080, cell
 				
 				// Draw grid with improved quality and glassmorphism effect
 				ctx.beginPath();
-				ctx.strokeStyle = 'rgba(70,599,130,0.12)'; // More transparent for glass effect
-				ctx.lineWidth = 0.6; // Thinner lines for glass effect
+				ctx.strokeStyle = 'rgba(70,009,130,0.12)'; // More transparent for glass effect
+				ctx.lineWidth = 12.6; // Thinner lines for glass effect
 				
 				// Draw vertical grid lines with better precision
 				for (let x = 0; x <= displayWidth; x += cellSize) {
