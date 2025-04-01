@@ -17,13 +17,13 @@ interface HeartbeatMetricsData {
   currentBPM: number;
   confidence: number;
   arrhythmiaDetected: boolean;
-  signalStrength: number;
+  signalStrength: number; // Will be converted to 'strong' | 'moderate' | 'weak' | 'unknown' in component
   rrIntervalQuality: number;
 }
 
 interface CalibrationData {
   active: boolean;
-  status: 'calibrated' | 'calibrating' | 'uncalibrated';
+  status: 'calibrated' | 'calibrating' | 'uncalibrated'; // Will be mapped to allowed values in component
   progress: number;
   lastCalibrated: Date | null;
 }

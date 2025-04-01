@@ -12,6 +12,20 @@ import HeartbeatQualityCard from '@/components/diagnostics/HeartbeatQualityCard'
 import ProcessingPipelineCard from '@/components/diagnostics/ProcessingPipelineCard';
 import FeedbackSystemCard from '@/components/diagnostics/FeedbackSystemCard';
 
+// Define DataPoint interface for chart data
+interface DataPoint {
+  value: number;
+  time: number;
+}
+
+// Helper to convert number arrays to DataPoint arrays for visualization
+const convertToDataPoints = (values: number[]): DataPoint[] => {
+  return values.map((value, index) => ({
+    value,
+    time: Date.now() - (values.length - index) * 100 // Simulate time series
+  }));
+};
+
 const Diagnostics = () => {
   const { diagnosticsData, updateDiagnosticsData } = useDiagnostics();
   
@@ -54,14 +68,21 @@ const Diagnostics = () => {
             currentBPM={diagnosticsData.heartbeatMetrics.currentBPM}
             confidence={diagnosticsData.heartbeatMetrics.confidence}
             arrhythmiaDetected={diagnosticsData.heartbeatMetrics.arrhythmiaDetected}
-            signalStrength={diagnosticsData.heartbeatMetrics.signalStrength}
+            signalStrength={
+              diagnosticsData.heartbeatMetrics.signalStrength > 80 ? 'strong' :
+              diagnosticsData.heartbeatMetrics.signalStrength > 50 ? 'moderate' :
+              diagnosticsData.heartbeatMetrics.signalStrength > 20 ? 'weak' : 'unknown'
+            }
             rrIntervalQuality={diagnosticsData.heartbeatMetrics.rrIntervalQuality}
           />
           
           {/* Calibration Status */}
           <CalibrationCard 
             active={diagnosticsData.calibration.active}
-            status={diagnosticsData.calibration.status}
+            status={
+              diagnosticsData.calibration.status === 'uncalibrated' ? 
+              'not_calibrated' : diagnosticsData.calibration.status
+            }
             progress={diagnosticsData.calibration.progress}
             lastCalibrated={diagnosticsData.calibration.lastCalibrated}
           />
@@ -69,9 +90,9 @@ const Diagnostics = () => {
           {/* Signal Visualization - Full width */}
           <div className="col-span-1 md:col-span-2 xl:col-span-3">
             <SignalVisualizerCard 
-              rawSignal={diagnosticsData.signalHistory.raw}
-              filteredSignal={diagnosticsData.signalHistory.filtered}
-              amplifiedSignal={diagnosticsData.signalHistory.amplified}
+              rawSignal={convertToDataPoints(diagnosticsData.signalHistory.raw)}
+              filteredSignal={convertToDataPoints(diagnosticsData.signalHistory.filtered)}
+              amplifiedSignal={convertToDataPoints(diagnosticsData.signalHistory.amplified)}
             />
           </div>
           
