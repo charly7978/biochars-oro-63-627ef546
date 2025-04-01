@@ -1,112 +1,136 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
  * Base class for specialized signal processing channels
  */
-import { OptimizedSignalChannel } from '../types';
-import { applyAdaptiveFilter } from '../utils/adaptive-predictor';
+
+import { v4 as uuidv4 } from 'uuid';
+import { OptimizedSignalChannel } from '../interfaces';
 
 /**
- * Types of vital signs processed by channels
+ * Supported vital sign types
  */
 export enum VitalSignType {
-  GLUCOSE = 'glucose',
-  LIPIDS = 'lipids',
-  BLOOD_PRESSURE = 'bloodPressure',
+  CARDIAC = 'cardiac',
   SPO2 = 'spo2',
-  CARDIAC = 'cardiac'
+  BLOOD_PRESSURE = 'blood_pressure',
+  GLUCOSE = 'glucose',
+  LIPIDS = 'lipids'
 }
 
 /**
- * Implements a base specialized channel for processing specific vital signs
+ * Base specialized channel implementation
  */
 export abstract class SpecializedChannel implements OptimizedSignalChannel {
+  /**
+   * Unique channel ID
+   */
+  public id: string;
+
+  /**
+   * Channel type
+   */
+  protected type: VitalSignType;
+  
+  /**
+   * Values buffer
+   */
   protected values: number[] = [];
-  protected maxValues: number = 100;
-  protected quality: number = 0;
-  protected id: string;
-  protected lastProcessedValue: number = 0;
-
-  constructor(
-    public readonly type: VitalSignType,
-    id?: string
-  ) {
-    this.id = id || `channel-${Math.random().toString(36).substring(2, 9)}`;
-  }
-
+  
   /**
-   * Process a signal and store in buffer
+   * Timestamps for values
    */
-  processSignal(signal: number): number {
-    // Add to history
-    this.values.push(signal);
-    if (this.values.length > this.maxValues) {
-      this.values.shift();
-    }
-    
-    // Calculate quality
-    this.quality = this.calculateQuality(signal);
-    
-    // Process and store
-    const result = this.processValue(signal);
-    this.lastProcessedValue = result;
-    
-    return result;
-  }
-
+  protected timestamps: number[] = [];
+  
   /**
-   * Process a signal value
+   * Create a new specialized channel
    */
-  abstract processValue(signal: number): number;
-
-  /**
-   * Calculate quality metric
-   */
-  calculateQuality(signal: number): number {
-    // Base implementation - measure stability
-    if (this.values.length < 5) return 0.5;
-    
-    const recent = this.values.slice(-5);
-    const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-    
-    // Calculate average deviation
-    const avgDeviation = recent.reduce((sum, val) => sum + Math.abs(val - mean), 0) / recent.length;
-    
-    // Normalize to quality score
-    const stability = Math.max(0, 1 - (avgDeviation / (Math.abs(mean) + 0.01)));
-    
-    return stability * 0.8 + 0.2; // Minimum quality of 0.2
+  constructor(type: VitalSignType, id?: string) {
+    this.type = type;
+    this.id = id || uuidv4();
   }
-
+  
   /**
-   * Get the current quality score
+   * Get the channel type
    */
-  getQuality(): number {
-    return this.quality;
+  public getType(): VitalSignType {
+    return this.type;
   }
-
+  
+  /**
+   * Process a new signal value
+   * Each specialized channel needs to implement this
+   */
+  abstract processValue(signal: number): any;
+  
+  /**
+   * Check if this channel matches a specified type
+   */
+  public isType(type: VitalSignType): boolean {
+    return this.type === type;
+  }
+  
+  /**
+   * Get the channel ID
+   */
+  public getId(): string {
+    return this.id;
+  }
+  
   /**
    * Reset the channel
+   * Should be implemented by subclasses to perform specialized reset
    */
-  reset(): void {
+  public reset(): void {
     this.values = [];
-    this.quality = 0;
-    this.lastProcessedValue = 0;
+    this.timestamps = [];
   }
-
+  
   /**
-   * Apply feedback to improve channel performance
+   * Get the latest value
    */
-  applyFeedback(feedback: any): void {
-    // Base implementation does nothing
-    console.log(`Channel ${this.id} (${this.type}) received feedback:`, feedback);
+  public getLatestValue(): number | null {
+    if (this.values.length === 0) return null;
+    return this.values[this.values.length - 1];
   }
-
+  
   /**
-   * Get channel ID
+   * Add a new value to the channel's buffer
    */
-  getId(): string {
-    return this.id;
+  protected addValue(value: number): void {
+    this.values.push(value);
+    this.timestamps.push(Date.now());
+    
+    // Keep buffer at reasonable size
+    const MAX_BUFFER_SIZE = 100;
+    if (this.values.length > MAX_BUFFER_SIZE) {
+      this.values.shift();
+      this.timestamps.shift();
+    }
+  }
+  
+  /**
+   * Get channel buffer
+   */
+  public getValues(): number[] {
+    return [...this.values];
+  }
+  
+  /**
+   * Get value timestamps
+   */
+  public getTimestamps(): number[] {
+    return [...this.timestamps];
+  }
+  
+  /**
+   * Get last N values from buffer
+   */
+  protected getLastValues(count: number): number[] {
+    if (this.values.length <= count) {
+      return [...this.values];
+    }
+    
+    return this.values.slice(-count);
   }
 }

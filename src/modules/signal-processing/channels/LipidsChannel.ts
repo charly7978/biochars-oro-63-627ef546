@@ -30,6 +30,8 @@ export class LipidsChannel extends SpecializedChannel {
   processValue(signal: number): LipidsResult {
     // Add to lipids buffer
     this.lipidsBuffer.push(signal);
+    this.addValue(signal);
+    
     if (this.lipidsBuffer.length > 20) {
       this.lipidsBuffer.shift();
     }

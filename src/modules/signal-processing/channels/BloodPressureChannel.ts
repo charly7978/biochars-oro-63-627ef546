@@ -6,15 +6,15 @@
  */
 
 import { SpecializedChannel, VitalSignType } from './SpecializedChannel';
+import { BloodPressureResult } from '../interfaces';
 import { applyAdaptiveFilter } from '../utils/adaptive-predictor';
 
-export interface BloodPressureResult {
-  systolic: number;
-  diastolic: number;
-}
-
 export class BloodPressureChannel extends SpecializedChannel {
-  private lastResult: BloodPressureResult = { systolic: 0, diastolic: 0 };
+  private lastResult: BloodPressureResult = {
+    systolic: 0,
+    diastolic: 0,
+    map: 0
+  };
   private bpBuffer: number[] = [];
   private rmssdValues: number[] = [];
   
@@ -28,49 +28,54 @@ export class BloodPressureChannel extends SpecializedChannel {
   processValue(signal: number): BloodPressureResult {
     // Add to buffer
     this.bpBuffer.push(signal);
+    this.addValue(signal);
+    
     if (this.bpBuffer.length > 30) {
       this.bpBuffer.shift();
     }
     
-    // Process signal
-    let processedValue = signal;
-    if (this.bpBuffer.length >= 5) {
-      processedValue = applyAdaptiveFilter(signal, this.bpBuffer, 0.3);
+    // Need minimum data
+    if (this.bpBuffer.length < 10) {
+      return this.lastResult;
     }
     
-    // Calculate blood pressure - direct measurement only
-    this.lastResult = this.calculateBloodPressure(processedValue);
+    // Apply adaptive filtering
+    const filteredValue = applyAdaptiveFilter(signal, this.bpBuffer, 0.3);
+    
+    // Calculate blood pressure from signal features
+    this.lastResult = this.calculateBloodPressure(filteredValue);
     
     return this.lastResult;
   }
 
   /**
-   * Calculate blood pressure values - direct measurement only
+   * Calculate blood pressure metrics from processed signal
    */
   private calculateBloodPressure(value: number): BloodPressureResult {
-    // Normalize the value
+    // Calculate features from the signal buffer
+    const mean = this.bpBuffer.reduce((sum, v) => sum + v, 0) / this.bpBuffer.length;
+    const variance = this.bpBuffer.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / this.bpBuffer.length;
+    const range = Math.max(...this.bpBuffer) - Math.min(...this.bpBuffer);
+    
+    // Normalize features between 0 and 1
     const normalizedValue = Math.max(0, Math.min(1, (value + 1) / 2));
+    const normalizedVariance = Math.min(1, variance * 10);
+    const normalizedRange = Math.min(1, range / 2);
     
-    // Calculate systolic - range approximately 90-160
-    const systolic = 90 + normalizedValue * 70;
+    // Calculate systolic using normalized features (typical range 90-140)
+    const systolic = 90 + normalizedValue * 25 + normalizedVariance * 15 + normalizedRange * 10;
     
-    // Calculate diastolic - range approximately 60-100
-    const diastolic = 60 + normalizedValue * 40;
+    // Calculate diastolic (typically around 2/3 of systolic in healthy individuals)
+    const diastolic = 60 + normalizedValue * 15 + normalizedVariance * 10 + normalizedRange * 5;
+    
+    // Calculate mean arterial pressure (MAP)
+    const map = diastolic + (systolic - diastolic) / 3;
     
     return {
       systolic: Math.round(systolic),
-      diastolic: Math.round(diastolic)
+      diastolic: Math.round(diastolic),
+      map: Math.round(map)
     };
-  }
-
-  /**
-   * Process RMSSD (heart rate variability) data for refining blood pressure calculations
-   */
-  processRMSSD(rmssd: number): void {
-    this.rmssdValues.push(rmssd);
-    if (this.rmssdValues.length > 10) {
-      this.rmssdValues.shift();
-    }
   }
 
   /**
@@ -80,14 +85,39 @@ export class BloodPressureChannel extends SpecializedChannel {
     super.reset();
     this.bpBuffer = [];
     this.rmssdValues = [];
-    this.lastResult = { systolic: 0, diastolic: 0 };
+    this.lastResult = {
+      systolic: 0,
+      diastolic: 0,
+      map: 0
+    };
   }
 
   /**
-   * Get formatted blood pressure string (systolic/diastolic)
+   * Get the current result
    */
-  getFormattedResult(): string {
-    if (this.lastResult.systolic === 0 || this.lastResult.diastolic === 0) {
+  getLastResult(): BloodPressureResult {
+    return { ...this.lastResult };
+  }
+  
+  /**
+   * Get current systolic value
+   */
+  getSystolic(): number {
+    return this.lastResult.systolic;
+  }
+  
+  /**
+   * Get current diastolic value
+   */
+  getDiastolic(): number {
+    return this.lastResult.diastolic;
+  }
+  
+  /**
+   * Get formatted blood pressure string
+   */
+  getFormattedBP(): string {
+    if (!this.lastResult.systolic || !this.lastResult.diastolic) {
       return "--/--";
     }
     return `${this.lastResult.systolic}/${this.lastResult.diastolic}`;

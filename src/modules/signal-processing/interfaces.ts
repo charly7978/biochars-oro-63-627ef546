@@ -5,27 +5,80 @@
  * Common interfaces for signal processing
  */
 
-import { ProcessedHeartbeatSignal, ProcessedPPGSignal, SignalProcessingOptions } from './types';
+import { VitalSignType } from './channels/SpecializedChannel';
 
 /**
- * Base signal processor interface
+ * Interface for optimized signal channels
  */
-export interface SignalProcessor {
-  processSignal(signal: number): any;
+export interface OptimizedSignalChannel {
+  id: string;
+  getId(): string;
+  getType(): VitalSignType;
+  isType(type: VitalSignType): boolean;
+  processValue(signal: number): any;
   reset(): void;
-  configure(options: Partial<SignalProcessingOptions>): void;
+  getLatestValue(): number | null;
+  getValues(): number[];
+  getTimestamps(): number[];
 }
 
 /**
- * Specific processor for PPG signals
+ * Interface for channel configuration
  */
-export interface PPGSignalProcessor extends SignalProcessor {
-  processSignal(signal: number): ProcessedPPGSignal;
+export interface ChannelConfiguration {
+  enabled: boolean;
+  sampleRate?: number;
+  adaptationRate?: number;
+  bufferSize?: number;
 }
 
 /**
- * Specific processor for heartbeat signals
+ * Signal distributor configuration
  */
-export interface HeartbeatSignalProcessor extends SignalProcessor {
-  processSignal(signal: number): ProcessedHeartbeatSignal;
+export interface SignalDistributorConfig {
+  channels?: {
+    [key in VitalSignType]?: ChannelConfiguration;
+  };
+  globalAdaptationRate?: number;
+  calibrationMode?: boolean;
+}
+
+/**
+ * Signal processing result
+ */
+export interface SignalProcessingResult {
+  timestamp: number;
+  channelResults: Map<VitalSignType, any>;
+  diagnostics?: SignalDiagnosticInfo;
+}
+
+/**
+ * Signal diagnostic information
+ */
+export interface SignalDiagnosticInfo {
+  quality: number;
+  fingerDetected: boolean;
+  signalStrength: number;
+  processingTime: number;
+  adaptationRate: number;
+}
+
+/**
+ * Blood pressure result
+ */
+export interface BloodPressureResult {
+  systolic: number;
+  diastolic: number;
+  map?: number;
+}
+
+/**
+ * Cardiac measurement result
+ */
+export interface CardiacResult {
+  bpm: number;
+  confidence: number;
+  isPeak: boolean;
+  rrInterval?: number | null;
+  hrv?: number | null;
 }

@@ -8,11 +8,15 @@
 import { 
   getAdaptivePredictor, 
   resetAdaptivePredictor, 
-  AdaptiveModelState,
-  applyAdaptiveFilter,
-  predictNextValue,
-  correctSignalAnomalies,
-  updateQualityWithPrediction
+  AdaptiveModelState
+} from '../../../modules/signal-processing/utils/adaptive-predictor';
+
+// Import specific functions we need but rename them to avoid conflicts with local functions
+import {
+  applyAdaptiveFilter as adaptiveFilterUtil,
+  predictNextValue as predictNextValueUtil,
+  correctSignalAnomalies as correctSignalAnomaliesUtil,
+  updateQualityWithPrediction as updateQualityWithPredictionUtil
 } from '../../../modules/signal-processing/utils/adaptive-predictor';
 
 // Keep history of signal values for processing

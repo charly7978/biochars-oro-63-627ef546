@@ -22,6 +22,8 @@ export class SpO2Channel extends SpecializedChannel {
   processValue(signal: number): number {
     // Add to buffer
     this.spo2Buffer.push(signal);
+    this.addValue(signal);
+    
     if (this.spo2Buffer.length > 20) {
       this.spo2Buffer.shift();
     }
@@ -59,5 +61,12 @@ export class SpO2Channel extends SpecializedChannel {
     super.reset();
     this.spo2Buffer = [];
     this.lastSpO2 = 0;
+  }
+  
+  /**
+   * Get the last calculated SpO2 value
+   */
+  getLastSpO2(): number {
+    return this.lastSpO2;
   }
 }

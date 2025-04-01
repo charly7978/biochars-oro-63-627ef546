@@ -22,6 +22,8 @@ export class GlucoseChannel extends SpecializedChannel {
   processValue(signal: number): number {
     // Add to glucose buffer
     this.glucoseValues.push(signal);
+    this.addValue(signal);
+    
     if (this.glucoseValues.length > 20) {
       this.glucoseValues.shift();
     }
@@ -57,5 +59,12 @@ export class GlucoseChannel extends SpecializedChannel {
     super.reset();
     this.glucoseValues = [];
     this.lastGlucose = 0;
+  }
+  
+  /**
+   * Get the last calculated glucose value
+   */
+  getLastGlucose(): number {
+    return this.lastGlucose;
   }
 }

@@ -91,6 +91,17 @@ export function isFingerDetected(
 }
 
 /**
+ * Backward compatibility alias for isFingerDetected
+ */
+export function detectFinger(
+  currentValue: number, 
+  signalBuffer: number[], 
+  sensitivity: number = 1.0
+): boolean {
+  return isFingerDetected(currentValue, signalBuffer, sensitivity);
+}
+
+/**
  * Reset finger detector state
  */
 export function resetFingerDetector(): void {
