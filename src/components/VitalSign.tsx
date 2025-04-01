@@ -1,22 +1,23 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp, AlertTriangle } from 'lucide-react';
+import { ChevronUp, X } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
   value: string | number;
   unit?: string;
   highlighted?: boolean;
+  calibrationProgress?: number;
 }
 
 const VitalSign = ({ 
   label, 
   value, 
   unit, 
-  highlighted = false
+  highlighted = false,
+  calibrationProgress 
 }: VitalSignProps) => {
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
@@ -45,21 +46,21 @@ const VitalSign = ({
             const systolic = parseInt(pressureParts[0], 10);
             const diastolic = parseInt(pressureParts[1], 10);
             if (!isNaN(systolic) && !isNaN(diastolic)) {
-              if (systolic >= 135 || diastolic >= 85) return 'Hipertensión'; // Slightly reduced from 140/90 for earlier detection
-              if (systolic < 95 || diastolic < 65) return 'Hipotensión'; // Slightly increased from 90/60 for earlier detection
+              if (systolic >= 140 || diastolic >= 90) return 'Hipertensión';
+              if (systolic < 90 || diastolic < 60) return 'Hipotensión';
             }
           }
           return '';
         case 'COLESTEROL':
           const cholesterol = parseInt(String(value), 10);
           if (!isNaN(cholesterol)) {
-            if (cholesterol > 190) return 'Hipercolesterolemia'; // Reduced from 200 for earlier detection
+            if (cholesterol > 200) return 'Hipercolesterolemia';
           }
           return '';
         case 'TRIGLICÉRIDOS':
           const triglycerides = parseInt(String(value), 10);
           if (!isNaN(triglycerides)) {
-            if (triglycerides > 140) return 'Hipertrigliceridemia'; // Reduced from 150 for earlier detection
+            if (triglycerides > 150) return 'Hipertrigliceridemia';
           }
           return '';
         default:
@@ -215,30 +216,6 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
-    // Enhanced display for blood pressure with improved parsing
-    if (label === 'PRESIÓN ARTERIAL' && typeof value === 'string') {
-      // Handle "--/--" case
-      if (value === "--/--") return value;
-      
-      // Parse for standard format
-      const parts = value.split('/');
-      if (parts.length === 2) {
-        const systolic = parseInt(parts[0], 10);
-        const diastolic = parseInt(parts[1], 10);
-        if (!isNaN(systolic) && !isNaN(diastolic)) {
-          return value; // Return original if valid format
-        }
-      }
-      
-      // Try to extract numbers if format is unusual
-      const numbers = value.match(/\d+/g);
-      if (numbers && numbers.length >= 2) {
-        return `${numbers[0]}/${numbers[1]}`;
-      }
-      
-      return value; // Return original if no parsing worked
-    }
-    
     return value;
   };
 
@@ -246,36 +223,44 @@ const VitalSign = ({
   const riskColor = getRiskColor(riskLabel);
   const detailedInfo = getDetailedInfo(label, value);
   const formattedValue = displayValue(label, value);
-  
-  // Determine if blood pressure is currently being measured (shows "--/--")
-  const isMeasuring = label === 'PRESIÓN ARTERIAL' && value === "--/--";
 
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className="relative flex flex-col justify-center items-center p-2 text-center cursor-pointer transition-colors duration-200 h-full w-full bg-blue-900/5 rounded-lg">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-blue-100/90 mb-1">
+        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
             {label}
           </div>
           
-          <div className="font-bold text-3xl sm:text-4xl transition-all duration-300">
-            <span className={`text-gradient-soft drop-shadow-[0_0_12px_rgba(140,180,255,0.5)] ${
-              label === 'PRESIÓN ARTERIAL' ? 'animate-pulse-subtle' : 'animate-subtle-pulse'
-            }`}>
+          <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
+            <span className="text-gradient-soft">
               {formattedValue}
             </span>
-            {unit && <span className="text-xs text-blue-100/90 ml-1">{unit}</span>}
+            {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
           </div>
-          
+
           {riskLabel && (
-            <div className={`absolute top-1 right-1 flex items-center ${riskColor} text-xs`}>
-              <AlertTriangle size={12} className="mr-1" />
-              <span className="text-[8px] font-medium">{riskLabel}</span>
+            <div className={`text-sm font-medium mt-1 ${riskColor}`}>
+              {riskLabel}
+            </div>
+          )}
+          
+          {calibrationProgress !== undefined && (
+            <div className="absolute inset-0 bg-transparent overflow-hidden pointer-events-none border-0">
+              <div 
+                className="h-full bg-blue-500/5 transition-all duration-300 ease-out"
+                style={{ width: `${calibrationProgress}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs text-white/80">
+                  {calibrationProgress < 100 ? `${Math.round(calibrationProgress)}%` : '✓'}
+                </span>
+              </div>
             </div>
           )}
           
           <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-            <ChevronUp size={16} className="text-blue-400/60" />
+            <ChevronUp size={16} className="text-gray-400" />
           </div>
         </div>
       </SheetTrigger>
@@ -288,9 +273,9 @@ const VitalSign = ({
               {unit && <span className="text-sm text-gray-500 ml-2">({unit})</span>}
             </div>
             <div className="flex space-x-2">
-              <span className={`text-2xl px-3 py-1 rounded-full ${
+              <span className={`text-xl px-3 py-1 rounded-full ${
                 riskLabel ? riskColor.replace('text-', 'bg-').replace('[#', 'rgba(').replace(']', ', 0.1)') : 'bg-green-500/10'
-              } drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]`}>
+              }`}>
                 {formattedValue}
                 {unit && unit}
               </span>
