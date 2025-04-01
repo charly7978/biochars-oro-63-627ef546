@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,7 +7,6 @@
  * Signal filtering utilities for processing real PPG signals
  * All methods work with real data only, no simulation
  * Enhanced with better filtering techniques for cleaner signal extraction
- * Improved with motion artifact detection and compensation
  */
 export class SignalFilter {
   // Ventanas de filtrado optimizadas basadas en la literatura médica
@@ -31,23 +31,6 @@ export class SignalFilter {
   private valueHistory: number[] = [];
   private derivativeHistory: number[] = [];
   private secondDerivativeHistory: number[] = [];
-  
-  // Nuevo: Variables para detección y compensación de artefactos de movimiento
-  private motionArtifactBuffer: number[] = [];
-  private readonly MOTION_BUFFER_SIZE = 20;
-  private readonly MOTION_THRESHOLD = 0.4; // Umbral para detección de artefactos
-  private motionCompensationActive: boolean = false;
-  private lastMotionArtifactTime: number = 0;
-  private readonly MOTION_RECOVERY_TIME = 1000; // Tiempo de recuperación después de artefacto (ms)
-  
-  // Nuevo: Buffer para análisis ICA simplificado
-  private signalComponentsBuffer: number[][] = [[], [], []]; // Múltiples componentes para ICA
-  private readonly ICA_BUFFER_SIZE = 30;
-  private readonly ICA_MIN_SAMPLES = 15;
-  
-  // Nuevo: Parámetros para compensación multiespectral
-  private multiWavelengthBuffer: {red: number[], ir?: number[]} = {red: [], ir: []};
-  private readonly WAVELENGTH_BUFFER_SIZE = 15;
   
   /**
    * Apply Moving Average filter to real values
@@ -203,276 +186,6 @@ export class SignalFilter {
   }
   
   /**
-   * Nuevo: Detección de artefactos de movimiento basada en análisis de señal
-   * Identifica patrones característicos de movimiento en la señal PPG
-   */
-  public detectMotionArtifact(value: number, accelerometerData?: {x: number, y: number, z: number}): boolean {
-    // Actualizar buffer de artefactos
-    this.motionArtifactBuffer.push(value);
-    if (this.motionArtifactBuffer.length > this.MOTION_BUFFER_SIZE) {
-      this.motionArtifactBuffer.shift();
-    }
-    
-    // Si tenemos datos de acelerómetro, usarlos como primera línea de detección
-    if (accelerometerData) {
-      // Calcular magnitud de aceleración
-      const magnitude = Math.sqrt(
-        Math.pow(accelerometerData.x, 2) + 
-        Math.pow(accelerometerData.y, 2) + 
-        Math.pow(accelerometerData.z, 2)
-      );
-      
-      // Umbral de movimiento significativo (adaptado a unidades típicas de acelerómetros móviles)
-      const significantMotion = magnitude > 10.5; // Aprox. 1.05g (gravedad)
-      
-      if (significantMotion) {
-        this.lastMotionArtifactTime = Date.now();
-        this.motionCompensationActive = true;
-        return true;
-      }
-    }
-    
-    // Si no tenemos suficientes datos, no podemos detectar artefactos
-    if (this.motionArtifactBuffer.length < 10) {
-      return false;
-    }
-    
-    // Análisis basado únicamente en la señal PPG
-    // 1. Calcular variación rápida (derivada)
-    const recentValues = this.motionArtifactBuffer.slice(-5);
-    const variations = [];
-    for (let i = 1; i < recentValues.length; i++) {
-      variations.push(Math.abs(recentValues[i] - recentValues[i-1]));
-    }
-    
-    // 2. Calcular variación promedio
-    const avgVariation = variations.reduce((sum, val) => sum + val, 0) / variations.length;
-    
-    // 3. Calcular variación histórica (para baseline)
-    const historicVariation = this.calculateHistoricVariation();
-    
-    // 4. Detectar si la variación actual es significativamente mayor que la histórica
-    const variationRatio = avgVariation / (historicVariation + 0.001); // Evitar división por cero
-    const isMotionArtifact = variationRatio > this.MOTION_THRESHOLD;
-    
-    // 5. Si detectamos artefacto o estamos en periodo de recuperación
-    if (isMotionArtifact) {
-      this.lastMotionArtifactTime = Date.now();
-      this.motionCompensationActive = true;
-      return true;
-    } else if (Date.now() - this.lastMotionArtifactTime < this.MOTION_RECOVERY_TIME) {
-      // Todavía en periodo de recuperación
-      return true;
-    } else {
-      this.motionCompensationActive = false;
-      return false;
-    }
-  }
-  
-  /**
-   * Calcular variación histórica para baseline de detección de movimiento
-   */
-  private calculateHistoricVariation(): number {
-    if (this.motionArtifactBuffer.length < 10) {
-      return 0.1; // Valor por defecto si no hay suficiente historial
-    }
-    
-    const variations = [];
-    const values = this.motionArtifactBuffer.slice(0, -5); // Usar valores más antiguos como referencia
-    
-    for (let i = 1; i < values.length; i++) {
-      variations.push(Math.abs(values[i] - values[i-1]));
-    }
-    
-    // Ordenar y tomar el percentil 75 para robustez
-    variations.sort((a, b) => a - b);
-    const p75Index = Math.floor(variations.length * 0.75);
-    
-    return variations[p75Index] || 0.1;
-  }
-  
-  /**
-   * Nuevo: Compensación de artefactos de movimiento usando ICA simplificado
-   * Implementa una versión simplificada de Análisis de Componentes Independientes
-   */
-  public applyMotionCompensation(value: number): number {
-    // Si no hay artefacto detectado, devolver el valor sin cambios
-    if (!this.motionCompensationActive) {
-      return value;
-    }
-    
-    // Guardar el valor en múltiples componentes (simulando diferentes canales)
-    // Para un ICA simplificado necesitamos al menos 2 componentes
-    this.signalComponentsBuffer[0].push(value);
-    // Segunda componente: valor con un retardo
-    this.signalComponentsBuffer[1].push(
-      this.signalComponentsBuffer[0].length > 2 ? 
-      this.signalComponentsBuffer[0][this.signalComponentsBuffer[0].length - 2] : 
-      value
-    );
-    // Tercera componente: tendencia suavizada
-    const smoothedValue = this.signalComponentsBuffer[2].length > 0 ? 
-      this.signalComponentsBuffer[2][this.signalComponentsBuffer[2].length - 1] * 0.8 + value * 0.2 : 
-      value;
-    this.signalComponentsBuffer[2].push(smoothedValue);
-    
-    // Limitar tamaño de los buffers
-    for (let i = 0; i < this.signalComponentsBuffer.length; i++) {
-      if (this.signalComponentsBuffer[i].length > this.ICA_BUFFER_SIZE) {
-        this.signalComponentsBuffer[i].shift();
-      }
-    }
-    
-    // Si no tenemos suficientes muestras, devolver el valor suavizado
-    if (this.signalComponentsBuffer[0].length < this.ICA_MIN_SAMPLES) {
-      return smoothedValue;
-    }
-    
-    // Implementar un ICA simplificado (en realidad una versión muy simplificada)
-    // Calcular correlaciones entre componentes
-    const corrMatrix = this.calculateCorrelationMatrix();
-    
-    // Identificar la componente menos correlacionada con las otras (probablemente la señal cardíaca)
-    const correlationScores = [
-      Math.abs(corrMatrix[0][1]) + Math.abs(corrMatrix[0][2]),
-      Math.abs(corrMatrix[1][0]) + Math.abs(corrMatrix[1][2]),
-      Math.abs(corrMatrix[2][0]) + Math.abs(corrMatrix[2][1])
-    ];
-    
-    // La componente con menor score de correlación es probablemente la más independiente
-    const minCorrelationIndex = correlationScores.indexOf(Math.min(...correlationScores));
-    
-    // Usar la componente más "independiente", pero mezclada con el valor actual para estabilidad
-    const compensatedValue = this.signalComponentsBuffer[minCorrelationIndex][this.signalComponentsBuffer[minCorrelationIndex].length - 1] * 0.7 + value * 0.3;
-    
-    return compensatedValue;
-  }
-  
-  /**
-   * Calcular matriz de correlación entre las componentes
-   */
-  private calculateCorrelationMatrix(): number[][] {
-    const matrix: number[][] = [
-      [1, 0, 0],
-      [0, 1, 0],
-      [0, 0, 1]
-    ];
-    
-    // Calcular correlaciones cruzadas
-    for (let i = 0; i < this.signalComponentsBuffer.length; i++) {
-      for (let j = i + 1; j < this.signalComponentsBuffer.length; j++) {
-        const correlation = this.calculateCorrelation(
-          this.signalComponentsBuffer[i],
-          this.signalComponentsBuffer[j]
-        );
-        matrix[i][j] = correlation;
-        matrix[j][i] = correlation; // Matriz simétrica
-      }
-    }
-    
-    return matrix;
-  }
-  
-  /**
-   * Calcular correlación entre dos señales
-   */
-  private calculateCorrelation(signal1: number[], signal2: number[]): number {
-    if (signal1.length < 3 || signal2.length < 3) return 0;
-    
-    // Usar solo los últimos N valores
-    const n = Math.min(signal1.length, signal2.length, 15);
-    const s1 = signal1.slice(-n);
-    const s2 = signal2.slice(-n);
-    
-    // Calcular medias
-    const mean1 = s1.reduce((sum, val) => sum + val, 0) / n;
-    const mean2 = s2.reduce((sum, val) => sum + val, 0) / n;
-    
-    // Calcular covarianza y varianzas
-    let covariance = 0;
-    let variance1 = 0;
-    let variance2 = 0;
-    
-    for (let i = 0; i < n; i++) {
-      const diff1 = s1[i] - mean1;
-      const diff2 = s2[i] - mean2;
-      covariance += diff1 * diff2;
-      variance1 += diff1 * diff1;
-      variance2 += diff2 * diff2;
-    }
-    
-    // Evitar división por cero
-    if (variance1 === 0 || variance2 === 0) return 0;
-    
-    // Calcular correlación normalizada
-    return covariance / Math.sqrt(variance1 * variance2);
-  }
-  
-  /**
-   * Nuevo: Procesamiento multiespectral para compensación de movimiento
-   * Si hay disponibles múltiples longitudes de onda (rojo e IR), usa su ratio para mejor detección
-   */
-  public processMultiWavelength(redValue: number, irValue?: number): number {
-    // Almacenar valores
-    this.multiWavelengthBuffer.red.push(redValue);
-    if (irValue !== undefined) {
-      if (!this.multiWavelengthBuffer.ir) this.multiWavelengthBuffer.ir = [];
-      this.multiWavelengthBuffer.ir.push(irValue);
-    }
-    
-    // Limitar tamaño de buffers
-    if (this.multiWavelengthBuffer.red.length > this.WAVELENGTH_BUFFER_SIZE) {
-      this.multiWavelengthBuffer.red.shift();
-      if (this.multiWavelengthBuffer.ir && this.multiWavelengthBuffer.ir.length > 0) {
-        this.multiWavelengthBuffer.ir.shift();
-      }
-    }
-    
-    // Si no tenemos IR, devolver el valor rojo
-    if (!this.multiWavelengthBuffer.ir || this.multiWavelengthBuffer.ir.length < 5) {
-      return redValue;
-    }
-    
-    // Calcular ratio R/IR para los últimos valores
-    const lastRedValue = this.multiWavelengthBuffer.red[this.multiWavelengthBuffer.red.length - 1];
-    const lastIrValue = this.multiWavelengthBuffer.ir[this.multiWavelengthBuffer.ir.length - 1];
-    
-    // Si algún valor es cercano a cero, evitar división
-    if (Math.abs(lastIrValue) < 0.001) return lastRedValue;
-    
-    // Calcular ratio normalizado
-    const ratio = lastRedValue / lastIrValue;
-    
-    // Detectar anomalías en el ratio que indiquen artefactos
-    const ratioHistory = [];
-    const n = Math.min(this.multiWavelengthBuffer.red.length, this.multiWavelengthBuffer.ir.length);
-    
-    for (let i = 0; i < n; i++) {
-      if (Math.abs(this.multiWavelengthBuffer.ir[i]) > 0.001) {
-        ratioHistory.push(this.multiWavelengthBuffer.red[i] / this.multiWavelengthBuffer.ir[i]);
-      }
-    }
-    
-    // Si no hay suficiente historial, devolver el valor original
-    if (ratioHistory.length < 3) return redValue;
-    
-    // Calcular estadísticas del ratio
-    ratioHistory.sort((a, b) => a - b);
-    const medianRatio = ratioHistory[Math.floor(ratioHistory.length / 2)];
-    
-    // Si el ratio actual es muy diferente del histórico, podría ser un artefacto
-    const ratioDifference = Math.abs(ratio - medianRatio) / medianRatio;
-    
-    if (ratioDifference > 0.3) { // Umbral de 30% de diferencia
-      // Tenemos un artefacto - usar valor corregido
-      return lastRedValue * (medianRatio / ratio);
-    }
-    
-    // No hay artefacto detectado
-    return redValue;
-  }
-  
-  /**
    * Actualiza el historial para análisis morfológico
    */
   private updateMorphologicalHistory(value: number): void {
@@ -544,48 +257,6 @@ export class SignalFilter {
   }
   
   /**
-   * Nuevo: Filtrado completo con compensación de movimiento 
-   * Aplica toda la cadena de procesamiento incluyendo detección y compensación de artefactos
-   */
-  public applyCompleteFilterWithMotionCompensation(
-    value: number, 
-    values: number[], 
-    accelerometerData?: {x: number, y: number, z: number},
-    irValue?: number
-  ): {
-    filteredValue: number;
-    hasMotionArtifact: boolean;
-    appliedCompensation: boolean;
-  } {
-    // 1. Detectar artefactos de movimiento
-    const hasMotionArtifact = this.detectMotionArtifact(value, accelerometerData);
-    
-    let processedValue = value;
-    let appliedCompensation = false;
-    
-    // 2. Si hay disponibles múltiples longitudes de onda, aplicar procesamiento
-    if (irValue !== undefined) {
-      processedValue = this.processMultiWavelength(value, irValue);
-      appliedCompensation = true;
-    }
-    
-    // 3. Si se detectó artefacto, aplicar compensación
-    if (hasMotionArtifact) {
-      processedValue = this.applyMotionCompensation(processedValue);
-      appliedCompensation = true;
-    }
-    
-    // 4. Aplicar el filtrado normal
-    const filteredValue = this.applyCardioOpticalFilter(processedValue, values);
-    
-    return {
-      filteredValue,
-      hasMotionArtifact,
-      appliedCompensation
-    };
-  }
-  
-  /**
    * Resetea los filtros que mantienen estado
    */
   public reset(): void {
@@ -594,12 +265,5 @@ export class SignalFilter {
     this.valueHistory = [];
     this.derivativeHistory = [];
     this.secondDerivativeHistory = [];
-    
-    // Reiniciar nuevos buffers
-    this.motionArtifactBuffer = [];
-    this.motionCompensationActive = false;
-    this.lastMotionArtifactTime = 0;
-    this.signalComponentsBuffer = [[], [], []];
-    this.multiWavelengthBuffer = {red: [], ir: []};
   }
 }
