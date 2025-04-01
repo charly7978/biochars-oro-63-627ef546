@@ -1,291 +1,373 @@
+
 /**
- * Adaptive Predictor - Implements adaptive control and predictive modeling
- * for real-time signal processing with dynamic parameter adjustment
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE
+ * 
+ * Advanced adaptive prediction for signal processing
+ * Integrates Bayesian optimization and Gaussian process modeling
  */
 
-// Configuration constants
-const ADAPTATION_RATE_MIN = 0.01;
-const ADAPTATION_RATE_MAX = 0.25;
-const MODEL_ORDER = 4;
-const PREDICTION_HORIZON = 3;
-const OUTLIER_THRESHOLD = 2.5;
+import { BayesianOptimizer, createDefaultPPGOptimizer } from './bayesian-optimization';
+import { GaussianProcessModel, DataPoint, GPPrediction } from './gaussian-process';
+import { SignalProcessingOptions } from '../types';
 
 /**
- * Class implementing adaptive signal prediction and correction
+ * State of the adaptive model
+ */
+export interface AdaptiveModelState {
+  // Buffer statistics
+  bufferSize: number;
+  
+  // Quality statistics
+  averageQuality: number;
+  qualityStability: number;
+  
+  // Prediction statistics
+  averagePredictionError: number;
+  predictionConfidence: number;
+  
+  // Parameter optimization
+  optimizedParameters: Record<string, number>;
+  improvementRate: number;
+}
+
+/**
+ * Prediction result
+ */
+export interface PredictionResult {
+  predictedValue: number;
+  confidence: number;
+  anomalyScore: number;
+  correctedValue: number | null;
+}
+
+/**
+ * Advanced adaptive predictor for PPG signal
+ * Combines multiple models for robust prediction
  */
 export class AdaptivePredictor {
-  // AR model coefficients
-  private coefficients: number[] = Array(MODEL_ORDER).fill(0);
+  // Signal buffer and statistics
+  private readonly buffer: {time: number, value: number, quality: number}[] = [];
+  private readonly MAX_BUFFER_SIZE = 30;
   
-  // Adaptation parameters
-  private adaptationRate: number = 0.05;
-  private signalHistory: number[] = [];
-  private errorHistory: number[] = [];
-  private predictionHistory: number[] = [];
+  // Recent anomaly statistics
+  private anomalyCount = 0;
+  private anomalyThreshold = 0.5;
   
-  // Signal statistics
-  private signalVariance: number = 0.1;
-  private noiseEstimate: number = 0.1;
-  private meanValue: number = 0;
+  // Advanced modeling components
+  private gaussianProcess: GaussianProcessModel;
+  private bayesianOptimizer: BayesianOptimizer;
   
-  // Performance metrics
-  private predictionAccuracy: number = 0;
-  private stabilityMetric: number = 0;
+  // Statistics tracking
+  private predictionErrors: number[] = [];
+  private readonly MAX_ERRORS_TRACKED = 20;
+  private lastPrediction: number | null = null;
+  private adaptationRate = 0.1;
   
-  /**
-   * Process a new signal value using the adaptive model
-   * @param value Current signal value
-   * @returns Processed value and prediction metrics
-   */
-  public processValue(value: number): {
-    filteredValue: number;
-    predictedValue: number;
-    signalQuality: number;
-  } {
-    // Update signal history
-    this.signalHistory.push(value);
-    if (this.signalHistory.length > MODEL_ORDER * 2) {
-      this.signalHistory.shift();
-    }
+  // Configuration
+  private options: SignalProcessingOptions = {
+    amplificationFactor: 2.0,
+    filterStrength: 1.0,
+    qualityThreshold: 0.7,
+    fingerDetectionSensitivity: 0.8,
+    useAdaptiveControl: true,
+    qualityEnhancedByPrediction: true,
+    predictionHorizon: 5,
+    adaptationRate: 0.15
+  };
+
+  constructor() {
+    this.gaussianProcess = new GaussianProcessModel();
+    this.bayesianOptimizer = createDefaultPPGOptimizer();
     
-    // Update signal statistics
-    this.updateSignalStatistics(value);
-    
-    // Make prediction using current model
-    const predictedValue = this.predictValue();
-    
-    // Calculate prediction error
-    const currentError = value - predictedValue;
-    
-    // Store prediction for future evaluation
-    this.predictionHistory.push(predictedValue);
-    if (this.predictionHistory.length > PREDICTION_HORIZON * 2) {
-      this.predictionHistory.shift();
-    }
-    
-    // Update error history
-    this.errorHistory.push(currentError);
-    if (this.errorHistory.length > 10) {
-      this.errorHistory.shift();
-    }
-    
-    // Check if current value is an outlier
-    const isOutlier = Math.abs(currentError) > this.signalVariance * OUTLIER_THRESHOLD;
-    
-    // Apply correction if needed
-    const filteredValue = isOutlier 
-      ? this.correctOutlier(value, predictedValue) 
-      : value;
-    
-    // Update prediction accuracy metric
-    this.updatePredictionAccuracy();
-    
-    // Adapt model coefficients using regularized LMS algorithm
-    this.adaptModelCoefficients(currentError);
-    
-    // Calculate signal quality based on prediction performance
-    const signalQuality = this.calculateSignalQuality();
-    
-    return {
-      filteredValue,
-      predictedValue,
-      signalQuality,
-    };
+    console.log("AdaptivePredictor: Initialized with GP and Bayesian optimization");
   }
-  
+
   /**
-   * Predict the next signal value using the AR model
+   * Update the adaptive model with a new signal value
    */
-  private predictValue(): number {
-    if (this.signalHistory.length < MODEL_ORDER) {
-      return this.signalHistory.length > 0 ? this.signalHistory[this.signalHistory.length - 1] : 0;
+  public update(time: number, value: number, quality: number): void {
+    // Add to buffer
+    this.buffer.push({time, value, quality});
+    if (this.buffer.length > this.MAX_BUFFER_SIZE) {
+      this.buffer.shift();
     }
     
-    // Apply AR model
-    let prediction = 0;
-    for (let i = 0; i < MODEL_ORDER; i++) {
-      prediction += this.coefficients[i] * this.signalHistory[this.signalHistory.length - 1 - i];
-    }
+    // Update GP model
+    this.gaussianProcess.addObservation({
+      time,
+      value,
+      uncertainty: 1.0 - quality
+    });
     
-    // Add bias correction (mean)
-    prediction += (1 - this.coefficients.reduce((sum, c) => sum + c, 0)) * this.meanValue;
-    
-    return prediction;
-  }
-  
-  /**
-   * Update signal statistics with new value
-   */
-  private updateSignalStatistics(value: number): void {
-    // Update mean using exponential moving average
-    this.meanValue = 0.95 * this.meanValue + 0.05 * value;
-    
-    // Update variance estimate
-    if (this.signalHistory.length > 3) {
-      const deviation = value - this.meanValue;
-      this.signalVariance = 0.95 * this.signalVariance + 0.05 * (deviation * deviation);
-    }
-    
-    // Update noise estimate from error history
-    if (this.errorHistory.length > 3) {
-      const meanError = this.errorHistory.reduce((sum, e) => sum + e, 0) / this.errorHistory.length;
-      const errorVariance = this.errorHistory.reduce((sum, e) => sum + (e - meanError) * (e - meanError), 0) / this.errorHistory.length;
-      this.noiseEstimate = 0.9 * this.noiseEstimate + 0.1 * errorVariance;
-    }
-  }
-  
-  /**
-   * Correct outliers using prediction and historical values
-   */
-  private correctOutlier(value: number, prediction: number): number {
-    // Blend actual value with prediction based on deviation magnitude
-    const deviation = Math.abs(value - prediction);
-    const relativeDeviation = deviation / (this.signalVariance + 0.001);
-    
-    // Calculate blend factor (higher deviation = more correction)
-    const blendFactor = Math.min(0.8, (relativeDeviation - OUTLIER_THRESHOLD) / 5);
-    
-    // Weighted average of actual value and prediction
-    return (1 - blendFactor) * value + blendFactor * prediction;
-  }
-  
-  /**
-   * Adapt model coefficients using regularized LMS algorithm
-   */
-  private adaptModelCoefficients(error: number): void {
-    if (this.signalHistory.length < MODEL_ORDER) return;
-    
-    // Update adaptation rate based on prediction performance
-    this.updateAdaptationRate();
-    
-    // Regularization factor to prevent overfitting
-    const regularization = 0.001;
-    
-    // Update each coefficient
-    for (let i = 0; i < MODEL_ORDER; i++) {
-      const signal = this.signalHistory[this.signalHistory.length - 1 - i];
+    // Check prediction error if we had a previous prediction
+    if (this.lastPrediction !== null) {
+      const error = Math.abs(value - this.lastPrediction);
+      this.predictionErrors.push(error);
       
-      // Regularized LMS update
-      this.coefficients[i] = (1 - this.adaptationRate * regularization) * this.coefficients[i] + 
-                            this.adaptationRate * error * signal / (this.signalVariance + 0.001);
-    }
-    
-    // Constraint: Ensure stability by keeping sum of coefficients <= 0.95
-    const sum = this.coefficients.reduce((total, coef) => total + Math.abs(coef), 0);
-    if (sum > 0.95) {
-      const scale = 0.95 / sum;
-      for (let i = 0; i < this.coefficients.length; i++) {
-        this.coefficients[i] *= scale;
+      if (this.predictionErrors.length > this.MAX_ERRORS_TRACKED) {
+        this.predictionErrors.shift();
+      }
+      
+      // Use prediction error to optimize parameters
+      if (this.predictionErrors.length >= 5) {
+        const avgError = this.predictionErrors.reduce((sum, e) => sum + e, 0) / 
+                        this.predictionErrors.length;
+        const score = Math.max(0, 1.0 - avgError / 10.0);
+        
+        this.bayesianOptimizer.addObservation({
+          qualityThreshold: this.options.qualityThreshold || 0.7,
+          amplificationFactor: this.options.amplificationFactor || 2.0,
+          adaptationRate: this.options.adaptationRate || 0.15,
+          filterStrength: this.options.filterStrength || 1.0,
+          predictionHorizon: this.options.predictionHorizon || 5
+        }, score);
+        
+        // Every 10 updates, see if we can improve parameters
+        if (this.buffer.length % 10 === 0) {
+          this.optimizeParameters();
+        }
       }
     }
+    
+    // Update GP kernel parameters occasionally
+    if (this.buffer.length % 5 === 0) {
+      this.gaussianProcess.updateParameters();
+    }
   }
-  
+
   /**
-   * Update the adaptation rate based on prediction performance
+   * Predict the next value
    */
-  private updateAdaptationRate(): void {
-    // Calculate recent error variance
-    if (this.errorHistory.length < 3) return;
-    
-    const meanError = this.errorHistory.reduce((sum, e) => sum + e, 0) / this.errorHistory.length;
-    const errorVariance = this.errorHistory.reduce((sum, e) => sum + (e - meanError) * (e - meanError), 0) / this.errorHistory.length;
-    
-    // Normalized error variance (compared to signal variance)
-    const normalizedErrorVariance = errorVariance / (this.signalVariance + 0.001);
-    
-    // Adjust adaptation rate - faster for poor performance, slower for good performance
-    if (normalizedErrorVariance > 0.5) {
-      // Increase adaptation rate for poor model performance
-      this.adaptationRate = Math.min(ADAPTATION_RATE_MAX, this.adaptationRate * 1.1);
-    } else {
-      // Decrease adaptation rate when model performs well
-      this.adaptationRate = Math.max(ADAPTATION_RATE_MIN, this.adaptationRate * 0.95);
+  public predict(time: number): PredictionResult {
+    if (this.buffer.length < 3) {
+      return {
+        predictedValue: 0,
+        confidence: 0,
+        anomalyScore: 0,
+        correctedValue: null
+      };
     }
     
-    // Update stability metric
-    this.stabilityMetric = 1 - normalizedErrorVariance;
-  }
-  
-  /**
-   * Update prediction accuracy metric
-   */
-  private updatePredictionAccuracy(): void {
-    if (this.errorHistory.length < 3 || this.signalVariance < 0.001) return;
+    // Use GP to predict
+    const gpPrediction = this.gaussianProcess.predict(time);
     
-    // Calculate normalized mean absolute error
-    const meanAbsError = this.errorHistory.reduce((sum, e) => sum + Math.abs(e), 0) / this.errorHistory.length;
-    const normalizedError = meanAbsError / Math.sqrt(this.signalVariance);
+    // Calculate linear prediction as fallback
+    const recent = this.buffer.slice(-3);
+    const linearPrediction = this.predictLinear(time);
     
-    // Convert to accuracy (0-1 scale)
-    this.predictionAccuracy = Math.max(0, 1 - Math.min(1, normalizedError));
-  }
-  
-  /**
-   * Calculate signal quality based on prediction performance
-   */
-  private calculateSignalQuality(): number {
-    // Weight factors for different components
-    const PREDICTION_WEIGHT = 0.6;
-    const STABILITY_WEIGHT = 0.3;
-    const NOISE_WEIGHT = 0.1;
+    // Detect if the GP prediction might be an anomaly
+    const recentValues = this.buffer.slice(-5).map(b => b.value);
+    const recentMean = recentValues.reduce((sum, v) => sum + v, 0) / recentValues.length;
+    const recentStd = Math.sqrt(
+      recentValues.reduce((sum, v) => sum + Math.pow(v - recentMean, 2), 0) / recentValues.length
+    );
     
-    // Noise factor (lower noise = higher quality)
-    const noiseRatio = this.noiseEstimate / (this.signalVariance + 0.001);
-    const noiseFactor = Math.max(0, 1 - Math.min(1, noiseRatio * 2));
+    // Anomaly detection
+    const deviationFromRecent = Math.abs(gpPrediction.mean - recentMean);
+    const anomalyScore = recentStd > 0 ? deviationFromRecent / (recentStd * 3) : 0;
     
-    // Combined quality metric
-    const qualityMetric = 
-      PREDICTION_WEIGHT * this.predictionAccuracy +
-      STABILITY_WEIGHT * this.stabilityMetric + 
-      NOISE_WEIGHT * noiseFactor;
+    // Final prediction is weighted average
+    const gpWeight = Math.max(0.3, Math.min(0.9, gpPrediction.confidence));
+    const predictedValue = gpPrediction.mean * gpWeight + linearPrediction * (1 - gpWeight);
     
-    // Convert to 0-100 scale
-    return Math.round(qualityMetric * 100);
-  }
-  
-  /**
-   * Reset the adaptive predictor
-   */
-  public reset(): void {
-    this.coefficients = Array(MODEL_ORDER).fill(0);
-    this.adaptationRate = 0.05;
-    this.signalHistory = [];
-    this.errorHistory = [];
-    this.predictionHistory = [];
-    this.signalVariance = 0.1;
-    this.noiseEstimate = 0.1;
-    this.meanValue = 0;
-    this.predictionAccuracy = 0;
-    this.stabilityMetric = 0;
-  }
-  
-  /**
-   * Get current predictor state for debugging
-   */
-  public getState(): any {
+    // Correct if anomaly detected
+    let correctedValue = null;
+    if (anomalyScore > this.anomalyThreshold) {
+      this.anomalyCount++;
+      correctedValue = linearPrediction;
+    } else {
+      this.anomalyCount = Math.max(0, this.anomalyCount - 1);
+    }
+    
+    // Store for error tracking
+    this.lastPrediction = predictedValue;
+    
     return {
-      coefficients: [...this.coefficients],
-      adaptationRate: this.adaptationRate,
-      signalVariance: this.signalVariance,
-      noiseEstimate: this.noiseEstimate,
-      predictionAccuracy: this.predictionAccuracy,
-      stabilityMetric: this.stabilityMetric
+      predictedValue,
+      confidence: gpPrediction.confidence,
+      anomalyScore,
+      correctedValue
     };
   }
+
+  /**
+   * Simple linear prediction based on recent values
+   */
+  private predictLinear(time: number): number {
+    if (this.buffer.length < 2) return 0;
+    
+    const recent = this.buffer.slice(-2);
+    const deltaTime = recent[1].time - recent[0].time;
+    const deltaValue = recent[1].value - recent[0].value;
+    
+    if (deltaTime === 0) return recent[1].value;
+    
+    const slope = deltaValue / deltaTime;
+    const timeFromLatest = time - recent[1].time;
+    
+    return recent[1].value + slope * timeFromLatest;
+  }
+
+  /**
+   * Optimize parameters using Bayesian optimization
+   */
+  private optimizeParameters(): void {
+    const nextParams = this.bayesianOptimizer.suggestNextParameters();
+    
+    // Only update if expected improvement is significant
+    if (nextParams.expectedImprovement > 0.2) {
+      const currentParams = {
+        qualityThreshold: this.options.qualityThreshold || 0.7,
+        amplificationFactor: this.options.amplificationFactor || 2.0,
+        adaptationRate: this.options.adaptationRate || 0.15,
+        filterStrength: this.options.filterStrength || 1.0,
+        predictionHorizon: this.options.predictionHorizon || 5
+      };
+      
+      // Gradually adapt parameters
+      Object.keys(nextParams.parameters).forEach(key => {
+        const current = currentParams[key];
+        const suggested = nextParams.parameters[key];
+        
+        // Use adaptation rate to smooth changes
+        this.options[key] = current * (1 - this.adaptationRate) + 
+                           suggested * this.adaptationRate;
+      });
+      
+      console.log("AdaptivePredictor: Updated parameters", {
+        qualityThreshold: this.options.qualityThreshold?.toFixed(2),
+        amplificationFactor: this.options.amplificationFactor?.toFixed(2),
+        adaptationRate: this.options.adaptationRate?.toFixed(3),
+        filterStrength: this.options.filterStrength?.toFixed(2),
+        predictionHorizon: this.options.predictionHorizon
+      });
+    }
+  }
+
+  /**
+   * Detect and correct anomalies in a signal value
+   */
+  public correctAnomaly(time: number, value: number, quality: number): number {
+    if (this.buffer.length < 5) return value;
+    
+    // Predict what the value should be
+    const prediction = this.predict(time);
+    
+    // If high anomaly score and low quality, correct the value
+    if (prediction.anomalyScore > this.anomalyThreshold && quality < 0.6) {
+      console.log("AdaptivePredictor: Correcting anomaly", {
+        original: value.toFixed(2),
+        corrected: prediction.predictedValue.toFixed(2),
+        anomalyScore: prediction.anomalyScore.toFixed(2),
+        quality
+      });
+      
+      // Blend original and prediction based on quality
+      const correctionStrength = 1.0 - quality;
+      return value * (1 - correctionStrength) + prediction.predictedValue * correctionStrength;
+    }
+    
+    return value;
+  }
+
+  /**
+   * Calculate the probability that a signal contains an artifact
+   */
+  public calculateArtifactProbability(): number {
+    if (this.buffer.length < 10) return 0;
+    
+    // Use recent prediction errors and anomaly count
+    const avgPredictionError = this.predictionErrors.length > 0 ? 
+      this.predictionErrors.reduce((sum, e) => sum + e, 0) / this.predictionErrors.length : 0;
+    
+    // Normalize and combine factors
+    const errorFactor = Math.min(1, avgPredictionError / 10);
+    const anomalyFactor = Math.min(1, this.anomalyCount / 5);
+    
+    return (errorFactor * 0.6 + anomalyFactor * 0.4);
+  }
+
+  /**
+   * Get the current state of the adaptive model
+   */
+  public getState(): AdaptiveModelState {
+    const avgQuality = this.buffer.length > 0 ? 
+      this.buffer.reduce((sum, b) => sum + b.quality, 0) / this.buffer.length : 0;
+    
+    const qualityVariation = this.buffer.length > 1 ? 
+      Math.sqrt(this.buffer.reduce((sum, b) => sum + Math.pow(b.quality - avgQuality, 2), 0) / this.buffer.length) : 0;
+    
+    const avgPredictionError = this.predictionErrors.length > 0 ? 
+      this.predictionErrors.reduce((sum, e) => sum + e, 0) / this.predictionErrors.length : 0;
+    
+    // Calculate confidence in prediction
+    const errorNormalized = Math.min(1, avgPredictionError / 10);
+    const predictionConfidence = 1.0 - errorNormalized;
+    
+    // Get latest optimized parameters
+    const bestParams = this.bayesianOptimizer.getBestParameters() || {};
+    
+    return {
+      bufferSize: this.buffer.length,
+      averageQuality: avgQuality,
+      qualityStability: 1.0 - Math.min(1, qualityVariation),
+      averagePredictionError: avgPredictionError,
+      predictionConfidence,
+      optimizedParameters: bestParams,
+      improvementRate: this.adaptationRate
+    };
+  }
+
+  /**
+   * Configure the predictor
+   */
+  public configure(options: SignalProcessingOptions): void {
+    this.options = {...this.options, ...options};
+    
+    // Update related parameters
+    if (options.adaptationRate !== undefined) {
+      this.adaptationRate = options.adaptationRate;
+    }
+    
+    console.log("AdaptivePredictor: Configured with options", this.options);
+  }
+
+  /**
+   * Reset the predictor state
+   */
+  public reset(): void {
+    this.buffer.length = 0;
+    this.predictionErrors.length = 0;
+    this.lastPrediction = null;
+    this.anomalyCount = 0;
+    
+    this.gaussianProcess.reset();
+    this.bayesianOptimizer.reset();
+    
+    console.log("AdaptivePredictor: Reset");
+  }
 }
 
 /**
- * Create a new adaptive predictor instance
+ * Singleton instance for global use
  */
-export function createAdaptivePredictor(): AdaptivePredictor {
-  return new AdaptivePredictor();
+let globalAdaptivePredictor: AdaptivePredictor | null = null;
+
+/**
+ * Get the global adaptive predictor instance
+ */
+export function getAdaptivePredictor(): AdaptivePredictor {
+  if (!globalAdaptivePredictor) {
+    globalAdaptivePredictor = new AdaptivePredictor();
+  }
+  return globalAdaptivePredictor;
 }
 
 /**
- * Function to reset the adaptive predictor from outside
+ * Reset the global adaptive predictor
  */
 export function resetAdaptivePredictor(): void {
-  console.log("Adaptive predictor reset requested");
-  // This is a placeholder for module-level reset
-  // Actual reset happens when calling reset() on the predictor instance
+  if (globalAdaptivePredictor) {
+    globalAdaptivePredictor.reset();
+  }
 }

@@ -13,6 +13,9 @@ export * from './utils/quality-detector';
 export * from './utils/finger-detector';
 export * from './utils/signal-normalizer';
 export * from './utils/adaptive-predictor';
+export * from './utils/bayesian-optimization';
+export * from './utils/gaussian-process';
+export * from './utils/mixed-model';
 
 // Exportar tipos
 export * from './types';
