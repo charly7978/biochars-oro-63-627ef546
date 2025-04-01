@@ -37,7 +37,7 @@ interface MediaTrackConstraintSet {
   contrast?: ConstrainDouble;
 }
 
-// Define ImageCapture as a global class
+// Define ImageCapture as a properly exported global class
 declare global {
   class ImageCapture {
     constructor(track: MediaStreamTrack);
@@ -46,4 +46,4 @@ declare global {
   }
 }
 
-// No export needed for global interfaces
+// No export needed for declaration merging

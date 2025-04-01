@@ -16,13 +16,24 @@ export * from './arrhythmia/types';
 // Export shared signal utils
 export * from './shared-signal-utils';
 
-// Export selected utility functions without ambiguity
-// Instead of exporting all utils which causes ambiguities
+// Export specific utility functions only
+// We're removing the specific function exports that don't exist
 export { 
-  // Export specific functions from utils to avoid ambiguity
-  normalizeSignal,
-  filterSignal,
-  calculateHeartRate,
-  validateSignalQuality,
-  detectPeaks
+  // Export signal processing core functions
+  calculateAC,
+  calculateDC,
+  calculateStandardDeviation,
+  calculateEMA,
+  normalizeValue,
+  
+  // Export peak detection functions
+  findPeaksAndValleys,
+  calculateAmplitude,
+  
+  // Export filter functions
+  applySMAFilter,
+  amplifySignal,
+  
+  // Export perfusion functions
+  calculatePerfusionIndex
 } from './utils';

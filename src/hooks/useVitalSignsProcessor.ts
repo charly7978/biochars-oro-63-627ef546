@@ -1,4 +1,3 @@
-
 /**
  * Hook for processing vital signs signals
  */
@@ -58,7 +57,8 @@ export function useVitalSignsProcessor() {
     
     debugInfo.current.processedSignals++;
     
-    const result = processorRef.current.process({
+    // Note: Using processSignal instead of process
+    const result = processorRef.current.processSignal({
       value,
       rrData
     });
