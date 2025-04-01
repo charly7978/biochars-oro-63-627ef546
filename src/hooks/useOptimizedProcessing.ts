@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -6,7 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   OptimizationController, 
-  getOptimizationController
+  getOptimizationController,
+  OptimizationStatus
 } from '../modules/extraction/OptimizationController';
 import { OptimizationPhase } from '../modules/extraction/optimization/OptimizationManager';
 
@@ -160,15 +162,14 @@ export const useOptimizedProcessing = (
     }
     
     // Establecer fase en el gestor de optimizaciones
-    if (controllerRef.current.getStatus().phase !== phase) {
+    controllerRef.current.getStatus().phase !== phase && 
       controllerRef.current.getOptimizationManager().activatePhase(phase);
       
-      // Aplicar configuración para la fase
-      controllerRef.current.applyOptimizedConfig();
-      
-      // Actualizar estado
-      setStatus(controllerRef.current.getStatus());
-    }
+    // Aplicar configuración para la fase
+    controllerRef.current.applyOptimizedConfig();
+    
+    // Actualizar estado
+    setStatus(controllerRef.current.getStatus());
   }, []);
   
   /**

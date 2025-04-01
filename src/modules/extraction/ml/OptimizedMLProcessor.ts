@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -5,20 +6,7 @@
  */
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl';
-import '@tensorflow/tfjs-layers';
 import { getOptimizationManager } from '../optimization/OptimizationManager';
-
-// Define types from tfjs that aren't properly imported
-interface GraphModel {
-  predict: (inputs: tf.Tensor | tf.Tensor[]) => tf.Tensor | tf.Tensor[];
-  dispose: () => void;
-}
-
-interface LayersModel {
-  predict: (inputs: tf.Tensor | tf.Tensor[]) => tf.Tensor | tf.Tensor[];
-  compile: (config: any) => void;
-  dispose: () => void;
-}
 
 export interface OptimizedMLProcessorConfig {
   enableQuantization: boolean;
@@ -39,7 +27,7 @@ export interface OptimizedMLResult {
 
 export class OptimizedMLProcessor {
   private config: OptimizedMLProcessorConfig;
-  private model: GraphModel | LayersModel | null = null;
+  private model: tf.GraphModel | tf.LayersModel | null = null;
   private isInitialized: boolean = false;
   private inputBuffer: number[] = [];
   private lastEnhanced: number = 0;
@@ -91,15 +79,15 @@ export class OptimizedMLProcessor {
           // Intentar cargar versión cuantizada
           const quantizedPath = modelPath.replace('.json', '_quantized.json');
           try {
-            this.model = await (tf as any).loadGraphModel(quantizedPath);
+            this.model = await tf.loadGraphModel(quantizedPath);
             console.log("[OptimizedMLProcessor] Modelo cuantizado cargado correctamente");
           } catch (e) {
             console.warn("[OptimizedMLProcessor] No se pudo cargar modelo cuantizado, intentando modelo normal");
-            this.model = await (tf as any).loadLayersModel(modelPath);
+            this.model = await tf.loadLayersModel(modelPath);
           }
         } else {
           // Cargar modelo normal
-          this.model = await (tf as any).loadLayersModel(modelPath);
+          this.model = await tf.loadLayersModel(modelPath);
           console.log("[OptimizedMLProcessor] Modelo estándar cargado correctamente");
         }
       } else {
@@ -122,15 +110,13 @@ export class OptimizedMLProcessor {
   /**
    * Crea un modelo optimizado con arquitectura eficiente
    */
-  private async createOptimizedModel(): Promise<LayersModel> {
+  private async createOptimizedModel(): Promise<tf.LayersModel> {
     // Usar tf.tidy para gestión automática de memoria
     return tf.tidy(() => {
-      const tfLayers = (tf as any).layers;
-      
-      const input = (tf as any).input({shape: [this.config.inputSize, 1]});
+      const input = tf.input({shape: [this.config.inputSize, 1]});
       
       // Capa de entrada con normalización
-      let x = tfLayers.conv1d({
+      let x = tf.layers.conv1d({
         filters: 16,
         kernelSize: 3,
         padding: 'same',
@@ -139,29 +125,29 @@ export class OptimizedMLProcessor {
       }).apply(input);
       
       // Arquitectura eficiente (reducida para optimización)
-      x = tfLayers.batchNormalization().apply(x);
+      x = tf.layers.batchNormalization().apply(x);
       
       // Residual block
       const shortcut = x;
-      let y = tfLayers.conv1d({
+      let y = tf.layers.conv1d({
         filters: 16, 
         kernelSize: 3,
         padding: 'same',
         activation: 'relu'
       }).apply(x);
       
-      y = tfLayers.conv1d({
+      y = tf.layers.conv1d({
         filters: 16,
         kernelSize: 3,
         padding: 'same',
         activation: 'linear'
       }).apply(y);
       
-      x = tfLayers.add().apply([shortcut, y]);
-      x = tfLayers.activation({activation: 'relu'}).apply(x);
+      x = tf.layers.add().apply([shortcut, y]);
+      x = tf.layers.activation({activation: 'relu'}).apply(x);
       
       // Capa de salida
-      const output = tfLayers.conv1d({
+      const output = tf.layers.conv1d({
         filters: 1,
         kernelSize: 3,
         padding: 'same',
@@ -169,7 +155,7 @@ export class OptimizedMLProcessor {
       }).apply(x);
       
       // Crear y compilar modelo
-      const model = (tf as any).model({inputs: input, outputs: output as tf.Tensor});
+      const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
       model.compile({
         optimizer: tf.train.adam(0.001),
         loss: 'meanSquaredError'
@@ -257,10 +243,8 @@ export class OptimizedMLProcessor {
           const output = this.model!.predict(inputTensor) as tf.Tensor;
           
           // Extraer último valor
-          const outputArray = await output.arraySync ? 
-                              output.arraySync() as number[][] : 
-                              [await output.array() as number[]];
-          const lastValue = outputArray[0][outputArray[0].length - 1];
+          const outputArray = output.reshape([this.config.inputSize]).arraySync() as number[];
+          const lastValue = outputArray[outputArray.length - 1];
           
           // Calcular métricas de calidad
           const calculatedQuality = this.calculateQuality(normalizedBuffer);
@@ -285,10 +269,8 @@ export class OptimizedMLProcessor {
         const inputTensor = tf.tensor(normalizedBuffer, [1, this.config.inputSize, 1]);
         
         const output = this.model.predict(inputTensor) as tf.Tensor;
-        const outputArray = await output.arraySync ? 
-                            output.arraySync() as number[][] : 
-                            [await output.array() as number[]];
-        const lastValue = outputArray[0][outputArray[0].length - 1];
+        const outputArray = await output.reshape([this.config.inputSize]).array() as number[];
+        const lastValue = outputArray[outputArray.length - 1];
         
         enhanced = this.denormalizeValue(lastValue, normalizedBuffer);
         quality = this.calculateQuality(normalizedBuffer);

@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -206,11 +207,11 @@ export class OptimizationController {
     // Obtener uso de memoria si está disponible
     let memoryUsage: number | undefined = undefined;
     
-    if (this.config.enableDetailedMetrics && typeof performance !== 'undefined' && 'memory' in performance) {
+    if (this.config.enableDetailedMetrics && 'memory' in performance) {
       try {
-        // Access performance.memory safely
-        const memoryInfo = (performance as any).memory;
-        if (memoryInfo && typeof memoryInfo.usedJSHeapSize === 'number') {
+        // @ts-ignore: memory API no estándar
+        const memoryInfo = performance.memory;
+        if (memoryInfo) {
           memoryUsage = memoryInfo.usedJSHeapSize;
         }
       } catch (e) {
