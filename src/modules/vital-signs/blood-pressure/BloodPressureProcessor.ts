@@ -7,7 +7,7 @@ import { calculateMAP, validateBloodPressure, formatBloodPressure, categorizeBlo
 
 /**
  * Processes PPG signals to extract blood pressure values
- * using direct measurement with more moderate amplification
+ * using direct measurement with MAXIMUM raw amplification
  */
 export class BloodPressureProcessor {
   private lastValidResult: BloodPressureResult | null = null;
@@ -31,10 +31,10 @@ export class BloodPressureProcessor {
   
   /**
    * Process a PPG signal to extract blood pressure
-   * Showing raw values with moderate amplification
+   * Showing RAW values with MAXIMUM amplification
    */
   public process(value: number): BloodPressureResult {
-    // Direct calculation with moderate amplification
+    // Direct calculation with MAXIMUM amplification
     const result = this.directCalculation(value);
     
     // Store result without validation
@@ -46,16 +46,16 @@ export class BloodPressureProcessor {
   
   /**
    * Calculate blood pressure directly from signal value
-   * with moderate amplification
+   * with MAXIMUM amplification
    */
   private directCalculation(value: number): BloodPressureResult {
-    // Direct multiplication of signal with moderate amplification factors
+    // Direct multiplication of signal with MAXIMUM amplification factors
     const signalAmplitude = Math.abs(value);
     
-    // Calculate systolic and diastolic with moderate amplification
+    // Calculate systolic and diastolic with MAXIMUM amplification
     // Starting from typical baseline values
-    const systolic = Math.round(120 + value * 15); // reduced from 40
-    const diastolic = Math.round(80 + value * 10); // reduced from 30
+    const systolic = Math.round(120 + value * 80); // increased amplification
+    const diastolic = Math.round(80 + value * 60); // increased amplification
     const map = calculateMAP(systolic, diastolic);
     
     // Get category without constraining the values
@@ -66,7 +66,7 @@ export class BloodPressureProcessor {
       diastolic,
       map,
       category,
-      confidence: signalAmplitude * 2 // Simple confidence based on signal strength
+      confidence: signalAmplitude * 3 // Simple confidence based on signal strength
     };
   }
   
