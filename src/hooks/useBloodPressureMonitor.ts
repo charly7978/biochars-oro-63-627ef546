@@ -3,7 +3,7 @@
  * Hook for monitoring blood pressure using the BloodPressureProcessor
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { BloodPressureProcessor } from '../modules/vital-signs';
+import { BloodPressureProcessor } from '../modules/vital-signs/blood-pressure/BloodPressureProcessor';
 import { formatBloodPressure } from '../modules/vital-signs/blood-pressure/BloodPressureUtils';
 
 interface BloodPressureMonitorOptions {
@@ -30,7 +30,6 @@ export function useBloodPressureMonitor(options?: BloodPressureMonitorOptions) {
   // Initialize processor
   useEffect(() => {
     processorRef.current = new BloodPressureProcessor({
-      useAI: currentOptions.useAI,
       confidenceThreshold: currentOptions.confidenceThreshold,
       useEnhancement: currentOptions.useEnhancement
     });
@@ -50,7 +49,7 @@ export function useBloodPressureMonitor(options?: BloodPressureMonitorOptions) {
     }
     
     try {
-      const result = await processorRef.current.process(ppgValue);
+      const result = processorRef.current.process(ppgValue);
       setConfidence(result.confidence);
       
       const formattedPressure = formatBloodPressure(result.systolic, result.diastolic);
@@ -84,10 +83,6 @@ export function useBloodPressureMonitor(options?: BloodPressureMonitorOptions) {
         confidenceThreshold: newOptions.confidenceThreshold,
         useEnhancement: newOptions.useEnhancement
       });
-      
-      if (newOptions.useAI !== undefined) {
-        processorRef.current.setAIEnabled(newOptions.useAI);
-      }
     }
   }, []);
   

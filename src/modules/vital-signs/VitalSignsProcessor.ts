@@ -1,6 +1,6 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVABLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { VitalSignsResult, RRIntervalData } from '../../types/vital-signs';
@@ -68,12 +68,10 @@ export class VitalSignsProcessor {
         `ARRHYTHMIA DETECTED|${this.arrhythmiaCounter}` : 
         `NORMAL RHYTHM|${this.arrhythmiaCounter}`,
       glucose,
-      lipids,
-      lastArrhythmiaData: arrhythmiaDetected ? {
-        timestamp: Date.now(),
-        rmssd: 0,
-        rrVariation: 0
-      } : null
+      lipids: {
+        totalCholesterol: lipids.totalCholesterol,
+        triglycerides: lipids.triglycerides
+      }
     };
   }
   
@@ -104,7 +102,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Calculate blood pressure
+   * Calculate blood pressure using simplified algorithm
    */
   private calculateBloodPressure(
     ppgValue: number, 

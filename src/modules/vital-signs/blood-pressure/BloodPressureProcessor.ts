@@ -1,17 +1,16 @@
 
 /**
- * Enhanced blood pressure processor with improved accuracy and reliability
+ * Simplified blood pressure processor without TensorFlow dependencies
  */
 import { BloodPressureResult } from './BloodPressureResult';
 import { calculateMAP, validateBloodPressure, formatBloodPressure } from './BloodPressureUtils';
 
 /**
  * Processes PPG signals to extract blood pressure values
+ * using simplified algorithms that don't depend on external models
  */
 export class BloodPressureProcessor {
-  private isAIEnabled: boolean = false;
   private lastValidResult: BloodPressureResult | null = null;
-  private isModelLoaded: boolean = false;
   private processingOptions: {
     useEnhancement: boolean;
     confidenceThreshold: number;
@@ -19,12 +18,10 @@ export class BloodPressureProcessor {
   };
   
   constructor(options?: {
-    useAI?: boolean;
     useEnhancement?: boolean;
     confidenceThreshold?: number;
     traditionalWeight?: number;
   }) {
-    this.isAIEnabled = options?.useAI ?? false;
     this.processingOptions = {
       useEnhancement: options?.useEnhancement ?? true,
       confidenceThreshold: options?.confidenceThreshold ?? 0.5,
@@ -35,10 +32,10 @@ export class BloodPressureProcessor {
   /**
    * Process a PPG signal to extract blood pressure
    */
-  public async process(value: number): Promise<BloodPressureResult> {
+  public process(value: number): BloodPressureResult {
     console.log("Processing blood pressure with value:", value);
     
-    // Use traditional calculation since AI features are disabled
+    // Use traditional calculation for blood pressure
     const traditionalResult = this.traditionalCalculation(value);
     
     // Store and return traditional result
@@ -79,13 +76,6 @@ export class BloodPressureProcessor {
    */
   public getConfidence(): number {
     return this.lastValidResult?.confidence ?? 0;
-  }
-  
-  /**
-   * Enable or disable AI processing
-   */
-  public setAIEnabled(enabled: boolean): void {
-    this.isAIEnabled = enabled;
   }
   
   /**

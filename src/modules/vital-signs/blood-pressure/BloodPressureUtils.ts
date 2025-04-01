@@ -46,3 +46,18 @@ export function validateBloodPressure(systolic: number, diastolic: number): bool
   
   return true;
 }
+
+/**
+ * Categorize blood pressure reading
+ * @param systolic Systolic blood pressure
+ * @param diastolic Diastolic blood pressure
+ * @returns Category of blood pressure
+ */
+export function categorizeBloodPressure(systolic: number, diastolic: number): string {
+  if (systolic < 90 || diastolic < 60) return "Low";
+  if (systolic < 120 && diastolic < 80) return "Normal";
+  if (systolic < 130 && diastolic < 80) return "Elevated";
+  if (systolic < 140 || diastolic < 90) return "Stage 1";
+  if (systolic < 180 || diastolic < 120) return "Stage 2";
+  return "Crisis";
+}

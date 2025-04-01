@@ -1,10 +1,9 @@
 
 /**
  * Hook for processing vital signs signals
- * Modified to use the new refactored blood pressure processing
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { VitalSignsProcessor } from '../modules/vital-signs'; 
+import { VitalSignsProcessor } from '../modules/vital-signs/VitalSignsProcessor'; 
 import { ProcessingPriority } from '../modules/extraction';
 import type { VitalSignsResult, RRIntervalData } from '../types/vital-signs';
 import type { ArrhythmiaWindow } from './vital-signs/types';
