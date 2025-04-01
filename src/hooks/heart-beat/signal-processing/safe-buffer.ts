@@ -1,128 +1,310 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Thread-safe buffer implementation for signal processing
+ * Buffer seguro con validación de datos y manejo de errores
+ * Encapsula el buffer optimizado con protecciones adicionales
  */
+import { 
+  OptimizedPPGBuffer, 
+  CircularBufferAdapter 
+} from './optimized-buffer';
+import { 
+  PPGDataPoint, 
+  TimestampedPPGData, 
+  SignalValidationResult 
+} from '../../../types/signal';
+import { 
+  SignalValidator, 
+  createSignalValidator 
+} from '../../../modules/signal-processing/signal-validator';
+import { 
+  SignalProcessingErrorHandler, 
+  getErrorHandler 
+} from '../../../modules/signal-processing/error-handler';
+import { 
+  SignalProcessingDiagnostics, 
+  getDiagnostics 
+} from '../../../modules/signal-processing/diagnostics';
 
-// Define signal data shape clearly to fix type issues
-export interface SafeSignalDataPoint {
-  value: number;
-  timestamp: number;
-  time: number;
-  quality?: number;
+/**
+ * SafeBuffer que añade validación y manejo de errores
+ * Compatible con la interfaz original para facilitar integración
+ */
+export class SafePPGBuffer<T extends TimestampedPPGData = TimestampedPPGData> {
+  private buffer: OptimizedPPGBuffer<T>;
+  private validator: SignalValidator;
+  private errorHandler: SignalProcessingErrorHandler;
+  private diagnostics: SignalProcessingDiagnostics;
+  private componentName: string;
+  private lastValidPoint: T | null = null;
+
+  constructor(capacity: number, componentName = 'SafePPGBuffer') {
+    // Inicializar buffer optimizado
+    this.buffer = new OptimizedPPGBuffer<T>(capacity);
+    
+    // Inicializar sistemas de validación y error
+    this.validator = createSignalValidator();
+    this.errorHandler = getErrorHandler();
+    this.diagnostics = getDiagnostics();
+    this.componentName = componentName;
+    
+    console.log(`SafePPGBuffer initialized with capacity ${capacity}`);
+  }
+
+  /**
+   * Añadir un punto con validación
+   */
+  public push(item: T): void {
+    try {
+      // Asegurarse de que el punto tenga todas las propiedades necesarias
+      const enhancedItem = { ...item } as T;
+      
+      // Garantizar que tanto time como timestamp existan
+      if ('timestamp' in item && !('time' in item)) {
+        (enhancedItem as unknown as { time: number }).time = item.timestamp;
+      } else if ('time' in item && !('timestamp' in item)) {
+        (enhancedItem as unknown as { timestamp: number }).timestamp = item.time;
+      }
+      
+      // Validar el punto antes de añadirlo
+      const validationStart = performance.now();
+      const validationResult: SignalValidationResult = this.validator.validatePPGDataPoint(enhancedItem);
+      const validationTimeMs = performance.now() - validationStart;
+      
+      // Registrar diagnóstico de validación
+      this.diagnostics.recordDiagnosticInfo({
+        processingStage: `${this.componentName}.validate`,
+        validationPassed: validationResult.isValid,
+        errorCode: validationResult.errorCode,
+        errorMessage: validationResult.errorMessage,
+        processingTimeMs: validationTimeMs
+      });
+      
+      if (!validationResult.isValid) {
+        // Manejar el error de validación
+        const error = {
+          code: validationResult.errorCode || 'VALIDATION_ERROR',
+          message: validationResult.errorMessage || 'Data validation failed',
+          timestamp: Date.now(),
+          severity: 'medium' as const,
+          recoverable: true,
+          data: {
+            item,
+            validationResult
+          }
+        };
+        
+        const { shouldRetry, fallbackValue } = this.errorHandler.handleError(
+          error, 
+          this.componentName,
+          this.lastValidPoint
+        );
+        
+        if (shouldRetry) {
+          // No hacer nada, dejar que el sistema siga operando
+          return;
+        } else if (fallbackValue) {
+          // Usar el último valor válido
+          this.buffer.push(fallbackValue);
+          return;
+        } else {
+          // No añadir el punto inválido
+          return;
+        }
+      }
+      
+      // Si pasa la validación, guardar como último valor válido
+      this.lastValidPoint = enhancedItem;
+      
+      // Registrar como valor bueno para futuros fallbacks
+      this.errorHandler.registerGoodValue(this.componentName, enhancedItem);
+      
+      // Añadir al buffer
+      this.buffer.push(enhancedItem);
+      
+    } catch (error) {
+      // Capturar errores inesperados
+      console.error(`SafePPGBuffer: Unexpected error in push operation:`, error);
+      
+      // Registrar error en el sistema de diagnóstico
+      this.diagnostics.recordDiagnosticInfo({
+        processingStage: `${this.componentName}.push`,
+        validationPassed: false,
+        errorCode: 'UNEXPECTED_ERROR',
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Obtener un elemento con manejo de errores
+   */
+  public get(index: number): T | null {
+    try {
+      return this.buffer.get(index);
+    } catch (error) {
+      // Registrar error
+      const processingError = {
+        code: 'BUFFER_GET_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+        severity: 'low' as const,
+        recoverable: true
+      };
+      
+      this.errorHandler.handleError(processingError, this.componentName);
+      return null;
+    }
+  }
+
+  /**
+   * Obtener todos los puntos con protección de errores
+   */
+  public getPoints(): T[] {
+    try {
+      return this.buffer.getPoints();
+    } catch (error) {
+      const processingError = {
+        code: 'BUFFER_GET_POINTS_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+        severity: 'low' as const,
+        recoverable: true
+      };
+      
+      this.errorHandler.handleError(processingError, this.componentName);
+      return [];
+    }
+  }
+
+  /**
+   * Limpiar el buffer
+   */
+  public clear(): void {
+    try {
+      this.buffer.clear();
+      this.lastValidPoint = null;
+    } catch (error) {
+      console.error('Error clearing buffer:', error);
+    }
+  }
+
+  /**
+   * Tamaño actual del buffer
+   */
+  public size(): number {
+    return this.buffer.size();
+  }
+
+  /**
+   * Verificar si el buffer está vacío
+   */
+  public isEmpty(): boolean {
+    return this.buffer.isEmpty();
+  }
+
+  /**
+   * Verificar si el buffer está lleno
+   */
+  public isFull(): boolean {
+    return this.buffer.isFull();
+  }
+
+  /**
+   * Obtener la capacidad del buffer
+   */
+  public getCapacity(): number {
+    return this.buffer.getCapacity();
+  }
+
+  /**
+   * Obtener los valores del buffer
+   */
+  public getValues(): number[] {
+    try {
+      return this.buffer.getValues();
+    } catch (error) {
+      const processingError = {
+        code: 'BUFFER_GET_VALUES_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+        severity: 'low' as const,
+        recoverable: true
+      };
+      
+      this.errorHandler.handleError(processingError, this.componentName);
+      return [];
+    }
+  }
+
+  /**
+   * Obtener los últimos N elementos
+   */
+  public getLastN(n: number): T[] {
+    try {
+      return this.buffer.getLastN(n);
+    } catch (error) {
+      const processingError = {
+        code: 'BUFFER_GET_LAST_N_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+        severity: 'low' as const,
+        recoverable: true
+      };
+      
+      this.errorHandler.handleError(processingError, this.componentName);
+      return [];
+    }
+  }
+
+  /**
+   * Obtener el buffer interno optimizado
+   */
+  public getOptimizedBuffer(): OptimizedPPGBuffer<T> {
+    return this.buffer;
+  }
 }
 
 /**
- * Thread-safe circular buffer for signal data
+ * Adaptador seguro compatible con CircularBuffer
+ * Proporciona la misma interfaz con protecciones adicionales
  */
-export class SafeBuffer<T extends SafeSignalDataPoint> {
-  private buffer: T[];
-  private capacity: number;
-  private size: number = 0;
-  private head: number = 0;
-  private tail: number = 0;
-  private mutex: boolean = false;
+export class SafeCircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPGData> extends CircularBufferAdapter<T> {
+  private safeBuffer: SafePPGBuffer<T>;
   
-  constructor(capacity: number) {
-    this.capacity = capacity;
-    this.buffer = new Array<T>(capacity);
+  constructor(capacity: number, componentName = 'SafeCircularBufferAdapter') {
+    super(capacity);
+    this.safeBuffer = new SafePPGBuffer<T>(capacity, componentName);
+  }
+  
+  public override push(item: T): void {
+    super.push(item);
+    this.safeBuffer.push(item);
   }
   
   /**
-   * Acquire the mutex
+   * Obtener el buffer seguro
    */
-  private acquire(): boolean {
-    if (this.mutex) return false;
-    this.mutex = true;
-    return true;
+  public getSafeBuffer(): SafePPGBuffer<T> {
+    return this.safeBuffer;
   }
-  
-  /**
-   * Release the mutex
-   */
-  private release(): void {
-    this.mutex = false;
-  }
-  
-  /**
-   * Safely add an item to the buffer
-   */
-  push(item: T): boolean {
-    if (!this.acquire()) return false;
-    
-    try {
-      this.buffer[this.tail] = item;
-      this.tail = (this.tail + 1) % this.capacity;
-      
-      if (this.size < this.capacity) {
-        this.size++;
-      } else {
-        this.head = (this.head + 1) % this.capacity;
-      }
-      
-      return true;
-    } finally {
-      this.release();
-    }
-  }
-  
-  /**
-   * Safely get all items from the buffer
-   */
-  getAll(): T[] {
-    if (!this.acquire()) return [];
-    
-    try {
-      const result = new Array<T>(this.size);
-      
-      for (let i = 0; i < this.size; i++) {
-        const pos = (this.head + i) % this.capacity;
-        result[i] = this.buffer[pos];
-      }
-      
-      return result;
-    } finally {
-      this.release();
-    }
-  }
-  
-  /**
-   * Safely clear the buffer
-   */
-  clear(): boolean {
-    if (!this.acquire()) return false;
-    
-    try {
-      this.head = 0;
-      this.tail = 0;
-      this.size = 0;
-      return true;
-    } finally {
-      this.release();
-    }
-  }
-  
-  /**
-   * Get the current size of the buffer
-   */
-  getSize(): number {
-    // No need for mutex for just reading size
-    return this.size;
-  }
-  
-  /**
-   * Get the most recent item safely
-   */
-  getLast(): T | null {
-    if (!this.acquire()) return null;
-    
-    try {
-      if (this.size === 0) return null;
-      const pos = (this.tail - 1 + this.capacity) % this.capacity;
-      return this.buffer[pos];
-    } finally {
-      this.release();
-    }
-  }
+}
+
+/**
+ * Crear un buffer seguro a partir de un buffer circular
+ */
+export function createSafeBuffer<U extends TimestampedPPGData>(
+  capacity: number, 
+  componentName?: string
+): SafePPGBuffer<U> {
+  return new SafePPGBuffer<U>(capacity, componentName);
+}
+
+/**
+ * Crear un adaptador de buffer seguro
+ */
+export function createSafeCircularBufferAdapter<U extends TimestampedPPGData>(
+  capacity: number,
+  componentName?: string
+): SafeCircularBufferAdapter<U> {
+  return new SafeCircularBufferAdapter<U>(capacity, componentName);
 }
