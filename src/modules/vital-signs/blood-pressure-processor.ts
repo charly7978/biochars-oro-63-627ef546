@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
@@ -242,6 +243,31 @@ export class BloodPressureProcessor {
       diastolic: resultDiastolic,
       precision
     };
+  }
+  
+  /**
+   * Process a single PPG value
+   * Wrapper method for compatibility with other processors
+   */
+  public processValue(value: number): {
+    systolic: number;
+    diastolic: number;
+    precision: number;
+  } {
+    // Create a single-element array with the value
+    return this.calculateBloodPressure([value]);
+  }
+  
+  /**
+   * Get the confidence level of the blood pressure measurement
+   */
+  public getConfidence(): number {
+    if (this.systolicBuffer.length === 0) {
+      return 0;
+    }
+    
+    const { precision } = this.calculateFinalValues();
+    return precision;
   }
   
   /**
