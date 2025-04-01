@@ -1,198 +1,157 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
+ * Heartbeat processor implementation
  */
 
-import { ProcessedHeartbeatSignal, SignalProcessingOptions } from './types';
-import { HeartbeatSignalProcessor } from './interfaces';
-import { calculateEMA } from '../vital-signs/utils/statistics-utils';
-import { findPeaksAndValleys } from '../vital-signs/utils/peak-detection-utils';
-import { 
-  applyAdaptiveFilter,
-  predictNextValue,
-  correctSignalAnomalies,
-  updateQualityWithPrediction
-} from './utils/adaptive-predictor';
+import { HeartbeatSignalProcessor, ProcessorOptions } from './interfaces';
+import { applyAdaptiveFilter, predictNextValue } from './utils/adaptive-predictor';
 
 /**
  * Processor for heartbeat signals
- * Direct measurement only, no simulation
  */
 export class HeartbeatProcessor implements HeartbeatSignalProcessor {
-  private signalBuffer: number[] = [];
+  private buffer: number[] = [];
+  private timestamps: number[] = [];
   private peakBuffer: number[] = [];
-  private rrIntervals: number[] = [];
-  private lastPeakTime: number | null = null;
-  private previousPeakTime: number | null = null;
-  private lastProcessedValue: number = 0;
-  private currentBpm: number = 0;
-  private confidenceLevel: number = 0;
-  private options: SignalProcessingOptions = {
-    filterStrength: 0.2,
-    qualityThreshold: 0.4
+  private lastPeakTime: number = 0;
+  private threshold: number = 0.05;
+  private adaptiveThreshold: boolean = true;
+  private minPeakDistance: number = 300; // ms
+  private options: ProcessorOptions = {
+    adaptationRate: 0.3,
+    bufferSize: 30,
+    useAdaptiveThresholds: true,
+    sensitivityLevel: 'medium'
   };
-  
-  /**
-   * Configure the processor with new options
-   */
-  configure(options: Partial<SignalProcessingOptions>): void {
-    this.options = { ...this.options, ...options };
-    console.log("HeartbeatProcessor: Configured with options", this.options);
+
+  constructor() {
+    console.log("HeartbeatProcessor initialized");
   }
-  
+
   /**
-   * Process a heartbeat signal and detect peaks
+   * Process a signal value to detect heartbeats
    */
-  processSignal(signal: number): ProcessedHeartbeatSignal {
+  processSignal(value: number) {
+    const now = Date.now();
+    
     // Add to buffer
-    this.signalBuffer.push(signal);
+    this.buffer.push(value);
+    this.timestamps.push(now);
     
-    // Keep buffer at reasonable size
-    if (this.signalBuffer.length > 128) {
-      this.signalBuffer.shift();
+    // Keep buffer at specified size
+    if (this.buffer.length > this.options.bufferSize!) {
+      this.buffer.shift();
+      this.timestamps.shift();
     }
-    
-    // Apply filtering
-    const filtered = this.applyFiltering(signal);
     
     // Detect peaks
-    const now = Date.now();
     let isPeak = false;
+    let confidence = 0;
+    let instantaneousBPM = null;
+    let rrInterval = null;
     
-    if (this.signalBuffer.length >= 5) {
-      // Get last few values
-      const lastValues = this.signalBuffer.slice(-5);
+    if (this.buffer.length >= 3) {
+      // Check if this is a peak
+      const prev = this.buffer[this.buffer.length - 2];
+      const current = value;
+      const timeSinceLastPeak = now - this.lastPeakTime;
       
-      // Center value is a peak if it's the highest
-      const centerValue = lastValues[2];
-      const isLocalPeak = centerValue > lastValues[1] && 
-                          centerValue > lastValues[3] &&
-                          centerValue >= lastValues[0] &&
-                          centerValue >= lastValues[4];
+      // Adjust threshold if adaptive
+      if (this.adaptiveThreshold && this.buffer.length > 10) {
+        // Calculate adaptive threshold based on recent signal
+        const recent = this.buffer.slice(-10);
+        const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+        const maxVal = Math.max(...recent);
+        this.threshold = mean + (maxVal - mean) * 0.3;
+      }
       
-      if (isLocalPeak) {
-        isPeak = true;
-        this.peakBuffer.push(centerValue);
+      // Peak detection
+      if (current > prev && 
+          current > this.threshold && 
+          timeSinceLastPeak > this.minPeakDistance) {
         
-        // Handle timing if this is a confirmed peak
-        if (this.lastPeakTime !== null) {
-          this.previousPeakTime = this.lastPeakTime;
-          const interval = now - this.lastPeakTime;
-          
-          // Only add reasonable intervals (between 40 and 200 BPM)
-          if (interval >= 300 && interval <= 1500) {
-            this.rrIntervals.push(interval);
-            
-            // Keep RR intervals buffer manageable
-            if (this.rrIntervals.length > 10) {
-              this.rrIntervals.shift();
-            }
-          }
+        isPeak = true;
+        this.lastPeakTime = now;
+        this.peakBuffer.push(now);
+        
+        // Keep peak buffer manageable
+        if (this.peakBuffer.length > 10) {
+          this.peakBuffer.shift();
         }
         
-        this.lastPeakTime = now;
+        // Calculate BPM if we have at least 2 peaks
+        if (this.peakBuffer.length >= 2) {
+          // Average RR interval
+          const intervals = [];
+          for (let i = 1; i < this.peakBuffer.length; i++) {
+            intervals.push(this.peakBuffer[i] - this.peakBuffer[i-1]);
+          }
+          
+          // Calculate average interval
+          const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+          instantaneousBPM = Math.round(60000 / avgInterval);
+          rrInterval = Math.round(avgInterval);
+          
+          // Set confidence based on consistency
+          const stdDev = Math.sqrt(
+            intervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / intervals.length
+          );
+          
+          const cv = stdDev / avgInterval; // Coefficient of variation
+          confidence = Math.max(0, 1 - cv);
+        }
       }
     }
-    
-    // Calculate BPM if we have enough intervals
-    if (this.rrIntervals.length >= 3) {
-      const avgInterval = this.rrIntervals.reduce((sum, val) => sum + val, 0) / this.rrIntervals.length;
-      const newBpm = Math.round(60000 / avgInterval);
-      
-      // Validate BPM is reasonable
-      if (newBpm >= 40 && newBpm <= 200) {
-        // Smooth BPM values
-        this.currentBpm = Math.round(this.currentBpm * 0.7 + newBpm * 0.3);
-        
-        // Update confidence based on consistency of intervals
-        const intervalDeviation = this.calculateIntervalDeviation();
-        this.confidenceLevel = Math.max(0, Math.min(1, 1 - intervalDeviation / 0.3));
-      }
-    }
-    
-    // Calculate instantaneous BPM if available
-    let instantBpm: number | null = null;
-    if (this.previousPeakTime !== null && this.lastPeakTime !== null) {
-      const lastInterval = this.lastPeakTime - this.previousPeakTime;
-      if (lastInterval >= 300 && lastInterval <= 1500) {
-        instantBpm = Math.round(60000 / lastInterval);
-      }
-    }
-    
-    // Calculate heart rate variability if possible
-    let hrv: number | null = null;
-    if (this.rrIntervals.length >= 5) {
-      hrv = this.calculateRMSSD();
-    }
-    
-    // Store this value
-    this.lastProcessedValue = filtered;
     
     return {
-      timestamp: now,
-      value: filtered,
+      value,
       isPeak,
-      bpm: this.currentBpm,
-      rrInterval: this.rrIntervals.length > 0 ? this.rrIntervals[this.rrIntervals.length - 1] : null,
-      confidence: this.confidenceLevel,
-      instantaneousBPM: instantBpm,
-      heartRateVariability: hrv,
-      rrData: {
-        intervals: [...this.rrIntervals],
-        lastPeakTime: this.lastPeakTime
-      }
+      confidence,
+      instantaneousBPM,
+      rrInterval,
+      timestamp: now
     };
   }
-  
+
   /**
-   * Reset the processor state
+   * Reset the processor
    */
   reset(): void {
-    this.signalBuffer = [];
+    this.buffer = [];
+    this.timestamps = [];
     this.peakBuffer = [];
-    this.rrIntervals = [];
-    this.lastPeakTime = null;
-    this.previousPeakTime = null;
-    this.lastProcessedValue = 0;
-    this.currentBpm = 0;
-    this.confidenceLevel = 0;
+    this.lastPeakTime = 0;
+    this.threshold = 0.05;
     console.log("HeartbeatProcessor: Reset complete");
   }
-  
+
   /**
-   * Apply filtering to the input signal
+   * Configure the processor with options
    */
-  private applyFiltering(signal: number): number {
-    if (this.signalBuffer.length < 3) return signal;
+  configure(options: ProcessorOptions): void {
+    this.options = { ...this.options, ...options };
     
-    // Apply adaptive filter
-    return applyAdaptiveFilter(signal, this.signalBuffer, this.options.filterStrength);
-  }
-  
-  /**
-   * Calculate RMSSD (Root Mean Square of Successive Differences)
-   * A common HRV metric
-   */
-  private calculateRMSSD(): number {
-    if (this.rrIntervals.length < 2) return 0;
-    
-    let sumSquaredDiffs = 0;
-    for (let i = 1; i < this.rrIntervals.length; i++) {
-      const diff = this.rrIntervals[i] - this.rrIntervals[i-1];
-      sumSquaredDiffs += diff * diff;
+    // Update parameters based on sensitivity
+    if (options.sensitivityLevel) {
+      switch (options.sensitivityLevel) {
+        case 'low':
+          this.threshold = 0.1;
+          this.minPeakDistance = 400;
+          break;
+        case 'medium':
+          this.threshold = 0.05;
+          this.minPeakDistance = 300;
+          break;
+        case 'high':
+          this.threshold = 0.03;
+          this.minPeakDistance = 250;
+          break;
+      }
     }
     
-    return Math.sqrt(sumSquaredDiffs / (this.rrIntervals.length - 1));
-  }
-  
-  /**
-   * Calculate the variability in RR intervals
-   */
-  private calculateIntervalDeviation(): number {
-    if (this.rrIntervals.length < 2) return 1;
+    this.adaptiveThreshold = !!this.options.useAdaptiveThresholds;
     
-    const avgInterval = this.rrIntervals.reduce((sum, val) => sum + val, 0) / this.rrIntervals.length;
-    const deviations = this.rrIntervals.map(interval => Math.abs(interval - avgInterval) / avgInterval);
-    
-    return deviations.reduce((sum, dev) => sum + dev, 0) / deviations.length;
+    console.log("HeartbeatProcessor: Configured with options", this.options);
   }
 }

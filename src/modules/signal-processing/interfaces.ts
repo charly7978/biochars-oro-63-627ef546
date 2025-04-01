@@ -41,6 +41,7 @@ export interface SignalDistributorConfig {
   };
   globalAdaptationRate?: number;
   calibrationMode?: boolean;
+  enableFeedback?: boolean;
 }
 
 /**
@@ -81,4 +82,32 @@ export interface CardiacResult {
   isPeak: boolean;
   rrInterval?: number | null;
   hrv?: number | null;
+}
+
+/**
+ * Interfaces for processors
+ */
+export interface PPGSignalProcessor {
+  processValue(value: number): number;
+  reset(): void;
+  startProcessing(): void;
+  stopProcessing(): void;
+  isActive(): boolean;
+  getLastValue(): number;
+}
+
+export interface HeartbeatSignalProcessor {
+  processSignal(value: number): any;
+  reset(): void;
+  configure(options: any): void;
+}
+
+/**
+ * Interface for processor options
+ */
+export interface ProcessorOptions {
+  adaptationRate?: number;
+  bufferSize?: number;
+  useAdaptiveThresholds?: boolean;
+  sensitivityLevel?: 'low' | 'medium' | 'high';
 }
