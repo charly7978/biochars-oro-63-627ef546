@@ -7,10 +7,13 @@
  * Signal filtering utilities for processing real PPG signals
  * All methods work with real data only, no simulation
  */
+import { applySMAFilter } from '../utils/filter-utils';
+
 export class SignalFilter {
   private readonly SMA_WINDOW_SIZE = 5;
   private readonly MEDIAN_WINDOW_SIZE = 3;
   private readonly LOW_PASS_ALPHA = 0.2;
+  private smaFilterBuffer: number[] = [];
   
   /**
    * Apply Moving Average filter to real values
@@ -24,9 +27,10 @@ export class SignalFilter {
       return value;
     }
     
-    const recentValues = safeValues.slice(-windowSize);
-    const sum = recentValues.reduce((acc, val) => acc + val, 0);
-    return (sum + value) / (windowSize + 1);
+    // Use the updated applySMAFilter function
+    const result = applySMAFilter(value, this.smaFilterBuffer, windowSize);
+    this.smaFilterBuffer = result.updatedBuffer;
+    return result.filteredValue;
   }
   
   /**
@@ -59,5 +63,12 @@ export class SignalFilter {
     valuesForMedian.sort((a, b) => a - b);
     
     return valuesForMedian[Math.floor(valuesForMedian.length / 2)];
+  }
+  
+  /**
+   * Reset all filter buffers
+   */
+  public reset(): void {
+    this.smaFilterBuffer = [];
   }
 }
