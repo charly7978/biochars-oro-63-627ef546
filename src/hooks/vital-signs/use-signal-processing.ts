@@ -68,11 +68,7 @@ export const useSignalProcessing = () => {
     }
     
     // Process signal directly - no simulation
-    // Fixed: Pass parameters correctly as expected by processSignal method
-    const result = processorRef.current.processSignal({
-      value,
-      rrData
-    });
+    let result = processorRef.current.processSignal(value, rrData);
     
     return result;
   }, []);

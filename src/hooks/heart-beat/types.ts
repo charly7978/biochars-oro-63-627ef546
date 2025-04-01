@@ -25,4 +25,5 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
+  arrhythmiaCount?: number;
 }
