@@ -1,320 +1,380 @@
 
 /**
- * Worker mejorado para procesamiento de señales
- * Implementa optimizaciones avanzadas para procesamiento eficiente
+ * Worker mejorado para procesamiento de señales con optimizaciones
  */
-import { WorkerProcessingResult, WorkerTaskConfig } from '../types/processing';
+import { WorkerTaskConfig, WorkerProcessingResult } from '../types/processing';
 
-// Interfaz para tareas del worker
-export interface WorkerTask<T = any> {
-  resolve: (value: WorkerProcessingResult<T> | PromiseLike<WorkerProcessingResult<T>>) => void;
-  reject: (reason?: any) => void;
-  startTime: number;
-  config: WorkerTaskConfig;
-  timeoutId?: number; // Propiedad opcional
-}
-
-// Tipos de mensajes del worker
+// Tipos de mensajes para el worker
 export enum WorkerMessageType {
   INITIALIZE = 'initialize',
   PROCESS_SIGNAL = 'process_signal',
   PROCESS_BATCH = 'process_batch',
   APPLY_FILTER = 'apply_filter',
   DETECT_PEAKS = 'detect_peaks',
-  OPTIMIZE_MEMORY = 'optimize_memory',
   RESULT = 'result',
-  ERROR = 'error',
-  PROGRESS = 'progress'
+  ERROR = 'error'
 }
 
-// Estructura de mensajes del worker
+// Interfaz para mensajes del worker
 export interface WorkerMessage {
   type: WorkerMessageType;
-  data: any;
+  data?: any;
   requestId?: string;
 }
 
 /**
- * Clase para gestionar un worker de procesamiento de señales mejorado
+ * Clase EnhancedSignalWorker: Gestiona un worker para procesamiento optimizado
  */
 export class EnhancedSignalWorker {
   private worker: Worker | null = null;
   private isInitialized: boolean = false;
-  private pendingTasks: Map<string, WorkerTask> = new Map();
-  private taskQueue: string[] = [];
-  private processingTask: boolean = false;
-  private workerUrl: string;
-  private autoTerminate: boolean;
-  private lastTaskTime: number = 0;
+  private pendingRequests: Map<string, { 
+    resolve: (value: any) => void, 
+    reject: (reason: any) => void,
+    timeout: number | null
+  }> = new Map();
+  
+  // Configuración por defecto
+  private config: WorkerTaskConfig = {
+    timeout: 5000,
+    priority: 'normal',
+    processingMode: 'async',
+    useWasm: true,
+    useML: false
+  };
   
   /**
-   * Constructor del worker mejorado
+   * Constructor
+   * @param workerUrl URL del script del worker
+   * @param config Configuración opcional
    */
-  constructor(workerUrl: string, autoTerminate: boolean = true) {
-    this.workerUrl = workerUrl;
-    this.autoTerminate = autoTerminate;
+  constructor(private workerUrl: string, config?: Partial<WorkerTaskConfig>) {
+    this.config = { ...this.config, ...config };
+    this.setupWorker();
+  }
+  
+  /**
+   * Configura el worker
+   */
+  private setupWorker(): void {
+    try {
+      // Crear instancia del worker
+      this.worker = new Worker(this.workerUrl, { type: 'module' });
+      
+      // Configurar manejador de mensajes
+      this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      
+      // Configurar manejador de errores
+      this.worker.onerror = this.handleWorkerError.bind(this);
+      
+      console.log('[EnhancedSignalWorker] Worker creado correctamente');
+    } catch (error) {
+      console.error('[EnhancedSignalWorker] Error creando worker:', error);
+      this.worker = null;
+    }
+  }
+  
+  /**
+   * Maneja mensajes recibidos del worker
+   */
+  private handleWorkerMessage(event: MessageEvent<WorkerMessage>): void {
+    const message = event.data;
+    
+    if (!message || !message.type) {
+      console.warn('[EnhancedSignalWorker] Mensaje recibido inválido:', message);
+      return;
+    }
+    
+    // Procesar mensaje según su tipo
+    switch (message.type) {
+      case WorkerMessageType.RESULT:
+        this.resolveRequest(message.requestId!, message.data);
+        break;
+        
+      case WorkerMessageType.ERROR:
+        this.rejectRequest(message.requestId!, new Error(message.data?.error || 'Error desconocido'));
+        break;
+        
+      default:
+        console.warn('[EnhancedSignalWorker] Tipo de mensaje desconocido:', message.type);
+    }
+  }
+  
+  /**
+   * Maneja errores del worker
+   */
+  private handleWorkerError(error: ErrorEvent): void {
+    console.error('[EnhancedSignalWorker] Error en worker:', error);
+    
+    // Rechazar todas las solicitudes pendientes
+    this.pendingRequests.forEach((request, id) => {
+      this.rejectRequest(id, new Error(`Error en worker: ${error.message}`));
+    });
+    
+    // Reiniciar el worker
+    this.restartWorker();
+  }
+  
+  /**
+   * Reinicia el worker
+   */
+  private restartWorker(): void {
+    console.log('[EnhancedSignalWorker] Reiniciando worker...');
+    
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    
+    this.isInitialized = false;
+    this.setupWorker();
+  }
+  
+  /**
+   * Envía un mensaje al worker
+   */
+  private sendMessage(type: WorkerMessageType, data?: any): Promise<any> {
+    if (!this.worker) {
+      return Promise.reject(new Error('Worker no disponible'));
+    }
+    
+    // Generar ID único para esta solicitud
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Crear promesa para esta solicitud
+    const promise = new Promise<any>((resolve, reject) => {
+      // Configurar timeout si es necesario
+      let timeoutId: number | null = null;
+      
+      if (this.config.timeout && this.config.timeout > 0) {
+        timeoutId = window.setTimeout(() => {
+          this.rejectRequest(requestId, new Error(`Timeout de ${this.config.timeout}ms excedido`));
+        }, this.config.timeout);
+      }
+      
+      // Almacenar callbacks y timeout
+      this.pendingRequests.set(requestId, { resolve, reject, timeout: timeoutId });
+    });
+    
+    // Enviar mensaje al worker
+    const message: WorkerMessage = { type, data, requestId };
+    this.worker.postMessage(message);
+    
+    return promise;
+  }
+  
+  /**
+   * Resuelve una solicitud pendiente
+   */
+  private resolveRequest(requestId: string, data: any): void {
+    const request = this.pendingRequests.get(requestId);
+    
+    if (request) {
+      // Limpiar timeout si existe
+      if (request.timeout !== null) {
+        clearTimeout(request.timeout);
+      }
+      
+      // Resolver promesa
+      request.resolve(data);
+      
+      // Eliminar solicitud de pendientes
+      this.pendingRequests.delete(requestId);
+    }
+  }
+  
+  /**
+   * Rechaza una solicitud pendiente
+   */
+  private rejectRequest(requestId: string, reason: any): void {
+    const request = this.pendingRequests.get(requestId);
+    
+    if (request) {
+      // Limpiar timeout si existe
+      if (request.timeout !== null) {
+        clearTimeout(request.timeout);
+      }
+      
+      // Rechazar promesa
+      request.reject(reason);
+      
+      // Eliminar solicitud de pendientes
+      this.pendingRequests.delete(requestId);
+    }
   }
   
   /**
    * Inicializa el worker
    */
   async initialize(): Promise<boolean> {
-    if (this.isInitialized) return true;
+    if (this.isInitialized) {
+      return true;
+    }
     
     try {
-      console.log("[EnhancedSignalWorker] Iniciando worker:", this.workerUrl);
-      this.worker = new Worker(this.workerUrl, { type: 'module' });
+      // Enviar mensaje de inicialización
+      const result = await this.sendMessage(WorkerMessageType.INITIALIZE, {
+        useWasm: this.config.useWasm,
+        useML: this.config.useML
+      });
       
-      // Configurar manejadores de eventos
-      this.worker.onmessage = this.handleWorkerMessage.bind(this);
-      this.worker.onerror = this.handleWorkerError.bind(this);
-      
-      // Inicializar el worker
-      const result = await this.sendMessage<{ success: boolean }>(
-        WorkerMessageType.INITIALIZE, 
-        {}
-      );
-      
-      this.isInitialized = result.success;
-      console.log(`[EnhancedSignalWorker] Inicialización ${this.isInitialized ? 'exitosa' : 'fallida'}`);
+      this.isInitialized = result?.success === true;
+      console.log(`[EnhancedSignalWorker] Inicialización ${this.isInitialized ? 'completada' : 'fallida'}`);
       
       return this.isInitialized;
     } catch (error) {
-      console.error("[EnhancedSignalWorker] Error inicializando worker:", error);
+      console.error('[EnhancedSignalWorker] Error inicializando worker:', error);
       this.isInitialized = false;
       return false;
     }
   }
   
   /**
-   * Envía un mensaje al worker y espera respuesta
+   * Procesa un valor de señal
    */
-  async sendMessage<T>(type: WorkerMessageType, data: any, config: WorkerTaskConfig = {}): Promise<WorkerProcessingResult<T>> {
-    if (!this.worker && !await this.initialize()) {
-      throw new Error("Worker no inicializado correctamente");
+  async processSignal(value: number): Promise<WorkerProcessingResult> {
+    if (!this.isInitialized) {
+      await this.initialize();
     }
     
-    // Generar ID único para la solicitud
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const startTime = performance.now();
     
-    return new Promise<WorkerProcessingResult<T>>((resolve, reject) => {
-      // Crear tarea
-      const task: WorkerTask<T> = {
-        resolve,
-        reject,
-        startTime: Date.now(),
-        config
+    try {
+      const result = await this.sendMessage(WorkerMessageType.PROCESS_SIGNAL, { value });
+      
+      return {
+        success: true,
+        data: result?.processed !== undefined ? result : { processed: value },
+        processingTime: performance.now() - startTime
       };
+    } catch (error) {
+      return {
+        success: false,
+        data: { processed: value },
+        processingTime: performance.now() - startTime,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  
+  /**
+   * Procesa un lote de valores de señal
+   */
+  async processBatch(values: number[]): Promise<WorkerProcessingResult> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    const startTime = performance.now();
+    
+    try {
+      const result = await this.sendMessage(WorkerMessageType.PROCESS_BATCH, { values });
       
-      // Configurar timeout si se especificó
-      if (config.timeout) {
-        task.timeoutId = window.setTimeout(() => {
-          this.handleTaskTimeout(requestId);
-        }, config.timeout);
-      }
-      
-      // Encolar tarea
-      this.pendingTasks.set(requestId, task);
-      this.taskQueue.push(requestId);
-      
-      // Enviar mensaje al worker
-      this.worker!.postMessage({
-        type,
-        data,
-        requestId
+      return {
+        success: true,
+        data: result || { processed: values },
+        processingTime: performance.now() - startTime
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: { processed: values },
+        processingTime: performance.now() - startTime,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  
+  /**
+   * Aplica un filtro a los valores
+   */
+  async applyFilter(values: number[], filterType: string): Promise<WorkerProcessingResult> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    const startTime = performance.now();
+    
+    try {
+      const result = await this.sendMessage(WorkerMessageType.APPLY_FILTER, { 
+        values, 
+        filterType 
       });
       
-      // Procesar siguiente tarea en cola si es necesario
-      this.processNextTask();
+      return {
+        success: true,
+        data: result || { filtered: values },
+        processingTime: performance.now() - startTime
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: { filtered: values },
+        processingTime: performance.now() - startTime,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  
+  /**
+   * Detecta picos en la señal
+   */
+  async detectPeaks(values: number[], options?: { 
+    minDistance?: number, 
+    threshold?: number 
+  }): Promise<WorkerProcessingResult> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
+    const startTime = performance.now();
+    
+    try {
+      const result = await this.sendMessage(WorkerMessageType.DETECT_PEAKS, { 
+        values, 
+        minDistance: options?.minDistance || 5,
+        threshold: options?.threshold || 0.5
+      });
       
-      // Actualizar tiempo de la última tarea
-      this.lastTaskTime = Date.now();
-    });
+      return {
+        success: true,
+        data: result || { peaks: [] },
+        processingTime: performance.now() - startTime
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: { peaks: [] },
+        processingTime: performance.now() - startTime,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
   
   /**
-   * Maneja el timeout de una tarea
+   * Libera recursos
    */
-  private handleTaskTimeout(requestId: string): void {
-    const task = this.pendingTasks.get(requestId);
-    if (!task) return;
+  dispose(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
     
-    console.warn(`[EnhancedSignalWorker] Tarea ${requestId} superó el tiempo máximo`);
-    
-    // Eliminar la tarea
-    this.pendingTasks.delete(requestId);
-    this.taskQueue = this.taskQueue.filter(id => id !== requestId);
-    
-    // Rechazar promesa
-    task.reject(new Error("Timeout - La tarea excedió el tiempo máximo permitido"));
-    
-    // Intentar procesar siguiente tarea
-    this.processNextTask();
-  }
-  
-  /**
-   * Procesa la siguiente tarea en cola
-   */
-  private processNextTask(): void {
-    if (this.processingTask || this.taskQueue.length === 0) return;
-    
-    this.processingTask = true;
-    
-    // Obtener siguiente tarea según prioridad
-    const highPriorityTasks = this.taskQueue.filter(id => {
-      const task = this.pendingTasks.get(id);
-      return task?.config.priority === 'high';
+    // Rechazar todas las solicitudes pendientes
+    this.pendingRequests.forEach((request, id) => {
+      this.rejectRequest(id, new Error('Worker terminado'));
     });
     
-    const nextTaskId = highPriorityTasks.length > 0 
-      ? highPriorityTasks[0]
-      : this.taskQueue[0];
-    
-    // Marcar como procesando
-    const nextTask = this.pendingTasks.get(nextTaskId);
-    if (!nextTask) {
-      this.processingTask = false;
-      return;
-    }
-    
-    // Continuar con el procesamiento (el worker ya tiene la tarea)
-    
-    // Al final esto se desmarcará en handleWorkerMessage
-  }
-  
-  /**
-   * Maneja los mensajes provenientes del worker
-   */
-  private handleWorkerMessage(event: MessageEvent<WorkerMessage>): void {
-    const { type, data, requestId } = event.data;
-    
-    if (!requestId) {
-      console.warn("[EnhancedSignalWorker] Mensaje recibido sin requestId:", type);
-      return;
-    }
-    
-    const task = this.pendingTasks.get(requestId);
-    if (!task) {
-      console.warn(`[EnhancedSignalWorker] Mensaje recibido para tarea no encontrada: ${requestId}`);
-      return;
-    }
-    
-    // Limpiar timeout si existe
-    if (task.timeoutId) {
-      clearTimeout(task.timeoutId);
-    }
-    
-    // Calcular tiempo de procesamiento
-    const processingTime = Date.now() - task.startTime;
-    
-    switch (type) {
-      case WorkerMessageType.RESULT:
-        // Resolver promesa con resultado exitoso
-        task.resolve({
-          success: true,
-          data: data,
-          processingTime
-        });
-        break;
-        
-      case WorkerMessageType.ERROR:
-        // Rechazar promesa con error
-        task.reject(new Error(data.error || "Error desconocido en worker"));
-        break;
-        
-      case WorkerMessageType.PROGRESS:
-        // Los mensajes de progreso no resuelven la promesa, se ignoran aquí
-        return;
-        
-      default:
-        console.warn(`[EnhancedSignalWorker] Tipo de mensaje no reconocido: ${type}`);
-        task.reject(new Error(`Tipo de mensaje no reconocido: ${type}`));
-    }
-    
-    // Eliminar tarea completada
-    this.pendingTasks.delete(requestId);
-    this.taskQueue = this.taskQueue.filter(id => id !== requestId);
-    
-    // Marcar como no procesando
-    this.processingTask = false;
-    
-    // Procesar siguiente tarea si existe
-    this.processNextTask();
-    
-    // Comprobar si debemos terminar el worker por inactividad
-    if (this.autoTerminate && this.pendingTasks.size === 0) {
-      const inactiveTime = Date.now() - this.lastTaskTime;
-      if (inactiveTime > 30000) { // 30 segundos de inactividad
-        this.terminate();
-      }
-    }
-  }
-  
-  /**
-   * Maneja errores provenientes del worker
-   */
-  private handleWorkerError(error: ErrorEvent): void {
-    console.error("[EnhancedSignalWorker] Error en worker:", error.message);
-    
-    // Rechazar todas las tareas pendientes
-    this.pendingTasks.forEach((task, requestId) => {
-      if (task.timeoutId) {
-        clearTimeout(task.timeoutId);
-      }
-      
-      task.reject(new Error(`Error en worker: ${error.message}`));
-      this.pendingTasks.delete(requestId);
-    });
-    
-    // Vaciar cola
-    this.taskQueue = [];
-    this.processingTask = false;
-    
-    // Reintentar inicializar el worker
     this.isInitialized = false;
-    this.worker = null;
-    
-    // No reiniciamos automáticamente para evitar ciclos infinitos
-  }
-  
-  /**
-   * Termina el worker
-   */
-  terminate(): void {
-    if (!this.worker) return;
-    
-    console.log("[EnhancedSignalWorker] Terminando worker");
-    
-    // Rechazar tareas pendientes
-    this.pendingTasks.forEach((task, requestId) => {
-      if (task.timeoutId) {
-        clearTimeout(task.timeoutId);
-      }
-      
-      task.reject(new Error("Worker terminado"));
-      this.pendingTasks.delete(requestId);
-    });
-    
-    this.taskQueue = [];
-    this.processingTask = false;
-    
-    // Terminar worker
-    this.worker.terminate();
-    this.worker = null;
-    this.isInitialized = false;
-  }
-  
-  /**
-   * Verifica si el worker está inicializado
-   */
-  isReady(): boolean {
-    return this.isInitialized && this.worker !== null;
   }
 }
 
 /**
  * Crea una instancia de EnhancedSignalWorker
  */
-export function createEnhancedSignalWorker(workerUrl: string, autoTerminate: boolean = true): EnhancedSignalWorker {
-  return new EnhancedSignalWorker(workerUrl, autoTerminate);
+export function createEnhancedSignalWorker(
+  workerUrl: string,
+  config?: Partial<WorkerTaskConfig>
+): EnhancedSignalWorker {
+  return new EnhancedSignalWorker(workerUrl, config);
 }

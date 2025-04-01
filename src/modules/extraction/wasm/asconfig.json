@@ -18,6 +18,13 @@
     }
   },
   "options": {
-    "bindings": "esm"
+    "bindings": "esm",
+    "importMemory": true,
+    "initialMemory": 2,
+    "maximumMemory": 16,
+    "noExportMemory": false,
+    "exportTable": true,
+    "exportStart": true,
+    "runtime": "incremental"
   }
 }
