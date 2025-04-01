@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -48,7 +47,17 @@ export class SignalProcessor extends BaseProcessor {
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
-    this.motionArtifactManager = new MotionArtifactManager(0.75); // 75% sensibilidad
+    
+    // Fix: Pass proper configuration object instead of just sensitivity value
+    this.motionArtifactManager = new MotionArtifactManager({
+      threshold: 3.5,
+      windowSize: 10,
+      recoveryTime: 1500,
+      adaptiveThreshold: true
+    });
+    
+    // Set sensitivity after initialization
+    this.motionArtifactManager.setSensitivity(0.75);
   }
   
   /**
@@ -90,23 +99,24 @@ export class SignalProcessor extends BaseProcessor {
    */
   public detectMotionArtifacts(value: number, accelerometerData?: {x: number, y: number, z: number}): boolean {
     // Usar el administrador especializado para detección
-    const motion = this.motionArtifactManager.processValue(value, accelerometerData);
+    const timestamp = Date.now();
+    const result = this.motionArtifactManager.processValue(value, timestamp, accelerometerData);
     
     // Actualizar historial
-    this.motionArtifactHistory.push(motion.motionDetected);
+    this.motionArtifactHistory.push(result.isArtifact);
     if (this.motionArtifactHistory.length > this.MOTION_HISTORY_SIZE) {
       this.motionArtifactHistory.shift();
     }
     
     // Actualizar estado
-    if (motion.motionDetected) {
+    if (result.isArtifact) {
       this.lastMotionDetectedTime = Date.now();
       this.motionDetected = true;
     } else if (Date.now() - this.lastMotionDetectedTime > this.MOTION_RECOVERY_TIME) {
       this.motionDetected = false;
     }
     
-    this.motionCompensationActive = motion.compensationApplied;
+    this.motionCompensationActive = result.isArtifact && result.correctedValue !== undefined;
     
     return this.motionDetected;
   }
