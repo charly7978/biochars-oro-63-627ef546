@@ -1,4 +1,3 @@
-
 /**
  * Centralized TensorFlow service for model management and inference
  */
@@ -56,9 +55,8 @@ export class TensorFlowService {
 
   /**
    * Initialize TensorFlow and try to enable WebGPU acceleration
-   * Public method that can be called explicitly
    */
-  public async initializeTensorFlow(): Promise<void> {
+  private async initializeTensorFlow(): Promise<void> {
     try {
       // Try to use WebGPU backend for acceleration
       await tf.setBackend('webgpu');

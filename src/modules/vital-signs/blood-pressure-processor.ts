@@ -60,7 +60,6 @@ export class BloodPressureProcessor {
   
   /**
    * Process a PPG signal to extract blood pressure
-   * This is the main method to calculate blood pressure (async version)
    */
   public async process(value: number): Promise<BloodPressureResult> {
     // Base calculation using traditional method
@@ -94,17 +93,6 @@ export class BloodPressureProcessor {
     // Store and return traditional result if AI failed or is disabled
     this.lastValidResult = traditionalResult;
     return traditionalResult;
-  }
-  
-  /**
-   * Synchronous version of blood pressure calculation
-   * For use when async processing is not possible
-   */
-  public processSync(value: number): BloodPressureResult {
-    // Use traditional calculation directly for sync method
-    const result = this.traditionalCalculation(value);
-    this.lastValidResult = result;
-    return result;
   }
   
   /**
@@ -179,13 +167,5 @@ export class BloodPressureProcessor {
    */
   public updateOptions(options: Partial<typeof this.processingOptions>): void {
     this.processingOptions = { ...this.processingOptions, ...options };
-  }
-
-  /**
-   * Reset the processor state
-   */
-  public reset(): void {
-    this.lastValidResult = null;
-    console.log("BloodPressureProcessor: Reset complete");
   }
 }

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -6,15 +5,16 @@ import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
-import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
-import { toast } from "sonner";
+import MonitorButton from "@/components/MonitorButton";
+import AppTitle from "@/components/AppTitle";
+import { VitalSignsResult } from "@/modules/vital-signs";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
-  const [vitalSigns, setVitalSigns] = useState({ 
-    spo2: 0, 
+  const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>({
+    spo2: 0,
     pressure: "--/--",
     arrhythmiaStatus: "--",
     glucose: 0,
@@ -24,134 +24,154 @@ const Index = () => {
     }
   });
   const [heartRate, setHeartRate] = useState(0);
-  const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const measurementTimerRef = useRef(null);
+  const [showResults, setShowResults] = useState(false);
+  const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat } = useHeartBeatProcessor();
-  const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
+  const { 
+    processSignal: processHeartBeat, 
+    isArrhythmia,
+    startMonitoring: startHeartBeatMonitoring,
+    stopMonitoring: stopHeartBeatMonitoring,
+    reset: resetHeartBeatProcessor
+  } = useHeartBeatProcessor();
+  
+  const { 
+    processSignal: processVitalSigns, 
+    reset: resetVitalSigns,
+    fullReset: fullResetVitalSigns,
+    lastValidResults
+  } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
-    const elem = document.documentElement;
     try {
-      if (elem.requestFullscreen) {
-        await elem.requestFullscreen();
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen();
-      } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen();
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen();
-      }
-      
-      // Try to activate Android immersive mode if available
-      if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.hasOwnProperty('AndroidFullScreen')) {
-          const AndroidFullScreen = (window as any).AndroidFullScreen;
-          AndroidFullScreen.immersiveMode(
-            function() { console.log('Immersive mode enabled'); },
-            function() { console.log('Failed to enable immersive mode'); }
-          );
-        }
-      }
+      await document.documentElement.requestFullscreen();
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
     }
   };
 
   useEffect(() => {
-    const preventScroll = (e) => e.preventDefault();
-    
-    const lockOrientation = async () => {
-      try {
-        if (screen.orientation?.lock) {
-          await screen.orientation.lock('portrait');
-        }
-      } catch (error) {
-        console.log('No se pudo bloquear la orientación:', error);
-      }
-    };
-    
-    const setMaxResolution = () => {
-      if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = (1 / window.devicePixelRatio).toString();
-      }
-    };
-    
-    lockOrientation();
-    setMaxResolution();
-    enterFullScreen();
-    
+    const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
-    document.body.addEventListener('touchstart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturestart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturechange', preventScroll, { passive: false });
-    document.body.addEventListener('gestureend', preventScroll, { passive: false });
-    
-    window.addEventListener('orientationchange', enterFullScreen);
-    
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) {
-        setTimeout(enterFullScreen, 1000);
-      }
-    });
 
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
-      document.body.removeEventListener('touchstart', preventScroll);
-      document.body.removeEventListener('gesturestart', preventScroll);
-      document.body.removeEventListener('gesturechange', preventScroll);
-      document.body.removeEventListener('gestureend', preventScroll);
-      window.removeEventListener('orientationchange', enterFullScreen);
-      document.removeEventListener('fullscreenchange', enterFullScreen);
     };
   }, []);
 
-  const startMonitoring = () => {
-    enterFullScreen();
-    setIsMonitoring(true);
-    setIsCameraOn(true);
-    startProcessing();
-    setElapsedTime(0);
-    
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
+  useEffect(() => {
+    if (lastValidResults && !isMonitoring) {
+      setVitalSigns(lastValidResults);
+      setShowResults(true);
     }
-    
-    measurementTimerRef.current = window.setInterval(() => {
-      setElapsedTime(prev => {
-        if (prev >= 30) {
-          stopMonitoring();
-          return 30;
+  }, [lastValidResults, isMonitoring]);
+
+  useEffect(() => {
+    if (lastSignal && isMonitoring) {
+      const minQualityThreshold = 40;
+      
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        
+        if (heartBeatResult.confidence > 0.4) {
+          setHeartRate(heartBeatResult.bpm);
+          
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
+          }
         }
-        return prev + 1;
-      });
-    }, 1000);
+        
+        setSignalQuality(lastSignal.quality);
+      } else {
+        setSignalQuality(lastSignal.quality);
+        
+        if (!lastSignal.fingerDetected && heartRate > 0) {
+          setHeartRate(0);
+        }
+      }
+    } else if (!isMonitoring) {
+      setSignalQuality(0);
+    }
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+
+  const startMonitoring = () => {
+    if (isMonitoring) {
+      finalizeMeasurement();
+    } else {
+      enterFullScreen();
+      setIsMonitoring(true);
+      setIsCameraOn(true);
+      setShowResults(false);
+      setHeartRate(0);
+      
+      startProcessing();
+      startHeartBeatMonitoring();
+      
+      setElapsedTime(0);
+      
+      if (measurementTimerRef.current) {
+        clearInterval(measurementTimerRef.current);
+      }
+      
+      measurementTimerRef.current = window.setInterval(() => {
+        setElapsedTime(prev => {
+          const newTime = prev + 1;
+          console.log(`Tiempo transcurrido: ${newTime}s`);
+          
+          if (newTime >= 30) {
+            finalizeMeasurement();
+            return 30;
+          }
+          return newTime;
+        });
+      }, 1000);
+    }
   };
 
-  const showMeasurementConfirmation = () => {
-    setShowConfirmDialog(true);
-  };
-
-  const confirmMeasurement = () => {
-    setShowConfirmDialog(false);
-    completeMonitoring();
-  };
-
-  const cancelMeasurement = () => {
-    setShowConfirmDialog(false);
-    stopMonitoring();
-  };
-
-  const completeMonitoring = () => {
+  const finalizeMeasurement = () => {
+    console.log("Finalizando medición");
+    
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    resetVitalSigns();
+    stopHeartBeatMonitoring();
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
+    
+    const savedResults = resetVitalSigns();
+    if (savedResults) {
+      setVitalSigns(savedResults);
+      setShowResults(true);
+    }
+    
+    setElapsedTime(0);
+    setSignalQuality(0);
+    setHeartRate(0);
+  };
+
+  const handleReset = () => {
+    console.log("Reseteando completamente la aplicación");
+    setIsMonitoring(false);
+    setIsCameraOn(false);
+    setShowResults(false);
+    stopProcessing();
+    stopHeartBeatMonitoring();
+    resetHeartBeatProcessor();
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
+    
+    fullResetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
     setVitalSigns({ 
@@ -164,124 +184,107 @@ const Index = () => {
         triglycerides: 0
       }
     });
-    setArrhythmiaCount("--");
     setSignalQuality(0);
-    
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
-      measurementTimerRef.current = null;
-    }
   };
 
-  const stopMonitoring = () => {
-    setIsMonitoring(false);
-    setIsCameraOn(false);
-    stopProcessing();
-    resetVitalSigns();
-    setElapsedTime(0);
-    setHeartRate(0);
-    setVitalSigns({ 
-      spo2: 0, 
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
-    });
-    setArrhythmiaCount("--");
-    setSignalQuality(0);
-    
-    if (measurementTimerRef.current) {
-      clearInterval(measurementTimerRef.current);
-      measurementTimerRef.current = null;
-    }
-  };
-
-  const handleStreamReady = (stream) => {
+  const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
     
-    // Use createImageBitmap API which is more widely supported
-    // Create a video element to display the stream
-    const videoElement = document.createElement('video');
-    videoElement.srcObject = new MediaStream([videoTrack]);
-    videoElement.autoplay = true;
-    videoElement.style.display = 'none';
-    document.body.appendChild(videoElement);
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    
-    const processVideoFrame = () => {
-      if (!isMonitoring) {
-        document.body.removeChild(videoElement);
-        return;
-      }
+    if (typeof window !== 'undefined' && 'ImageCapture' in window) {
+      const imageCapture = new (window as any).ImageCapture(videoTrack);
       
-      if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-        tempCanvas.width = videoElement.videoWidth;
-        tempCanvas.height = videoElement.videoHeight;
-        tempCtx.drawImage(videoElement, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        processFrame(imageData);
-      }
-      
-      requestAnimationFrame(processVideoFrame);
-    };
-    
-    videoElement.onloadedmetadata = () => {
-      processVideoFrame();
-    };
-    
-    // Try to enable camera torch if available
-    if (videoTrack.getCapabilities) {
-      const capabilities = videoTrack.getCapabilities();
-      if (capabilities && capabilities.torch) {
+      if (videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna para mejorar la señal PPG");
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
         }).catch(err => console.error("Error activando linterna:", err));
+      } else {
+        console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
       }
+      
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+      if (!tempCtx) {
+        console.error("No se pudo obtener el contexto 2D");
+        return;
+      }
+      
+      let lastProcessTime = 0;
+      const targetFrameInterval = 1000/30;
+      let frameCount = 0;
+      let lastFpsUpdateTime = Date.now();
+      let processingFps = 0;
+      
+      const processImage = async () => {
+        if (!isMonitoring) return;
+        
+        const now = Date.now();
+        const timeSinceLastProcess = now - lastProcessTime;
+        
+        if (timeSinceLastProcess >= targetFrameInterval) {
+          try {
+            const frame = await imageCapture.grabFrame();
+            
+            const targetWidth = Math.min(320, frame.width);
+            const targetHeight = Math.min(240, frame.height);
+            
+            tempCanvas.width = targetWidth;
+            tempCanvas.height = targetHeight;
+            
+            tempCtx.drawImage(
+              frame, 
+              0, 0, frame.width, frame.height, 
+              0, 0, targetWidth, targetHeight
+            );
+            
+            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+            processFrame(imageData);
+            
+            frameCount++;
+            lastProcessTime = now;
+            
+            if (now - lastFpsUpdateTime > 1000) {
+              processingFps = frameCount;
+              frameCount = 0;
+              lastFpsUpdateTime = now;
+              console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+            }
+          } catch (error) {
+            console.error("Error capturando frame:", error);
+          }
+        }
+        
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
+      };
+
+      processImage();
+    } else {
+      console.error("ImageCapture API is not supported in this browser");
     }
   };
 
-  useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
-      
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns({
-          spo2: vitals.spo2,
-          pressure: vitals.pressure,
-          arrhythmiaStatus: vitals.arrhythmiaStatus,
-          glucose: vitals.glucose,
-          lipids: vitals.lipids
-        });
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
-      }
-      
-      setSignalQuality(lastSignal.quality);
+  const handleToggleMonitoring = () => {
+    if (isMonitoring) {
+      finalizeMeasurement();
+    } else {
+      startMonitoring();
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-black" 
-      style={{ 
-        height: '100%',
-        width: '100%',
-        maxWidth: '100vw',
-        maxHeight: '100vh',
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
-        touchAction: 'none',
-        userSelect: 'none',
-      }}>
+    <div className="fixed inset-0 flex flex-col bg-black" style={{ 
+      height: '100vh',
+      width: '100vw',
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      overflow: 'hidden',
+      paddingTop: 'env(safe-area-inset-top)',
+      paddingBottom: 'env(safe-area-inset-bottom)'
+    }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 
@@ -293,87 +296,89 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
+          <div className="px-4 py-2 flex justify-around items-center bg-black/20">
+            <div className="text-white text-lg">
+              Calidad: {signalQuality}
+            </div>
+            <div className="text-white text-lg">
+              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+            </div>
+          </div>
+
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
               quality={lastSignal?.quality || 0}
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
-              onReset={stopMonitoring}
+              onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              rawArrhythmiaData={null}
+              preserveResults={showResults}
+              isArrhythmia={isArrhythmia}
             />
           </div>
 
-          <div className="absolute bottom-[200px] left-0 right-0 px-4">
-            <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
-              <div className="grid grid-cols-6 gap-2">
-                <VitalSign 
-                  label="FRECUENCIA CARDÍACA"
-                  value={heartRate || "--"}
-                  unit="BPM"
-                />
-                <VitalSign 
-                  label="SPO2"
-                  value={vitalSigns.spo2 || "--"}
-                  unit="%"
-                />
-                <VitalSign 
-                  label="PRESIÓN ARTERIAL"
-                  value={vitalSigns.pressure}
-                  unit="mmHg"
-                />
-                <VitalSign 
-                  label="ARRITMIAS"
-                  value={vitalSigns.arrhythmiaStatus}
-                />
-                <VitalSign 
-                  label="GLUCOSA"
-                  value={vitalSigns.glucose || "--"}
-                  unit="mg/dL"
-                />
-                <VitalSign 
-                  label="COLESTEROL"
-                  value={vitalSigns.lipids?.totalCholesterol || "--"}
-                  unit="mg/dL"
-                />
-              </div>
+          <AppTitle />
+
+          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
+              <VitalSign 
+                label="FRECUENCIA CARDÍACA"
+                value={heartRate || "--"}
+                unit="BPM"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="SPO2"
+                value={vitalSigns.spo2 || "--"}
+                unit="%"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="PRESIÓN ARTERIAL"
+                value={vitalSigns.pressure}
+                unit="mmHg"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="GLUCOSA"
+                value={vitalSigns.glucose || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="COLESTEROL"
+                value={vitalSigns.lipids?.totalCholesterol || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="TRIGLICÉRIDOS"
+                value={vitalSigns.lipids?.triglycerides || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
             </div>
           </div>
 
-          {isMonitoring && (
-            <div className="absolute bottom-40 left-0 right-0 text-center">
-              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+          <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleToggleMonitoring} 
+                variant="monitor"
+              />
             </div>
-          )}
-
-          <div className="h-[80px] grid grid-cols-2 gap-px bg-gray-900 mt-auto">
-            <button 
-              onClick={startMonitoring}
-              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
-            >
-              INICIAR
-            </button>
-            <button 
-              onClick={stopMonitoring}
-              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
-            >
-              RESET
-            </button>
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleReset} 
+                variant="reset"
+              />
+            </div>
           </div>
         </div>
       </div>
-
-      <MeasurementConfirmationDialog
-        open={showConfirmDialog}
-        onOpenChange={setShowConfirmDialog}
-        onConfirm={confirmMeasurement}
-        onCancel={cancelMeasurement}
-        measurementTime={elapsedTime}
-        heartRate={heartRate}
-        spo2={vitalSigns.spo2}
-        pressure={vitalSigns.pressure}
-      />
     </div>
   );
 };

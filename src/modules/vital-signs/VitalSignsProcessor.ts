@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -115,18 +114,10 @@ export class VitalSignsProcessor {
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
-    // Use the process method with proper handling of the async result
-    let pressure = "--/--";
-    try {
-      // We use the synchronous processSync method for direct real-time processing
-      const bpResult = this.bpProcessor.processSync(filtered);
-
-      if (bpResult && bpResult.systolic > 0 && bpResult.diastolic > 0) {
-        pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
-      }
-    } catch (error) {
-      console.error("Error calculating blood pressure:", error);
-    }
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    const pressure = bp.systolic > 0 && bp.diastolic > 0 
+      ? `${bp.systolic}/${bp.diastolic}` 
+      : "--/--";
     
     // Calculate glucose with real data only
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
@@ -168,7 +159,6 @@ export class VitalSignsProcessor {
       finalGlucose,
       finalLipids,
       {
-        spo2: 0.85, // Add spo2 confidence value
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
         overall: overallConfidence
