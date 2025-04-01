@@ -1,17 +1,9 @@
-
 /**
  * Buffer circular optimizado para procesamiento de señales PPG
  * Mejora el rendimiento y reduce la presión sobre el recolector de basura
  */
 
-/**
- * Interfaz para datos PPG con timestamp
- */
-export interface TimestampedPPGData {
-  timestamp: number;
-  value: number;
-  [key: string]: any;
-}
+import { PPGDataPoint, TimestampedPPGData } from '../../types/signal';
 
 /**
  * Buffer circular optimizado para datos PPG
@@ -157,7 +149,12 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     
     // Transferir los datos al nuevo buffer
     points.forEach((point: U) => {
-      optimizedBuffer.push(point);
+      // Ensure point has time property if needed
+      const enhancedPoint = {...point};
+      if (!('time' in enhancedPoint) && 'timestamp' in enhancedPoint) {
+        enhancedPoint.time = enhancedPoint.timestamp;
+      }
+      optimizedBuffer.push(enhancedPoint as U);
     });
     
     return optimizedBuffer;
@@ -212,7 +209,8 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     for (let i = 0; i < view.length / 2; i++) {
       const point = {
         timestamp: view[i * 2],
-        value: view[i * 2 + 1]
+        value: view[i * 2 + 1],
+        time: view[i * 2] // Add time property to satisfy PPGDataPoint constraint
       } as T;
       
       const index = (result.tail + i) % result.capacity;

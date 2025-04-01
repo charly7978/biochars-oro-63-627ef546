@@ -1,5 +1,7 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { configureCameraForDevice, processFramesControlled } from './CameraFrameCapture';
+import DeviceCapabilityDetector from './DeviceCapabilityDetector';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -23,7 +25,8 @@ const CameraView: React.FC<CameraViewProps> = ({
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
-  const [isIOS, setIsWindows] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [deviceCapabilities, setDeviceCapabilities] = useState<any>(null);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
   const processingCallbackRef = useRef<((imageData: ImageData) => void) | null>(null);
@@ -33,21 +36,40 @@ const CameraView: React.FC<CameraViewProps> = ({
     processingCallbackRef.current = onFrameProcessed || null;
   }, [onFrameProcessed]);
 
-  useEffect(() => {
+  // Memo para evitar re-renderizados innecesarios
+  const userAgentInfo = useMemo(() => {
     const userAgent = navigator.userAgent.toLowerCase();
     const androidDetected = /android/i.test(userAgent);
     const iosDetected = /ipad|iphone|ipod/i.test(userAgent);
     
-    console.log("Plataforma detectada:", {
+    return {
       userAgent,
       isAndroid: androidDetected,
       isIOS: iosDetected,
       isMobile: /mobile|android|iphone|ipad|ipod/i.test(userAgent)
-    });
-    
-    setIsAndroid(androidDetected);
-    setIsWindows(iosDetected);
+    };
   }, []);
+
+  useEffect(() => {
+    console.log("Plataforma detectada:", userAgentInfo);
+    
+    setIsAndroid(userAgentInfo.isAndroid);
+    setIsIOS(userAgentInfo.isIOS);
+    
+    // Inicializar detector de capacidades
+    const initializeCapabilities = async () => {
+      try {
+        const detector = DeviceCapabilityDetector.getInstance();
+        const capabilities = await detector.detectCapabilities();
+        setDeviceCapabilities(capabilities);
+        console.log("Capacidades del dispositivo detectadas:", capabilities);
+      } catch (error) {
+        console.error("Error detectando capacidades:", error);
+      }
+    };
+    
+    initializeCapabilities();
+  }, [userAgentInfo]);
 
   const stopCamera = async () => {
     if (frameProcessorRef.current) {
@@ -87,57 +109,38 @@ const CameraView: React.FC<CameraViewProps> = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      const isAndroid = /android/i.test(navigator.userAgent);
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
+      // Obtener capacidades adaptativas del dispositivo
+      const detector = DeviceCapabilityDetector.getInstance();
+      const capabilities = detector.getCapabilities();
+      
+      // Usar configuración adaptativa basada en capacidades detectadas
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: capabilities.recommendedResolution.width },
+        height: { ideal: capabilities.recommendedResolution.height },
+        frameRate: { ideal: capabilities.maxFPS }
       };
-
-      if (isAndroid) {
-        console.log("Configurando para Android");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else if (isIOS) {
-        console.log("Configurando para iOS");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      } else {
-        console.log("Configurando para escritorio con máxima resolución");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      }
 
       const constraints: MediaStreamConstraints = {
         video: baseVideoConstraints,
         audio: false
       };
 
-      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
+      console.log("Intentando acceder a la cámara con configuración adaptativa:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       console.log("Cámara inicializada correctamente");
       
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack) {
-        await configureCameraForDevice(videoTrack, isAndroid, isIOS);
+        await configureCameraForDevice(videoTrack, userAgentInfo.isAndroid, userAgentInfo.isIOS);
         
         if (videoRef.current) {
           videoRef.current.srcObject = newStream;
+          // Aplicar optimizaciones de renderizado
           videoRef.current.style.willChange = 'transform';
           videoRef.current.style.transform = 'translateZ(0)';
-          videoRef.current.style.imageRendering = 'crisp-edges';
+          videoRef.current.style.imageRendering = capabilities.isLowEndDevice ? 'auto' : 'crisp-edges';
           videoRef.current.style.backfaceVisibility = 'hidden';
           videoRef.current.style.perspective = '1000px';
         }
@@ -151,10 +154,14 @@ const CameraView: React.FC<CameraViewProps> = ({
             frameProcessorRef.current();
           }
           
+          // Usar el frameRate adaptativo
+          const adaptiveFrameRate = capabilities.maxFPS;
+          console.log(`Usando tasa de frames adaptativa: ${adaptiveFrameRate} FPS`);
+          
           frameProcessorRef.current = processFramesControlled(
             imageCapture,
             isMonitoring,
-            frameRate,
+            adaptiveFrameRate,
             processingCallbackRef.current
           );
         }
@@ -214,10 +221,13 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
       
       if (processingCallbackRef.current) {
+        // Obtener frameRate adaptativo
+        const adaptiveFrameRate = deviceCapabilities?.maxFPS || frameRate;
+        
         frameProcessorRef.current = processFramesControlled(
           imageCapture,
           isMonitoring,
-          frameRate,
+          adaptiveFrameRate,
           processingCallbackRef.current
         );
       }
@@ -228,7 +238,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     if (onStreamReady) {
       onStreamReady(newStream);
     }
-  }, [isMonitoring, frameRate, onStreamReady]);
+  }, [isMonitoring, frameRate, onStreamReady, deviceCapabilities]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
@@ -266,6 +276,14 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
+  // Cálculo de la calidad visual según capacidades
+  const videoQuality = useMemo(() => {
+    if (!deviceCapabilities) return "auto";
+    
+    return deviceCapabilities.isLowEndDevice ? 'auto' : 
+           deviceCapabilities.isMidRangeDevice ? 'pixelated' : 'crisp-edges';
+  }, [deviceCapabilities]);
+
   return (
     <video
       ref={videoRef}
@@ -277,7 +295,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         willChange: 'transform',
         transform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
-        imageRendering: 'crisp-edges'
+        imageRendering: videoQuality
       }}
     />
   );

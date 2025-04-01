@@ -7,15 +7,7 @@
  */
 
 import { CircularBuffer } from '../../../utils/CircularBuffer';
-
-/**
- * Interfaz para datos PPG con timestamp
- */
-export interface TimestampedPPGData {
-  timestamp: number;
-  value: number;
-  [key: string]: any;
-}
+import { PPGDataPoint, TimestampedPPGData } from '../../../types/signal';
 
 /**
  * Buffer circular optimizado para datos PPG
@@ -161,7 +153,12 @@ export class OptimizedPPGBuffer<T extends TimestampedPPGData = TimestampedPPGDat
     
     // Transferir los datos al nuevo buffer
     points.forEach(point => {
-      optimizedBuffer.push(point);
+      // Ensure point has time property if needed for backward compatibility
+      const enhancedPoint = {...point};
+      if (!('time' in enhancedPoint) && 'timestamp' in enhancedPoint) {
+        enhancedPoint.time = enhancedPoint.timestamp;
+      }
+      optimizedBuffer.push(enhancedPoint as U);
     });
     
     return optimizedBuffer;
@@ -181,8 +178,14 @@ export class CircularBufferAdapter<T extends TimestampedPPGData = TimestampedPPG
   }
   
   public override push(item: T): void {
-    super.push(item);
-    this.optimizedBuffer.push(item);
+    // Ensure item has time property if not present
+    const enhancedItem = {...item};
+    if (!('time' in enhancedItem) && 'timestamp' in enhancedItem) {
+      enhancedItem.time = enhancedItem.timestamp;
+    }
+    
+    super.push(enhancedItem as T);
+    this.optimizedBuffer.push(enhancedItem as T);
   }
   
   public override get(index: number): T | undefined {
