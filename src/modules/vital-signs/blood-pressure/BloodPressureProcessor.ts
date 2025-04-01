@@ -3,7 +3,7 @@
  * Simplified blood pressure processor without TensorFlow dependencies
  */
 import { BloodPressureResult } from './BloodPressureResult';
-import { calculateMAP, validateBloodPressure, formatBloodPressure } from './BloodPressureUtils';
+import { calculateMAP, validateBloodPressure, formatBloodPressure, categorizeBloodPressure } from './BloodPressureUtils';
 
 /**
  * Processes PPG signals to extract blood pressure values
@@ -38,8 +38,13 @@ export class BloodPressureProcessor {
     // Use traditional calculation for blood pressure
     const traditionalResult = this.traditionalCalculation(value);
     
-    // Store and return traditional result
-    this.lastValidResult = traditionalResult;
+    // Validate the result
+    if (validateBloodPressure(traditionalResult.systolic, traditionalResult.diastolic)) {
+      // Store valid result
+      this.lastValidResult = traditionalResult;
+    }
+    
+    // Return the result (validated or not)
     return traditionalResult;
   }
   
@@ -56,10 +61,14 @@ export class BloodPressureProcessor {
     const diastolic = Math.round(baseDiastolic + value * 5);
     const map = calculateMAP(systolic, diastolic);
     
+    // Get category
+    const category = categorizeBloodPressure(systolic, diastolic);
+    
     return {
       systolic,
       diastolic,
       map,
+      category,
       confidence: 0.7 // Fixed confidence for traditional method
     };
   }
