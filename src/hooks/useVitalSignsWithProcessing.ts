@@ -9,6 +9,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePPGExtraction } from './usePPGExtraction';
 import { useUnifiedSignalProcessor } from './useUnifiedSignalProcessor';
 import { useUnifiedVitalSignsAdapter } from './vital-signs/useUnifiedVitalSignsAdapter';
+import { ProcessedPPGSignal } from '../modules/signal-processing/unified/types';
 
 /**
  * Resultado integrado del procesamiento completo
@@ -77,7 +78,7 @@ export function useVitalSignsWithProcessing() {
     
     try {
       // 2. Procesar el valor PPG extraído con el procesador unificado
-      const processedSignal = processing.processFrame(extraction.lastResult.filteredValue);
+      const processedSignal = processing.processSignal(extraction.lastResult.filteredValue);
       
       if (processedSignal && processedSignal.fingerDetected) {
         // 3. Procesar para obtener signos vitales
