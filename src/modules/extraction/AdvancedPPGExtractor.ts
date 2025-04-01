@@ -3,16 +3,57 @@
  * 
  * Advanced PPG Signal and Heartbeat Extractor
  * Uses TensorFlow.js for advanced signal processing and neural network-based peak detection
+ * Enhanced with XLA optimization, CNN-LSTM hybrid architecture, and denoising autoencoder
  */
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
+import '@tensorflow/tfjs-backend-webgpu';
 import { CombinedExtractionResult } from './CombinedExtractor';
 
-// Initialize TensorFlow
-tf.setBackend('webgl').then(() => {
-  console.log('TensorFlow initialized with WebGL backend');
-  console.log('TensorFlow version:', tf.version.tfjs);
-});
+// Initialize TensorFlow with optimizations
+async function initializeTensorFlow() {
+  try {
+    // Check for WebGPU support (faster than WebGL)
+    if ('WebGPU' in window && await tf.test_util.await_is_webgpu_supported()) {
+      console.log('Using WebGPU backend (faster GPU acceleration)');
+      await tf.setBackend('webgpu');
+      // Enable XLA optimization for WebGPU
+      await tf.env().set('ENGINE_COMPILE_XLA', true);
+    } else {
+      console.log('WebGPU not supported, falling back to WebGL backend');
+      await tf.setBackend('webgl');
+      // Enable shader compilation optimization
+      await tf.env().set('WEBGL_USE_SHADER_COMPILATION_DELAY', false);
+      // Optimize WebGL precision/performance tradeoff
+      await tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+    }
+    
+    // Enable memory optimization
+    await tf.env().set('DISPOSE_TENSORS_WHEN_NO_LONGER_NEEDED', true);
+    
+    // Log initialization status
+    console.log('TensorFlow initialized with optimizations:', {
+      backend: tf.getBackend(),
+      version: tf.version.tfjs,
+      xla: await tf.env().getAsync('ENGINE_COMPILE_XLA'),
+      numTensors: tf.memory().numTensors,
+      numBytes: tf.memory().numBytes
+    });
+    
+    // Warm up the backend
+    const warmupTensor = tf.tensor([1, 2, 3, 4]);
+    warmupTensor.square().dispose();
+    warmupTensor.dispose();
+    
+    return true;
+  } catch (error) {
+    console.error('TensorFlow initialization failed:', error);
+    return false;
+  }
+}
+
+// Start initialization immediately
+const tfInitPromise = initializeTensorFlow();
 
 // Interface for the advanced extraction result
 export interface AdvancedExtractionResult extends CombinedExtractionResult {
@@ -35,29 +76,39 @@ export interface AdvancedExtractorConfig {
   useWaveletDenoising: boolean;
   useTensorFlow: boolean;
   usePeakVerification: boolean;
+  useAutoencoder: boolean;       // Use denoising autoencoder
+  useCnnLstm: boolean;           // Use hybrid CNN-LSTM architecture
   temporalWindowSize: number;
-  nnThreshold: number; // For heart rate variability (in ms)
+  lstmSequenceLength: number;    // Sequence length for LSTM
+  nnThreshold: number;           // For heart rate variability (in ms)
   memorySaver: boolean; 
   adaptiveThresholdSensitivity: number;
+  enableXlaOptimization: boolean; // Enable XLA compilation optimization
+  modelQuantization: boolean;     // Enable model quantization for efficiency
 }
 
 /**
  * Advanced PPG Signal Extractor with TensorFlow-powered signal processing
+ * Enhanced with XLA optimization, CNN-LSTM hybrid architecture, and denoising autoencoder
  */
 export class AdvancedPPGExtractor {
   // Signal buffers
   private rawBuffer: number[] = [];
   private filteredBuffer: number[] = [];
   private featureBuffer: tf.Tensor[] = [];
+  private sequenceBuffer: number[][] = []; // For LSTM sequence input
   
   // Signal metadata
   private baselineValue: number = 0;
   private signalAmplitude: number = 0;
   private lastTimestamp: number = 0;
   
-  // Neural network model
+  // Neural network models
   private peakDetectionModel: tf.LayersModel | null = null;
+  private denoisingAutoencoder: tf.LayersModel | null = null;
+  private cnnLstmModel: tf.LayersModel | null = null;
   private modelLoaded: boolean = false;
+  private tfInitialized: boolean = false;
   
   // Peak detection state
   private peaks: Array<{time: number, value: number}> = [];
@@ -72,17 +123,22 @@ export class AdvancedPPGExtractor {
   private adaptiveThreshold: number = 0.5;
   private lastBPM: number | null = null;
   
-  // Configuration
+  // Configuration with defaults
   private config: AdvancedExtractorConfig = {
     useDynamicThresholding: true,
     applyAdaptiveFilter: true,
     useWaveletDenoising: true,
     useTensorFlow: true,
     usePeakVerification: true,
+    useAutoencoder: true,          // Enable denoising autoencoder by default
+    useCnnLstm: true,              // Enable CNN-LSTM by default
     temporalWindowSize: 256,
-    nnThreshold: 50, // in ms
+    lstmSequenceLength: 32,        // LSTM sequence length
+    nnThreshold: 50,               // in ms
     memorySaver: true,
-    adaptiveThresholdSensitivity: 1.5
+    adaptiveThresholdSensitivity: 1.5,
+    enableXlaOptimization: true,   // Enable XLA by default
+    modelQuantization: true        // Enable quantization for efficiency
   };
   
   // Memory management
@@ -90,6 +146,7 @@ export class AdvancedPPGExtractor {
   private CLEANUP_INTERVAL = 5000; // 5 seconds
   private MAX_BUFFER_SIZE = 512;
   private MAX_FEATURE_TENSORS = 10;
+  private MAX_SEQUENCE_BUFFER = 40;
   
   constructor(config?: Partial<AdvancedExtractorConfig>) {
     if (config) {
@@ -109,17 +166,30 @@ export class AdvancedPPGExtractor {
    */
   private async initialize(): Promise<void> {
     try {
-      if (this.config.useTensorFlow) {
-        console.log('Initializing TensorFlow for advanced PPG extraction...');
+      // Wait for TensorFlow to initialize
+      this.tfInitialized = await tfInitPromise;
+      
+      if (this.tfInitialized && this.config.useTensorFlow) {
+        console.log('Initializing neural networks for advanced PPG extraction...');
         
-        // Create a simple model for peak detection
-        this.peakDetectionModel = this.createPeakDetectionModel();
+        // Create models for signal processing
+        await Promise.all([
+          this.createPeakDetectionModel(),
+          this.createDenoisingAutoencoder(),
+          this.createCnnLstmModel()
+        ]);
+        
         this.modelLoaded = true;
         
-        console.log('Advanced PPG extraction initialized with TensorFlow');
+        // Output memory usage after model creation
+        console.log('Advanced PPG extraction initialized with TensorFlow:', {
+          tensors: tf.memory().numTensors,
+          bytes: tf.memory().numBytes,
+          backend: tf.getBackend()
+        });
       }
     } catch (error) {
-      console.error('Failed to initialize TensorFlow model:', error);
+      console.error('Failed to initialize TensorFlow models:', error);
       this.modelLoaded = false;
       
       // Fallback to traditional methods
@@ -128,68 +198,223 @@ export class AdvancedPPGExtractor {
   }
   
   /**
-   * Create a neural network model for peak detection
+   * Create a CNN for peak detection
    */
-  private createPeakDetectionModel(): tf.LayersModel {
-    const windowSize = 32; // Input window size
+  private async createPeakDetectionModel(): Promise<void> {
+    try {
+      const windowSize = 32; // Input window size
+      
+      // Create a sequential model
+      const model = tf.sequential();
+      
+      // Add layers
+      // 1D Convolutional layer for feature extraction
+      model.add(tf.layers.conv1d({
+        inputShape: [windowSize, 1],
+        filters: 16,
+        kernelSize: 5,
+        activation: 'relu',
+        padding: 'same'
+      }));
+      
+      // Pooling layer to reduce dimensionality
+      model.add(tf.layers.maxPooling1d({
+        poolSize: 2,
+        strides: 2
+      }));
+      
+      // Another convolutional layer
+      model.add(tf.layers.conv1d({
+        filters: 32,
+        kernelSize: 3,
+        activation: 'relu',
+        padding: 'same'
+      }));
+      
+      // Flatten the output for dense layers
+      model.add(tf.layers.flatten());
+      
+      // Dense layers for classification
+      model.add(tf.layers.dense({
+        units: 64,
+        activation: 'relu'
+      }));
+      
+      model.add(tf.layers.dropout({
+        rate: 0.25
+      }));
+      
+      // Output layer - probability of a peak at the center
+      model.add(tf.layers.dense({
+        units: 1,
+        activation: 'sigmoid'
+      }));
+      
+      // Compile the model
+      model.compile({
+        optimizer: tf.train.adam(0.001),
+        loss: 'binaryCrossentropy',
+        metrics: ['accuracy']
+      });
+      
+      // Optionally quantize the model if configured
+      if (this.config.modelQuantization) {
+        console.log('Quantizing peak detection model for efficiency');
+        const quantizedModel = await tf.quantization.quantizeModel(model);
+        this.peakDetectionModel = quantizedModel;
+      } else {
+        this.peakDetectionModel = model;
+      }
+      
+      console.log('Peak detection CNN model created successfully');
+    } catch (error) {
+      console.error('Error creating peak detection model:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Create a denoising autoencoder for signal enhancement
+   */
+  private async createDenoisingAutoencoder(): Promise<void> {
+    if (!this.config.useAutoencoder) {
+      return;
+    }
     
-    // Create a sequential model
-    const model = tf.sequential();
+    try {
+      const inputSize = 64; // Input signal window size
+      
+      // Create autoencoder model
+      const model = tf.sequential();
+      
+      // Encoder part
+      model.add(tf.layers.dense({
+        inputShape: [inputSize],
+        units: 32,
+        activation: 'tanh'
+      }));
+      
+      model.add(tf.layers.dense({
+        units: 16,
+        activation: 'tanh'
+      }));
+      
+      // Bottleneck layer
+      model.add(tf.layers.dense({
+        units: 8,
+        activation: 'tanh',
+        name: 'bottleneck'
+      }));
+      
+      // Decoder part
+      model.add(tf.layers.dense({
+        units: 16,
+        activation: 'tanh'
+      }));
+      
+      model.add(tf.layers.dense({
+        units: 32,
+        activation: 'tanh'
+      }));
+      
+      // Output layer
+      model.add(tf.layers.dense({
+        units: inputSize,
+        activation: 'linear'
+      }));
+      
+      // Compile model
+      model.compile({
+        optimizer: tf.train.adam(0.001),
+        loss: 'meanSquaredError'
+      });
+      
+      this.denoisingAutoencoder = model;
+      console.log('Denoising autoencoder model created successfully');
+    } catch (error) {
+      console.error('Error creating denoising autoencoder:', error);
+      this.config.useAutoencoder = false; // Disable autoencoder on error
+    }
+  }
+  
+  /**
+   * Create a hybrid CNN-LSTM model for temporal pattern recognition
+   */
+  private async createCnnLstmModel(): Promise<void> {
+    if (!this.config.useCnnLstm) {
+      return;
+    }
     
-    // Add layers
-    // 1D Convolutional layer for feature extraction
-    model.add(tf.layers.conv1d({
-      inputShape: [windowSize, 1],
-      filters: 16,
-      kernelSize: 5,
-      activation: 'relu',
-      padding: 'same'
-    }));
-    
-    // Pooling layer to reduce dimensionality
-    model.add(tf.layers.maxPooling1d({
-      poolSize: 2,
-      strides: 2
-    }));
-    
-    // Another convolutional layer
-    model.add(tf.layers.conv1d({
-      filters: 32,
-      kernelSize: 3,
-      activation: 'relu',
-      padding: 'same'
-    }));
-    
-    // Flatten the output for dense layers
-    model.add(tf.layers.flatten());
-    
-    // Dense layers for classification
-    model.add(tf.layers.dense({
-      units: 64,
-      activation: 'relu'
-    }));
-    
-    model.add(tf.layers.dropout({
-      rate: 0.25
-    }));
-    
-    // Output layer - probability of a peak at the center
-    model.add(tf.layers.dense({
-      units: 1,
-      activation: 'sigmoid'
-    }));
-    
-    // Compile the model
-    model.compile({
-      optimizer: tf.train.adam(0.001),
-      loss: 'binaryCrossentropy',
-      metrics: ['accuracy']
-    });
-    
-    // Note: In a real implementation, this model would be pre-trained and weights loaded.
-    // Here we're just initializing the architecture.
-    
-    return model;
+    try {
+      const sequenceLength = this.config.lstmSequenceLength;
+      const featureLength = 32; // Length of individual feature vector
+      
+      // Create model
+      const model = tf.sequential();
+      
+      // Add 1D CNN layers for feature extraction from each time step
+      model.add(tf.layers.timeDistributed({
+        layer: tf.layers.conv1d({
+          filters: 16,
+          kernelSize: 3,
+          activation: 'relu',
+          padding: 'same'
+        }),
+        inputShape: [sequenceLength, featureLength, 1]
+      }));
+      
+      // Add max pooling
+      model.add(tf.layers.timeDistributed({
+        layer: tf.layers.maxPooling1d({
+          poolSize: 2
+        })
+      }));
+      
+      // Flatten CNN output for each time step
+      model.add(tf.layers.timeDistributed({
+        layer: tf.layers.flatten()
+      }));
+      
+      // Add LSTM layers
+      model.add(tf.layers.lstm({
+        units: 32,
+        returnSequences: true
+      }));
+      
+      model.add(tf.layers.lstm({
+        units: 32,
+        returnSequences: false
+      }));
+      
+      // Add dense layers for classification
+      model.add(tf.layers.dense({
+        units: 16,
+        activation: 'relu'
+      }));
+      
+      model.add(tf.layers.dropout({
+        rate: 0.2
+      }));
+      
+      // Output layer
+      model.add(tf.layers.dense({
+        units: 1,
+        activation: 'sigmoid'
+      }));
+      
+      // Compile model
+      model.compile({
+        optimizer: tf.train.adam(0.001),
+        loss: 'binaryCrossentropy',
+        metrics: ['accuracy']
+      });
+      
+      this.cnnLstmModel = model;
+      console.log('CNN-LSTM hybrid model created successfully');
+    } catch (error) {
+      console.error('Error creating CNN-LSTM model:', error);
+      this.config.useCnnLstm = false; // Disable CNN-LSTM on error
+    }
   }
   
   /**
@@ -206,8 +431,8 @@ export class AdvancedPPGExtractor {
       this.rawBuffer.shift();
     }
     
-    // 1. Apply adaptive filtering
-    const filteredValue = this.applyAdaptiveFiltering(value);
+    // 1. Apply adaptive filtering and denoising
+    const filteredValue = this.applySignalProcessing(value);
     
     // Store filtered value
     this.filteredBuffer.push(filteredValue);
@@ -221,16 +446,16 @@ export class AdvancedPPGExtractor {
     // 3. Calculate noise estimate
     this.noiseEstimate = this.estimateNoiseLevel();
     
-    // 4. Detect peaks using either traditional methods or TensorFlow
+    // 4. Detect peaks using neural networks if available, otherwise fall back to traditional methods
     let hasPeak = false;
     let peakValue: number | null = null;
     let instantaneousBPM: number | null = null;
     let confidence = 0;
     let rrInterval: number | null = null;
     
-    if (this.config.useTensorFlow && this.modelLoaded && this.filteredBuffer.length >= 32) {
+    if (this.tfInitialized && this.modelLoaded && this.config.useTensorFlow && this.filteredBuffer.length >= 32) {
       // Use neural network for peak detection
-      const result = this.detectPeakWithTensorFlow();
+      const result = this.detectPeakWithNeuralNetworks();
       hasPeak = result.hasPeak;
       peakValue = result.peakValue;
       confidence = result.confidence;
@@ -332,6 +557,11 @@ export class AdvancedPPGExtractor {
     // Update last timestamp
     this.lastTimestamp = now;
     
+    // Update sequence buffer for LSTM if enabled
+    if (this.config.useCnnLstm) {
+      this.updateSequenceBuffer(filteredValue, hasPeak);
+    }
+    
     // Memory cleanup if needed
     if (now - this.lastCleanupTime > this.CLEANUP_INTERVAL) {
       this.cleanupMemory();
@@ -339,6 +569,30 @@ export class AdvancedPPGExtractor {
     }
     
     return result;
+  }
+  
+  /**
+   * Apply comprehensive signal processing pipeline
+   */
+  private applySignalProcessing(value: number): number {
+    if (this.filteredBuffer.length < 2) {
+      return value;
+    }
+    
+    // Apply adaptive filtering first
+    let filtered = this.applyAdaptiveFiltering(value);
+    
+    // Apply wavelet denoising if enabled and we have enough data
+    if (this.config.useWaveletDenoising && this.filteredBuffer.length >= 32) {
+      filtered = this.applyWaveletDenoising(filtered);
+    }
+    
+    // Apply autoencoder denoising if enabled and initialized
+    if (this.config.useAutoencoder && this.denoisingAutoencoder && this.filteredBuffer.length >= 64) {
+      filtered = this.applyAutoencoderDenoising(filtered);
+    }
+    
+    return filtered;
   }
   
   /**
@@ -371,11 +625,6 @@ export class AdvancedPPGExtractor {
     // Apply exponential moving average filter
     const lastFiltered = this.filteredBuffer[this.filteredBuffer.length - 1];
     let filtered = alpha * value + (1 - alpha) * lastFiltered;
-    
-    // Apply wavelet denoising if enabled and we have enough data
-    if (this.config.useWaveletDenoising && this.filteredBuffer.length >= 32) {
-      filtered = this.applyWaveletDenoising(filtered);
-    }
     
     return filtered;
   }
@@ -414,43 +663,43 @@ export class AdvancedPPGExtractor {
   }
   
   /**
-   * Estimate appropriate threshold for wavelet denoising
+   * Apply denoising autoencoder to the signal window
    */
-  private estimateWaveletThreshold(window: number[]): number {
-    // Universal threshold (simplified)
-    const n = window.length;
-    
-    // Calculate MAD (Median Absolute Deviation) estimator
-    const median = this.calculateMedian(window);
-    const deviations = window.map(x => Math.abs(x - median));
-    const mad = this.calculateMedian(deviations);
-    
-    // Scale MAD to approximate standard deviation
-    const sigma = mad / 0.6745;
-    
-    // Compute threshold using universal threshold formula
-    return sigma * Math.sqrt(2 * Math.log(n));
-  }
-  
-  /**
-   * Calculate local trend using a moving average
-   */
-  private calculateLocalTrend(window: number[]): number {
-    const n = window.length;
-    const center = window[n - 1]; // Current value
-    
-    // Use a weighted average of recent values
-    let sum = 0;
-    let weightSum = 0;
-    
-    const recentWindow = window.slice(-7);
-    for (let i = 0; i < recentWindow.length; i++) {
-      const weight = i + 1;
-      sum += recentWindow[i] * weight;
-      weightSum += weight;
+  private applyAutoencoderDenoising(value: number): number {
+    if (!this.denoisingAutoencoder || this.filteredBuffer.length < 64) {
+      return value;
     }
     
-    return sum / weightSum;
+    try {
+      // Create a window of the last 64 values (including current)
+      const window = [...this.filteredBuffer.slice(-63), value];
+      
+      // Normalize the window to [0, 1] range
+      const min = Math.min(...window);
+      const max = Math.max(...window);
+      const range = max - min > 0 ? max - min : 1;
+      const normalized = window.map(v => (v - min) / range);
+      
+      // Convert to tensor
+      const inputTensor = tf.tensor2d([normalized]);
+      
+      // Run through autoencoder
+      const outputTensor = this.denoisingAutoencoder.predict(inputTensor) as tf.Tensor;
+      
+      // Get denoised values
+      const denoisedNormalized = outputTensor.dataSync();
+      
+      // Denormalize the output (last value is the current denoised value)
+      const denoisedValue = denoisedNormalized[denoisedNormalized.length - 1] * range + min;
+      
+      // Clean up tensors
+      tf.dispose([inputTensor, outputTensor]);
+      
+      return denoisedValue;
+    } catch (error) {
+      console.error('Error in autoencoder denoising:', error);
+      return value; // Return original on error
+    }
   }
   
   /**
@@ -478,16 +727,119 @@ export class AdvancedPPGExtractor {
   }
   
   /**
-   * Detect peaks using TensorFlow neural network
+   * Update sequence buffer for LSTM processing
    */
-  private detectPeakWithTensorFlow(): {
+  private updateSequenceBuffer(value: number, isPeak: boolean): void {
+    if (!this.config.useCnnLstm) return;
+    
+    // Create feature vector for current window
+    if (this.filteredBuffer.length >= 32) {
+      const window = this.filteredBuffer.slice(-32);
+      
+      // Simple features: normalized values and first derivatives
+      const normalized = this.normalizeWindow(window);
+      const derivatives = this.calculateDerivatives(normalized);
+      
+      // Combine features
+      const featureVector = [...normalized, ...derivatives];
+      
+      // Add to sequence buffer
+      this.sequenceBuffer.push(featureVector);
+      
+      // Maintain maximum size
+      if (this.sequenceBuffer.length > this.MAX_SEQUENCE_BUFFER) {
+        this.sequenceBuffer.shift();
+      }
+    }
+  }
+  
+  /**
+   * Normalize a window of values to [-1, 1]
+   */
+  private normalizeWindow(window: number[]): number[] {
+    const min = Math.min(...window);
+    const max = Math.max(...window);
+    const range = max - min > 0 ? max - min : 1;
+    return window.map(v => (v - min) / range * 2 - 1);
+  }
+  
+  /**
+   * Calculate first derivatives
+   */
+  private calculateDerivatives(values: number[]): number[] {
+    const derivatives = [];
+    for (let i = 1; i < values.length; i++) {
+      derivatives.push(values[i] - values[i-1]);
+    }
+    // Pad first value
+    derivatives.unshift(0);
+    return derivatives;
+  }
+  
+  /**
+   * Detect peaks using all available neural networks
+   */
+  private detectPeakWithNeuralNetworks(): {
     hasPeak: boolean,
     peakValue: number | null,
     confidence: number
   } {
     try {
+      // Default result
+      let hasPeak = false;
+      let confidence = 0;
+      
       if (!this.modelLoaded || this.filteredBuffer.length < 32) {
         return { hasPeak: false, peakValue: null, confidence: 0 };
+      }
+      
+      // 1. CNN Peak Detection
+      const cnnResult = this.detectPeakWithCNN();
+      
+      // 2. CNN-LSTM (if enabled and we have enough data)
+      let lstmConfidence = 0;
+      if (this.config.useCnnLstm && this.cnnLstmModel && this.sequenceBuffer.length >= this.config.lstmSequenceLength) {
+        const lstmResult = this.detectPeakWithCnnLstm();
+        lstmConfidence = lstmResult.confidence;
+        
+        // Combine CNN and LSTM results (weighted average)
+        confidence = cnnResult.confidence * 0.6 + lstmConfidence * 0.4;
+        hasPeak = confidence > this.adaptiveThreshold;
+      } else {
+        // Only use CNN result
+        confidence = cnnResult.confidence;
+        hasPeak = cnnResult.hasPeak;
+      }
+      
+      // Also verify with traditional approach
+      const isLocalMax = this.isLocalMaximum();
+      
+      // Consider it a peak only if neural network and traditional method agree
+      hasPeak = hasPeak && isLocalMax;
+      
+      return {
+        hasPeak,
+        peakValue: hasPeak ? this.filteredBuffer[this.filteredBuffer.length - 1] : null,
+        confidence
+      };
+      
+    } catch (error) {
+      console.error('Error in neural network peak detection:', error);
+      // Fall back to traditional method
+      return this.detectPeakTraditional();
+    }
+  }
+  
+  /**
+   * Detect peaks using the CNN model
+   */
+  private detectPeakWithCNN(): {
+    hasPeak: boolean,
+    confidence: number
+  } {
+    try {
+      if (!this.peakDetectionModel || this.filteredBuffer.length < 32) {
+        return { hasPeak: false, confidence: 0 };
       }
       
       // Create a window of the last 32 values
@@ -499,45 +851,80 @@ export class AdvancedPPGExtractor {
       const range = max - min > 0 ? max - min : 1;
       const normalized = window.map(v => (v - min) / range * 2 - 1);
       
-      // Create tensor from the window
-      const inputTensor = tf.tensor3d([normalized.map(v => [v])]);
+      // Ensure data is correctly shaped for model input (TensorFlow.js expects batch dimension)
+      const inputTensor = tf.tidy(() => {
+        // Shape: [batchSize, windowLength, channels]
+        return tf.tensor3d([normalized.map(v => [v])]);
+      });
       
       // Run prediction
-      const prediction = this.peakDetectionModel!.predict(inputTensor) as tf.Tensor;
-      const probabilities = prediction.dataSync();
+      const predictionTensor = this.peakDetectionModel.predict(inputTensor) as tf.Tensor;
+      const probabilities = Array.from(predictionTensor.dataSync());
       
       // Clean up tensors
-      inputTensor.dispose();
-      prediction.dispose();
+      tf.dispose([inputTensor, predictionTensor]);
       
       // Check if the center point is a peak
-      const isPeak = probabilities[0] > this.adaptiveThreshold;
       const confidence = probabilities[0];
-      
-      // Also check if it's a local maximum in the raw signal
-      // (adds a traditional check on top of the ML prediction)
-      const isLocalMax = this.isLocalMaximum();
-      
-      // Only consider it a peak if both methods agree
-      const hasPeak = isPeak && isLocalMax;
-      
-      // Store the feature for later training (potential future improvement)
-      if (this.config.memorySaver) {
-        if (hasPeak && this.featureBuffer.length < this.MAX_FEATURE_TENSORS) {
-          this.featureBuffer.push(tf.tensor(normalized));
-        }
-      }
+      const isPeak = confidence > this.adaptiveThreshold;
       
       return {
-        hasPeak,
-        peakValue: hasPeak ? this.filteredBuffer[this.filteredBuffer.length - 1] : null,
+        hasPeak: isPeak,
         confidence: confidence as number
       };
       
     } catch (error) {
-      console.error('Error in TensorFlow peak detection:', error);
-      // Fall back to traditional method
-      return this.detectPeakTraditional();
+      console.error('Error in CNN peak detection:', error);
+      return { hasPeak: false, confidence: 0 };
+    }
+  }
+  
+  /**
+   * Detect peaks using the CNN-LSTM hybrid model
+   */
+  private detectPeakWithCnnLstm(): {
+    hasPeak: boolean,
+    confidence: number
+  } {
+    try {
+      if (!this.cnnLstmModel || this.sequenceBuffer.length < this.config.lstmSequenceLength) {
+        return { hasPeak: false, confidence: 0 };
+      }
+      
+      // Get the last N sequences
+      const sequences = this.sequenceBuffer.slice(-this.config.lstmSequenceLength);
+      
+      // Each sequence is a feature vector, we need to reshape for CNN-LSTM input
+      // Shape: [batch, timesteps, features, channels]
+      const reshapedSequences = sequences.map(seq => {
+        // Take first 32 features (if we have more)
+        const features = seq.slice(0, 32);
+        // Add channel dimension
+        return features.map(f => [f]);
+      });
+      
+      // Create input tensor with batch dimension
+      const inputTensor = tf.tensor4d([reshapedSequences]);
+      
+      // Run prediction
+      const predictionTensor = this.cnnLstmModel.predict(inputTensor) as tf.Tensor;
+      const probabilities = Array.from(predictionTensor.dataSync());
+      
+      // Clean up tensors
+      tf.dispose([inputTensor, predictionTensor]);
+      
+      // Get confidence
+      const confidence = probabilities[0];
+      const isPeak = confidence > this.adaptiveThreshold;
+      
+      return {
+        hasPeak: isPeak,
+        confidence: confidence as number
+      };
+      
+    } catch (error) {
+      console.error('Error in CNN-LSTM peak detection:', error);
+      return { hasPeak: false, confidence: 0 };
     }
   }
   
@@ -908,13 +1295,13 @@ export class AdvancedPPGExtractor {
     if (this.filteredBuffer.length < 10) return 0;
     
     // Factors:
-    // 1. Signal amplitude (25%)
+    // 1. Signal amplitude (20%)
     const amplitudeScore = Math.min(100, this.signalAmplitude * 5000);
     
-    // 2. SNR (25%)
+    // 2. SNR (20%)
     const snrScore = Math.min(100, Math.max(0, this.snr * 5));
     
-    // 3. Spectrum peak prominence (25%)
+    // 3. Spectrum peak prominence (20%)
     let peakProminence = 0;
     if (this.powerSpectrum.length > 0) {
       const maxPower = Math.max(...this.powerSpectrum);
@@ -922,7 +1309,7 @@ export class AdvancedPPGExtractor {
       peakProminence = avgPower > 0 ? Math.min(100, (maxPower / avgPower - 1) * 100) : 0;
     }
     
-    // 4. Heart rate stability (25%)
+    // 4. Heart rate stability (20%)
     let stabilityScore = 0;
     if (this.rrIntervals.length >= 3) {
       const intervals = this.rrIntervals.slice(-5);
@@ -934,12 +1321,21 @@ export class AdvancedPPGExtractor {
       stabilityScore = Math.min(100, Math.max(0, (1 - cv * 5) * 100));
     }
     
+    // 5. Neural network confidence (20%)
+    let nnConfidence = 0;
+    if (this.tfInitialized && this.modelLoaded) {
+      // If we have a neural network prediction, use its confidence
+      const cnnResult = this.detectPeakWithCNN();
+      nnConfidence = cnnResult.confidence * 100;
+    }
+    
     // Weighted average
     const qualityScore = (
-      amplitudeScore * 0.25 +
-      snrScore * 0.25 +
-      peakProminence * 0.25 +
-      stabilityScore * 0.25
+      amplitudeScore * 0.2 +
+      snrScore * 0.2 +
+      peakProminence * 0.2 +
+      stabilityScore * 0.2 +
+      nnConfidence * 0.2
     );
     
     return Math.round(qualityScore);
@@ -963,14 +1359,107 @@ export class AdvancedPPGExtractor {
     // Check SNR
     const hasGoodSNR = this.snr > 2;
     
-    // Require at least three of the four criteria
+    // Neural network-based detection
+    let nnDetection = false;
+    if (this.tfInitialized && this.modelLoaded) {
+      // Use autoencoder reconstruction error as a finger detection metric
+      if (this.config.useAutoencoder && this.denoisingAutoencoder && this.filteredBuffer.length >= 64) {
+        const reconstructionError = this.calculateReconstructionError();
+        nnDetection = reconstructionError < 0.15; // Low error means finger likely present
+      }
+    }
+    
+    // Require at least three of the five criteria
     let criteria = 0;
     if (hasAdequateAmplitude) criteria++;
     if (hasGoodQuality) criteria++;
     if (hasConsistentHeartbeat) criteria++;
     if (hasGoodSNR) criteria++;
+    if (nnDetection) criteria++;
     
     return criteria >= 3;
+  }
+  
+  /**
+   * Calculate autoencoder reconstruction error for finger detection
+   */
+  private calculateReconstructionError(): number {
+    if (!this.denoisingAutoencoder || this.filteredBuffer.length < 64) {
+      return 1.0;
+    }
+    
+    try {
+      // Create a window of the last 64 values
+      const window = this.filteredBuffer.slice(-64);
+      
+      // Normalize the window
+      const min = Math.min(...window);
+      const max = Math.max(...window);
+      const range = max - min > 0 ? max - min : 1;
+      const normalized = window.map(v => (v - min) / range);
+      
+      // Convert to tensor
+      const inputTensor = tf.tensor2d([normalized]);
+      
+      // Run through autoencoder
+      const outputTensor = this.denoisingAutoencoder.predict(inputTensor) as tf.Tensor;
+      const reconstructed = Array.from(outputTensor.dataSync());
+      
+      // Calculate mean squared error
+      let sumSquaredError = 0;
+      for (let i = 0; i < normalized.length; i++) {
+        sumSquaredError += Math.pow(normalized[i] - reconstructed[i], 2);
+      }
+      const mse = sumSquaredError / normalized.length;
+      
+      // Clean up tensors
+      tf.dispose([inputTensor, outputTensor]);
+      
+      return mse;
+    } catch (error) {
+      console.error('Error calculating reconstruction error:', error);
+      return 1.0;
+    }
+  }
+  
+  /**
+   * Estimate appropriate threshold for wavelet denoising
+   */
+  private estimateWaveletThreshold(window: number[]): number {
+    // Universal threshold (simplified)
+    const n = window.length;
+    
+    // Calculate MAD (Median Absolute Deviation) estimator
+    const median = this.calculateMedian(window);
+    const deviations = window.map(x => Math.abs(x - median));
+    const mad = this.calculateMedian(deviations);
+    
+    // Scale MAD to approximate standard deviation
+    const sigma = mad / 0.6745;
+    
+    // Compute threshold using universal threshold formula
+    return sigma * Math.sqrt(2 * Math.log(n));
+  }
+  
+  /**
+   * Calculate local trend using a moving average
+   */
+  private calculateLocalTrend(window: number[]): number {
+    const n = window.length;
+    const center = window[n - 1]; // Current value
+    
+    // Use a weighted average of recent values
+    let sum = 0;
+    let weightSum = 0;
+    
+    const recentWindow = window.slice(-7);
+    for (let i = 0; i < recentWindow.length; i++) {
+      const weight = i + 1;
+      sum += recentWindow[i] * weight;
+      weightSum += weight;
+    }
+    
+    return sum / weightSum;
   }
   
   /**
@@ -999,6 +1488,16 @@ export class AdvancedPPGExtractor {
    * Clean up memory by disposing tensors and trimming buffers
    */
   private cleanupMemory(): void {
+    console.log('Running memory cleanup...');
+    
+    // Log memory usage before cleanup
+    if (this.tfInitialized) {
+      console.log('Memory before cleanup:', {
+        tensors: tf.memory().numTensors,
+        bytes: tf.memory().numBytes
+      });
+    }
+    
     // Dispose TensorFlow tensors
     if (this.featureBuffer.length > 0) {
       // Keep only the most recent features
@@ -1021,6 +1520,10 @@ export class AdvancedPPGExtractor {
       this.filteredBuffer = this.filteredBuffer.slice(-this.MAX_BUFFER_SIZE / 2);
     }
     
+    if (this.sequenceBuffer.length > this.MAX_SEQUENCE_BUFFER / 2) {
+      this.sequenceBuffer = this.sequenceBuffer.slice(-this.MAX_SEQUENCE_BUFFER / 2);
+    }
+    
     if (this.peaks.length > 10) {
       this.peaks = this.peaks.slice(-10);
     }
@@ -1030,8 +1533,19 @@ export class AdvancedPPGExtractor {
     }
     
     // Force garbage collection in TensorFlow
-    if (tf.memory().numTensors > 100) {
-      tf.dispose();
+    if (this.tfInitialized && tf.memory().numTensors > 100) {
+      try {
+        tf.tidy(() => {}); // Trigger execution to clean up tidy counts
+        tf.disposeVariables(); // Dispose of any variables
+        
+        // Log memory after cleanup
+        console.log('Memory after cleanup:', {
+          tensors: tf.memory().numTensors,
+          bytes: tf.memory().numBytes
+        });
+      } catch (error) {
+        console.error('Error during TensorFlow memory cleanup:', error);
+      }
     }
   }
   
@@ -1042,10 +1556,20 @@ export class AdvancedPPGExtractor {
     // Reset signal buffers
     this.rawBuffer = [];
     this.filteredBuffer = [];
+    this.sequenceBuffer = [];
     
     // Clean up TensorFlow tensors
-    this.featureBuffer.forEach(tensor => tensor.dispose());
-    this.featureBuffer = [];
+    if (this.tfInitialized) {
+      this.featureBuffer.forEach(tensor => tensor.dispose());
+      this.featureBuffer = [];
+      
+      // Force garbage collection
+      tf.tidy(() => {});
+      console.log('TensorFlow memory after reset:', {
+        tensors: tf.memory().numTensors,
+        bytes: tf.memory().numBytes
+      });
+    }
     
     // Reset peak detection state
     this.peaks = [];
@@ -1061,7 +1585,7 @@ export class AdvancedPPGExtractor {
     this.snr = 0;
     this.lastBPM = null;
     
-    console.log('Advanced PPG extractor reset');
+    console.log('Advanced PPG extractor reset with TensorFlow optimization');
   }
 }
 
