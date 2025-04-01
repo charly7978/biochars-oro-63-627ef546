@@ -1,179 +1,125 @@
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Hook para procesamiento de señal PPG
- * VERSIÓN MEJORADA: Mayor sensibilidad para señales débiles
  */
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { createPPGSignalProcessorAdapter } from '../modules/signal-processing/adapters/PPGSignalProcessorAdapter';
-import { ProcessedPPGSignal } from '../modules/signal-processing/types';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { PPGSignalProcessor } from '../modules/SignalProcessor';
+import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
- * Hook para procesar señales PPG
- * Versión optimizada para señales más débiles
+ * Hook para el procesamiento de señales PPG reales
+ * No se permite ninguna simulación o datos sintéticos
  */
 export const useSignalProcessor = () => {
-  // Crear procesador
+  // Create processor instance
   const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia", {
       timestamp: new Date().toISOString(),
       sessionId: Math.random().toString(36).substring(2, 9)
     });
     
-    return createPPGSignalProcessorAdapter();
+    return new PPGSignalProcessor();
   });
   
-  // Estado
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [lastSignal, setLastSignal] = useState<ProcessedPPGSignal | null>(null);
-  
-  // Referencia para acceso en callbacks
-  const isProcessingRef = useRef(isProcessing);
-  isProcessingRef.current = isProcessing;
-  
-  // Contadores para diagnóstico
-  const framesProcessed = useRef(0);
-  const pixelSumAccumulator = useRef(0);
-  const lastUpdateTime = useRef(Date.now());
-  
-  /**
-   * Procesar un cuadro de imagen de la cámara
-   * VERSIÓN MEJORADA: Mejor extracción de canal rojo para señales débiles
-   */
-  const processFrame = useCallback((imageData: ImageData) => {
-    if (!isProcessingRef.current) return;
-    
-    try {
-      framesProcessed.current++;
-      const now = Date.now();
+  // Basic state
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
+  const [error, setError] = useState<ProcessingError | null>(null);
+  const [framesProcessed, setFramesProcessed] = useState(0);
+  const [signalStats, setSignalStats] = useState({
+    minValue: Infinity,
+    maxValue: -Infinity,
+    avgValue: 0,
+    totalValues: 0
+  });
+
+  // Set up processor callbacks and cleanup
+  useEffect(() => {
+    // Signal callback
+    processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      setLastSignal(signal);
+      setError(null);
+      setFramesProcessed(prev => prev + 1);
       
-      // Extraer canal rojo con un enfoque más sensible
-      const data = imageData.data;
-      let redSum = 0;
-      let greenSum = 0;
-      let blueSum = 0;
-      let count = 0;
-      
-      // Analizar solo el centro (40% central) para mayor precisión
-      const centerWidth = Math.floor(imageData.width * 0.4);
-      const centerHeight = Math.floor(imageData.height * 0.4);
-      const startX = Math.floor((imageData.width - centerWidth) / 2);
-      const startY = Math.floor((imageData.height - centerHeight) / 2);
-      const endX = startX + centerWidth;
-      const endY = startY + centerHeight;
-      
-      // Considerar menos píxeles para optimización
-      const samplingStep = 4; // Analizar 1 de cada 4 píxeles
-      
-      for (let y = startY; y < endY; y += samplingStep) {
-        for (let x = startX; x < endX; x += samplingStep) {
-          const i = (y * imageData.width + x) * 4;
-          redSum += data[i];         // Canal rojo
-          greenSum += data[i + 1];   // Canal verde
-          blueSum += data[i + 2];    // Canal azul
-          count++;
-        }
-      }
-      
-      // Calcular promedio para cada canal
-      const avgRed = redSum / count;
-      const avgGreen = greenSum / count;
-      const avgBlue = blueSum / count;
-      
-      // Normalizar a [0,1]
-      const redNormalized = avgRed / 255;
-      
-      // Algoritmo mejorado: usar diferencia rojo-verde para reducir artefactos de iluminación
-      // Red-Green parece captar mejor la señal PPG
-      const redMinusGreen = (avgRed - avgGreen) / 255;
-      
-      // Usar también otros canales para diagnóstico
-      const rgDiff = (avgRed - avgGreen) / 255;
-      const rbDiff = (avgRed - avgBlue) / 255;
-      
-      // Valor compuesto: combinar técnicas para máxima sensibilidad
-      // Usar mayor peso en el canal rojo para señales débiles
-      const compositeValue = redNormalized * 0.7 + rgDiff * 0.3;
-      
-      // Acumular para análisis estadístico
-      pixelSumAccumulator.current += redSum;
-      
-      // Registrar diagnóstico cada 30 frames para no saturar consola
-      if (framesProcessed.current % 30 === 0) {
-        const elapsed = now - lastUpdateTime.current;
-        const fps = elapsed > 0 ? (30 / (elapsed / 1000)).toFixed(1) : "N/A";
-        console.log("useSignalProcessor: Extracción de señal", {
-          rojo: redNormalized.toFixed(4),
-          rojoVerde: rgDiff.toFixed(4), 
-          rojoAzul: rbDiff.toFixed(4),
-          compuesto: compositeValue.toFixed(4),
-          fps,
-          frame: framesProcessed.current
-        });
-        lastUpdateTime.current = now;
-      }
-      
-      // Procesar valor compuesto para mayor sensibilidad
-      const result = processor.processSignal(compositeValue);
-      setLastSignal(result);
-      
-      return result;
-    } catch (error) {
-      console.error("Error procesando frame:", error);
-      return null;
-    }
+      // Update signal statistics
+      setSignalStats(prev => {
+        return {
+          minValue: Math.min(prev.minValue, signal.filteredValue),
+          maxValue: Math.max(prev.maxValue, signal.filteredValue),
+          avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
+          totalValues: prev.totalValues + 1
+        };
+      });
+    };
+
+    // Error callback
+    processor.onError = (error: ProcessingError) => {
+      console.error("useSignalProcessor: Error en procesamiento:", error);
+      setError(error);
+    };
+
+    // Initialize processor
+    processor.initialize().catch(error => {
+      console.error("useSignalProcessor: Error de inicialización:", error);
+    });
+
+    // Cleanup
+    return () => {
+      processor.stop();
+    };
   }, [processor]);
-  
+
   /**
-   * Inicia el procesamiento
+   * Start processing signals
    */
   const startProcessing = useCallback(() => {
     console.log("useSignalProcessor: Iniciando procesamiento");
     
-    // Resetear estado
-    framesProcessed.current = 0;
-    pixelSumAccumulator.current = 0;
-    lastUpdateTime.current = Date.now();
-    
     setIsProcessing(true);
-  }, []);
-  
+    setFramesProcessed(0);
+    setSignalStats({
+      minValue: Infinity,
+      maxValue: -Infinity,
+      avgValue: 0,
+      totalValues: 0
+    });
+    
+    processor.start();
+  }, [processor]);
+
   /**
-   * Detiene el procesamiento
+   * Stop processing signals
    */
   const stopProcessing = useCallback(() => {
     console.log("useSignalProcessor: Deteniendo procesamiento");
     
     setIsProcessing(false);
-    setLastSignal(null);
-  }, []);
-  
+    processor.stop();
+  }, [processor]);
+
   /**
-   * Resetear procesador
+   * Process a frame from camera
    */
-  const reset = useCallback(() => {
-    processor.reset();
-    
-    framesProcessed.current = 0;
-    pixelSumAccumulator.current = 0;
-    
-    console.log("useSignalProcessor: Procesador reseteado");
-  }, [processor]);
-  
-  // Limpiar al desmontar
-  useEffect(() => {
-    return () => {
-      processor.reset();
-    };
-  }, [processor]);
-  
+  const processFrame = useCallback((imageData: ImageData) => {
+    if (isProcessing) {
+      try {
+        processor.processFrame(imageData);
+      } catch (err) {
+        console.error("useSignalProcessor: Error procesando frame:", err);
+      }
+    }
+  }, [isProcessing, processor]);
+
   return {
     isProcessing,
     lastSignal,
-    processFrame,
+    error,
+    framesProcessed,
+    signalStats,
     startProcessing,
     stopProcessing,
-    reset
+    processFrame
   };
 };

@@ -1,7 +1,7 @@
 
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { optimizeElement } from '../utils/displayOptimizer';
-import { AlertCircle, Heart, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Heart } from 'lucide-react';
 
 interface HeartRateDisplayProps {
   bpm: number;
@@ -10,7 +10,7 @@ interface HeartRateDisplayProps {
 
 const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isReliable = confidence > 0.6; // Aumentado umbral de confiabilidad
+  const isReliable = confidence > 0.5;
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -58,11 +58,9 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
 
   const getReliabilityIndicator = () => {
     if (confidence > 0.8) return "high";
-    if (confidence > 0.6) return "medium";
+    if (confidence > 0.5) return "medium";
     return "low";
   };
-
-  const showWeakSignalWarning = confidence > 0 && confidence < 0.4;
 
   return (
     <div 
@@ -79,13 +77,6 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
         )}
       </div>
       
-      {showWeakSignalWarning && (
-        <div className="bg-red-900/30 rounded px-1 py-0.5 mb-1 flex items-center justify-center">
-          <AlertTriangle className="h-3 w-3 text-red-500 mr-1" />
-          <p className="text-red-400 text-xs">Señal muy débil</p>
-        </div>
-      )}
-      
       <div className="flex items-baseline justify-center gap-1">
         <Heart 
           className={`h-4 w-4 mr-0.5 ${getHeartColor()} animation-smooth will-change-transform ${
@@ -95,34 +86,22 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
           strokeWidth={1.5}
         />
         <span className={`text-2xl font-bold typography-medical-data ${getValueClass()}`}>
-          {bpm > 0 && isReliable ? bpm : '--'}
+          {bpm > 0 ? bpm : '--'}
         </span>
         <span className="text-gray-400/90 text-xs unit-text">BPM</span>
       </div>
       
-      {/* Signal strength indicator */}
+      {/* Signal amplification indicator */}
       {confidence > 0 && (
         <div className="mt-1.5 w-full bg-gray-700/30 rounded-full h-0.5 overflow-hidden">
           <div 
             className={`h-full rounded-full animation-smooth ${
               confidence > 0.8 ? 'bg-green-500' : 
-              confidence > 0.6 ? 'bg-yellow-500' : 
+              confidence > 0.5 ? 'bg-yellow-500' : 
               'bg-red-500'
             }`}
             style={{ width: `${Math.min(100, confidence * 100)}%` }}
           />
-        </div>
-      )}
-      
-      {/* Añadir texto de calidad explícito */}
-      {confidence > 0 && (
-        <div className="mt-1 text-xs">
-          {confidence > 0.8 ? 
-            <span className="text-green-500">Señal fuerte</span> : 
-            confidence > 0.6 ? 
-              <span className="text-yellow-500">Señal moderada</span> : 
-              <span className="text-red-500">Señal débil</span>
-          }
         </div>
       )}
     </div>
