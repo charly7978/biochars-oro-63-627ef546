@@ -37,16 +37,9 @@ export * from './specialized/BloodPressureProcessor';
 export * from './specialized/SpO2Processor';
 export * from './specialized/CardiacProcessor';
 
-// Export arrhythmia types
+// Export shared signal utils and arrhythmia types
 export * from './arrhythmia/types';
 export * from './shared-signal-utils';
-
-// Export enhanced peak detection and signal quality modules
-export * from './enhanced-detection/fourier-analyzer';
-export * from './enhanced-detection/wavelet-analyzer';
-export * from './enhanced-detection/multi-beat-validator';
-export * from './enhanced-detection/adaptive-threshold';
-export * from './enhanced-detection/spectral-analyzer';
 
 // Export specific utility functions
 export { 
@@ -60,20 +53,10 @@ export {
   // Export peak detection functions
   findPeaksAndValleys,
   calculateAmplitude,
-  findPeaksFourier,
-  findPeaksWavelet,
-  validateMultiBeatSequence,
-  getAdaptiveThreshold,
   
   // Export filter functions
   applySMAFilter,
   amplifySignal,
-  
-  // Export spectral analysis functions
-  calculateSignalNoiseRatio,
-  calculatePulsatilityIndex,
-  calculateConsistencyMetrics,
-  performSpectralAnalysis,
   
   // Export perfusion functions
   calculatePerfusionIndex
