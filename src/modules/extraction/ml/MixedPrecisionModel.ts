@@ -6,7 +6,6 @@
  * Implementa técnicas de cálculo en precisión mixta (float16/float32)
  */
 import * as tf from '@tensorflow/tfjs';
-import * as tfCore from '@tensorflow/tfjs-core';
 
 // Configuración para precisión mixta
 export interface MixedPrecisionConfig {
@@ -209,4 +208,3 @@ export const createMixedPrecisionModel = (
 ): MixedPrecisionModel => {
   return new MixedPrecisionModel(config);
 };
-

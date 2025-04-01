@@ -20,4 +20,3 @@ export {
   createMixedPrecisionModel,
   createDataTransformer
 };
-

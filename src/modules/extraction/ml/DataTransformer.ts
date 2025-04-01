@@ -177,4 +177,3 @@ export const createDataTransformer = (
 ): DataTransformer => {
   return new DataTransformer(windowSize, overlapFactor, usePreallocatedBuffers);
 };
-
