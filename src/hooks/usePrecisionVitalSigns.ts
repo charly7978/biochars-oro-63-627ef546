@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -198,7 +197,7 @@ export function usePrecisionVitalSigns() {
     if (!processorRef.current) return;
     
     processorRef.current.reset();
-    signalProcessing.reset();
+    // Removed signalProcessing.reset() call as it doesn't exist
     
     setState({
       isProcessing: false,
@@ -215,7 +214,7 @@ export function usePrecisionVitalSigns() {
     });
     
     console.log("usePrecisionVitalSigns: Estado reiniciado");
-  }, [signalProcessing]);
+  }, []);
   
   // Obtener diagnósticos
   const getDiagnostics = useCallback(() => {

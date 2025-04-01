@@ -1,299 +1,175 @@
 
-/**
- * Hook for gathering system diagnostics data
- */
-import { useState, useEffect, useCallback } from 'react';
-import { useSignalProcessing } from './useSignalProcessing';
-import { useVitalSignsProcessor } from './useVitalSignsProcessor';
-import { useVitalSignsWithProcessing } from './useVitalSignsWithProcessing';
-import { usePPGExtraction } from './usePPGExtraction';
+import { useState, useCallback } from 'react';
 
-export function useDiagnostics() {
-  // Get access to all the system hooks
-  const signalProcessing = useSignalProcessing();
-  const vitalSigns = useVitalSignsProcessor();
-  const integratedProcessing = useVitalSignsWithProcessing();
-  const signalExtraction = usePPGExtraction();
-  
-  // State for diagnostics data
-  const [diagnosticsData, setDiagnosticsData] = useState({
-    signalQuality: {
-      current: 0,
-      history: [] as number[],
-      status: 'unknown' as 'good' | 'moderate' | 'poor' | 'unknown'
-    },
-    calibration: {
-      active: false,
-      status: 'not_calibrated' as 'calibrating' | 'calibrated' | 'not_calibrated',
-      progress: 0,
-      lastCalibrated: null as Date | null
-    },
-    channels: {
-      cardiac: { quality: 0, active: false },
-      spo2: { quality: 0, active: false },
-      glucose: { quality: 0, active: false },
-      lipids: { quality: 0, active: false },
-      bloodPressure: { quality: 0, active: false }
-    },
-    signalMetrics: {
-      rawAmplitude: 0,
-      filteredAmplitude: 0,
-      noiseLevel: 0,
-      stabilityScore: 0
-    },
-    processingPipeline: {
-      framesProcessed: 0,
-      framesPerSecond: 0,
-      lastProcessTime: 0,
-      activeProcessors: [] as string[]
-    },
-    heartbeatMetrics: {
-      currentBPM: 0,
-      confidence: 0,
-      arrhythmiaDetected: false,
-      signalStrength: 'unknown' as 'strong' | 'moderate' | 'weak' | 'unknown',
-      rrIntervalQuality: 0
-    },
-    systemStatus: {
-      isMonitoring: false,
-      fingerDetected: false,
-      errors: [] as string[],
-      warnings: [] as string[]
-    },
-    networkStatus: {
-      active: false,
-      trainingProgress: 0,
-      lastTrainingDate: null as Date | null,
-      accuracy: 0
-    },
-    feedbackSystem: {
-      bidirectionalActive: false,
-      lastFeedbackTime: null as Date | null,
-      feedbackQueue: 0,
-      adaptations: [] as {component: string, timestamp: Date, adaptation: string}[]
-    },
-    signalHistory: {
-      raw: [] as {time: number, value: number}[],
-      filtered: [] as {time: number, value: number}[],
-      amplified: [] as {time: number, value: number}[]
-    }
-  });
-  
-  // Update diagnostics data periodically
-  useEffect(() => {
-    const updateInterval = setInterval(() => {
-      updateDiagnosticsData();
-    }, 1000);
-    
-    return () => clearInterval(updateInterval);
-  }, []);
-  
-  // Function to update diagnostics data
-  const updateDiagnosticsData = useCallback(() => {
-    // Get the latest data from all sources
-    const signalQualityValue = Math.max(
-      signalProcessing.signalQuality || 0,
-      signalExtraction.signalQuality || 0
-    );
-    
-    const heartRate = signalProcessing.heartRate || 0;
-    const fingerDetected = signalProcessing.fingerDetected || false;
-    
-    // Get signal processing details
-    const lastResult = signalProcessing.lastResult;
-    
-    // Get diagnostics from vital signs processor
-    const vitalSignsDiagnostics = vitalSigns.getPeakDetectionDiagnostics?.() || [];
-    const arrhythmiaCount = vitalSigns.arrhythmiaCounter || 0;
-    
-    // Get debug info
-    const vitalSignsDebug = vitalSigns.debugInfo;
-    
-    // Determine signal quality status
-    let qualityStatus: 'good' | 'moderate' | 'poor' | 'unknown' = 'unknown';
-    if (signalQualityValue >= 70) qualityStatus = 'good';
-    else if (signalQualityValue >= 40) qualityStatus = 'moderate';
-    else if (signalQualityValue > 0) qualityStatus = 'poor';
-    
-    // Determine heart signal strength
-    let heartSignalStrength: 'strong' | 'moderate' | 'weak' | 'unknown' = 'unknown';
-    const signalStrength = lastResult?.signalStrength || 0;
-    if (signalStrength >= 0.7) heartSignalStrength = 'strong';
-    else if (signalStrength >= 0.4) heartSignalStrength = 'moderate';
-    else if (signalStrength > 0) heartSignalStrength = 'weak';
+// Define the types for our diagnostics data
+interface SignalQualityData {
+  current: number;
+  status: 'good' | 'moderate' | 'poor' | 'unknown';
+  history: number[];
+}
 
-    // Determine active processors
-    const activeProcessors: string[] = [];
-    if (signalProcessing.isProcessing) activeProcessors.push('PPG Signal Processor');
-    if (integratedProcessing.isMonitoring) activeProcessors.push('Integrated Vital Signs');
-    if (signalExtraction.isProcessing) activeProcessors.push('Signal Extraction');
-    
-    // Get signal metrics
-    const rawValue = lastResult?.rawValue || 0;
-    const filteredValue = lastResult?.filteredValue || 0;
-    
-    // Calculate noise and stability
-    const noiseLevel = Math.abs(rawValue - filteredValue);
-    const stabilityScore = lastResult ? Math.min(100, 100 - (noiseLevel * 200)) : 0;
-    
-    // Update all diagnostic data
-    setDiagnosticsData(prevData => {
-      // Update signal history
-      const now = Date.now();
-      const newRaw = [...prevData.signalHistory.raw, {time: now, value: rawValue}].slice(-50);
-      const newFiltered = [...prevData.signalHistory.filtered, {time: now, value: filteredValue}].slice(-50);
-      const newAmplified = [...prevData.signalHistory.amplified, {time: now, value: lastResult?.amplifiedValue || 0}].slice(-50);
-      
-      // Calculate amplitudes
-      const rawAmplitude = calculateAmplitude(newRaw.map(d => d.value));
-      const filteredAmplitude = calculateAmplitude(newFiltered.map(d => d.value));
-      
-      // Calculate frames per second
-      const fps = calculateFPS(
-        signalProcessing.processedFrames || 0, 
-        prevData.processingPipeline.framesProcessed || 0
-      );
-      
-      return {
-        ...prevData,
-        signalQuality: {
-          current: signalQualityValue,
-          history: [...prevData.signalQuality.history, signalQualityValue].slice(-50),
-          status: qualityStatus
-        },
-        calibration: {
-          ...prevData.calibration,
-          active: isCalibrationActive(vitalSignsDebug),
-          status: determineCalibrationStatus(vitalSignsDebug)
-        },
-        channels: {
-          cardiac: { 
-            quality: estimateChannelQuality('cardiac', lastResult), 
-            active: activeProcessors.length > 0 
-          },
-          spo2: { 
-            quality: estimateChannelQuality('spo2', lastResult), 
-            active: activeProcessors.length > 0 
-          },
-          glucose: { 
-            quality: estimateChannelQuality('glucose', lastResult), 
-            active: activeProcessors.length > 0 
-          },
-          lipids: { 
-            quality: estimateChannelQuality('lipids', lastResult), 
-            active: activeProcessors.length > 0 
-          },
-          bloodPressure: { 
-            quality: estimateChannelQuality('bloodPressure', lastResult), 
-            active: activeProcessors.length > 0 
-          },
-        },
-        signalMetrics: {
-          rawAmplitude,
-          filteredAmplitude,
-          noiseLevel,
-          stabilityScore
-        },
-        processingPipeline: {
-          framesProcessed: signalProcessing.processedFrames || 0,
-          framesPerSecond: fps,
-          lastProcessTime: now,
-          activeProcessors
-        },
-        heartbeatMetrics: {
-          currentBPM: heartRate,
-          confidence: lastResult?.peakConfidence || 0,
-          arrhythmiaDetected: arrhythmiaCount > 0,
-          signalStrength: heartSignalStrength,
-          rrIntervalQuality: calculateRRQuality(lastResult)
-        },
-        systemStatus: {
-          isMonitoring: integratedProcessing.isMonitoring || signalProcessing.isProcessing,
-          fingerDetected,
-          errors: [], // Would be populated from error states
-          warnings: [] // Would be populated from warning states
-        },
-        networkStatus: {
-          ...prevData.networkStatus,
-          active: isNeuralNetworkActive(vitalSignsDebug),
-        },
-        feedbackSystem: {
-          ...prevData.feedbackSystem,
-          bidirectionalActive: isBidirectionalFeedbackActive(vitalSignsDebug),
-          lastFeedbackTime: vitalSignsDebug?.performanceMetrics?.avgProcessTime ? new Date() : prevData.feedbackSystem.lastFeedbackTime,
-        },
-        signalHistory: {
-          raw: newRaw,
-          filtered: newFiltered,
-          amplified: newAmplified
-        }
-      };
-    });
-  }, [signalProcessing, vitalSigns, integratedProcessing, signalExtraction]);
+interface SignalMetricsData {
+  noiseLevel: number;
+  stabilityScore: number;
+}
+
+interface HeartbeatMetricsData {
+  currentBPM: number;
+  confidence: number;
+  arrhythmiaDetected: boolean;
+  signalStrength: number;
+  rrIntervalQuality: number;
+}
+
+interface CalibrationData {
+  active: boolean;
+  status: 'calibrated' | 'calibrating' | 'uncalibrated';
+  progress: number;
+  lastCalibrated: Date | null;
+}
+
+interface ChannelInfo {
+  quality: number;
+  active: boolean;
+}
+
+interface ChannelsData {
+  cardiac: ChannelInfo;
+  spo2: ChannelInfo;
+  glucose: ChannelInfo;
+  lipids: ChannelInfo;
+  bloodPressure: ChannelInfo;
+}
+
+interface ProcessingPipelineData {
+  framesProcessed: number;
+  framesPerSecond: number;
+  activeProcessors: string[];
+}
+
+interface SignalHistoryData {
+  raw: number[];
+  filtered: number[];
+  amplified: number[];
+}
+
+interface FeedbackSystemData {
+  bidirectionalActive: boolean;
+  lastFeedbackTime: Date | null;
+  feedbackQueue: number;
+  adaptations: {component: string, timestamp: Date, adaptation: string}[];
+}
+
+interface SystemStatusData {
+  isMonitoring: boolean;
+  fingerDetected: boolean;
+  batteryLevel: number;
+  cpuUsage: number;
+  memoryUsage: number;
+}
+
+export interface DiagnosticsData {
+  signalQuality: SignalQualityData;
+  signalMetrics: SignalMetricsData;
+  heartbeatMetrics: HeartbeatMetricsData;
+  calibration: CalibrationData;
+  channels: ChannelsData;
+  processingPipeline: ProcessingPipelineData;
+  signalHistory: SignalHistoryData;
+  feedbackSystem: FeedbackSystemData;
+  systemStatus: SystemStatusData;
+}
+
+// Mock data generator for demonstration
+const generateMockData = (): DiagnosticsData => {
+  const randomQuality = (min = 30, max = 100) => Math.floor(Math.random() * (max - min) + min);
+  const randomBoolean = () => Math.random() > 0.5;
   
-  // Helper functions
-  const calculateAmplitude = (values: number[]): number => {
-    if (values.length < 2) return 0;
-    return Math.max(...values) - Math.min(...values);
-  };
+  const now = new Date();
+  const lastCalibrated = new Date();
+  lastCalibrated.setHours(lastCalibrated.getHours() - 2);
   
-  const calculateFPS = (currentFrames: number, previousFrames: number): number => {
-    const frameDiff = currentFrames - previousFrames;
-    return frameDiff; // Since we update every second
-  };
-  
-  const estimateChannelQuality = (channel: string, result: any): number => {
-    if (!result) return 0;
-    
-    // Estimate quality based on available metrics
-    // This is a placeholder - in a real implementation, each channel would have its own quality metrics
-    switch (channel) {
-      case 'cardiac':
-        return result.peakConfidence ? result.peakConfidence * 100 : 0;
-      case 'spo2':
-        return result.quality ? result.quality * 0.9 : 0; // Slightly less than overall quality
-      case 'glucose':
-        return result.quality ? result.quality * 0.7 : 0; // More affected by noise
-      case 'lipids':
-        return result.quality ? result.quality * 0.6 : 0; // More affected by noise
-      case 'bloodPressure':
-        return result.quality ? result.quality * 0.8 : 0; // Less affected by noise
-      default:
-        return 0;
-    }
-  };
-  
-  const calculateRRQuality = (result: any): number => {
-    if (!result || !result.rrInterval) return 0;
-    // Higher confidence in RR intervals with higher peak confidence
-    return result.peakConfidence ? result.peakConfidence * 100 : 0;
-  };
-  
-  const isCalibrationActive = (debugInfo: any): boolean => {
-    // In a real implementation, this would check if calibration is currently active
-    return debugInfo?.processedSignals > 0;
-  };
-  
-  const determineCalibrationStatus = (debugInfo: any): 'calibrating' | 'calibrated' | 'not_calibrated' => {
-    if (!debugInfo) return 'not_calibrated';
-    
-    if (debugInfo.processedSignals < 10) return 'not_calibrated';
-    if (debugInfo.processedSignals < 50) return 'calibrating';
-    return 'calibrated';
-  };
-  
-  const isNeuralNetworkActive = (debugInfo: any): boolean => {
-    // In a real implementation, this would check if neural network processing is active
-    return debugInfo?.performanceMetrics?.avgProcessTime > 0;
-  };
-  
-  const isBidirectionalFeedbackActive = (debugInfo: any): boolean => {
-    // In a real implementation, this would check if bidirectional feedback is active
-    return debugInfo?.signalLog?.length > 0;
-  };
+  const lastFeedbackTime = new Date();
+  lastFeedbackTime.setMinutes(lastFeedbackTime.getMinutes() - 5);
   
   return {
-    diagnosticsData,
-    updateDiagnosticsData
+    signalQuality: {
+      current: randomQuality(60, 100),
+      status: Math.random() > 0.7 ? 'good' : Math.random() > 0.4 ? 'moderate' : 'poor',
+      history: Array.from({ length: 20 }, () => randomQuality()),
+    },
+    signalMetrics: {
+      noiseLevel: Math.random() * 0.5,
+      stabilityScore: randomQuality(50, 100),
+    },
+    heartbeatMetrics: {
+      currentBPM: Math.floor(Math.random() * 40) + 60,
+      confidence: Math.random() * 0.7 + 0.3,
+      arrhythmiaDetected: Math.random() > 0.9,
+      signalStrength: randomQuality(60, 100),
+      rrIntervalQuality: randomQuality(50, 100),
+    },
+    calibration: {
+      active: randomBoolean(),
+      status: Math.random() > 0.7 ? 'calibrated' : Math.random() > 0.4 ? 'calibrating' : 'uncalibrated',
+      progress: Math.random() * 100,
+      lastCalibrated,
+    },
+    channels: {
+      cardiac: { quality: randomQuality(70, 100), active: true },
+      spo2: { quality: randomQuality(60, 100), active: true },
+      glucose: { quality: randomQuality(30, 90), active: randomBoolean() },
+      lipids: { quality: randomQuality(20, 80), active: randomBoolean() },
+      bloodPressure: { quality: randomQuality(60, 90), active: true },
+    },
+    processingPipeline: {
+      framesProcessed: Math.floor(Math.random() * 10000) + 5000,
+      framesPerSecond: Math.floor(Math.random() * 20) + 10,
+      activeProcessors: [
+        'PPGExtractor',
+        'HeartbeatDetector',
+        'SpO2Calculator',
+        ...(randomBoolean() ? ['GlucoseEstimator'] : []),
+        ...(randomBoolean() ? ['LipidAnalyzer'] : []),
+        'BloodPressureEstimator',
+      ],
+    },
+    signalHistory: {
+      raw: Array.from({ length: 100 }, () => Math.sin(Math.random() * Math.PI) * 0.5 + Math.random() * 0.2),
+      filtered: Array.from({ length: 100 }, () => Math.sin(Math.random() * Math.PI) * 0.4),
+      amplified: Array.from({ length: 100 }, () => Math.sin(Math.random() * Math.PI) * 0.8),
+    },
+    feedbackSystem: {
+      bidirectionalActive: randomBoolean(),
+      lastFeedbackTime,
+      feedbackQueue: Math.floor(Math.random() * 5),
+      adaptations: [
+        { component: 'PPGProcessor', timestamp: new Date(now.getTime() - 30000), adaptation: 'Adjusted amplification factor to 1.2' },
+        { component: 'FilterChain', timestamp: new Date(now.getTime() - 120000), adaptation: 'Increased filter strength to reduce noise' },
+        { component: 'HeartbeatDetector', timestamp: new Date(now.getTime() - 300000), adaptation: 'Optimized threshold for better peak detection' },
+      ],
+    },
+    systemStatus: {
+      isMonitoring: randomBoolean(),
+      fingerDetected: randomBoolean(),
+      batteryLevel: randomQuality(50, 100),
+      cpuUsage: randomQuality(10, 50),
+      memoryUsage: randomQuality(20, 60),
+    },
   };
-}
+};
+
+export const useDiagnostics = () => {
+  const [diagnosticsData, setDiagnosticsData] = useState<DiagnosticsData>(generateMockData());
+
+  const updateDiagnosticsData = useCallback(() => {
+    // In a real app, you would fetch actual data from your processing pipeline
+    // For demo purposes, we're generating mock data
+    setDiagnosticsData(generateMockData());
+  }, []);
+
+  return {
+    diagnosticsData,
+    updateDiagnosticsData,
+  };
+};

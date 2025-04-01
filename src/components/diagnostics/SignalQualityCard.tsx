@@ -53,8 +53,11 @@ const SignalQualityCard: React.FC<SignalQualityCardProps> = ({
               <span className="text-sm">Noise Level</span>
               <span className="text-sm font-semibold">{noiseLevel.toFixed(4)}</span>
             </div>
-            <Progress value={Math.min(100, noiseLevel * 200)} className="h-2 bg-gray-200" 
-              indicatorClassName="bg-red-500" />
+            <Progress 
+              value={Math.min(100, noiseLevel * 200)} 
+              className="h-2 bg-gray-200" 
+              indicatorClassName="bg-red-500" 
+            />
           </div>
           
           <div>
