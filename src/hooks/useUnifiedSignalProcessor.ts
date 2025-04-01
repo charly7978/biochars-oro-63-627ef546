@@ -100,9 +100,9 @@ export const useUnifiedSignalProcessor = () => {
   }, [processor]);
   
   /**
-   * Procesar un frame
+   * Procesar un frame entero de imagen
    */
-  const processFrame = useCallback((imageData: ImageData) => {
+  const processImageFrame = useCallback((imageData: ImageData) => {
     if (isProcessing) {
       try {
         // Extraer valor promedio del canal rojo
@@ -116,17 +116,42 @@ export const useUnifiedSignalProcessor = () => {
         
         const redAvg = redSum / pixelCount / 255; // Normalizar a 0-1
         
-        // Procesar señal
-        const result = processor.processSignal(redAvg);
-        
-        // El callback handleSignalReady actualizará el estado
-        handleSignalReady(result);
+        // Procesar señal y actualizar estado a través del callback
+        processor.processSignal(redAvg);
       } catch (err) {
-        console.error("useUnifiedSignalProcessor: Error procesando frame:", err);
+        console.error("useUnifiedSignalProcessor: Error procesando frame de imagen:", err);
         handleError(err instanceof Error ? err : new Error(String(err)));
       }
     }
-  }, [isProcessing, processor, handleSignalReady, handleError]);
+  }, [isProcessing, processor, handleError]);
+  
+  /**
+   * Procesar un valor numérico
+   */
+  const processFrame = useCallback((value: number) => {
+    if (isProcessing) {
+      try {
+        // Validar valor
+        if (isNaN(value) || !isFinite(value)) {
+          console.warn("useUnifiedSignalProcessor: Valor inválido", value);
+          return;
+        }
+        
+        // Normalizar si es necesario
+        const normalizedValue = value > 1 ? value / 255 : value;
+        
+        // Procesar señal directamente
+        processor.processSignal(normalizedValue);
+        
+        return lastSignal;
+      } catch (err) {
+        console.error("useUnifiedSignalProcessor: Error procesando valor:", err);
+        handleError(err instanceof Error ? err : new Error(String(err)));
+        return null;
+      }
+    }
+    return null;
+  }, [isProcessing, processor, handleError, lastSignal]);
   
   return {
     isProcessing,
@@ -136,7 +161,8 @@ export const useUnifiedSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    processFrame,
+    processFrame, // Para valores numéricos
+    processImageFrame, // Para imágenes completas
     // Métodos adicionales directos al procesador
     getArrhythmiaCounter: useCallback(() => processor.getArrhythmiaCounter(), [processor]),
     getRRIntervals: useCallback(() => processor.getRRIntervals(), [processor]),

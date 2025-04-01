@@ -5,7 +5,16 @@
  * Utilidades para evaluación de calidad de señal
  */
 
-import { calculateVariance } from './signal-normalizer';
+/**
+ * Calcula la varianza de una serie de valores
+ */
+export function calculateVariance(values: number[]): number {
+  if (values.length < 2) return 0;
+  
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+  return squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+}
 
 /**
  * Evalúa la calidad de una señal PPG

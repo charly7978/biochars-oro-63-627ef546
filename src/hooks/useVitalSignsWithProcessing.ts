@@ -79,10 +79,11 @@ export function useVitalSignsWithProcessing() {
     try {
       // 2. Procesar el valor PPG extraído con el procesador unificado
       // La función correcta es processFrame, no processSignal
-      const processedSignal = processing.processFrame(extraction.lastResult.filteredValue);
+      // Debemos extraer un número del objeto ImageData, no pasarlo directamente
+      processing.processFrame(extraction.lastResult.filteredValue);
       
       // Verificar si tenemos una señal procesada y hay un dedo detectado
-      if (processedSignal && processing.lastSignal && processing.lastSignal.fingerDetected) {
+      if (processing.lastSignal && processing.lastSignal.fingerDetected) {
         // 3. Procesar para obtener signos vitales
         const vitalsResult = vitalSigns.processSignal(
           processing.lastSignal.filteredValue, 

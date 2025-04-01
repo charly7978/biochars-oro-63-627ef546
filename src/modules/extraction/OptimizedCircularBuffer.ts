@@ -175,8 +175,10 @@ export class OptimizedCircularBuffer<T extends TimestampedPPGData = TimestampedP
     
     // Llenar el buffer con los datos
     points.forEach((point, i) => {
-      view[i * 2] = point.timestamp;
-      view[i * 2 + 1] = point.value;
+      if (point && 'timestamp' in point && 'value' in point) {
+        view[i * 2] = point.timestamp;
+        view[i * 2 + 1] = point.value;
+      }
     });
     
     // Devolver el buffer y metadata para reconstrucción

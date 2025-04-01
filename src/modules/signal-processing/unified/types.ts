@@ -2,22 +2,50 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Definiciones de tipos para el procesador unificado
+ * Tipos unificados para procesamiento de señales PPG
  */
 
 /**
- * Configuración para el procesador de señal unificado
+ * Señal PPG procesada por el procesador unificado
  */
-export interface SignalProcessorOptions {
-  // Parámetros de filtrado y calidad
-  amplificationFactor?: number;
-  filterStrength?: number;
-  qualityThreshold?: number;
-  fingerDetectionSensitivity?: number;
+export interface ProcessedPPGSignal {
+  // Información temporal
+  timestamp: number;
   
-  // Parámetros de detección de picos
-  peakThreshold?: number;
-  minPeakDistance?: number;
+  // Valores de señal
+  rawValue: number;
+  filteredValue: number;
+  amplifiedValue: number;
+  
+  // Análisis de frecuencia cardíaca
+  isPeak: boolean;
+  instantaneousBPM: number;
+  rrInterval: number | null;
+  heartRateVariability?: number;
+  
+  // Métricas de calidad
+  quality: number;
+  fingerDetected: boolean;
+  
+  // Estado de arritmia
+  arrhythmiaCount: number;
+}
+
+/**
+ * Opciones de configuración para el procesador unificado
+ */
+export interface UnifiedProcessorOptions {
+  // Configuración de procesamiento
+  bufferSize?: number;
+  sampleRate?: number;
+  
+  // Umbrales y sensibilidad
+  peakDetectionThreshold?: number;
+  qualityThreshold?: number;
+  
+  // Amplificación y filtrado
+  amplificationFactor?: number;
+  useAdvancedFiltering?: boolean;
   
   // Callbacks
   onSignalReady?: (signal: ProcessedPPGSignal) => void;
@@ -25,65 +53,11 @@ export interface SignalProcessorOptions {
 }
 
 /**
- * Señal PPG procesada con datos completos
- */
-export interface ProcessedPPGSignal {
-  // Marca de tiempo
-  timestamp: number;
-  
-  // Valores de señal
-  rawValue: number;
-  filteredValue: number;
-  normalizedValue: number;
-  amplifiedValue: number;
-  
-  // Calidad y detección
-  quality: number;
-  fingerDetected: boolean;
-  signalStrength: number;
-  
-  // Datos de latidos
-  isPeak: boolean;
-  peakConfidence: number;
-  instantaneousBPM: number | null;
-  rrInterval: number | null;
-  heartRateVariability: number | null;
-  
-  // Arritmias
-  arrhythmiaCount: number;
-}
-
-/**
  * Métricas de calidad de señal
  */
 export interface SignalQualityMetrics {
   quality: number;
-  amplitude: number;
-  signalStrength: number;
-  weakSignalCount: number;
-}
-
-/**
- * Resultado de detección de dedo
- */
-export interface FingerDetectionResult {
-  detected: boolean;
-  confidence: number;
-  quality: number;
-}
-
-/**
- * Datos de intervalo RR
- */
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
-}
-
-/**
- * Error en el procesamiento de señal
- */
-export interface ProcessingError extends Error {
-  code: string;
-  timestamp: number;
+  strength: number;
+  stability: number;
+  noiseLevel: number;
 }
