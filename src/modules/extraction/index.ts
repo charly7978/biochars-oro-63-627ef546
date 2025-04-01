@@ -7,10 +7,12 @@
 export * from './HeartbeatExtractor';
 export * from './PPGSignalExtractor';
 export * from './CombinedExtractor';
+export * from './DiagnosticsCollector';
+export * from './OptimizedCircularBuffer';
 
 // Re-exportar enumeración de prioridad para uso externo
 export { ProcessingPriority } from './CombinedExtractor';
 
 // Exportar interfaces de diagnóstico
-export type { DiagnosticsEntry } from './CombinedExtractor';
+export type { DiagnosticsEntry } from './DiagnosticsCollector';
 
