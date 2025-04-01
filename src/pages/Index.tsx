@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -9,7 +8,6 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -302,7 +300,6 @@ const Index = () => {
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
             />
           </div>
 

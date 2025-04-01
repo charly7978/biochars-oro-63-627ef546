@@ -1,18 +1,27 @@
 
+/**
+ * VitalSignsProcessor.ts
+ * 
+ * Procesador principal de signos vitales con arquitectura modular
+ * y mejoras en detección de arritmias y SpO2.
+ */
+
+import { SpO2Processor } from './spo2-processor';
 import { ArrhythmiaDetector, ArrhythmiaDetectionResult } from './ArrhythmiaDetector';
+import { calculateDC, calculateAC, calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export interface VitalSignsResult {
   spo2: number;
   pressure: string;
   arrhythmiaStatus: string;
-  visualWindow?: {
-    start: number;
-    end: number;
-  } | null;
   lastArrhythmiaData?: {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
+  } | null;
+  visualWindow?: {
+    start: number;
+    end: number;
   } | null;
   calibration?: {
     progress: {
@@ -20,239 +29,113 @@ export interface VitalSignsResult {
       spo2: number;
       pressure: number;
       arrhythmia: number;
-    }
+    };
   };
-  lipids?: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  glucose?: number;
 }
 
 export class VitalSignsProcessor {
+  // Configuración general
   private readonly WINDOW_SIZE = 300;
-  private readonly SPO2_CALIBRATION_FACTOR = 1.05; // Aumentado de 1.02 a 1.05 para mejor calibración
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Reducido de 0.05 a 0.045 para mayor sensibilidad
-  private readonly SPO2_WINDOW = 8; // Reducido de 10 a 8 para respuesta más rápida
   private readonly SMA_WINDOW = 3;
-  private readonly RR_WINDOW_SIZE = 5;
-  private readonly RMSSD_THRESHOLD = 22; // Reducido de 25 a 22 para mejor detección de arritmias
-  private readonly ARRHYTHMIA_LEARNING_PERIOD = 2500; // Reducido de 3000 a 2500 ms
-  private readonly PEAK_THRESHOLD = 0.28; // Reducido de 0.3 a 0.28 para mayor sensibilidad
-  
-  private ppgValues: number[] = [];
-  private lastValue = 0;
-  private lastPeakTime: number | null = null;
-  private rrIntervals: number[] = [];
-  private measurementStartTime: number = Date.now();
-  private arrhythmiaDetector: ArrhythmiaDetector;
-  private smaBuffer: number[] = [];
-  
-  private spo2Buffer: number[] = [];
-  private readonly SPO2_BUFFER_SIZE = 10;
-
-  private systolicBuffer: number[] = [];
-  private diastolicBuffer: number[] = [];
   private readonly BP_BUFFER_SIZE = 10;
   private readonly BP_ALPHA = 0.7;
   
+  // Variables de estado
+  private ppgValues: number[] = [];
+  private systolicBuffer: number[] = [];
+  private diastolicBuffer: number[] = [];
+  private smaBuffer: number[] = [];
+  private measurementStartTime: number = Date.now();
+  
+  // Procesadores modulares
+  private spo2Processor: SpO2Processor;
+  private arrhythmiaDetector: ArrhythmiaDetector;
+  
   constructor() {
-    this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.reset();
+    this.spo2Processor = new SpO2Processor();
+    this.arrhythmiaDetector = new ArrhythmiaDetector({
+      minTimeBetweenArrhythmias: 3000,
+      maxArrhythmiasPerSession: 10,
+      signalQualityThreshold: 0.65
+    });
+    
+    console.log("VitalSignsProcessor: Inicializado con configuración optimizada");
   }
-
+  
+  /**
+   * Procesa la señal PPG y datos RR para calcular signos vitales
+   */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
+    const currentTime = Date.now();
+    
+    // Aplicar filtro SMA para suavizar la señal
     const filteredValue = this.applySMAFilter(ppgValue);
     
+    // Guardar valor filtrado
     this.ppgValues.push(filteredValue);
     if (this.ppgValues.length > this.WINDOW_SIZE) {
       this.ppgValues.shift();
     }
-
-    // Process RR data for arrhythmia detection
-    let arrhythmiaResult: ArrhythmiaDetectionResult = {
-      isArrhythmia: false,
-      arrhythmiaCounter: 0,
-      arrhythmiaStatus: "--",
-      lastArrhythmiaData: null,
-      visualWindow: null
-    };
     
-    const signalQuality = this.calculateSignalQuality(this.ppgValues.slice(-30));
+    // Calcular SpO2 usando el procesador dedicado
+    const spo2 = this.spo2Processor.calculateSpO2(this.ppgValues.slice(-60));
+    
+    // Calcular presión arterial
+    const bp = this.calculateBloodPressure(this.ppgValues.slice(-60));
+    const pressureString = `${bp.systolic}/${bp.diastolic}`;
+    
+    // Analizar datos de arritmia si hay intervalos RR disponibles
+    let arrhythmiaResult: ArrhythmiaDetectionResult;
     
     if (rrData && rrData.intervals.length > 0) {
-      this.rrIntervals = [...rrData.intervals];
-      this.lastPeakTime = rrData.lastPeakTime;
+      // Calcular calidad de señal basada en variabilidad y amplitud
+      const signalQuality = this.calculateSignalQuality(this.ppgValues.slice(-30));
       
-      const currentTime = Date.now();
+      // Analizar intervalos RR para detección de arritmias
       arrhythmiaResult = this.arrhythmiaDetector.analyzeRRIntervals(
-        this.rrIntervals,
+        rrData.intervals,
         currentTime,
         signalQuality
       );
+    } else {
+      // Sin datos RR, mantener estado actual
+      arrhythmiaResult = {
+        isArrhythmia: false,
+        arrhythmiaCounter: this.arrhythmiaDetector.getArrhythmiaCounter(),
+        arrhythmiaStatus: `SIN ARRITMIAS|${this.arrhythmiaDetector.getArrhythmiaCounter()}`,
+        lastArrhythmiaData: null,
+        visualWindow: null
+      };
     }
-
-    const spo2 = this.calculateSpO2(this.ppgValues.slice(-60));
-    const bp = this.calculateBloodPressure(this.ppgValues.slice(-60));
-    const pressureString = `${bp.systolic}/${bp.diastolic}`;
-
-    // Simulated values for demo purposes - these would normally come from real algorithms
-    const glucose = this.estimateGlucose(spo2, bp, this.ppgValues.slice(-60));
-    const lipids = this.estimateLipids(spo2, bp, this.ppgValues.slice(-60));
-
-    const calibrationProgress = {
-      heartRate: Math.min(1, this.ppgValues.length / 60),
-      spo2: Math.min(1, this.spo2Buffer.length / this.SPO2_BUFFER_SIZE),
-      pressure: Math.min(1, this.systolicBuffer.length / this.BP_BUFFER_SIZE),
-      arrhythmia: Math.min(1, (Date.now() - this.measurementStartTime) / 5000)
-    };
-
+    
+    // Calcular progreso de calibración (simulado para mantener interfaz compatible)
+    const elapsedTime = currentTime - this.measurementStartTime;
+    const calibrationProgress = Math.min(1, elapsedTime / 10000);
+    
+    // Devolver resultado completo
     return {
       spo2,
       pressure: pressureString,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      visualWindow: arrhythmiaResult.visualWindow,
       lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
-      calibration: { progress: calibrationProgress },
-      glucose,
-      lipids
+      visualWindow: arrhythmiaResult.visualWindow,
+      calibration: {
+        progress: {
+          heartRate: calibrationProgress,
+          spo2: calibrationProgress,
+          pressure: calibrationProgress,
+          arrhythmia: calibrationProgress
+        }
+      }
     };
-  }
-
-  private calculateSignalQuality(values: number[]): number {
-    if (values.length < 10) return 0;
-    
-    const std = this.calculateStandardDeviation(values);
-    const ac = calculateAC(values);
-    const dc = calculateDC(values);
-    
-    const variability = std / (dc > 0 ? dc : 1);
-    const perfusionIndex = ac / (dc > 0 ? dc : 1);
-    
-    // Higher score for moderate variability and good perfusion
-    const score = (0.7 * Math.min(perfusionIndex * 100, 100)) + 
-                  (0.3 * (100 - Math.abs(variability - 0.15) * 200));
-    
-    return Math.max(0, Math.min(100, score));
-  }
-
-  private estimateGlucose(spo2: number, bp: {systolic: number, diastolic: number}, values: number[]): number {
-    // Simple simulation algorithm for demo purposes
-    const baseGlucose = 95;
-    
-    // Adjust based on SpO2
-    const spo2Factor = spo2 > 0 ? (spo2 - 90) * 0.5 : 0;
-    
-    // Adjust based on blood pressure
-    const bpFactor = bp.systolic > 0 ? ((bp.systolic - 120) * 0.2) : 0;
-    
-    // Adjust based on signal variability
-    const std = this.calculateStandardDeviation(values);
-    const variabilityFactor = std * 10;
-    
-    const glucose = Math.round(baseGlucose + spo2Factor + bpFactor + variabilityFactor);
-    return Math.max(70, Math.min(140, glucose));
   }
   
-  private estimateLipids(spo2: number, bp: {systolic: number, diastolic: number}, values: number[]): {totalCholesterol: number, triglycerides: number} {
-    // Simple simulation algorithm for demo purposes
-    const baseCholesterol = 170;
-    const baseTriglycerides = 120;
-    
-    // Adjust based on blood pressure
-    const bpFactor = bp.systolic > 0 ? ((bp.systolic - 120) * 0.6) : 0;
-    
-    // Adjust based on signal characteristics
-    const ac = calculateAC(values);
-    const dc = calculateDC(values);
-    const perfusionIndex = dc > 0 ? ac / dc : 0;
-    const perfusionFactor = perfusionIndex * 50;
-    
-    const cholesterol = Math.round(baseCholesterol + bpFactor + perfusionFactor);
-    const triglycerides = Math.round(baseTriglycerides + bpFactor * 0.7 + perfusionFactor * 0.8);
-    
-    return {
-      totalCholesterol: Math.max(150, Math.min(250, cholesterol)),
-      triglycerides: Math.max(80, Math.min(200, triglycerides))
-    };
-  }
-
-  private calculateStandardDeviation(values: number[]): number {
-    const n = values.length;
-    if (n === 0) return 0;
-    const mean = values.reduce((a, b) => a + b, 0) / n;
-    const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-    const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-    return Math.sqrt(avgSqDiff);
-  }
-
-  private applySMAFilter(value: number): number {
-    this.smaBuffer.push(value);
-    if (this.smaBuffer.length > this.SMA_WINDOW) {
-      this.smaBuffer.shift();
-    }
-    const sum = this.smaBuffer.reduce((a, b) => a + b, 0);
-    return sum / this.smaBuffer.length;
-  }
-
-  private calculateSpO2(values: number[]): number {
-    if (values.length < 30) {
-      if (this.spo2Buffer.length > 0) {
-        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-        return Math.max(0, lastValid - 1);
-      }
-      return 0;
-    }
-
-    const dc = calculateDC(values);
-    if (dc === 0) {
-      if (this.spo2Buffer.length > 0) {
-        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-        return Math.max(0, lastValid - 1);
-      }
-      return 0;
-    }
-
-    const ac = calculateAC(values);
-    
-    const perfusionIndex = ac / dc;
-    
-    if (perfusionIndex < this.PERFUSION_INDEX_THRESHOLD) {
-      if (this.spo2Buffer.length > 0) {
-        const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-        return Math.max(0, lastValid - 2);
-      }
-      return 0;
-    }
-
-    const R = (ac / dc) / this.SPO2_CALIBRATION_FACTOR;
-    
-    let spO2 = Math.round(98 - (15 * R));
-    
-    if (perfusionIndex > 0.15) {
-      spO2 = Math.min(98, spO2 + 1);
-    } else if (perfusionIndex < 0.08) {
-      spO2 = Math.max(0, spO2 - 1);
-    }
-
-    spO2 = Math.min(98, spO2);
-
-    this.spo2Buffer.push(spO2);
-    if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
-      this.spo2Buffer.shift();
-    }
-
-    if (this.spo2Buffer.length > 0) {
-      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-      spO2 = Math.round(sum / this.spo2Buffer.length);
-    }
-
-    return spO2;
-  }
-
+  /**
+   * Calcula la presión arterial a partir de valores PPG
+   */
   private calculateBloodPressure(values: number[]): {
     systolic: number;
     diastolic: number;
@@ -261,7 +144,7 @@ export class VitalSignsProcessor {
       return { systolic: 0, diastolic: 0 };
     }
 
-    const { peakIndices, valleyIndices } = this.localFindPeaksAndValleys(values);
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
     if (peakIndices.length < 2) {
       return { systolic: 120, diastolic: 80 };
     }
@@ -281,7 +164,7 @@ export class VitalSignsProcessor {
     }, 0) / pttValues.reduce((acc, _, idx) => acc + (idx + 1) / pttValues.length, 0);
 
     const normalizedPTT = Math.max(300, Math.min(1200, weightedPTT));
-    const amplitude = this.calculateAmplitude(values, peakIndices, valleyIndices);
+    const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
     const normalizedAmplitude = Math.min(100, Math.max(0, amplitude * 5));
 
     const pttFactor = (600 - normalizedPTT) * 0.08;
@@ -327,103 +210,106 @@ export class VitalSignsProcessor {
       diastolic: Math.round(finalDiastolic)
     };
   }
-
-  private localFindPeaksAndValleys(values: number[]) {
-    const peakIndices: number[] = [];
-    const valleyIndices: number[] = [];
-
-    for (let i = 2; i < values.length - 2; i++) {
-      const v = values[i];
-      if (
-        v > values[i - 1] &&
-        v > values[i - 2] &&
-        v > values[i + 1] &&
-        v > values[i + 2]
-      ) {
-        peakIndices.push(i);
-      }
-      if (
-        v < values[i - 1] &&
-        v < values[i - 2] &&
-        v < values[i + 1] &&
-        v < values[i + 2]
-      ) {
-        valleyIndices.push(i);
-      }
-    }
-    return { peakIndices, valleyIndices };
-  }
-
-  private calculateAmplitude(
-    values: number[],
-    peaks: number[],
-    valleys: number[]
-  ): number {
-    if (peaks.length === 0 || valleys.length === 0) return 0;
-
-    const amps: number[] = [];
-    const len = Math.min(peaks.length, valleys.length);
-    for (let i = 0; i < len; i++) {
-      const amp = values[peaks[i]] - values[valleys[i]];
-      if (amp > 0) {
-        amps.push(amp);
-      }
-    }
-    if (amps.length === 0) return 0;
-
-    const mean = amps.reduce((a, b) => a + b, 0) / amps.length;
-    return mean;
-  }
-
-  public reset(): VitalSignsResult | null {
-    const lastValidResult: VitalSignsResult | null = this.ppgValues.length > 30 ? {
-      spo2: this.calculateSpO2(this.ppgValues.slice(-60)),
-      pressure: (() => {
-        const bp = this.calculateBloodPressure(this.ppgValues.slice(-60));
-        return `${bp.systolic}/${bp.diastolic}`;
-      })(),
-      arrhythmiaStatus: this.arrhythmiaDetector.getArrhythmiaCounter() > 0 ? 
-        `ARRITMIA DETECTADA|${this.arrhythmiaDetector.getArrhythmiaCounter()}` : 
-        `SIN ARRITMIAS|0`,
-      glucose: this.estimateGlucose(
-        this.calculateSpO2(this.ppgValues.slice(-60)),
-        this.calculateBloodPressure(this.ppgValues.slice(-60)),
-        this.ppgValues.slice(-60)
-      ),
-      lipids: this.estimateLipids(
-        this.calculateSpO2(this.ppgValues.slice(-60)),
-        this.calculateBloodPressure(this.ppgValues.slice(-60)),
-        this.ppgValues.slice(-60)
-      )
-    } : null;
+  
+  /**
+   * Calcula la calidad de señal basada en amplitud y variabilidad
+   */
+  private calculateSignalQuality(values: number[]): number {
+    if (values.length < 10) return 0;
     
+    // Calcular amplitud (diferencia entre máximo y mínimo)
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const amplitude = max - min;
+    
+    // Calcular desviación estándar normalizada
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const std = Math.sqrt(variance);
+    const normalizedStd = std / (max - min);
+    
+    // Calcular diferencia entre sucesivos puntos
+    let sumDiffs = 0;
+    for (let i = 1; i < values.length; i++) {
+      sumDiffs += Math.abs(values[i] - values[i-1]);
+    }
+    const avgDiff = sumDiffs / (values.length - 1);
+    
+    // Combinar métricas para calidad total (0-1)
+    // - Amplitud grande es buena (saturada a 1 para valores > 0.2)
+    // - Variabilidad moderada es buena (ideal alrededor de 0.15-0.2)
+    // - Cambios suaves son buenos (menor es mejor)
+    const amplitudeQuality = Math.min(1, amplitude * 5);
+    const variabilityQuality = Math.min(1, Math.max(0, 0.5 - Math.abs(normalizedStd - 0.15) * 3));
+    const smoothnessQuality = Math.min(1, Math.max(0, 0.15 - avgDiff) * 10);
+    
+    // Peso mayor a amplitud, seguido de variabilidad, luego suavidad
+    const quality = (amplitudeQuality * 0.5) + (variabilityQuality * 0.3) + (smoothnessQuality * 0.2);
+    
+    return Math.min(1, Math.max(0, quality));
+  }
+  
+  /**
+   * Aplica filtro de media móvil simple (SMA)
+   */
+  private applySMAFilter(value: number): number {
+    this.smaBuffer.push(value);
+    if (this.smaBuffer.length > this.SMA_WINDOW) {
+      this.smaBuffer.shift();
+    }
+    const sum = this.smaBuffer.reduce((a, b) => a + b, 0);
+    return sum / this.smaBuffer.length;
+  }
+  
+  /**
+   * Verifica si un latido en un momento dado es arrítmico
+   */
+  public isHeartbeatArrhythmic(timestamp: number): boolean {
+    return this.arrhythmiaDetector.isHeartbeatArrhythmic(timestamp);
+  }
+  
+  /**
+   * Reinicia el procesador (soft reset)
+   */
+  public reset(): VitalSignsResult | null {
+    // Guardar último resultado válido antes del reset
+    let lastValidResult: VitalSignsResult | null = null;
+    
+    if (this.ppgValues.length > 60) {
+      const spo2 = this.spo2Processor.calculateSpO2(this.ppgValues.slice(-60));
+      const bp = this.calculateBloodPressure(this.ppgValues.slice(-60));
+      const arrhythmiaCounter = this.arrhythmiaDetector.getArrhythmiaCounter();
+      
+      lastValidResult = {
+        spo2,
+        pressure: `${bp.systolic}/${bp.diastolic}`,
+        arrhythmiaStatus: arrhythmiaCounter > 0 ? 
+          `ARRITMIA DETECTADA|${arrhythmiaCounter}` : 
+          `SIN ARRITMIAS|${arrhythmiaCounter}`
+      };
+    }
+    
+    // Reiniciar valores internos
     this.ppgValues = [];
-    this.smaBuffer = [];
-    this.spo2Buffer = [];
-    this.lastValue = 0;
-    this.lastPeakTime = null;
-    this.rrIntervals = [];
-    this.arrhythmiaDetector.reset();
-    this.measurementStartTime = Date.now();
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
+    this.smaBuffer = [];
+    this.measurementStartTime = Date.now();
+    
+    // Reiniciar procesadores
+    this.spo2Processor.reset();
+    this.arrhythmiaDetector.reset();
+    
+    console.log("VitalSignsProcessor: Reset completo");
     
     return lastValidResult;
   }
   
+  /**
+   * Reinicio completo (hard reset)
+   */
   public fullReset(): void {
     this.reset();
-    this.arrhythmiaDetector = new ArrhythmiaDetector();
+    console.log("VitalSignsProcessor: Full reset ejecutado");
   }
-}
-
-// Utilidades extraídas para evitar duplicación
-function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
-
-function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
 }
