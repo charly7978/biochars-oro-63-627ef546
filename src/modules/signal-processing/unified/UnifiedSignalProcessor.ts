@@ -6,15 +6,14 @@
  */
 
 import { ProcessedPPGSignal, UnifiedProcessorOptions, SignalQualityMetrics } from './types';
-import { OptimizedCircularBuffer } from '../../extraction/OptimizedCircularBuffer';
-import { evaluateSignalQuality } from '../utils/quality-detector';
+import { evaluateSignalQuality, calculateSignalStrength } from '../utils/quality-detector';
 
 /**
  * Procesador unificado que maneja todo el pipeline de procesamiento de señal PPG
  */
 export class UnifiedSignalProcessor {
   // Estado interno
-  private isProcessing: boolean = false;
+  private isProcessing: boolean = true; // Iniciar como activo por defecto
   private signalBuffer: number[] = [];
   private peakBuffer: number[] = [];
   private rrIntervals: number[] = [];
@@ -39,6 +38,10 @@ export class UnifiedSignalProcessor {
     qualityThreshold: 30,
     amplificationFactor: 1.2,
     useAdvancedFiltering: true,
+    filterStrength: 0.5,
+    peakThreshold: 0.2,
+    minPeakDistance: 300,
+    fingerDetectionSensitivity: 0.5,
     onSignalReady: undefined,
     onError: undefined
   };
@@ -118,7 +121,10 @@ export class UnifiedSignalProcessor {
       // 3. Amplificar señal
       const amplifiedValue = filteredValue * this.options.amplificationFactor;
       
-      // 4. Evaluar calidad
+      // 4. Normalizar valor para análisis consistente
+      const normalizedValue = this.normalizeValue(filteredValue);
+      
+      // 5. Evaluar calidad
       const quality = evaluateSignalQuality(
         value, 
         filteredValue, 
@@ -126,13 +132,17 @@ export class UnifiedSignalProcessor {
         this.options.qualityThreshold
       );
       
-      // 5. Detectar dedo
+      // 6. Calcular fuerza de la señal
+      const signalStrength = calculateSignalStrength(this.signalBuffer);
+      
+      // 7. Detectar dedo
       const fingerDetected = quality >= this.options.qualityThreshold / 2;
       
-      // 6. Detección de picos cardíacos
+      // 8. Detección de picos cardíacos
       const isPeak = this.detectPeak(amplifiedValue);
+      const peakConfidence = isPeak ? Math.min(quality / 100, 0.9) : 0;
       
-      // 7. Calcular BPM instantáneo y variabilidad
+      // 9. Calcular BPM instantáneo y variabilidad
       let instantaneousBPM = 0;
       let rrInterval: number | null = null;
       
@@ -168,29 +178,32 @@ export class UnifiedSignalProcessor {
         this.lastPeakTime = now;
       }
       
-      // 8. Crear resultado procesado
+      // 10. Crear resultado procesado
       const processedSignal: ProcessedPPGSignal = {
         timestamp: Date.now(),
         rawValue: value,
         filteredValue,
+        normalizedValue,
         amplifiedValue,
         isPeak,
+        peakConfidence,
         instantaneousBPM,
         rrInterval,
         quality,
         fingerDetected,
+        signalStrength,
         arrhythmiaCount: this.arrhythmiaCounter
       };
       
-      // 9. Calcular HRV si hay suficientes intervalos
+      // 11. Calcular HRV si hay suficientes intervalos
       if (this.rrIntervals.length >= 3) {
         processedSignal.heartRateVariability = this.calculateHRV();
       }
       
-      // 10. Almacenar último resultado
+      // 12. Almacenar último resultado
       this._lastSignal = processedSignal;
       
-      // 11. Notificar resultado
+      // 13. Notificar resultado
       if (this.onSignalReady) {
         this.onSignalReady(processedSignal);
       }
@@ -206,6 +219,14 @@ export class UnifiedSignalProcessor {
   }
   
   /**
+   * Normalizar valor para procesamiento uniforme
+   */
+  private normalizeValue(value: number): number {
+    // Implementación simple: asegurar que está en rango [0,1]
+    return value > 1 ? value / 255 : value;
+  }
+  
+  /**
    * Crear señal vacía cuando hay error
    */
   private createEmptySignal(value: number): ProcessedPPGSignal {
@@ -213,12 +234,15 @@ export class UnifiedSignalProcessor {
       timestamp: Date.now(),
       rawValue: value,
       filteredValue: value,
+      normalizedValue: value,
       amplifiedValue: value,
       isPeak: false,
+      peakConfidence: 0,
       instantaneousBPM: 0,
       rrInterval: null,
       quality: 0,
       fingerDetected: false,
+      signalStrength: 0,
       arrhythmiaCount: this.arrhythmiaCounter
     };
   }

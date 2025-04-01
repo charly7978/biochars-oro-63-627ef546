@@ -45,9 +45,9 @@ export class HeartbeatProcessorAdapter {
   public configure(options: SignalProcessingOptions): void {
     this.unifiedProcessor.configure({
       amplificationFactor: options.amplificationFactor,
-      filterStrength: options.filterStrength,
       peakThreshold: options.amplificationFactor ? options.amplificationFactor / 2 : undefined,
-      minPeakDistance: options.filterStrength ? 250 + (options.filterStrength * 100) : undefined
+      minPeakDistance: options.amplificationFactor ? 250 + (options.amplificationFactor * 100) : undefined,
+      qualityThreshold: options.qualityThreshold
     });
   }
   

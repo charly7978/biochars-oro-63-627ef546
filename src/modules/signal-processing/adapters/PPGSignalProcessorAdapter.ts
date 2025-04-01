@@ -6,7 +6,6 @@
  */
 
 import { UnifiedSignalProcessor } from '../unified/UnifiedSignalProcessor';
-import { ProcessedPPGSignal as UnifiedSignal } from '../unified/types';
 import { ProcessedPPGSignal, SignalProcessingOptions } from '../types';
 
 /**
@@ -37,7 +36,13 @@ export class PPGSignalProcessorAdapter {
       amplifiedValue: result.amplifiedValue,
       quality: result.quality,
       fingerDetected: result.fingerDetected,
-      signalStrength: result.signalStrength
+      signalStrength: result.signalStrength,
+      isPeak: result.isPeak,
+      instantaneousBPM: result.instantaneousBPM,
+      rrInterval: result.rrInterval,
+      peakConfidence: result.peakConfidence,
+      arrhythmiaCount: result.arrhythmiaCount,
+      heartRateVariability: result.heartRateVariability
     };
   }
   
@@ -47,9 +52,9 @@ export class PPGSignalProcessorAdapter {
   public configure(options: SignalProcessingOptions): void {
     this.unifiedProcessor.configure({
       amplificationFactor: options.amplificationFactor,
-      filterStrength: options.filterStrength,
       qualityThreshold: options.qualityThreshold,
-      fingerDetectionSensitivity: options.fingerDetectionSensitivity
+      fingerDetectionSensitivity: options.fingerDetectionSensitivity,
+      peakDetectionThreshold: options.amplificationFactor ? options.amplificationFactor / 3 : undefined
     });
   }
   

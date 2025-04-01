@@ -16,9 +16,11 @@ export interface ProcessedPPGSignal {
   rawValue: number;
   filteredValue: number;
   amplifiedValue: number;
+  normalizedValue: number;
   
   // Análisis de frecuencia cardíaca
   isPeak: boolean;
+  peakConfidence: number;
   instantaneousBPM: number;
   rrInterval: number | null;
   heartRateVariability?: number;
@@ -26,9 +28,20 @@ export interface ProcessedPPGSignal {
   // Métricas de calidad
   quality: number;
   fingerDetected: boolean;
+  signalStrength: number;
   
   // Estado de arritmia
   arrhythmiaCount: number;
+}
+
+/**
+ * Error durante el procesamiento
+ */
+export interface ProcessingError {
+  code: string;
+  message: string;
+  timestamp: number;
+  name?: string;
 }
 
 /**
@@ -46,6 +59,10 @@ export interface UnifiedProcessorOptions {
   // Amplificación y filtrado
   amplificationFactor?: number;
   useAdvancedFiltering?: boolean;
+  filterStrength?: number;
+  peakThreshold?: number;
+  minPeakDistance?: number;
+  fingerDetectionSensitivity?: number;
   
   // Callbacks
   onSignalReady?: (signal: ProcessedPPGSignal) => void;
