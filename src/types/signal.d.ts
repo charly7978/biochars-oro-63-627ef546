@@ -26,27 +26,15 @@ export interface ProcessedSignal {
     amplitudes: number[];
     dominantFrequency: number;
   };
-  diagnosticInfo?: {
-    processingStage: string;
-    validationPassed: boolean;
-    errorCode?: string;
-    errorMessage?: string;
-    processingTimeMs?: number;
-    timestamp?: number;
-  };
 }
 
 /**
  * Estructura de error de procesamiento
  */
 export interface ProcessingError {
-  code: string;             // Código de error
-  message: string;          // Mensaje descriptivo
-  timestamp: number;        // Marca de tiempo del error
-  severity: 'low' | 'medium' | 'high' | 'critical'; // Severidad del error
-  recoverable: boolean;     // Si el sistema puede recuperarse
-  component?: string;       // Componente donde ocurrió el error
-  suggestions?: string[];   // Sugerencias de remediación
+  code: string;       // Código de error
+  message: string;    // Mensaje descriptivo
+  timestamp: number;  // Marca de tiempo del error
 }
 
 /**
@@ -56,12 +44,10 @@ export interface SignalProcessor {
   initialize: () => Promise<void>;                      // Inicialización
   start: () => void;                                    // Iniciar procesamiento
   stop: () => void;                                     // Detener procesamiento
-  calibrate?: () => Promise<boolean>;                   // Calibrar el procesador
+  calibrate: () => Promise<boolean>;                    // Calibrar el procesador
   onSignalReady?: (signal: ProcessedSignal) => void;    // Callback de señal lista
   onError?: (error: ProcessingError) => void;           // Callback de error
   processFrame?: (imageData: ImageData) => void;        // Procesar frame de imagen
-  validateSignal?: (signal: any) => { isValid: boolean, errorCode?: string, errorMessage?: string };
-  getDiagnosticInfo?: () => { processingStage: string, validationPassed: boolean, timestamp?: number };
 }
 
 /**
