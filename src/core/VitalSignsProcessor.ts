@@ -1,344 +1,245 @@
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
 
-import { PPGProcessor } from './signal/PPGProcessor';
-import { PeakDetector, RRData } from './signal/PeakDetector';
-import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
-import { BloodPressureAnalyzer } from './analysis/BloodPressureAnalyzer';
-import { DEFAULT_PROCESSOR_CONFIG, ProcessorConfig } from './config/ProcessorConfig';
-import { GlucoseEstimator } from './analysis/GlucoseEstimator';
-import { LipidEstimator } from './analysis/LipidEstimator';
-import { HemoglobinEstimator } from './analysis/HemoglobinEstimator';
-import type { ProcessedSignal } from '../types/signal';
-
-export interface VitalSignsResult {
-  spo2: number;
-  pressure: string;
-  arrhythmiaStatus: string;
-  glucose: number;
-  lipids: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  hemoglobin: number;
-  calibration?: {
-    isCalibrating: boolean;
-    progress: {
-      heartRate: number;
-      spo2: number;
-      pressure: number;
-      arrhythmia: number;
-      glucose: number;
-      lipids: number;
-      hemoglobin: number;
-    };
-  };
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null;
-}
+import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { checkSignalQuality } from './heart-beat/signal-quality';
 
 /**
- * Procesador unificado de signos vitales
- * - Arquitectura modular que elimina duplicidades
- * - Enfoque en precisión y consistencia
- * - Optimizado para diversos dispositivos móviles
+ * Wrapper using the PPGSignalMeter's finger detection and quality
+ * No simulation or data manipulation allowed.
+ * Improved resistance to false positives
  */
 export class VitalSignsProcessor {
-  // Componentes de procesamiento
-  private ppgProcessor: PPGProcessor;
-  private peakDetector: PeakDetector;
-  private arrhythmiaDetector: ArrhythmiaDetector;
-  private bpAnalyzer: BloodPressureAnalyzer;
-  private glucoseEstimator: GlucoseEstimator;
-  private lipidEstimator: LipidEstimator;
-  private hemoglobinEstimator: HemoglobinEstimator;
+  private processor: CoreProcessor;
   
-  // Estado del procesador
-  private lastValidResults: VitalSignsResult | null = null;
-  private isCalibrating: boolean = false;
-  private calibrationStartTime: number = 0;
-  private calibrationSamples: number = 0;
-  private readonly CALIBRATION_REQUIRED_SAMPLES: number = 50;
-  private readonly CALIBRATION_DURATION_MS: number = 8000;
+  // Signal measurement parameters
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
+  private readonly PEAK_THRESHOLD = 0.30; // Increased from 0.25
   
-  // Progreso de calibración
-  private calibrationProgress = {
-    heartRate: 0,
-    spo2: 0,
-    pressure: 0,
-    arrhythmia: 0,
-    glucose: 0,
-    lipids: 0,
-    hemoglobin: 0
-  };
+  // Extended guard period to prevent false positives
+  private readonly FALSE_POSITIVE_GUARD_PERIOD = 1200; // Increased from 800ms
+  private lastDetectionTime: number = 0;
   
-  // Finalización forzada de calibración
-  private forceCompleteCalibration: boolean = false;
-  private calibrationTimer: any = null;
+  // Improved counter for weak signals with higher thresholds
+  private readonly LOW_SIGNAL_THRESHOLD = 0.20; // Increased from 0.15
+  private readonly MAX_WEAK_SIGNALS = 6; // Increased from 5
+  private weakSignalsCount: number = 0;
   
-  // Buffer de señal PPG
-  private ppgValues: number[] = [];
+  // Signal stability tracking to reduce false positives
+  private signalHistory: number[] = [];
+  private readonly HISTORY_SIZE = 15; // Increased from 10
+  private readonly STABILITY_THRESHOLD = 0.15; // Reduced from 0.2 (more strict)
+  
+  // Frame rate tracking for consistency check
+  private lastFrameTime: number = 0;
+  private frameRateHistory: number[] = [];
+  private readonly MIN_FRAME_RATE = 15; // Minimum frames per second
+  private readonly FRAME_CONSISTENCY_THRESHOLD = 0.5; // Maximum allowed variation in frame times
+  
+  // Physiological validation
+  private validPhysiologicalSignalsCount: number = 0;
+  private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
   
   /**
-   * Constructor del procesador unificado
+   * Constructor that initializes the processor
    */
-  constructor(config: Partial<ProcessorConfig> = {}) {
-    const fullConfig = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    
-    this.ppgProcessor = new PPGProcessor(
-      this.handleProcessedSignal.bind(this)
-    );
-    
-    this.peakDetector = new PeakDetector();
-    this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.bpAnalyzer = new BloodPressureAnalyzer();
-    this.glucoseEstimator = new GlucoseEstimator(fullConfig);
-    this.lipidEstimator = new LipidEstimator(fullConfig);
-    this.hemoglobinEstimator = new HemoglobinEstimator(fullConfig);
-    
-    console.log('Procesador de signos vitales unificado inicializado');
+  constructor() {
+    console.log("VitalSignsProcessor: Initializing with direct measurement mode only");
+    this.processor = new CoreProcessor();
   }
   
   /**
-   * Inicia proceso de calibración
-   */
-  public startCalibration(): void {
-    if (this.isCalibrating) return;
-    
-    this.isCalibrating = true;
-    this.calibrationStartTime = Date.now();
-    this.calibrationSamples = 0;
-    this.forceCompleteCalibration = false;
-    
-    // Reiniciar progreso de calibración
-    this.calibrationProgress = {
-      heartRate: 0,
-      spo2: 0,
-      pressure: 0,
-      arrhythmia: 0,
-      glucose: 0,
-      lipids: 0,
-      hemoglobin: 0
-    };
-    
-    // Establecer temporizador de calibración
-    if (this.calibrationTimer) {
-      clearTimeout(this.calibrationTimer);
-    }
-    
-    this.calibrationTimer = setTimeout(() => {
-      this.completeCalibration();
-    }, this.CALIBRATION_DURATION_MS);
-    
-    console.log('Calibración iniciada');
-  }
-  
-  /**
-   * Completa el proceso de calibración
-   */
-  private completeCalibration(): void {
-    if (!this.isCalibrating) return;
-    
-    this.isCalibrating = false;
-    this.forceCompleteCalibration = false;
-    
-    if (this.calibrationTimer) {
-      clearTimeout(this.calibrationTimer);
-      this.calibrationTimer = null;
-    }
-    
-    // Determinar si tenemos suficientes muestras para calibración
-    const hasEnoughSamples = this.calibrationSamples >= this.CALIBRATION_REQUIRED_SAMPLES;
-    
-    // Aplicar calibración solo si hay suficientes muestras
-    if (hasEnoughSamples && this.ppgValues.length > 100) {
-      const recentValues = this.ppgValues.slice(-100);
-      
-      // Actualizar progreso a 100% para todos los componentes
-      Object.keys(this.calibrationProgress).forEach(key => {
-        this.calibrationProgress[key] = 100;
-      });
-      
-      console.log('Calibración completada con éxito');
-    } else {
-      console.log('Calibración fallida: insuficientes muestras');
-    }
-  }
-  
-  /**
-   * Procesa una señal PPG y genera resultados de signos vitales
+   * Process a PPG signal with improved false positive detection
    */
   public processSignal(
     ppgValue: number,
-    rrData?: RRData
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Añadir valor a buffer
-    this.ppgValues.push(ppgValue);
-    if (this.ppgValues.length > DEFAULT_PROCESSOR_CONFIG.bufferSize) {
-      this.ppgValues.shift();
+    // Apply enhanced verification
+    const now = Date.now();
+    const timeSinceLastDetection = now - this.lastDetectionTime;
+    
+    // Track frame rate for consistency
+    if (this.lastFrameTime > 0) {
+      const frameDelta = now - this.lastFrameTime;
+      this.frameRateHistory.push(frameDelta);
+      if (this.frameRateHistory.length > 10) {
+        this.frameRateHistory.shift();
+      }
     }
+    this.lastFrameTime = now;
     
-    // Detectar picos en la señal
-    const peakInfo = this.peakDetector.detectPeaks(this.ppgValues);
-    
-    // Procesar arritmias
-    const arrhythmiaResult = this.arrhythmiaDetector.processRRData(rrData);
-    
-    // Calcular SpO2
-    const spo2 = this.calculateSpO2(this.ppgValues);
-    
-    // Calcular presión arterial
-    const bloodPressure = this.bpAnalyzer.calculateBloodPressure(this.ppgValues);
-    
-    // Calcular métricas no invasivas
-    const glucose = this.glucoseEstimator.estimate(this.ppgValues);
-    const lipids = this.lipidEstimator.estimate(this.ppgValues);
-    const hemoglobin = this.hemoglobinEstimator.estimate(this.ppgValues);
-    
-    // Actualizar conteo de muestras de calibración
-    if (this.isCalibrating) {
-      this.calibrationSamples++;
-      this.updateCalibrationProgress();
+    // Check if frame rate is consistent enough for reliable detection
+    let frameRateConsistent = true;
+    if (this.frameRateHistory.length >= 5) {
+      const avgDelta = this.frameRateHistory.reduce((sum, delta) => sum + delta, 0) / this.frameRateHistory.length;
+      const fps = 1000 / avgDelta;
       
-      // Verificar si calibración debe finalizar
-      if (this.forceCompleteCalibration || 
-          Date.now() - this.calibrationStartTime >= this.CALIBRATION_DURATION_MS) {
-        this.completeCalibration();
+      // Calculate frame rate variance
+      const variance = this.frameRateHistory.reduce((sum, delta) => sum + Math.pow(delta - avgDelta, 2), 0) / this.frameRateHistory.length;
+      const normalizedVariance = variance / (avgDelta * avgDelta);
+      
+      frameRateConsistent = fps >= this.MIN_FRAME_RATE && normalizedVariance <= this.FRAME_CONSISTENCY_THRESHOLD;
+      
+      if (!frameRateConsistent) {
+        console.log("Frame rate inconsistency detected - possible false positive condition", {
+          fps,
+          normalizedVariance,
+          frameDeltas: this.frameRateHistory
+        });
+        // Reset detection if frame rate becomes inconsistent
+        this.validPhysiologicalSignalsCount = 0;
       }
     }
     
-    // Crear resultado
-    const result: VitalSignsResult = {
-      spo2,
-      pressure: `${bloodPressure.systolic}/${bloodPressure.diastolic}`,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      glucose,
-      lipids,
-      hemoglobin,
-      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
-    };
+    // Update signal history for stability analysis
+    this.updateSignalHistory(ppgValue);
     
-    // Añadir información de calibración si está en proceso
-    if (this.isCalibrating) {
-      result.calibration = {
-        isCalibrating: true,
-        progress: { ...this.calibrationProgress }
+    // Enhanced signal verification with stability check
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      ppgValue,
+      this.weakSignalsCount,
+      {
+        lowSignalThreshold: this.LOW_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: this.MAX_WEAK_SIGNALS
+      }
+    );
+    
+    this.weakSignalsCount = updatedWeakSignalsCount;
+    
+    // Additional stability check to prevent false positives
+    const isStable = this.checkSignalStability();
+    
+    // Physiological validation - add more checks for real signals
+    if (!isWeakSignal && isStable && frameRateConsistent && Math.abs(ppgValue) > 0) {
+      // Signal appears valid from physiological perspective
+      this.validPhysiologicalSignalsCount = Math.min(this.MIN_PHYSIOLOGICAL_SIGNALS + 10, this.validPhysiologicalSignalsCount + 1);
+    } else {
+      // Reduce counter more slowly to maintain stability
+      this.validPhysiologicalSignalsCount = Math.max(0, this.validPhysiologicalSignalsCount - 0.5);
+    }
+    
+    // Enhanced verification with stability requirement
+    const hasPhysiologicalValidation = this.validPhysiologicalSignalsCount >= this.MIN_PHYSIOLOGICAL_SIGNALS;
+    const signalVerified = !isWeakSignal && Math.abs(ppgValue) > 0 && isStable && frameRateConsistent;
+    
+    if (signalVerified) {
+      this.lastDetectionTime = now;
+    }
+    
+    // Only process verified and stable signals or within guard period
+    if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
+      return this.processor.processSignal(ppgValue, rrData);
+    } else {
+      // Return empty result without processing when signal is uncertain
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
       };
     }
-    
-    // Actualizar últimos resultados válidos
-    this.lastValidResults = result;
-    
-    return result;
   }
   
   /**
-   * Calcula SpO2 basado en valores PPG
+   * Update signal history for stability analysis
    */
-  private calculateSpO2(values: number[]): number {
-    if (values.length < 30) return 98; // Valor por defecto
-    
-    // Implementación simplificada para este ejemplo
-    // En producción, usar análisis más sofisticado
-    let spo2 = 98; // Valor base saludable
-    
-    const recentValues = values.slice(-30);
-    const max = Math.max(...recentValues);
-    const min = Math.min(...recentValues);
-    const amplitude = max - min;
-    
-    // Ajustar ligeramente basado en amplitud
-    if (amplitude > 0.1) {
-      spo2 = Math.min(100, spo2 + 1);
-    } else if (amplitude < 0.05) {
-      spo2 = Math.max(90, spo2 - 2);
-    }
-    
-    return Math.round(spo2);
-  }
-  
-  /**
-   * Actualiza progreso de calibración
-   */
-  private updateCalibrationProgress(): void {
-    const progress = Math.min(100, (this.calibrationSamples / this.CALIBRATION_REQUIRED_SAMPLES) * 100);
-    
-    // Actualizar progreso de manera ligeramente diferente para cada componente
-    this.calibrationProgress.heartRate = progress;
-    this.calibrationProgress.spo2 = Math.max(0, progress - 5);
-    this.calibrationProgress.pressure = Math.max(0, progress - 10);
-    this.calibrationProgress.arrhythmia = Math.max(0, progress - 15);
-    this.calibrationProgress.glucose = Math.max(0, progress - 20);
-    this.calibrationProgress.lipids = Math.max(0, progress - 25);
-    this.calibrationProgress.hemoglobin = Math.max(0, progress - 30);
-  }
-  
-  /**
-   * Verifica si se está calibrando actualmente
-   */
-  public isCurrentlyCalibrating(): boolean {
-    return this.isCalibrating;
-  }
-  
-  /**
-   * Obtiene estado de progreso de calibración
-   */
-  public getCalibrationProgress(): VitalSignsResult['calibration'] {
-    return {
-      isCalibrating: this.isCalibrating,
-      progress: { ...this.calibrationProgress }
-    };
-  }
-  
-  /**
-   * Fuerza la finalización de la calibración
-   */
-  public forceCalibrationCompletion(): void {
-    if (this.isCalibrating) {
-      this.forceCompleteCalibration = true;
-      this.completeCalibration();
+  private updateSignalHistory(ppgValue: number): void {
+    this.signalHistory.push(ppgValue);
+    if (this.signalHistory.length > this.HISTORY_SIZE) {
+      this.signalHistory.shift();
     }
   }
   
   /**
-   * Reinicia el procesador manteniendo parámetros de calibración
+   * Check signal stability to prevent false positives
+   * Returns true if signal is stable enough to process
    */
-  public reset(): VitalSignsResult | null {
-    this.ppgValues = [];
-    this.peakDetector.reset();
-    this.arrhythmiaDetector.reset();
-    
-    if (this.calibrationTimer) {
-      clearTimeout(this.calibrationTimer);
-      this.calibrationTimer = null;
+  private checkSignalStability(): boolean {
+    if (this.signalHistory.length < this.HISTORY_SIZE / 2) {
+      return false;
     }
     
-    this.isCalibrating = false;
-    this.forceCompleteCalibration = false;
+    // Calculate signal variation with more rigorous method
+    const values = this.signalHistory.slice(-10);
     
-    return this.lastValidResults;
+    // Check if we have a reasonable min/max range (too small = not physiological)
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    
+    if (range < 0.10) { // Minimum physiological range
+      return false;
+    }
+    
+    // Calculate variance normalized by the mean to detect inconsistent signals
+    const sum = values.reduce((a, b) => a + b, 0);
+    const mean = sum / values.length;
+    
+    // Skip very low signals
+    if (mean < 0.05) {
+      return false;
+    }
+    
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const normalizedVariance = variance / (mean * mean);
+    
+    // Check if normalized variance is within physiological range (not too stable, not too chaotic)
+    return normalizedVariance > 0.05 && normalizedVariance < this.STABILITY_THRESHOLD;
   }
   
   /**
-   * Reinicio completo incluyendo calibración
+   * Basic signal verification
+   */
+  private verifySignal(ppgValue: number): boolean {
+    // Basic validation to ensure reasonable values
+    if (ppgValue < 0 || ppgValue > 255 || isNaN(ppgValue)) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Reset the processor
+   */
+  public reset() {
+    console.log("VitalSignsProcessor: Reset - all measurements start from zero");
+    this.lastDetectionTime = 0;
+    this.weakSignalsCount = 0;
+    this.signalHistory = [];
+    this.frameRateHistory = [];
+    this.lastFrameTime = 0;
+    this.validPhysiologicalSignalsCount = 0;
+    return this.processor.reset();
+  }
+  
+  /**
+   * Completely reset the processor and all its data
    */
   public fullReset(): void {
-    this.reset();
-    this.lastValidResults = null;
+    console.log("VitalSignsProcessor: Full reset - removing all data history");
+    this.lastDetectionTime = 0;
+    this.weakSignalsCount = 0;
+    this.signalHistory = [];
+    this.frameRateHistory = [];
+    this.lastFrameTime = 0;
+    this.validPhysiologicalSignalsCount = 0;
+    this.processor.fullReset();
   }
   
   /**
-   * Manejador de señales procesadas
+   * Get arrhythmia counter
    */
-  private handleProcessedSignal(signal: ProcessedSignal): void {
-    // Implementación de callback para señales procesadas
-    // Este método podría expandirse según necesidades
-    console.log('Señal procesada:', signal);
+  public getArrhythmiaCounter(): number {
+    return this.processor.getArrhythmiaCounter();
   }
 }
 
-// Exportar estimadores
-export { GlucoseEstimator } from './analysis/GlucoseEstimator';
-export { LipidEstimator } from './analysis/LipidEstimator';
-export { HemoglobinEstimator } from './analysis/HemoglobinEstimator';
+// Re-export types for compatibility
+export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';

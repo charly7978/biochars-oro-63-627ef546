@@ -9,6 +9,7 @@ import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
 import { MotionArtifactManager } from './processors/motion-artifact-manager';
 import { evaluateSignalConsistency, detectMotionInSignal } from '../../hooks/heart-beat/signal-quality';
+import { AccelerometerData } from './motion/types';
 
 /**
  * Signal processor for real PPG signals
@@ -95,9 +96,9 @@ export class SignalProcessor extends BaseProcessor {
   }
 
   /**
-   * Nuevo: Detectar artefactos de movimiento en la señal
+   * Detectar artefactos de movimiento en la señal
    */
-  public detectMotionArtifacts(value: number, accelerometerData?: {x: number, y: number, z: number}): boolean {
+  public detectMotionArtifacts(value: number, accelerometerData?: AccelerometerData): boolean {
     // Usar el administrador especializado para detección
     const timestamp = Date.now();
     const result = this.motionArtifactManager.processValue(value, timestamp, accelerometerData);
@@ -122,7 +123,7 @@ export class SignalProcessor extends BaseProcessor {
   }
   
   /**
-   * Nuevo: Obtener métricas sobre la calidad de señal y artefactos
+   * Obtener métricas sobre la calidad de señal y artefactos
    */
   public getSignalMetrics(windowSize: number = 15): {
     quality: number;
@@ -153,7 +154,7 @@ export class SignalProcessor extends BaseProcessor {
    */
   public applyFilters(
     value: number, 
-    accelerometerData?: {x: number, y: number, z: number},
+    accelerometerData?: AccelerometerData,
     irValue?: number
   ): { 
     filteredValue: number, 
