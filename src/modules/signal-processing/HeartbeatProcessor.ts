@@ -1,7 +1,7 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Heartbeat processor implementation
+ * Implementation of heartbeat signal processor
  */
 
 import { HeartbeatSignalProcessor, ProcessorOptions } from './interfaces';
@@ -24,6 +24,9 @@ export class HeartbeatProcessor implements HeartbeatSignalProcessor {
     useAdaptiveThresholds: true,
     sensitivityLevel: 'medium'
   };
+  private rrIntervals: number[] = [];
+  private bpmHistory: number[] = [];
+  private arrhythmiaCounter: number = 0;
 
   constructor() {
     console.log("HeartbeatProcessor initialized");
@@ -93,6 +96,18 @@ export class HeartbeatProcessor implements HeartbeatSignalProcessor {
           instantaneousBPM = Math.round(60000 / avgInterval);
           rrInterval = Math.round(avgInterval);
           
+          // Store RR interval
+          this.rrIntervals.push(rrInterval);
+          if (this.rrIntervals.length > 8) {
+            this.rrIntervals.shift();
+          }
+          
+          // Store BPM in history
+          this.bpmHistory.push(instantaneousBPM);
+          if (this.bpmHistory.length > 8) {
+            this.bpmHistory.shift();
+          }
+          
           // Set confidence based on consistency
           const stdDev = Math.sqrt(
             intervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / intervals.length
@@ -104,14 +119,57 @@ export class HeartbeatProcessor implements HeartbeatSignalProcessor {
       }
     }
     
+    // Calculate heart rate variability (if we have enough intervals)
+    let hrv = null;
+    if (this.rrIntervals.length >= 3) {
+      const diffs = [];
+      for (let i = 1; i < this.rrIntervals.length; i++) {
+        diffs.push(Math.abs(this.rrIntervals[i] - this.rrIntervals[i-1]));
+      }
+      hrv = Math.sqrt(diffs.reduce((sum, val) => sum + val * val, 0) / diffs.length);
+    }
+    
+    // Calculate average BPM from history
+    const bpm = this.calculateAverageBPM();
+    
     return {
       value,
       isPeak,
       confidence,
       instantaneousBPM,
       rrInterval,
-      timestamp: now
+      timestamp: now,
+      bpm,
+      heartRateVariability: hrv,
+      rrData: {
+        intervals: this.rrIntervals,
+        lastPeakTime: this.lastPeakTime
+      }
     };
+  }
+
+  /**
+   * Calculate average BPM from history
+   */
+  private calculateAverageBPM(): number {
+    if (this.bpmHistory.length === 0) return 0;
+    
+    // Sort to remove outliers
+    const sorted = [...this.bpmHistory].sort((a, b) => a - b);
+    
+    // Use central 80% of the data if we have enough values
+    if (sorted.length >= 5) {
+      const startIdx = Math.floor(sorted.length * 0.1);
+      const endIdx = Math.ceil(sorted.length * 0.9);
+      const centralValues = sorted.slice(startIdx, endIdx);
+      
+      const sum = centralValues.reduce((a, b) => a + b, 0);
+      return Math.round(sum / centralValues.length);
+    }
+    
+    // Otherwise use simple average
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    return Math.round(sum / sorted.length);
   }
 
   /**
@@ -123,6 +181,9 @@ export class HeartbeatProcessor implements HeartbeatSignalProcessor {
     this.peakBuffer = [];
     this.lastPeakTime = 0;
     this.threshold = 0.05;
+    this.rrIntervals = [];
+    this.bpmHistory = [];
+    this.arrhythmiaCounter = 0;
     console.log("HeartbeatProcessor: Reset complete");
   }
 
@@ -153,5 +214,22 @@ export class HeartbeatProcessor implements HeartbeatSignalProcessor {
     this.adaptiveThreshold = !!this.options.useAdaptiveThresholds;
     
     console.log("HeartbeatProcessor: Configured with options", this.options);
+  }
+
+  /**
+   * Get RR intervals data
+   */
+  getRRIntervals() {
+    return {
+      intervals: [...this.rrIntervals],
+      lastPeakTime: this.lastPeakTime
+    };
+  }
+
+  /**
+   * Get arrhythmia counter
+   */
+  getArrhythmiaCounter(): number {
+    return this.arrhythmiaCounter;
   }
 }

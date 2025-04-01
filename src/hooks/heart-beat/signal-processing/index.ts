@@ -33,8 +33,5 @@ export {
   correctSignalAnomalies,
   updateQualityWithPrediction,
   resetAdaptiveControl,
-  getAdaptiveModelState,
-  applyBayesianOptimization,
-  applyGaussianProcessModeling,
-  applyMixedModelPrediction
+  getAdaptiveModelState
 } from './adaptive-control';
