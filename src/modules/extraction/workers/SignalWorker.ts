@@ -57,14 +57,26 @@ export class SignalWorkerManager {
     }
     
     try {
-      // En versión actual, simulamos el worker para compatibilidad
-      // En implementación real, se usaría:
-      // this.worker = new Worker(new URL('./signal.worker.ts', import.meta.url), { type: 'module' });
+      // Crear worker real
+      // Usamos URL.createObjectURL para evitar problemas de CORS
+      const blob = new Blob([
+        `importScripts('${window.location.origin}/assets/signal.worker.js');`
+      ], { type: 'application/javascript' });
       
-      console.log("SignalWorkerManager: Simulando worker en hilo principal");
+      const workerUrl = URL.createObjectURL(blob);
+      this.worker = new Worker(workerUrl);
+      
+      console.log("SignalWorkerManager: Worker real inicializado");
       this.setupMessageHandling();
-      this.isInitialized = true;
-      return true;
+      
+      // Inicializar worker
+      const initialized = await this.sendMessage(
+        WorkerMessageType.INITIALIZE, 
+        {}
+      );
+      
+      this.isInitialized = initialized.success;
+      return this.isInitialized;
     } catch (error) {
       console.error("SignalWorkerManager: Error inicializando Worker", error);
       return false;
@@ -75,9 +87,84 @@ export class SignalWorkerManager {
    * Configura manejo de mensajes desde el Worker
    */
   private setupMessageHandling(): void {
-    // En implementación real, esto escucharía eventos del worker
-    // this.worker!.onmessage = this.handleWorkerMessage.bind(this);
-    // this.worker!.onerror = this.handleWorkerError.bind(this);
+    if (!this.worker) return;
+    
+    // Escuchar mensajes del worker
+    this.worker.onmessage = this.handleWorkerMessage.bind(this);
+    this.worker.onerror = this.handleWorkerError.bind(this);
+  }
+  
+  /**
+   * Maneja mensajes recibidos del worker
+   */
+  private handleWorkerMessage(event: MessageEvent<WorkerMessage>): void {
+    const message = event.data;
+    const { type, data, requestId } = message;
+    
+    if (!requestId) {
+      console.warn("SignalWorkerManager: Mensaje sin ID de solicitud", message);
+      return;
+    }
+    
+    const request = this.pendingRequests.get(requestId);
+    if (!request) {
+      console.warn("SignalWorkerManager: Solicitud no encontrada para ID", requestId);
+      return;
+    }
+    
+    const { resolve, reject } = request;
+    
+    if (type === WorkerMessageType.ERROR) {
+      reject(new Error(data.error || 'Error desconocido en worker'));
+    } else {
+      resolve(data);
+    }
+    
+    this.pendingRequests.delete(requestId);
+  }
+  
+  /**
+   * Maneja errores del worker
+   */
+  private handleWorkerError(error: ErrorEvent): void {
+    console.error("SignalWorkerManager: Error en worker", error);
+    
+    // Rechazar todas las solicitudes pendientes
+    for (const [requestId, { reject }] of this.pendingRequests.entries()) {
+      reject(new Error(`Error en worker: ${error.message}`));
+      this.pendingRequests.delete(requestId);
+    }
+  }
+  
+  /**
+   * Envía un mensaje al worker y espera respuesta
+   */
+  private async sendMessage(type: WorkerMessageType, data: any): Promise<any> {
+    if (!this.worker) {
+      throw new Error("Worker no inicializado");
+    }
+    
+    const requestId = this.generateRequestId();
+    
+    return new Promise((resolve, reject) => {
+      // Guardar callbacks para cuando llegue la respuesta
+      this.pendingRequests.set(requestId, { resolve, reject });
+      
+      // Enviar mensaje al worker
+      this.worker!.postMessage({
+        type,
+        data,
+        requestId
+      });
+      
+      // Timeout para evitar bloqueos
+      setTimeout(() => {
+        if (this.pendingRequests.has(requestId)) {
+          this.pendingRequests.delete(requestId);
+          reject(new Error(`Timeout esperando respuesta para mensaje tipo ${type}`));
+        }
+      }, 5000);
+    });
   }
   
   /**
@@ -86,40 +173,20 @@ export class SignalWorkerManager {
   public async processSignal(value: number): Promise<number> {
     if (!this.isInitialized) {
       if (!await this.initialize()) {
-        // Si no podemos inicializar el worker, procesar en hilo principal
-        console.warn("SignalWorkerManager: Procesando en hilo principal");
-        return this.simulateProcessing(value);
+        throw new Error("No se pudo inicializar el worker");
       }
     }
     
-    const requestId = this.generateRequestId();
-    
     try {
-      return new Promise((resolve, reject) => {
-        // Guardar callbacks para cuando llegue la respuesta
-        this.pendingRequests.set(requestId, { resolve, reject });
-        
-        // En implementación real, enviaría mensaje al worker:
-        // this.worker!.postMessage({
-        //   type: WorkerMessageType.PROCESS_SIGNAL,
-        //   data: { value },
-        //   requestId
-        // });
-        
-        // Para simulación, resolver directamente
-        setTimeout(() => {
-          const result = this.simulateProcessing(value);
-          
-          const callbacks = this.pendingRequests.get(requestId);
-          if (callbacks) {
-            callbacks.resolve(result);
-            this.pendingRequests.delete(requestId);
-          }
-        }, 0);
-      });
+      const result = await this.sendMessage(
+        WorkerMessageType.PROCESS_SIGNAL, 
+        { value }
+      );
+      
+      return result.processed;
     } catch (error) {
       console.error("SignalWorkerManager: Error procesando señal", error);
-      return value;
+      throw error;
     }
   }
   
@@ -129,49 +196,67 @@ export class SignalWorkerManager {
   public async processBatch(values: number[]): Promise<number[]> {
     if (!this.isInitialized) {
       if (!await this.initialize()) {
-        // Si no podemos inicializar el worker, procesar en hilo principal
-        console.warn("SignalWorkerManager: Procesando lote en hilo principal");
-        return this.simulateBatchProcessing(values);
+        throw new Error("No se pudo inicializar el worker");
       }
     }
     
-    const requestId = this.generateRequestId();
-    
     try {
-      return new Promise((resolve, reject) => {
-        this.pendingRequests.set(requestId, { resolve, reject });
-        
-        // Para simulación, resolver directamente
-        setTimeout(() => {
-          const result = this.simulateBatchProcessing(values);
-          
-          const callbacks = this.pendingRequests.get(requestId);
-          if (callbacks) {
-            callbacks.resolve(result);
-            this.pendingRequests.delete(requestId);
-          }
-        }, 0);
-      });
+      const result = await this.sendMessage(
+        WorkerMessageType.PROCESS_BATCH, 
+        { values }
+      );
+      
+      return result.processed;
     } catch (error) {
       console.error("SignalWorkerManager: Error procesando lote", error);
-      return values;
+      throw error;
     }
   }
   
   /**
-   * Simulación de procesamiento (para compatibilidad)
+   * Aplica un filtro a los valores en el Worker
    */
-  private simulateProcessing(value: number): number {
-    // Aplicar un filtro simple como ejemplo
-    return value * 0.9 + 0.1 * Math.sin(Date.now() * 0.001);
+  public async applyFilter(values: number[], filterType: string): Promise<number[]> {
+    if (!this.isInitialized) {
+      if (!await this.initialize()) {
+        throw new Error("No se pudo inicializar el worker");
+      }
+    }
+    
+    try {
+      const result = await this.sendMessage(
+        WorkerMessageType.APPLY_FILTER,
+        { values, filterType }
+      );
+      
+      return result.filtered;
+    } catch (error) {
+      console.error(`SignalWorkerManager: Error aplicando filtro ${filterType}`, error);
+      throw error;
+    }
   }
   
   /**
-   * Simulación de procesamiento por lotes (para compatibilidad)
+   * Detecta picos en la señal usando el Worker
    */
-  private simulateBatchProcessing(values: number[]): number[] {
-    // Aplicar filtro simple a todo el lote
-    return values.map(v => v * 0.9 + 0.1 * Math.sin(Date.now() * 0.001));
+  public async detectPeaks(values: number[]): Promise<number[]> {
+    if (!this.isInitialized) {
+      if (!await this.initialize()) {
+        throw new Error("No se pudo inicializar el worker");
+      }
+    }
+    
+    try {
+      const result = await this.sendMessage(
+        WorkerMessageType.DETECT_PEAKS,
+        { values }
+      );
+      
+      return result.peaks;
+    } catch (error) {
+      console.error("SignalWorkerManager: Error detectando picos", error);
+      throw error;
+    }
   }
   
   /**

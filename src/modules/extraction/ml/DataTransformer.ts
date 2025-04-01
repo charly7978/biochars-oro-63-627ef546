@@ -2,178 +2,285 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Transformador de datos para el procesador ML
- * Convierte entre arrays de JavaScript y tensores TensorFlow.js
+ * Transformador de datos para pre-procesamiento y post-procesamiento de señales
  */
-import * as tf from '@tensorflow/tfjs';
+import * as tf from '@tensorflow/tfjs-core';
 
 /**
- * Clase para transformación eficiente de datos
+ * Configuración del transformador de datos
+ */
+export interface DataTransformerConfig {
+  normalizeInput: boolean;
+  normalizeRange: [number, number];
+  windowSize: number;
+  useOverlap: boolean;
+  overlapSize: number;
+  useCompression: boolean;
+  compressionRatio: number;
+}
+
+/**
+ * Clase para transformación de datos de señal
  */
 export class DataTransformer {
-  // Tamaño de ventana para procesamiento
-  private windowSize: number;
-  // Factor de superposición entre ventanas
-  private overlapFactor: number;
-  // Usar buffers preasignados para evitar reasignaciones
-  private usePreallocatedBuffers: boolean;
-  // Buffers preasignados
-  private inputBuffer: Float32Array | null = null;
-  private outputBuffer: Float32Array | null = null;
+  private config: DataTransformerConfig;
+  private buffer: number[] = [];
+  private windows: number[][] = [];
+  private stats: {
+    min: number;
+    max: number;
+    mean: number;
+    std: number;
+  };
   
-  constructor(
-    windowSize: number = 30,
-    overlapFactor: number = 0.5,
-    usePreallocatedBuffers: boolean = true
-  ) {
-    this.windowSize = windowSize;
-    this.overlapFactor = Math.max(0, Math.min(0.9, overlapFactor));
-    this.usePreallocatedBuffers = usePreallocatedBuffers;
+  // Configuración por defecto
+  private readonly DEFAULT_CONFIG: DataTransformerConfig = {
+    normalizeInput: true,
+    normalizeRange: [-1, 1],
+    windowSize: 64,
+    useOverlap: true,
+    overlapSize: 32,
+    useCompression: false,
+    compressionRatio: 0.5
+  };
+  
+  /**
+   * Constructor
+   */
+  constructor(config?: Partial<DataTransformerConfig>) {
+    this.config = {
+      ...this.DEFAULT_CONFIG,
+      ...(config || {})
+    };
     
-    if (this.usePreallocatedBuffers) {
-      this.inputBuffer = new Float32Array(windowSize);
-      this.outputBuffer = new Float32Array(windowSize);
+    this.stats = {
+      min: Infinity,
+      max: -Infinity,
+      mean: 0,
+      std: 1
+    };
+    
+    console.log("DataTransformer: Inicializado con configuración", this.config);
+  }
+  
+  /**
+   * Añade un valor al buffer
+   */
+  public addValue(value: number): void {
+    // Actualizar estadísticas
+    this.stats.min = Math.min(this.stats.min, value);
+    this.stats.max = Math.max(this.stats.max, value);
+    
+    // Actualizar media móvil
+    const prevMean = this.stats.mean;
+    const n = this.buffer.length;
+    this.stats.mean = n === 0 
+      ? value 
+      : prevMean + (value - prevMean) / (n + 1);
+    
+    // Actualizar desviación estándar móvil
+    if (n > 0) {
+      const prevM2 = this.stats.std * this.stats.std * n;
+      const m2 = prevM2 + (value - prevMean) * (value - this.stats.mean);
+      this.stats.std = Math.sqrt(m2 / (n + 1));
     }
     
-    console.log("DataTransformer: Inicializado con configuración", {
-      windowSize,
-      overlapFactor,
-      usePreallocatedBuffers
+    // Añadir al buffer
+    this.buffer.push(value);
+    
+    // Generar ventanas cuando sea necesario
+    this.updateWindows();
+  }
+  
+  /**
+   * Añade múltiples valores al buffer
+   */
+  public addValues(values: number[]): void {
+    values.forEach(value => this.addValue(value));
+  }
+  
+  /**
+   * Actualiza las ventanas de datos
+   */
+  private updateWindows(): void {
+    const { windowSize, useOverlap, overlapSize } = this.config;
+    const step = useOverlap ? windowSize - overlapSize : windowSize;
+    
+    // Si no tenemos suficientes datos para una ventana, no hacer nada
+    if (this.buffer.length < windowSize) {
+      return;
+    }
+    
+    // Crear ventanas mientras sea posible
+    while (this.buffer.length >= windowSize) {
+      // Extraer ventana
+      const window = this.buffer.slice(0, windowSize);
+      this.windows.push(window);
+      
+      // Eliminar datos procesados según el paso
+      this.buffer.splice(0, step);
+    }
+  }
+  
+  /**
+   * Normaliza un valor según las estadísticas actuales
+   */
+  public normalizeValue(value: number): number {
+    if (!this.config.normalizeInput) return value;
+    
+    const [targetMin, targetMax] = this.config.normalizeRange;
+    const targetRange = targetMax - targetMin;
+    
+    // Usar Z-score si tenemos suficientes datos
+    if (this.buffer.length > 10 && this.stats.std > 0) {
+      const zScore = (value - this.stats.mean) / this.stats.std;
+      // Convertir Z-score al rango objetivo (generalmente -1 a 1 o 0 a 1)
+      return targetMin + (zScore + 2) * targetRange / 4;
+    }
+    
+    // Sino, usar min-max si tenemos un rango
+    if (this.stats.max > this.stats.min) {
+      const sourceRange = this.stats.max - this.stats.min;
+      return targetMin + ((value - this.stats.min) / sourceRange) * targetRange;
+    }
+    
+    // Si no tenemos rango, simplemente devolver el valor
+    return value;
+  }
+  
+  /**
+   * Desnormaliza un valor al rango original
+   */
+  public denormalizeValue(value: number): number {
+    if (!this.config.normalizeInput) return value;
+    
+    const [targetMin, targetMax] = this.config.normalizeRange;
+    const targetRange = targetMax - targetMin;
+    
+    // Desnormalizar desde Z-score
+    if (this.buffer.length > 10 && this.stats.std > 0) {
+      const zScore = ((value - targetMin) * 4 / targetRange) - 2;
+      return zScore * this.stats.std + this.stats.mean;
+    }
+    
+    // Desnormalizar desde min-max
+    if (this.stats.max > this.stats.min) {
+      const sourceRange = this.stats.max - this.stats.min;
+      return this.stats.min + ((value - targetMin) / targetRange) * sourceRange;
+    }
+    
+    return value;
+  }
+  
+  /**
+   * Obtiene tensores para todas las ventanas disponibles
+   */
+  public getWindowTensors(): tf.Tensor[] {
+    if (this.windows.length === 0) {
+      return [];
+    }
+    
+    // Convertir ventanas a tensores
+    return this.windows.map(window => {
+      // Normalizar ventana si es necesario
+      const processedWindow = this.config.normalizeInput 
+        ? window.map(v => this.normalizeValue(v))
+        : window;
+      
+      // Aplicar compresión si está habilitada
+      const compressedWindow = this.config.useCompression 
+        ? this.compressWindow(processedWindow)
+        : processedWindow;
+      
+      // Crear tensor
+      return tf.tensor(compressedWindow, [compressedWindow.length, 1]);
     });
   }
   
   /**
-   * Prepara segmentos de señal para procesamiento ML
-   * No genera datos nuevos, solo prepara datos existentes
+   * Comprime una ventana de datos
    */
-  public prepareSignalBatches(values: number[]): number[][][] {
-    if (values.length < this.windowSize) {
-      // No hay suficientes datos para procesar
-      return [[[]]];
-    }
+  private compressWindow(window: number[]): number[] {
+    if (!this.config.useCompression) return window;
     
-    const stride = Math.floor(this.windowSize * (1 - this.overlapFactor));
-    const numSegments = Math.floor((values.length - this.windowSize) / stride) + 1;
+    const targetLength = Math.floor(window.length * this.config.compressionRatio);
+    if (targetLength >= window.length) return window;
     
-    // Crear segmentos con superposición
-    const segments: number[][][] = [];
+    const result: number[] = [];
+    const step = window.length / targetLength;
     
-    for (let i = 0; i < numSegments; i++) {
-      const startIdx = i * stride;
-      const segment: number[][] = [];
+    for (let i = 0; i < targetLength; i++) {
+      const pos = Math.floor(i * step);
+      const nextPos = Math.min(Math.floor((i + 1) * step), window.length - 1);
       
-      for (let j = 0; j < this.windowSize; j++) {
-        segment.push([values[startIdx + j]]);
+      // Calcular promedio de valores en el rango
+      let sum = 0;
+      for (let j = pos; j <= nextPos; j++) {
+        sum += window[j];
       }
       
-      segments.push(segment);
-    }
-    
-    return segments;
-  }
-  
-  /**
-   * Convierte array de JavaScript a tensor TensorFlow.js
-   * Optimizado con buffer preasignado si está habilitado
-   */
-  public arrayToTensor(values: number[]): tf.Tensor1D {
-    if (this.usePreallocatedBuffers && this.inputBuffer && values.length <= this.inputBuffer.length) {
-      // Usar buffer preasignado para evitar reasignaciones
-      this.inputBuffer.set(values);
-      return tf.tensor1d(this.inputBuffer.subarray(0, values.length));
-    } else {
-      // Crear nuevo tensor
-      return tf.tensor1d(values);
-    }
-  }
-  
-  /**
-   * Convierte batch de arrays a tensor 3D
-   */
-  public batchToTensor(batch: number[][][]): tf.Tensor3D {
-    return tf.tensor3d(batch);
-  }
-  
-  /**
-   * Convierte tensor a array de JavaScript
-   * Optimizado con buffer preasignado si está habilitado
-   */
-  public async tensorToArray(tensor: tf.Tensor1D): Promise<number[]> {
-    if (this.usePreallocatedBuffers && this.outputBuffer && tensor.size <= this.outputBuffer.length) {
-      // Usar buffer preasignado con DataSync para evitar Promise overhead
-      this.outputBuffer.set(tensor.dataSync());
-      return Array.from(this.outputBuffer.subarray(0, tensor.size));
-    } else {
-      // Usar método async estándar
-      return await tensor.array() as number[];
-    }
-  }
-  
-  /**
-   * Recombina segmentos procesados en una señal continua
-   * Usando combinación ponderada en áreas de superposición
-   */
-  public recombineSegments(
-    processedSegments: number[][][],
-    originalLength: number
-  ): number[] {
-    if (processedSegments.length === 0 || processedSegments[0].length === 0) {
-      return [];
-    }
-    
-    const stride = Math.floor(this.windowSize * (1 - this.overlapFactor));
-    
-    // Pre-asignar array de resultado con tamaño original
-    const result = new Array(originalLength).fill(0);
-    // Array para seguir el peso acumulado en cada posición
-    const weights = new Array(originalLength).fill(0);
-    
-    // Función de peso - da más peso al centro de cada segmento
-    const getWeight = (position: number): number => {
-      // Función triangular simple centrada en la ventana
-      return 1 - 2 * Math.abs(position / this.windowSize - 0.5);
-    };
-    
-    // Aplicar cada segmento procesado con ponderación
-    for (let i = 0; i < processedSegments.length; i++) {
-      const startIdx = i * stride;
-      const segment = processedSegments[i];
-      
-      for (let j = 0; j < segment.length && j < this.windowSize && startIdx + j < originalLength; j++) {
-        const weight = getWeight(j);
-        result[startIdx + j] += segment[j][0] * weight;
-        weights[startIdx + j] += weight;
-      }
-    }
-    
-    // Normalizar por pesos acumulados
-    for (let i = 0; i < result.length; i++) {
-      if (weights[i] > 0) {
-        result[i] /= weights[i];
-      }
+      result.push(sum / (nextPos - pos + 1));
     }
     
     return result;
   }
   
   /**
-   * Reinicia el transformador y libera recursos
+   * Limpia el buffer y las ventanas
    */
-  public reset(): void {
-    if (this.usePreallocatedBuffers) {
-      if (this.inputBuffer) this.inputBuffer.fill(0);
-      if (this.outputBuffer) this.outputBuffer.fill(0);
+  public clear(): void {
+    this.buffer = [];
+    this.windows = [];
+    
+    // Reiniciar estadísticas
+    this.stats = {
+      min: Infinity,
+      max: -Infinity,
+      mean: 0,
+      std: 1
+    };
+  }
+  
+  /**
+   * Configura el transformador
+   */
+  public configure(config: Partial<DataTransformerConfig>): void {
+    this.config = {
+      ...this.config,
+      ...config
+    };
+    
+    // Si cambia el tamaño de ventana o solapamiento, limpiar
+    if (
+      config.windowSize !== undefined || 
+      config.useOverlap !== undefined || 
+      config.overlapSize !== undefined
+    ) {
+      this.buffer = [];
+      this.windows = [];
     }
+    
+    console.log("DataTransformer: Configuración actualizada", this.config);
+  }
+  
+  /**
+   * Obtiene estadísticas actuales
+   */
+  public getStats(): any {
+    return {
+      ...this.stats,
+      bufferSize: this.buffer.length,
+      windowCount: this.windows.length,
+      config: this.config
+    };
   }
 }
 
 /**
- * Crea una instancia del transformador de datos
+ * Crea una instancia del transformador
  */
 export const createDataTransformer = (
-  windowSize: number = 30,
-  overlapFactor: number = 0.5,
-  usePreallocatedBuffers: boolean = true
+  config?: Partial<DataTransformerConfig>
 ): DataTransformer => {
-  return new DataTransformer(windowSize, overlapFactor, usePreallocatedBuffers);
+  return new DataTransformer(config);
 };

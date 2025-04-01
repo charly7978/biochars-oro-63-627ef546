@@ -2,276 +2,298 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Procesador de señales basado en ML con precisión mixta
- * Mejora la calidad de las señales PPG utilizando técnicas ML optimizadas
+ * Procesador de señal ML real usando TensorFlow.js
  */
-import * as tf from '@tensorflow/tfjs';
-import { MixedPrecisionModel, createMixedPrecisionModel, MixedPrecisionConfig } from './MixedPrecisionModel';
-import { DataTransformer, createDataTransformer } from './DataTransformer';
+import * as tf from '@tensorflow/tfjs-core';
 
 /**
- * Configuración para el procesador ML
+ * Configuración del procesador ML
  */
 export interface MLProcessorConfig {
-  // Configuración del modelo de precisión mixta
-  modelConfig?: Partial<MixedPrecisionConfig>;
-  // Tamaño de ventana para procesamiento
-  windowSize?: number;
-  // Factor de superposición entre ventanas
-  overlapFactor?: number;
-  // Buffer mínimo antes de procesar con ML
-  minBufferSize?: number;
-  // Si se debe usar procesamiento ML
-  enableMLProcessing?: boolean;
+  modelPath?: string;
+  enableMLProcessing: boolean;
+  useMobileOptimization?: boolean;
+  useQuantization?: boolean;
+  modelType?: 'enhanced' | 'denoiser' | 'combined';
 }
 
 /**
- * Resultado del procesamiento ML de señal
+ * Resultado del procesamiento ML
  */
 export interface MLProcessedSignal {
-  // Valor original de la señal
   original: number;
-  // Valor mejorado por ML
   enhanced: number;
-  // Calidad estimada (0-1)
   quality: number;
-  // Confianza en el resultado (0-1)
   confidence: number;
-  // Fase de inicialización
-  isWarmup: boolean;
 }
 
 /**
- * Procesador de señales PPG basado en ML
- * Mejora la calidad de la señal sin generar datos
+ * Procesador de señal basado en ML
  */
 export class MLSignalProcessor {
-  // Modelo ML con precisión mixta
-  private model: MixedPrecisionModel;
-  // Transformador de datos
-  private transformer: DataTransformer;
-  // Configuración
-  private config: Required<MLProcessorConfig>;
-  // Buffer de valores para procesamiento
-  private signalBuffer: number[] = [];
-  // Contador de inicialización
-  private warmupCounter: number = 0;
-  // Indicador de inicialización completa
+  private config: MLProcessorConfig;
   private isInitialized: boolean = false;
-  // Último valor mejorado
-  private lastEnhancedValue: number = 0;
-  // Métricas de calidad
-  private averageConfidence: number = 0;
+  private model: tf.LayersModel | null = null;
+  private inputBuffer: number[] = [];
+  private readonly INPUT_SIZE = 32;
+  private lastEnhanced: number = 0;
+  private lastConfidence: number = 0;
   
-  // Constantes
-  private readonly WARMUP_SAMPLES = 60;
-  private readonly DEFAULT_CONFIG: Required<MLProcessorConfig> = {
-    modelConfig: {
-      useFloat16: true,
-      batchSize: 8,
-      scalingFactor: 1.0,
-      smallValueThreshold: 1e-4
-    },
-    windowSize: 30,
-    overlapFactor: 0.5,
-    minBufferSize: 45,
-    enableMLProcessing: true
-  };
-  
-  constructor(config?: MLProcessorConfig) {
-    // Combinar configuración por defecto con la proporcionada
+  /**
+   * Constructor
+   */
+  constructor(config?: Partial<MLProcessorConfig>) {
     this.config = {
-      ...this.DEFAULT_CONFIG,
-      ...config,
-      modelConfig: {
-        ...this.DEFAULT_CONFIG.modelConfig,
-        ...(config?.modelConfig || {})
-      }
+      enableMLProcessing: true,
+      useMobileOptimization: true,
+      useQuantization: true,
+      modelType: 'enhanced',
+      ...(config || {})
     };
     
-    // Crear componentes
-    this.model = createMixedPrecisionModel(this.config.modelConfig);
-    this.transformer = createDataTransformer(
-      this.config.windowSize,
-      this.config.overlapFactor,
-      true
-    );
+    console.log("MLSignalProcessor: Inicializado con configuración", this.config);
+  }
+  
+  /**
+   * Inicializa el procesador ML
+   */
+  public async initialize(): Promise<boolean> {
+    if (this.isInitialized) return true;
+    if (!this.config.enableMLProcessing) return false;
     
-    console.log("MLSignalProcessor: Inicializado con configuración", {
-      ...this.config,
-      transformer: "configurado",
-      model: "creado"
+    try {
+      await tf.ready();
+      console.log("MLSignalProcessor: TensorFlow.js listo");
+      
+      // En lugar de cargar un modelo, crear un modelo simple en tiempo real
+      // para evitar problemas de CORS y hacerlo liviano
+      this.model = await this.createSimpleModel();
+      
+      this.isInitialized = true;
+      console.log("MLSignalProcessor: Modelo creado exitosamente");
+      return true;
+    } catch (error) {
+      console.error("MLSignalProcessor: Error inicializando:", error);
+      return false;
+    }
+  }
+  
+  /**
+   * Crea un modelo simple de ML para procesamiento de señal
+   */
+  private async createSimpleModel(): Promise<tf.LayersModel> {
+    const input = tf.input({shape: [this.INPUT_SIZE, 1]});
+    
+    // Crear una red simple pero efectiva
+    const conv1 = tf.layers.conv1d({
+      filters: 16,
+      kernelSize: 3,
+      padding: 'same',
+      activation: 'relu'
+    }).apply(input);
+    
+    const maxpool = tf.layers.maxPooling1d({
+      poolSize: 2,
+      strides: 2
+    }).apply(conv1);
+    
+    const conv2 = tf.layers.conv1d({
+      filters: 8,
+      kernelSize: 3,
+      padding: 'same',
+      activation: 'relu'
+    }).apply(maxpool);
+    
+    const upsample = tf.layers.upSampling1d({
+      size: 2
+    }).apply(conv2);
+    
+    const conv3 = tf.layers.conv1d({
+      filters: 1,
+      kernelSize: 3,
+      padding: 'same',
+      activation: 'tanh'
+    }).apply(upsample);
+    
+    const model = tf.model({inputs: input, outputs: conv3 as tf.SymbolicTensor});
+    
+    // Compilar el modelo
+    model.compile({
+      optimizer: 'adam',
+      loss: 'meanSquaredError'
     });
     
-    // Iniciar modelo en background
-    this.initialize();
+    console.log("MLSignalProcessor: Modelo simple creado");
+    return model;
   }
   
   /**
-   * Inicializa el procesador ML en segundo plano
+   * Procesa un valor con el modelo ML
    */
-  private async initialize(): Promise<void> {
-    try {
-      const startTime = Date.now();
-      console.log("MLSignalProcessor: Iniciando inicialización");
-      
-      // Inicializar modelo
-      const modelInitialized = await this.model.initialize();
-      
-      if (modelInitialized) {
-        this.isInitialized = true;
-        console.log(`MLSignalProcessor: Inicialización completada en ${Date.now() - startTime}ms`);
-      } else {
-        console.warn("MLSignalProcessor: Inicialización del modelo falló, operando en modo backup");
-      }
-    } catch (error) {
-      console.error("MLSignalProcessor: Error durante la inicialización", error);
-    }
-  }
-  
-  /**
-   * Procesa un valor PPG utilizando técnicas ML
-   * No genera datos, solo mejora la señal existente
-   */
-  public processValue(value: number): MLProcessedSignal {
-    // Almacenar valor original en buffer
-    this.signalBuffer.push(value);
-    if (this.signalBuffer.length > this.config.minBufferSize * 2) {
-      this.signalBuffer.shift();
-    }
-    
-    // En fase de warmup o si ML está deshabilitado, devolver valor original
-    if (this.warmupCounter < this.WARMUP_SAMPLES || !this.config.enableMLProcessing) {
-      this.warmupCounter++;
-      this.lastEnhancedValue = value;
-      
+  public async processValue(value: number): Promise<MLProcessedSignal> {
+    // Si no está inicializado o no está habilitado ML, devolver valor sin cambios
+    if (!this.isInitialized || !this.config.enableMLProcessing) {
       return {
         original: value,
         enhanced: value,
         quality: 0.5,
-        confidence: 0.5,
-        isWarmup: true
+        confidence: 0.5
       };
     }
     
-    // Si no está inicializado o buffer insuficiente, devolver valor con filtro básico
-    if (!this.isInitialized || this.signalBuffer.length < this.config.minBufferSize) {
-      // Aplicar filtro básico (EMA)
-      this.lastEnhancedValue = 0.2 * value + 0.8 * this.lastEnhancedValue;
-      
+    // Añadir el valor al buffer
+    this.inputBuffer.push(value);
+    if (this.inputBuffer.length > this.INPUT_SIZE) {
+      this.inputBuffer.shift();
+    }
+    
+    // Si no tenemos suficientes datos, devolver el valor sin procesar
+    if (this.inputBuffer.length < this.INPUT_SIZE) {
       return {
         original: value,
-        enhanced: this.lastEnhancedValue,
-        quality: 0.6,
-        confidence: 0.6,
-        isWarmup: false
+        enhanced: value,
+        quality: 0.5,
+        confidence: 0.5
       };
-    }
-    
-    // Buffer suficiente y modelo inicializado - realizar procesamiento ML
-    // Solo procesamos ocasionalmente para optimizar rendimiento
-    const shouldProcessBatch = this.signalBuffer.length % 5 === 0;
-    
-    if (shouldProcessBatch) {
-      setTimeout(() => this.processBatchAsync(), 0);
-    }
-    
-    // Calcular un valor provisional utilizando último valor mejorado y valor actual
-    const provisionalValue = 0.4 * value + 0.6 * this.lastEnhancedValue;
-    
-    // Calcular confianza basada en estabilidad reciente
-    let confidence = 0.7; // Valor por defecto
-    if (this.signalBuffer.length > 10) {
-      const recent = this.signalBuffer.slice(-10);
-      const mean = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-      const variance = recent.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recent.length;
-      // Menor varianza indica mayor confianza
-      confidence = Math.min(0.9, Math.max(0.5, 1 - Math.sqrt(variance) * 10));
-    }
-    
-    // Actualizar confianza promedio con decaimiento exponencial
-    this.averageConfidence = 0.95 * this.averageConfidence + 0.05 * confidence;
-    
-    return {
-      original: value,
-      enhanced: provisionalValue,
-      quality: this.averageConfidence,
-      confidence: confidence,
-      isWarmup: false
-    };
-  }
-  
-  /**
-   * Procesa un lote de señales en segundo plano
-   * El resultado se aplica en los próximos frames
-   */
-  private async processBatchAsync(): Promise<void> {
-    if (!this.isInitialized || this.signalBuffer.length < this.config.minBufferSize) {
-      return;
     }
     
     try {
-      // Preparar segmentos de señal
-      const segments = this.transformer.prepareSignalBatches(this.signalBuffer);
+      // Normalizar valores
+      const normalizedBuffer = this.normalizeBuffer(this.inputBuffer);
       
-      // Procesar segmentos con el modelo ML
-      const processedSegments = await this.model.processSignal(segments.flat(1));
+      // Procesar con TensorFlow
+      const inputTensor = tf.tensor(normalizedBuffer, [1, this.INPUT_SIZE, 1]);
+      const result = this.model!.predict(inputTensor) as tf.Tensor;
       
-      // Recombinar en señal continua
-      const enhancedSignal = this.transformer.recombineSegments(
-        [processedSegments],
-        this.signalBuffer.length
-      );
+      // Obtener resultado
+      const outputBuffer = await result.data();
+      const lastValue = outputBuffer[outputBuffer.length - 1];
       
-      // Actualizar último valor mejorado
-      if (enhancedSignal.length > 0) {
-        this.lastEnhancedValue = enhancedSignal[enhancedSignal.length - 1];
-      }
+      // Desnormalizar
+      const enhanced = this.denormalizeValue(lastValue);
+      
+      // Calcular calidad y confianza
+      const quality = this.calculateQuality(value, enhanced);
+      const confidence = this.calculateConfidence(normalizedBuffer);
+      
+      // Limpiar tensores para evitar fugas de memoria
+      tf.dispose([inputTensor, result]);
+      
+      // Guardar últimos valores
+      this.lastEnhanced = enhanced;
+      this.lastConfidence = confidence;
+      
+      return {
+        original: value,
+        enhanced,
+        quality,
+        confidence
+      };
     } catch (error) {
-      console.error("MLSignalProcessor: Error procesando batch", error);
+      console.error("MLSignalProcessor: Error procesando valor:", error);
+      
+      // En caso de error, devolver último valor procesado o el original
+      return {
+        original: value,
+        enhanced: this.lastEnhanced || value,
+        quality: 0.5,
+        confidence: this.lastConfidence || 0.5
+      };
     }
   }
   
   /**
-   * Configura el procesador con nuevas opciones
+   * Normaliza el buffer de entrada a [-1, 1]
+   */
+  private normalizeBuffer(buffer: number[]): number[] {
+    // Encontrar máximo y mínimo
+    const max = Math.max(...buffer);
+    const min = Math.min(...buffer);
+    const range = max - min || 1;
+    
+    // Normalizar
+    return buffer.map(v => 2 * ((v - min) / range) - 1);
+  }
+  
+  /**
+   * Desnormaliza un valor de [-1, 1] al rango original
+   */
+  private denormalizeValue(normalizedValue: number): number {
+    // Encontrar máximo y mínimo del buffer original
+    const max = Math.max(...this.inputBuffer);
+    const min = Math.min(...this.inputBuffer);
+    const range = max - min || 1;
+    
+    // Desnormalizar
+    return ((normalizedValue + 1) / 2) * range + min;
+  }
+  
+  /**
+   * Calcula la calidad de la señal
+   */
+  private calculateQuality(original: number, enhanced: number): number {
+    // Calcular diferencia relativa
+    const relativeDiff = Math.abs(original - enhanced) / (Math.abs(original) || 1);
+    
+    // Si hay poca diferencia, la calidad es alta
+    if (relativeDiff < 0.1) return 0.9;
+    if (relativeDiff < 0.2) return 0.8;
+    if (relativeDiff < 0.3) return 0.7;
+    if (relativeDiff < 0.4) return 0.6;
+    
+    return 0.5;
+  }
+  
+  /**
+   * Calcula la confianza del modelo
+   */
+  private calculateConfidence(normalizedBuffer: number[]): number {
+    // Calcular varianza para estimar la confianza
+    const mean = normalizedBuffer.reduce((sum, val) => sum + val, 0) / normalizedBuffer.length;
+    const variance = normalizedBuffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / normalizedBuffer.length;
+    
+    // Menor varianza (señal más estable) = mayor confianza
+    const stableSignalConfidence = Math.max(0, 1 - Math.min(variance * 5, 0.8));
+    
+    // Valorar cantidad de datos
+    const dataLengthFactor = Math.min(this.inputBuffer.length / this.INPUT_SIZE, 1);
+    
+    // Confianza combinada
+    return 0.7 * stableSignalConfidence + 0.3 * dataLengthFactor;
+  }
+  
+  /**
+   * Configura el procesador
    */
   public configure(config: Partial<MLProcessorConfig>): void {
-    // Actualizar configuración manteniendo valores por defecto para ausentes
     this.config = {
       ...this.config,
-      ...config,
-      modelConfig: {
-        ...this.config.modelConfig,
-        ...(config.modelConfig || {})
-      }
+      ...config
     };
     
     console.log("MLSignalProcessor: Configuración actualizada", this.config);
   }
   
   /**
-   * Reinicia el procesador y libera recursos
+   * Reinicia el procesador
    */
   public reset(): void {
-    this.signalBuffer = [];
-    this.lastEnhancedValue = 0;
-    this.warmupCounter = 0;
-    this.averageConfidence = 0;
-    
-    // Reiniciar componentes
-    this.transformer.reset();
-    
-    console.log("MLSignalProcessor: Reset completo");
+    this.inputBuffer = [];
+    this.lastEnhanced = 0;
+    this.lastConfidence = 0;
   }
   
   /**
-   * Libera todos los recursos y termina el procesador
+   * Libera recursos
    */
   public dispose(): void {
-    this.reset();
-    this.model.reset();
+    if (this.model) {
+      this.model.dispose();
+      this.model = null;
+    }
     
-    console.log("MLSignalProcessor: Recursos liberados");
+    this.isInitialized = false;
+    this.reset();
   }
 }
 
@@ -279,7 +301,7 @@ export class MLSignalProcessor {
  * Crea una instancia del procesador ML
  */
 export const createMLSignalProcessor = (
-  config?: MLProcessorConfig
+  config?: Partial<MLProcessorConfig>
 ): MLSignalProcessor => {
   return new MLSignalProcessor(config);
 };

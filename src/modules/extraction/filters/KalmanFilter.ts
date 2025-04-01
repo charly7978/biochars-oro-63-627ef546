@@ -2,218 +2,171 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Implementación optimizada del filtro Kalman para procesamiento de señales PPG
- * Incluye adaptación dinámica de parámetros y aceleración WASM
+ * Implementación de Filtro Kalman adaptativo para procesamiento de señales
  */
-import { getWasmProcessor } from '../wasm/WasmProcessor';
 
 /**
- * Configuración para el filtro Kalman
+ * Configuración del filtro Kalman
  */
 export interface KalmanFilterConfig {
-  // Proceso de ruido (mayor valor -> mayor adaptabilidad a cambios)
-  processNoise: number;
-  // Ruido de medición (mayor valor -> mayor filtrado)
-  measurementNoise: number;
-  // Estado inicial estimado
-  initialEstimate: number;
-  // Covarianza inicial
-  initialErrorCovariance: number;
-  // Habilitar adaptación de parámetros
-  enableAdaptiveParameters: boolean;
-  // Usar aceleración WASM
-  useWasmAcceleration: boolean;
+  processNoise: number;  // Q: varianza del ruido del proceso
+  measurementNoise: number;  // R: varianza del ruido de medición
+  estimatedError: number;  // P: error de estimación inicial
+  enableAdaptiveParameters: boolean;  // Ajuste adaptativo de parámetros
+  adaptationRate: number;  // Tasa de adaptación para parámetros
+  useWasmAcceleration: boolean;  // Uso de aceleración WASM
 }
 
 /**
- * Implementación del filtro Kalman para suavizado y reducción de ruido
+ * Estado del filtro Kalman
+ */
+export interface KalmanState {
+  estimate: number;  // Estimación actual (x)
+  covariance: number;  // Covarianza del error (P)
+  processNoise: number;  // Ruido del proceso (Q)
+  measurementNoise: number;  // Ruido de medición (R)
+  gain: number;  // Ganancia Kalman (K)
+}
+
+/**
+ * Filtro Kalman real para procesamiento de señales
  */
 export class KalmanFilter {
   private config: KalmanFilterConfig;
-  private stateEstimate: number;
-  private errorCovariance: number;
-  private gainHistory: number[] = [];
-  private wasmProcessor = getWasmProcessor();
-  private wasmInitialized = false;
+  private state: KalmanState;
+  private lastMeasurements: number[] = [];
+  private readonly MAX_MEASUREMENTS = 30;
+  private adaptiveCounter: number = 0;
   
-  // Búfer para proceso por lotes
-  private buffer: number[] = [];
-  private readonly BATCH_SIZE = 30;
+  // Configuración por defecto optimizada para señales PPG
+  private readonly DEFAULT_CONFIG: KalmanFilterConfig = {
+    processNoise: 0.01,
+    measurementNoise: 0.1,
+    estimatedError: 1.0,
+    enableAdaptiveParameters: true,
+    adaptationRate: 0.01,
+    useWasmAcceleration: true
+  };
   
   /**
    * Constructor
    */
   constructor(config?: Partial<KalmanFilterConfig>) {
-    // Configuración por defecto optimizada para señales PPG
     this.config = {
-      processNoise: 0.01,
-      measurementNoise: 0.1,
-      initialEstimate: 0,
-      initialErrorCovariance: 1,
-      enableAdaptiveParameters: true,
-      useWasmAcceleration: true,
-      ...config
+      ...this.DEFAULT_CONFIG,
+      ...(config || {})
     };
     
-    // Inicializar estado
-    this.stateEstimate = this.config.initialEstimate;
-    this.errorCovariance = this.config.initialErrorCovariance;
-    
-    // Inicializar aceleración WASM si está habilitada
-    if (this.config.useWasmAcceleration) {
-      this.initWasm();
-    }
+    this.state = {
+      estimate: 0,
+      covariance: this.config.estimatedError,
+      processNoise: this.config.processNoise,
+      measurementNoise: this.config.measurementNoise,
+      gain: 0
+    };
     
     console.log("KalmanFilter: Inicializado con configuración", this.config);
   }
   
   /**
-   * Inicializa el procesador WASM para cálculos acelerados
-   */
-  private async initWasm(): Promise<void> {
-    try {
-      // Inicializar procesador WASM
-      this.wasmInitialized = await this.wasmProcessor.initialize();
-      console.log("KalmanFilter: Aceleración WASM inicializada:", this.wasmInitialized);
-    } catch (error) {
-      console.error("KalmanFilter: Error inicializando WASM", error);
-      this.wasmInitialized = false;
-    }
-  }
-  
-  /**
-   * Filtra un solo valor utilizando el algoritmo Kalman
+   * Filtra un valor con Kalman
    */
   public filter(measurement: number): number {
-    // Si WASM está habilitado y disponible, procesar con él
-    if (this.config.useWasmAcceleration && this.wasmInitialized) {
-      // Agregar al búfer para procesamiento por lotes
-      this.buffer.push(measurement);
-      
-      // Si el búfer está lleno, procesar por lotes
-      if (this.buffer.length >= this.BATCH_SIZE) {
-        const result = this.processWithWasm(this.buffer);
-        // Mantener solo el último valor para estado interno
-        if (result.length > 0) {
-          this.stateEstimate = result[result.length - 1];
-        }
-        this.buffer = []; // Reiniciar búfer
-        return this.stateEstimate;
-      }
-      
-      // Si el búfer no está lleno, procesar con algoritmo estándar
-      return this.applyKalmanAlgorithm(measurement);
-    } else {
-      // Usar algoritmo estándar
-      return this.applyKalmanAlgorithm(measurement);
+    // Almacenar medición para análisis adaptativo
+    this.lastMeasurements.push(measurement);
+    if (this.lastMeasurements.length > this.MAX_MEASUREMENTS) {
+      this.lastMeasurements.shift();
     }
-  }
-  
-  /**
-   * Aplica el algoritmo Kalman estándar
-   */
-  private applyKalmanAlgorithm(measurement: number): number {
-    // Actualización de tiempo (predicción)
-    let q = this.config.processNoise;
-    let r = this.config.measurementNoise;
     
-    // Adaptación dinámica de parámetros si está habilitada
+    // Actualizar parámetros adaptativos si está habilitado
     if (this.config.enableAdaptiveParameters) {
-      // Ajustar ruido de proceso basado en la varianza reciente
-      q = this.adaptProcessNoise();
-      // Ajustar ruido de medición basado en la estabilidad reciente
-      r = this.adaptMeasurementNoise(measurement);
+      this.adaptiveCounter++;
+      
+      // Actualizar cada 10 mediciones para evitar cálculos excesivos
+      if (this.adaptiveCounter >= 10) {
+        this.updateAdaptiveParameters();
+        this.adaptiveCounter = 0;
+      }
     }
     
     // Predicción
-    this.errorCovariance = this.errorCovariance + q;
+    // P = P + Q
+    this.state.covariance = this.state.covariance + this.state.processNoise;
     
     // Corrección
-    const kalmanGain = this.errorCovariance / (this.errorCovariance + r);
-    this.stateEstimate = this.stateEstimate + kalmanGain * (measurement - this.stateEstimate);
-    this.errorCovariance = (1 - kalmanGain) * this.errorCovariance;
+    // K = P / (P + R)
+    this.state.gain = this.state.covariance / (this.state.covariance + this.state.measurementNoise);
     
-    // Guardar ganancia para adaptación futura
-    this.gainHistory.push(kalmanGain);
-    if (this.gainHistory.length > 10) {
-      this.gainHistory.shift();
-    }
+    // x = x + K * (measurement - x)
+    this.state.estimate = this.state.estimate + this.state.gain * (measurement - this.state.estimate);
     
-    return this.stateEstimate;
+    // P = (1 - K) * P
+    this.state.covariance = (1 - this.state.gain) * this.state.covariance;
+    
+    return this.state.estimate;
   }
   
   /**
-   * Procesa un lote de valores usando aceleración WASM
+   * Actualiza parámetros del filtro de forma adaptativa
    */
-  private processWithWasm(values: number[]): number[] {
-    try {
-      // Usar procesador WASM con configuración actual
-      return this.wasmProcessor.applyKalmanFilter(
-        values, 
-        this.config.processNoise, 
-        this.config.measurementNoise
-      );
-    } catch (error) {
-      console.error("KalmanFilter: Error en procesamiento WASM", error);
-      
-      // Fallback a implementación estándar
-      const result: number[] = [];
-      for (const value of values) {
-        result.push(this.applyKalmanAlgorithm(value));
-      }
-      return result;
+  private updateAdaptiveParameters(): void {
+    if (this.lastMeasurements.length < 10) return;
+    
+    // Calcular varianza de las mediciones recientes
+    const mean = this.lastMeasurements.reduce((sum, val) => sum + val, 0) / this.lastMeasurements.length;
+    const variance = this.lastMeasurements.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.lastMeasurements.length;
+    
+    // Si hay alta varianza, aumentar el ruido de medición
+    // para reducir la influencia de datos ruidosos
+    if (variance > 0.1) {
+      const targetNoise = Math.min(variance * 0.5, 1.0);
+      this.state.measurementNoise = this.state.measurementNoise * (1 - this.config.adaptationRate) + 
+                                   targetNoise * this.config.adaptationRate;
+    }
+    // Si hay baja varianza, reducir el ruido de medición
+    // para dar más peso a las mediciones confiables
+    else {
+      const targetNoise = Math.max(variance * 2, 0.01);
+      this.state.measurementNoise = this.state.measurementNoise * (1 - this.config.adaptationRate) + 
+                                   targetNoise * this.config.adaptationRate;
+    }
+    
+    // Ajustar el ruido del proceso basado en la tendencia reciente
+    // Calcular tendencia (diferencia promedio entre mediciones consecutivas)
+    let totalTrend = 0;
+    for (let i = 1; i < this.lastMeasurements.length; i++) {
+      totalTrend += Math.abs(this.lastMeasurements[i] - this.lastMeasurements[i-1]);
+    }
+    const avgTrend = totalTrend / (this.lastMeasurements.length - 1);
+    
+    // Si hay tendencia fuerte, aumentar el ruido del proceso
+    // para que el filtro responda más rápido a cambios
+    if (avgTrend > 0.05) {
+      const targetProcessNoise = Math.min(avgTrend * 0.5, 0.1);
+      this.state.processNoise = this.state.processNoise * (1 - this.config.adaptationRate) + 
+                               targetProcessNoise * this.config.adaptationRate;
+    }
+    // Si hay tendencia débil, reducir el ruido del proceso
+    // para estabilizar la salida
+    else {
+      const targetProcessNoise = Math.max(avgTrend * 0.5, 0.001);
+      this.state.processNoise = this.state.processNoise * (1 - this.config.adaptationRate) + 
+                               targetProcessNoise * this.config.adaptationRate;
     }
   }
   
   /**
-   * Adapta dinámicamente el ruido de proceso basado en la varianza reciente
+   * Filtra un array de valores
    */
-  private adaptProcessNoise(): number {
-    // Si no tenemos suficiente historial, usar valor predeterminado
-    if (this.gainHistory.length < 3) {
-      return this.config.processNoise;
-    }
-    
-    // Calcular varianza de ganancia reciente
-    const mean = this.gainHistory.reduce((a, b) => a + b, 0) / this.gainHistory.length;
-    const variance = this.gainHistory.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / this.gainHistory.length;
-    
-    // Ajustar ruido de proceso basado en la varianza
-    // Alta varianza -> Mayor adaptabilidad
-    return Math.max(0.001, Math.min(0.1, this.config.processNoise + variance * 0.2));
+  public filterArray(measurements: number[]): number[] {
+    return measurements.map(measurement => this.filter(measurement));
   }
   
   /**
-   * Adapta dinámicamente el ruido de medición basado en la estabilidad reciente
+   * Obtiene el estado actual del filtro
    */
-  private adaptMeasurementNoise(currentMeasurement: number): number {
-    // Calcular diferencia con la estimación actual
-    const delta = Math.abs(currentMeasurement - this.stateEstimate);
-    
-    // Ajustar ruido de medición basado en la estabilidad
-    // Gran diferencia -> Posible outlier -> Mayor filtrado
-    if (delta > 3 * this.config.measurementNoise) {
-      return this.config.measurementNoise * 2;
-    } else if (delta < 0.5 * this.config.measurementNoise) {
-      return Math.max(0.01, this.config.measurementNoise * 0.8);
-    }
-    
-    return this.config.measurementNoise;
-  }
-  
-  /**
-   * Obtiene el estado actual
-   */
-  public getState(): {
-    estimate: number;
-    covariance: number;
-    config: KalmanFilterConfig;
-  } {
-    return {
-      estimate: this.stateEstimate,
-      covariance: this.errorCovariance,
-      config: { ...this.config }
-    };
+  public getState(): KalmanState {
+    return { ...this.state };
   }
   
   /**
@@ -225,26 +178,29 @@ export class KalmanFilter {
       ...config
     };
     
-    // Reiniciar aceleración WASM si cambió la configuración
-    if (config.useWasmAcceleration !== undefined && 
-        config.useWasmAcceleration !== this.wasmInitialized) {
-      if (config.useWasmAcceleration) {
-        this.initWasm();
-      } else {
-        this.wasmInitialized = false;
-      }
+    // Si se desactiva el modo adaptativo, restaurar valores originales
+    if (config.enableAdaptiveParameters === false) {
+      this.state.processNoise = this.config.processNoise;
+      this.state.measurementNoise = this.config.measurementNoise;
     }
+    
+    console.log("KalmanFilter: Configuración actualizada", this.config);
   }
   
   /**
-   * Reinicia el filtro a los valores iniciales
+   * Reinicia el filtro a valores iniciales
    */
   public reset(): void {
-    this.stateEstimate = this.config.initialEstimate;
-    this.errorCovariance = this.config.initialErrorCovariance;
-    this.gainHistory = [];
-    this.buffer = [];
-    console.log("KalmanFilter: Filtro reiniciado");
+    this.state = {
+      estimate: 0,
+      covariance: this.config.estimatedError,
+      processNoise: this.config.processNoise,
+      measurementNoise: this.config.measurementNoise,
+      gain: 0
+    };
+    
+    this.lastMeasurements = [];
+    this.adaptiveCounter = 0;
   }
 }
 
