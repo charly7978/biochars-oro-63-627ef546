@@ -11,7 +11,8 @@ import { HeartbeatProcessorAdapter } from './adapters/HeartbeatProcessorAdapter'
 export class HeartbeatProcessor {
   // Umbral de pico mucho más sensible para señales débiles
   private readonly MIN_PEAK_AMPLITUDE = 0.0035; // Reducido a 0.35% para detectar señales muy débiles
-  private readonly MIN_PEAK_INTERVAL_MS = 250; // Revisado para permitir latidos más frecuentes
+  // Changed from readonly to private to allow configuration
+  private minPeakIntervalMs = 250; // Revisado para permitir latidos más frecuentes
   private readonly MAX_PEAK_INTERVAL_MS = 1500;
   private readonly CONFIDENCE_THRESHOLD = 0.10; // Reducido para ser más sensible
   
@@ -187,7 +188,7 @@ export class HeartbeatProcessor {
     }
     
     // Verificar intervalo mínimo con último pico
-    if (this.lastPeakTime && timestamp - this.lastPeakTime < this.MIN_PEAK_INTERVAL_MS) {
+    if (this.lastPeakTime && timestamp - this.lastPeakTime < this.minPeakIntervalMs) {
       return { isPeak: false, confidence: 0 };
     }
     
@@ -252,7 +253,7 @@ export class HeartbeatProcessor {
       const interval = timestamp - previousPeakTime;
       
       // Solo considerar intervalos fisiológicamente plausibles
-      if (interval >= this.MIN_PEAK_INTERVAL_MS && interval <= this.MAX_PEAK_INTERVAL_MS) {
+      if (interval >= this.minPeakIntervalMs && interval <= this.MAX_PEAK_INTERVAL_MS) {
         const bpm = Math.round(60000 / interval);
         
         // Solo registrar BPM plausibles
@@ -285,7 +286,7 @@ export class HeartbeatProcessor {
     const interval = lastPeakTime - previousPeakTime;
     
     // Verificar intervalo válido para cálculo de BPM
-    if (interval < this.MIN_PEAK_INTERVAL_MS || interval > this.MAX_PEAK_INTERVAL_MS) {
+    if (interval < this.minPeakIntervalMs || interval > this.MAX_PEAK_INTERVAL_MS) {
       return 0;
     }
     
@@ -325,13 +326,14 @@ export class HeartbeatProcessor {
     }
     
     if (options.minPeakDistance !== undefined) {
-      this.MIN_PEAK_INTERVAL_MS = options.minPeakDistance;
+      // Use the changeable property instead of the read-only one
+      this.minPeakIntervalMs = options.minPeakDistance;
     }
     
     console.log("HeartbeatProcessor: Configurado con opciones personalizadas", {
       umbralPico: this.dynamicThreshold,
       tasaAdaptacion: this.adaptationRate,
-      distanciaMinimaPicos: this.MIN_PEAK_INTERVAL_MS
+      distanciaMinimaPicos: this.minPeakIntervalMs
     });
   }
   
