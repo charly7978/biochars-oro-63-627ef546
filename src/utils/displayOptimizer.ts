@@ -109,8 +109,7 @@ export async function applyTensorFlowImageFilter(
     const [height, width] = result.shape.slice(0, 2);
     const filteredData = new Uint8ClampedArray(width * height * 4);
     
-    // Fix: Use the correct approach for toPixels
-    // tf.browser.toPixels expects a tensor as first arg and array/canvas as second arg
+    // Fix: Pass the result tensor as first argument and the array as second argument
     await tf.browser.toPixels(result, filteredData);
     
     // Clean up tensors
