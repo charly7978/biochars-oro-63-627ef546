@@ -90,15 +90,15 @@ export function useSignalProcessor() {
             const paddedSignal = tf.pad(signalTensor, [[Math.floor(kernelSize/2), 
                                                       Math.floor(kernelSize/2)]]);
             
-            // Apply convolution for filtering
+            // Apply convolution for filtering - casting to ensure type compatibility
             const filtered = tf.conv1d(
-              paddedSignal.reshape([1, paddedSignal.shape[0], 1]),
-              kernel.reshape([kernelSize, 1, 1]),
+              paddedSignal.reshape([1, paddedSignal.shape[0], 1]) as tf.Tensor3D,
+              kernel.reshape([kernelSize, 1, 1]) as tf.Tensor3D,
               1, 'valid'
             );
             
             // Get the filtered result
-            return filtered.reshape([recentValues.length]).arraySync();
+            return filtered.reshape([recentValues.length]).dataSync();
           });
           
           // Use the last value from the filtered result

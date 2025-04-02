@@ -19,7 +19,9 @@ export async function initializeTensorFlow(): Promise<boolean> {
       version: tf.version.tfjs,
       backend: tf.getBackend(),
       isWebGLAvailable: tf.ENV.getBool('HAS_WEBGL'),
-      deviceMemory: navigator.deviceMemory || 'unknown',
+      // Use navigator.deviceMemory safely with type check
+      deviceMemory: navigator && 'deviceMemory' in navigator ? 
+        (navigator as any).deviceMemory : 'unknown',
     });
     
     return true;
