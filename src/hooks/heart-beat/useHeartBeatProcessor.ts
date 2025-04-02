@@ -119,16 +119,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    // Pass all required parameters to processSignalInternal
+    // Fix the isMonitoringRef parameter - pass the reference, not the boolean value
     const result = processSignalInternal(
       value, 
       currentBPM, 
       confidence, 
       processorRef.current, 
       requestBeep, 
-      isMonitoringRef.current,  // <-- Changed from isMonitoringRef to isMonitoringRef.current
-      lastRRIntervalsRef.current,
-      currentBeatIsArrhythmiaRef.current
+      isMonitoringRef, 
+      lastRRIntervalsRef, 
+      currentBeatIsArrhythmiaRef
     );
 
     if (result.bpm > 0 && result.confidence > 0.4) {

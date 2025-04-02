@@ -90,19 +90,22 @@ export function useSignalProcessor() {
             const paddedSignal = tf.pad(signalTensor, [[Math.floor(kernelSize/2), 
                                                       Math.floor(kernelSize/2)]]);
             
-            // Apply convolution for filtering - casting to ensure type compatibility
+            // Apply convolution for filtering - fixing the tensor type issue
             const filtered = tf.conv1d(
+              // Explicitly reshape to 3D tensor with correct shape
               paddedSignal.reshape([1, paddedSignal.shape[0], 1]) as tf.Tensor3D,
               kernel.reshape([kernelSize, 1, 1]) as tf.Tensor3D,
               1, 'valid'
             );
             
             // Get the filtered result
-            return filtered.reshape([recentValues.length]).dataSync();
+            return filtered.reshape([recentValues.length]).arraySync();
           });
           
           // Use the last value from the filtered result
-          processedValue = Array.isArray(result) ? result[result.length - 1] : value;
+          // Fix the type issue by ensuring we get a single number
+          const resultArray = result as number[];
+          processedValue = resultArray[resultArray.length - 1];
           
           // Clean up tensors
           signalTensor.dispose();

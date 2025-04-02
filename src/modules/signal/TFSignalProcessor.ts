@@ -168,11 +168,12 @@ export class TFSignalProcessor {
       
       // Apply moving average filter using TensorFlow
       const kernel = tf.tensor1d(Array(5).fill(1/5));
-      const expandedInput = inputTensor.expandDims(0).expandDims(2);
-      const expandedKernel = kernel.expandDims(0).expandDims(1);
+      // Fix tensor type by explicitly setting shapes
+      const expandedInput = inputTensor.expandDims(0).expandDims(2) as tf.Tensor3D;
+      const expandedKernel = kernel.expandDims(0).expandDims(1).expandDims(2) as tf.Tensor3D;
       
       // Apply convolution for filtering
-      const filtered = tf.conv1d(expandedInput, expandedKernel.expandDims(2), 1, 'same')
+      const filtered = tf.conv1d(expandedInput, expandedKernel, 1, 'same')
                           .squeeze()
                           .arraySync() as number[];
       

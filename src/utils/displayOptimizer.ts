@@ -78,30 +78,38 @@ export async function applyTensorFlowImageFilter(
       
       // Apply Gaussian blur for noise reduction
       const blurred = redChannel.expandDims(0).expandDims(-1);
-      const kernel = tf.tensor4d([
+      
+      // Fix kernel type - use number[][] instead of Uint8Array[][]
+      const kernelValues = [
         [0.0625, 0.125, 0.0625],
         [0.125, 0.25, 0.125],
         [0.0625, 0.125, 0.0625]
-      ], [1, 3, 3, 1]);
+      ];
       
+      // Create properly typed kernel tensor
+      const kernel = tf.tensor4d(kernelValues, [1, 3, 3, 1]);
+      
+      // Fix tensor type cast by explicitly ensuring 4D tensor
       const convolved = tf.conv2d(blurred as tf.Tensor4D, kernel, 1, 'same');
       
       // Convert back to ImageData
       const filteredRed = convolved.squeeze();
       
-      // Create RGB image with filtered red channel
+      // Create RGB image with filtered red channel using properly typed tensors
       return tf.stack([
         filteredRed,
         tf.zeros(filteredRed.shape),
         tf.zeros(filteredRed.shape),
         tf.ones(filteredRed.shape).mul(255)
-      ], -1);
+      ], -1) as tf.Tensor3D;
     });
     
-    // Convert tensor to ImageData
+    // Convert tensor to ImageData - ensure correct typing
     const [height, width] = result.shape.slice(0, 2);
     const filteredData = new Uint8ClampedArray(width * height * 4);
-    await tf.browser.toPixels(result as tf.Tensor3D, filteredData);
+    
+    // Use the correct type for toPixels - it expects Tensor3D or Tensor2D
+    await tf.browser.toPixels(result, filteredData);
     
     // Clean up tensors
     tensor.dispose();
