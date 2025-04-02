@@ -1,15 +1,16 @@
+
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
 import * as tf from '@tensorflow/tfjs';
 import { 
-  checkWeakSignal, 
-  shouldProcessMeasurement, 
-  createWeakSignalResult, 
-  handlePeakDetection,
-  updateLastValidBpm,
-  processLowConfidenceResult
-} from './signal-processing';
+  checkWeakSignal as checkSignalWeak, 
+  shouldProcessMeasurement as shouldProcess, 
+  createWeakSignalResult as createWeakResult, 
+  handlePeakDetection as handlePeak,
+  updateLastValidBpm as updateBpm,
+  processLowConfidenceResult as processLowConfidence
+} from './signal-processing/index';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -37,7 +38,7 @@ export function useSignalProcessor() {
     currentBeatIsArrhythmiaRef: React.MutableRefObject<boolean>
   ): HeartBeatResult => {
     if (!processor) {
-      return createWeakSignalResult();
+      return createWeakResult(0);
     }
 
     try {
@@ -50,7 +51,7 @@ export function useSignalProcessor() {
       }
       
       // Check for weak signal
-      const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
+      const { isWeakSignal, updatedWeakSignalsCount } = checkSignalWeak(
         value, 
         consecutiveWeakSignalsRef.current, 
         {
@@ -62,12 +63,12 @@ export function useSignalProcessor() {
       consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
       
       if (isWeakSignal) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
+        return createWeakResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
       }
       
       // Only process signals with sufficient amplitude
-      if (!shouldProcessMeasurement(value)) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
+      if (!shouldProcess(value)) {
+        return createWeakResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
       }
       
       // Apply TensorFlow filtering if we have enough data and TF is available
@@ -89,7 +90,7 @@ export function useSignalProcessor() {
             const paddedSignal = tf.pad(signalTensor, [[Math.floor(kernelSize/2), 
                                                       Math.floor(kernelSize/2)]]);
             
-            // Apply convolution for filtering - fixing tensor type issues by reshaping properly
+            // Apply convolution for filtering - fixing tensor type issues
             const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]);
             const kernelReshaped = kernel.reshape([kernelSize, 1, 1]);
             
@@ -105,7 +106,7 @@ export function useSignalProcessor() {
           
           // Use the last value from the filtered result
           const resultArray = Array.isArray(result) ? result : [result];
-          processedValue = resultArray[resultArray.length - 1];
+          processedValue = Number(resultArray[resultArray.length - 1]);
           
           // Clean up tensors
           signalTensor.dispose();
@@ -124,7 +125,7 @@ export function useSignalProcessor() {
       }
       
       // Handle peak detection
-      handlePeakDetection(
+      handlePeak(
         result, 
         lastPeakTimeRef, 
         requestImmediateBeep, 
@@ -133,12 +134,12 @@ export function useSignalProcessor() {
       );
       
       // Update last valid BPM if it's reasonable
-      updateLastValidBpm(result, lastValidBpmRef);
+      updateBpm(result, lastValidBpmRef);
       
       lastSignalQualityRef.current = result.confidence;
 
       // Process result
-      return processLowConfidenceResult(
+      return processLowConfidence(
         result, 
         currentBPM, 
         processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0

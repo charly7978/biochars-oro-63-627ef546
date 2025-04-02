@@ -63,7 +63,7 @@ export function useArrhythmiaDetector() {
       
       // Compile the model with improved optimizer settings
       model.compile({
-        optimizer: 'adam', // Using string format to avoid type mismatch
+        optimizer: 'adam', // Using string shorthand instead of object configuration
         loss: 'binaryCrossentropy',
         metrics: ['accuracy']
       });
@@ -194,7 +194,7 @@ export function useArrhythmiaDetector() {
       // Calculate RR standard deviation (RRSD)
       const squaredDifferences = rrIntervals.map(rr => Math.pow(rr - mean, 2));
       const variance = squaredDifferences.reduce((a, b) => a + b, 0) / rrIntervals.length;
-      const rrsd = Math.sqrt(variance);
+      const standardDeviation = Math.sqrt(variance);
       
       // Calculate irregularity score with improved sensitivity
       const irregularityScore = rmssd / mean;

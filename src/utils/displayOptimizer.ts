@@ -157,7 +157,7 @@ export async function applyTensorFlowImageFilter(
   } = { denoise: true, enhanceContrast: true, removeMotionArtifacts: true }
 ): Promise<ImageData | null> {
   try {
-    return await runWithMemoryManagement(async () => {
+    return await runWithMemoryManagement<ImageData>(async () => {
       // Create tensor from image data
       const tensor = tf.browser.fromPixels(imageData, 4);
       
@@ -182,10 +182,14 @@ export async function applyTensorFlowImageFilter(
         // Expand dimensions for convolution
         const kernelExpanded = kernel.expandDims(-1).expandDims(-1);
         
-        // Apply convolution for spatial filtering
+        // Apply convolution for spatial filtering - fixed typing
+        const processedChannelAs4D = processedChannel as tf.Tensor4D;
+        const kernelExpandedAs4D = kernelExpanded as tf.Tensor4D;
+        
+        // Corrected convolution operation with proper types
         processedChannel = tf.conv2d(
-          processedChannel as tf.Tensor4D, 
-          kernelExpanded as tf.Tensor4D, 
+          processedChannelAs4D, 
+          kernelExpandedAs4D, 
           [1, 1], 
           'same'
         );
@@ -206,10 +210,14 @@ export async function applyTensorFlowImageFilter(
         // Expand dimensions for 2D convolution
         const blurKernelExpanded = blurKernel.expandDims(-1).expandDims(-1);
         
-        // Apply convolution for denoising
+        // Apply convolution for denoising - fixed typing
+        const processedChannelExpanded = processedChannel.expandDims(0).expandDims(-1);
+        const processedChannelAs4D = processedChannelExpanded as tf.Tensor4D;
+        const blurKernelExpandedAs4D = blurKernelExpanded as tf.Tensor4D;
+        
         processedChannel = tf.conv2d(
-          processedChannel.expandDims(0).expandDims(-1) as tf.Tensor4D,
-          blurKernelExpanded as tf.Tensor4D,
+          processedChannelAs4D,
+          blurKernelExpandedAs4D,
           [1, 1],
           'same'
         ).squeeze([0, 3]);
@@ -249,6 +257,7 @@ export async function applyTensorFlowImageFilter(
       const resultData = new Uint8ClampedArray(width * height * 4);
       
       // Use the correct typing for toPixels
+      // Fix: Use resultData directly instead of passing HTMLCanvasElement
       await tf.browser.toPixels(resultTensor as tf.Tensor3D, resultData);
       
       // Clean up tensors
@@ -294,9 +303,14 @@ export function detectPeaksTF(
         
         // Apply convolution for low-pass filtering (approximation coefficients)
         const paddedSignal = tf.pad(signal, [[2, 2]], 'reflect');
+        
+        // Fixed tensor shape issues by ensuring proper dimensions
+        const paddedSignalExpanded = paddedSignal.expandDims(0).expandDims(2);
+        const lowPassFilterExpanded = lowPassFilter.expandDims(0).expandDims(1);
+        
         const approximation = tf.conv1d(
-          paddedSignal.expandDims(0).expandDims(2), 
-          lowPassFilter.expandDims(0).expandDims(1), 
+          paddedSignalExpanded, 
+          lowPassFilterExpanded, 
           1, 
           'valid'
         ).squeeze([0, 2]);
@@ -423,18 +437,22 @@ export function removeMotionArtifacts(
       const signalTensor = tf.tensor1d(signal);
       
       // Apply moving median filter to remove impulse artifacts
-      const filteredSignal = [];
+      const filteredSignal: number[] = [];
       
       for (let i = 0; i < signal.length; i++) {
         const windowStart = Math.max(0, i - windowSize);
         const windowEnd = Math.min(signal.length, i + windowSize + 1);
         const window = signalTensor.slice(windowStart, windowEnd - windowStart);
         
+        // Properly type tensors for TensorFlow operations
         // Sort values in window to find median
-        const sorted = tf.topk(window, window.shape[0]).values;
-        const median = sorted.gather(tf.scalar(Math.floor(window.shape[0] / 2), 'int32')).dataSync()[0];
+        const sortedValues = tf.topk(window, window.shape[0]).values;
+        const medianIndex = Math.floor(window.shape[0] / 2);
+        const medianValue = sortedValues.gather(tf.scalar(medianIndex, 'int32'));
         
-        filteredSignal.push(median);
+        // Safe extraction of scalar value
+        const medianScalar = medianValue.dataSync()[0];
+        filteredSignal.push(medianScalar);
       }
       
       // Apply low-pass filter to remove high-frequency noise
