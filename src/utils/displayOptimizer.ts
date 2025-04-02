@@ -80,16 +80,17 @@ export async function applyTensorFlowImageFilter(
       const blurred = redChannel.expandDims(0).expandDims(-1);
       
       // Create properly typed kernel for TensorFlow.js
+      // Use a regular number array but properly shape it to 4D dimensions
       const kernelValues = [
-        [0.0625, 0.125, 0.0625],
-        [0.125, 0.25, 0.125],
-        [0.0625, 0.125, 0.0625]
+        [[[0.0625]], [[0.125]], [[0.0625]]],
+        [[[0.125]], [[0.25]], [[0.125]]],
+        [[[0.0625]], [[0.125]], [[0.0625]]]
       ];
       
-      // Convert to proper TensorLike4D format
-      const kernel4D = tf.tensor4d(kernelValues, [1, 3, 3, 1]);
+      // Convert to proper tensor format with explicit typing
+      const kernel4D = tf.tensor4d(kernelValues);
       
-      // Fix tensor type cast by explicitly ensuring 4D tensor
+      // Apply convolution with proper typing
       const convolved = tf.conv2d(blurred as tf.Tensor4D, kernel4D, 1, 'same');
       
       // Convert back to ImageData
