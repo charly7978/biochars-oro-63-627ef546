@@ -10,7 +10,7 @@ import {
   handlePeakDetection,
   updateLastValidBpm,
   processLowConfidenceResult
-} from './signal-processing/index';
+} from './signal-processing';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -63,12 +63,12 @@ export function useSignalProcessor() {
       consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
       
       if (isWeakSignal) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
+        return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
       // Only process signals with sufficient amplitude
       if (!shouldProcessMeasurement(value)) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
+        return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
       // Apply TensorFlow filtering if we have enough data and TF is available
@@ -90,13 +90,11 @@ export function useSignalProcessor() {
             const paddedSignal = tf.pad(signalTensor, [[Math.floor(kernelSize/2), 
                                                       Math.floor(kernelSize/2)]]);
             
-            // Apply convolution for filtering - fixed tensor type issues by explicitly casting
-            const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]) as tf.Tensor3D;
-            const kernelReshaped = kernel.reshape([kernelSize, 1, 1]) as tf.Tensor3D;
-            
+            // Apply convolution for filtering - fixing the tensor type issue
             const filtered = tf.conv1d(
-              paddedReshaped,
-              kernelReshaped,
+              // Explicitly reshape to 3D tensor with correct shape
+              paddedSignal.reshape([1, paddedSignal.shape[0], 1]) as tf.Tensor3D,
+              kernel.reshape([kernelSize, 1, 1]) as tf.Tensor3D,
               1, 'valid'
             );
             
@@ -105,9 +103,9 @@ export function useSignalProcessor() {
           });
           
           // Use the last value from the filtered result
-          const resultArray = Array.isArray(result) ? result : [result];
-          // Fix type issue by explicitly converting to number
-          processedValue = Number(resultArray[resultArray.length - 1]);
+          // Fix the type issue by ensuring we get a single number
+          const resultArray = result as number[];
+          processedValue = resultArray[resultArray.length - 1];
           
           // Clean up tensors
           signalTensor.dispose();
@@ -121,7 +119,7 @@ export function useSignalProcessor() {
       const result = processor.processSignal(processedValue);
       const rrData = processor.getRRIntervals();
       
-      if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+      if (rrData && rrData.intervals.length > 0) {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
@@ -143,7 +141,7 @@ export function useSignalProcessor() {
       return processLowConfidenceResult(
         result, 
         currentBPM, 
-        processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0
+        processor.getArrhythmiaCounter()
       );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);
@@ -172,18 +170,14 @@ export function useSignalProcessor() {
     
     // Clean up TensorFlow resources
     if (tfModelRef.current) {
-      try {
-        tfModelRef.current.dispose();
-        tfModelRef.current = null;
-      } catch (error) {
-        console.warn('Error disposing TensorFlow model', error);
-      }
+      tfModelRef.current.dispose();
+      tfModelRef.current = null;
     }
     
     // Dispose any lingering tensors
     if (typeof tf !== 'undefined') {
       try {
-        tf.engine().disposeVariables();
+        tf.dispose();
       } catch (error) {
         console.warn('Error disposing TensorFlow resources', error);
       }
