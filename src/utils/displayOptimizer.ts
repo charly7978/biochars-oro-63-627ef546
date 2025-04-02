@@ -79,18 +79,18 @@ export async function applyTensorFlowImageFilter(
       // Apply Gaussian blur for noise reduction
       const blurred = redChannel.expandDims(0).expandDims(-1);
       
-      // Fix kernel type - use number[][] instead of Uint8Array[][]
+      // Create properly typed kernel for TensorFlow.js
       const kernelValues = [
         [0.0625, 0.125, 0.0625],
         [0.125, 0.25, 0.125],
         [0.0625, 0.125, 0.0625]
       ];
       
-      // Create properly typed kernel tensor
-      const kernel = tf.tensor4d(kernelValues, [1, 3, 3, 1]);
+      // Convert to proper TensorLike4D format
+      const kernel4D = tf.tensor4d(kernelValues, [1, 3, 3, 1]);
       
       // Fix tensor type cast by explicitly ensuring 4D tensor
-      const convolved = tf.conv2d(blurred as tf.Tensor4D, kernel, 1, 'same');
+      const convolved = tf.conv2d(blurred as tf.Tensor4D, kernel4D, 1, 'same');
       
       // Convert back to ImageData
       const filteredRed = convolved.squeeze();

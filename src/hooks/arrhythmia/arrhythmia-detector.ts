@@ -66,8 +66,9 @@ export function useArrhythmiaDetector() {
     if (rrIntervals.length < 2) {
       return {
         isArrhythmia: false,
-        rrsd: 0,
-        irregularityScore: 0
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: Date.now()
       };
     }
     
@@ -78,10 +79,10 @@ export function useArrhythmiaDetector() {
       // Calculate RR standard deviation (RRSD)
       const squaredDifferences = rrIntervals.map(rr => Math.pow(rr - mean, 2));
       const variance = squaredDifferences.reduce((a, b) => a + b, 0) / rrIntervals.length;
-      const rrsd = Math.sqrt(variance);
+      const rmssd = Math.sqrt(variance);
       
       // Calculate irregularity score (normalized RRSD)
-      const irregularityScore = rrsd / mean;
+      const irregularityScore = rmssd / mean;
       heartRateVariabilityRef.current = irregularityScore;
       
       // Simple threshold-based detection
@@ -108,15 +109,17 @@ export function useArrhythmiaDetector() {
       
       return {
         isArrhythmia,
-        rrsd,
-        irregularityScore
+        rmssd,
+        rrVariation: irregularityScore,
+        timestamp: Date.now()
       };
     } catch (error) {
       console.error('Error in arrhythmia detection:', error);
       return {
         isArrhythmia: false,
-        rrsd: 0,
-        irregularityScore: 0
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: Date.now()
       };
     }
   }, []);
