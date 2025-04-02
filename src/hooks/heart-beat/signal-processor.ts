@@ -10,7 +10,7 @@ import {
   handlePeakDetection,
   updateLastValidBpm,
   processLowConfidenceResult
-} from './signal-processing';
+} from './signal-processing/index';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -90,12 +90,12 @@ export function useSignalProcessor() {
             const paddedSignal = tf.pad(signalTensor, [[Math.floor(kernelSize/2), 
                                                       Math.floor(kernelSize/2)]]);
             
-            // Apply convolution for filtering - fixing tensor type issues by reshaping properly
-            const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]);
-            const kernelReshaped = kernel.reshape([kernelSize, 1, 1]);
+            // Apply convolution for filtering - fixed tensor type issues by explicitly casting
+            const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]) as tf.Tensor3D;
+            const kernelReshaped = kernel.reshape([kernelSize, 1, 1]) as tf.Tensor3D;
             
             const filtered = tf.conv1d(
-              paddedReshaped as tf.Tensor3D,  // Cast to correct type
+              paddedReshaped,
               kernelReshaped,
               1, 'valid'
             );

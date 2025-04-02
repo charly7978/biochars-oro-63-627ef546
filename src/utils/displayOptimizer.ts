@@ -182,20 +182,20 @@ export async function applyTensorFlowImageFilter(
         // Expand dimensions for convolution
         const kernelExpanded = kernel.expandDims(-1).expandDims(-1);
         
-        // Apply convolution for spatial filtering - fixed typing
-        const processedChannelAs4D = processedChannel as tf.Tensor4D;
-        const kernelExpandedAs4D = kernelExpanded as tf.Tensor4D;
+        // Apply convolution for spatial filtering - cast to proper types
+        const processedChannelAs4D = processedChannel as unknown as tf.Tensor4D;
+        const kernelExpandedAs4D = kernelExpanded as unknown as tf.Tensor4D;
         
-        // Corrected convolution operation with proper types
-        processedChannel = tf.conv2d(
+        // Apply convolution with proper typing
+        const filtered = tf.conv2d(
           processedChannelAs4D, 
           kernelExpandedAs4D, 
           [1, 1], 
           'same'
         );
         
-        // Remove batch dimension
-        processedChannel = processedChannel.squeeze([0]);
+        // Fix tensor type by explicit casting
+        processedChannel = filtered.squeeze([0]) as tf.Tensor3D;
       }
       
       // Apply denoising if requested
@@ -210,17 +210,17 @@ export async function applyTensorFlowImageFilter(
         // Expand dimensions for 2D convolution
         const blurKernelExpanded = blurKernel.expandDims(-1).expandDims(-1);
         
-        // Apply convolution for denoising - fixed typing
+        // Apply convolution for denoising with proper typing
         const processedChannelExpanded = processedChannel.expandDims(0).expandDims(-1);
-        const processedChannelAs4D = processedChannelExpanded as tf.Tensor4D;
-        const blurKernelExpandedAs4D = blurKernelExpanded as tf.Tensor4D;
+        const processedChannelAs4D = processedChannelExpanded as unknown as tf.Tensor4D;
+        const blurKernelExpandedAs4D = blurKernelExpanded as unknown as tf.Tensor4D;
         
         processedChannel = tf.conv2d(
           processedChannelAs4D,
           blurKernelExpandedAs4D,
           [1, 1],
           'same'
-        ).squeeze([0, 3]);
+        ).squeeze([0, 3]) as tf.Tensor3D;
       }
       
       // Apply contrast enhancement if requested
@@ -250,20 +250,22 @@ export async function applyTensorFlowImageFilter(
         greenChannel, 
         blueChannel, 
         alphaChannel
-      ], -1);
+      ], -1) as tf.Tensor3D; // Explicitly cast to Tensor3D
       
       // Convert tensor to ImageData
       const [height, width] = resultTensor.shape.slice(0, 2);
       const resultData = new Uint8ClampedArray(width * height * 4);
       
-      // Use the correct typing for toPixels
-      // Fix: Use resultData directly instead of passing HTMLCanvasElement
-      await tf.browser.toPixels(resultTensor as tf.Tensor3D, resultData);
+      // Use the correct method for converting tensors to pixels
+      await tf.browser.toPixels(resultTensor, resultData);
+      
+      // Create new ImageData with the processed pixels
+      const result = new ImageData(resultData, width, height);
       
       // Clean up tensors
       tensor.dispose();
       
-      return new ImageData(resultData, width, height);
+      return result;
     }, { logPerformance: true });
   } catch (error) {
     console.error("Error applying advanced image filtering:", error);
@@ -291,7 +293,7 @@ export function detectPeaksTF(
   }
   
   try {
-    return tf.tidy(() => {
+    const result = tf.tidy(() => {
       const signal = tf.tensor1d(values);
       
       // Apply wavelet-based denoising if requested
@@ -299,176 +301,70 @@ export function detectPeaksTF(
       if (useWavelet) {
         // Simplified wavelet denoising using a filter bank approach
         // This approximates a single-level wavelet transform
-        const lowPassFilter = tf.tensor1d([0.1, 0.2, 0.4, 0.2, 0.1]);
         
-        // Apply convolution for low-pass filtering (approximation coefficients)
-        const paddedSignal = tf.pad(signal, [[2, 2]], 'reflect');
+        // Low-pass filter coefficients (simplified Haar wavelet)
+        const lowPassFilter = tf.tensor1d([0.5, 0.5]);
         
-        // Fixed tensor shape issues by ensuring proper dimensions
-        const paddedSignalExpanded = paddedSignal.expandDims(0).expandDims(2);
-        const lowPassFilterExpanded = lowPassFilter.expandDims(0).expandDims(1);
+        // High-pass filter coefficients (simplified Haar wavelet)
+        const highPassFilter = tf.tensor1d([0.5, -0.5]);
         
-        const approximation = tf.conv1d(
-          paddedSignalExpanded, 
-          lowPassFilterExpanded, 
-          1, 
-          'valid'
-        ).squeeze([0, 2]);
+        // Apply low-pass filter using conv1d
+        const lowFreqComponent = tf.conv1d(
+          processedSignal.expandDims(0).expandDims(2) as tf.Tensor3D,
+          lowPassFilter.expandDims(0).expandDims(1) as tf.Tensor3D,
+          1, 'same'
+        ).squeeze([0, 2]) as tf.Tensor1D;
         
-        // Apply thresholding to create a denoised signal
-        processedSignal = approximation;
+        // Apply high-pass filter using conv1d
+        const highFreqComponent = tf.conv1d(
+          processedSignal.expandDims(0).expandDims(2) as tf.Tensor3D,
+          highPassFilter.expandDims(0).expandDims(1) as tf.Tensor3D,
+          1, 'same'
+        ).squeeze([0, 2]) as tf.Tensor1D;
+        
+        // Threshold high frequency components to remove noise
+        const threshold = tf.scalar(0.1);
+        const thresholdedHighFreq = highFreqComponent.mul(
+          highFreqComponent.abs().greater(threshold)
+        );
+        
+        // Reconstruct signal
+        processedSignal = lowFreqComponent.add(thresholdedHighFreq);
       }
       
-      // Calculate local maxima with adaptive thresholding
-      const localMaxima: number[] = [];
+      // Calculate local maxima for peak detection
+      const peakIndices: number[] = [];
       
-      for (let i = windowSize; i < values.length - windowSize; i++) {
-        const windowStart = i - windowSize;
-        const windowEnd = i + windowSize + 1;
-        const window = processedSignal.slice(windowStart, windowEnd - windowStart);
+      // Use CPU implementation for peak finding as it's more reliable
+      const signalValues = processedSignal.arraySync() as number[];
+      
+      // Find local maxima using sliding window approach
+      for (let i = windowSize; i < signalValues.length - windowSize; i++) {
+        const currentValue = signalValues[i];
+        const windowValues = signalValues.slice(i - windowSize, i + windowSize + 1);
+        const maxValue = Math.max(...windowValues);
         
-        const center = window.slice(windowSize, 1);
-        const neighbors = tf.concat([
-          window.slice(0, windowSize),
-          window.slice(windowSize + 1)
-        ]);
-        
-        // Calculate local statistics for adaptive thresholding
-        const neighborMax = neighbors.max();
-        const neighborMean = neighbors.mean();
-        
-        // A peak must be greater than all neighbors and have sufficient prominence
-        const isLocalMax = center.greater(neighborMax).dataSync()[0];
-        
-        // Calculate prominence as the difference between peak and highest neighbor
-        const prominence = center.sub(neighborMax).div(center.sub(neighborMean).add(1e-5));
-        const hasProminence = prominence.greater(tf.scalar(prominenceThreshold)).dataSync()[0];
-        
-        if (isLocalMax && hasProminence) {
-          localMaxima.push(i);
+        // Check if current point is a local maximum
+        if (currentValue === maxValue) {
+          // Calculate prominence
+          const leftMin = Math.min(...signalValues.slice(Math.max(0, i - windowSize * 2), i));
+          const rightMin = Math.min(...signalValues.slice(i + 1, Math.min(signalValues.length, i + windowSize * 2 + 1)));
+          const localMinimum = Math.min(leftMin, rightMin);
+          const prominence = currentValue - localMinimum;
+          
+          // Only count peaks with sufficient prominence
+          if (prominence >= prominenceThreshold * maxValue) {
+            peakIndices.push(i);
+          }
         }
       }
       
-      return localMaxima;
+      return peakIndices;
     });
+    
+    return result;
   } catch (error) {
     console.error("Error detecting peaks with TensorFlow:", error);
     return [];
-  }
-}
-
-/**
- * Apply wavelet transform for multi-resolution analysis
- */
-export function applyWaveletTransform(signal: number[]): {
-  approximation: number[];
-  details: number[];
-} {
-  try {
-    return tf.tidy(() => {
-      // Pad signal to power of 2 length for efficient transform
-      const nextPowerOf2 = Math.pow(2, Math.ceil(Math.log2(signal.length)));
-      const paddedSignal = [...signal, ...Array(nextPowerOf2 - signal.length).fill(signal[signal.length - 1] || 0)];
-      
-      // Create tensor from padded signal
-      const signalTensor = tf.tensor1d(paddedSignal);
-      
-      // Define Haar wavelet filters
-      const lowPassFilter = tf.tensor1d([0.7071067811865475, 0.7071067811865475]);
-      const highPassFilter = tf.tensor1d([0.7071067811865475, -0.7071067811865475]);
-      
-      // Convolve signal with filters and downsample by 2
-      const paddedSignalExpanded = signalTensor.expandDims(0).expandDims(2);
-      
-      // Apply low-pass filter (approximation)
-      const approximationFull = tf.conv1d(
-        paddedSignalExpanded,
-        lowPassFilter.expandDims(0).expandDims(1),
-        1,
-        'same'
-      ).squeeze([0, 2]);
-      
-      // Apply high-pass filter (details)
-      const detailsFull = tf.conv1d(
-        paddedSignalExpanded,
-        highPassFilter.expandDims(0).expandDims(1),
-        1,
-        'same'
-      ).squeeze([0, 2]);
-      
-      // Downsample by taking every other sample
-      const indices = tf.range(0, signalTensor.shape[0], 2);
-      const approximation = tf.gather(approximationFull, indices).arraySync() as number[];
-      const details = tf.gather(detailsFull, indices).arraySync() as number[];
-      
-      return {
-        approximation: approximation.slice(0, signal.length),
-        details: details.slice(0, signal.length)
-      };
-    });
-  } catch (error) {
-    console.error("Error applying wavelet transform:", error);
-    return {
-      approximation: [...signal],
-      details: Array(signal.length).fill(0)
-    };
-  }
-}
-
-/**
- * Remove motion artifacts from signal
- */
-export function removeMotionArtifacts(
-  signal: number[],
-  options: {
-    windowSize?: number;
-    cutoffFrequency?: number;
-  } = {}
-): number[] {
-  const windowSize = options.windowSize || 10;
-  const cutoffFrequency = options.cutoffFrequency || 0.1; // Normalized frequency
-  
-  if (signal.length < windowSize * 2) {
-    return [...signal];
-  }
-  
-  try {
-    return tf.tidy(() => {
-      const signalTensor = tf.tensor1d(signal);
-      
-      // Apply moving median filter to remove impulse artifacts
-      const filteredSignal: number[] = [];
-      
-      for (let i = 0; i < signal.length; i++) {
-        const windowStart = Math.max(0, i - windowSize);
-        const windowEnd = Math.min(signal.length, i + windowSize + 1);
-        const window = signalTensor.slice(windowStart, windowEnd - windowStart);
-        
-        // Properly type tensors for TensorFlow operations
-        // Sort values in window to find median
-        const sortedValues = tf.topk(window, window.shape[0]).values;
-        const medianIndex = Math.floor(window.shape[0] / 2);
-        const medianValue = sortedValues.gather(tf.scalar(medianIndex, 'int32'));
-        
-        // Safe extraction of scalar value
-        const medianScalar = medianValue.dataSync()[0];
-        filteredSignal.push(medianScalar);
-      }
-      
-      // Apply low-pass filter to remove high-frequency noise
-      const beta = Math.exp(-2 * Math.PI * cutoffFrequency);
-      let filteredValue = filteredSignal[0];
-      const smoothedSignal = [filteredValue];
-      
-      for (let i = 1; i < filteredSignal.length; i++) {
-        filteredValue = filteredSignal[i] * (1 - beta) + filteredValue * beta;
-        smoothedSignal.push(filteredValue);
-      }
-      
-      return smoothedSignal;
-    });
-  } catch (error) {
-    console.error("Error removing motion artifacts:", error);
-    return [...signal];
   }
 }

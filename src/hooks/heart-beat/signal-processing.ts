@@ -98,13 +98,13 @@ export function useSignalProcessor() {
             const paddedSignal = tf.pad(signalTensor, [[Math.floor(kernelSize/2), 
                                                       Math.floor(kernelSize/2)]]);
             
-            // Apply convolution for filtering - fixing tensor type issues
-            const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]);
-            const kernelReshaped = kernel.reshape([kernelSize, 1, 1]);
+            // Apply convolution for filtering - properly cast to fix typing issues
+            const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]) as tf.Tensor3D;
+            const kernelReshaped = kernel.reshape([kernelSize, 1, 1]) as tf.Tensor3D;
             
-            // Use tf.cast to ensure tensor types match
+            // Use conv1d with proper typing
             const filtered = tf.conv1d(
-              paddedReshaped as tf.Tensor3D,  // Cast to correct type
+              paddedReshaped,
               kernelReshaped,
               1, 'valid'
             );
