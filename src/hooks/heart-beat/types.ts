@@ -14,6 +14,9 @@ export interface HeartBeatResult {
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
   rrData?: RRIntervalData;
+  tensorflowEnhanced?: boolean; // Indicates if TensorFlow was used for processing
+  signalQuality?: number; // TensorFlow-calculated signal quality score
+  errorMargin?: number; // Error margin for BPM estimation
 }
 
 export interface UseHeartBeatReturn {
