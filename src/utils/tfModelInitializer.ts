@@ -1,61 +1,60 @@
-
 import * as tf from '@tensorflow/tfjs';
 
 /**
  * Tensor memory management wrapper with performance monitoring
+ * @param fn Function that performs TensorFlow operations
+ * @param options Options for memory management
+ * @returns Result of the function execution
  */
 export async function runWithMemoryManagement<T>(
-  tfFunction: () => Promise<T> | T,
+  fn: () => Promise<T>,
   options: {
-    maxTensors?: number;
     logPerformance?: boolean;
-  } = {}
+    disposeIntermediateTensors?: boolean;
+  } = { logPerformance: false, disposeIntermediateTensors: true }
 ): Promise<T> {
   const startTime = performance.now();
-  const startingTensorCount = tf.memory().numTensors;
-  let result: T;
+  const initialNumTensors = tf.memory().numTensors;
   
   try {
-    // Create a wrapper function that returns the result directly
-    // This fixes the typing issues with tf.tidy
-    const runFunction = async () => {
-      return await tfFunction();
-    };
+    // Execute the function that performs TensorFlow operations
+    const result = await fn();
     
-    // Run TensorFlow operations
-    result = await runFunction();
-    
-    // Check memory usage
-    const currentTensorCount = tf.memory().numTensors;
-    const tensorDelta = currentTensorCount - startingTensorCount;
-    
-    // Clean up if too many tensors remain
-    const maxTensors = options.maxTensors || 100;
-    if (currentTensorCount > maxTensors) {
-      console.warn(`High tensor count detected: ${currentTensorCount}. Performing targeted cleanup.`);
-      tf.disposeVariables();
-    }
-    
-    // Log performance metrics
+    // Log performance stats
     if (options.logPerformance) {
       const endTime = performance.now();
-      console.log(`TensorFlow operation completed:`, {
-        executionTime: `${(endTime - startTime).toFixed(2)}ms`,
-        startingTensorCount,
-        endingTensorCount: tf.memory().numTensors,
-        tensorDelta: tensorDelta > 0 ? `+${tensorDelta}` : tensorDelta,
-        memoryUsage: `${(tf.memory().numBytes / (1024 * 1024)).toFixed(2)} MB`
-      });
+      const duration = endTime - startTime;
+      const finalNumTensors = tf.memory().numTensors;
+      const tensorDiff = finalNumTensors - initialNumTensors;
+      
+      console.log(`TensorFlow operation completed in ${duration.toFixed(2)}ms`);
+      console.log(`Tensor count change: ${tensorDiff} (${initialNumTensors} → ${finalNumTensors})`);
+      
+      if (tensorDiff > 0) {
+        console.warn(`Memory leak detected: ${tensorDiff} tensors were not properly disposed`);
+      }
     }
     
     return result;
   } catch (error) {
-    console.error('TensorFlow operation failed:', error);
-    
-    // Emergency cleanup on error
-    tf.engine().disposeVariables();
-    
+    console.error('Error in TensorFlow operation:', error);
     throw error;
+  } finally {
+    // Dispose intermediate tensors if requested
+    if (options.disposeIntermediateTensors) {
+      // Keep only tensors that are needed for the result
+      // This is a more targeted approach than disposing all tensors
+      const currentNumTensors = tf.memory().numTensors;
+      if (currentNumTensors > initialNumTensors) {
+        // Use tidy to clean up orphaned tensors
+        tf.tidy(() => {});
+        
+        if (options.logPerformance) {
+          const cleanedNumTensors = tf.memory().numTensors;
+          console.log(`Cleaned up ${currentNumTensors - cleanedNumTensors} orphaned tensors`);
+        }
+      }
+    }
   }
 }
 

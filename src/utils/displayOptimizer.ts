@@ -182,9 +182,9 @@ export async function applyTensorFlowImageFilter(
         // Expand dimensions for convolution
         const kernelExpanded = kernel.expandDims(-1).expandDims(-1);
         
-        // Apply convolution for spatial filtering - cast to proper types
-        const processedChannelAs4D = processedChannel as unknown as tf.Tensor4D;
-        const kernelExpandedAs4D = kernelExpanded as unknown as tf.Tensor4D;
+        // Apply convolution for spatial filtering - fixed tensor types
+        const processedChannelAs4D = processedChannel.reshape([1, processedChannel.shape[1], processedChannel.shape[2], 1]) as tf.Tensor4D;
+        const kernelExpandedAs4D = kernelExpanded.reshape([kernelExpanded.shape[0], kernelExpanded.shape[1], 1, 1]) as tf.Tensor4D;
         
         // Apply convolution with proper typing
         const filtered = tf.conv2d(
@@ -194,8 +194,8 @@ export async function applyTensorFlowImageFilter(
           'same'
         );
         
-        // Fix tensor type by explicit casting
-        processedChannel = filtered.squeeze([0]) as tf.Tensor3D;
+        // Fix tensor type by ensuring it's a 3D tensor
+        processedChannel = filtered.squeeze([0, 3]) as tf.Tensor3D;
       }
       
       // Apply denoising if requested
@@ -212,8 +212,8 @@ export async function applyTensorFlowImageFilter(
         
         // Apply convolution for denoising with proper typing
         const processedChannelExpanded = processedChannel.expandDims(0).expandDims(-1);
-        const processedChannelAs4D = processedChannelExpanded as unknown as tf.Tensor4D;
-        const blurKernelExpandedAs4D = blurKernelExpanded as unknown as tf.Tensor4D;
+        const processedChannelAs4D = processedChannelExpanded as tf.Tensor4D;
+        const blurKernelExpandedAs4D = blurKernelExpanded as tf.Tensor4D;
         
         processedChannel = tf.conv2d(
           processedChannelAs4D,
@@ -250,13 +250,13 @@ export async function applyTensorFlowImageFilter(
         greenChannel, 
         blueChannel, 
         alphaChannel
-      ], -1) as tf.Tensor3D; // Explicitly cast to Tensor3D
+      ], -1) as tf.Tensor3D; // Stack along last dimension
       
       // Convert tensor to ImageData
       const [height, width] = resultTensor.shape.slice(0, 2);
       const resultData = new Uint8ClampedArray(width * height * 4);
       
-      // Use the correct method for converting tensors to pixels
+      // Use tf.browser.toPixels correctly with the right parameters
       await tf.browser.toPixels(resultTensor, resultData);
       
       // Create new ImageData with the processed pixels
