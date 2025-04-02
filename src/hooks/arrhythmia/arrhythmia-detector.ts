@@ -63,11 +63,7 @@ export function useArrhythmiaDetector() {
       
       // Compile the model with improved optimizer settings
       model.compile({
-        optimizer: tf.train.adam({
-          learningRate: 0.005,
-          beta1: 0.9,
-          beta2: 0.999
-        }),
+        optimizer: 'adam', // Using string format to avoid type mismatch
         loss: 'binaryCrossentropy',
         metrics: ['accuracy']
       });
@@ -180,7 +176,6 @@ export function useArrhythmiaDetector() {
     if (rrIntervals.length < 3) {
       return {
         isArrhythmia: false,
-        rrsd: 0,
         irregularityScore: 0
       };
     }
@@ -254,7 +249,6 @@ export function useArrhythmiaDetector() {
       
       return {
         isArrhythmia,
-        rrsd,
         irregularityScore,
         // Additional advanced metrics
         hrv: {
@@ -269,7 +263,6 @@ export function useArrhythmiaDetector() {
       console.error('Error in advanced arrhythmia detection:', error);
       return {
         isArrhythmia: false,
-        rrsd: 0,
         irregularityScore: 0
       };
     }
