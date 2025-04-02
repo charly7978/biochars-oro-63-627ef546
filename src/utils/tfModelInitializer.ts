@@ -1,4 +1,6 @@
 
+import * as tf from '@tensorflow/tfjs';
+
 /**
  * Tensor memory management wrapper with performance monitoring
  */
@@ -56,3 +58,27 @@ export async function runWithMemoryManagement<T>(
     throw error;
   }
 }
+
+// Add these exports for backward compatibility with other modules
+export const initializeTensorFlow = async () => {
+  // Simple initialization logic
+  try {
+    console.log("Initializing TensorFlow environment");
+    await tf.ready();
+    return true;
+  } catch (error) {
+    console.error("Failed to initialize TensorFlow:", error);
+    return false;
+  }
+};
+
+export const disposeTensors = () => {
+  try {
+    tf.engine().disposeVariables();
+    console.log("TensorFlow tensors disposed");
+    return true;
+  } catch (error) {
+    console.error("Failed to dispose TensorFlow tensors:", error);
+    return false;
+  }
+};

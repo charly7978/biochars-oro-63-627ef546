@@ -12,6 +12,14 @@ import {
   processLowConfidenceResult as processLowConfidence
 } from './signal-processing/index';
 
+// Re-export with aliases for backwards compatibility
+export const checkWeakSignal = checkSignalWeak;
+export const shouldProcessMeasurement = shouldProcess;
+export const createWeakSignalResult = createWeakResult;
+export const handlePeakDetection = handlePeak;
+export const updateLastValidBpm = updateBpm;
+export const processLowConfidenceResult = processLowConfidence;
+
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
   const consistentBeatsCountRef = useRef<number>(0);
@@ -94,8 +102,9 @@ export function useSignalProcessor() {
             const paddedReshaped = paddedSignal.reshape([1, paddedSignal.shape[0], 1]);
             const kernelReshaped = kernel.reshape([kernelSize, 1, 1]);
             
+            // Use tf.cast to ensure tensor types match
             const filtered = tf.conv1d(
-              paddedReshaped,
+              paddedReshaped as tf.Tensor3D,  // Cast to correct type
               kernelReshaped,
               1, 'valid'
             );

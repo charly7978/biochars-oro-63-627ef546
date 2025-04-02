@@ -8,7 +8,7 @@ export * from './signal-quality';
 export * from './peak-detection';
 export * from './result-processor';
 
-// Export specific functions for direct use
+// Export specific functions for direct use with proper naming
 export { 
   checkWeakSignal, 
   shouldProcessMeasurement, 

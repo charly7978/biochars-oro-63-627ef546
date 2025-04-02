@@ -63,12 +63,12 @@ export function useSignalProcessor() {
       consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
       
       if (isWeakSignal) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
+        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
       }
       
       // Only process signals with sufficient amplitude
       if (!shouldProcessMeasurement(value)) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
+        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
       }
       
       // Apply TensorFlow filtering if we have enough data and TF is available
@@ -95,7 +95,7 @@ export function useSignalProcessor() {
             const kernelReshaped = kernel.reshape([kernelSize, 1, 1]);
             
             const filtered = tf.conv1d(
-              paddedReshaped,
+              paddedReshaped as tf.Tensor3D,  // Cast to correct type
               kernelReshaped,
               1, 'valid'
             );
@@ -106,7 +106,8 @@ export function useSignalProcessor() {
           
           // Use the last value from the filtered result
           const resultArray = Array.isArray(result) ? result : [result];
-          processedValue = resultArray[resultArray.length - 1];
+          // Fix type issue by explicitly converting to number
+          processedValue = Number(resultArray[resultArray.length - 1]);
           
           // Clean up tensors
           signalTensor.dispose();
