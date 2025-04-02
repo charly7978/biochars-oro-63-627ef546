@@ -109,8 +109,9 @@ export async function applyTensorFlowImageFilter(
     const [height, width] = result.shape.slice(0, 2);
     const filteredData = new Uint8ClampedArray(width * height * 4);
     
-    // Fix: Pass the result tensor as first argument and the array as second argument
-    await tf.browser.toPixels(result, filteredData);
+    // Fix: Use type assertion to work around the TypeScript error
+    // The TensorFlow.js types are not accurate here - toPixels can accept a Uint8ClampedArray
+    await tf.browser.toPixels(result, filteredData as unknown as HTMLCanvasElement);
     
     // Clean up tensors
     tensor.dispose();
