@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -238,97 +237,26 @@ const PPGSignalMeter = memo(({
     if (isArrhythmia && dataBufferRef.current) {
       const now = Date.now();
       
-      // If this is a new arrhythmia event
+      // Si este es un nuevo evento de arritmia
       if (now - lastArrhythmiaTime.current > 1000) {
         console.log("New arrhythmia event detected, starting segment tracking");
         
-        // Start a new arrhythmia segment
-        const newSegment = {
-          startTime: now,
-          endTime: null,
-          points: [] as PPGDataPointExtended[]
-        };
+        // Iniciar un nuevo segmento de arritmia con tiempo de finalización automático
+        const eventEndTime = now + 500; // Solo mostrar el efecto visual durante 500ms
         
-        // Capture already existing points from before the arrhythmia started (pre-arrhythmia context)
-        const existingPoints = dataBufferRef.current.getPoints();
-        const preArrhythmiaPoints = existingPoints.slice(-30); // Get last 30 points for context
-        
-        // Add pre-arrhythmia points to the segment
-        newSegment.points.push(...preArrhythmiaPoints.map(p => ({...p})));
-        
-        // Add to waveform collection
-        completeArrhythmiaWaveformsRef.current.push(newSegment);
-        
-        // Add visual marker
         arrhythmiaSegmentsRef.current.push({
           startTime: now,
-          endTime: null
+          endTime: eventEndTime // Auto-finalizar el efecto visual
         });
         
-        // Limit saved arrhythmia segments
-        if (completeArrhythmiaWaveformsRef.current.length > MAX_ARRHYTHMIA_SEGMENTS) {
-          completeArrhythmiaWaveformsRef.current.shift();
-        }
+        // Limitar los segmentos guardados
         if (arrhythmiaSegmentsRef.current.length > MAX_ARRHYTHMIA_SEGMENTS) {
           arrhythmiaSegmentsRef.current.shift();
         }
       }
       
-      // Update the last arrhythmia timestamp
+      // Actualizar el último timestamp de arritmia
       lastArrhythmiaTime.current = now;
-      
-      // Update active arrhythmia segment with new data points
-      const activeSegment = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
-      if (activeSegment && !activeSegment.endTime) {
-        // Add current point to the segment
-        if (dataBufferRef.current) {
-          const latestPoints = dataBufferRef.current.getPoints().slice(-1);
-          if (latestPoints.length > 0) {
-            // Mark this point as part of an arrhythmia
-            const pointWithArrhythmia = {...latestPoints[0], isArrhythmia: true};
-            activeSegment.points.push(pointWithArrhythmia);
-          }
-        }
-      }
-    } else if (lastArrhythmiaTime.current > 0 && Date.now() - lastArrhythmiaTime.current > 1000) {
-      // If arrhythmia has ended, close the active segment
-      const activeSegment = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
-      if (activeSegment && !activeSegment.endTime) {
-        activeSegment.endTime = Date.now();
-        console.log("Arrhythmia event ended, capturing complete waveform", {
-          startTime: new Date(activeSegment.startTime).toISOString(),
-          endTime: new Date(activeSegment.endTime).toISOString(),
-          pointsCount: activeSegment.points.length
-        });
-        
-        // Add post-arrhythmia context (continue capturing for a short time after arrhythmia ends)
-        const capturePostArrhythmiaContext = () => {
-          if (dataBufferRef.current && activeSegment) {
-            const latestPoints = dataBufferRef.current.getPoints().slice(-1);
-            if (latestPoints.length > 0) {
-              activeSegment.points.push({...latestPoints[0]});
-            }
-            
-            // Continue capturing for half a second after arrhythmia ends
-            if (activeSegment.points.length < 50 || 
-                Date.now() - (activeSegment.endTime || 0) < 500) {
-              requestAnimationFrame(capturePostArrhythmiaContext);
-            } else {
-              console.log("Post-arrhythmia context capture complete", {
-                totalPoints: activeSegment.points.length
-              });
-              
-              // Close the visual segment marker
-              const activeVisualSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
-              if (activeVisualSegment && !activeVisualSegment.endTime) {
-                activeVisualSegment.endTime = Date.now();
-              }
-            }
-          }
-        };
-        
-        capturePostArrhythmiaContext();
-      }
     }
   }, [isArrhythmia]);
 
@@ -549,7 +477,13 @@ const PPGSignalMeter = memo(({
   // Function to draw arrhythmia regions
   const drawArrhythmiaRegions = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
     const activeArrhythmiaSegments = arrhythmiaSegmentsRef.current.filter(
-      segment => !segment.endTime || now - (segment.endTime || 0) < WINDOW_WIDTH_MS
+      segment => {
+        // Solo mantener segmentos recientes o que aún están activos (sin endTime)
+        const isRecent = !segment.endTime || now - (segment.endTime || 0) < WINDOW_WIDTH_MS;
+        // Solo mostrar durante un tiempo limitado después de la detección - 2 segundos
+        const isTemporallyRelevant = (now - segment.startTime) < 2000;
+        return isRecent && isTemporallyRelevant;
+      }
     );
     
     // Draw arrhythmia background regions

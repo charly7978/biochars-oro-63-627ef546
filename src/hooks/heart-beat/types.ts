@@ -19,6 +19,14 @@ export interface HeartBeatResult {
 }
 
 /**
+ * Type for RR interval data structure
+ */
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
+}
+
+/**
  * Return type for useHeartBeatProcessor hook.
  */
 export interface UseHeartBeatReturn {
