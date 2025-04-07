@@ -1,12 +1,15 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ActivitySquare, Server, Shield, RefreshCw, XCircle, CheckCircle, AlertTriangle, RotateCw, Zap } from 'lucide-react';
-import ErrorDefenseSystem from '@/core/error-defense/ErrorDefenseSystem';
+import { ActivitySquare, Server, Shield, RefreshCw, XCircle, CheckCircle, AlertTriangle, RotateCw, Zap, AlertCircle, Bug } from 'lucide-react';
+import ErrorDefenseSystem, { ErrorCategory, SystemError } from '@/core/error-defense/ErrorDefenseSystem';
 import { useErrorDefense } from '@/hooks/useErrorDefense';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { getLogEntries, LogLevel } from '@/utils/signalLogging';
+import DependencyMonitor from '@/core/error-defense/DependencyMonitor';
 
 interface SystemDiagnosticsProps {
   minimal?: boolean;
@@ -18,10 +21,46 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
   const [isOpen, setIsOpen] = useState<boolean>(!minimal);
   const [recoveryInProgress, setRecoveryInProgress] = useState<boolean>(false);
   const [recoveryLog, setRecoveryLog] = useState<string[]>([]);
+  const [criticalErrors, setCriticalErrors] = useState<{message: string, source: string, timestamp: number}[]>([]);
+  const [missingDependencies, setMissingDependencies] = useState<string[]>([]);
+  const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
   
+  // Obtener errores críticos y dependencias faltantes
   useEffect(() => {
+    const fetchCriticalData = async () => {
+      // Obtener los últimos errores críticos
+      const recentLogs = getLogEntries();
+      const criticalErrorLogs = recentLogs
+        .filter(log => log.level === LogLevel.ERROR)
+        .slice(0, 10)
+        .map(log => ({
+          message: log.message,
+          source: log.source,
+          timestamp: log.timestamp
+        }));
+      
+      setCriticalErrors(criticalErrorLogs);
+      
+      // Verificar dependencias faltantes
+      try {
+        const dependencyMonitor = DependencyMonitor.getInstance();
+        const results = await dependencyMonitor.checkAllDependencies();
+        
+        const missing = Object.entries(results)
+          .filter(([_, available]) => !available)
+          .map(([name]) => name);
+        
+        setMissingDependencies(missing);
+      } catch (error) {
+        console.error("Error al verificar dependencias:", error);
+      }
+    };
+    
+    fetchCriticalData();
+    
     const updateInterval = setInterval(() => {
       setLastUpdated(new Date());
+      fetchCriticalData();
     }, 15000);
     
     return () => clearInterval(updateInterval);
@@ -81,6 +120,28 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     }
   };
   
+  // Formatear mensaje explicativo sobre errores críticos
+  const getErrorExplanation = () => {
+    let message = "";
+    
+    // Explicar dependencias faltantes
+    if (missingDependencies.length > 0) {
+      message += `• Dependencias no disponibles: ${missingDependencies.join(", ")}.\n`;
+    }
+    
+    // Explicar patrones de error si hay errores críticos
+    if (errorState.criticalErrors > 0 || errorState.highErrors > 0) {
+      message += `• ${errorState.criticalErrors} errores críticos y ${errorState.highErrors} errores graves detectados.\n`;
+    }
+    
+    // Si no hay mensajes específicos pero hay problemas
+    if (message === "" && !errorState.isSystemHealthy) {
+      message = "El sistema ha detectado problemas pero no se puede determinar la causa exacta.";
+    }
+    
+    return message || "No se han detectado problemas críticos.";
+  };
+  
   if (minimal && !isOpen) {
     return (
       <div className="fixed bottom-4 right-4 z-40">
@@ -119,7 +180,7 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
   };
   
   return (
-    <Card className={minimal ? "fixed bottom-4 right-4 z-40 w-80 max-h-[90vh] overflow-auto" : "w-full"}>
+    <Card className={minimal ? "fixed bottom-4 right-4 z-40 w-96 max-h-[90vh] overflow-auto" : "w-full"}>
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -143,6 +204,64 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       </CardHeader>
       
       <CardContent className="space-y-4">
+        {/* Explicación detallada de errores críticos */}
+        {!errorState.isSystemHealthy && (
+          <div className="bg-destructive/10 p-3 rounded-md border border-destructive/30 mb-4">
+            <div className="flex items-start gap-2 mb-2">
+              <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+              <div>
+                <h3 className="font-medium text-destructive">Problemas críticos detectados</h3>
+                <div className="text-xs whitespace-pre-line text-muted-foreground mt-1">
+                  {getErrorExplanation()}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end mt-2">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="text-xs h-7"
+                onClick={() => setShowErrorDetails(!showErrorDetails)}
+              >
+                {showErrorDetails ? "Ocultar detalles" : "Ver detalles"}
+              </Button>
+            </div>
+            
+            {showErrorDetails && (
+              <div className="mt-3 pt-3 border-t border-destructive/20">
+                <h4 className="text-xs font-medium mb-2">Dependencias faltantes:</h4>
+                {missingDependencies.length > 0 ? (
+                  <ul className="text-xs space-y-1 ml-5 list-disc">
+                    {missingDependencies.map((dep, i) => (
+                      <li key={i} className="text-muted-foreground">{dep}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No se detectaron dependencias faltantes.</p>
+                )}
+                
+                <h4 className="text-xs font-medium mb-2 mt-3">Últimos errores críticos:</h4>
+                {criticalErrors.length > 0 ? (
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {criticalErrors.map((error, i) => (
+                      <div key={i} className="text-xs p-2 bg-muted/50 rounded border">
+                        <div className="font-medium">{error.source}</div>
+                        <div className="text-muted-foreground truncate">{error.message}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {new Date(error.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No se encontraron errores críticos recientes.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      
         <div className="flex justify-between items-center">
           <div className="text-sm font-medium">Estado General:</div>
           <Badge variant={errorState.isSystemHealthy ? "outline" : "destructive"}>
