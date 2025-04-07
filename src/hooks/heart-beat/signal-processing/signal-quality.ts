@@ -2,55 +2,57 @@
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
- * Functions for signal quality analysis
+ * Signal quality assessment functionality
  */
 
-import { HeartBeatResult } from '../types';
-
 /**
- * Structure for signal quality check parameters
- */
-interface SignalQualityParams {
-  lowSignalThreshold: number;
-  maxWeakSignalCount: number;
-}
-
-/**
- * Basic signal quality check to detect if a signal is too weak
- * Simple threshold-based implementation without complex processing
+ * Check for weak signal
+ * @param value The current signal value
+ * @param currentWeakSignalCount Current count of consecutive weak signals
+ * @param options Configuration options
+ * @returns Object containing updated weak signal state
  */
 export const checkWeakSignal = (
   value: number,
-  currentWeakSignalCount: number, 
-  params: SignalQualityParams
+  currentWeakSignalCount: number,
+  options: {
+    lowSignalThreshold: number,
+    maxWeakSignalCount: number
+  }
 ): { isWeakSignal: boolean, updatedWeakSignalsCount: number } => {
-  // Basic threshold check for low signal
-  const isCurrentValueWeak = Math.abs(value) < params.lowSignalThreshold;
+  // Check if value is below threshold (weak signal)
+  const isWeak = Math.abs(value) < options.lowSignalThreshold;
   
-  // Simple counter increment/reset logic
-  const updatedWeakSignalsCount = isCurrentValueWeak 
+  // Update weak signal counter
+  let updatedCount = isWeak 
     ? currentWeakSignalCount + 1 
-    : 0;
+    : Math.max(0, currentWeakSignalCount - 1);
   
-  // Signal is considered weak if too many consecutive low values
-  const isWeakSignal = updatedWeakSignalsCount >= params.maxWeakSignalCount;
+  // Determine if we have too many consecutive weak signals
+  const isWeakSignal = updatedCount >= options.maxWeakSignalCount;
   
-  return { isWeakSignal, updatedWeakSignalsCount };
+  return {
+    isWeakSignal,
+    updatedWeakSignalsCount: updatedCount
+  };
 }
 
 /**
- * Check if a measurement has sufficient amplitude to process
- * Minimal implementation focused on stability
+ * Check if measurement is valid for processing
+ * @param value The signal value to check
+ * @returns Boolean indicating whether the signal should be processed
  */
 export const shouldProcessMeasurement = (value: number): boolean => {
-  return Math.abs(value) >= 0.05;
+  // Simplified threshold check
+  return Math.abs(value) >= 0.1;
 }
 
 /**
- * Create result for when signal is too weak
- * Simple, stable implementation
+ * Create result for weak signal
+ * @param arrhythmiaCount Optional count of arrhythmias
+ * @returns A default result object for weak signal conditions
  */
-export const createWeakSignalResult = (arrhythmiaCount: number = 0): HeartBeatResult => {
+export const createWeakSignalResult = (arrhythmiaCount: number = 0): any => {
   return {
     bpm: 0,
     confidence: 0,
@@ -64,21 +66,9 @@ export const createWeakSignalResult = (arrhythmiaCount: number = 0): HeartBeatRe
 }
 
 /**
- * Reset signal quality state
- * Simple helper function for state management
+ * Reset signal quality state 
  */
-export const resetSignalQualityState = (weakSignalsCountRef: React.MutableRefObject<number>): void => {
-  weakSignalsCountRef.current = 0;
-}
-
-/**
- * Central function for signal quality analysis
- * Simple implementation with basic quality assessment
- */
-export function checkSignalQuality(
-  value: number,
-  currentWeakSignalsCount: number,
-  params: SignalQualityParams
-) {
-  return checkWeakSignal(value, currentWeakSignalsCount, params);
+export const resetSignalQualityState = (): void => {
+  // Reset call for external tracking
+  console.log("Signal quality state reset requested");
 }

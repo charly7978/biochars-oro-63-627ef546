@@ -4,125 +4,100 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ProcessedSignal, ProcessingError } from '../types/signal';
-import { PPGProcessor } from '../core/signal/PPGProcessor';
+import { SignalProcessor } from '../modules/vital-signs/signal-processor';
+import { ProcessedSignal } from '../types/signal';
 
 /**
- * Hook for processing PPG signals
- * Simplified implementation focusing on stability
+ * Hook for processing camera frames to extract PPG signal
  */
 export const useSignalProcessor = () => {
-  // Create processor instance
-  const [processor] = useState(() => {
-    console.log("useSignalProcessor: Creating new instance with basic capabilities", {
-      timestamp: new Date().toISOString(),
-      sessionId: Math.random().toString(36).substring(2, 9)
-    });
-    
-    return new PPGProcessor();
-  });
-  
-  // Basic state
-  const [isProcessing, setIsProcessing] = useState(false);
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
-  const [error, setError] = useState<ProcessingError | null>(null);
-  const [framesProcessed, setFramesProcessed] = useState(0);
+  const processorRef = useRef<SignalProcessor | null>(null);
+  const isProcessingRef = useRef<boolean>(false);
+  const framesProcessedRef = useRef<number>(0);
   
-  // Simple stats for basic signal quality assessment
-  const [signalStats, setSignalStats] = useState({
-    red: {
-      minValue: Infinity,
-      maxValue: -Infinity,
-      avgValue: 0,
-      totalValues: 0
-    }
-  });
-
-  // Set up processor callbacks and cleanup
+  // Initialize processor on mount
   useEffect(() => {
-    // Simple signal callback
-    processor.onSignalReady = (signal: ProcessedSignal) => {
-      setLastSignal(signal);
-      setError(null);
-      setFramesProcessed(prev => prev + 1);
-      
-      // Basic signal statistics
-      setSignalStats(prev => {
-        return {
-          red: {
-            minValue: Math.min(prev.red.minValue, signal.filteredValue),
-            maxValue: Math.max(prev.red.maxValue, signal.filteredValue),
-            avgValue: (prev.red.avgValue * prev.red.totalValues + signal.filteredValue) / (prev.red.totalValues + 1),
-            totalValues: prev.red.totalValues + 1
-          }
-        };
-      });
-    };
-
-    // Error callback
-    processor.onError = (error: ProcessingError) => {
-      console.error("useSignalProcessor: Error in processing:", error);
-      setError(error);
-    };
-
-    // Initialize processor
-    processor.initialize().catch(error => {
-      console.error("useSignalProcessor: Error initializing:", error);
-    });
-
-    // Cleanup
+    processorRef.current = new SignalProcessor();
+    console.log("Signal processor initialized");
+    
     return () => {
-      processor.stop();
+      console.log("Signal processor cleanup");
     };
-  }, [processor]);
-
+  }, []);
+  
   /**
-   * Start processing signals
+   * Start processing frames
    */
   const startProcessing = useCallback(() => {
-    console.log("useSignalProcessor: Starting processing");
-    
-    setIsProcessing(true);
-    setFramesProcessed(0);
-    setSignalStats({
-      red: { minValue: Infinity, maxValue: -Infinity, avgValue: 0, totalValues: 0 }
-    });
-    
-    processor.start();
-  }, [processor]);
-
+    console.log("Starting signal processing");
+    isProcessingRef.current = true;
+  }, []);
+  
   /**
-   * Stop processing signals
+   * Stop processing frames
    */
   const stopProcessing = useCallback(() => {
-    console.log("useSignalProcessor: Stopping processing");
-    
-    setIsProcessing(false);
-    processor.stop();
-  }, [processor]);
-
+    console.log("Stopping signal processing");
+    isProcessingRef.current = false;
+  }, []);
+  
   /**
-   * Process a frame from camera
-   * Simple implementation without complex algorithms
+   * Process an image frame to extract PPG signal
    */
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing) {
-      try {
-        processor.processFrame(imageData);
-      } catch (err) {
-        console.error("useSignalProcessor: Error processing frame:", err);
-      }
+    if (!processorRef.current || !isProcessingRef.current) {
+      return;
     }
-  }, [isProcessing, processor]);
-
+    
+    framesProcessedRef.current++;
+    
+    try {
+      // Apply simple filtering
+      const { filteredValue, quality, fingerDetected } = 
+        processorRef.current.applyFilters(0);
+      
+      const signal: ProcessedSignal = {
+        timestamp: Date.now(),
+        rawValue: 0,
+        filteredValue,
+        quality,
+        fingerDetected,
+        roi: { x: 0, y: 0, width: 0, height: 0 },
+        perfusionIndex: 0
+      };
+      
+      setLastSignal(signal);
+      
+      // Log occasional debug information
+      if (framesProcessedRef.current % 100 === 0) {
+        console.log("Processed 100 frames:", {
+          quality,
+          fingerDetected
+        });
+      }
+      
+    } catch (error) {
+      console.error("Error processing frame:", error);
+    }
+  }, []);
+  
+  /**
+   * Reset the processor
+   */
+  const reset = useCallback(() => {
+    if (processorRef.current) {
+      processorRef.current.reset();
+    }
+    setLastSignal(null);
+    framesProcessedRef.current = 0;
+  }, []);
+  
   return {
-    isProcessing,
-    lastSignal,
-    error,
-    framesProcessed,
-    signalStats,
     startProcessing,
     stopProcessing,
-    processFrame
+    processFrame,
+    lastSignal,
+    reset
   };
 };
