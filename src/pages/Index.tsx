@@ -94,6 +94,13 @@ const Index = () => {
     }
   }, [isMonitoring]);
 
+  // Prepare PPG signal data for the result dialog
+  const ppgSignalData = ppgData.map((value, index) => ({
+    time: index * 150, // Assuming 150ms between samples
+    value,
+    isPeak: index % 15 === 0 // Simple demonstration of peaks
+  }));
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       <div className="flex-1 overflow-hidden">
@@ -121,7 +128,7 @@ const Index = () => {
           {isMonitoring && (
             <div className="absolute top-4 left-0 right-0 flex justify-center">
               <HeartRateDisplay 
-                heartRate={heartBeatResult?.bpm || 0}
+                bpm={heartBeatResult?.bpm || 0}
                 confidence={heartBeatResult?.confidence || 0}
               />
             </div>
@@ -131,12 +138,9 @@ const Index = () => {
 
       {/* Results dialog */}
       <PPGResultDialog
-        open={isResultModalOpen}
-        onOpenChange={setIsResultModalOpen}
-        heartRate={heartBeatResult?.bpm || 0}
-        arrhythmiaStatus={arrhythmiaStatus}
-        stressLevel={stressLevel}
-        hrvData={hrvData}
+        isOpen={isResultModalOpen}
+        onClose={() => setIsResultModalOpen(false)}
+        signalData={ppgSignalData}
       />
     </div>
   );
