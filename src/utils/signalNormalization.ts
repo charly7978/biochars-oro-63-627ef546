@@ -1,3 +1,4 @@
+
 /**
  * Utilities for robust signal normalization and filtering
  * Provides multiple normalization strategies and adaptive filtering
@@ -326,13 +327,4 @@ function calculatePeriodicityScore(values: number[]): number {
     console.error('Error calculating periodicity:', error);
     return 0;
   }
-}
-
-/**
- * Log signal processing events
- * @param message Log message
- * @param data Additional data to log
- */
-export function logSignalProcessing(message: string, data?: any) {
-  console.log(`[Signal Processing] ${message}`, data);
 }
