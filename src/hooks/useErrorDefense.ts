@@ -1,7 +1,7 @@
 
 /**
  * Hook para integrar el Sistema de Defensa contra Errores
- * en componentes de React
+ * en componentes de React con capacidades de auto-reparación proactivas
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -11,6 +11,8 @@ import ErrorDefenseSystem, {
   ErrorSeverity 
 } from '@/core/error-defense/ErrorDefenseSystem';
 import { performSystemDiagnostics } from '@/utils/signalLogging';
+import DependencyManager from '@/core/error-defense/DependencyManager';
+import SelfHealingSystem from '@/core/error-defense/SelfHealingSystem';
 
 export interface ErrorDefenseState {
   isSystemHealthy: boolean;
@@ -23,6 +25,11 @@ export interface ErrorDefenseState {
     recommendations: string[];
     timestamp: number;
   } | null;
+  healingMetrics: {
+    preventedIssues: number;
+    recoveredErrors: number;
+    lastHealingCycle: string;
+  } | null;
 }
 
 export function useErrorDefense(componentId?: string) {
@@ -32,30 +39,34 @@ export function useErrorDefense(componentId?: string) {
     highErrors: 0,
     totalErrors: 0,
     lastError: null,
-    diagnostics: null
+    diagnostics: null,
+    healingMetrics: null
   });
   
-  // Obtener la instancia del sistema
+  // Get system instances
   const errorSystem = ErrorDefenseSystem.getInstance();
+  const dependencyManager = DependencyManager.getInstance();
+  const healingSystem = SelfHealingSystem.getInstance();
   
-  // Registrar este componente en el sistema
+  // Register this component with the system
   useEffect(() => {
     if (componentId) {
       errorSystem.registerComponent(componentId, 'healthy');
       
       return () => {
-        // No es necesario explícitamente desregistrar
-        // ya que el sistema maneja sus propios límites
+        // Not necessary to explicitly unregister
+        // since the system handles its own limits
       };
     }
   }, [componentId, errorSystem]);
   
-  // Actualizar el estado cuando ocurren errores
+  // Update state when errors occur
   useEffect(() => {
     const removeListener = errorSystem.addErrorListener((error: SystemError) => {
       setErrorState(prevState => {
         const status = errorSystem.getSystemStatus();
         const diagnostics = performSystemDiagnostics();
+        const healingMetrics = healingSystem.getHealthMetrics();
         
         return {
           isSystemHealthy: status.isHealthy,
@@ -71,14 +82,22 @@ export function useErrorDefense(componentId?: string) {
             systemHealth: diagnostics.systemHealth,
             recommendations: diagnostics.recommendations,
             timestamp: diagnostics.timestamp
+          },
+          healingMetrics: {
+            preventedIssues: healingMetrics.preventedIssues,
+            recoveredErrors: healingMetrics.recoveredErrors,
+            lastHealingCycle: healingMetrics.lastHealingCycle > 0 
+              ? new Date(healingMetrics.lastHealingCycle).toISOString() 
+              : 'never'
           }
         };
       });
     });
     
-    // Configuración inicial
+    // Initialize state
     const status = errorSystem.getSystemStatus();
     const initialDiagnostics = performSystemDiagnostics();
+    const healingMetrics = healingSystem.getHealthMetrics();
     
     setErrorState({
       isSystemHealthy: status.isHealthy,
@@ -94,16 +113,23 @@ export function useErrorDefense(componentId?: string) {
         systemHealth: initialDiagnostics.systemHealth,
         recommendations: initialDiagnostics.recommendations,
         timestamp: initialDiagnostics.timestamp
+      },
+      healingMetrics: {
+        preventedIssues: healingMetrics.preventedIssues,
+        recoveredErrors: healingMetrics.recoveredErrors,
+        lastHealingCycle: healingMetrics.lastHealingCycle > 0 
+          ? new Date(healingMetrics.lastHealingCycle).toISOString() 
+          : 'never'
       }
     });
     
     return () => {
       removeListener();
     };
-  }, [errorSystem]);
+  }, [errorSystem, healingSystem]);
   
   /**
-   * Reportar un error desde el componente
+   * Report an error from the component
    */
   const reportError = useCallback((
     message: string,
@@ -122,7 +148,7 @@ export function useErrorDefense(componentId?: string) {
     } = options || {};
     
     errorSystem.reportError({
-      id: '', // Se generará automáticamente
+      id: '', // Will be generated automatically
       timestamp: Date.now(),
       category,
       severity,
@@ -133,7 +159,7 @@ export function useErrorDefense(componentId?: string) {
   }, [componentId, errorSystem]);
   
   /**
-   * Actualizar el estado del componente
+   * Update the component status
    */
   const updateComponentStatus = useCallback((
     status: 'healthy' | 'degraded' | 'failed'
@@ -144,77 +170,93 @@ export function useErrorDefense(componentId?: string) {
   }, [componentId, errorSystem]);
   
   /**
-   * Intenta recuperar el sistema con estrategias avanzadas de mitigación
+   * Attempt recovery with enhanced self-healing strategies
    */
   const attemptRecovery = useCallback(() => {
-    console.log('Iniciando protocolo de recuperación del sistema');
+    console.log('Initiating advanced system recovery protocol');
     
-    // 1. Iniciar diagnóstico completo
+    // 1. Trigger self-healing cycle
+    healingSystem.triggerHealingCycle();
+    
+    // 2. Perform complete system diagnostics
     const diagnostics = performSystemDiagnostics();
     
-    // 2. Aplicar estrategias específicas según el diagnóstico
+    // 3. Apply specific recovery strategies based on diagnostics
     const recoveryActions: string[] = [];
     
-    // Reiniciar procesadores críticos
+    // Reinitialize critical dependencies first
     try {
-      if (typeof window !== 'undefined') {
-        // Manejar los procesadores globales
-        if ((window as any).heartBeatProcessor) {
-          console.log('Restableciendo heartBeatProcessor global');
-          (window as any).heartBeatProcessor.reset();
-          recoveryActions.push('HeartBeatProcessor reiniciado');
+      const dependencyResults = dependencyManager.initializeAllDependencies();
+      let dependenciesInitialized = 0;
+      
+      for (const [name, success] of dependencyResults.entries()) {
+        if (success) {
+          dependenciesInitialized++;
+          recoveryActions.push(`${name} initialized successfully`);
+        } else {
+          recoveryActions.push(`${name} using fallback mode`);
         }
+      }
+      
+      // Reset all processors
+      dependencyManager.resetAllDependencies();
+      recoveryActions.push('All processors reset');
+      
+      // Clear stored states that might be corrupted
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const keysToRemove = [
+          'arrhythmia_detection_state',
+          'signal_processor_state',
+          'vital_signs_state'
+        ];
         
-        if ((window as any).signalProcessor) {
-          console.log('Restableciendo signalProcessor global');
-          (window as any).signalProcessor.reset();
-          recoveryActions.push('SignalProcessor reiniciado');
-        }
-        
-        if ((window as any).vitalSignsProcessor) {
-          console.log('Restableciendo vitalSignsProcessor global');
-          (window as any).vitalSignsProcessor.reset();
-          recoveryActions.push('VitalSignsProcessor reiniciado');
-        }
-        
-        // Limpiar almacenamiento local relacionado con procesadores
-        if (localStorage) {
-          localStorage.removeItem('arrhythmia_detection_state');
-          localStorage.removeItem('signal_processor_state');
-          localStorage.removeItem('vital_signs_state');
-          recoveryActions.push('Estados persistentes limpiados');
-        }
-        
-        // Intentar liberar memoria de tensores si TensorFlow está presente
-        if ((window as any).tf) {
+        keysToRemove.forEach(key => {
           try {
-            (window as any).tf.disposeVariables();
-            (window as any).tf.engine().endScope();
-            (window as any).tf.engine().startScope();
-            recoveryActions.push('Memoria de TensorFlow liberada');
+            localStorage.removeItem(key);
+            recoveryActions.push(`${key} cleared from storage`);
           } catch (e) {
-            console.warn('Error al liberar memoria de TensorFlow:', e);
+            console.warn(`Error clearing ${key} from localStorage:`, e);
           }
+        });
+      }
+      
+      // Force memory cleanup for TensorFlow if present
+      if (typeof window !== 'undefined' && (window as any).tf) {
+        try {
+          (window as any).tf.disposeVariables();
+          (window as any).tf.engine().endScope();
+          (window as any).tf.engine().startScope();
+          recoveryActions.push('TensorFlow memory released');
+        } catch (e) {
+          console.warn('Error releasing TensorFlow memory:', e);
         }
       }
     } catch (e) {
-      console.error('Error al restablecer procesadores:', e);
-      recoveryActions.push(`Error en recuperación: ${e}`);
+      console.error('Error during recovery:', e);
+      recoveryActions.push(`Recovery error: ${e}`);
     }
     
-    // 3. Resetear el sistema de defensa
+    // 4. Reset the error defense system
     errorSystem.reset();
-    recoveryActions.push('Sistema de defensa reiniciado');
+    recoveryActions.push('Error defense system reset');
     
-    // 4. Verificar integridad después de la recuperación
+    // 5. Force specific healing actions based on system health
+    if (diagnostics.systemHealth === 'critical' || diagnostics.systemHealth === 'degraded') {
+      healingSystem.forcePreventiveAction('reinitialize-dependencies');
+      healingSystem.forcePreventiveAction('reset-processors');
+      recoveryActions.push('Critical system healing forced');
+    }
+    
+    // 6. Verify integrity after recovery
     setTimeout(() => {
       const postRecoveryDiagnostics = performSystemDiagnostics();
+      const healingMetrics = healingSystem.getHealthMetrics();
       const recoverySuccess = postRecoveryDiagnostics.systemHealth !== 'critical' && 
                              postRecoveryDiagnostics.systemHealth !== 'degraded';
       
-      console.log(`Recuperación ${recoverySuccess ? 'exitosa' : 'parcial'}:`, postRecoveryDiagnostics);
+      console.log(`Recovery ${recoverySuccess ? 'successful' : 'partial'}:`, postRecoveryDiagnostics);
       
-      // 5. Actualizar estado con resultados de recuperación
+      // Update state with recovery results
       setErrorState(prevState => ({
         ...prevState,
         isSystemHealthy: errorSystem.getSystemStatus().isHealthy,
@@ -222,11 +264,18 @@ export function useErrorDefense(componentId?: string) {
           systemHealth: postRecoveryDiagnostics.systemHealth,
           recommendations: postRecoveryDiagnostics.recommendations,
           timestamp: postRecoveryDiagnostics.timestamp
+        },
+        healingMetrics: {
+          preventedIssues: healingMetrics.preventedIssues,
+          recoveredErrors: healingMetrics.recoveredErrors,
+          lastHealingCycle: healingMetrics.lastHealingCycle > 0 
+            ? new Date(healingMetrics.lastHealingCycle).toISOString() 
+            : 'never'
         }
       }));
     }, 1000);
     
-    // Actualizar el estado inmediatamente con las acciones realizadas
+    // Update state immediately with recovery actions
     setErrorState(prevState => ({
       ...prevState,
       lastError: null,
@@ -238,15 +287,21 @@ export function useErrorDefense(componentId?: string) {
     }));
     
     return recoveryActions;
-  }, [errorSystem]);
+  }, [errorSystem, healingSystem, dependencyManager]);
   
   /**
-   * Verificar periódicamente el estado del sistema
-   * y ejecutar diagnóstico forense detallado
+   * Periodically check system health
+   * and run detailed forensic diagnostics
    */
   const checkForIssues = useCallback(() => {
     const status = errorSystem.getSystemStatus();
     const diagnostics = performSystemDiagnostics();
+    const healingMetrics = healingSystem.getHealthMetrics();
+    
+    // Trigger preemptive healing on health decline
+    if (diagnostics.systemHealth === 'critical' || diagnostics.systemHealth === 'degraded') {
+      healingSystem.triggerHealingCycle();
+    }
     
     setErrorState(prevState => ({
       isSystemHealthy: status.isHealthy,
@@ -262,25 +317,32 @@ export function useErrorDefense(componentId?: string) {
         systemHealth: diagnostics.systemHealth,
         recommendations: diagnostics.recommendations,
         timestamp: diagnostics.timestamp
+      },
+      healingMetrics: {
+        preventedIssues: healingMetrics.preventedIssues,
+        recoveredErrors: healingMetrics.recoveredErrors,
+        lastHealingCycle: healingMetrics.lastHealingCycle > 0 
+          ? new Date(healingMetrics.lastHealingCycle).toISOString() 
+          : 'never'
       }
     }));
     
     return !status.isHealthy;
-  }, [errorSystem]);
+  }, [errorSystem, healingSystem]);
   
   /**
-   * Forzar limpieza y recreación de todos los procesadores críticos
+   * Force complete rebuilding of all critical processors
    */
   const forceRebuild = useCallback(() => {
-    // Esta es una medida extrema que solo debe usarse en caso
-    // de problemas graves de funcionamiento
-    console.warn('Iniciando reconstrucción forzada de procesadores...');
+    // This is an extreme measure to be used only in case
+    // of severe operational problems
+    console.warn('Initiating forced system rebuild...');
     
-    // 1. Guardar datos importantes en memoria temporal
+    // 1. Save important data in temporary storage
     const tempStorage: Record<string, any> = {};
     try {
       if (localStorage) {
-        // Guardar configuraciones importantes
+        // Save important configurations
         const keys = Object.keys(localStorage);
         keys.forEach(key => {
           if (key.includes('config') || key.includes('settings')) {
@@ -289,17 +351,20 @@ export function useErrorDefense(componentId?: string) {
         });
       }
     } catch (e) {
-      console.error('Error al respaladar configuraciones:', e);
+      console.error('Error backing up configurations:', e);
     }
     
-    // 2. Realizar limpieza completa
+    // 2. Perform complete cleanup
     attemptRecovery();
     
-    // 3. Reinicialización forzada de la aplicación
+    // 3. Force reinitialization of the application
     try {
-      // Forzar recarga de módulos críticos
+      // Force reload of critical modules
       if (typeof window !== 'undefined') {
-        // Intentar reinicializar todos los procesadores
+        // Try to reinitialize all processors
+        dependencyManager.resetAllDependencies();
+        
+        // Remove global instances to force fresh initialization
         if ((window as any).heartBeatProcessor) {
           delete (window as any).heartBeatProcessor;
         }
@@ -310,27 +375,31 @@ export function useErrorDefense(componentId?: string) {
           delete (window as any).vitalSignsProcessor;
         }
         
-        // Restaurar configuraciones importantes
+        // Trigger forceful dependency reinitialization
         setTimeout(() => {
+          dependencyManager.initializeAllDependencies();
+          
+          // Restore important configurations
           try {
             Object.keys(tempStorage).forEach(key => {
               localStorage.setItem(key, tempStorage[key]);
             });
-            console.log('Configuraciones restauradas después de reinicio');
+            console.log('Configurations restored after reset');
           } catch (e) {
-            console.error('Error al restaurar configuraciones:', e);
+            console.error('Error restoring configurations:', e);
           }
         }, 1000);
       }
     } catch (e) {
-      console.error('Error durante la reconstrucción forzada:', e);
+      console.error('Error during forced rebuild:', e);
     }
     
-    // 4. Resetear el sistema de defensa
+    // 4. Reset all defense and healing systems
     errorSystem.reset();
+    healingSystem.reset();
     
-    return "Reconstrucción forzada completada";
-  }, [attemptRecovery, errorSystem]);
+    return "Forced system rebuild completed";
+  }, [attemptRecovery, errorSystem, healingSystem, dependencyManager]);
   
   return {
     errorState,
