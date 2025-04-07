@@ -13,6 +13,7 @@ import { CoherenceChecker } from './CoherenceChecker';
 import { ChangeLogger } from './ChangeLogger';
 import { RollbackManager } from './RollbackManager';
 import { SignalProcessingTelemetry, TelemetryCategory } from '../telemetry/SignalProcessingTelemetry';
+import { PreCommitTypeChecker } from './PreCommitTypeChecker';
 
 export class CodeProtectionShield {
   private static instance: CodeProtectionShield;
@@ -22,6 +23,7 @@ export class CodeProtectionShield {
   private changeLogger: ChangeLogger;
   private rollbackManager: RollbackManager;
   private telemetry: SignalProcessingTelemetry;
+  private typeChecker: PreCommitTypeChecker;
   
   private constructor() {
     this.verifier = new CodeVerifier();
@@ -30,6 +32,7 @@ export class CodeProtectionShield {
     this.changeLogger = new ChangeLogger();
     this.rollbackManager = new RollbackManager();
     this.telemetry = SignalProcessingTelemetry.getInstance();
+    this.typeChecker = new PreCommitTypeChecker();
     
     console.log('Sistema de Escudo Protector inicializado correctamente');
   }
@@ -67,6 +70,23 @@ export class CodeProtectionShield {
     this.changeLogger.logChangeAttempt(context, new Date());
     
     try {
+      // 0. Verificación sintáctica previa (nueva)
+      const syntaxResult = await this.typeChecker.performPreCommitCheck(modifiedCode, context);
+      this.telemetry.measurePhase(verificationId, 'syntax_check_time', performance.now(), 'ms');
+      
+      if (!syntaxResult.success) {
+        console.warn(`Verificación sintáctica fallida: ${syntaxResult.message}`);
+        
+        // Registrar fallo en telemetría
+        this.telemetry.recordPhaseEvent(verificationId, 'syntax_check_failed', {
+          message: syntaxResult.message,
+          details: syntaxResult.details
+        });
+        
+        this.telemetry.endPhase(verificationId, TelemetryCategory.SIGNAL_PROCESSING);
+        return syntaxResult;
+      }
+      
       // 1. Verificación previa de dependencias y tipos
       const verificationResult = await this.verifier.verifyCode(originalCode, modifiedCode, context);
       this.telemetry.measurePhase(verificationId, 'verification_time', performance.now(), 'ms');

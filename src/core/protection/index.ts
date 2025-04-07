@@ -10,6 +10,7 @@ export { DataIntegrityValidator } from './DataIntegrityValidator';
 export { CoherenceChecker } from './CoherenceChecker';
 export { ChangeLogger } from './ChangeLogger';
 export { RollbackManager } from './RollbackManager';
+export { PreCommitTypeChecker } from './PreCommitTypeChecker';
 export * from './types';
 
 // Nuevas exportaciones relacionadas con verificación de señales
