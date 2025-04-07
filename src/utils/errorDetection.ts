@@ -1,429 +1,204 @@
 /**
- * Comprehensive error detection and prevention system
- * Provides early warning of potential issues and recovery mechanisms
+ * Error detection and handling utilities
  */
 
-import { logSignalProcessing, LogLevel, getErrorStats } from './signalLogging';
-import { toast } from '@/hooks/use-toast';
+import { toast } from "@/hooks/use-toast";
 
-// Error thresholds
-const ERROR_RATE_THRESHOLD = 0.1; // 10% of operations resulting in errors
-const CONSECUTIVE_ERROR_THRESHOLD = 5; // Max consecutive errors before action
-const RECOVERY_COOLDOWN_MS = 60000; // 1 minute between auto-recovery attempts
-const MEMORY_THRESHOLD_MB = 200; // Memory threshold for warnings (MB)
-const TENSOR_COUNT_THRESHOLD = 1000; // Tensor count threshold for warnings
+const MAX_ERROR_LIMIT = 5; // Maximum number of errors to track
+const ERROR_RESET_INTERVAL = 60000; // Reset error counts every 60 seconds
 
-// Error tracking state
-let totalOperations = 0;
-let errorCount = 0;
-let consecutiveErrorCount = 0;
-let lastErrorTime = 0;
-let lastRecoveryTime = 0;
-let isRecoveryMode = false;
-let abnormalStateDetected = false;
-
-// Monitor state
-const perfData: Array<{
+interface ErrorEntry {
   timestamp: number;
-  fps: number;
-  memory: number | null;
-  tensors: number | null;
-}> = [];
-
-// Error categories
-const errorCategories: Record<string, {
-  count: number;
-  lastTime: number;
-  isCritical: boolean;
-  recoveryAttempted: boolean;
-}> = {};
-
-/**
- * Initialize error detection system
- */
-export function initializeErrorDetection(): void {
-  resetErrorMetrics();
-  startPerformanceMonitoring();
-  
-  logSignalProcessing(LogLevel.INFO, 'ErrorDetection', 'Error detection system initialized');
+  message: string;
 }
 
-/**
- * Reset error metrics
- */
-export function resetErrorMetrics(): void {
-  totalOperations = 0;
-  errorCount = 0;
-  consecutiveErrorCount = 0;
-  lastErrorTime = 0;
-  lastRecoveryTime = 0;
-  isRecoveryMode = false;
-  abnormalStateDetected = false;
-  
-  // Reset categories but keep the keys
-  for (const category in errorCategories) {
-    errorCategories[category] = {
-      count: 0,
-      lastTime: 0,
-      isCritical: errorCategories[category].isCritical,
-      recoveryAttempted: false
-    };
-  }
-  
-  perfData.length = 0;
-}
+// Error tracking
+const errorCounts: number[] = [];
+const errorLog: ErrorEntry[] = [];
 
 /**
- * Log a successful operation
+ * Log an error and track its frequency
  */
-export function logSuccess(operation: string): void {
-  totalOperations++;
-  consecutiveErrorCount = 0;
-  
-  // If we were in recovery mode and have had several successes, exit recovery mode
-  if (isRecoveryMode && totalOperations % 10 === 0) {
-    const recentErrors = getErrorStats().recentErrors;
-    
-    if (recentErrors === 0) {
-      isRecoveryMode = false;
-      logSignalProcessing(LogLevel.INFO, 'ErrorDetection', 'Exited recovery mode after successful operations');
-    }
-  }
-}
-
-/**
- * Log an error with categorization and potential recovery actions
- */
-export function logError(
-  category: string,
-  operation: string,
-  error: any,
-  isCritical: boolean = false
-): void {
-  try {
-    const now = Date.now();
-    totalOperations++;
-    errorCount++;
-    consecutiveErrorCount++;
-    lastErrorTime = now;
-    
-    // Create category if it doesn't exist
-    if (!errorCategories[category]) {
-      errorCategories[category] = {
-        count: 0,
-        lastTime: 0,
-        isCritical,
-        recoveryAttempted: false
-      };
-    }
-    
-    // Update category stats
-    const categoryData = errorCategories[category];
-    categoryData.count++;
-    categoryData.lastTime = now;
-    categoryData.isCritical = isCritical;
-    
-    // Calculate error rate
-    const errorRate = totalOperations > 0 ? errorCount / totalOperations : 0;
-    
-    // Log based on severity
-    const logLevel = isCritical ? LogLevel.ERROR : (errorRate > ERROR_RATE_THRESHOLD ? LogLevel.ERROR : LogLevel.WARN);
-    
-    logSignalProcessing(
-      logLevel,
-      'ErrorDetection',
-      `Error in operation: ${operation} (${category})`,
-      {
-        error,
-        errorRate: errorRate.toFixed(3),
-        consecutive: consecutiveErrorCount,
-        category,
-        totalErrorsInCategory: categoryData.count
-      }
-    );
-    
-    // Check if we need to enter recovery mode
-    if (
-      (consecutiveErrorCount >= CONSECUTIVE_ERROR_THRESHOLD || isCritical) &&
-      !isRecoveryMode &&
-      now - lastRecoveryTime > RECOVERY_COOLDOWN_MS
-    ) {
-      enterRecoveryMode(category, operation);
-    }
-    
-    // Alert user for critical or high-frequency errors
-    if (
-      isCritical || 
-      categoryData.count % 10 === 1 || // First, then every 10th error
-      (errorRate > ERROR_RATE_THRESHOLD && now - categoryData.lastTime > 30000) // High rate but not too frequent alerts
-    ) {
-      toast({
-        title: isCritical ? "Error Detected" : "Warning",
-        description: `Issue detected in ${category}. Some features may not work correctly.`,
-        variant: isCritical ? "destructive" : "warning"
-      });
-    }
-    
-    // If abnormal state persists, suggest page reload
-    if (abnormalStateDetected && consecutiveErrorCount > CONSECUTIVE_ERROR_THRESHOLD * 2) {
-      toast({
-        title: "Application Error",
-        description: "Several issues detected. Consider reloading the page.",
-        variant: "destructive"
-      });
-    }
-  } catch (metaError) {
-    // Last resort if our error handling itself fails
-    console.error("Error in error detection system:", metaError);
-  }
-}
-
-/**
- * Enter recovery mode to attempt automatic error resolution
- */
-function enterRecoveryMode(category: string, operation: string): void {
+export function logError(message: string) {
   const now = Date.now();
-  isRecoveryMode = true;
-  lastRecoveryTime = now;
-  abnormalStateDetected = true;
+  errorCounts.push(now);
+  errorLog.push({ timestamp: now, message });
   
-  const categoryData = errorCategories[category];
-  categoryData.recoveryAttempted = true;
+  // Remove old errors
+  while (errorCounts.length > 0 && now - errorCounts[0] > ERROR_RESET_INTERVAL) {
+    errorCounts.shift();
+  }
   
-  logSignalProcessing(
-    LogLevel.WARN,
-    'ErrorDetection',
-    'Entering recovery mode',
-    { category, operation, consecutiveErrors: consecutiveErrorCount }
-  );
-  
-  // Attempt recovery based on error category
-  try {
-    // Different recovery strategies based on category
-    switch (category) {
-      case 'tensorflow':
-        // This will be handled by the TensorFlow integration
-        import('../hooks/useTensorFlowIntegration')
-          .then(module => {
-            // This will trigger a reinitialize on next render
-            abnormalStateDetected = true;
-          })
-          .catch(error => {
-            logSignalProcessing(
-              LogLevel.ERROR,
-              'ErrorDetection',
-              'Failed to import TensorFlow module for recovery',
-              { error }
-            );
-          });
-        break;
-        
-      case 'camera':
-        // For camera errors, we'll let the application handle reconnection
-        logSignalProcessing(
-          LogLevel.INFO,
-          'ErrorDetection',
-          'Camera recovery will be handled by camera management system'
-        );
-        break;
-        
-      case 'signal-processing':
-        // Signal processing issues might require resetting the processor
-        // This will be communicated to components that use signal processing
-        logSignalProcessing(
-          LogLevel.INFO,
-          'ErrorDetection',
-          'Signal processing recovery initiated'
-        );
-        break;
-        
-      default:
-        // General recovery - clear caches and state
-        try {
-          // Clear any non-essential caches
-          if ('caches' in window) {
-            caches.keys().then(names => {
-              for (const name of names) {
-                if (name.includes('dynamic') || name.includes('temp')) {
-                  caches.delete(name);
-                }
-              }
-            });
-          }
-          
-          logSignalProcessing(
-            LogLevel.INFO,
-            'ErrorDetection',
-            'General recovery initiated - cleared caches'
-          );
-        } catch (cacheError) {
-          logSignalProcessing(
-            LogLevel.ERROR,
-            'ErrorDetection',
-            'Error during cache clearing in recovery',
-            { error: cacheError }
-          );
-        }
-    }
+  // Check if error limit has been reached
+  if (errorCounts.length > MAX_ERROR_LIMIT) {
+    const errorMessage = `Too many errors detected. System may be unstable. Last error: ${message}`;
+    console.error(errorMessage);
     
-    // Notify user
+    // Show toast notification
     toast({
-      title: "Automatic Recovery",
-      description: "System is attempting to recover from errors",
-      variant: "warning"
+      title: "Critical Error",
+      description: errorMessage,
+      variant: "destructive"
     });
-  } catch (recoveryError) {
-    logSignalProcessing(
-      LogLevel.ERROR,
-      'ErrorDetection',
-      'Error during recovery attempt',
-      { error: recoveryError }
-    );
+    
+    // Optionally, trigger a system reset or fallback mechanism
+    // resetSystem();
   }
 }
 
 /**
- * Get error detection status
+ * Get recent errors
  */
-export function getErrorDetectionStatus(): {
-  isRecoveryMode: boolean;
-  errorRate: number;
-  abnormalStateDetected: boolean;
-  categories: typeof errorCategories;
-  recentPerformance: typeof perfData;
-} {
-  const errorRate = totalOperations > 0 ? errorCount / totalOperations : 0;
-  
-  return {
-    isRecoveryMode,
-    errorRate,
-    abnormalStateDetected,
-    categories: { ...errorCategories },
-    recentPerformance: [...perfData.slice(-20)] // Last 20 performance data points
-  };
+export function getRecentErrors(timeWindow: number = 60000): ErrorEntry[] {
+  const now = Date.now();
+  return errorLog.filter(error => now - error.timestamp <= timeWindow);
 }
 
 /**
- * Start monitoring application performance
+ * Clear error log
  */
-function startPerformanceMonitoring(): void {
-  if (typeof window === 'undefined') return;
+export function clearErrorLog() {
+  errorCounts.length = 0;
+  errorLog.length = 0;
+}
+
+/**
+ * Detect infinite loops based on repeated function calls
+ */
+const functionCallCounts: { [key: string]: number } = {};
+const FUNCTION_CALL_THRESHOLD = 1000; // Threshold for loop detection
+const LOOP_RESET_INTERVAL = 1000; // Reset loop counts every 1 second
+
+/**
+ * Track function calls and detect potential infinite loops
+ */
+export function trackFunctionCall(functionName: string) {
+  if (!functionCallCounts[functionName]) {
+    functionCallCounts[functionName] = 0;
+  }
   
-  let lastFrameTime = performance.now();
-  let frameCount = 0;
-  let lastFpsUpdateTime = lastFrameTime;
+  functionCallCounts[functionName]++;
   
-  // Monitor frame rate
-  function checkFrameRate() {
-    const now = performance.now();
-    frameCount++;
+  // Check for loop condition
+  if (functionCallCounts[functionName] > FUNCTION_CALL_THRESHOLD) {
+    const message = `Infinite loop detected in function: ${functionName}`;
+    console.error(message);
     
-    // Update FPS every second
-    if (now - lastFpsUpdateTime > 1000) {
-      const fps = Math.round((frameCount * 1000) / (now - lastFpsUpdateTime));
+    // Show toast notification
+    toast({
+      title: "Loop Detected",
+      description: message,
+      variant: "destructive"
+    });
+    
+    // Reset the count to prevent repeated alerts
+    functionCallCounts[functionName] = 0;
+  }
+  
+  // Reset counts periodically
+  setTimeout(() => {
+    if (functionCallCounts[functionName] > 0) {
+      functionCallCounts[functionName] = Math.max(0, functionCallCounts[functionName] - 100);
+    }
+  }, LOOP_RESET_INTERVAL);
+}
+
+/**
+ * Detect signal processing errors based on invalid values
+ */
+const INVALID_SIGNAL_THRESHOLD = 0.001; // Threshold for invalid signal detection
+const INVALID_SIGNAL_COUNT_THRESHOLD = 5; // Number of invalid signals to trigger error
+let invalidSignalCount = 0;
+
+/**
+ * Check for invalid signal values
+ */
+export function checkSignalValue(value: number) {
+  if (isNaN(value) || Math.abs(value) < INVALID_SIGNAL_THRESHOLD) {
+    invalidSignalCount++;
+    
+    if (invalidSignalCount > INVALID_SIGNAL_COUNT_THRESHOLD) {
+      const message = "Invalid signal detected. Possible sensor malfunction.";
+      console.warn(message);
       
-      // Get memory info if available
-      let memoryInfo: { jsHeapSizeLimit?: number; totalJSHeapSize?: number; usedJSHeapSize?: number } = {};
-      let memoryUsageMB: number | null = null;
-      let tensorCount: number | null = null;
-      
-      try {
-        // Try to get browser memory info
-        if (performance && (performance as any).memory) {
-          memoryInfo = (performance as any).memory;
-          memoryUsageMB = memoryInfo.usedJSHeapSize ? memoryInfo.usedJSHeapSize / (1024 * 1024) : null;
-        }
-        
-        // Try to get TensorFlow memory info
-        if (typeof window !== 'undefined' && window.tf) {
-          const tfMemory = window.tf.memory();
-          tensorCount = tfMemory.numTensors;
-          
-          // If browser memory not available, use TensorFlow's
-          if (memoryUsageMB === null && tfMemory.numBytes) {
-            memoryUsageMB = tfMemory.numBytes / (1024 * 1024);
-          }
-        }
-      } catch (memoryError) {
-        // Ignore memory access errors
-      }
-      
-      // Store performance data
-      perfData.push({
-        timestamp: now,
-        fps,
-        memory: memoryUsageMB,
-        tensors: tensorCount
+      toast({
+        title: "Signal Processing Error",
+        description: message,
+        variant: "destructive" // Changed from "warning" to "destructive"
       });
       
-      // Keep history limited
-      if (perfData.length > 100) {
-        perfData.shift();
-      }
-      
-      // Check for performance issues
-      if (fps < 10) {  // Severe frame rate drop
-        logSignalProcessing(
-          LogLevel.WARN,
-          'Performance',
-          'Low frame rate detected',
-          { fps, expected: '30-60' }
-        );
-      }
-      
-      // Check memory usage if available
-      if (memoryUsageMB !== null && memoryUsageMB > MEMORY_THRESHOLD_MB) {
-        logSignalProcessing(
-          LogLevel.WARN,
-          'Performance',
-          'High memory usage detected',
-          { memoryMB: memoryUsageMB, threshold: MEMORY_THRESHOLD_MB }
-        );
-      }
-      
-      // Check tensor count if available
-      if (tensorCount !== null && tensorCount > TENSOR_COUNT_THRESHOLD) {
-        logSignalProcessing(
-          LogLevel.WARN,
-          'Performance',
-          'High tensor count detected',
-          { tensors: tensorCount, threshold: TENSOR_COUNT_THRESHOLD }
-        );
-        
-        // Try to clean up tensors
-        try {
-          if (window.tf) {
-            window.tf.tidy(() => {}); // Clean up unused tensors
-          }
-        } catch (tensorError) {
-          // Ignore tensor cleanup errors
-        }
-      }
-      
-      // Reset counters
-      frameCount = 0;
-      lastFpsUpdateTime = now;
+      invalidSignalCount = 0; // Reset counter
     }
-    
-    lastFrameTime = now;
-    requestAnimationFrame(checkFrameRate);
+  } else {
+    invalidSignalCount = Math.max(0, invalidSignalCount - 1); // Reduce count if signal is valid
   }
-  
-  // Start monitoring
-  requestAnimationFrame(checkFrameRate);
 }
 
 /**
- * Add window.tf typing
+ * Detect low signal quality based on variance
  */
-declare global {
-  interface Window {
-    tf?: {
-      memory: () => { numTensors: number; numBytes: number };
-      tidy: (fn: () => any) => any;
-    };
+const LOW_QUALITY_VARIANCE_THRESHOLD = 0.0001; // Threshold for low variance
+const LOW_QUALITY_COUNT_THRESHOLD = 3; // Number of low quality signals to trigger warning
+let lowQualityCount = 0;
+
+/**
+ * Check for low signal quality based on variance
+ */
+export function checkSignalQuality(variance: number) {
+  if (variance < LOW_QUALITY_VARIANCE_THRESHOLD) {
+    lowQualityCount++;
+    
+    if (lowQualityCount > LOW_QUALITY_COUNT_THRESHOLD) {
+      const message = "Signal quality is low. Check sensor connection.";
+      console.warn(message);
+      
+      toast({
+        title: "Warning",
+        description: "Signal quality is low",
+        variant: "default" // Changed from "warning" to "default"
+      });
+      
+      lowQualityCount = 0; // Reset counter
+    }
+  } else {
+    lowQualityCount = Math.max(0, lowQualityCount - 1); // Reduce count if signal is good
   }
 }
 
-// Initialize the system
-initializeErrorDetection();
+/**
+ * Detect excessive memory usage
+ */
+const MEMORY_USAGE_THRESHOLD = 500; // MB
+let memoryCheckInterval: any;
+
+/**
+ * Start monitoring memory usage
+ */
+export function startMemoryMonitoring() {
+  memoryCheckInterval = setInterval(() => {
+    if (typeof window !== 'undefined' && window.performance && window.performance.memory) {
+      const memoryUsage = window.performance.memory.usedJSHeapSize / (1024 * 1024); // in MB
+      
+      if (memoryUsage > MEMORY_USAGE_THRESHOLD) {
+        const message = `Excessive memory usage detected: ${memoryUsage.toFixed(2)} MB`;
+        console.warn(message);
+        
+        toast({
+          title: "Memory Warning",
+          description: message,
+          variant: "destructive"
+        });
+        
+        // Optionally, trigger garbage collection or reduce memory usage
+        // collectGarbage();
+      }
+    }
+  }, 5000); // Check every 5 seconds
+}
+
+/**
+ * Stop monitoring memory usage
+ */
+export function stopMemoryMonitoring() {
+  clearInterval(memoryCheckInterval);
+}
