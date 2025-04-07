@@ -8,8 +8,19 @@ import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-resul
 import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
-import { UseVitalSignsProcessorReturn } from './vital-signs/types';
+import { ArrhythmiaWindow } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
+
+// Define the return type interface here since it doesn't exist in the imported file
+interface UseVitalSignsProcessorReturn {
+  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
+  reset: () => null;
+  fullReset: () => void;
+  arrhythmiaCounter: number;
+  lastValidResults: VitalSignsResult | null;
+  arrhythmiaWindows: ArrhythmiaWindow[];
+  debugInfo: Record<string, any>;
+}
 
 /**
  * Hook for processing vital signs with direct algorithms only

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -17,6 +16,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
   
   // Hooks for processing and detection
   const { 
@@ -29,7 +29,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   } = useBeepProcessor();
   
   const {
-    isArrhythmia,
+    isArrhythmia: arrhythmiaDetected,
     detectArrhythmia,
     reset: resetArrhythmiaDetector,
     arrhythmiaData
@@ -114,14 +114,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    // Process the signal using our internal processor
+    // Process the signal using our internal processor with the correct number of arguments
     const result = processSignalInternal(
       value, 
       currentBPM, 
       confidence, 
       processorRef.current, 
       requestBeep, 
-      isMonitoringRef
+      isMonitoringRef,
+      lastPeakTimeRef,
+      lastValidBpmRef
     );
 
     // Update BPM if we have good confidence
@@ -130,22 +132,19 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       setConfidence(result.confidence);
     }
 
-    // Only check for arrhythmia if we have enough RR intervals
-    if (result.rrData.intervals.length >= 3) {
-      // Use our consolidated arrhythmia detection
+    // Check for arrhythmia
+    if (result.rrData && result.rrData.intervals && result.rrData.intervals.length > 0) {
       const arrhythmiaResult = detectArrhythmia(result.rrData);
-      result.isArrhythmia = arrhythmiaResult.isArrhythmia;
-      result.arrhythmiaCount = arrhythmiaResult.count;
+      if (arrhythmiaResult.isArrhythmia) {
+        setIsArrhythmia(true);
+      }
     }
 
-    return result;
-  }, [
-    currentBPM, 
-    confidence, 
-    processSignalInternal, 
-    requestBeep, 
-    detectArrhythmia
-  ]);
+    return {
+      ...result,
+      isArrhythmia: arrhythmiaDetected || false
+    };
+  }, [currentBPM, confidence, processSignalInternal, requestBeep, detectArrhythmia, arrhythmiaDetected, lastPeakTimeRef, lastValidBpmRef]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
@@ -208,11 +207,21 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   return {
     currentBPM,
     confidence,
+    isArrhythmia: arrhythmiaDetected || isArrhythmia,
     processSignal,
-    reset,
-    isArrhythmia,
+    reset: resetArrhythmiaDetector,
     requestBeep,
-    startMonitoring,
-    stopMonitoring
+    startMonitoring: () => {
+      if (processorRef.current) {
+        processorRef.current.setMonitoring(true);
+        isMonitoringRef.current = true;
+      }
+    },
+    stopMonitoring: () => {
+      if (processorRef.current) {
+        processorRef.current.setMonitoring(false);
+        isMonitoringRef.current = false;
+      }
+    },
   };
 };

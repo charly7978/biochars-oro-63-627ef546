@@ -50,6 +50,7 @@ const PPGSignalMeter = memo(({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   const rrIntervalsRef = useRef<number[]>([]);
+  const lastArrhythmiaTimeRef = useRef<number>(0);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
@@ -490,10 +491,10 @@ const PPGSignalMeter = memo(({
         arrhythmiaStatus?.includes("ARRITMIA") && 
         now - rawArrhythmiaData.timestamp < 1000) {
       currentIsArrhythmia = true;
-      lastArrhythmiaTime.current = now;
+      lastArrhythmiaTimeRef.current = now;
     } else if (isArrhythmia) {
       currentIsArrhythmia = true;
-      lastArrhythmiaTime.current = now;
+      lastArrhythmiaTimeRef.current = now;
     }
     
     const dataPoint: PPGDataPointExtended = {

@@ -1,7 +1,6 @@
 
 import React, { memo, useEffect, useState } from 'react';
 import { AlertTriangle, Heart } from 'lucide-react';
-import { animations } from '@/theme/animations';
 
 interface ArrhythmiaIndicatorProps {
   isArrhythmia: boolean;
@@ -43,7 +42,7 @@ const ArrhythmiaIndicator = memo(({
         <div className="relative">
           <Heart 
             className="h-5 w-5 text-red-500 opacity-90"
-            style={{ animation: animations["arrhythmia-pulse"] }}
+            style={{ animation: "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" }}
             fill="currentColor"
           />
           <AlertTriangle 
