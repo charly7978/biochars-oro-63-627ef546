@@ -15,23 +15,12 @@ export interface ProcessedSignal {
     y: number;
     width: number;
     height: number;
-    lastUpdateTime?: number; // Tiempo de última actualización para ROI dinámico
   };
   perfusionIndex?: number;  // Índice de perfusión opcional
   spectrumData?: {          // Datos del espectro de frecuencia
     frequencies: number[];
     amplitudes: number[];
     dominantFrequency: number;
-  };
-  multiChannelData?: {      // Datos multicanal para análisis avanzado
-    red: number;
-    green: number;
-    blue: number;
-    weights: {
-      red: number;
-      green: number;
-      blue: number;
-    };
   };
 }
 
