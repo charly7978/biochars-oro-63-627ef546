@@ -102,3 +102,4 @@ export function resetDetectionStates() {
     weakSignalsCount: 0
   };
 }
+

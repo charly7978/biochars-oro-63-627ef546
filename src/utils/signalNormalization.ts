@@ -1,26 +1,44 @@
 
 /**
- * Signal normalization utilities
+ * Signal normalization and processing utilities
  */
 
 /**
- * Normalize signal value
- * @param data The signal data to normalize
- * @returns Normalized signal value
+ * Log signal processing information for debugging
+ * @param signalValue The signal value being processed
+ * @param processedValue The processed signal value
+ * @param metadata Additional metadata for logging
  */
-export function normalizeSignalValue(data: Uint8ClampedArray): number {
-  if (!data || data.length === 0) return 0;
-  
-  // Calculate average of red channel values
-  let sum = 0;
-  let count = 0;
-  
-  for (let i = 0; i < data.length; i += 4) {
-    sum += data[i]; // Red channel
-    count++;
+export function logSignalProcessing(
+  signalValue: number,
+  processedValue: number,
+  metadata?: Record<string, any>
+): void {
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Signal processing: ${signalValue} -> ${processedValue}`, metadata);
+  }
+}
+
+/**
+ * Apply adaptive filtering to a signal
+ * @param value Raw signal value
+ * @param previousValues Array of previous values
+ * @param alpha Smoothing factor (0-1)
+ * @returns Filtered signal value
+ */
+export function adaptiveFilter(
+  value: number,
+  previousValues: number[],
+  alpha: number = 0.3
+): number {
+  if (previousValues.length === 0) {
+    return value;
   }
   
-  // Normalize to 0-1 range
-  const average = count > 0 ? sum / count : 0;
-  return average / 255;
+  // Calculate the moving average of previous values
+  const average = previousValues.reduce((sum, val) => sum + val, 0) / previousValues.length;
+  
+  // Apply exponential weighted moving average
+  return alpha * value + (1 - alpha) * average;
 }
+

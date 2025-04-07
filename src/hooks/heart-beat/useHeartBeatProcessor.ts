@@ -4,7 +4,7 @@ import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { useBeepProcessor } from './beep-processor';
 import { useSignalProcessor } from './signal-processor';
-import { HeartBeatResult, UseHeartBeatReturn } from './types';
+import { HeartBeatResult, RRIntervalData, UseHeartBeatReturn } from './types';
 import { ArrhythmiaDetectionService } from '../../services/ArrhythmiaDetectionService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {

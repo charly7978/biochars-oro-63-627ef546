@@ -1,37 +1,60 @@
 
 /**
- * Error detection utility functions
+ * Error detection and logging utilities
  */
 
-// Fix the comparison in line 87
-export function validateSignalPattern(values: number[]): boolean {
-  if (!values || values.length < 10) {
-    return false;
-  }
-  
-  // Check for physiological patterns
-  const peaks = [];
-  for (let i = 1; i < values.length - 1; i++) {
-    if (values[i] > values[i-1] && values[i] > values[i+1]) {
-      peaks.push(i);
-    }
-  }
-  
-  // Fixed: Change array.length comparison to number
-  // This used to be: if (peaks.length < 2)
-  if (peaks.length < 2) {
-    return false;
-  }
-  
-  return true;
-}
+let errorCount = 0;
+let lastErrorTime = 0;
+const errors: Record<string, number> = {};
 
-// Fix the toast variant in line 275
-export function showErrorToast(message: string, description: string) {
+/**
+ * Check error detection status
+ * @returns Current error detection statistics
+ */
+export function getErrorDetectionStatus(): { count: number; lastTime: number; errors: Record<string, number> } {
   return {
-    title: message,
-    description: description,
-    variant: "default",  // Changed from "warning" to "default"
-    duration: 5000
+    count: errorCount,
+    lastTime: lastErrorTime,
+    errors
   };
 }
+
+/**
+ * Log an error
+ * @param code Error code
+ * @param message Error message
+ * @param data Additional error data
+ */
+export function logError(code: string, message: string, data?: any): void {
+  errorCount++;
+  lastErrorTime = Date.now();
+  
+  if (!errors[code]) {
+    errors[code] = 0;
+  }
+  errors[code]++;
+  
+  console.error(`[${code}] ${message}`, data);
+}
+
+/**
+ * Log a success
+ * @param code Success code
+ * @param message Success message
+ * @param data Additional success data
+ */
+export function logSuccess(code: string, message: string, data?: any): void {
+  console.log(`[${code}] ${message}`, data);
+}
+
+/**
+ * Reset error metrics
+ */
+export function resetErrorMetrics(): void {
+  errorCount = 0;
+  lastErrorTime = 0;
+  Object.keys(errors).forEach(key => {
+    errors[key] = 0;
+  });
+}
+

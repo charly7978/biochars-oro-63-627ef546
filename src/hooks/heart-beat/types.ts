@@ -17,4 +17,21 @@ export interface HeartBeatResult {
   arrhythmiaCount?: number;
   filteredValue?: number;
   rrData?: RRIntervalData;
+  isArrhythmia?: boolean;
 }
+
+/**
+ * Interface for heart beat processor hook return
+ */
+export interface UseHeartBeatReturn {
+  currentBPM: number;
+  confidence: number;
+  processSignal: (value: number) => HeartBeatResult;
+  reset: () => void;
+  isArrhythmia: boolean;
+  requestBeep: (value: number) => boolean;
+  startMonitoring: () => void;
+  stopMonitoring: () => void;
+  arrhythmiaSegments: Array<{start: number, end: number}>;
+}
+

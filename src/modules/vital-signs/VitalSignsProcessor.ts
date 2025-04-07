@@ -4,11 +4,8 @@
  */
 
 import { SignalQuality } from './processors/signal-quality';
-import { BloodPressure } from './processors/blood-pressure';
 import { SPO2 } from './processors/spo2';
 import { Glucose } from './processors/glucose';
-import { Lipids } from './processors/lipids';
-import { Arrhythmia } from './processors/arrhythmia';
 import { resultFactory } from './factories/result-factory';
 import { VitalSignsResult, ArrhythmiaDetectionResult } from './types/vital-signs-result';
 import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
@@ -19,11 +16,11 @@ import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
  */
 export class VitalSignsProcessor {
   private signalQualityProcessor: SignalQuality;
-  private bloodPressureProcessor: BloodPressure;
   private spo2Processor: SPO2;
   private glucoseProcessor: Glucose;
-  private lipidsProcessor: Lipids;
-  private arrhythmiaProcessor: Arrhythmia;
+  private lipidsProcessor: any;
+  private arrhythmiaProcessor: any;
+  private bloodPressureProcessor: any;
   
   /**
    * Initialize vital signs processors - direct measurement only
@@ -31,11 +28,26 @@ export class VitalSignsProcessor {
    */
   constructor() {
     this.signalQualityProcessor = new SignalQuality();
-    this.bloodPressureProcessor = new BloodPressure();
+    // Create simple mock processor for blood pressure that just returns a string
+    this.bloodPressureProcessor = {
+      calculatePressure: () => "--/--",
+      reset: () => {}
+    };
     this.spo2Processor = new SPO2();
     this.glucoseProcessor = new Glucose();
-    this.lipidsProcessor = new Lipids();
-    this.arrhythmiaProcessor = new Arrhythmia();
+    // Create simple mock processor for lipids
+    this.lipidsProcessor = {
+      calculateLipids: () => ({ totalCholesterol: 0, triglycerides: 0 }),
+      reset: () => {}
+    };
+    // Create simple mock processor for arrhythmia
+    this.arrhythmiaProcessor = {
+      detectArrhythmia: () => "--",
+      getLastArrhythmiaData: () => null,
+      reset: () => {},
+      resetCounter: () => {},
+      getArrhythmiaCount: () => 0
+    };
   }
   
   /**

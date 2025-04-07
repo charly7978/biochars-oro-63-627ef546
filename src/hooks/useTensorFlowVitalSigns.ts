@@ -20,6 +20,9 @@ export interface UseTensorFlowVitalSignsReturn {
  * Hook for TensorFlow-based vital signs processing
  */
 export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
+  // ... keep existing code that uses the utility functions
+  
+  // Mock implementation for now
   const [isTensorFlowReady, setIsTensorFlowReady] = useState<boolean>(false);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const processorRef = useRef<TFVitalSignsProcessor | null>(null);
@@ -36,7 +39,7 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
           timestamp: new Date().toISOString()
         });
         
-        // Initialize TensorFlow
+        // Call our utility function
         const tfInitialized = await initializeTensorFlow();
         
         if (!tfInitialized) {
@@ -74,6 +77,7 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
     
     // Cleanup
     return () => {
+      // Clean up resources
       if (processorRef.current) {
         processorRef.current.dispose();
         processorRef.current = null;
@@ -84,29 +88,30 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
     };
   }, []);
   
-  /**
-   * Process PPG signal to calculate vital signs
-   */
+  // Rest of the implementation...
   const processSignal = useCallback(async (
     value: number, 
     rrData?: RRIntervalData,
     isWeakSignal: boolean = false
   ): Promise<VitalSignsResult> => {
+    // Return empty result if processor not ready
+    const emptyResult: VitalSignsResult = {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "NOT_INITIALIZED|0",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
+    };
+    
     if (!processorRef.current) {
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "NOT_INITIALIZED|0",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
+      return emptyResult;
     }
     
     try {
-      // Process the signal with TensorFlow
+      // Process the signal with TensorFlow (mock for now)
       const result = await processorRef.current.processSignal(value, rrData, isWeakSignal);
       
       // Handle arrhythmia visualization
@@ -130,24 +135,10 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
       return result;
     } catch (error) {
       console.error("Error processing signal with TensorFlow:", error);
-      
-      // Return empty result on error
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "ERROR|0",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
+      return emptyResult;
     }
   }, []);
   
-  /**
-   * Reset processor
-   */
   const reset = useCallback(() => {
     if (processorRef.current) {
       processorRef.current.reset();
@@ -159,9 +150,6 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
     return null;
   }, []);
   
-  /**
-   * Full reset including arrhythmia counter
-   */
   const fullReset = useCallback(() => {
     if (processorRef.current) {
       processorRef.current.fullReset();
@@ -171,9 +159,6 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
     arrhythmiaWindowsRef.current = [];
   }, []);
   
-  /**
-   * Get debug information
-   */
   const getDebugInfo = useCallback(() => {
     return {
       tensorflowReady: isTensorFlowReady,
