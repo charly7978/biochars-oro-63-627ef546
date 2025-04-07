@@ -1,11 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { CoreProcessor } from './core/CoreProcessor';
-import { checkSignalQuality } from '../heart-beat/signal-quality';
-import { VitalSignsResult, ArrhythmiaDetectionResult } from './types/vital-signs-result';
+import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+import { checkSignalQuality } from './heart-beat/signal-quality';
 
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
@@ -261,4 +259,4 @@ export class VitalSignsProcessor {
 }
 
 // Re-export types for compatibility
-export type { VitalSignsResult } from './types/vital-signs-result';
+export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';
