@@ -1,13 +1,15 @@
 
 import React, { useState, useEffect, ReactNode } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, RefreshCw, ShieldCheck, Activity } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ShieldCheck, Activity, BarChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useErrorDetection } from '@/hooks/useErrorDetection';
 import { useErrorDefense } from '@/hooks/useErrorDefense';
 import ErrorBoundary from './ErrorBoundary';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '@/core/error-defense/ErrorDefenseSystem';
 import { SystemDiagnostics } from './SystemDiagnostics';
+import { toast } from '@/hooks/use-toast';
+import { evaluateSystemQuality } from '@/utils/signalLogging';
 
 interface ErrorHandlingProviderProps {
   children: ReactNode;
@@ -41,47 +43,65 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   const [recoveryAttempted, setRecoveryAttempted] = useState<boolean>(false);
   const [showHealthIndicator, setShowHealthIndicator] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  const [systemQualityScore, setSystemQualityScore] = useState<number>(100);
+  const [lastAutoRecovery, setLastAutoRecovery] = useState<number>(0);
   
-  // Inicializar sistema de defensa al cargar
+  // Initialize defense system when loading
   useEffect(() => {
-    // Asegurar que el sistema está inicializado
-    ErrorDefenseSystem.getInstance();
+    // Ensure the system is initialized
+    const defenseSystem = ErrorDefenseSystem.getInstance();
     
-    // Iniciar monitoreo de errores
+    // Start error monitoring
     startMonitoring();
     
-    // Marcar componente como saludable
+    // Mark component as healthy
     updateComponentStatus('healthy');
+    
+    // Perform initial system quality evaluation
+    const qualityReport = evaluateSystemQuality();
+    setSystemQualityScore(qualityReport.score);
+    
+    // Initial health check and notification
+    setTimeout(() => {
+      setShowHealthIndicator(true);
+      toast({
+        title: "Sistema de Defensa Activo",
+        description: `Estado inicial: ${qualityReport.summary}`,
+        variant: "default"
+      });
+      setTimeout(() => setShowHealthIndicator(false), 3000);
+    }, 2000);
     
     return () => {
       stopMonitoring();
+      defenseSystem.removeAllListeners();
     };
   }, [startMonitoring, stopMonitoring, updateComponentStatus]);
   
-  // Check for issues periodically
+  // Advanced periodic health check system
   useEffect(() => {
     const checkInterval = setInterval(() => {
-      // Verificar sistema de defensa contra errores
+      // Verify error defense system
       const hasIssues = checkForIssues();
       
-      // Verificar errores desde sistema anterior
+      // Check for errors from legacy system
       const hasLegacyIssues = errorStats.count > 0;
       const criticalLegacyIssues = errorStats.count > 5;
       
-      // Mostrar indicador de salud temporalmente
+      // Temporarily show health indicator
       setShowHealthIndicator(true);
       setTimeout(() => setShowHealthIndicator(false), 2000);
       
-      // Combinar información de ambos sistemas
+      // Combine information from both systems
       const combinedHasIssues = hasIssues || hasLegacyIssues;
       const combinedIsCritical = 
         (!errorState.isSystemHealthy && errorState.criticalErrors > 0) || 
         criticalLegacyIssues;
       
-      // Establecer estado de alerta
+      // Set alert state
       setShowWarning(combinedHasIssues);
       
-      // Construir mensaje de problemas
+      // Build issue message
       let message = null;
       if (combinedHasIssues) {
         if (errorState.criticalErrors > 0) {
@@ -97,19 +117,34 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       setIssueMessage(message);
       setIsCritical(combinedIsCritical);
       
-      // Auto-recovery attempt for non-critical issues
-      if (combinedHasIssues && !combinedIsCritical && !recoveryAttempted) {
-        console.log("ErrorHandlingProvider: Auto-recovery attempt for non-critical issue");
-        handleRecovery();
-        setRecoveryAttempted(true);
-        
-        // Reset recovery attempt flag after 30 seconds
-        setTimeout(() => {
-          setRecoveryAttempted(false);
-        }, 30000);
+      // Evaluate system quality score periodically
+      const qualityReport = evaluateSystemQuality();
+      setSystemQualityScore(qualityReport.score);
+      
+      // Intelligent auto-recovery system with throttling
+      const now = Date.now();
+      if (combinedHasIssues && now - lastAutoRecovery > 60000) { // Max once per minute
+        const shouldAutoRecover = 
+          (qualityReport.score < 70) || // Poor quality score
+          (!combinedIsCritical && errorState.totalErrors > 3) || // Multiple non-critical errors
+          (hasLegacyIssues && errorStats.count > 2); // Multiple legacy errors
+          
+        if (shouldAutoRecover) {
+          console.log("ErrorHandlingProvider: Intelligent auto-recovery triggered");
+          handleRecovery();
+          setLastAutoRecovery(now);
+          
+          // Notification based on severity
+          const notificationVariant = combinedIsCritical ? "destructive" : "default";
+          toast({
+            title: combinedIsCritical ? "Recuperación Crítica Iniciada" : "Auto-recuperación Iniciada",
+            description: "Sistema ejecutando procedimientos de restauración automáticos",
+            variant: notificationVariant
+          });
+        }
       }
       
-      // Mostrar diagnóstico automáticamente para problemas críticos
+      // Show diagnostics automatically for critical problems
       if (combinedIsCritical && !showDiagnostics) {
         setShowDiagnostics(true);
       }
@@ -118,25 +153,44 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     return () => {
       clearInterval(checkInterval);
     };
-  }, [errorStats, recoveryAttempted, checkForIssues, errorState, showDiagnostics]);
+  }, [errorStats, recoveryAttempted, checkForIssues, errorState, showDiagnostics, lastAutoRecovery]);
   
   // Handle recovery attempt
   const handleRecovery = async () => {
-    // Utilizar sistema de recuperación unificado
-    attemptRecovery();
+    // Use unified recovery system
+    const recoveryActions = attemptRecovery();
     resetMonitoring();
     
     setShowWarning(false);
     console.log("ErrorHandlingProvider: Recovery attempted");
+    
+    // Notify about recovery steps based on severity
+    if (recoveryActions && recoveryActions.length > 0) {
+      const summary = `Acciones: ${recoveryActions.length > 1 ? 
+        recoveryActions[0] + " y " + (recoveryActions.length - 1) + " más" : 
+        recoveryActions[0]}`;
+        
+      toast({
+        title: "Recuperación en Proceso",
+        description: summary,
+        variant: "default"
+      });
+    }
   };
   
   // Handle forced rebuild
   const handleForceRebuild = async () => {
     if (window.confirm("Esta acción realizará una reconstrucción forzada del sistema. ¿Continuar?")) {
-      forceRebuild();
+      const result = forceRebuild();
       resetMonitoring();
       setShowWarning(false);
       console.log("ErrorHandlingProvider: Forced rebuild initiated");
+      
+      toast({
+        title: "Reconstrucción Completa Iniciada",
+        description: "El sistema está siendo reconstruido desde cero",
+        variant: "destructive"
+      });
     }
   };
   
@@ -149,10 +203,10 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         setIsCritical(true);
         setShowDiagnostics(true);
         
-        // Reportar al sistema antiguo
+        // Report to legacy system
         reportError("REACT_ERROR", error.message, { stack: error.stack });
         
-        // Reportar al nuevo sistema de defensa
+        // Report to new defense system
         const defenseSystem = ErrorDefenseSystem.getInstance();
         defenseSystem.reportError({
           id: '',
@@ -164,25 +218,46 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           stack: error.stack,
           metadata: { type: 'react_error' }
         });
+        
+        // Critical error notification
+        toast({
+          title: "Error Crítico Detectado",
+          description: error.message.substring(0, 100) + (error.message.length > 100 ? '...' : ''),
+          variant: "destructive"
+        });
       }}
     >
-      {/* Indicador de salud del sistema */}
+      {/* System health indicator with quality score */}
       {showHealthIndicator && (
         <div className="fixed top-2 right-2 z-50 transition-opacity duration-300">
-          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-            errorState.isSystemHealthy ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
-          }`}>
-            {errorState.isSystemHealthy ? (
-              <ShieldCheck className="h-3 w-3" />
-            ) : (
-              <Activity className="h-3 w-3" />
-            )}
-            <span>Sistema {errorState.isSystemHealthy ? 'estable' : 'en recuperación'}</span>
+          <div className={`flex flex-col items-end gap-1`}>
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+              systemQualityScore > 80 ? 'bg-green-100 text-green-800' : 
+              systemQualityScore > 60 ? 'bg-amber-100 text-amber-800' : 
+              'bg-red-100 text-red-800'
+            }`}>
+              {systemQualityScore > 80 ? (
+                <ShieldCheck className="h-3 w-3" />
+              ) : (
+                <Activity className="h-3 w-3" />
+              )}
+              <span>Sistema {
+                systemQualityScore > 90 ? 'óptimo' : 
+                systemQualityScore > 80 ? 'estable' : 
+                systemQualityScore > 60 ? 'en recuperación' : 
+                'comprometido'
+              }</span>
+            </div>
+            
+            <div className="bg-background border rounded-full px-2 py-0.5 text-xs flex items-center gap-1 shadow-sm">
+              <BarChart className="h-3 w-3 text-muted-foreground" />
+              <span>Calidad: {systemQualityScore}%</span>
+            </div>
           </div>
         </div>
       )}
       
-      {/* Show warning banner for non-fatal issues */}
+      {/* Warning banner for detected issues */}
       {showWarning && (
         <Alert
           variant={isCritical ? "destructive" : "default"}
@@ -229,7 +304,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         </Alert>
       )}
       
-      {/* Diagnóstico del sistema (minimizado si no hay problemas) */}
+      {/* System Diagnostics (minimized if no issues) */}
       {showDiagnostics ? (
         <div className="mb-4">
           <SystemDiagnostics minimal={false} />

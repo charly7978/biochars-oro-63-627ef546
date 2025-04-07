@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ActivitySquare, Server, Shield, RefreshCw, XCircle, CheckCircle, AlertTriangle, RotateCw, Tool, Zap } from 'lucide-react';
+import { ActivitySquare, Server, Shield, RefreshCw, XCircle, CheckCircle, AlertTriangle, RotateCw, Zap } from 'lucide-react';
 import ErrorDefenseSystem from '@/core/error-defense/ErrorDefenseSystem';
 import { useErrorDefense } from '@/hooks/useErrorDefense';
 import { Separator } from '@/components/ui/separator';
@@ -20,7 +19,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
   const [recoveryInProgress, setRecoveryInProgress] = useState<boolean>(false);
   const [recoveryLog, setRecoveryLog] = useState<string[]>([]);
   
-  // Actualizar periódicamente
   useEffect(() => {
     const updateInterval = setInterval(() => {
       setLastUpdated(new Date());
@@ -29,7 +27,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     return () => clearInterval(updateInterval);
   }, []);
   
-  // Manejar la recuperación con retroalimentación
   const handleRecovery = async () => {
     setRecoveryInProgress(true);
     setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Iniciando recuperación...`]);
@@ -43,7 +40,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
         });
       }
       
-      // Simular progreso de recuperación
       setTimeout(() => {
         setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Verificando integridad del sistema...`]);
       }, 800);
@@ -58,7 +54,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     }
   };
   
-  // Manejar la reconstrucción forzada
   const handleForceRebuild = () => {
     if (window.confirm("¿Estás seguro? Esta acción reconstruirá completamente el sistema de procesamiento y puede tardar unos segundos.")) {
       setRecoveryInProgress(true);
@@ -67,7 +62,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       try {
         const result = forceRebuild();
         
-        // Simular progreso
         setTimeout(() => {
           setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Eliminando procesadores existentes...`]);
         }, 500);
@@ -87,7 +81,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     }
   };
   
-  // Si es minimal, mostrar solo el panel compacto
   if (minimal && !isOpen) {
     return (
       <div className="fixed bottom-4 right-4 z-40">
@@ -112,7 +105,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     );
   }
   
-  // Determinar color del estado del sistema
   const getHealthColor = () => {
     if (!errorState.diagnostics) return "text-muted-foreground";
     
@@ -151,7 +143,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       </CardHeader>
       
       <CardContent className="space-y-4">
-        {/* Estado General */}
         <div className="flex justify-between items-center">
           <div className="text-sm font-medium">Estado General:</div>
           <Badge variant={errorState.isSystemHealthy ? "outline" : "destructive"}>
@@ -171,7 +162,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </Badge>
         </div>
         
-        {/* Diagnóstico de Salud */}
         {errorState.diagnostics && (
           <div className="flex justify-between items-center">
             <div className="text-sm font-medium">Diagnóstico de Salud:</div>
@@ -183,7 +173,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </div>
         )}
         
-        {/* Errores Recientes */}
         <div>
           <h4 className="text-sm font-medium mb-2">Errores Recientes:</h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -220,7 +209,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </div>
         </div>
         
-        {/* Último Error (si existe) */}
         {errorState.lastError && (
           <div className="text-sm">
             <h4 className="font-medium mb-1">Último Error:</h4>
@@ -236,7 +224,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </div>
         )}
         
-        {/* Recomendaciones del sistema */}
         {errorState.diagnostics && errorState.diagnostics.recommendations.length > 0 && (
           <Collapsible className="w-full">
             <CollapsibleTrigger asChild>
@@ -260,7 +247,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </Collapsible>
         )}
         
-        {/* Log de Recuperación */}
         {recoveryLog.length > 0 && (
           <div className="text-sm">
             <h4 className="font-medium mb-1">Registro de Recuperación:</h4>
