@@ -1,13 +1,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { toast } from './use-toast';
-import { 
-  logError, 
+import {
+  getErrorDetectionStatus,
+  logError,
   logSuccess,
-  resetErrorMetrics,
-  getErrorDetectionStatus, 
-  ErrorDetectionStatus 
+  resetErrorMetrics
 } from '../utils/errorDetection';
+import { toast } from './use-toast';
 import { disposeTensors } from '../utils/tfModelInitializer';
 
 interface ErrorDetectionState {
