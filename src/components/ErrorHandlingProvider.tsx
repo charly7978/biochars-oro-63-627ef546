@@ -25,6 +25,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   const [showWarning, setShowWarning] = useState<boolean>(false);
   const [issueMessage, setIssueMessage] = useState<string | null>(null);
   const [isCritical, setIsCritical] = useState<boolean>(false);
+  const [recoveryAttempted, setRecoveryAttempted] = useState<boolean>(false);
   
   // Check for issues periodically
   useEffect(() => {
@@ -34,12 +35,24 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       setShowWarning(hasIssues);
       setIssueMessage(message);
       setIsCritical(criticalIssues);
+      
+      // Auto-recovery attempt for non-critical issues
+      if (hasIssues && !criticalIssues && !recoveryAttempted) {
+        console.log("ErrorHandlingProvider: Auto-recovery attempt for non-critical issue");
+        handleRecovery();
+        setRecoveryAttempted(true);
+        
+        // Reset recovery attempt flag after 30 seconds
+        setTimeout(() => {
+          setRecoveryAttempted(false);
+        }, 30000);
+      }
     }, 10000); // Check every 10 seconds
     
     return () => {
       clearInterval(checkInterval);
     };
-  }, [checkForIssues, errorState]);
+  }, [checkForIssues, errorState, recoveryAttempted]);
   
   // Handle recovery attempt
   const handleRecovery = async () => {
@@ -47,6 +60,28 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     if (success) {
       setShowWarning(false);
       updateStatus();
+      console.log("ErrorHandlingProvider: Recovery successful");
+      
+      // Reset arrhythmia detection services if possible
+      try {
+        if (typeof window !== 'undefined') {
+          // Reset any global detection services
+          if ((window as any).heartBeatProcessor) {
+            (window as any).heartBeatProcessor.reset();
+            console.log("ErrorHandlingProvider: Reset heartBeatProcessor");
+          }
+          
+          // Clear any stale RR interval data
+          if (localStorage) {
+            localStorage.removeItem('arrhythmia_detection_state');
+            console.log("ErrorHandlingProvider: Cleared persisted arrhythmia state");
+          }
+        }
+      } catch (error) {
+        console.error("ErrorHandlingProvider: Error during additional recovery steps", error);
+      }
+    } else {
+      console.log("ErrorHandlingProvider: Recovery failed");
     }
   };
   
