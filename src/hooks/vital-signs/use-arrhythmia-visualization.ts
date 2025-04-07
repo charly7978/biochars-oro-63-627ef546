@@ -1,9 +1,16 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ArrhythmiaWindow } from './types';
+
+/**
+ * Duración máxima (en ms) que debe mostrarse un segmento de arritmia
+ * antes de desactivarse automáticamente
+ */
+const ARRHYTHMIA_DISPLAY_DURATION = 2000;
 
 /**
  * Hook to manage arrhythmia visualization windows
@@ -19,12 +26,9 @@ export const useArrhythmiaVisualization = () => {
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
     // Limit to most recent arrhythmia windows for visualization
     setArrhythmiaWindows(prev => {
-      const newWindows = [...prev, { start, end }];
-      // Keep only the most recent 5 windows for better visibility
-      return newWindows.slice(-5);
+      const newWindows = [...prev, { start, end, isActive: true }];
+      return newWindows.slice(-3);
     });
-    
-    console.log("ArrhythmiaVisualization: Added window", { start, end, timestamp: new Date().toISOString() });
   }, []);
   
   /**
@@ -32,8 +36,51 @@ export const useArrhythmiaVisualization = () => {
    */
   const clearArrhythmiaWindows = useCallback(() => {
     setArrhythmiaWindows([]);
-    console.log("ArrhythmiaVisualization: Cleared all windows");
   }, []);
+  
+  /**
+   * Efecto para automatizar la desactivación de visualizaciones de arritmia
+   * después de un tiempo específico
+   */
+  useEffect(() => {
+    const now = Date.now();
+    let hasChanges = false;
+    
+    const updatedWindows = arrhythmiaWindows.map(window => {
+      // Si el segmento está activo y ha pasado el tiempo suficiente
+      if (window.isActive && (now - window.end) > ARRHYTHMIA_DISPLAY_DURATION) {
+        hasChanges = true;
+        return { ...window, isActive: false };
+      }
+      return window;
+    });
+    
+    if (hasChanges) {
+      setArrhythmiaWindows(updatedWindows);
+    }
+    
+    // Configurar el intervalo para comprobar y actualizar las ventanas de arritmia
+    const checkInterval = setInterval(() => {
+      const currentTime = Date.now();
+      let needsUpdate = false;
+      
+      setArrhythmiaWindows(prev => {
+        const updated = prev.map(window => {
+          if (window.isActive && (currentTime - window.end) > ARRHYTHMIA_DISPLAY_DURATION) {
+            needsUpdate = true;
+            return { ...window, isActive: false };
+          }
+          return window;
+        });
+        
+        return needsUpdate ? updated : prev;
+      });
+    }, 1000);
+    
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [arrhythmiaWindows]);
   
   return {
     arrhythmiaWindows,
