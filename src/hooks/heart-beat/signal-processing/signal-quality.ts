@@ -72,3 +72,20 @@ export const resetSignalQualityState = (): void => {
   // Reset call for external tracking
   console.log("Signal quality state reset requested");
 }
+
+/**
+ * Check signal quality for monitoring
+ * @param value The current signal value
+ * @param threshold The threshold for quality detection
+ * @returns Quality assessment (0-100)
+ */
+export const checkSignalQuality = (
+  value: number,
+  currentWeakSignalCount: number,
+  options: {
+    lowSignalThreshold: number,
+    maxWeakSignalCount: number
+  }
+): { isWeakSignal: boolean, updatedWeakSignalsCount: number } => {
+  return checkWeakSignal(value, currentWeakSignalCount, options);
+}
