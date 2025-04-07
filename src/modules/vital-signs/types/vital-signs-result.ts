@@ -22,3 +22,12 @@ export interface VitalSignsResult {
     rrVariation: number;
   } | null;
 }
+
+/**
+ * Result from arrhythmia detection
+ */
+export interface ArrhythmiaDetectionResult {
+  timestamp: number;
+  rmssd: number;
+  rrVariation: number;
+}
