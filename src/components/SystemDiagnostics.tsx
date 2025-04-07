@@ -1,15 +1,20 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ActivitySquare, Server, Shield, RefreshCw, XCircle, CheckCircle, AlertTriangle, RotateCw, Zap, AlertCircle, Bug } from 'lucide-react';
+import { 
+  ActivitySquare, Server, Shield, RefreshCw, XCircle, CheckCircle, 
+  AlertTriangle, RotateCw, Zap, AlertCircle, Bug, Camera, Ban, 
+  FileWarning
+} from 'lucide-react';
 import ErrorDefenseSystem, { ErrorCategory, SystemError } from '@/core/error-defense/ErrorDefenseSystem';
 import { useErrorDefense } from '@/hooks/useErrorDefense';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { getLogEntries, LogLevel } from '@/utils/signalLogging';
+import { getLogEntries, LogLevel, evaluateSystemQuality } from '@/utils/signalLogging';
 import DependencyMonitor from '@/core/error-defense/DependencyMonitor';
+import { toast } from '@/components/ui/use-toast';
 
 interface SystemDiagnosticsProps {
   minimal?: boolean;
@@ -24,6 +29,8 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
   const [criticalErrors, setCriticalErrors] = useState<{message: string, source: string, timestamp: number}[]>([]);
   const [missingDependencies, setMissingDependencies] = useState<string[]>([]);
   const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
+  const [commonErrorPatterns, setCommonErrorPatterns] = useState<{pattern: string, count: number}[]>([]);
+  const [showAdvancedTools, setShowAdvancedTools] = useState<boolean>(false);
   
   // Obtener errores críticos y dependencias faltantes
   useEffect(() => {
@@ -54,6 +61,9 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       } catch (error) {
         console.error("Error al verificar dependencias:", error);
       }
+      
+      // Analizar patrones comunes de error
+      analyzeErrorPatterns(recentLogs);
     };
     
     fetchCriticalData();
@@ -65,6 +75,42 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     
     return () => clearInterval(updateInterval);
   }, []);
+  
+  // Analizar patrones comunes en los errores
+  const analyzeErrorPatterns = (logs: any[]) => {
+    const errorLogs = logs.filter(log => log.level === LogLevel.ERROR);
+    const patterns: Record<string, number> = {};
+    
+    // Buscar patrones en los mensajes de error
+    errorLogs.forEach(log => {
+      // Extraer tipo de error general eliminando detalles específicos
+      let pattern = log.message;
+      
+      // Remover IDs, timestamps y detalles específicos
+      pattern = pattern.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '[ID]');
+      pattern = pattern.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, '[TIMESTAMP]');
+      pattern = pattern.replace(/at position \d+/g, 'at position [N]');
+      pattern = pattern.replace(/line \d+/g, 'line [N]');
+      pattern = pattern.replace(/\d+ ms/g, '[N] ms');
+      
+      // Para errores de "Track in an invalid state", extraer solo la parte relevante
+      if (pattern.includes('InvalidStateError') && pattern.includes('Track is in an invalid state')) {
+        pattern = 'InvalidStateError: The associated Track is in an invalid state';
+      }
+      
+      // Contar ocurrencias del patrón
+      patterns[pattern] = (patterns[pattern] || 0) + 1;
+    });
+    
+    // Convertir a array y ordenar por frecuencia
+    const patternArray = Object.entries(patterns)
+      .filter(([_, count]) => count > 1) // Solo patrones que ocurren más de una vez
+      .map(([pattern, count]) => ({ pattern, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5); // Top 5 patrones
+    
+    setCommonErrorPatterns(patternArray);
+  };
   
   const handleRecovery = async () => {
     setRecoveryInProgress(true);
@@ -86,6 +132,12 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       setTimeout(() => {
         setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Recuperación completada`]);
         setRecoveryInProgress(false);
+        
+        toast({
+          title: "Recuperación completada",
+          description: "El sistema ha intentado solucionar los problemas detectados",
+          variant: "default"
+        });
       }, 2000);
     } catch (e) {
       setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Error durante la recuperación: ${e}`]);
@@ -112,11 +164,47 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
         setTimeout(() => {
           setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${result}`]);
           setRecoveryInProgress(false);
+          
+          toast({
+            title: "Sistema reconstruido",
+            description: "Se ha reiniciado completamente el sistema de procesamiento",
+            variant: "default"
+          });
         }, 2500);
       } catch (e) {
         setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Error durante la reconstrucción: ${e}`]);
         setRecoveryInProgress(false);
       }
+    }
+  };
+  
+  // Reiniciar cámara y permisos
+  const handleResetCamera = () => {
+    setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Reiniciando cámara y permisos...`]);
+    
+    try {
+      // Intenta liberar todos los streams de video activos
+      if (navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          .then(stream => {
+            // Detener todas las pistas de video
+            stream.getTracks().forEach(track => track.stop());
+            
+            setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Tracks de video liberados correctamente`]);
+            
+            // Recargar la página para reiniciar completamente
+            setTimeout(() => {
+              window.location.reload();
+            }, 1000);
+          })
+          .catch(error => {
+            setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Error al acceder a la cámara: ${error.message}`]);
+          });
+      } else {
+        setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: API MediaDevices no disponible en este navegador`]);
+      }
+    } catch (e) {
+      setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Error al reiniciar la cámara: ${e}`]);
     }
   };
   
@@ -132,6 +220,19 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     // Explicar patrones de error si hay errores críticos
     if (errorState.criticalErrors > 0 || errorState.highErrors > 0) {
       message += `• ${errorState.criticalErrors} errores críticos y ${errorState.highErrors} errores graves detectados.\n`;
+      
+      // Añadir información sobre patrones de error comunes
+      if (commonErrorPatterns.length > 0) {
+        message += `• Patrones de error más comunes:\n`;
+        commonErrorPatterns.forEach(pattern => {
+          message += `  - "${pattern.pattern.substring(0, 50)}${pattern.pattern.length > 50 ? '...' : ''}" (${pattern.count} veces)\n`;
+        });
+      }
+    }
+    
+    // Si hay errores de cámara, sugerir reinicio
+    if (criticalErrors.some(e => e.message.includes('Track') || e.message.includes('camera') || e.message.includes('InvalidState'))) {
+      message += `• Se detectaron problemas con la cámara. Considere reiniciar los permisos de cámara.\n`;
     }
     
     // Si no hay mensajes específicos pero hay problemas
@@ -140,6 +241,29 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     }
     
     return message || "No se han detectado problemas críticos.";
+  };
+  
+  // Sugerir acciones específicas para solucionar problemas
+  const getSuggestedActions = () => {
+    const suggestions: string[] = [];
+    
+    // Sugerencias basadas en patrón de error
+    if (commonErrorPatterns.some(p => p.pattern.includes('Track is in an invalid state'))) {
+      suggestions.push('Use el botón "Reiniciar Cámara" para solucionar los problemas con el stream de video.');
+      suggestions.push('Verifique que ha concedido permisos de cámara al navegador.');
+    }
+    
+    // Sugerencias basadas en dependencias faltantes
+    if (missingDependencies.length > 0) {
+      suggestions.push('Intente una reconstrucción forzada para reinicializar las dependencias del sistema.');
+    }
+    
+    // Si hay muchos errores
+    if (errorState.totalErrors > 10) {
+      suggestions.push('Para problemas persistentes, recargue completamente la página.');
+    }
+    
+    return suggestions;
   };
   
   if (minimal && !isOpen) {
@@ -180,7 +304,7 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
   };
   
   return (
-    <Card className={minimal ? "fixed bottom-4 right-4 z-40 w-96 max-h-[90vh] overflow-auto" : "w-full"}>
+    <Card className={minimal ? "fixed bottom-4 right-4 z-40 w-[450px] max-h-[90vh] overflow-auto" : "w-full"}>
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -216,6 +340,18 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
                 </div>
               </div>
             </div>
+            
+            {/* Sugerencias de solución */}
+            {getSuggestedActions().length > 0 && (
+              <div className="mt-2 border-t border-destructive/20 pt-2">
+                <h4 className="text-xs font-medium mb-1">Acciones recomendadas:</h4>
+                <ul className="text-xs space-y-1 ml-5 list-disc text-muted-foreground">
+                  {getSuggestedActions().map((suggestion, i) => (
+                    <li key={i}>{suggestion}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             
             <div className="flex justify-end mt-2">
               <Button 
@@ -343,6 +479,26 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </div>
         )}
         
+        {/* Patrones de error comunes */}
+        {commonErrorPatterns.length > 0 && (
+          <div className="text-sm">
+            <h4 className="font-medium mb-1">Patrones de Error Comunes:</h4>
+            <div className="space-y-1 p-2 bg-muted/50 border rounded-md">
+              {commonErrorPatterns.map((pattern, i) => (
+                <div key={i} className="text-xs flex items-start gap-2 py-1 border-b last:border-0">
+                  <FileWarning className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                  <div className="flex-1">
+                    <span className="truncate block">
+                      {pattern.pattern.substring(0, 60)}{pattern.pattern.length > 60 ? '...' : ''}
+                    </span>
+                    <span className="text-muted-foreground">Ocurrencias: {pattern.count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
         {errorState.diagnostics && errorState.diagnostics.recommendations.length > 0 && (
           <Collapsible className="w-full">
             <CollapsibleTrigger asChild>
@@ -365,6 +521,91 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
             </CollapsibleContent>
           </Collapsible>
         )}
+        
+        {/* Herramientas avanzadas */}
+        <Collapsible 
+          className="w-full"
+          open={showAdvancedTools}
+          onOpenChange={setShowAdvancedTools}
+        >
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm" className="w-full">
+              <div className="flex items-center justify-between w-full">
+                <span>Herramientas Avanzadas</span>
+                <Bug className="h-4 w-4" />
+              </div>
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2">
+            <div className="space-y-2 p-2 bg-muted/50 border rounded-md">
+              <div className="flex items-center justify-between">
+                <div className="text-xs">
+                  <div className="font-medium">Reiniciar Cámara</div>
+                  <div className="text-muted-foreground">Soluciona problemas con el stream de video</div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex items-center gap-1 text-xs h-8"
+                  onClick={handleResetCamera}
+                  disabled={recoveryInProgress}
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  <span>Reiniciar</span>
+                </Button>
+              </div>
+              
+              <Separator />
+              
+              <div className="flex items-center justify-between">
+                <div className="text-xs">
+                  <div className="font-medium">Limpiar Almacenamiento</div>
+                  <div className="text-muted-foreground">Elimina datos almacenados del navegador</div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex items-center gap-1 text-xs h-8"
+                  onClick={() => {
+                    try {
+                      localStorage.clear();
+                      setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Almacenamiento local limpiado`]);
+                      toast({
+                        title: "Almacenamiento limpiado",
+                        description: "Se han eliminado todos los datos almacenados localmente",
+                        variant: "default"
+                      });
+                    } catch (e) {
+                      console.error("Error al limpiar almacenamiento:", e);
+                    }
+                  }}
+                  disabled={recoveryInProgress}
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                  <span>Limpiar</span>
+                </Button>
+              </div>
+              
+              <Separator />
+              
+              <div className="flex items-center justify-between">
+                <div className="text-xs">
+                  <div className="font-medium">Recargar Aplicación</div>
+                  <div className="text-muted-foreground">Reinicia completamente la aplicación</div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex items-center gap-1 text-xs h-8"
+                  onClick={() => window.location.reload()}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>Recargar</span>
+                </Button>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
         
         {recoveryLog.length > 0 && (
           <div className="text-sm">
@@ -401,7 +642,18 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </Button>
         </div>
         
-        <div className="w-full flex justify-end">
+        <div className="w-full flex justify-end gap-2">
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="flex items-center gap-1"
+            disabled={recoveryInProgress}
+            onClick={handleResetCamera}
+          >
+            <Camera className="h-3.5 w-3.5" />
+            <span>Reiniciar Cámara</span>
+          </Button>
+          
           <Button 
             size="sm" 
             variant="secondary" 
