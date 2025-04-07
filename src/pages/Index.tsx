@@ -29,8 +29,7 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [heartRateConfidence, setHeartRateConfidence] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
-  // Important: Always show results when we have valid data
-  const [showResults, setShowResults] = useState(true);
+  const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -70,13 +69,12 @@ const Index = () => {
 
   // Effect to update display from lastValidResults when monitoring is stopped
   useEffect(() => {
-    if (lastValidResults) {
+    if (lastValidResults && !isMonitoring) {
       console.log("Using lastValidResults:", lastValidResults);
       setVitalSigns(lastValidResults);
-      // Always show results when we have valid data
       setShowResults(true);
     }
-  }, [lastValidResults]);
+  }, [lastValidResults, isMonitoring]);
 
   // Process incoming signals and update display
   useEffect(() => {
@@ -98,7 +96,7 @@ const Index = () => {
           timeProcessed: new Date().toISOString()
         });
         
-        // Always update the heart rate when monitoring is active
+        // Make sure to always update the heart rate when monitoring is active
         setHeartRate(heartBeatResult.bpm || 0);
         setHeartRateConfidence(heartBeatResult.confidence || 0);
           
@@ -106,13 +104,14 @@ const Index = () => {
         if (vitals) {
           console.log("Vital signs updated:", {
             ...vitals,
-            timeProcessed: new Date().toISOString(),
-            hasUpdated: true
+            timeProcessed: new Date().toISOString()
           });
           setVitalSigns(vitals);
           
-          // Make vital signs immediately visible - ALWAYS show results
-          setShowResults(true);
+          // Make vital signs immediately visible during monitoring
+          if (!showResults && vitals.spo2 > 0) {
+            setShowResults(true);
+          }
         }
         
         setSignalQuality(lastSignal.quality);
@@ -128,8 +127,10 @@ const Index = () => {
           }, 3000);
         }
       }
+    } else if (!isMonitoring) {
+      setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartRateConfidence]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartRateConfidence, showResults]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -140,7 +141,7 @@ const Index = () => {
       setIsCameraOn(true);
       // Don't hide results immediately when starting a new measurement
       // This helps users see previous results until new ones are available
-      // setShowResults(true);
+      // setShowResults(false);
       
       console.log("Starting monitoring - activating processors");
       startProcessing();
@@ -195,8 +196,7 @@ const Index = () => {
     console.log("Reseteando completamente la aplicación");
     setIsMonitoring(false);
     setIsCameraOn(false);
-    // Don't hide results on reset
-    // setShowResults(false);
+    setShowResults(false);
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
@@ -315,13 +315,6 @@ const Index = () => {
     });
   }, [vitalSigns, showResults]);
 
-  // Format values for display
-  const formatVitalSign = (value: number | string) => {
-    // Convert all numeric zeros to "--" for display
-    if (value === 0) return "--";
-    return value;
-  };
-
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
@@ -381,37 +374,37 @@ const Index = () => {
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
-                value={formatVitalSign(heartRate)}
+                value={heartRate || "--"}
                 unit="BPM"
                 highlighted={showResults}
               />
               <VitalSign 
                 label="SPO2"
-                value={formatVitalSign(vitalSigns.spo2)}
+                value={vitalSigns.spo2 || "--"}
                 unit="%"
                 highlighted={showResults}
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
-                value={vitalSigns.pressure !== "--/--" ? vitalSigns.pressure : "--"}
+                value={vitalSigns.pressure}
                 unit="mmHg"
                 highlighted={showResults}
               />
               <VitalSign 
                 label="GLUCOSA"
-                value={formatVitalSign(vitalSigns.glucose)}
+                value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
               />
               <VitalSign 
                 label="COLESTEROL"
-                value={formatVitalSign(vitalSigns.lipids?.totalCholesterol)}
+                value={vitalSigns.lipids?.totalCholesterol || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
               />
               <VitalSign 
                 label="TRIGLICÉRIDOS"
-                value={formatVitalSign(vitalSigns.lipids?.triglycerides)}
+                value={vitalSigns.lipids?.triglycerides || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
               />
