@@ -1,10 +1,8 @@
-
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 import ErrorDefenseSystem from './core/error-defense/ErrorDefenseSystem';
 import DependencyManager from './core/error-defense/DependencyManager';
-import { CodeGuardianWidget } from './components/CodeGuardianWidget';
 
 // Pre-initialization error detection system
 const preloadErrorDetection = () => {
@@ -200,13 +198,10 @@ window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
 // Only render if preload was successful
 if (isPreloadSuccessful) {
-  // Render the app with enhanced error handling
+  // Render the app with NO CodeGuardianWidget
   try {
     createRoot(document.getElementById("root")!).render(
-      <>
-        <App />
-        <CodeGuardianWidget position="bottom-right" />
-      </>
+      <App />
     );
   } catch (error) {
     console.error('Fatal error during initial render:', error);
