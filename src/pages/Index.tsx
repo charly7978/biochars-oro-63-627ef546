@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -8,6 +9,13 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { useParallelProcessing } from "@/hooks/useParallelProcessing";
+import PerformanceMonitor from "@/components/PerformanceMonitor";
+
+const PERFORMANCE_OPTIMIZATION = true;
+const MEASUREMENT_DURATION = 30; // seconds
+const MIN_QUALITY_THRESHOLD = 40;
+const FRAMES_TO_PROCESS = 2; // Process 1 in every N frames
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -26,7 +34,13 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
+  
   const measurementTimerRef = useRef<number | null>(null);
+  const frameCounterRef = useRef(0);
+  const lastUpdateTimeRef = useRef(0);
+  const processingCapacityRef = useRef(1);
+  const processingRateRef = useRef(FRAMES_TO_PROCESS);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -43,6 +57,45 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+  
+  const {
+    isWorkerAvailable,
+    processSignalParallel,
+    resetWorker
+  } = useParallelProcessing();
+
+  // Dynamic processing capacity assessment
+  useEffect(() => {
+    if (!PERFORMANCE_OPTIMIZATION) return;
+    
+    // Simple benchmark to assess device capability
+    const assess = () => {
+      const start = performance.now();
+      let sum = 0;
+      for (let i = 0; i < 50000; i++) {
+        sum += Math.sin(i * 0.01) * Math.cos(i * 0.02);
+      }
+      const duration = performance.now() - start;
+      
+      // Adjust processing capacity based on benchmark
+      // Longer duration means slower device
+      if (duration > 100) {
+        processingCapacityRef.current = 0.5; // Very slow device
+        processingRateRef.current = 3; // Process 1 in 3 frames
+        console.log("Low processing capacity detected, reducing workload");
+      } else if (duration > 50) {
+        processingCapacityRef.current = 0.75; // Medium device
+        processingRateRef.current = 2; // Process 1 in 2 frames
+        console.log("Medium processing capacity detected");
+      } else {
+        processingCapacityRef.current = 1; // Fast device
+        processingRateRef.current = 1; // Process all frames
+        console.log("High processing capacity detected");
+      }
+    };
+    
+    assess();
+  }, []);
 
   const enterFullScreen = async () => {
     try {
@@ -70,40 +123,87 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal only if we have good quality and finger detection
+  // Optimized signal processing with rate limiting
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 40; // Increased threshold for better quality detection
+      // Apply processing rate limiting
+      frameCounterRef.current = (frameCounterRef.current + 1) % processingRateRef.current;
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        
-        // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
-          setHeartRate(heartBeatResult.bpm);
-          
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
-          }
+      // Only process if it's our turn and we have a minimum quality
+      const shouldProcess = frameCounterRef.current === 0;
+      const minQualityThreshold = MIN_QUALITY_THRESHOLD;
+      
+      // Always update signal quality and finger detection status
+      setSignalQuality(lastSignal.quality);
+      
+      if (shouldProcess && lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        // Use Web Worker for processing if available
+        if (isWorkerAvailable && PERFORMANCE_OPTIMIZATION) {
+          processSignalParallel([lastSignal.filteredValue], 30)
+            .then(result => {
+              if (result && result.bpm > 0 && result.confidence > 0.4) {
+                setHeartRate(result.bpm);
+                
+                // Still process vital signs in main thread for now
+                const vitals = processVitalSigns(lastSignal.filteredValue, {
+                  intervals: result.intervals || [],
+                  lastPeakTime: Date.now()
+                });
+                
+                if (vitals) {
+                  setVitalSigns(vitals);
+                }
+              }
+            })
+            .catch(err => {
+              console.error("Error processing signal in worker:", err);
+              // Fallback to main thread processing
+              processSignalInMainThread();
+            });
+        } else {
+          // Process in main thread if worker not available
+          processSignalInMainThread();
         }
-        
-        setSignalQuality(lastSignal.quality);
-      } else {
-        // When no quality signal, update signal quality but not values
-        setSignalQuality(lastSignal.quality);
-        
+      } else if (!lastSignal.fingerDetected && heartRate > 0) {
         // If finger not detected for a while, reset heart rate to zero
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
-        }
+        setHeartRate(0);
       }
     } else if (!isMonitoring) {
       // If not monitoring, maintain zero values
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+    
+    // Local function to process signals in main thread
+    function processSignalInMainThread() {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      
+      // Only update heart rate if confidence is sufficient
+      if (heartBeatResult.confidence > 0.4) {
+        setHeartRate(heartBeatResult.bpm);
+        
+        const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+        if (vitals) {
+          setVitalSigns(vitals);
+        }
+      }
+    }
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, isWorkerAvailable, processSignalParallel]);
+
+  // Space out processing intensive operations
+  useEffect(() => {
+    if (!lastSignal || !isMonitoring) return;
+    
+    // Limit the frequency of non-essential operations
+    const now = Date.now();
+    if (now - lastUpdateTimeRef.current < 500) return;
+    
+    lastUpdateTimeRef.current = now;
+    
+    // Performance monitoring for development
+    if (Math.random() < 0.05) { // Only log occasionally
+      console.log(`Performance: Processing capacity ${processingCapacityRef.current}, Rate ${processingRateRef.current}`);
+    }
+  }, [lastSignal, isMonitoring]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -113,10 +213,14 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0); // Reset heart rate explicitly
+      setHeartRate(0);
+      
+      // Reset processing counters
+      frameCounterRef.current = 0;
+      lastUpdateTimeRef.current = 0;
       
       startProcessing();
-      startHeartBeatMonitoring(); // Update the processor state
+      startHeartBeatMonitoring();
       
       setElapsedTime(0);
       
@@ -127,11 +231,10 @@ const Index = () => {
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
           
-          if (newTime >= 30) {
+          if (newTime >= MEASUREMENT_DURATION) {
             finalizeMeasurement();
-            return 30;
+            return MEASUREMENT_DURATION;
           }
           return newTime;
         });
@@ -145,11 +248,15 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
+    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
+    }
+    
+    if (isWorkerAvailable) {
+      resetWorker().catch(console.error);
     }
     
     const savedResults = resetVitalSigns();
@@ -160,7 +267,7 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0); // Reset heart rate explicitly
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -177,6 +284,10 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
+    if (isWorkerAvailable) {
+      resetWorker().catch(console.error);
+    }
+    
     fullResetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
@@ -191,8 +302,16 @@ const Index = () => {
       }
     });
     setSignalQuality(0);
+    
+    // Triple click to toggle performance monitor (dev feature)
+    const now = Date.now();
+    if (now - lastUpdateTimeRef.current < 300) {
+      setShowPerformanceMonitor(prev => !prev);
+    }
+    lastUpdateTimeRef.current = now;
   };
 
+  // Optimized video handling
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
@@ -200,23 +319,25 @@ const Index = () => {
     const imageCapture = new ImageCapture(videoTrack);
     
     if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
       }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
     }
     
+    // Use a smaller canvas for processing to improve performance
     const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 160; // Reduced from original size
+    tempCanvas.height = 120; // Reduced from original size
+    
     const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
     }
     
+    // Processing settings
     let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
+    const targetFrameInterval = 1000 / 20; // Reduced target FPS
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
     let processingFps = 0;
@@ -231,29 +352,32 @@ const Index = () => {
         try {
           const frame = await imageCapture.grabFrame();
           
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
+          // Use even smaller processing area
           tempCtx.drawImage(
             frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
+            frame.width/4, frame.height/4, frame.width/2, frame.height/2, // Focus on center region 
+            0, 0, tempCanvas.width, tempCanvas.height
           );
           
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
           processFrame(imageData);
           
           frameCount++;
           lastProcessTime = now;
           
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
+          if (now - lastFpsUpdateTime > 2000) { // Check less frequently
+            processingFps = Math.round((frameCount / (now - lastFpsUpdateTime)) * 1000);
             frameCount = 0;
             lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+            
+            // Dynamically adjust processing rate based on actual FPS
+            if (processingFps < 15 && processingRateRef.current < 4) {
+              processingRateRef.current++;
+              console.log(`Performance: FPS too low (${processingFps}), reducing processing rate to 1/${processingRateRef.current}`);
+            } else if (processingFps > 25 && processingRateRef.current > 1) {
+              processingRateRef.current--;
+              console.log(`Performance: FPS good (${processingFps}), increasing processing rate to 1/${processingRateRef.current}`);
+            }
           }
         } catch (error) {
           console.error("Error capturando frame:", error);
@@ -277,7 +401,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -381,6 +504,9 @@ const Index = () => {
           </div>
         </div>
       </div>
+      
+      {/* Performance monitor in development mode */}
+      <PerformanceMonitor enabled={true} showInUI={showPerformanceMonitor} />
     </div>
   );
 };
