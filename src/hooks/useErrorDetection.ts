@@ -48,7 +48,8 @@ export const useErrorDetection = () => {
   
   const reportError = useCallback((code: string, message: string, data?: any) => {
     logError(code, message, data);
-    toast.error(`Error: ${message}`);
+    // Disabled toast notification
+    // toast.error(`Error: ${message}`);
   }, []);
   
   return {
