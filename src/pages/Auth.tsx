@@ -26,9 +26,9 @@ const Auth = () => {
         });
         if (error) throw error;
         
+        // Simplified toast
         toast({
           title: "Registro exitoso",
-          description: "Por favor, revisa tu email para confirmar tu cuenta.",
         });
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -40,10 +40,10 @@ const Auth = () => {
         navigate("/");
       }
     } catch (error: any) {
+      // Only show specific error messages
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message,
+        title: "Error de autenticación",
       });
     } finally {
       setLoading(false);

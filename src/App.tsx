@@ -22,43 +22,21 @@ const App = () => {
     // Run comprehensive system verification on startup
     const startupVerification = async () => {
       try {
-        // Log startup event
-        logSignalProcessing(
-          LogLevel.INFO,
-          'SystemStartup',
-          'Initiating automated system verification'
-        );
-        
-        // Check all dependencies
+        // Removed verbose logging toasts
         await dependencyMonitor.checkAllDependencies();
         
-        // Run system quality evaluation
         const qualityReport = evaluateSystemQuality();
         
-        // Log verification results
-        logSignalProcessing(
-          LogLevel.INFO,
-          'SystemStartup',
-          `System verification complete: ${qualityReport.summary}`,
-          qualityReport
-        );
+        // Only log to console, removed system toasts
+        console.log('System startup verification:', qualityReport);
         
         // Preemptively reset error defense system if quality is compromised
         if (qualityReport.score < 80) {
           errorDefense.reset();
-          logSignalProcessing(
-            LogLevel.WARN,
-            'SystemStartup',
-            'System quality below threshold, performing preventive reset'
-          );
+          console.warn('System quality below threshold, performing preventive reset');
         }
       } catch (error) {
-        logSignalProcessing(
-          LogLevel.ERROR,
-          'SystemStartup',
-          'System verification failed',
-          error
-        );
+        console.error('System startup verification failed', error);
       }
     };
     

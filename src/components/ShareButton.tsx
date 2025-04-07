@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 
-const APP_SHARE_URL = "https://healthpulse.app"; // Replace with your actual app URL
+const APP_SHARE_URL = "https://healthpulse.app";
 
 const ShareButton = () => {
   const [isSharing, setIsSharing] = useState(false);
@@ -21,25 +21,25 @@ const ShareButton = () => {
 
       if (navigator.share && navigator.canShare(shareData)) {
         await navigator.share(shareData);
+        // Simplified toast
         toast({
-          title: "Compartido",
-          description: "Enlace compartido exitosamente",
+          title: "Enlace compartido",
         });
       } else {
-        // Fallback to clipboard copy
+        // Simplified clipboard toast
         await navigator.clipboard.writeText(APP_SHARE_URL);
         toast({
           title: "Enlace copiado",
-          description: "El enlace ha sido copiado al portapapeles",
         });
       }
     } catch (error) {
-      console.error("Error sharing: ", error);
-      toast({
-        title: "Error al compartir",
-        description: "No se pudo compartir el enlace",
-        variant: "destructive",
-      });
+      // Only show toast for actual sharing errors
+      if (error instanceof Error) {
+        toast({
+          title: "Error al compartir",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsSharing(false);
     }
