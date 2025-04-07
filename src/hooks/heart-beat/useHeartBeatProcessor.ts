@@ -4,9 +4,9 @@ import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { RRAnalysisResult } from '../../hooks/arrhythmia/types';
 import { useBeepProcessor } from './beep-processor';
-import { useArrhythmiaDetector } from './arrhythmia-detector';
 import { useSignalProcessor } from './signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './types';
+import { ArrhythmiaDetectionService } from '../../services/ArrhythmiaDetectionService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -19,6 +19,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
+  // Replace arrhythmia detector with new service
+  const arrhythmiaServiceRef = useRef<ArrhythmiaDetectionService | null>(null);
+  const lastRRIntervalsRef = useRef<number[]>([]);
+  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
+  
+  // Initialize arrhythmia service if needed
+  if (!arrhythmiaServiceRef.current) {
+    arrhythmiaServiceRef.current = new ArrhythmiaDetectionService();
+  }
+  
   // Hooks para procesamiento y detección, sin funcionalidad de beep
   const { 
     requestImmediateBeep, 
@@ -28,16 +38,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     beepProcessorTimeoutRef, 
     cleanup: cleanupBeepProcessor 
   } = useBeepProcessor();
-  
-  const {
-    detectArrhythmia,
-    heartRateVariabilityRef,
-    stabilityCounterRef,
-    lastRRIntervalsRef,
-    lastIsArrhythmiaRef,
-    currentBeatIsArrhythmiaRef,
-    reset: resetArrhythmiaDetector
-  } = useArrhythmiaDetector();
   
   const {
     processSignal: processSignalInternal,
@@ -119,7 +119,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    // Fix the isMonitoringRef parameter - pass the reference, not the boolean value
     const result = processSignalInternal(
       value, 
       currentBPM, 
@@ -136,11 +135,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       setConfidence(result.confidence);
     }
 
-    if (lastRRIntervalsRef.current.length >= 3) {
-      const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
-      currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
+    // Use the ArrhythmiaDetectionService for arrhythmia detection
+    if (lastRRIntervalsRef.current.length >= 3 && arrhythmiaServiceRef.current) {
+      const arrhythmiaResult = arrhythmiaServiceRef.current.detectArrhythmia({
+        intervals: lastRRIntervalsRef.current,
+        lastPeakTime: result.rrData.lastPeakTime
+      });
       
-      result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
+      currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
+      result.isArrhythmia = arrhythmiaResult.isArrhythmia;
+      result.arrhythmiaCount = arrhythmiaServiceRef.current.getArrhythmiaCount();
     }
 
     return result;
@@ -148,8 +152,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     currentBPM, 
     confidence, 
     processSignalInternal, 
-    requestBeep, 
-    detectArrhythmia
+    requestBeep
   ]);
 
   const reset = useCallback(() => {
@@ -169,14 +172,20 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     setCurrentBPM(0);
     setConfidence(0);
     
-    resetArrhythmiaDetector();
+    // Reset arrhythmia detection service
+    if (arrhythmiaServiceRef.current) {
+      arrhythmiaServiceRef.current.reset();
+    }
+    lastRRIntervalsRef.current = [];
+    currentBeatIsArrhythmiaRef.current = false;
+    
     resetSignalProcessor();
     
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
     
     cleanupBeepProcessor();
-  }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);
+  }, [resetSignalProcessor, cleanupBeepProcessor]);
 
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');

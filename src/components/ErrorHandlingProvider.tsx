@@ -97,7 +97,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       {/* Show warning banner for non-fatal issues */}
       {showWarning && (
         <Alert
-          variant={isCritical ? "destructive" : "warning"}
+          variant={isCritical ? "destructive" : "default"}
           className="mb-4 sticky top-0 z-50"
         >
           <AlertTriangle className="h-4 w-4" />

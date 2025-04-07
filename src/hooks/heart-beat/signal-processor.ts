@@ -1,3 +1,4 @@
+
 import { useCallback, useRef } from 'react';
 
 interface SignalProcessingResult {
@@ -9,6 +10,7 @@ interface SignalProcessingResult {
     lastPeakTime: number | null;
   };
   isArrhythmia?: boolean;
+  arrhythmiaCount?: number;
 }
 
 export function useSignalProcessor() {
@@ -49,7 +51,8 @@ export function useSignalProcessor() {
         bpm: 0,
         confidence: 0,
         isPeak: false,
-        rrData: { intervals: [], lastPeakTime: null }
+        rrData: { intervals: [], lastPeakTime: null },
+        arrhythmiaCount: 0
       };
     }
     
@@ -138,7 +141,8 @@ export function useSignalProcessor() {
       confidence: result.confidence,
       isPeak: result.isPeak,
       rrData,
-      isArrhythmia: currentBeatIsArrhythmiaRef.current
+      isArrhythmia: currentBeatIsArrhythmiaRef.current,
+      arrhythmiaCount: 0
     };
   }, []);
   
