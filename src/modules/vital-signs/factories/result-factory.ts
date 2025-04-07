@@ -6,15 +6,34 @@
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating consistent VitalSignsResult objects
- * All methods work with real data only, no simulation
+ * Factory for creating vital signs measurement results
+ * Direct measurement only, no simulation
  */
 export class ResultFactory {
   /**
-   * Creates an empty result when there is no valid data
-   * Always returns zeros, no simulation
+   * Creates a vital signs result object
+   * @param data Raw vital signs data
+   * @returns VitalSignsResult object
    */
-  public static createEmptyResults(): VitalSignsResult {
+  createResult(data: any): VitalSignsResult {
+    return {
+      spo2: data.spo2 || 0,
+      pressure: data.pressure || "--/--",
+      arrhythmiaStatus: data.arrhythmiaStatus || "--",
+      glucose: data.glucose || 0,
+      lipids: {
+        totalCholesterol: data.lipids?.totalCholesterol || 0,
+        triglycerides: data.lipids?.triglycerides || 0
+      },
+      lastArrhythmiaData: data.lastArrhythmiaData || null
+    };
+  }
+
+  /**
+   * Creates an empty vital signs result object
+   * @returns Empty VitalSignsResult object
+   */
+  createEmptyResult(): VitalSignsResult {
     return {
       spo2: 0,
       pressure: "--/--",
@@ -24,36 +43,9 @@ export class ResultFactory {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
-      }
-    };
-  }
-  
-  /**
-   * Creates a result with the given values
-   * Only for direct measurements
-   */
-  public static createResult(
-    spo2: number,
-    pressure: string,
-    arrhythmiaStatus: string,
-    glucose: number,
-    lipids: { totalCholesterol: number; triglycerides: number },
-    confidence: { glucose: number; lipids: number; overall: number },
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
-  ): VitalSignsResult {
-    return {
-      spo2,
-      pressure,
-      arrhythmiaStatus,
-      glucose,
-      lipids,
-      confidence,
-      lastArrhythmiaData
+      lastArrhythmiaData: null
     };
   }
 }
 
+export const resultFactory = new ResultFactory();

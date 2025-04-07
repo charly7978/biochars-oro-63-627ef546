@@ -1,24 +1,30 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Interface for arrhythmia visualization window
  */
-
-import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
-
 export interface ArrhythmiaWindow {
   start: number;
   end: number;
+  isActive?: boolean;
 }
 
+/**
+ * Interface for signal quality parameters
+ */
+export interface SignalQualityParams {
+  lowSignalThreshold: number;
+  maxWeakSignalCount: number;
+}
+
+/**
+ * Return type for useVitalSignsProcessor hook
+ */
 export interface UseVitalSignsProcessorReturn {
-  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
-  reset: () => VitalSignsResult | null;
+  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => any;
+  reset: () => any;
   fullReset: () => void;
   arrhythmiaCounter: number;
-  lastValidResults: VitalSignsResult | null;
-  arrhythmiaWindows: ArrhythmiaWindow[];
-  debugInfo: {
-    processedSignals: number;
-    signalLog: { timestamp: number, value: number, result: any }[];
-  };
+  lastValidResults: any | null;
+  arrhythmiaWindows?: ArrhythmiaWindow[];
+  debugInfo?: any;
 }

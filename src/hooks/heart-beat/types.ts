@@ -1,29 +1,20 @@
 
 /**
- * Interface for heart beat processing results.
+ * Interface for RR interval data
+ */
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
+}
+
+/**
+ * Interface for heart beat result
  */
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
-  arrhythmiaCount: number;
-  rrData: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
-  isArrhythmia?: boolean;
-}
-
-/**
- * Return type for useHeartBeatProcessor hook.
- */
-export interface UseHeartBeatReturn {
-  currentBPM: number;
-  confidence: number;
-  processSignal: (value: number) => HeartBeatResult;
-  reset: () => void;
-  isArrhythmia: boolean;
-  requestBeep: (value: number) => boolean;
-  startMonitoring: () => void;
-  stopMonitoring: () => void;
+  arrhythmiaCount?: number;
+  filteredValue?: number;
+  rrData?: RRIntervalData;
 }
