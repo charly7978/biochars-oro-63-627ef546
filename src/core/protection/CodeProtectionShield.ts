@@ -1,4 +1,3 @@
-
 /**
  * Sistema de Escudo Protector
  * 
@@ -154,6 +153,30 @@ export class CodeProtectionShield {
     } catch (error) {
       console.error(`Error durante rollback de ${fileName}:`, error);
       return false;
+    }
+  }
+  
+  /**
+   * Registra un resultado de verificación en el log
+   * @param verification Detalles de la verificación
+   */
+  public logVerification(verification: {
+    type: string;
+    result: VerificationResult;
+    timestamp: number;
+    context: { fileName: string; moduleName: string; }
+  }): void {
+    try {
+      this.changeLogger.logVerification(verification.context, new Date(verification.timestamp), {
+        type: verification.type,
+        result: verification.result
+      });
+      
+      if (!verification.result.success) {
+        console.warn(`Verificación fallida: ${verification.type} en ${verification.context.fileName}`);
+      }
+    } catch (error) {
+      console.error('Error al registrar verificación:', error);
     }
   }
   
