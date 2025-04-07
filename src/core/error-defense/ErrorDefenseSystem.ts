@@ -1,4 +1,3 @@
-
 /**
  * Sistema Integral de Defensa contra Errores
  * 
@@ -451,6 +450,14 @@ class ErrorDefenseSystem {
       
       console.log('Monitoreo de salud del sistema inicializado');
     }
+  }
+
+  /**
+   * Elimina todos los listeners de error registrados
+   */
+  public removeAllListeners(): void {
+    this.errorListeners.clear();
+    console.log('Todos los listeners de error han sido eliminados');
   }
 
   /**
