@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -114,7 +115,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    // Process the signal using our internal processor with the correct number of arguments
+    // Corregido el tipo para lastPeakTimeRef
+    // Ahora pasamos el lastPeakTimeRef.current como un valor, no como una referencia
     const result = processSignalInternal(
       value, 
       currentBPM, 
@@ -122,7 +124,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current, 
       requestBeep, 
       isMonitoringRef,
-      lastPeakTimeRef,
+      lastPeakTimeRef.current,
       lastValidBpmRef
     );
 
@@ -144,7 +146,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       ...result,
       isArrhythmia: arrhythmiaDetected || false
     };
-  }, [currentBPM, confidence, processSignalInternal, requestBeep, detectArrhythmia, arrhythmiaDetected, lastPeakTimeRef, lastValidBpmRef]);
+  }, [currentBPM, confidence, processSignalInternal, requestBeep, detectArrhythmia, arrhythmiaDetected]);
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
@@ -177,6 +179,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current.setMonitoring(true);
       console.log('HeartBeatProcessor: Monitoring state set to true');
       
+      // Corregido: asignamos null al current directamente, no a la referencia
       lastPeakTimeRef.current = null;
       lastBeepTimeRef.current = 0;
       lastProcessedPeakTimeRef.current = 0;
