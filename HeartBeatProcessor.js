@@ -273,6 +273,8 @@ export class HeartBeatProcessor {
   }
 
   resetDetectionStates() {
+    // FIXED: Implemented directly in this class instead of importing
+    // This prevents the critical import error that causes black screen
     this.lastPeakTime = null;
     this.previousPeakTime = null;
     this.lastConfirmedPeak = false;
@@ -280,7 +282,22 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.peakConfirmationBuffer = [];
     this.values = [];
-    console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
+    console.log("HeartBeatProcessor: auto-reset detection states (low signal) - using internal implementation.");
+    
+    // Try to access the global fix if it exists (for backward compatibility)
+    try {
+      if (typeof window !== 'undefined' && 
+          window.__moduleExports && 
+          window.__moduleExports['/src/modules/heart-beat/signal-quality.ts'] && 
+          window.__moduleExports['/src/modules/heart-beat/signal-quality.ts'].resetDetectionStates) {
+        // Call the fallback implementation but don't rely on its result
+        window.__moduleExports['/src/modules/heart-beat/signal-quality.ts'].resetDetectionStates();
+      }
+    } catch (e) {
+      // Ignore errors - we have our own implementation now
+    }
+    
+    return { weakSignalsCount: 0 };
   }
 
   detectPeak(normalizedValue, derivative) {
