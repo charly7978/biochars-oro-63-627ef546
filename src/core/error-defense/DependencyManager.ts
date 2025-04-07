@@ -1,4 +1,3 @@
-
 /**
  * DependencyManager - Proactively manages and initializes critical system dependencies
  * to prevent "dependency not available" errors before they happen
@@ -7,6 +6,7 @@
 import { VitalSignsProcessor } from '../../modules/VitalSignsProcessor';
 import { logSignalProcessing, LogLevel } from '../../utils/signalLogging';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from './ErrorDefenseSystem';
+import TypeScriptValidator from './TypeScriptValidator';
 
 interface ManagedDependency {
   name: string;
@@ -221,12 +221,12 @@ class DependencyManager {
           errorSystem.reportError({
             id: '',
             timestamp: Date.now(),
-            category: ErrorCategory.CODE_QUALITY,
+            category: ErrorCategory.RUNTIME,
             severity: ErrorSeverity.HIGH,
             message: `Code Guardian: ${issue.message}`,
             source: 'CodeGuardian',
             metadata: {
-              rule: issue.name,
+              rule: issue.description || '',
               affectedFiles: issue.affectedFiles
             }
           });
@@ -694,29 +694,18 @@ class DependencyManager {
    * This would be integrated with the TypeScript compiler API
    */
   public validateTypeScript(code: string, filePath: string): ValidationResult[] {
-    // This is a placeholder - a real implementation would use the TypeScript compiler API
-    const possibleErrors: ValidationResult[] = [];
+    // Use the TypeScriptValidator to validate the code
+    const validator = TypeScriptValidator.getInstance();
+    const validationResults = validator.validateCode(code, filePath);
     
-    // Simple regex-based checks (not a substitute for real TS checking)
-    if (code.includes('any') && !filePath.includes('.d.ts')) {
-      possibleErrors.push({
-        passed: false,
-        message: 'Avoid using "any" type',
-        severity: 'warning',
-        affectedFiles: [filePath]
-      });
-    }
-    
-    if (code.includes('!.') || code.includes('?.')) {
-      possibleErrors.push({
-        passed: false,
-        message: 'Non-null assertion operators (!.) should be used carefully',
-        severity: 'warning',
-        affectedFiles: [filePath]
-      });
-    }
-    
-    return possibleErrors;
+    // Transform the TypeScriptValidator results to our ValidationResult format
+    return validationResults.map(result => ({
+      passed: result.passed,
+      message: result.message,
+      severity: result.severity,
+      affectedFiles: [filePath],
+      description: result.name // Use description instead of name
+    }));
   }
 }
 

@@ -1,4 +1,3 @@
-
 /**
  * TypeScriptValidator - Provides real-time validation of TypeScript code
  * to catch errors before they become runtime issues
@@ -6,7 +5,7 @@
 
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from './ErrorDefenseSystem';
 
-interface ValidationResult {
+export interface ValidationResult {
   passed: boolean;
   message: string;
   severity: 'warning' | 'error' | 'critical';
@@ -197,6 +196,7 @@ class TypeScriptValidator {
         const line = lines.length;
         const column = lines[lines.length - 1].length + 1;
         
+        // Add result with name property so it can be used by other systems
         results.push({
           passed: false,
           message,

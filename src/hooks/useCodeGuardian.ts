@@ -1,7 +1,7 @@
 
 /**
  * useCodeGuardian - React hook for integrating Code Guardian validation
- * into components and tools
+ * into components and tools without showing information to the user
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -17,10 +17,16 @@ export interface ValidationIssue {
   timestamp: number;
 }
 
-export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
+export function useCodeGuardian(options: { autoValidate?: boolean; silent?: boolean } = {}) {
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [lastValidated, setLastValidated] = useState<number | null>(null);
+  
+  // Set default options
+  const opts = {
+    autoValidate: options.autoValidate ?? true,
+    silent: options.silent ?? true // Default to silent mode per user's request
+  };
   
   // Get dependency manager instance
   const dependencyManager = DependencyManager.getInstance();
@@ -34,7 +40,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
         message: result.message,
         severity: result.severity,
         affectedFiles: result.affectedFiles || [],
-        rule: result.name || 'unknown-rule',
+        rule: result.description || 'unknown-rule', // Changed from result.name to result.description
         suggestions: result.suggestion ? [result.suggestion] : [],
         timestamp: Date.now()
       }));
@@ -46,14 +52,23 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
     
     try {
       const results = dependencyManager.validateCodebase();
-      setValidationIssues(transformResults(results));
+      const issues = transformResults(results);
+      setValidationIssues(issues);
       setLastValidated(Date.now());
+      
+      // Log issues to console but don't display to user
+      if (issues.length > 0 && !opts.silent) {
+        console.warn('Code Guardian found issues:', issues);
+      }
+      
+      return issues;
     } catch (error) {
       console.error('Error during code validation:', error);
+      return [];
     } finally {
       setIsValidating(false);
     }
-  }, [dependencyManager, transformResults]);
+  }, [dependencyManager, transformResults, opts.silent]);
   
   // Validate code changes before commit
   const validateChanges = useCallback((changedFiles: string[], additions: Record<string, string[]>, removals: Record<string, string[]>) => {
@@ -62,8 +77,17 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
     try {
       const results = dependencyManager.validateCodeChanges(changedFiles, additions, removals);
       const issues = transformResults(results);
-      setValidationIssues(prev => [...prev, ...issues]);
-      setLastValidated(Date.now());
+      
+      if (issues.length > 0) {
+        setValidationIssues(prev => [...prev, ...issues]);
+        setLastValidated(Date.now());
+        
+        // Log issues to console in silent mode
+        if (!opts.silent) {
+          console.warn('Code Guardian found issues in changes:', issues);
+        }
+      }
+      
       return issues.length === 0;
     } catch (error) {
       console.error('Error validating changes:', error);
@@ -71,7 +95,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
     } finally {
       setIsValidating(false);
     }
-  }, [dependencyManager, transformResults]);
+  }, [dependencyManager, transformResults, opts.silent]);
   
   // Validate TypeScript code
   const validateTypeScript = useCallback((code: string, filePath: string) => {
@@ -81,6 +105,12 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
       
       if (issues.length > 0) {
         setValidationIssues(prev => [...prev, ...issues]);
+        
+        // Log issues to console in silent mode
+        if (!opts.silent) {
+          console.warn(`Code Guardian found TypeScript issues in ${filePath}:`, issues);
+        }
+        
         return issues;
       }
       return [];
@@ -88,14 +118,14 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
       console.error('Error validating TypeScript:', error);
       return [];
     }
-  }, [dependencyManager, transformResults]);
+  }, [dependencyManager, transformResults, opts.silent]);
   
   // Auto-validate on mount if enabled
   useEffect(() => {
-    if (options.autoValidate) {
+    if (opts.autoValidate) {
       runValidation();
     }
-  }, [options.autoValidate, runValidation]);
+  }, [opts.autoValidate, runValidation]);
   
   return {
     validationIssues,
