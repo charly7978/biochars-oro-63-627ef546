@@ -11,7 +11,7 @@ import { Lipids } from './processors/lipids';
 import { Arrhythmia } from './processors/arrhythmia';
 import { resultFactory } from './factories/result-factory';
 import { VitalSignsResult, ArrhythmiaDetectionResult } from './types/vital-signs-result';
-import { checkSignalQuality } from '../heart-beat/signal-quality';
+import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 
 /**
  * Main processor for vital signs - direct measurement only

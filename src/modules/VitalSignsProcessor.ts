@@ -1,8 +1,8 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+// Fix the import to eliminate circular dependency
 import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
 import { VitalSignsResult } from './vital-signs/types/vital-signs-result';
 import { checkSignalQuality } from './heart-beat/signal-quality';
@@ -11,7 +11,7 @@ import { RRIntervalData } from '../hooks/heart-beat/types';
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
  * No simulation or data manipulation allowed.
- * Improved resistance to false positives
+ *  Improved resistance to false positives
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
