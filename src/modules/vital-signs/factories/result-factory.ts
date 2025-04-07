@@ -1,21 +1,18 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
-
-import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
  * Factory for creating vital signs measurement results
  * Direct measurement only, no simulation
  */
-export class ResultFactory {
+class ResultFactory {
   /**
    * Creates a vital signs result object
    * @param data Raw vital signs data
    * @returns VitalSignsResult object
    */
-  createResult(data: any): VitalSignsResult {
+  createResult(data: any) {
     return {
       spo2: data.spo2 || 0,
       pressure: data.pressure || "--/--",
@@ -33,7 +30,7 @@ export class ResultFactory {
    * Creates an empty vital signs result object
    * @returns Empty VitalSignsResult object
    */
-  createEmptyResult(): VitalSignsResult {
+  createEmptyResult() {
     return {
       spo2: 0,
       pressure: "--/--",

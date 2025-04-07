@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -9,7 +8,7 @@ import { SPO2 } from './processors/spo2';
 import { Glucose } from './processors/glucose';
 import { Lipids } from './processors/lipids';
 import { Arrhythmia } from './processors/arrhythmia';
-import { resultFactory } from './factories/result-factory';
+import { ResultFactory } from './factories/result-factory';
 import { VitalSignsResult, ArrhythmiaDetectionResult } from './types/vital-signs-result';
 import { checkSignalQuality } from '../heart-beat/signal-quality';
 
@@ -24,6 +23,7 @@ export class VitalSignsProcessor {
   private glucoseProcessor: Glucose;
   private lipidsProcessor: Lipids;
   private arrhythmiaProcessor: Arrhythmia;
+  private resultFactory: ResultFactory;
   
   /**
    * Initialize vital signs processors - direct measurement only
@@ -36,6 +36,7 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new Glucose();
     this.lipidsProcessor = new Lipids();
     this.arrhythmiaProcessor = new Arrhythmia();
+    this.resultFactory = new ResultFactory();
   }
   
   /**
@@ -55,7 +56,7 @@ export class VitalSignsProcessor {
     const glucose = this.glucoseProcessor.calculateGlucose(value, quality, isWeakSignal);
     const lipids = this.lipidsProcessor.calculateLipids(value, quality, isWeakSignal);
     
-    let result = resultFactory.createResult({
+    let result = this.resultFactory.createResult({
       spo2,
       pressure,
       arrhythmiaStatus,
@@ -118,6 +119,3 @@ export class VitalSignsProcessor {
     };
   }
 }
-
-// Export the VitalSignsResult type
-export type { VitalSignsResult, ArrhythmiaDetectionResult } from './types/vital-signs-result';
