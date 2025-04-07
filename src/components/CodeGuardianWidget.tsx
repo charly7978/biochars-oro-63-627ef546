@@ -83,10 +83,10 @@ export function CodeGuardianWidget({
   
   // Render expanded widget
   return (
-    <div 
-      className={`fixed ${positionClasses} z-50 w-96 bg-background/95 backdrop-blur-sm rounded-lg border shadow-lg overflow-hidden transition-all duration-300 ${
-        isOpen ? 'max-h-[70vh]' : 'max-h-12'
-      }`}
+    <Collapsible
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className={`fixed ${positionClasses} z-50 w-96 bg-background/95 backdrop-blur-sm rounded-lg border shadow-lg overflow-hidden transition-all duration-300`}
     >
       {/* Header */}
       <div className="p-3 border-b flex items-center justify-between">
@@ -114,19 +114,20 @@ export function CodeGuardianWidget({
             </Button>
           )}
           
-          <Button 
-            variant="ghost" 
-            size="icon"
-            className="h-6 w-6"
-            onClick={() => setIsOpen(!isOpen)}
-          >
-            <span className="sr-only">Toggle</span>
-            {isOpen ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronUp className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          <CollapsibleTrigger asChild>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-6 w-6"
+            >
+              <span className="sr-only">Toggle</span>
+              {isOpen ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
           
           {!minimal && (
             <Button 
@@ -143,7 +144,7 @@ export function CodeGuardianWidget({
       </div>
       
       {/* Content */}
-      <CollapsibleContent forceMount className={isOpen ? 'block' : 'hidden'}>
+      <CollapsibleContent>
         <ScrollArea className="p-3 max-h-[60vh]">
           {validationIssues.length === 0 ? (
             <div className="py-8 flex flex-col items-center justify-center text-center">
@@ -188,7 +189,7 @@ export function CodeGuardianWidget({
           )}
         </ScrollArea>
       </CollapsibleContent>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -244,7 +245,7 @@ function Issue({ issue, onDismiss }: { issue: ValidationIssue, onDismiss: () => 
         </div>
       </div>
       
-      <CollapsibleContent className="px-2 pb-2">
+      <CollapsibleContent>
         {issue.affectedFiles && issue.affectedFiles.length > 0 && (
           <div className="mb-2">
             <p className="text-xs font-medium mb-1">Affected Files:</p>

@@ -10,6 +10,7 @@ interface ValidationResult {
   passed: boolean;
   message: string;
   severity: 'warning' | 'error' | 'critical';
+  name?: string;
   location?: {
     line: number;
     column: number;
@@ -33,6 +34,7 @@ class TypeScriptValidator {
   private patterns: Array<{
     pattern: RegExp;
     message: string;
+    name: string;
     severity: 'warning' | 'error' | 'critical';
     suggestion?: string;
   }> = [];
@@ -54,24 +56,28 @@ class TypeScriptValidator {
       {
         pattern: /useState\([^)]*\)\s*(?!\s*const\s*\[)/g, 
         message: "useState result should be destructured with const",
+        name: "use-state-destructuring",
         severity: 'warning',
         suggestion: "const [value, setValue] = useState(initialValue)"
       },
       {
         pattern: /<([A-Z][A-Za-z0-9]*)\s+[^>]*>(?:(?!<\/\1>).)*$/gm,
         message: "JSX tag is not closed properly",
+        name: "jsx-unclosed-tag",
         severity: 'error',
         suggestion: "Ensure all JSX tags are properly closed"
       },
       {
         pattern: /props\.children(?!\s*as\s*)/g,
         message: "props.children should be typed explicitly",
+        name: "children-typing",
         severity: 'warning',
         suggestion: "children: ReactNode in your props interface"
       },
       {
         pattern: /useEffect\([^,)]*\)/g,
         message: "useEffect missing dependency array",
+        name: "effect-dependencies",
         severity: 'warning',
         suggestion: "useEffect(() => { ... }, [])"
       },
@@ -80,18 +86,21 @@ class TypeScriptValidator {
       {
         pattern: /:\s*any\b/g,
         message: "Avoid using 'any' type",
+        name: "no-any",
         severity: 'warning',
         suggestion: "Use a more specific type or unknown"
       },
       {
         pattern: /\(\s*\)\s*=>\s*{\s*}/g,
         message: "Empty arrow function",
+        name: "no-empty-function",
         severity: 'warning',
         suggestion: "Implement the function or use a meaningful default"
       },
       {
         pattern: /as\s+any/g,
         message: "Type assertion to 'any' should be avoided",
+        name: "no-any-assertion",
         severity: 'warning',
         suggestion: "Use a more specific type assertion or type guard"
       },
@@ -100,12 +109,14 @@ class TypeScriptValidator {
       {
         pattern: /import\s+{[^}]*}\s+from\s+['"](?:\.\/|\.\.\/)[^'"]*['"]/g,
         message: "Check import path",
+        name: "import-path",
         severity: 'warning',
         suggestion: "Verify that the imported file exists at this path"
       },
       {
         pattern: /import\s+(?:{[^}]*})?\s*from\s*['"][^'"]*\.jsx?['"];/g,
         message: "Importing from .js/.jsx file in TypeScript project",
+        name: "ts-import",
         severity: 'warning',
         suggestion: "Consider using .ts/.tsx files for consistency"
       },
@@ -114,18 +125,21 @@ class TypeScriptValidator {
       {
         pattern: /(?:if|for|while)\s*\([^)]*\)\s*(?!{)/g,
         message: "Control statement without block",
+        name: "block-scoping",
         severity: 'warning',
         suggestion: "Use {} blocks with control statements for clarity"
       },
       {
         pattern: /===\s*undefined/g,
         message: "Consider using optional chaining or nullish coalescing",
+        name: "modern-syntax",
         severity: 'warning',
         suggestion: "Use obj?.prop or obj ?? defaultValue"
       },
       {
         pattern: /!==\s*null\s*&&\s*[^&\n]+!==\s*undefined/g,
         message: "Consider using optional chaining",
+        name: "optional-chaining",
         severity: 'warning',
         suggestion: "Use obj?.prop instead of obj !== null && obj !== undefined && obj.prop"
       },
@@ -134,12 +148,14 @@ class TypeScriptValidator {
       {
         pattern: /useCallback\(\s*\(\)\s*=>\s*{\s*(?:setInterval|setTimeout)\(/g,
         message: "Timer inside useCallback without cleanup",
+        name: "timer-cleanup",
         severity: 'warning',
         suggestion: "Remember to clear timer with clearTimeout/clearInterval"
       },
       {
         pattern: /new\s+Array\(\d+\)/g,
         message: "Using new Array() constructor",
+        name: "array-literal",
         severity: 'warning',
         suggestion: "Consider using array literal [] syntax"
       },
@@ -148,12 +164,14 @@ class TypeScriptValidator {
       {
         pattern: /dangerouslySetInnerHTML/g,
         message: "Using dangerouslySetInnerHTML - security risk",
+        name: "xss-risk",
         severity: 'error',
         suggestion: "Avoid using dangerouslySetInnerHTML when possible"
       },
       {
         pattern: /eval\(/g,
         message: "Using eval() - security risk",
+        name: "eval-usage",
         severity: 'critical',
         suggestion: "Avoid using eval - it's a security risk"
       }
@@ -167,7 +185,7 @@ class TypeScriptValidator {
     const results: ValidationResult[] = [];
     
     // Apply all patterns
-    for (const { pattern, message, severity, suggestion } of this.patterns) {
+    for (const { pattern, message, severity, suggestion, name } of this.patterns) {
       // Reset regex lastIndex to ensure proper matching
       pattern.lastIndex = 0;
       
@@ -183,6 +201,7 @@ class TypeScriptValidator {
           passed: false,
           message,
           severity,
+          name,
           location: { line, column },
           code: match[0],
           suggestion
@@ -199,7 +218,7 @@ class TypeScriptValidator {
         errorSystem.reportError({
           id: '',
           timestamp: Date.now(),
-          category: ErrorCategory.CODE_QUALITY,
+          category: ErrorCategory.RUNTIME,
           severity: ErrorSeverity.HIGH,
           message: `Code Guardian: ${issue.message} in ${filePath}`,
           source: 'TypeScriptValidator',

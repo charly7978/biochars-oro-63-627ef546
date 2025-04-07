@@ -35,7 +35,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean } = {}) {
         severity: result.severity,
         affectedFiles: result.affectedFiles || [],
         rule: result.name || 'unknown-rule',
-        suggestions: [],
+        suggestions: result.suggestion ? [result.suggestion] : [],
         timestamp: Date.now()
       }));
   }, []);
