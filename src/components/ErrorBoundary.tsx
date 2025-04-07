@@ -2,7 +2,6 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { showToast } from '@/utils/toast-utils';
 import { logSignalProcessing, LogLevel } from '@/utils/signalLogging';
 
 interface Props {
@@ -60,18 +59,6 @@ class ErrorBoundary extends Component<Props, State> {
     // Call onError prop if provided
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
-    }
-    
-    // Limit error toasts to once per 30 seconds and only for critical errors
-    const now = Date.now();
-    if (now - this.lastError > 30000) {
-      showToast(
-        'Error Crítico', 
-        error.message.substring(0, 100) + (error.message.length > 100 ? '...' : ''), 
-        'error',
-        { important: true }
-      );
-      this.lastError = now;
     }
   }
 

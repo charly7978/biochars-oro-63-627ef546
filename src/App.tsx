@@ -62,6 +62,7 @@ const App = () => {
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        {/* Mantenemos los componentes Toaster para no romper referencias, pero no mostrarán nada */}
         <Toaster />
         <SonnerToaster />
       </ErrorHandlingProvider>

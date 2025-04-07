@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +13,6 @@ import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { getLogEntries, LogLevel, evaluateSystemQuality } from '@/utils/signalLogging';
 import DependencyMonitor from '@/core/error-defense/DependencyMonitor';
-import { toast } from '@/components/ui/use-toast';
 
 interface SystemDiagnosticsProps {
   minimal?: boolean;
@@ -32,10 +30,8 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
   const [commonErrorPatterns, setCommonErrorPatterns] = useState<{pattern: string, count: number}[]>([]);
   const [showAdvancedTools, setShowAdvancedTools] = useState<boolean>(false);
   
-  // Obtener errores críticos y dependencias faltantes
   useEffect(() => {
     const fetchCriticalData = async () => {
-      // Obtener los últimos errores críticos
       const recentLogs = getLogEntries();
       const criticalErrorLogs = recentLogs
         .filter(log => log.level === LogLevel.ERROR)
@@ -48,7 +44,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       
       setCriticalErrors(criticalErrorLogs);
       
-      // Verificar dependencias faltantes
       try {
         const dependencyMonitor = DependencyMonitor.getInstance();
         const results = await dependencyMonitor.checkAllDependencies();
@@ -62,7 +57,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
         console.error("Error al verificar dependencias:", error);
       }
       
-      // Analizar patrones comunes de error
       analyzeErrorPatterns(recentLogs);
     };
     
@@ -76,38 +70,31 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     return () => clearInterval(updateInterval);
   }, []);
   
-  // Analizar patrones comunes en los errores
   const analyzeErrorPatterns = (logs: any[]) => {
     const errorLogs = logs.filter(log => log.level === LogLevel.ERROR);
     const patterns: Record<string, number> = {};
     
-    // Buscar patrones en los mensajes de error
     errorLogs.forEach(log => {
-      // Extraer tipo de error general eliminando detalles específicos
       let pattern = log.message;
       
-      // Remover IDs, timestamps y detalles específicos
       pattern = pattern.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '[ID]');
       pattern = pattern.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, '[TIMESTAMP]');
       pattern = pattern.replace(/at position \d+/g, 'at position [N]');
       pattern = pattern.replace(/line \d+/g, 'line [N]');
       pattern = pattern.replace(/\d+ ms/g, '[N] ms');
       
-      // Para errores de "Track in an invalid state", extraer solo la parte relevante
       if (pattern.includes('InvalidStateError') && pattern.includes('Track is in an invalid state')) {
         pattern = 'InvalidStateError: The associated Track is in an invalid state';
       }
       
-      // Contar ocurrencias del patrón
       patterns[pattern] = (patterns[pattern] || 0) + 1;
     });
     
-    // Convertir a array y ordenar por frecuencia
     const patternArray = Object.entries(patterns)
-      .filter(([_, count]) => count > 1) // Solo patrones que ocurren más de una vez
+      .filter(([_, count]) => count > 1)
       .map(([pattern, count]) => ({ pattern, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 5); // Top 5 patrones
+      .slice(0, 5);
     
     setCommonErrorPatterns(patternArray);
   };
@@ -132,12 +119,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       setTimeout(() => {
         setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Recuperación completada`]);
         setRecoveryInProgress(false);
-        
-        toast({
-          title: "Recuperación completada",
-          description: "El sistema ha intentado solucionar los problemas detectados",
-          variant: "default"
-        });
       }, 2000);
     } catch (e) {
       setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Error durante la recuperación: ${e}`]);
@@ -164,12 +145,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
         setTimeout(() => {
           setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${result}`]);
           setRecoveryInProgress(false);
-          
-          toast({
-            title: "Sistema reconstruido",
-            description: "Se ha reiniciado completamente el sistema de procesamiento",
-            variant: "default"
-          });
         }, 2500);
       } catch (e) {
         setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Error durante la reconstrucción: ${e}`]);
@@ -178,21 +153,17 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     }
   };
   
-  // Reiniciar cámara y permisos
   const handleResetCamera = () => {
     setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Reiniciando cámara y permisos...`]);
     
     try {
-      // Intenta liberar todos los streams de video activos
       if (navigator.mediaDevices) {
         navigator.mediaDevices.getUserMedia({ video: true, audio: false })
           .then(stream => {
-            // Detener todas las pistas de video
             stream.getTracks().forEach(track => track.stop());
             
             setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Tracks de video liberados correctamente`]);
             
-            // Recargar la página para reiniciar completamente
             setTimeout(() => {
               window.location.reload();
             }, 1000);
@@ -208,20 +179,16 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     }
   };
   
-  // Formatear mensaje explicativo sobre errores críticos
   const getErrorExplanation = () => {
     let message = "";
     
-    // Explicar dependencias faltantes
     if (missingDependencies.length > 0) {
       message += `• Dependencias no disponibles: ${missingDependencies.join(", ")}.\n`;
     }
     
-    // Explicar patrones de error si hay errores críticos
     if (errorState.criticalErrors > 0 || errorState.highErrors > 0) {
       message += `• ${errorState.criticalErrors} errores críticos y ${errorState.highErrors} errores graves detectados.\n`;
       
-      // Añadir información sobre patrones de error comunes
       if (commonErrorPatterns.length > 0) {
         message += `• Patrones de error más comunes:\n`;
         commonErrorPatterns.forEach(pattern => {
@@ -230,12 +197,10 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       }
     }
     
-    // Si hay errores de cámara, sugerir reinicio
     if (criticalErrors.some(e => e.message.includes('Track') || e.message.includes('camera') || e.message.includes('InvalidState'))) {
       message += `• Se detectaron problemas con la cámara. Considere reiniciar los permisos de cámara.\n`;
     }
     
-    // Si no hay mensajes específicos pero hay problemas
     if (message === "" && !errorState.isSystemHealthy) {
       message = "El sistema ha detectado problemas pero no se puede determinar la causa exacta.";
     }
@@ -243,22 +208,18 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
     return message || "No se han detectado problemas críticos.";
   };
   
-  // Sugerir acciones específicas para solucionar problemas
   const getSuggestedActions = () => {
     const suggestions: string[] = [];
     
-    // Sugerencias basadas en patrón de error
     if (commonErrorPatterns.some(p => p.pattern.includes('Track is in an invalid state'))) {
       suggestions.push('Use el botón "Reiniciar Cámara" para solucionar los problemas con el stream de video.');
       suggestions.push('Verifique que ha concedido permisos de cámara al navegador.');
     }
     
-    // Sugerencias basadas en dependencias faltantes
     if (missingDependencies.length > 0) {
       suggestions.push('Intente una reconstrucción forzada para reinicializar las dependencias del sistema.');
     }
     
-    // Si hay muchos errores
     if (errorState.totalErrors > 10) {
       suggestions.push('Para problemas persistentes, recargue completamente la página.');
     }
@@ -328,7 +289,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
       </CardHeader>
       
       <CardContent className="space-y-4">
-        {/* Explicación detallada de errores críticos */}
         {!errorState.isSystemHealthy && (
           <div className="bg-destructive/10 p-3 rounded-md border border-destructive/30 mb-4">
             <div className="flex items-start gap-2 mb-2">
@@ -341,7 +301,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
               </div>
             </div>
             
-            {/* Sugerencias de solución */}
             {getSuggestedActions().length > 0 && (
               <div className="mt-2 border-t border-destructive/20 pt-2">
                 <h4 className="text-xs font-medium mb-1">Acciones recomendadas:</h4>
@@ -479,7 +438,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </div>
         )}
         
-        {/* Patrones de error comunes */}
         {commonErrorPatterns.length > 0 && (
           <div className="text-sm">
             <h4 className="font-medium mb-1">Patrones de Error Comunes:</h4>
@@ -522,7 +480,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
           </Collapsible>
         )}
         
-        {/* Herramientas avanzadas */}
         <Collapsible 
           className="w-full"
           open={showAdvancedTools}
@@ -570,11 +527,6 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
                     try {
                       localStorage.clear();
                       setRecoveryLog(prev => [...prev, `${new Date().toLocaleTimeString()}: Almacenamiento local limpiado`]);
-                      toast({
-                        title: "Almacenamiento limpiado",
-                        description: "Se han eliminado todos los datos almacenados localmente",
-                        variant: "default"
-                      });
                     } catch (e) {
                       console.error("Error al limpiar almacenamiento:", e);
                     }
@@ -596,7 +548,7 @@ export function SystemDiagnostics({ minimal = false }: SystemDiagnosticsProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="flex items-center gap-1 text-xs h-8"
+                  className="flex items-center gap-1"
                   onClick={() => window.location.reload()}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />

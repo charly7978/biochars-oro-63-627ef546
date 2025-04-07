@@ -23,8 +23,6 @@ const Auth = () => {
           password,
         });
         if (error) throw error;
-        
-        commonToasts.auth.signUpSuccess();
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -35,7 +33,6 @@ const Auth = () => {
         navigate("/");
       }
     } catch (error: any) {
-      commonToasts.auth.authError();
     } finally {
       setLoading(false);
     }

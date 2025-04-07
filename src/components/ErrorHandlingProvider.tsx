@@ -8,7 +8,6 @@ import ErrorBoundary from './ErrorBoundary';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '@/core/error-defense/ErrorDefenseSystem';
 import { SystemDiagnostics } from './SystemDiagnostics';
 import { evaluateSystemQuality } from '@/utils/signalLogging';
-import { showToast, commonToasts } from '@/utils/toast-utils';
 
 interface ErrorHandlingProviderProps {
   children: ReactNode;
@@ -125,11 +124,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           console.log("ErrorHandlingProvider: Intelligent auto-recovery triggered");
           handleRecovery();
           setLastAutoRecovery(now);
-          
-          // Only notify for critical issues
-          if (combinedIsCritical) {
-            showToast("Recuperación Crítica Iniciada", "Sistema ejecutando procedimientos de restauración", "error");
-          }
         }
       }
       
@@ -152,12 +146,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     
     setShowWarning(false);
     console.log("ErrorHandlingProvider: Recovery attempted");
-    
-    // Only notify for significant recovery actions
-    if (recoveryActions && recoveryActions.length > 2) {
-      const summary = `Acciones: ${recoveryActions[0]} y ${recoveryActions.length - 1} más`;
-      showToast("Recuperación en Proceso", summary);
-    }
   };
   
   // Handle forced rebuild
@@ -167,11 +155,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       resetMonitoring();
       setShowWarning(false);
       console.log("ErrorHandlingProvider: Forced rebuild initiated");
-      
-      // Critical notification required for full rebuild
-      showToast("Reconstrucción Completa Iniciada", 
-        "El sistema está siendo reconstruido desde cero", 
-        "error");
     }
   };
   
@@ -199,11 +182,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           stack: error.stack,
           metadata: { type: 'react_error' }
         });
-        
-        // Critical error notification - keep this one as it's important
-        showToast("Error Crítico Detectado", 
-          error.message.substring(0, 100) + (error.message.length > 100 ? '...' : ''), 
-          "error");
       }}
     >
       {/* System health indicator with quality score - show only when active */}
