@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -108,10 +109,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Store valid results for later retrieval
     if (result && !isWeakSignal) {
       // Only update if we have a valid result with meaningful values
-      if (result.spo2 > 0 || result.pressure !== "--/--" || result.glucose > 0) {
-        console.log("useVitalSignsProcessor: Storing valid result", result);
-        setLastValidResults(result);
-      }
+      // Fixed: Removed strict conditions for storing results
+      console.log("useVitalSignsProcessor: Storing valid result", result);
+      setLastValidResults(result);
     }
     
     // Log processed signals
@@ -132,6 +132,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     const currentResults = lastValidResults;
     console.log("useVitalSignsProcessor: Reset called, returning last valid results:", currentResults);
     
+    // Fixed: Return actual results instead of null
     return currentResults;
   };
   
@@ -152,7 +153,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults, // Now returning actual last valid results instead of null
+    lastValidResults, // Fixed: Now correctly returning actual last valid results
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

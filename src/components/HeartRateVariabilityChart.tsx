@@ -34,7 +34,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw background with higher contrast
-    ctx.fillStyle = '#111827'; // Darker background for better contrast
+    ctx.fillStyle = '#0F172A'; // Darker background for better contrast
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Draw grid if enabled
@@ -102,7 +102,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     // Draw line connecting RR intervals with higher visibility
     ctx.beginPath();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5; // Thicker line
+    ctx.lineWidth = 3; // Thicker line for better visibility
     ctx.lineJoin = 'round';
     
     const stepX = width / (data.length - 1);
@@ -121,9 +121,9 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     
     ctx.stroke();
     
-    // Add a slight glow effect to the line for better visibility
+    // Add a stronger glow effect to the line for better visibility
     ctx.shadowColor = color;
-    ctx.shadowBlur = 4;
+    ctx.shadowBlur = 6; // Increased blur for better glow
     ctx.strokeStyle = color;
     ctx.stroke();
     ctx.shadowBlur = 0;
@@ -136,12 +136,12 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
       
       ctx.beginPath();
       ctx.fillStyle = '#ffffff'; // White center for contrast
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2); // Larger dots
       ctx.fill();
       
       ctx.beginPath();
       ctx.fillStyle = color;
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2); // Larger colored inner circle
       ctx.fill();
     }
   };
@@ -157,10 +157,10 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     ctx.textBaseline = 'top';
     
     // Background for metrics with higher contrast
-    ctx.fillStyle = 'rgba(10, 10, 20, 0.85)'; // Darker background with higher opacity
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.9)'; // Darker background with higher opacity
     ctx.fillRect(10, 10, 150, 80);
     ctx.strokeStyle = '#3B82F6'; // Blue border
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5; // Thicker border
     ctx.strokeRect(10, 10, 150, 80);
     
     ctx.fillStyle = '#FFFFFF'; // Brighter white text
@@ -172,7 +172,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     
     // Draw arrhythmia indicator if detected with enhanced visibility
     if (metrics.hasArrhythmia) {
-      ctx.fillStyle = '#F59E0B'; // Brighter orange for warning
+      ctx.fillStyle = '#FBBF24'; // Brighter yellow for warning
       ctx.fillText('⚠️ Posible arritmia', 15, 75);
     }
   };
@@ -183,7 +183,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
       width={width}
       height={height}
       style={{ width: `${width}px`, height: `${height}px` }}
-      className="rounded-md shadow-lg border border-blue-500/20" // Added subtle border for better visual separation
+      className="rounded-md shadow-lg border border-blue-500/30" // Increased border visibility
     />
   );
 };

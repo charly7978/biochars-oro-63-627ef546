@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -78,16 +77,19 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    if (lastValidResults && !isMonitoring) {
+    console.log("lastValidResults updated:", lastValidResults);
+    if (lastValidResults) {
+      console.log("Setting vitalSigns from lastValidResults");
       setVitalSigns(lastValidResults);
-      setShowResults(true);
+      if (!isMonitoring) {
+        setShowResults(true);
+      }
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signals and update vital signs
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+      const minQualityThreshold = 30;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
@@ -97,12 +99,11 @@ const Index = () => {
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
+            console.log("Processed vital signs:", vitals);
             setVitalSigns(vitals);
           }
           
-          // Capture RR intervals for HRV analysis
           if (heartBeatResult.rrData && heartBeatResult.rrData.intervals.length > 0) {
-            // Add new RR intervals to the collection
             heartBeatResult.rrData.intervals.forEach(interval => {
               addRRInterval(interval);
               setRRIntervals(prev => [...prev, interval]);
@@ -173,15 +174,20 @@ const Index = () => {
     }
     
     const savedResults = resetVitalSigns();
+    console.log("Saved results after reset:", savedResults);
+    
     if (savedResults) {
+      console.log("Setting saved results:", savedResults);
       setVitalSigns(savedResults);
+      setShowResults(true);
+    } else if (lastValidResults) {
+      console.log("Using lastValidResults as fallback:", lastValidResults);
+      setVitalSigns(lastValidResults);
       setShowResults(true);
     }
 
-    // Final HRV analysis at the end of measurement
     if (rrIntervals.length > 10) {
       analyzeHRV().then(() => {
-        // Don't automatically show HRV chart - let user request it
         toast.success("Análisis HRV completado. Puede ver los resultados con el botón 'VER HRV'");
       });
     }
@@ -381,7 +387,7 @@ const Index = () => {
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
-                value={vitalSigns.pressure}
+                value={vitalSigns.pressure || "--/--"}
                 unit="mmHg"
                 highlighted={showResults}
               />
@@ -405,7 +411,6 @@ const Index = () => {
               />
             </div>
             
-            {/* HRV Chart Modal - Only when explicitly shown by user */}
             {showHRVChart && hrvResult && (
               <div className="fixed inset-0 bg-black/70 flex flex-col items-center justify-center animate-fade-in z-50">
                 <div className="w-full max-w-md bg-gray-900 rounded-lg shadow-xl overflow-hidden p-4">
