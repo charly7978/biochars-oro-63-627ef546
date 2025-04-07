@@ -99,7 +99,7 @@ export function isFingerDetectedByPattern(
 export function resetDetectionStates() {
   console.log("Signal quality: Resetting detection states");
   return {
-    weakSignalsCount: 0
+    weakSignalsCount: 0,
+    patternCount: 0
   };
 }
-
