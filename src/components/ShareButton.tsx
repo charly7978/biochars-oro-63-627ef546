@@ -21,10 +21,10 @@ const ShareButton = () => {
 
       if (navigator.share && navigator.canShare(shareData)) {
         await navigator.share(shareData);
-        commonToasts.sharing.linkShared();
+        // Removed success toast
       } else {
         await navigator.clipboard.writeText(APP_SHARE_URL);
-        commonToasts.sharing.linkCopied();
+        // Removed copy toast
       }
     } catch (error) {
       // Only show toast for actual sharing errors

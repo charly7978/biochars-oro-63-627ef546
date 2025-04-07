@@ -1,49 +1,47 @@
+
 import { toast } from "@/hooks/use-toast";
 
-// Toast types for consistency
 export type ToastType = 'success' | 'error' | 'info';
 
-/**
- * Centralized toast notification utility to maintain consistent
- * toast appearance and behavior across the application
- */
 export const showToast = (
   title: string, 
   description?: string, 
-  type: ToastType = 'info'
+  type: ToastType = 'info',
+  options?: { 
+    duration?: number, 
+    important?: boolean 
+  }
 ) => {
-  return toast({
-    title,
-    description,
-    variant: type === 'error' ? 'destructive' : 'default',
-    // Keep toast duration brief for non-critical notifications
-    duration: type === 'error' ? 5000 : 3000,
-  });
+  // Only show toast if it's an important notification or an error
+  if (options?.important || type === 'error') {
+    return toast({
+      title,
+      description,
+      variant: type === 'error' ? 'destructive' : 'default',
+      duration: type === 'error' ? 5000 : (options?.duration || 2000),
+    });
+  }
 };
 
-// Common toast messages to avoid duplication
 export const commonToasts = {
-  // Authentication related toasts
   auth: {
-    signUpSuccess: () => showToast('Registro exitoso'),
-    signInSuccess: () => showToast('Sesión iniciada'),
-    authError: () => showToast('Error de autenticación', undefined, 'error'),
+    signInSuccess: () => null, // Removed toast for login
+    authError: () => showToast('Error de autenticación', undefined, 'error', { important: true }),
   },
   
-  // Sharing related toasts
   sharing: {
-    linkShared: () => showToast('Enlace compartido'),
-    linkCopied: () => showToast('Enlace copiado'),
-    shareError: () => showToast('Error al compartir', undefined, 'error'),
+    linkShared: () => null, // Removed toast for sharing
+    linkCopied: () => null, // Removed toast for copying
+    shareError: () => showToast('Error al compartir', undefined, 'error', { important: true }),
   },
   
-  // System related toasts - only showing critical issues
   system: {
     criticalError: (message?: string) => showToast(
       'Error del Sistema', 
       message, 
-      'error'
+      'error', 
+      { important: true }
     ),
-    recoveryStarted: () => showToast('Recuperación Iniciada'),
+    recoveryStarted: () => null, // Removed recovery toast
   }
 };

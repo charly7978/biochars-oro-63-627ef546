@@ -62,10 +62,15 @@ class ErrorBoundary extends Component<Props, State> {
       this.props.onError(error, errorInfo);
     }
     
-    // Don't spam with error toasts (max 1 per 10 seconds)
+    // Limit error toasts to once per 30 seconds and only for critical errors
     const now = Date.now();
-    if (now - this.lastError > 10000) {
-      showToast('Error del Componente', 'Intenta recargar si los problemas persisten', 'error');
+    if (now - this.lastError > 30000) {
+      showToast(
+        'Error Crítico', 
+        error.message.substring(0, 100) + (error.message.length > 100 ? '...' : ''), 
+        'error',
+        { important: true }
+      );
       this.lastError = now;
     }
   }
