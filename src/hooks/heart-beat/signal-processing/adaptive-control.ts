@@ -6,9 +6,10 @@
  */
 
 import { 
-  getAdaptivePredictor, 
-  resetAdaptivePredictor, 
-  AdaptiveModelState 
+  AdaptivePredictor,
+  createAdaptivePredictor, 
+  AdaptivePredictorState, 
+  AdaptivePredictionResult 
 } from '../../../modules/signal-processing/utils/adaptive-predictor';
 import {
   getMixedModel,
@@ -28,6 +29,9 @@ import {
 // Keep history of signal values for processing
 const signalHistory: {time: number, value: number, quality: number}[] = [];
 const MAX_HISTORY_LENGTH = 30;
+
+// Create an instance of the adaptive predictor
+let adaptivePredictor: AdaptivePredictor = createAdaptivePredictor();
 
 // Bayesian optimization for parameter tuning
 let bayesianOptimizer: BayesianOptimizer | null = null;
@@ -50,7 +54,8 @@ export function resetAdaptiveControl(): void {
   windowStd = 0;
   lastAnomalyDetectionTime = 0;
   
-  resetAdaptivePredictor();
+  // Reset the adaptive predictor
+  adaptivePredictor.reset();
   resetMixedModel();
   
   if (bayesianOptimizer) {
@@ -67,8 +72,8 @@ export function resetAdaptiveControl(): void {
 /**
  * Get the current state of the adaptive model
  */
-export function getAdaptiveModelState(): AdaptiveModelState {
-  return getAdaptivePredictor().getState();
+export function getAdaptiveModelState(): AdaptivePredictorState {
+  return adaptivePredictor.getState();
 }
 
 /**
@@ -90,8 +95,8 @@ export function applyAdaptiveFilter(value: number, time: number, quality: number
     );
   }
   
-  // Update the adaptive predictor
-  getAdaptivePredictor().update(time, value, quality);
+  // Process the value with adaptive predictor
+  const prediction = adaptivePredictor.processValue(value);
   
   // Apply adaptive filtering based on signal quality
   if (signalHistory.length < 3) return value;
@@ -140,12 +145,15 @@ export function predictNextValue(time: number): {
     };
   }
   
-  // Get prediction from adaptive predictor
-  const prediction = getAdaptivePredictor().predict(time);
+  // Get the last value to predict from
+  const lastValue = signalHistory[signalHistory.length - 1].value;
+  
+  // Process with adaptive predictor
+  const prediction = adaptivePredictor.processValue(lastValue);
   
   return {
     prediction: prediction.predictedValue,
-    confidence: prediction.confidence
+    confidence: prediction.signalQuality
   };
 }
 
@@ -188,15 +196,28 @@ export function correctSignalAnomalies(value: number, time: number, quality: num
     };
   }
   
-  // For suspected anomalies, use adaptive predictor
-  const correctedValue = getAdaptivePredictor().correctAnomaly(time, value, quality);
-  const anomalyProbability = runFullDetection ? 
-    getAdaptivePredictor().calculateArtifactProbability() : 
-    quickAnomalyScore;
+  // Get prediction for this value
+  const prediction = adaptivePredictor.processValue(value);
   
-  const anomalyDetected = correctedValue !== value || anomalyProbability > 0.5;
+  // Determine if the value is an anomaly by comparing with prediction
+  const predictionError = Math.abs(value - prediction.predictedValue);
+  const normalizedError = windowStd > 0 ? 
+    predictionError / (windowStd * 3) : 
+    predictionError / (Math.abs(value) + 0.01);
   
+  // The higher the error, the more likely it's an anomaly
+  const anomalyProbability = Math.min(1.0, normalizedError);
+  
+  // Only correct the signal if it's very likely to be an anomaly
+  const anomalyThreshold = 0.7; // Conservative threshold
+  const anomalyDetected = anomalyProbability > anomalyThreshold;
+  
+  let correctedValue = value;
   if (anomalyDetected) {
+    // Apply conservative correction - blend original with filtered
+    const correctionStrength = 0.3; // Low correction strength
+    correctedValue = value * (1 - correctionStrength) + prediction.filteredValue * correctionStrength;
+    
     console.log("AdaptiveControl: Anomaly detected", {
       original: value.toFixed(2),
       corrected: correctedValue.toFixed(2),
@@ -225,11 +246,11 @@ export function updateQualityWithPrediction(
     return quality;
   }
   
-  // Get the most recent prediction
-  const lastPrediction = predictNextValue(time);
+  // Process with adaptive predictor to get prediction
+  const prediction = adaptivePredictor.processValue(value);
   
   // Compare prediction with actual value
-  const predictionError = Math.abs(value - lastPrediction.prediction);
+  const predictionError = Math.abs(value - prediction.predictedValue);
   const normalizedError = windowStd > 0 ? 
     predictionError / (windowStd * 3) : 
     predictionError / (Math.abs(value) + 0.01);
