@@ -24,27 +24,3 @@ export function normalizeSignalValue(data: Uint8ClampedArray): number {
   const average = count > 0 ? sum / count : 0;
   return average / 255;
 }
-
-/**
- * Log signal processing events
- * @param message The message to log
- * @param data Additional data to log
- */
-export function logSignalProcessing(message: string, data?: any): void {
-  console.log(`[Signal Processing] ${message}`, data || '');
-}
-
-/**
- * Apply adaptive filtering to a signal value
- * @param value Current signal value
- * @param history Array of previous values
- * @returns Filtered value
- */
-export function adaptiveFilter(value: number, history: number[]): number {
-  if (!history || history.length === 0) return value;
-  
-  // Simple adaptive filtering
-  const alpha = 0.3; // Filtering coefficient
-  const average = history.reduce((sum, val) => sum + val, 0) / history.length;
-  return value * (1 - alpha) + average * alpha;
-}
