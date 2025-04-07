@@ -7,6 +7,7 @@ import { useErrorDetection } from '@/hooks/useErrorDetection';
 import { useErrorDefense } from '@/hooks/useErrorDefense';
 import ErrorBoundary from './ErrorBoundary';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '@/core/error-defense/ErrorDefenseSystem';
+import { SystemDiagnostics } from './SystemDiagnostics';
 
 interface ErrorHandlingProviderProps {
   children: ReactNode;
@@ -30,7 +31,8 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     errorState,
     attemptRecovery,
     checkForIssues,
-    updateComponentStatus
+    updateComponentStatus,
+    forceRebuild
   } = useErrorDefense('ErrorHandlingProvider');
   
   const [showWarning, setShowWarning] = useState<boolean>(false);
@@ -38,6 +40,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   const [isCritical, setIsCritical] = useState<boolean>(false);
   const [recoveryAttempted, setRecoveryAttempted] = useState<boolean>(false);
   const [showHealthIndicator, setShowHealthIndicator] = useState<boolean>(false);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   
   // Inicializar sistema de defensa al cargar
   useEffect(() => {
@@ -105,12 +108,17 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           setRecoveryAttempted(false);
         }, 30000);
       }
+      
+      // Mostrar diagnóstico automáticamente para problemas críticos
+      if (combinedIsCritical && !showDiagnostics) {
+        setShowDiagnostics(true);
+      }
     }, 10000); // Check every 10 seconds
     
     return () => {
       clearInterval(checkInterval);
     };
-  }, [errorStats, recoveryAttempted, checkForIssues, errorState]);
+  }, [errorStats, recoveryAttempted, checkForIssues, errorState, showDiagnostics]);
   
   // Handle recovery attempt
   const handleRecovery = async () => {
@@ -120,24 +128,15 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     
     setShowWarning(false);
     console.log("ErrorHandlingProvider: Recovery attempted");
-    
-    // Reset arrhythmia detection services if possible
-    try {
-      if (typeof window !== 'undefined') {
-        // Reset any global detection services
-        if ((window as any).heartBeatProcessor) {
-          (window as any).heartBeatProcessor.reset();
-          console.log("ErrorHandlingProvider: Reset heartBeatProcessor");
-        }
-        
-        // Clear any stale RR interval data
-        if (localStorage) {
-          localStorage.removeItem('arrhythmia_detection_state');
-          console.log("ErrorHandlingProvider: Cleared persisted arrhythmia state");
-        }
-      }
-    } catch (error) {
-      console.error("ErrorHandlingProvider: Error during additional recovery steps", error);
+  };
+  
+  // Handle forced rebuild
+  const handleForceRebuild = async () => {
+    if (window.confirm("Esta acción realizará una reconstrucción forzada del sistema. ¿Continuar?")) {
+      forceRebuild();
+      resetMonitoring();
+      setShowWarning(false);
+      console.log("ErrorHandlingProvider: Forced rebuild initiated");
     }
   };
   
@@ -148,6 +147,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         setShowWarning(true);
         setIssueMessage("React error: " + error.message);
         setIsCritical(true);
+        setShowDiagnostics(true);
         
         // Reportar al sistema antiguo
         reportError("REACT_ERROR", error.message, { stack: error.stack });
@@ -194,16 +194,48 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           </AlertTitle>
           <AlertDescription className="mt-2 flex items-center justify-between">
             <span>{issueMessage || 'Problemas del sistema detectados'}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-1"
-              onClick={handleRecovery}
-            >
-              <RefreshCw className="h-3 w-3" /> Intentar Recuperación
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-1"
+                onClick={handleRecovery}
+              >
+                <RefreshCw className="h-3 w-3" /> Recuperación Estándar
+              </Button>
+              
+              <Button
+                size="sm"
+                variant="secondary"
+                className="flex items-center gap-1"
+                onClick={() => setShowDiagnostics(!showDiagnostics)}
+              >
+                <Activity className="h-3 w-3" /> 
+                {showDiagnostics ? 'Ocultar Diagnóstico' : 'Mostrar Diagnóstico'}
+              </Button>
+              
+              {isCritical && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="flex items-center gap-1"
+                  onClick={handleForceRebuild}
+                >
+                  <RefreshCw className="h-3 w-3" /> Reconstrucción Forzada
+                </Button>
+              )}
+            </div>
           </AlertDescription>
         </Alert>
+      )}
+      
+      {/* Diagnóstico del sistema (minimizado si no hay problemas) */}
+      {showDiagnostics ? (
+        <div className="mb-4">
+          <SystemDiagnostics minimal={false} />
+        </div>
+      ) : (
+        <SystemDiagnostics minimal={true} />
       )}
       
       {/* Render children */}

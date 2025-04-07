@@ -205,6 +205,9 @@ export function performSystemDiagnostics() {
     systemHealth = 'excellent';
   }
   
+  // Verificar recursos del sistema
+  const memoryInfo = getMemoryInfo();
+  
   // Resultados del diagnóstico
   return {
     timestamp: now,
@@ -217,12 +220,66 @@ export function performSystemDiagnostics() {
     },
     logStats: logsByLevel,
     systemHealth,
+    memoryInfo,
     recommendations: generateRecommendations(
       systemHealth, 
       errorSources, 
-      trend
+      trend,
+      memoryInfo
     )
   };
+}
+
+/**
+ * Obtener información de memoria del sistema
+ */
+function getMemoryInfo() {
+  try {
+    if (typeof window !== 'undefined' && (window as any).performance && (window as any).performance.memory) {
+      const memoryInfo = (window as any).performance.memory;
+      return {
+        usedJSHeapSize: formatBytes(memoryInfo.usedJSHeapSize),
+        jsHeapSizeLimit: formatBytes(memoryInfo.jsHeapSizeLimit),
+        totalJSHeapSize: formatBytes(memoryInfo.totalJSHeapSize),
+        memoryUsagePercentage: ((memoryInfo.usedJSHeapSize / memoryInfo.jsHeapSizeLimit) * 100).toFixed(1) + '%'
+      };
+    }
+    
+    // Información de memoria de TensorFlow si está disponible
+    if (typeof window !== 'undefined' && (window as any).tf) {
+      try {
+        const tfMemory = (window as any).tf.memory();
+        return {
+          numTensors: tfMemory.numTensors,
+          numDataBuffers: tfMemory.numDataBuffers,
+          unreliable: tfMemory.unreliable,
+          reasons: tfMemory.reasons
+        };
+      } catch (e) {
+        console.warn('Error al obtener info de memoria TF:', e);
+      }
+    }
+  } catch (e) {
+    console.warn('Error al obtener información de memoria:', e);
+  }
+  
+  return {
+    unavailable: true,
+    message: 'Información de memoria no disponible'
+  };
+}
+
+/**
+ * Formatear bytes a unidades legibles
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 /**
@@ -231,7 +288,8 @@ export function performSystemDiagnostics() {
 function generateRecommendations(
   systemHealth: 'critical' | 'degraded' | 'fair' | 'good' | 'excellent',
   errorSources: [string, number][],
-  trend: 'improving' | 'stable' | 'worsening'
+  trend: 'improving' | 'stable' | 'worsening',
+  memoryInfo: any
 ): string[] {
   const recommendations: string[] = [];
   
@@ -279,5 +337,182 @@ function generateRecommendations(
     }
   }
   
+  // Recomendaciones basadas en memoria
+  if (memoryInfo && !memoryInfo.unavailable) {
+    // Si es memoria TensorFlow
+    if (memoryInfo.numTensors) {
+      if (memoryInfo.numTensors > 1000) {
+        recommendations.push(`Liberar tensores no utilizados (${memoryInfo.numTensors} activos)`);
+      }
+    }
+    // Si es memoria JavaScript
+    else if (memoryInfo.memoryUsagePercentage) {
+      const usagePercent = parseFloat(memoryInfo.memoryUsagePercentage);
+      if (usagePercent > 80) {
+        recommendations.push(`Reducir uso de memoria (${memoryInfo.memoryUsagePercentage} utilizado)`);
+      }
+    }
+  }
+  
   return recommendations;
+}
+
+/**
+ * Analizar logs para identificar correlaciones entre eventos
+ */
+export function analyzeLogCorrelations(timeWindow: number = 300000) {
+  const now = Date.now();
+  const cutoff = now - timeWindow;
+  
+  const recentLogs = inMemoryLog.filter(entry => 
+    new Date(entry.timestamp).getTime() > cutoff
+  );
+  
+  // Agrupar por ventanas de tiempo de 10 segundos
+  const timeWindows: Record<string, any[]> = {};
+  const windowSize = 10000; // 10 segundos
+  
+  recentLogs.forEach(log => {
+    const timestamp = new Date(log.timestamp).getTime();
+    const windowKey = Math.floor((timestamp - cutoff) / windowSize).toString();
+    
+    if (!timeWindows[windowKey]) {
+      timeWindows[windowKey] = [];
+    }
+    
+    timeWindows[windowKey].push(log);
+  });
+  
+  // Buscar correlaciones de eventos
+  const correlations: {
+    window: string;
+    events: {source: string; level: LogLevel}[];
+    count: number;
+  }[] = [];
+  
+  Object.entries(timeWindows).forEach(([window, logs]) => {
+    if (logs.length >= 3) {
+      const sources = new Set(logs.map(log => log.source));
+      
+      // Si hay varios orígenes en la misma ventana, puede haber correlación
+      if (sources.size >= 2) {
+        correlations.push({
+          window,
+          events: logs.map(log => ({
+            source: log.source,
+            level: log.level
+          })),
+          count: logs.length
+        });
+      }
+    }
+  });
+  
+  // Ordenar por cantidad de eventos
+  correlations.sort((a, b) => b.count - a.count);
+  
+  return {
+    correlations: correlations.slice(0, 5), // Top 5 correlaciones
+    timeWindows: Object.keys(timeWindows).length,
+    totalLogs: recentLogs.length
+  };
+}
+
+/**
+ * Capacidades avanzadas: Detección de anomalías en patrones de error
+ */
+export function detectErrorAnomalies() {
+  // Obtener estadísticas históricas
+  const hourlyStats: number[] = [];
+  
+  // Generar estadísticas de cada hora en las últimas 24 horas
+  for (let i = 0; i < 24; i++) {
+    const timeWindow = (i + 1) * 3600000; // i+1 horas en ms
+    const stats = getErrorStats(timeWindow);
+    hourlyStats.push(stats.total);
+  }
+  
+  // Calcular desviación estándar y media
+  const mean = hourlyStats.reduce((sum, val) => sum + val, 0) / hourlyStats.length;
+  const variance = hourlyStats.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / hourlyStats.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // Detección de anomalías (valores que exceden 2 desviaciones estándar)
+  const latestErrorCount = hourlyStats[0]; // Última hora
+  const isAnomaly = Math.abs(latestErrorCount - mean) > 2 * stdDev;
+  
+  return {
+    isAnomaly,
+    currentCount: latestErrorCount,
+    mean: mean.toFixed(2),
+    stdDev: stdDev.toFixed(2),
+    threshold: (mean + 2 * stdDev).toFixed(2),
+    hourlyStats
+  };
+}
+
+/**
+ * Evalúa la calidad general del sistema
+ */
+export function evaluateSystemQuality() {
+  const diagnostics = performSystemDiagnostics();
+  const anomalies = detectErrorAnomalies();
+  const correlations = analyzeLogCorrelations();
+  
+  // Calcular puntuación general (0-100)
+  let qualityScore = 100;
+  
+  // Reducir puntuación basada en salud del sistema
+  switch (diagnostics.systemHealth) {
+    case 'critical':
+      qualityScore -= 50;
+      break;
+    case 'degraded':
+      qualityScore -= 30;
+      break;
+    case 'fair':
+      qualityScore -= 15;
+      break;
+    case 'good':
+      qualityScore -= 5;
+      break;
+    case 'excellent':
+      // No reducción
+      break;
+  }
+  
+  // Reducir por anomalías detectadas
+  if (anomalies.isAnomaly) {
+    qualityScore -= 20;
+  }
+  
+  // Reducir por correlaciones significativas (pueden indicar problemas sistémicos)
+  if (correlations.correlations.length > 3) {
+    qualityScore -= 10;
+  }
+  
+  // Asegurar que la puntuación esté en rango 0-100
+  qualityScore = Math.max(0, Math.min(100, qualityScore));
+  
+  // Calcular grado de calidad
+  let qualityGrade: 'A' | 'B' | 'C' | 'D' | 'F';
+  
+  if (qualityScore >= 90) qualityGrade = 'A';
+  else if (qualityScore >= 80) qualityGrade = 'B';
+  else if (qualityScore >= 70) qualityGrade = 'C';
+  else if (qualityScore >= 60) qualityGrade = 'D';
+  else qualityGrade = 'F';
+  
+  return {
+    score: qualityScore,
+    grade: qualityGrade,
+    timestamp: Date.now(),
+    summary: `El sistema está operando con una calidad grado ${qualityGrade} (${qualityScore}/100)`,
+    details: {
+      health: diagnostics.systemHealth,
+      anomaliesDetected: anomalies.isAnomaly,
+      correlationsFound: correlations.correlations.length
+    },
+    recommendations: diagnostics.recommendations
+  };
 }
