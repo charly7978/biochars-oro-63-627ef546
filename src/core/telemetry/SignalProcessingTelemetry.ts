@@ -1,4 +1,3 @@
-
 /**
  * Sistema de telemetría avanzada para el procesamiento de señales
  * Registra métricas de rendimiento en cada etapa
@@ -13,7 +12,8 @@ export enum TelemetryCategory {
   HEART_RATE_CALCULATION = 'heart_rate_calculation',
   PARALLEL_PROCESSING = 'parallel_processing',
   MEMORY_MANAGEMENT = 'memory_management',
-  VITAL_SIGNS_CALCULATION = 'vital_signs_calculation'
+  VITAL_SIGNS_CALCULATION = 'vital_signs_calculation',
+  PERFORMANCE = 'performance'  // Añadimos esta categoría para las métricas de rendimiento
 }
 
 interface TelemetryMetric {
