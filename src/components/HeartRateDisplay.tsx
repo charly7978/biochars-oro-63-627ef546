@@ -62,15 +62,23 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
     return "low";
   };
 
-  // Added console.log to debug the values
+  // Enhanced debug logging
   useEffect(() => {
-    console.log("HeartRateDisplay values:", { bpm, confidence, isReliable });
+    console.log("HeartRateDisplay values:", { 
+      bpm, 
+      confidence, 
+      isReliable, 
+      displayValue: bpm > 0 ? bpm : '--',
+      reliability: getReliabilityIndicator()
+    });
   }, [bpm, confidence, isReliable]);
 
   return (
     <div 
       ref={containerRef}
       className="glass-card-dark p-3 text-center animation-hardware-accelerated rounded-lg"
+      data-bpm={bpm}
+      data-confidence={confidence}
     >
       <div className="flex items-center justify-center gap-1 mb-1">
         <h3 className="text-gray-400/90 text-sm typography-clinical">Heart Rate</h3>

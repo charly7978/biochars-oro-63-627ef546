@@ -110,17 +110,30 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Store valid results for later retrieval
-      if (result && (result.spo2 > 0 || result.pressure !== "--/--")) {
-        setLastValidResults(result);
+      // Enhanced logging for debugging
+      if (processedSignals.current % 20 === 0) {
+        console.log("Vital Signs Processor Results:", {
+          spo2: result.spo2,
+          pressure: result.pressure,
+          arrhythmiaStatus: result.arrhythmiaStatus,
+          glucose: result.glucose,
+          timestamp: new Date().toISOString(),
+          signalValue: value,
+          isWeakSignal
+        });
       }
       
-      // Always return real result
+      // Store valid results for later retrieval - Make sure we store regardless of the values
+      // to ensure we always have the most recent results
+      setLastValidResults(result);
+      
+      // Always return result
       return result;
     } catch (error) {
       console.error("Error in vital signs processing:", error);
+      
       // Return last valid results if available, or empty results
-      return lastValidResults || {
+      const defaultResult = {
         spo2: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
@@ -130,6 +143,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           triglycerides: 0
         }
       };
+      
+      // Even in error case, we should return a valid result
+      return lastValidResults || defaultResult;
     }
   };
 
@@ -143,9 +159,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Store current results before resetting
     const currentResults = lastValidResults;
-    
-    // Reset state
-    setLastValidResults(null);
     
     try {
       // Reset weak signals counter
