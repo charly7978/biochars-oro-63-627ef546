@@ -26,6 +26,17 @@ jobs:
     - name: Install dependencies
       run: npm install
 
+    - name: TypeScript Validation
+      run: |
+        echo "Verificando tipos TypeScript..."
+        npx tsc --noEmit --skipLibCheck
+        if [ $? -ne 0 ]; then
+          echo "❌ Errores de TypeScript detectados"
+          exit 1
+        else
+          echo "✅ Validación de TypeScript completada con éxito"
+        fi
+
     - name: Check for dangerous patterns
       run: |
         echo "Verificando patrones peligrosos en los cambios..."
@@ -37,14 +48,34 @@ jobs:
             { pattern: /DROP\\s+TABLE/i, description: 'Eliminación de tabla de base de datos' },
             { pattern: /eval\\s*\\(/, description: 'Evaluación dinámica de código (eval)' },
             { pattern: /exec\\s*\\(/, description: 'Ejecución de comandos del sistema' },
-            { pattern: /process\\.exit/, description: 'Terminación forzada del proceso' }
+            { pattern: /process\\.exit/, description: 'Terminación forzada del proceso' },
+            { pattern: /TelemetryCategory\\.[A-Z_]+/g, description: 'Uso de TelemetryCategory' }
           ];
           
           let found = false;
           for (const p of patterns) {
             if (p.pattern.test(data)) {
-              console.error('⚠️ Patrón peligroso detectado: ' + p.description);
-              found = true;
+              if (p.description === 'Uso de TelemetryCategory') {
+                // Verificación especial para TelemetryCategory
+                const matches = data.match(p.pattern);
+                if (matches) {
+                  const validCategories = [
+                    'PERFORMANCE', 'SIGNAL_PROCESSING', 'NEURAL_NETWORK', 
+                    'ERROR', 'USER_INTERACTION', 'SYSTEM', 'CI_INTEGRATION',
+                    'MEMORY_MANAGEMENT', 'SIGNAL_CAPTURE'
+                  ];
+                  for (const match of matches) {
+                    const category = match.split('.')[1];
+                    if (!validCategories.includes(category)) {
+                      console.error('⚠️ Categoría de telemetría inexistente detectada: ' + category);
+                      found = true;
+                    }
+                  }
+                }
+              } else {
+                console.error('⚠️ Patrón peligroso detectado: ' + p.description);
+                found = true;
+              }
             }
           }
           
@@ -60,4 +91,3 @@ jobs:
 
     - name: Build
       run: gulp
-

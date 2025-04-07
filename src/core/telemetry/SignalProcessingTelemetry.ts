@@ -12,7 +12,9 @@ export enum TelemetryCategory {
   ERROR = 'error',
   USER_INTERACTION = 'user_interaction',
   SYSTEM = 'system',
-  CI_INTEGRATION = 'ci_integration' // Añadimos esta nueva categoría para la integración CI
+  CI_INTEGRATION = 'ci_integration',
+  MEMORY_MANAGEMENT = 'memory_management',
+  SIGNAL_CAPTURE = 'signal_capture'
 }
 
 interface TelemetryMetric {

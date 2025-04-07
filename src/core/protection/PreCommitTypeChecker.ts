@@ -1,4 +1,3 @@
-
 /**
  * Verificador de Tipos Pre-Commit
  * 
@@ -52,6 +51,10 @@ export class PreCommitTypeChecker {
       const telemetryViolations = this.checkTelemetryReferences(code);
       violations.push(...telemetryViolations);
     }
+    
+    // Nueva verificación: analizar todos los archivos en busca de referencias a TelemetryCategory
+    const telemetryCategoryViolations = this.checkTelemetryCategoryUsage(code);
+    violations.push(...telemetryCategoryViolations);
     
     this.telemetry.endPhase(checkId, TelemetryCategory.PERFORMANCE);
     
@@ -331,6 +334,38 @@ export class PreCommitTypeChecker {
             severity: 'high'
           });
         }
+      }
+    }
+    
+    return violations;
+  }
+  
+  /**
+   * Nueva función: Verificar específicamente el uso de TelemetryCategory
+   * Detecta referencias a categorías que no existen en el enum
+   */
+  private checkTelemetryCategoryUsage(code: string): ViolationDetail[] {
+    const violations: ViolationDetail[] = [];
+    
+    // Lista completa de categorías válidas
+    const validCategories = Object.keys(TelemetryCategory)
+      .filter(key => isNaN(Number(key)))  // Filtrar solo las claves de string
+      .map(key => key.toString());
+    
+    // Buscar usos del patrón TelemetryCategory.ALGO
+    const categoryUsageRegex = /TelemetryCategory\.([A-Z_]+)/g;
+    let match;
+    
+    while ((match = categoryUsageRegex.exec(code)) !== null) {
+      const usedCategory = match[1];
+      
+      // Verificar si la categoría existe en el enum
+      if (!validCategories.includes(usedCategory)) {
+        violations.push({
+          type: VerificationType.TYPE_INTEGRITY,
+          message: `Referencia a categoría de telemetría inexistente: TelemetryCategory.${usedCategory}`,
+          severity: 'high'
+        });
       }
     }
     
