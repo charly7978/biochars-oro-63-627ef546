@@ -1,6 +1,8 @@
 
 import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
+import { ROIDetector } from './roi-detector';
+import { MultichannelAnalyzer } from './multichannel-analyzer';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
 export class PPGProcessor {
@@ -28,18 +30,40 @@ export class PPGProcessor {
   private baselineValue: number = 0;
   private periodicityBuffer: number[] = [];
   
+  // Nuevos componentes para análisis avanzado
+  private roiDetector: ROIDetector;
+  private multichannelAnalyzer: MultichannelAnalyzer;
+  private lastROI: ProcessedSignal['roi'] = { x: 0, y: 0, width: 100, height: 100 };
+  
+  // Buffer de canales para diagnóstico
+  private redBuffer: number[] = [];
+  private greenBuffer: number[] = [];
+  private blueBuffer: number[] = [];
+  
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.waveletDenoiser = new WaveletDenoiser();
-    console.log("PPGProcessor: Instancia unificada creada");
+    
+    // Inicializar nuevos componentes
+    this.roiDetector = new ROIDetector();
+    this.multichannelAnalyzer = new MultichannelAnalyzer();
+    
+    console.log("PPGProcessor: Instancia unificada creada con análisis multicanal y ROI dinámico");
   }
 
   public initialize(): Promise<void> {
     return new Promise<void>((resolve) => {
-      console.log("PPGProcessor: Inicializado");
+      // Reiniciar detectores y analizadores
+      this.roiDetector.reset();
+      this.multichannelAnalyzer.reset();
+      this.redBuffer = [];
+      this.greenBuffer = [];
+      this.blueBuffer = [];
+      
+      console.log("PPGProcessor: Inicializado con análisis multicanal y ROI dinámico");
       resolve();
     });
   }
@@ -67,8 +91,32 @@ export class PPGProcessor {
     }
 
     try {
-      const redValue = this.extractRedChannel(imageData);
-      const kalmanFiltered = this.kalmanFilter.filter(redValue);
+      // Detectar ROI dinámica
+      const optimalROI = this.roiDetector.detectOptimalROI(imageData);
+      this.lastROI = optimalROI;
+      
+      // Procesar canales en la ROI optimizada
+      const {
+        redValue,
+        greenValue,
+        blueValue,
+        weightedValue,
+        perfusionIndex
+      } = this.multichannelAnalyzer.processROI(imageData, optimalROI);
+      
+      // Guardar valores de canales para diagnóstico
+      this.redBuffer.push(redValue);
+      this.greenBuffer.push(greenValue);
+      this.blueBuffer.push(blueValue);
+      
+      if (this.redBuffer.length > 30) {
+        this.redBuffer.shift();
+        this.greenBuffer.shift();
+        this.blueBuffer.shift();
+      }
+      
+      // Aplicar filtrado avanzado al valor ponderado
+      const kalmanFiltered = this.kalmanFilter.filter(weightedValue);
       const filtered = this.waveletDenoiser.denoise(kalmanFiltered);
       
       this.lastValues.push(filtered);
@@ -77,11 +125,16 @@ export class PPGProcessor {
       }
 
       const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
-      const perfusionIndex = this.calculatePerfusionIndex();
 
       this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.CONFIG.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
+      }
+
+      // Obtener datos de espectro si tenemos suficientes muestras
+      let spectrumData = undefined;
+      if (this.periodicityBuffer.length >= 30) {
+        spectrumData = this.calculateSpectrumData();
       }
 
       const processedSignal: ProcessedSignal = {
@@ -90,8 +143,9 @@ export class PPGProcessor {
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
-        perfusionIndex: perfusionIndex
+        roi: this.lastROI,
+        perfusionIndex: perfusionIndex,
+        spectrumData
       };
 
       this.onSignalReady?.(processedSignal);
@@ -99,28 +153,6 @@ export class PPGProcessor {
       console.error("PPGProcessor: Error procesando frame", error);
       this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
-  }
-
-  private extractRedChannel(imageData: ImageData): number {
-    const data = imageData.data;
-    let redSum = 0;
-    let count = 0;
-    
-    // Analizar el 40% central de la imagen para mejor precisión
-    const startX = Math.floor(imageData.width * 0.3);
-    const endX = Math.floor(imageData.width * 0.7);
-    const startY = Math.floor(imageData.height * 0.3);
-    const endY = Math.floor(imageData.height * 0.7);
-    
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Canal rojo
-        count++;
-      }
-    }
-    
-    return redSum / count;
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
@@ -163,7 +195,12 @@ export class PPGProcessor {
       // Calcular calidad basada en estabilidad y periodicidad
       const stabilityQuality = (this.stableFrameCount / (this.CONFIG.MIN_STABILITY_COUNT * 2)) * 50;
       const periodicityQuality = this.analyzePeriodicityQuality() * 50;
-      quality = Math.round(stabilityQuality + periodicityQuality);
+      
+      // Incorporar pesos de canales para calidad total
+      const weights = this.multichannelAnalyzer.getChannelWeights();
+      const channelBalanceScore = Math.min(50, (1 - Math.abs(weights.red - 0.5)) * 50);
+      
+      quality = Math.round(stabilityQuality + periodicityQuality + channelBalanceScore) / 1.5;
     }
 
     return { isFingerDetected, quality };
@@ -202,12 +239,43 @@ export class PPGProcessor {
     return normalizedCorrelation;
   }
 
-  private detectROI(redValue: number): ProcessedSignal['roi'] {
+  private calculateSpectrumData(): ProcessedSignal['spectrumData'] {
+    // Usar los últimos 30 valores del buffer de periodicidad
+    const signal = this.periodicityBuffer.slice(-30);
+    const signalMean = signal.reduce((sum, v) => sum + v, 0) / signal.length;
+    const normalizedSignal = signal.map(v => v - signalMean);
+    
+    // Calcular autocorrelación para diferentes frecuencias
+    const frequencies: number[] = [];
+    const amplitudes: number[] = [];
+    let maxAmplitude = 0;
+    let dominantFrequencyIdx = 0;
+    
+    // Analizar frecuencias entre 0.5 Hz (30 BPM) y 3.3 Hz (200 BPM)
+    for (let freq = 0.5; freq <= 3.3; freq += 0.1) {
+      let amplitude = 0;
+      
+      // Calcular componente de autocorrelación para esta frecuencia
+      for (let i = 0; i < normalizedSignal.length; i++) {
+        const phase = (i / normalizedSignal.length) * Math.PI * 2 * freq;
+        amplitude += normalizedSignal[i] * Math.sin(phase);
+      }
+      
+      amplitude = Math.abs(amplitude) / normalizedSignal.length;
+      
+      frequencies.push(freq);
+      amplitudes.push(amplitude);
+      
+      if (amplitude > maxAmplitude) {
+        maxAmplitude = amplitude;
+        dominantFrequencyIdx = frequencies.length - 1;
+      }
+    }
+    
     return {
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100
+      frequencies,
+      amplitudes,
+      dominantFrequency: frequencies[dominantFrequencyIdx]
     };
   }
 

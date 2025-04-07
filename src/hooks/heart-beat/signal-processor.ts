@@ -87,7 +87,8 @@ export function useSignalProcessor() {
       return processLowConfidenceResult(
         result, 
         currentBPM, 
-        processor.getArrhythmiaCounter()
+        processor.getArrhythmiaCounter(),
+        rrData
       );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);
