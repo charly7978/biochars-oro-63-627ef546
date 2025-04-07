@@ -69,8 +69,7 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       confidence, 
       isReliable, 
       displayValue: bpm > 0 ? bpm : '--',
-      reliability: getReliabilityIndicator(),
-      displayTime: new Date().toISOString()
+      reliability: getReliabilityIndicator()
     });
   }, [bpm, confidence, isReliable]);
 

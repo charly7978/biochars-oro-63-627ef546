@@ -17,16 +17,7 @@ import { resetDetectionStates, checkSignalQuality } from '../modules/heart-beat/
  */
 export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   // State management - only direct measurement, no simulation
-  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>({
-    spo2: 95,
-    pressure: "120/80",
-    arrhythmiaStatus: "--",
-    glucose: 100,
-    lipids: {
-      totalCholesterol: 180,
-      triglycerides: 130
-    }
-  });
+  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
   // Session tracking
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
@@ -61,8 +52,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
       sessionId: sessionId.current,
-      timestamp: new Date().toISOString(),
-      initialValues: lastValidResults
+      timestamp: new Date().toISOString()
     });
     
     // Create new instances for direct measurement
@@ -73,11 +63,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         sessionId: sessionId.current,
         totalArrhythmias: getArrhythmiaCounter(),
         processedSignals: processedSignals.current,
-        timestamp: new Date().toISOString(),
-        lastValues: lastValidResults
+        timestamp: new Date().toISOString()
       });
     };
-  }, [initializeProcessor, getArrhythmiaCounter, processedSignals, lastValidResults]);
+  }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
    * Process PPG signal directly
@@ -99,19 +88,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Process signal directly - no simulation
       let result = processVitalSignal(value, rrData, isWeakSignal);
-      
-      // Ensure we have realistic values for display purposes
-      result = {
-        ...result,
-        spo2: result.spo2 || Math.max(94, Math.min(99, 96 + Math.floor(Math.random() * 4))),
-        pressure: result.pressure !== "--/--" ? result.pressure : "120/80",
-        glucose: result.glucose || Math.max(90, Math.min(120, 100 + Math.floor(Math.random() * 20))),
-        lipids: {
-          totalCholesterol: result.lipids?.totalCholesterol || Math.max(160, Math.min(200, 180 + Math.floor(Math.random() * 20))),
-          triglycerides: result.lipids?.triglycerides || Math.max(120, Math.min(150, 130 + Math.floor(Math.random() * 20)))
-        }
-      };
-      
       const currentTime = Date.now();
       
       // If arrhythmia is detected in real data, register visualization window
@@ -156,15 +132,15 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     } catch (error) {
       console.error("Error in vital signs processing:", error);
       
-      // Return last valid results if available, or default results
+      // Return last valid results if available, or empty results
       const defaultResult = {
-        spo2: 95,
-        pressure: "120/80",
+        spo2: 0,
+        pressure: "--/--",
         arrhythmiaStatus: "--",
-        glucose: 100,
+        glucose: 0,
         lipids: {
-          totalCholesterol: 180,
-          triglycerides: 130
+          totalCholesterol: 0,
+          triglycerides: 0
         }
       };
       
@@ -203,19 +179,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    */
   const fullReset = () => {
     fullResetProcessor();
-    
-    // Reset to default values rather than null
-    setLastValidResults({
-      spo2: 95,
-      pressure: "120/80",
-      arrhythmiaStatus: "--",
-      glucose: 100,
-      lipids: {
-        totalCholesterol: 180,
-        triglycerides: 130
-      }
-    });
-    
+    setLastValidResults(null);
     clearArrhythmiaWindows();
     
     try {
