@@ -93,8 +93,10 @@ export function trackPerformance(label: string, startTime: number) {
 
 /**
  * Track performance metrics for async operations
+ * Updated to support optional category parameter for better organization
  */
 export async function trackPerformanceAsync<T>(
+  category: string,
   label: string, 
   fn: () => Promise<T>
 ): Promise<T> {
@@ -106,7 +108,7 @@ export async function trackPerformanceAsync<T>(
     
     logSignalProcessing(
       LogLevel.DEBUG, 
-      'Performance', 
+      category, 
       `Async ${label} took ${duration.toFixed(2)}ms`
     );
     
@@ -117,7 +119,7 @@ export async function trackPerformanceAsync<T>(
     
     logSignalProcessing(
       LogLevel.ERROR, 
-      'Performance', 
+      category, 
       `Async ${label} failed after ${duration.toFixed(2)}ms`,
       error
     );

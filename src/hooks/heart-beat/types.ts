@@ -1,3 +1,14 @@
+/**
+ * Heart-beat related types
+ */
+
+/**
+ * RR Interval Data for heart rate variability
+ */
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
+}
 
 /**
  * Interface for heart beat processing results.
@@ -16,14 +27,6 @@ export interface HeartBeatResult {
     startTime: number;
     endTime: number | null;
   };
-}
-
-/**
- * Type for RR interval data structure
- */
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
 }
 
 /**
