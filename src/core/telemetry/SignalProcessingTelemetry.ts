@@ -1,19 +1,18 @@
 /**
- * Sistema de telemetría avanzada para el procesamiento de señales
- * Registra métricas de rendimiento en cada etapa
+ * Telemetría para el procesamiento de señales
+ * 
+ * Esta clase maneja la recopilación y análisis de telemetría para el procesamiento de señales PPG
+ * y permite un seguimiento detallado del rendimiento y los resultados.
  */
 
 export enum TelemetryCategory {
-  SIGNAL_CAPTURE = 'signal_capture',
+  PERFORMANCE = 'performance',
   SIGNAL_PROCESSING = 'signal_processing',
-  FILTER_APPLICATION = 'filter_application',
-  PEAK_DETECTION = 'peak_detection',
-  FEATURE_EXTRACTION = 'feature_extraction',
-  HEART_RATE_CALCULATION = 'heart_rate_calculation',
-  PARALLEL_PROCESSING = 'parallel_processing',
-  MEMORY_MANAGEMENT = 'memory_management',
-  VITAL_SIGNS_CALCULATION = 'vital_signs_calculation',
-  PERFORMANCE = 'performance'  // Añadimos esta categoría para las métricas de rendimiento
+  NEURAL_NETWORK = 'neural_network',
+  ERROR = 'error',
+  USER_INTERACTION = 'user_interaction',
+  SYSTEM = 'system',
+  CI_INTEGRATION = 'ci_integration' // Añadimos esta nueva categoría para la integración CI
 }
 
 interface TelemetryMetric {

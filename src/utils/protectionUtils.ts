@@ -1,13 +1,26 @@
-
 /**
  * Utilidades para trabajar con el Sistema de Escudo Protector
  */
 
 import { shield } from '../core/protection';
 import { SignalProcessingTelemetry, TelemetryCategory } from '../core/telemetry/SignalProcessingTelemetry';
+import * as os from 'os';
 
 // Instancia de telemetría
 const telemetry = SignalProcessingTelemetry.getInstance();
+
+// Lista de patrones de código potencialmente peligrosos
+const DANGEROUS_PATTERNS = [
+  { pattern: /rm\s+-rf\s+/, description: 'Eliminación recursiva forzada' },
+  { pattern: /DROP\s+TABLE/i, description: 'Eliminación de tabla de base de datos' },
+  { pattern: /DELETE\s+FROM/i, description: 'Eliminación masiva de registros' },
+  { pattern: /eval\s*\(/, description: 'Evaluación dinámica de código (eval)' },
+  { pattern: /exec\s*\(/, description: 'Ejecución de comandos del sistema' },
+  { pattern: /child_process/, description: 'Uso de procesos hijo' },
+  { pattern: /process\.exit/, description: 'Terminación forzada del proceso' },
+  { pattern: /fs\.rmdir/, description: 'Eliminación de directorios' },
+  { pattern: /fs\.unlink/, description: 'Eliminación de archivos' },
+];
 
 /**
  * Verifica un cambio propuesto con el escudo protector
@@ -21,6 +34,30 @@ export async function verifyCodeChange(
   telemetry.startPhase(verificationId, TelemetryCategory.PERFORMANCE);
   
   try {
+    // NUEVO: Verificación de patrones peligrosos antes de continuar
+    const dangerousPatterns = detectDangerousPatterns(modifiedCode);
+    if (dangerousPatterns.length > 0) {
+      console.error('⚠️ ¡ALERTA! Se detectaron patrones de código potencialmente peligrosos:');
+      dangerousPatterns.forEach(item => {
+        console.error(`- ${item.description}`);
+      });
+      
+      // Registrar el intento bloqueado
+      telemetry.recordPhaseEvent(verificationId, 'dangerous_code_blocked', {
+        fileName,
+        patterns: dangerousPatterns.map(p => p.description)
+      });
+      
+      telemetry.endPhase(verificationId, TelemetryCategory.PERFORMANCE);
+      
+      // Mostrar mensaje prominente en consola
+      console.error('\n' + '='.repeat(80));
+      console.error('🛑 ACCIÓN BLOQUEADA: Código potencialmente peligroso detectado');
+      console.error('='.repeat(80) + '\n');
+      
+      return false;
+    }
+    
     const moduleName = fileName.split('/').slice(-2)[0] || 'desconocido';
     
     // Registrar métricas de tamaño de código
@@ -104,6 +141,47 @@ export async function verifyCodeChange(
     telemetry.endPhase(verificationId, TelemetryCategory.PERFORMANCE);
     return false;
   }
+}
+
+/**
+ * Detecta patrones de código potencialmente peligrosos
+ */
+export function detectDangerousPatterns(code: string): Array<{pattern: RegExp, description: string}> {
+  return DANGEROUS_PATTERNS.filter(item => item.pattern.test(code));
+}
+
+/**
+ * Verifica si una acción es potencialmente peligrosa
+ */
+export function isActionDangerous(action: string): { isDangerous: boolean, reason?: string } {
+  // Verificar patrones peligrosos en la acción
+  const dangerousPatterns = detectDangerousPatterns(action);
+  if (dangerousPatterns.length > 0) {
+    return { 
+      isDangerous: true, 
+      reason: `Patrón peligroso detectado: ${dangerousPatterns[0].description}`
+    };
+  }
+  
+  // Verificar intentos de modificar archivos críticos
+  const criticalFilePatterns = [
+    /package\.json/i,
+    /\.github\/workflows/i,
+    /ci\//i,
+    /\.npmrc/i,
+    /\.env/i
+  ];
+  
+  for (const pattern of criticalFilePatterns) {
+    if (pattern.test(action)) {
+      return { 
+        isDangerous: true, 
+        reason: `Intentando modificar archivo crítico que coincide con: ${pattern}`
+      };
+    }
+  }
+  
+  return { isDangerous: false };
 }
 
 /**
@@ -202,4 +280,33 @@ export async function analyzeFileForViolations(
       hasCriticalViolations: true
     };
   }
+}
+
+/**
+ * Nueva función: Bloquear inmediatamente una acción peligrosa
+ */
+export function blockDangerousAction(action: string, context: string): { blocked: boolean, reason?: string } {
+  const check = isActionDangerous(action);
+  
+  if (check.isDangerous) {
+    console.error('\n' + '='.repeat(80));
+    console.error(`🛑 ACCIÓN BLOQUEADA: ${check.reason}`);
+    console.error(`Contexto: ${context}`);
+    console.error('='.repeat(80) + '\n');
+    
+    // Registrar el bloqueo en telemetría
+    telemetry.recordEvent(
+      TelemetryCategory.SYSTEM,
+      'dangerous_action_blocked',
+      {
+        action,
+        reason: check.reason,
+        context
+      }
+    );
+    
+    return { blocked: true, reason: check.reason };
+  }
+  
+  return { blocked: false };
 }

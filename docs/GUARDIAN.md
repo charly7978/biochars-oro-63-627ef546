@@ -44,6 +44,24 @@ Para verificar manualmente un cambio de código, puedes utilizar:
 npm run code-protection
 ```
 
+## Protección contra Acciones Peligrosas
+
+El sistema ahora incluye protección contra acciones potencialmente peligrosas:
+
+```bash
+node scripts/action-protector.js "tu-comando-aquí"
+```
+
+Este sistema verificará si el comando contiene patrones potencialmente peligrosos y pedirá confirmación antes de ejecutarlo.
+
+### Patrones bloqueados automáticamente:
+
+- Eliminación recursiva forzada (rm -rf)
+- Instrucciones de eliminación de bases de datos
+- Uso de eval() o execSync()
+- Modificación de archivos críticos como package.json
+- Comandos de eliminación de archivos
+
 ## Configuración
 
 El comportamiento del Guardian se puede configurar editando el archivo `src/core/config/GuardianConfig.ts`.
