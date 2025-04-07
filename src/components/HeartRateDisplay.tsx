@@ -1,6 +1,5 @@
 
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { optimizeElement } from '../utils/displayOptimizer';
 import { AlertCircle, Heart } from 'lucide-react';
 
 interface HeartRateDisplayProps {
@@ -13,13 +12,6 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const isReliable = confidence > 0.5;
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Apply optimizations after component mounts
-  useEffect(() => {
-    if (containerRef.current) {
-      optimizeElement(containerRef.current);
-    }
-  }, []);
   
   // Animate heart when BPM updates and is reliable
   useEffect(() => {
@@ -44,9 +36,9 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
-    if (bpm > 100) return "medical-warning-text";
-    if (bpm < 60) return "medical-warning-text";
-    return "medical-normal-text";
+    if (bpm > 100) return "text-orange-500";
+    if (bpm < 60) return "text-blue-500";
+    return "text-green-500";
   };
 
   const getHeartColor = () => {
@@ -65,10 +57,10 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   return (
     <div 
       ref={containerRef}
-      className="glass-card-dark p-3 text-center animation-hardware-accelerated rounded-lg"
+      className="bg-gray-900/30 backdrop-blur-sm p-3 text-center rounded-lg"
     >
       <div className="flex items-center justify-center gap-1 mb-1">
-        <h3 className="text-gray-400/90 text-sm typography-clinical">Heart Rate</h3>
+        <h3 className="text-gray-300 text-sm font-medium">Heart Rate</h3>
         
         {getReliabilityIndicator() === "low" && (
           <div className="relative" title="Signal quality is low">
@@ -79,23 +71,23 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       
       <div className="flex items-baseline justify-center gap-1">
         <Heart 
-          className={`h-4 w-4 mr-0.5 ${getHeartColor()} animation-smooth will-change-transform ${
+          className={`h-4 w-4 mr-0.5 ${getHeartColor()} transition-all duration-300 ${
             isAnimating ? 'scale-150 opacity-80' : 'scale-100 opacity-100'
           }`}
           fill={isReliable ? "currentColor" : "none"}
           strokeWidth={1.5}
         />
-        <span className={`text-2xl font-bold typography-medical-data ${getValueClass()}`}>
+        <span className={`text-2xl font-bold ${getValueClass()}`}>
           {bpm > 0 ? bpm : '--'}
         </span>
-        <span className="text-gray-400/90 text-xs unit-text">BPM</span>
+        <span className="text-gray-400 text-xs">BPM</span>
       </div>
       
-      {/* Signal amplification indicator */}
+      {/* Signal confidence indicator */}
       {confidence > 0 && (
         <div className="mt-1.5 w-full bg-gray-700/30 rounded-full h-0.5 overflow-hidden">
           <div 
-            className={`h-full rounded-full animation-smooth ${
+            className={`h-full rounded-full transition-all duration-300 ${
               confidence > 0.8 ? 'bg-green-500' : 
               confidence > 0.5 ? 'bg-yellow-500' : 
               'bg-red-500'
