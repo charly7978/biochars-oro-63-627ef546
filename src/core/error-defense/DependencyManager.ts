@@ -705,7 +705,7 @@ class DependencyManager {
       message: result.message,
       severity: result.severity,
       affectedFiles: [filePath],
-      // Fix: Use name instead of description which doesn't exist on the ValidationResult type
+      // Make sure we use the name property which exists, not description
       rule: result.name || 'unknown-rule'
     }));
   }

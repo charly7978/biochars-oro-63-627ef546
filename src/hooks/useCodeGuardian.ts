@@ -1,3 +1,4 @@
+
 /**
  * useCodeGuardian - React hook for integrating Code Guardian validation
  * into components and tools without showing information to the user
@@ -21,10 +22,10 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
   const [isValidating, setIsValidating] = useState(false);
   const [lastValidated, setLastValidated] = useState<number | null>(null);
   
-  // Set default options - always silent by default as requested by user
+  // Siempre operamos en modo silencioso como solicitó el usuario
   const opts = {
     autoValidate: options.autoValidate ?? true,
-    silent: options.silent ?? true
+    silent: true // Forzar modo silencioso siempre
   };
   
   // Get dependency manager instance
@@ -55,7 +56,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
       setValidationIssues(issues);
       setLastValidated(Date.now());
       
-      // Log issues to console but don't display to user
+      // Solo log a consola, invisible para el usuario
       if (issues.length > 0) {
         console.warn('Code Guardian found issues:', issues);
       }
@@ -81,10 +82,8 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
         setValidationIssues(prev => [...prev, ...issues]);
         setLastValidated(Date.now());
         
-        // Log issues to console in silent mode
-        if (!opts.silent) {
-          console.warn('Code Guardian found issues in changes:', issues);
-        }
+        // Solo log a consola, invisible para el usuario
+        console.warn('Code Guardian found issues in changes:', issues);
       }
       
       return issues.length === 0;
@@ -94,7 +93,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
     } finally {
       setIsValidating(false);
     }
-  }, [dependencyManager, transformResults, opts.silent]);
+  }, [dependencyManager, transformResults]);
   
   // Validate TypeScript code
   const validateTypeScript = useCallback((code: string, filePath: string) => {
@@ -105,19 +104,16 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
       if (issues.length > 0) {
         setValidationIssues(prev => [...prev, ...issues]);
         
-        // Log issues to console in silent mode
-        if (!opts.silent) {
-          console.warn(`Code Guardian found TypeScript issues in ${filePath}:`, issues);
-        }
-        
-        return issues;
+        // Solo log a consola, invisible para el usuario
+        console.warn(`Code Guardian found TypeScript issues in ${filePath}:`, issues);
       }
-      return [];
+      
+      return issues;
     } catch (error) {
       console.error('Error validating TypeScript:', error);
       return [];
     }
-  }, [dependencyManager, transformResults, opts.silent]);
+  }, [dependencyManager, transformResults]);
   
   // Auto-validate on mount if enabled
   useEffect(() => {
