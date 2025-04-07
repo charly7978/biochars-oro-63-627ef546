@@ -8,7 +8,7 @@ import { ErrorHandlingProvider } from "./components/ErrorHandlingProvider";
 import { useEffect } from "react";
 import ErrorDefenseSystem from "./core/error-defense/ErrorDefenseSystem";
 import DependencyMonitor from "./core/error-defense/DependencyMonitor";
-import { logSignalProcessing, LogLevel, evaluateSystemQuality } from "./utils/signalLogging";
+import { evaluateSystemQuality } from "./utils/signalLogging";
 
 const App = () => {
   // Initialize defense systems
@@ -19,12 +19,10 @@ const App = () => {
     // Initialize dependency monitor
     const dependencyMonitor = DependencyMonitor.getInstance();
     
-    // Run comprehensive system verification on startup
+    // Run comprehensive system verification on startup with minimal logging
     const startupVerification = async () => {
       try {
-        // Removed verbose logging toasts
         await dependencyMonitor.checkAllDependencies();
-        
         const qualityReport = evaluateSystemQuality();
         
         // Only log to console, removed system toasts
@@ -43,7 +41,7 @@ const App = () => {
     // Run verification after a short delay to allow components to initialize
     const verificationTimer = setTimeout(startupVerification, 1500);
     
-    // Set up periodic verification
+    // Set up periodic verification with reduced frequency
     const periodicVerificationInterval = setInterval(() => {
       dependencyMonitor.checkAllDependencies();
     }, 300000); // Every 5 minutes

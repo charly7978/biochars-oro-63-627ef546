@@ -2,7 +2,7 @@
 import { Share2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/use-toast";
+import { commonToasts } from "@/utils/toast-utils";
 
 const APP_SHARE_URL = "https://healthpulse.app";
 
@@ -21,24 +21,15 @@ const ShareButton = () => {
 
       if (navigator.share && navigator.canShare(shareData)) {
         await navigator.share(shareData);
-        // Simplified toast
-        toast({
-          title: "Enlace compartido",
-        });
+        commonToasts.sharing.linkShared();
       } else {
-        // Simplified clipboard toast
         await navigator.clipboard.writeText(APP_SHARE_URL);
-        toast({
-          title: "Enlace copiado",
-        });
+        commonToasts.sharing.linkCopied();
       }
     } catch (error) {
       // Only show toast for actual sharing errors
       if (error instanceof Error) {
-        toast({
-          title: "Error al compartir",
-          variant: "destructive",
-        });
+        commonToasts.sharing.shareError();
       }
     } finally {
       setIsSharing(false);

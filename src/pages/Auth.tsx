@@ -1,10 +1,9 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
+import { commonToasts } from "@/utils/toast-utils";
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -12,7 +11,6 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +24,7 @@ const Auth = () => {
         });
         if (error) throw error;
         
-        // Simplified toast
-        toast({
-          title: "Registro exitoso",
-        });
+        commonToasts.auth.signUpSuccess();
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -40,11 +35,7 @@ const Auth = () => {
         navigate("/");
       }
     } catch (error: any) {
-      // Only show specific error messages
-      toast({
-        variant: "destructive",
-        title: "Error de autenticación",
-      });
+      commonToasts.auth.authError();
     } finally {
       setLoading(false);
     }
