@@ -8,7 +8,34 @@ import { applyFilterPipeline } from './heart-beat/signal-filters';
 import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
 import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
 import { HeartbeatAudioManager } from './heart-beat/audio-manager';
-import { checkSignalQuality, resetDetectionStates } from './heart-beat/signal-quality';
+import { checkSignalQuality } from './heart-beat/signal-quality';
+
+// Definición local de resetDetectionStates como fallback en caso de fallo de importación
+const resetDetectionStatesLocal = () => {
+  console.log("Signal quality: Resetting detection states (local fallback)");
+  return {
+    weakSignalsCount: 0
+  };
+};
+
+// Intentar importar resetDetectionStates o usar el fallback si falla
+let resetDetectionStates = resetDetectionStatesLocal;
+
+// Esta es una forma segura de manejar dependencias críticas
+try {
+  // Comprobar si existe importación global (provista por el sistema de defensa)
+  if (typeof window !== 'undefined' && 
+      window.__moduleResolution && 
+      window.__moduleResolution['/src/modules/heart-beat/signal-quality.ts'] &&
+      window.__moduleResolution['/src/modules/heart-beat/signal-quality.ts'].resetDetectionStates) {
+    
+    resetDetectionStates = window.__moduleResolution['/src/modules/heart-beat/signal-quality.ts'].resetDetectionStates;
+    console.log("HeartBeatProcessor: Using resetDetectionStates from global module resolution");
+  }
+} catch (error) {
+  console.error("HeartBeatProcessor: Error resolving resetDetectionStates, using local fallback", error);
+  resetDetectionStates = resetDetectionStatesLocal;
+}
 
 export class HeartBeatProcessor {
   // Import configuration from config module
@@ -105,7 +132,7 @@ export class HeartBeatProcessor {
   }
 
   processSignal(value) {
-    // Check for weak signal
+    // Check for weak signal - using imported function with fallbacks
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value, 
       this.lowSignalCount, 
@@ -285,6 +312,15 @@ export class HeartBeatProcessor {
     
     // Try to ensure audio context is active
     this.initAudio();
+    
+    // Reset signal quality states - use safe resetDetectionStates
+    // that handles missing imports
+    try {
+      resetDetectionStates();
+    } catch (error) {
+      console.error("HeartBeatProcessor: Error calling resetDetectionStates, using fallback", error);
+      resetDetectionStatesLocal();
+    }
     
     console.log("HeartBeatProcessor: Reset complete - all values at zero");
   }

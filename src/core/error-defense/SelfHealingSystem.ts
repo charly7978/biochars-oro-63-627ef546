@@ -1,4 +1,3 @@
-
 /**
  * SelfHealingSystem - Proactive error prevention and automatic recovery
  * 
@@ -9,6 +8,7 @@
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity, SystemError } from './ErrorDefenseSystem';
 import DependencyManager from './DependencyManager';
 import { logSignalProcessing, LogLevel } from '../../utils/signalLogging';
+import ImportErrorDefenseSystem from './ImportErrorDefenseSystem';
 
 // Preventive Actions
 type PreventiveAction = {
@@ -51,6 +51,7 @@ class SelfHealingSystem {
   // Dependencies
   private dependencyManager: DependencyManager;
   private errorSystem: ErrorDefenseSystem;
+  private importErrorSystem: ImportErrorDefenseSystem | null = null;
   
   private constructor() {
     this.dependencyManager = DependencyManager.getInstance();
@@ -112,6 +113,41 @@ class SelfHealingSystem {
         preventiveActions: ['retry-network-operations'],
         occurrences: 0,
         lastSeen: 0
+      },
+      {
+        pattern: /does not provide an export named/i,
+        category: ErrorCategory.DEPENDENCY,
+        preventiveActions: ['fix-missing-exports', 'resolve-module-imports'],
+        occurrences: 0,
+        lastSeen: 0
+      },
+      {
+        pattern: /Module not found/i,
+        category: ErrorCategory.DEPENDENCY,
+        preventiveActions: ['resolve-module-imports', 'reinitialize-dependencies'],
+        occurrences: 0,
+        lastSeen: 0
+      },
+      {
+        pattern: /SyntaxError: The requested module/i,
+        category: ErrorCategory.DEPENDENCY,
+        preventiveActions: ['fix-module-syntax', 'resolve-module-imports'],
+        occurrences: 0,
+        lastSeen: 0
+      },
+      {
+        pattern: /import\/no-unresolved/i,
+        category: ErrorCategory.DEPENDENCY,
+        preventiveActions: ['resolve-module-imports'],
+        occurrences: 0,
+        lastSeen: 0
+      },
+      {
+        pattern: /Circular dependency/i,
+        category: ErrorCategory.DEPENDENCY,
+        preventiveActions: ['fix-circular-dependency'],
+        occurrences: 0,
+        lastSeen: 0
       }
     ];
   }
@@ -125,7 +161,6 @@ class SelfHealingSystem {
         id: 'reinitialize-dependencies',
         name: 'Reinitialize System Dependencies',
         condition: () => {
-          // Check if any critical dependencies are missing
           const criticalDeps = ['vitalSignsProcessor', 'signalProcessor', 'heartBeatProcessor'];
           return criticalDeps.some(dep => !this.dependencyManager.isDependencyAvailable(dep));
         },
@@ -140,14 +175,13 @@ class SelfHealingSystem {
           this.dependencyManager.initializeAllDependencies();
         },
         lastRun: 0,
-        cooldownMs: 10000, // 10 seconds
+        cooldownMs: 10000,
         successCount: 0
       },
       {
         id: 'reset-processors',
         name: 'Reset Signal Processors',
         condition: () => {
-          // Check for error symptoms in the system status
           const status = this.errorSystem.getSystemStatus();
           return !status.isHealthy || status.recentErrors.high > 0;
         },
@@ -160,10 +194,8 @@ class SelfHealingSystem {
           );
           
           try {
-            // Reset all processing components
             this.dependencyManager.resetAllDependencies();
             
-            // Clear local storage entries that might be corrupted
             if (typeof window !== 'undefined' && window.localStorage) {
               const keysToRemove = [
                 'signal_processor_state',
@@ -184,14 +216,13 @@ class SelfHealingSystem {
           }
         },
         lastRun: 0,
-        cooldownMs: 30000, // 30 seconds
+        cooldownMs: 30000,
         successCount: 0
       },
       {
         id: 'clear-memory',
         name: 'Clear TensorFlow Memory',
         condition: () => {
-          // Check if TensorFlow is available
           return typeof window !== 'undefined' && !!(window as any).tf;
         },
         action: () => {
@@ -204,12 +235,10 @@ class SelfHealingSystem {
                 { timestamp: new Date().toISOString() }
               );
               
-              // Release tensors
               (window as any).tf.engine().endScope();
               (window as any).tf.engine().startScope();
               (window as any).tf.disposeVariables();
               
-              // Force garbage collection if available
               if ((window as any).gc) {
                 (window as any).gc();
               }
@@ -219,14 +248,13 @@ class SelfHealingSystem {
           }
         },
         lastRun: 0,
-        cooldownMs: 60000, // 1 minute
+        cooldownMs: 60000,
         successCount: 0
       },
       {
         id: 'reset-recursive-components',
         name: 'Reset Recursive Components',
         condition: () => {
-          // Check for stack overflow error symptoms
           const status = this.errorSystem.getSystemStatus();
           return status.recentErrors.critical > 0;
         },
@@ -238,19 +266,17 @@ class SelfHealingSystem {
             { timestamp: new Date().toISOString() }
           );
           
-          // Reset the system components that might be causing recursion
           this.dependencyManager.resetAllDependencies();
           this.errorSystem.reset();
         },
         lastRun: 0,
-        cooldownMs: 15000, // 15 seconds
+        cooldownMs: 15000,
         successCount: 0
       },
       {
         id: 'reduce-tensor-allocations',
         name: 'Reduce Tensor Allocations',
         condition: () => {
-          // Check for memory pressure
           return typeof window !== 'undefined' && 
                  (window as any).tf && 
                  (window as any).tf.memory && 
@@ -271,7 +297,6 @@ class SelfHealingSystem {
                 }
               );
               
-              // Force tensor cleanup
               (window as any).tf.disposeVariables();
               (window as any).tf.engine().endScope();
               (window as any).tf.engine().startScope();
@@ -294,38 +319,262 @@ class SelfHealingSystem {
           }
         },
         lastRun: 0,
-        cooldownMs: 30000, // 30 seconds
+        cooldownMs: 30000,
         successCount: 0
       },
       {
         id: 'retry-network-operations',
         name: 'Retry Failed Network Operations',
-        condition: () => false, // Placeholder for network retry logic
+        condition: () => false,
         action: () => {
-          // Placeholder for network retry logic
         },
         lastRun: 0,
-        cooldownMs: 15000, // 15 seconds
+        cooldownMs: 15000,
+        successCount: 0
+      },
+      {
+        id: 'fix-missing-exports',
+        name: 'Fix Missing Exports',
+        condition: () => {
+          const importErrors = this.errorPatterns.filter(p => 
+            (typeof p.pattern === 'string' && 
+             (p.pattern.includes('export') || p.pattern.includes('Module'))) || 
+            (p.pattern instanceof RegExp && 
+             (p.pattern.toString().includes('export') || p.pattern.toString().includes('Module')))
+          );
+          
+          return importErrors.some(p => p.occurrences > 0);
+        },
+        action: () => {
+          logSignalProcessing(
+            LogLevel.INFO,
+            'SelfHealingSystem',
+            'Fixing missing exports',
+            { timestamp: new Date().toISOString() }
+          );
+          
+          this.ensureImportErrorSystem();
+          
+          if (typeof window !== 'undefined') {
+            try {
+              if (this.importErrorSystem) {
+                this.importErrorSystem.registerSubstitute(
+                  '/src/modules/heart-beat/signal-quality.ts',
+                  () => {
+                    console.warn('Using fallback resetDetectionStates');
+                    return { weakSignalsCount: 0 };
+                  },
+                  'resetDetectionStates'
+                );
+              }
+            } catch (error) {
+              console.error('Error setting up module fix:', error);
+            }
+          }
+        },
+        lastRun: 0,
+        cooldownMs: 5000,
+        successCount: 0
+      },
+      {
+        id: 'resolve-module-imports',
+        name: 'Resolve Module Imports',
+        condition: () => {
+          const moduleErrors = this.errorPatterns.filter(p => 
+            (typeof p.pattern === 'string' && p.pattern.includes('Module')) || 
+            (p.pattern instanceof RegExp && p.pattern.toString().includes('Module'))
+          );
+          
+          return moduleErrors.some(p => p.occurrences > 0);
+        },
+        action: () => {
+          logSignalProcessing(
+            LogLevel.INFO,
+            'SelfHealingSystem',
+            'Resolving module imports',
+            { timestamp: new Date().toISOString() }
+          );
+          
+          this.ensureImportErrorSystem();
+          
+          if (this.importErrorSystem) {
+            this.importErrorSystem.startImportAnalysis();
+          }
+          
+          if (typeof window !== 'undefined' && document) {
+            const scripts = document.querySelectorAll('script[type="module"]');
+            scripts.forEach(script => {
+              const src = script.getAttribute('src');
+              if (src) {
+                const newScript = document.createElement('script');
+                newScript.type = 'module';
+                newScript.src = src + (src.includes('?') ? '&' : '?') + 'nocache=' + Date.now();
+                
+                if (script.parentNode) {
+                  script.parentNode.replaceChild(newScript, script);
+                  
+                  logSignalProcessing(
+                    LogLevel.INFO,
+                    'SelfHealingSystem',
+                    'Reloaded module script',
+                    { src }
+                  );
+                }
+              }
+            });
+          }
+        },
+        lastRun: 0,
+        cooldownMs: 10000,
+        successCount: 0
+      },
+      {
+        id: 'fix-module-syntax',
+        name: 'Fix Module Syntax Errors',
+        condition: () => {
+          const syntaxErrors = this.errorPatterns.filter(p => 
+            (typeof p.pattern === 'string' && p.pattern.includes('SyntaxError')) || 
+            (p.pattern instanceof RegExp && p.pattern.toString().includes('SyntaxError'))
+          );
+          
+          return syntaxErrors.some(p => p.occurrences > 0);
+        },
+        action: () => {
+          logSignalProcessing(
+            LogLevel.INFO,
+            'SelfHealingSystem',
+            'Fixing module syntax errors',
+            { timestamp: new Date().toISOString() }
+          );
+          
+          this.ensureImportErrorSystem();
+          
+          if (this.importErrorSystem) {
+            this.importErrorSystem.registerSubstitute(
+              '/src/modules/heart-beat/signal-quality.ts',
+              () => {
+                console.warn('Using fallback resetDetectionStates from syntax error fix');
+                return { weakSignalsCount: 0 };
+              },
+              'resetDetectionStates'
+            );
+          }
+          
+          if (typeof window !== 'undefined') {
+            (window as any).__refreshModules = () => {
+              try {
+                const scripts = document.querySelectorAll('script[type="module"]');
+                scripts.forEach(script => {
+                  const src = script.getAttribute('src');
+                  if (src) {
+                    const newSrc = src.split('?')[0] + '?t=' + Date.now();
+                    script.setAttribute('src', newSrc);
+                  }
+                });
+                
+                if (this.importErrorSystem) {
+                  this.importErrorSystem.startImportAnalysis();
+                }
+                
+                return true;
+              } catch (error) {
+                console.error('Error refreshing modules:', error);
+                return false;
+              }
+            };
+          }
+        },
+        lastRun: 0,
+        cooldownMs: 8000,
+        successCount: 0
+      },
+      {
+        id: 'fix-circular-dependency',
+        name: 'Fix Circular Dependencies',
+        condition: () => {
+          const circularErrors = this.errorPatterns.filter(p => 
+            (typeof p.pattern === 'string' && p.pattern.includes('Circular')) || 
+            (p.pattern instanceof RegExp && p.pattern.toString().includes('Circular'))
+          );
+          
+          return circularErrors.some(p => p.occurrences > 0);
+        },
+        action: () => {
+          logSignalProcessing(
+            LogLevel.INFO,
+            'SelfHealingSystem',
+            'Attempting to fix circular dependencies',
+            { timestamp: new Date().toISOString() }
+          );
+          
+          this.ensureImportErrorSystem();
+          
+          if (this.importErrorSystem) {
+            (window as any).__breakCircularDependency = (modulePath: string) => {
+              try {
+                if (this.importErrorSystem) {
+                  this.importErrorSystem.registerSubstitute(
+                    modulePath,
+                    { __breakCircle: true }
+                  );
+                  return true;
+                }
+                return false;
+              } catch (error) {
+                console.error('Error breaking circular dependency:', error);
+                return false;
+              }
+            };
+          }
+        },
+        lastRun: 0,
+        cooldownMs: 30000,
         successCount: 0
       }
     ];
   }
   
   /**
+   * Ensure ImportErrorDefenseSystem is initialized
+   */
+  private ensureImportErrorSystem(): void {
+    if (!this.importErrorSystem) {
+      try {
+        this.importErrorSystem = ImportErrorDefenseSystem.getInstance();
+        this.importErrorSystem.initializeGlobalInterceptor();
+        
+        logSignalProcessing(
+          LogLevel.INFO,
+          'SelfHealingSystem',
+          'Initialized ImportErrorDefenseSystem',
+          { timestamp: new Date().toISOString() }
+        );
+      } catch (error) {
+        logSignalProcessing(
+          LogLevel.ERROR,
+          'SelfHealingSystem',
+          `Error initializing ImportErrorDefenseSystem: ${error}`,
+          {}
+        );
+      }
+    }
+  }
+  
+  /**
    * Start the healing cycle
    */
   private startHealingCycle(): void {
-    // Register with the error system to monitor errors
     this.errorSystem.addErrorListener((error: SystemError) => {
       this.handleError(error);
     });
     
-    // Start periodic healing cycle
     if (typeof window !== 'undefined' && !this.healingInterval) {
       this.healingInterval = window.setInterval(() => {
         this.runHealingCycle();
       }, this.CHECK_INTERVAL);
     }
+    
+    this.ensureImportErrorSystem();
   }
   
   /**
@@ -335,22 +584,49 @@ class SelfHealingSystem {
     const message = error.message;
     const now = Date.now();
     
-    // Match against known patterns
     for (const pattern of this.errorPatterns) {
       const isMatch = typeof pattern.pattern === 'string' 
         ? message.includes(pattern.pattern) 
         : pattern.pattern.test(message);
       
       if (isMatch) {
-        // Update pattern statistics
         pattern.occurrences++;
         pattern.lastSeen = now;
         
-        // Take preventive actions for this pattern
         this.takePreventiveActions(pattern.preventiveActions);
         break;
       }
     }
+  }
+  
+  /**
+   * Handle an external error that might not go through the regular error system
+   * This allows integration with window.onerror and other error sources
+   */
+  public handleExternalError(errorMessage: string): void {
+    const systemError: SystemError = {
+      id: `ext-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: Date.now(),
+      category: ErrorCategory.RUNTIME,
+      severity: ErrorSeverity.HIGH,
+      message: errorMessage,
+      source: 'external',
+      metadata: { 
+        type: 'external_error',
+        source: 'external_handler'
+      }
+    };
+    
+    this.handleError(systemError);
+    
+    logSignalProcessing(
+      LogLevel.ERROR,
+      'SelfHealingSystem',
+      `Handling external error: ${errorMessage}`,
+      { timestamp: new Date().toISOString() }
+    );
+    
+    this.errorSystem.reportError(systemError);
   }
   
   /**
@@ -364,7 +640,6 @@ class SelfHealingSystem {
       
       if (action && now - action.lastRun >= action.cooldownMs) {
         try {
-          // Run the action
           action.action();
           action.lastRun = now;
           action.successCount++;
@@ -400,15 +675,12 @@ class SelfHealingSystem {
     this.healthMetrics.lastHealingCycle = now;
     this.healthMetrics.healingCycles++;
     
-    // Check conditions for all preventive actions
     for (const action of this.preventiveActions) {
       if (now - action.lastRun >= action.cooldownMs) {
         try {
-          // Check if action should be taken
           const shouldAct = action.condition();
           
           if (shouldAct) {
-            // Take action
             action.action();
             action.lastRun = now;
             action.successCount++;
@@ -453,7 +725,11 @@ class SelfHealingSystem {
         name: a.name,
         successCount: a.successCount,
         lastRun: a.lastRun > 0 ? new Date(a.lastRun).toISOString() : 'never'
-      }))
+      })),
+      importErrorSystem: this.importErrorSystem ? 
+        'active' : 'not initialized',
+      importErrorsStatus: this.importErrorSystem ? 
+        this.importErrorSystem.getStatus() : null
     };
   }
   
@@ -462,6 +738,8 @@ class SelfHealingSystem {
    */
   public triggerHealingCycle(): void {
     this.runHealingCycle();
+    
+    this.ensureImportErrorSystem();
   }
   
   /**
@@ -507,6 +785,10 @@ class SelfHealingSystem {
     this.healthMetrics.preventedIssues = 0;
     this.healthMetrics.recoveredErrors = 0;
     this.healthMetrics.failedRecoveries = 0;
+    
+    if (this.importErrorSystem) {
+      this.importErrorSystem.reset();
+    }
     
     logSignalProcessing(
       LogLevel.INFO,

@@ -8,6 +8,8 @@ import ErrorBoundary from './ErrorBoundary';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '@/core/error-defense/ErrorDefenseSystem';
 import { SystemDiagnostics } from './SystemDiagnostics';
 import { evaluateSystemQuality } from '@/utils/signalLogging';
+import SelfHealingSystem from '@/core/error-defense/SelfHealingSystem';
+import ImportErrorDefenseSystem from '@/core/error-defense/ImportErrorDefenseSystem';
 
 interface ErrorHandlingProviderProps {
   children: ReactNode;
@@ -41,27 +43,19 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [systemQualityScore, setSystemQualityScore] = useState<number>(100);
   const [lastAutoRecovery, setLastAutoRecovery] = useState<number>(0);
+  const [importErrorSystemInitialized, setImportErrorSystemInitialized] = useState<boolean>(false);
   
-  // Initialize defense system when loading
   useEffect(() => {
-    // Ensure the system is initialized
     const defenseSystem = ErrorDefenseSystem.getInstance();
     
-    // Start error monitoring
     startMonitoring();
-    
-    // Mark component as healthy
     updateComponentStatus('healthy');
     
-    // Perform initial system quality evaluation
     const qualityReport = evaluateSystemQuality();
     setSystemQualityScore(qualityReport.score);
     
-    // Initial health check - minimal notification
-    setTimeout(() => {
-      setShowHealthIndicator(true);
-      setTimeout(() => setShowHealthIndicator(false), 3000);
-    }, 2000);
+    setShowHealthIndicator(true);
+    setTimeout(() => setShowHealthIndicator(false), 3000);
     
     return () => {
       stopMonitoring();
@@ -69,30 +63,22 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     };
   }, [startMonitoring, stopMonitoring, updateComponentStatus]);
   
-  // Advanced periodic health check system with reduced notifications
   useEffect(() => {
     const checkInterval = setInterval(() => {
-      // Verify error defense system
       const hasIssues = checkForIssues();
-      
-      // Check for errors from legacy system
       const hasLegacyIssues = errorStats.count > 0;
       const criticalLegacyIssues = errorStats.count > 5;
       
-      // Temporarily show health indicator
       setShowHealthIndicator(true);
       setTimeout(() => setShowHealthIndicator(false), 2000);
       
-      // Combine information from both systems
       const combinedHasIssues = hasIssues || hasLegacyIssues;
       const combinedIsCritical = 
         (!errorState.isSystemHealthy && errorState.criticalErrors > 0) || 
         criticalLegacyIssues;
       
-      // Set alert state
       setShowWarning(combinedHasIssues);
       
-      // Build issue message
       let message = null;
       if (combinedHasIssues) {
         if (errorState.criticalErrors > 0) {
@@ -108,17 +94,15 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       setIssueMessage(message);
       setIsCritical(combinedIsCritical);
       
-      // Evaluate system quality score periodically
       const qualityReport = evaluateSystemQuality();
       setSystemQualityScore(qualityReport.score);
       
-      // Intelligent auto-recovery system with throttling and minimal notifications
       const now = Date.now();
-      if (combinedHasIssues && now - lastAutoRecovery > 60000) { // Max once per minute
+      if (combinedHasIssues && now - lastAutoRecovery > 60000) {
         const shouldAutoRecover = 
-          (qualityReport.score < 70) || // Poor quality score
-          (!combinedIsCritical && errorState.totalErrors > 3) || // Multiple non-critical errors
-          (hasLegacyIssues && errorStats.count > 2); // Multiple legacy errors
+          (qualityReport.score < 70) || 
+          (!combinedIsCritical && errorState.totalErrors > 3) || 
+          (hasLegacyIssues && errorStats.count > 2);
           
         if (shouldAutoRecover) {
           console.log("ErrorHandlingProvider: Intelligent auto-recovery triggered");
@@ -127,28 +111,40 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         }
       }
       
-      // Show diagnostics automatically for critical problems
       if (combinedIsCritical && !showDiagnostics) {
         setShowDiagnostics(true);
       }
-    }, 10000); // Check every 10 seconds
+    }, 10000);
     
     return () => {
       clearInterval(checkInterval);
     };
   }, [errorStats, checkForIssues, errorState, showDiagnostics, lastAutoRecovery]);
   
-  // Handle recovery attempt
   const handleRecovery = async () => {
-    // Use unified recovery system
     const recoveryActions = attemptRecovery();
     resetMonitoring();
     
     setShowWarning(false);
     console.log("ErrorHandlingProvider: Recovery attempted");
+    
+    if (!importErrorSystemInitialized) {
+      try {
+        const importErrorSystem = ImportErrorDefenseSystem.getInstance();
+        importErrorSystem.initializeGlobalInterceptor();
+        setImportErrorSystemInitialized(true);
+        
+        console.log('ErrorHandlingProvider: ImportErrorDefenseSystem initialized during recovery');
+      } catch (error) {
+        console.error('Error initializing ImportErrorDefenseSystem during recovery:', error);
+      }
+    }
+    
+    const selfHealingSystem = SelfHealingSystem.getInstance();
+    selfHealingSystem.forcePreventiveAction('fix-missing-exports');
+    selfHealingSystem.forcePreventiveAction('resolve-module-imports');
   };
   
-  // Handle forced rebuild
   const handleForceRebuild = async () => {
     if (window.confirm("Esta acción realizará una reconstrucción forzada del sistema. ¿Continuar?")) {
       forceRebuild();
@@ -167,10 +163,8 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         setIsCritical(true);
         setShowDiagnostics(true);
         
-        // Report to legacy system
         reportError("REACT_ERROR", error.message, { stack: error.stack });
         
-        // Report to new defense system
         const defenseSystem = ErrorDefenseSystem.getInstance();
         defenseSystem.reportError({
           id: '',
@@ -182,9 +176,21 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           stack: error.stack,
           metadata: { type: 'react_error' }
         });
+        
+        const errorMessage = error.message || '';
+        if (errorMessage.includes('Module') || 
+            errorMessage.includes('import') || 
+            errorMessage.includes('export') ||
+            errorMessage.includes('SyntaxError')) {
+          
+          console.log('ErrorHandlingProvider: React error contains import/module issue:', errorMessage);
+          
+          const selfHealingSystem = SelfHealingSystem.getInstance();
+          selfHealingSystem.forcePreventiveAction('fix-missing-exports');
+          selfHealingSystem.forcePreventiveAction('resolve-module-imports');
+        }
       }}
     >
-      {/* System health indicator with quality score - show only when active */}
       {showHealthIndicator && (
         <div className="fixed top-2 right-2 z-50 transition-opacity duration-300">
           <div className={`flex flex-col items-end gap-1`}>
@@ -214,7 +220,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         </div>
       )}
       
-      {/* Warning banner for detected issues */}
       {showWarning && (
         <Alert
           variant={isCritical ? "destructive" : "default"}
@@ -261,7 +266,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         </Alert>
       )}
       
-      {/* System Diagnostics - only show detailed view when explicitly requested */}
       {showDiagnostics ? (
         <div className="mb-4">
           <SystemDiagnostics minimal={false} />
@@ -270,7 +274,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         <SystemDiagnostics minimal={true} />
       )}
       
-      {/* Render children */}
       {children}
     </ErrorBoundary>
   );
