@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, ReactNode } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, RefreshCw, ShieldCheck, Activity, BarChart } from 'lucide-react';
@@ -37,7 +38,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   const [showWarning, setShowWarning] = useState<boolean>(false);
   const [issueMessage, setIssueMessage] = useState<string | null>(null);
   const [isCritical, setIsCritical] = useState<boolean>(false);
-  const [showHealthIndicator, setShowHealthIndicator] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [systemQualityScore, setSystemQualityScore] = useState<number>(100);
   const [lastAutoRecovery, setLastAutoRecovery] = useState<number>(0);
@@ -57,12 +57,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     const qualityReport = evaluateSystemQuality();
     setSystemQualityScore(qualityReport.score);
     
-    // Initial health check - minimal notification
-    setTimeout(() => {
-      setShowHealthIndicator(true);
-      setTimeout(() => setShowHealthIndicator(false), 3000);
-    }, 2000);
-    
     return () => {
       stopMonitoring();
       defenseSystem.removeAllListeners();
@@ -78,10 +72,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       // Check for errors from legacy system
       const hasLegacyIssues = errorStats.count > 0;
       const criticalLegacyIssues = errorStats.count > 5;
-      
-      // Temporarily show health indicator
-      setShowHealthIndicator(true);
-      setTimeout(() => setShowHealthIndicator(false), 2000);
       
       // Combine information from both systems
       const combinedHasIssues = hasIssues || hasLegacyIssues;
@@ -184,37 +174,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         });
       }}
     >
-      {/* System health indicator with quality score - show only when active */}
-      {showHealthIndicator && (
-        <div className="fixed top-2 right-2 z-50 transition-opacity duration-300">
-          <div className={`flex flex-col items-end gap-1`}>
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-              systemQualityScore > 80 ? 'bg-green-100 text-green-800' : 
-              systemQualityScore > 60 ? 'bg-amber-100 text-amber-800' : 
-              'bg-red-100 text-red-800'
-            }`}>
-              {systemQualityScore > 80 ? (
-                <ShieldCheck className="h-3 w-3" />
-              ) : (
-                <Activity className="h-3 w-3" />
-              )}
-              <span>Sistema {
-                systemQualityScore > 90 ? 'óptimo' : 
-                systemQualityScore > 80 ? 'estable' : 
-                systemQualityScore > 60 ? 'en recuperación' : 
-                'comprometido'
-              }</span>
-            </div>
-            
-            <div className="bg-background border rounded-full px-2 py-0.5 text-xs flex items-center gap-1 shadow-sm">
-              <BarChart className="h-3 w-3 text-muted-foreground" />
-              <span>Calidad: {systemQualityScore}%</span>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Warning banner for detected issues */}
+      {/* Warning banner for detected issues - only shown when there are actual problems */}
       {showWarning && (
         <Alert
           variant={isCritical ? "destructive" : "default"}

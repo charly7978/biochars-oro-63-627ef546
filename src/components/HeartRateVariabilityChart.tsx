@@ -34,7 +34,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw background
-    ctx.fillStyle = '#f8fafc';
+    ctx.fillStyle = '#1A1F2C'; // Dark background for better contrast
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Draw grid if enabled
@@ -59,7 +59,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     const gridSizeX = 30;
     const gridSizeY = 15;
     
-    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeStyle = '#2D3748'; // Darker grid lines
     ctx.lineWidth = 0.5;
     
     // Draw vertical grid lines
@@ -145,10 +145,10 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     ctx.textBaseline = 'top';
     
     // Background for metrics
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fillStyle = 'rgba(26, 31, 44, 0.8)'; // Dark background with opacity
     ctx.fillRect(10, 10, 150, 80);
     
-    ctx.fillStyle = '#334155';
+    ctx.fillStyle = '#F1F0FB'; // Light text for better contrast
     
     // Draw key metrics
     ctx.fillText(`SDNN: ${metrics.sdnn.toFixed(1)} ms`, 15, 15);
@@ -157,7 +157,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     
     // Draw arrhythmia indicator if detected
     if (metrics.hasArrhythmia) {
-      ctx.fillStyle = '#DC2626';
+      ctx.fillStyle = '#F97316'; // Orange for warning
       ctx.fillText('⚠️ Posible arritmia', 15, 75);
     }
   };
@@ -168,7 +168,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
       width={width}
       height={height}
       style={{ width: `${width}px`, height: `${height}px` }}
-      className="rounded-md"
+      className="rounded-md shadow-lg" // Add shadow for better visual separation
     />
   );
 };

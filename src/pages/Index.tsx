@@ -12,6 +12,7 @@ import AppTitle from "@/components/AppTitle";
 import ShareButton from "@/components/ShareButton";
 import HeartRateVariabilityChart from "@/components/HeartRateVariabilityChart";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { toast } from 'sonner';
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -83,16 +84,7 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Analyze HRV when we have enough data points
-  useEffect(() => {
-    if (rrIntervals.length > 15 && isMonitoring) {
-      analyzeHRV().then(() => {
-        // Show HRV chart after we have valid data
-        setShowHRVChart(true);
-      });
-    }
-  }, [rrIntervals, isMonitoring, analyzeHRV]);
-
+  // Process signals and update vital signs
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
@@ -156,7 +148,6 @@ const Index = () => {
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
           
           if (newTime >= 30) {
             finalizeMeasurement();
@@ -190,7 +181,8 @@ const Index = () => {
     // Final HRV analysis at the end of measurement
     if (rrIntervals.length > 10) {
       analyzeHRV().then(() => {
-        setShowHRVChart(true);
+        // Don't automatically show HRV chart - let user request it
+        toast.success("Análisis HRV completado. Puede ver los resultados con el botón 'VER HRV'");
       });
     }
     
@@ -315,6 +307,16 @@ const Index = () => {
     }
   };
 
+  const handleShowHRVChart = () => {
+    if (rrIntervals.length > 10) {
+      analyzeHRV().then(() => {
+        setShowHRVChart(true);
+      });
+    } else {
+      toast.error("No hay suficientes datos para mostrar el análisis HRV");
+    }
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
@@ -403,50 +405,63 @@ const Index = () => {
               />
             </div>
             
-            {/* HRV Chart Overlay - Only shows when there's data and after measurement */}
+            {/* HRV Chart Modal - Only when explicitly shown by user */}
             {showHRVChart && hrvResult && (
-              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in rounded-lg overflow-hidden">
-                <div className="absolute top-2 right-2 z-10">
+              <div className="fixed inset-0 bg-black/70 flex flex-col items-center justify-center animate-fade-in z-50">
+                <div className="w-full max-w-md bg-gray-900 rounded-lg shadow-xl overflow-hidden p-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-white font-semibold text-lg">
+                      Análisis de Variabilidad del Ritmo Cardíaco (HRV)
+                    </h3>
+                    <button 
+                      onClick={() => setShowHRVChart(false)}
+                      className="bg-gray-800 hover:bg-gray-700 p-1 rounded-full text-white"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="flex justify-center">
+                    <HeartRateVariabilityChart 
+                      data={rrIntervals}
+                      hrvResult={hrvResult}
+                      width={320}
+                      height={180}
+                      lineColor="#0EA5E9"
+                      showGrid={true}
+                      showMetrics={true}
+                    />
+                  </div>
+                  
+                  {hrvResult && (
+                    <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                      <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-xs text-gray-300">SDNN</div>
+                        <div className="text-lg text-white font-semibold">{hrvResult.sdnn.toFixed(1)}</div>
+                        <div className="text-xs text-gray-400">ms</div>
+                      </div>
+                      <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-xs text-gray-300">RMSSD</div>
+                        <div className="text-lg text-white font-semibold">{hrvResult.rmssd.toFixed(1)}</div>
+                        <div className="text-xs text-gray-400">ms</div>
+                      </div>
+                      <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-xs text-gray-300">pNN50</div>
+                        <div className="text-lg text-white font-semibold">{hrvResult.pnn50.toFixed(1)}</div>
+                        <div className="text-xs text-gray-400">%</div>
+                      </div>
+                    </div>
+                  )}
+                  
                   <button 
                     onClick={() => setShowHRVChart(false)}
-                    className="bg-white/10 hover:bg-white/20 p-1 rounded-full text-white"
+                    className="mt-4 w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
+                    Cerrar
                   </button>
                 </div>
-                <div className="text-white font-semibold mb-2">
-                  Análisis de Variabilidad del Ritmo Cardíaco (HRV)
-                </div>
-                <HeartRateVariabilityChart 
-                  data={rrIntervals}
-                  hrvResult={hrvResult}
-                  width={320}
-                  height={180}
-                  lineColor="#0EA5E9"
-                  showGrid={true}
-                  showMetrics={true}
-                />
-                {hrvResult && (
-                  <div className="mt-2 grid grid-cols-3 gap-4 text-center">
-                    <div className="bg-white/10 p-2 rounded">
-                      <div className="text-xs text-gray-300">SDNN</div>
-                      <div className="text-lg text-white font-semibold">{hrvResult.sdnn.toFixed(1)}</div>
-                      <div className="text-xs text-gray-400">ms</div>
-                    </div>
-                    <div className="bg-white/10 p-2 rounded">
-                      <div className="text-xs text-gray-300">RMSSD</div>
-                      <div className="text-lg text-white font-semibold">{hrvResult.rmssd.toFixed(1)}</div>
-                      <div className="text-xs text-gray-400">ms</div>
-                    </div>
-                    <div className="bg-white/10 p-2 rounded">
-                      <div className="text-xs text-gray-300">pNN50</div>
-                      <div className="text-lg text-white font-semibold">{hrvResult.pnn50.toFixed(1)}</div>
-                      <div className="text-xs text-gray-400">%</div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -468,11 +483,7 @@ const Index = () => {
             </div>
             <div className="w-1/3">
               <button 
-                onClick={() => {
-                  if (rrIntervals.length > 10) {
-                    analyzeHRV().then(() => setShowHRVChart(true));
-                  }
-                }}
+                onClick={handleShowHRVChart}
                 disabled={rrIntervals.length < 10}
                 className={`w-full h-14 rounded-lg text-white font-semibold ${
                   rrIntervals.length >= 10 
