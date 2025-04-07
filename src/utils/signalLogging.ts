@@ -1,3 +1,4 @@
+
 /**
  * Signal logging utilities for debugging and monitoring
  */

@@ -202,7 +202,7 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
       const success = await trackPerformanceAsync(
         'TensorFlow',
         'reinitialization',
-        async () => await initializeTensorFlow()
+        async () => initializeTensorFlow()
       );
       
       if (success) {
