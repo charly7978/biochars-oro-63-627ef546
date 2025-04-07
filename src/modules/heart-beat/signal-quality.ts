@@ -1,3 +1,4 @@
+
 /**
  * Improved central module for signal quality detection
  * Consistent parameters across all parts of the application
@@ -82,5 +83,15 @@ export function createSignalHistoryTracker(windowSize: number = 100) {
     clear: () => {
       history = [];
     }
+  };
+}
+
+/**
+ * Reset all detection states - added to fix the missing export
+ */
+export function resetDetectionStates() {
+  console.log("Signal quality: Resetting all detection states");
+  return {
+    consecutiveWeakSignals: 0
   };
 }
