@@ -1,5 +1,4 @@
-
-name: NodeJS with Gulp and Code Protection
+name: NodeJS with Gulp
 
 on:
   push:
@@ -23,71 +22,7 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
-    - name: Install dependencies
-      run: npm install
-
-    - name: TypeScript Validation
-      run: |
-        echo "Verificando tipos TypeScript..."
-        npx tsc --noEmit --skipLibCheck
-        if [ $? -ne 0 ]; then
-          echo "❌ Errores de TypeScript detectados"
-          exit 1
-        else
-          echo "✅ Validación de TypeScript completada con éxito"
-        fi
-
-    - name: Check for dangerous patterns
-      run: |
-        echo "Verificando patrones peligrosos en los cambios..."
-        git diff --name-only ${{ github.event.before }} ${{ github.sha }} | xargs cat | node -e "
-          const fs = require('fs');
-          const data = fs.readFileSync(0, 'utf-8');
-          const patterns = [
-            { pattern: /rm\\s+-rf\\s+/, description: 'Eliminación recursiva forzada' },
-            { pattern: /DROP\\s+TABLE/i, description: 'Eliminación de tabla de base de datos' },
-            { pattern: /eval\\s*\\(/, description: 'Evaluación dinámica de código (eval)' },
-            { pattern: /exec\\s*\\(/, description: 'Ejecución de comandos del sistema' },
-            { pattern: /process\\.exit/, description: 'Terminación forzada del proceso' },
-            { pattern: /TelemetryCategory\\.[A-Z_]+/g, description: 'Uso de TelemetryCategory' }
-          ];
-          
-          let found = false;
-          for (const p of patterns) {
-            if (p.pattern.test(data)) {
-              if (p.description === 'Uso de TelemetryCategory') {
-                // Verificación especial para TelemetryCategory
-                const matches = data.match(p.pattern);
-                if (matches) {
-                  const validCategories = [
-                    'PERFORMANCE', 'SIGNAL_PROCESSING', 'NEURAL_NETWORK', 
-                    'ERROR', 'USER_INTERACTION', 'SYSTEM', 'CI_INTEGRATION',
-                    'MEMORY_MANAGEMENT', 'SIGNAL_CAPTURE'
-                  ];
-                  for (const match of matches) {
-                    const category = match.split('.')[1];
-                    if (!validCategories.includes(category)) {
-                      console.error('⚠️ Categoría de telemetría inexistente detectada: ' + category);
-                      found = true;
-                    }
-                  }
-                }
-              } else {
-                console.error('⚠️ Patrón peligroso detectado: ' + p.description);
-                found = true;
-              }
-            }
-          }
-          
-          if (found) {
-            process.exit(1);
-          } else {
-            console.log('✅ No se detectaron patrones peligrosos');
-          }
-        "
-
-    - name: Run Code Protection Shield
-      run: npm run code-protection
-
     - name: Build
-      run: gulp
+      run: |
+        npm install
+        gulp

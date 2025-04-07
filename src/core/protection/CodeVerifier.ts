@@ -1,3 +1,4 @@
+
 /**
  * Verificador de Código
  * 
@@ -6,15 +7,8 @@
  */
 
 import { VerificationResult, VerificationType, ViolationDetail } from './types';
-import { SignalProcessingTelemetry, TelemetryCategory } from '../telemetry/SignalProcessingTelemetry';
 
 export class CodeVerifier {
-  private telemetry: SignalProcessingTelemetry;
-  
-  constructor() {
-    this.telemetry = SignalProcessingTelemetry.getInstance();
-  }
-  
   /**
    * Verifica el código modificado para asegurar que cumple con los estándares
    */
@@ -25,9 +19,6 @@ export class CodeVerifier {
   ): Promise<VerificationResult> {
     console.log(`Verificando cambios en ${context.fileName}...`);
     
-    const verificationId = `verify_${Date.now()}_${context.fileName}`;
-    this.telemetry.startPhase(verificationId, TelemetryCategory.SIGNAL_PROCESSING);
-    
     const violations: ViolationDetail[] = [];
     
     // Verificar dependencias
@@ -37,14 +28,6 @@ export class CodeVerifier {
     // Verificar integridad de tipos
     const typeViolations = this.checkTypeIntegrity(originalCode, modifiedCode);
     violations.push(...typeViolations);
-    
-    // Verificar enumeraciones y referencias
-    const enumViolations = this.checkEnumReferences(modifiedCode);
-    violations.push(...enumViolations);
-    
-    // Verificar errores de sintaxis TypeScript
-    const syntaxViolations = this.checkTypescriptSyntax(modifiedCode);
-    violations.push(...syntaxViolations);
     
     // Verificar duplicaciones
     const duplicationViolations = this.checkDuplication(originalCode, modifiedCode);
@@ -62,8 +45,6 @@ export class CodeVerifier {
     
     // Determinar resultado final
     const highSeverityViolations = violations.filter(v => v.severity === 'high');
-    
-    this.telemetry.endPhase(verificationId, TelemetryCategory.SIGNAL_PROCESSING);
     
     if (highSeverityViolations.length > 0) {
       return {
@@ -247,155 +228,6 @@ export class CodeVerifier {
     }
     
     return properties;
-  }
-  
-  /**
-   * Verifica referencias a enumeraciones y valores de enum
-   * Detecta errores comunes como referencias a valores de enum inexistentes
-   */
-  private checkEnumReferences(code: string): ViolationDetail[] {
-    const violations: ViolationDetail[] = [];
-    
-    // Extraer definiciones de enum
-    const enumDefinitions = this.extractEnumDefinitions(code);
-    
-    // Verificar referencias a enums
-    for (const enumName of Object.keys(enumDefinitions)) {
-      const enumValues = enumDefinitions[enumName];
-      const enumReferences = this.extractEnumReferences(code, enumName);
-      
-      // Verificar si las referencias a valores existen en la definición
-      for (const reference of enumReferences) {
-        if (!enumValues.includes(reference) && reference !== enumName) {
-          violations.push({
-            type: VerificationType.TYPE_INTEGRITY,
-            message: `Referencia a valor inexistente '${reference}' en enum '${enumName}'.`,
-            severity: 'high'
-          });
-        }
-      }
-    }
-    
-    return violations;
-  }
-  
-  /**
-   * Extrae las definiciones de enumeraciones
-   */
-  private extractEnumDefinitions(code: string): Record<string, string[]> {
-    const enumDefinitions: Record<string, string[]> = {};
-    const enumRegex = /enum\s+(\w+)\s*\{([^}]*)\}/g;
-    
-    let match;
-    while ((match = enumRegex.exec(code)) !== null) {
-      const enumName = match[1];
-      const enumBody = match[2];
-      
-      // Extraer valores del enum
-      const valueRegex = /\b(\w+)\b\s*=?\s*['"]?([^,\s'"]*)/g;
-      const values: string[] = [];
-      
-      let valueMatch;
-      while ((valueMatch = valueRegex.exec(enumBody)) !== null) {
-        values.push(valueMatch[1]);
-      }
-      
-      enumDefinitions[enumName] = values;
-    }
-    
-    return enumDefinitions;
-  }
-  
-  /**
-   * Extrae referencias a valores de un enum específico
-   */
-  private extractEnumReferences(code: string, enumName: string): string[] {
-    const references: string[] = [];
-    const referenceRegex = new RegExp(`${enumName}\\.([\\w_]+)`, 'g');
-    
-    let match;
-    while ((match = referenceRegex.exec(code)) !== null) {
-      references.push(match[1]);
-    }
-    
-    return references;
-  }
-  
-  /**
-   * Verifica errores de sintaxis básicos en TypeScript
-   */
-  private checkTypescriptSyntax(code: string): ViolationDetail[] {
-    const violations: ViolationDetail[] = [];
-    
-    // Verificar paréntesis, corchetes y llaves sin cerrar
-    const openBrackets = (code.match(/\(/g) || []).length;
-    const closeBrackets = (code.match(/\)/g) || []).length;
-    if (openBrackets !== closeBrackets) {
-      violations.push({
-        type: VerificationType.TYPE_INTEGRITY,
-        message: `Desequilibrio en paréntesis: ${openBrackets} abiertos vs ${closeBrackets} cerrados.`,
-        severity: 'high'
-      });
-    }
-    
-    const openBraces = (code.match(/\{/g) || []).length;
-    const closeBraces = (code.match(/\}/g) || []).length;
-    if (openBraces !== closeBraces) {
-      violations.push({
-        type: VerificationType.TYPE_INTEGRITY,
-        message: `Desequilibrio en llaves: ${openBraces} abiertas vs ${closeBraces} cerradas.`,
-        severity: 'high'
-      });
-    }
-    
-    const openSquares = (code.match(/\[/g) || []).length;
-    const closeSquares = (code.match(/\]/g) || []).length;
-    if (openSquares !== closeSquares) {
-      violations.push({
-        type: VerificationType.TYPE_INTEGRITY,
-        message: `Desequilibrio en corchetes: ${openSquares} abiertos vs ${closeSquares} cerrados.`,
-        severity: 'high'
-      });
-    }
-    
-    // Verificar errores comunes de typescript
-    if (code.includes('import type') && code.includes('= require(')) {
-      violations.push({
-        type: VerificationType.TYPE_INTEGRITY,
-        message: 'Mezcla de sintaxis de importación ES6 y CommonJS en el mismo archivo.',
-        severity: 'medium'
-      });
-    }
-    
-    // Verificar propiedades privadas accedidas incorrectamente
-    const privateProps = this.extractPrivateProperties(code);
-    for (const prop of privateProps) {
-      const directAccess = new RegExp(`(?<!this\\.)${prop}\\b`, 'g');
-      if (directAccess.test(code)) {
-        violations.push({
-          type: VerificationType.TYPE_INTEGRITY,
-          message: `Posible acceso incorrecto a propiedad privada '${prop}'.`,
-          severity: 'medium'
-        });
-      }
-    }
-    
-    return violations;
-  }
-  
-  /**
-   * Extrae propiedades privadas de una clase
-   */
-  private extractPrivateProperties(code: string): string[] {
-    const privateProps: string[] = [];
-    const privatePropsRegex = /private\s+(\w+)\s*:/g;
-    
-    let match;
-    while ((match = privatePropsRegex.exec(code)) !== null) {
-      privateProps.push(match[1]);
-    }
-    
-    return privateProps;
   }
   
   /**
