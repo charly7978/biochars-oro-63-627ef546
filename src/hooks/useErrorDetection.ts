@@ -1,6 +1,5 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
 import { 
   getErrorDetectionStatus,
   logError,
@@ -48,8 +47,7 @@ export const useErrorDetection = () => {
   
   const reportError = useCallback((code: string, message: string, data?: any) => {
     logError(code, message, data);
-    // Disabled toast notification
-    // toast.error(`Error: ${message}`);
+    // Completely removed toast notification
   }, []);
   
   return {

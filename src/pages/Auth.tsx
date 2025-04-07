@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { commonToasts } from "@/utils/toast-utils";
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -34,6 +33,8 @@ const Auth = () => {
         navigate("/");
       }
     } catch (error: any) {
+      // Only log error to console, no toasts
+      console.error("Authentication error:", error.message);
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,13 @@
 
-// Re-export the toast hooks from the hooks directory
-import { useToast, toast } from "@/hooks/use-toast";
+// Re-export completely disabled toast hooks
+export const useToast = () => ({
+  toasts: [],
+  toast: () => ({ id: "", dismiss: () => {}, update: () => {} }),
+  dismiss: () => {}
+});
 
-export { useToast, toast };
+export const toast = () => ({
+  id: "",
+  dismiss: () => {},
+  update: () => {}
+});

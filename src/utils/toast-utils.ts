@@ -1,26 +1,15 @@
 
-import { toast } from "@/hooks/use-toast";
-
+// This file is intentionally empty to disable all toast functionality
 export type ToastType = 'success' | 'error' | 'info';
 
-// Modified to never show toasts regardless of parameters
-export const showToast = (
-  title: string, 
-  description?: string, 
-  type: ToastType = 'info',
-  options?: { 
-    duration?: number, 
-    important?: boolean 
-  }
-) => {
-  // Return null instead of showing toasts
-  return null;
-};
+// Completely disabled toast function
+export const showToast = () => null;
 
+// Completely disabled common toasts
 export const commonToasts = {
   auth: {
     signInSuccess: () => null,
-    signUpSuccess: () => null, // Added this back to fix Auth.tsx error
+    signUpSuccess: () => null,
     authError: () => null,
   },
   
@@ -31,7 +20,7 @@ export const commonToasts = {
   },
   
   system: {
-    criticalError: (message?: string) => null,
+    criticalError: () => null,
     recoveryStarted: () => null,
   }
 };

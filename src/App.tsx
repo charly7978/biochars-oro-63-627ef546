@@ -1,7 +1,5 @@
 
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { ErrorHandlingProvider } from "./components/ErrorHandlingProvider";
@@ -62,9 +60,7 @@ const App = () => {
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-        {/* Mantenemos los componentes Toaster para no romper referencias, pero no mostrarán nada */}
-        <Toaster />
-        <SonnerToaster />
+        {/* Removed all Toaster components */}
       </ErrorHandlingProvider>
     </Router>
   );
