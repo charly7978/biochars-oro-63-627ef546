@@ -1,43 +1,61 @@
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Functions for processing heart beat results
- */
 
 /**
- * Update last valid BPM reference
- * Simple implementation without complex validation
+ * Functions for processing signal results
  */
-export const updateLastValidBpm = (
-  result: any,
-  lastValidBpmRef: React.MutableRefObject<number>,
-): void => {
-  if (result && result.bpm > 40 && result.bpm < 220 && result.confidence > 0.5) {
+import React from 'react';
+
+/**
+ * Process signal results with low confidence
+ */
+export function processLowConfidenceResult(
+  result: any, 
+  currentBPM: number,
+  arrhythmiaCounter: number = 0
+): any {
+  // If confidence is very low, don't update values
+  if (result.confidence < 0.25) {
+    return {
+      bpm: currentBPM,
+      confidence: result.confidence,
+      isPeak: false,
+      arrhythmiaCount: arrhythmiaCounter || 0,
+      rrData: {
+        intervals: [],
+        lastPeakTime: null
+      }
+    };
+  }
+  
+  return result;
+}
+
+/**
+ * Updates the reference to last valid BPM when condition is met
+ */
+export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRefObject<number>): void {
+  if (result.bpm >= 40 && result.bpm <= 200) {
     lastValidBpmRef.current = result.bpm;
   }
 }
 
 /**
- * Process result with low confidence
- * Simpler implementation without advanced algorithms
+ * Handle peak detection
  */
-export const processLowConfidenceResult = (
-  result: any,
-  currentBPM: number,
-  arrhythmiaCount: number
-): any => {
-  // If confidence is too low, use current BPM
-  if (result.confidence < 0.3) {
-    return {
-      ...result,
-      bpm: currentBPM > 0 ? currentBPM : result.bpm,
-      arrhythmiaCount
-    };
-  }
+export function handlePeakDetection(
+  result: any, 
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  requestBeepCallback: (value: number) => boolean,
+  isMonitoringRef: React.MutableRefObject<boolean>,
+  value: number
+): void {
+  const now = Date.now();
   
-  // Otherwise use result as is
-  return {
-    ...result,
-    arrhythmiaCount
-  };
+  // Only process peaks with minimum confidence
+  if (result.isPeak && result.confidence > 0.4) {
+    lastPeakTimeRef.current = now;
+    
+    if (isMonitoringRef.current && result.confidence > 0.5) {
+      requestBeepCallback(value);
+    }
+  }
 }
