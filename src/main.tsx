@@ -1,58 +1,7 @@
+
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
-import ErrorDefenseSystem from './core/error-defense/ErrorDefenseSystem';
-import DependencyManager from './core/error-defense/DependencyManager';
-
-// Pre-initialization error detection system
-const preloadErrorDetection = () => {
-  try {
-    // Pre-initialize error defense system to catch early errors
-    const errorSystem = ErrorDefenseSystem.getInstance();
-    console.log('ErrorDefenseSystem pre-initialized for early error detection');
-    
-    // Pre-verify critical modules
-    const dependencyManager = DependencyManager.getInstance();
-    console.log('DependencyManager pre-initialized');
-    
-    // Register important module substitutes and fallbacks
-    // This ensures critical functions are always available even if imports fail
-    const moduleSubstitutes = new Map<string, any>();
-    
-    // Add signal-quality substitute functions
-    moduleSubstitutes.set('resetDetectionStates', () => {
-      console.warn('Using fallback resetDetectionStates');
-      return {
-        weakSignalsCount: 0,
-        patternCount: 0
-      };
-    });
-    
-    // Register substitutes with dependency manager
-    dependencyManager.registerFallbacks(moduleSubstitutes);
-    
-    return true;
-  } catch (error) {
-    console.error('Critical error during preload phase:', error);
-    
-    // Add error to DOM for visibility even if rendering fails
-    const rootElement = document.getElementById('root');
-    if (rootElement) {
-      rootElement.innerHTML = `
-        <div style="padding: 20px; background: #ffebe9; color: #c00; border: 1px solid #c00; border-radius: 4px;">
-          <h2>Critical Initialization Error</h2>
-          <p>${String(error)}</p>
-          <button onclick="window.location.reload()">Reload Application</button>
-        </div>
-      `;
-    }
-    
-    return false;
-  }
-};
-
-// Run preload error detection before anything else
-const isPreloadSuccessful = preloadErrorDetection();
 
 // Apply high-resolution interface class to the root element
 const applyHighResolution = () => {
@@ -196,32 +145,5 @@ const setupPerformanceObserver = () => {
 // Start the performance observer after render
 window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 
-// Only render if preload was successful
-if (isPreloadSuccessful) {
-  // Render the app with NO CodeGuardianWidget
-  try {
-    createRoot(document.getElementById("root")!).render(
-      <App />
-    );
-  } catch (error) {
-    console.error('Fatal error during initial render:', error);
-    
-    // Show user-friendly error message
-    const rootElement = document.getElementById('root');
-    if (rootElement) {
-      rootElement.innerHTML = `
-        <div style="padding: 20px; background: #ffebe9; color: #c00; border: 1px solid #c00; border-radius: 4px; margin: 20px;">
-          <h2>Rendering Error</h2>
-          <p>The application encountered an error during startup. Please try refreshing the page.</p>
-          <p style="font-size: 12px; margin-top: 10px;">Error details: ${String(error)}</p>
-          <button style="padding: 8px 16px; background: #0366d6; color: white; border: none; border-radius: 4px; margin-top: 10px;" 
-                  onclick="window.location.reload()">
-            Reload Application
-          </button>
-        </div>
-      `;
-    }
-  }
-} else {
-  console.error('Application initialization aborted due to preload failures');
-}
+// Render the app
+createRoot(document.getElementById("root")!).render(<App />);

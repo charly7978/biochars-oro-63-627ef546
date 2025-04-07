@@ -10,7 +10,10 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
   filteredValue: number;
   updatedBuffer: number[];
 } {
-  const updatedBuffer = [...buffer, value];
+  // Make sure buffer is an array before using spread operator
+  const safeBuffer = Array.isArray(buffer) ? buffer : [];
+  
+  const updatedBuffer = [...safeBuffer, value];
   if (updatedBuffer.length > windowSize) {
     updatedBuffer.shift();
   }

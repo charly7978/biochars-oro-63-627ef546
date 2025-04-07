@@ -3,13 +3,7 @@
  * Utilidades de optimización específicas para pantallas de alta resolución
  */
 
-/**
- * Check if the current device is a mobile device
- */
-const isMobileDeviceCheck = (): boolean => {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-};
+import { isMobileDevice } from './displayOptimizer';
 
 /**
  * Detecta si el dispositivo tiene una pantalla de alta resolución
@@ -46,7 +40,7 @@ export const applyHighResolutionOptimizations = (): void => {
     document.documentElement.classList.add('ultra-high-resolution');
     
     // Si no es móvil, aplicamos optimizaciones específicas para pantallas grandes
-    if (!isMobileDeviceCheck()) {
+    if (!isMobileDevice()) {
       document.documentElement.classList.add('ultra-crisp-rendering');
     }
   }
