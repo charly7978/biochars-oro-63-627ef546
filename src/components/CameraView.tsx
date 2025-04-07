@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface CameraViewProps {
@@ -21,6 +22,7 @@ const CameraView = ({
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
+  const [exposureCompensationLevel, setExposureCompensationLevel] = useState(0);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -150,7 +152,10 @@ const CameraView = ({
               };
               
               if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+                // Iniciar con exposición óptima para detección PPG
+                const maxCompensation = capabilities.exposureCompensation.max;
+                exposureConstraint.exposureCompensation = Math.round(maxCompensation * 0.3); // 30% del máximo
+                setExposureCompensationLevel(Math.round(maxCompensation * 0.3));
               }
               
               advancedConstraints.push(exposureConstraint);
@@ -221,6 +226,9 @@ const CameraView = ({
       
       retryAttemptsRef.current = 0;
       
+      // Programar ajustes adaptativos de exposición
+      scheduleAdaptiveExposureAdjustments(newStream);
+      
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
       
@@ -232,6 +240,52 @@ const CameraView = ({
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
     }
+  };
+  
+  // Nuevo método para ajustes adaptativos de exposición basados en la calidad de la señal
+  const scheduleAdaptiveExposureAdjustments = (stream: MediaStream) => {
+    // Ajuste de exposición adaptativo basado en calidad de señal
+    const adjustExposureBasedOnSignal = async () => {
+      if (!stream || !isMonitoring) return;
+      
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) return;
+      
+      const capabilities = videoTrack.getCapabilities();
+      if (!capabilities.exposureCompensation) return;
+      
+      const maxCompensation = capabilities.exposureCompensation.max;
+      const minCompensation = capabilities.exposureCompensation.min;
+      
+      try {
+        let newCompensation = exposureCompensationLevel;
+        
+        // Aumentar exposición si la señal es débil o de baja calidad
+        if (signalQuality < 30 && !isFingerDetected) {
+          newCompensation = Math.min(maxCompensation, exposureCompensationLevel + maxCompensation * 0.05);
+        } 
+        // Disminuir exposición si la señal es demasiado fuerte (sobreexposición)
+        else if (signalQuality > 80 && isFingerDetected) {
+          newCompensation = Math.max(minCompensation, exposureCompensationLevel - maxCompensation * 0.05);
+        }
+        
+        if (newCompensation !== exposureCompensationLevel) {
+          console.log(`Ajustando exposición adaptativa: ${exposureCompensationLevel} -> ${newCompensation}`);
+          await videoTrack.applyConstraints({
+            advanced: [{ exposureCompensation: newCompensation }]
+          });
+          setExposureCompensationLevel(newCompensation);
+        }
+      } catch (err) {
+        console.error("Error al ajustar exposición adaptativa:", err);
+      }
+    };
+    
+    // Ajustar cada 5 segundos
+    const intervalId = setInterval(adjustExposureBasedOnSignal, 5000);
+    
+    // Limpiar intervalo cuando el componente se desmonte
+    return () => clearInterval(intervalId);
   };
 
   const refreshAutoFocus = useCallback(async () => {
@@ -293,6 +347,7 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
+  // Ajuste dinámico de framerate basado en calidad de señal y plataforma
   const targetFrameInterval = isAndroid ? 1000/10 : 
                              signalQuality > 70 ? 1000/30 : 1000/15;
 

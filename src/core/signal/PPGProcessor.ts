@@ -28,6 +28,33 @@ export class PPGProcessor {
   private baselineValue: number = 0;
   private periodicityBuffer: number[] = [];
   
+  // Nuevas variables para ROI dinámico
+  private dynamicROI = {
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    lastUpdateTime: 0
+  };
+  private roiUpdateInterval = 500; // ms entre actualizaciones de ROI
+  
+  // Variables para detección multicanal
+  private channelWeights = {
+    red: 0.6,
+    green: 0.3,
+    blue: 0.1
+  };
+  private channelSignals = {
+    red: [] as number[],
+    green: [] as number[],
+    blue: [] as number[]
+  };
+  
+  // Variables para estabilización de exposición
+  private exposureHistory: number[] = [];
+  private readonly EXPOSURE_HISTORY_SIZE = 10;
+  private exposureNormalizationFactor = 1.0;
+
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
@@ -39,6 +66,29 @@ export class PPGProcessor {
 
   public initialize(): Promise<void> {
     return new Promise<void>((resolve) => {
+      // Inicializar canales y buffers
+      this.lastValues = [];
+      this.stableFrameCount = 0;
+      this.lastStableValue = 0;
+      this.periodicityBuffer = [];
+      this.exposureHistory = [];
+      this.channelSignals = {
+        red: [],
+        green: [],
+        blue: []
+      };
+      
+      // Reiniciar ROI dinámico
+      this.dynamicROI = {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        lastUpdateTime: 0
+      };
+      
+      this.exposureNormalizationFactor = 1.0;
+      
       console.log("PPGProcessor: Inicializado");
       resolve();
     });
@@ -56,6 +106,8 @@ export class PPGProcessor {
 
   public calibrate(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
+      // Optimizar pesos de canales basados en SNR inicial
+      this.calculateOptimalChannelWeights();
       console.log("PPGProcessor: Calibración completada");
       resolve(true);
     });
@@ -67,8 +119,20 @@ export class PPGProcessor {
     }
 
     try {
-      const redValue = this.extractRedChannel(imageData);
-      const kalmanFiltered = this.kalmanFilter.filter(redValue);
+      // Extraer valores de todos los canales
+      const channelValues = this.extractChannelValues(imageData);
+      
+      // Actualizar ROI dinámicamente
+      this.updateDynamicROI(imageData, channelValues.red);
+      
+      // Actualizar historial de exposición para normalización
+      this.updateExposureHistory(channelValues.red);
+      
+      // Calcular valor combinado multicanal con pesos optimizados
+      const combinedValue = this.calculateMultichannelValue(channelValues);
+      
+      // Aplicar filtros al valor combinado
+      const kalmanFiltered = this.kalmanFilter.filter(combinedValue);
       const filtered = this.waveletDenoiser.denoise(kalmanFiltered);
       
       this.lastValues.push(filtered);
@@ -76,7 +140,7 @@ export class PPGProcessor {
         this.lastValues.shift();
       }
 
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
+      const { isFingerDetected, quality } = this.analyzeSignal(filtered, channelValues.red);
       const perfusionIndex = this.calculatePerfusionIndex();
 
       this.periodicityBuffer.push(filtered);
@@ -86,11 +150,11 @@ export class PPGProcessor {
 
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
-        rawValue: redValue,
+        rawValue: channelValues.red,
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
+        roi: this.dynamicROI,
         perfusionIndex: perfusionIndex
       };
 
@@ -100,10 +164,61 @@ export class PPGProcessor {
       this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
   }
-
-  private extractRedChannel(imageData: ImageData): number {
+  
+  // Nuevo método: Extracción de todos los canales
+  private extractChannelValues(imageData: ImageData): { red: number, green: number, blue: number } {
     const data = imageData.data;
-    let redSum = 0;
+    let redSum = 0, greenSum = 0, blueSum = 0;
+    let count = 0;
+    
+    // Usar el ROI dinámico para la extracción
+    const roi = this.dynamicROI;
+    
+    // Asegurar que el ROI está dentro de los límites de la imagen
+    const startX = Math.max(0, Math.min(roi.x, imageData.width - 1));
+    const endX = Math.max(0, Math.min(roi.x + roi.width, imageData.width));
+    const startY = Math.max(0, Math.min(roi.y, imageData.height - 1));
+    const endY = Math.max(0, Math.min(roi.y + roi.height, imageData.height));
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const i = (y * imageData.width + x) * 4;
+        redSum += data[i];       // Canal rojo
+        greenSum += data[i + 1]; // Canal verde
+        blueSum += data[i + 2];  // Canal azul
+        count++;
+      }
+    }
+    
+    if (count === 0) {
+      // Fallback al centro si el ROI está completamente fuera de la imagen
+      return this.extractRedChannel(imageData); 
+    }
+    
+    // Aplicar normalización de exposición
+    const redAvg = (redSum / count) * this.exposureNormalizationFactor;
+    const greenAvg = (greenSum / count) * this.exposureNormalizationFactor;
+    const blueAvg = (blueSum / count) * this.exposureNormalizationFactor;
+    
+    // Almacenar valores para análisis de SNR
+    this.channelSignals.red.push(redAvg);
+    this.channelSignals.green.push(greenAvg);
+    this.channelSignals.blue.push(blueAvg);
+    
+    // Limitar tamaño de los buffers
+    if (this.channelSignals.red.length > 30) {
+      this.channelSignals.red.shift();
+      this.channelSignals.green.shift();
+      this.channelSignals.blue.shift();
+    }
+    
+    return { red: redAvg, green: greenAvg, blue: blueAvg };
+  }
+  
+  // Método para compatibilidad con código existente
+  private extractRedChannel(imageData: ImageData): { red: number, green: number, blue: number } {
+    const data = imageData.data;
+    let redSum = 0, greenSum = 0, blueSum = 0;
     let count = 0;
     
     // Analizar el 40% central de la imagen para mejor precisión
@@ -115,12 +230,193 @@ export class PPGProcessor {
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Canal rojo
+        redSum += data[i];       // Canal rojo
+        greenSum += data[i + 1]; // Canal verde
+        blueSum += data[i + 2];  // Canal azul
         count++;
       }
     }
     
-    return redSum / count;
+    const redAvg = redSum / count;
+    const greenAvg = greenSum / count;
+    const blueAvg = blueSum / count;
+    
+    return { red: redAvg, green: greenAvg, blue: blueAvg };
+  }
+  
+  // Nuevo método: Actualización del ROI dinámico
+  private updateDynamicROI(imageData: ImageData, redValue: number): void {
+    const now = Date.now();
+    
+    // Limitar frecuencia de actualización del ROI para reducir carga de CPU
+    if (now - this.dynamicROI.lastUpdateTime < this.roiUpdateInterval) {
+      return;
+    }
+    
+    // Dividir la imagen en una cuadrícula de 4x4 y encontrar la región con mayor señal
+    const gridSize = 4;
+    const cellWidth = Math.floor(imageData.width / gridSize);
+    const cellHeight = Math.floor(imageData.height / gridSize);
+    
+    let maxSignalStrength = -1;
+    let bestCell = { x: 0, y: 0 };
+    
+    const data = imageData.data;
+    
+    for (let gridY = 0; gridY < gridSize; gridY++) {
+      for (let gridX = 0; gridX < gridSize; gridX++) {
+        let redSum = 0;
+        let greenSum = 0;
+        let count = 0;
+        
+        const startX = gridX * cellWidth;
+        const endX = Math.min((gridX + 1) * cellWidth, imageData.width);
+        const startY = gridY * cellHeight;
+        const endY = Math.min((gridY + 1) * cellHeight, imageData.height);
+        
+        // Muestreo de la celda (no todos los píxeles para optimizar rendimiento)
+        for (let y = startY; y < endY; y += 2) {
+          for (let x = startX; x < endX; x += 2) {
+            const i = (y * imageData.width + x) * 4;
+            redSum += data[i];       // Canal rojo
+            greenSum += data[i + 1]; // Canal verde para mejor detección de piel
+            count++;
+          }
+        }
+        
+        if (count > 0) {
+          // Calcular "fuerza de señal" basada en intensidad del rojo y ratio rojo/verde
+          // Este ratio es útil para detección de piel humana
+          const redAvg = redSum / count;
+          const greenAvg = greenSum / count;
+          const redGreenRatio = greenAvg > 0 ? redAvg / greenAvg : 0;
+          
+          // Priorizar áreas con buen ratio rojo/verde (indicativo de piel humana)
+          // y buena intensidad de rojo
+          const signalStrength = redAvg * Math.pow(redGreenRatio, 0.7);
+          
+          if (signalStrength > maxSignalStrength) {
+            maxSignalStrength = signalStrength;
+            bestCell = { x: gridX, y: gridY };
+          }
+        }
+      }
+    }
+    
+    // Actualizar ROI basado en la mejor celda encontrada
+    const newROI = {
+      x: bestCell.x * cellWidth,
+      y: bestCell.y * cellHeight,
+      width: cellWidth,
+      height: cellHeight,
+      lastUpdateTime: now
+    };
+    
+    // Aplicar cambio gradual al ROI para evitar saltos bruscos
+    if (this.dynamicROI.x !== 0 || this.dynamicROI.y !== 0) {
+      this.dynamicROI = {
+        x: Math.floor(this.dynamicROI.x * 0.7 + newROI.x * 0.3),
+        y: Math.floor(this.dynamicROI.y * 0.7 + newROI.y * 0.3),
+        width: Math.floor(this.dynamicROI.width * 0.7 + newROI.width * 0.3),
+        height: Math.floor(this.dynamicROI.height * 0.7 + newROI.height * 0.3),
+        lastUpdateTime: now
+      };
+    } else {
+      // Primera actualización
+      this.dynamicROI = newROI;
+    }
+    
+    console.log("PPGProcessor: ROI dinámico actualizado", this.dynamicROI);
+  }
+  
+  // Nuevo método: Calcular valor óptimo multicanal
+  private calculateMultichannelValue(channelValues: { red: number, green: number, blue: number }): number {
+    // Combinar señales de diferentes canales usando pesos
+    return (
+      channelValues.red * this.channelWeights.red +
+      channelValues.green * this.channelWeights.green +
+      channelValues.blue * this.channelWeights.blue
+    );
+  }
+  
+  // Nuevo método: Optimizar pesos de canales basados en SNR
+  private calculateOptimalChannelWeights(): void {
+    if (this.channelSignals.red.length < 10) {
+      return; // No hay suficientes datos para calcular SNR
+    }
+    
+    // Calcular SNR para cada canal
+    const redSNR = this.calculateSNR(this.channelSignals.red);
+    const greenSNR = this.calculateSNR(this.channelSignals.green);
+    const blueSNR = this.calculateSNR(this.channelSignals.blue);
+    
+    // Normalizar SNR para obtener pesos (mayor SNR = mayor peso)
+    const totalSNR = redSNR + greenSNR + blueSNR;
+    
+    if (totalSNR > 0) {
+      // Asegurar siempre un mínimo para el canal rojo
+      const minRedWeight = 0.3;
+      let redWeight = Math.max(minRedWeight, redSNR / totalSNR);
+      
+      // Distribuir el resto entre verde y azul según SNR
+      const remainingWeight = 1.0 - redWeight;
+      const greenBlueTotal = greenSNR + blueSNR;
+      
+      let greenWeight = greenBlueTotal > 0 ? remainingWeight * (greenSNR / greenBlueTotal) : 0.3;
+      let blueWeight = greenBlueTotal > 0 ? remainingWeight * (blueSNR / greenBlueTotal) : 0.1;
+      
+      // Actualizar pesos
+      this.channelWeights = {
+        red: redWeight,
+        green: greenWeight,
+        blue: blueWeight
+      };
+      
+      console.log("PPGProcessor: Pesos de canales actualizados", {
+        weights: this.channelWeights,
+        snr: { red: redSNR, green: greenSNR, blue: blueSNR }
+      });
+    }
+  }
+  
+  // Método auxiliar: Calcular SNR (Relación Señal-Ruido)
+  private calculateSNR(signal: number[]): number {
+    if (signal.length < 5) return 0;
+    
+    // 1. Calcular la media
+    const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+    
+    // 2. Calcular potencia de señal y ruido
+    const signalPower = Math.pow(mean, 2);
+    
+    // 3. Calcular varianza (potencia de ruido)
+    const variance = signal.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / signal.length;
+    
+    // 4. Calcular SNR
+    return variance > 0 ? signalPower / variance : 0;
+  }
+  
+  // Nuevo método: Normalización adaptativa de exposición
+  private updateExposureHistory(redValue: number): void {
+    this.exposureHistory.push(redValue);
+    if (this.exposureHistory.length > this.EXPOSURE_HISTORY_SIZE) {
+      this.exposureHistory.shift();
+    }
+    
+    if (this.exposureHistory.length >= this.EXPOSURE_HISTORY_SIZE / 2) {
+      // Calcular la media del historial
+      const mean = this.exposureHistory.reduce((sum, val) => sum + val, 0) / this.exposureHistory.length;
+      
+      // Rango objetivo para valores normalizados (optimizado para 8-bit)
+      const targetValue = 128;
+      
+      // Ajustar gradualmente el factor de normalización
+      if (mean > 0) {
+        const newFactor = targetValue / mean;
+        // Cambio gradual para evitar oscilaciones
+        this.exposureNormalizationFactor = this.exposureNormalizationFactor * 0.8 + newFactor * 0.2;
+      }
+    }
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
@@ -200,15 +496,6 @@ export class PPGProcessor {
     const normalizedCorrelation = Math.min(1, Math.max(0, 1 - (avgCorrelation / 10)));
     
     return normalizedCorrelation;
-  }
-
-  private detectROI(redValue: number): ProcessedSignal['roi'] {
-    return {
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100
-    };
   }
 
   private handleError(code: string, message: string): void {
