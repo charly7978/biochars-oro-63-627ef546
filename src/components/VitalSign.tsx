@@ -20,7 +20,15 @@ const VitalSign = ({
   highlighted = false,
   calibrationProgress 
 }: VitalSignProps) => {
+  // Added debug logging for values
+  console.log(`VitalSign rendering: ${label}`, { value, highlighted, type: typeof value });
+
   const getRiskLabel = (label: string, value: string | number) => {
+    // Check for empty values first
+    if (value === '' || value === '--' || value === undefined || value === null) {
+      return '';
+    }
+    
     if (typeof value === 'number') {
       switch(label) {
         case 'FRECUENCIA CARDÍACA':
@@ -42,6 +50,8 @@ const VitalSign = ({
     if (typeof value === 'string') {
       switch(label) {
         case 'PRESIÓN ARTERIAL':
+          if (value === '--/--' || value === '--') return '';
+          
           const pressureParts = value.split('/');
           if (pressureParts.length === 2) {
             const systolic = parseInt(pressureParts[0], 10);
@@ -217,6 +227,16 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
+    // Handle zero or invalid values
+    if (value === 0 || value === '0' || !value) {
+      return '--';
+    }
+    
+    // Handle special pressure case
+    if (label === 'PRESIÓN ARTERIAL' && value === '--/--') {
+      return '--';
+    }
+    
     return value;
   };
 
