@@ -16,11 +16,7 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null;
+  lastArrhythmiaData?: ArrhythmiaDetectionResult | null;
 }
 
 /**
