@@ -30,6 +30,7 @@ interface ValidationResult {
   message: string;
   severity: 'warning' | 'error' | 'critical';
   affectedFiles?: string[];
+  name?: string;
 }
 
 // Representation of codebase state for validation
@@ -120,7 +121,8 @@ class DependencyManager {
               ? `Found ${duplicateComponents.length} potentially duplicate components` 
               : 'No duplicate components detected',
             severity: 'warning',
-            affectedFiles: duplicateComponents.map(c => c.path)
+            affectedFiles: duplicateComponents.map(c => c.path),
+            name: 'duplicate-components'
           };
         }
       },
@@ -138,7 +140,8 @@ class DependencyManager {
               ? `Found ${unusedImports.length} unused imports` 
               : 'All imports are used correctly',
             severity: 'warning',
-            affectedFiles: [...new Set(unusedImports.map(i => i.source))]
+            affectedFiles: [...new Set(unusedImports.map(i => i.source))],
+            name: 'unused-imports'
           };
         }
       },
@@ -155,7 +158,8 @@ class DependencyManager {
               ? `Found ${largeComponents.length} components that are too large (>300 lines)` 
               : 'All components are appropriately sized',
             severity: 'warning',
-            affectedFiles: largeComponents.map(c => c.path)
+            affectedFiles: largeComponents.map(c => c.path),
+            name: 'oversized-components'
           };
         }
       },
@@ -180,7 +184,8 @@ class DependencyManager {
               ? `Found ${potentialCircular.length} potential circular dependencies` 
               : 'No circular dependencies detected',
             severity: 'error',
-            affectedFiles: [...new Set(potentialCircular.flatMap(p => p.split(' ↔ ')))]
+            affectedFiles: [...new Set(potentialCircular.flatMap(p => p.split(' ↔ ')))],
+            name: 'circular-dependencies'
           };
         }
       }
@@ -227,7 +232,7 @@ class DependencyManager {
             message: `Code Guardian: ${issue.message}`,
             source: 'CodeGuardian',
             metadata: {
-              rule: issue.description || '',
+              rule: issue.name || '',
               affectedFiles: issue.affectedFiles
             }
           });
