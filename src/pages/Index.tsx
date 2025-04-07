@@ -67,7 +67,7 @@ const Index = () => {
     };
   }, []);
 
-  // Effect to update display from lastValidResults
+  // Effect to update display from lastValidResults when monitoring is stopped
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       console.log("Using lastValidResults:", lastValidResults);
@@ -76,12 +76,14 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Process incoming signals and update display
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       console.log("Processing signal:", {
         fingerDetected: lastSignal.fingerDetected,
         quality: lastSignal.quality,
-        filteredValue: lastSignal.filteredValue
+        filteredValue: lastSignal.filteredValue,
+        timestamp: new Date().toISOString()
       });
       
       const minQualityThreshold = 40;
@@ -89,16 +91,26 @@ const Index = () => {
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        console.log("Heart beat result:", heartBeatResult);
+        console.log("Heart beat result:", {
+          ...heartBeatResult,
+          timeProcessed: new Date().toISOString()
+        });
         
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
-          setHeartRateConfidence(heartBeatResult.confidence);
+        // Make sure to always update the heart rate when monitoring is active
+        setHeartRate(heartBeatResult.bpm || 0);
+        setHeartRateConfidence(heartBeatResult.confidence || 0);
           
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            console.log("Vital signs updated:", vitals);
-            setVitalSigns(vitals);
+        const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+        if (vitals) {
+          console.log("Vital signs updated:", {
+            ...vitals,
+            timeProcessed: new Date().toISOString()
+          });
+          setVitalSigns(vitals);
+          
+          // Make vital signs immediately visible during monitoring
+          if (!showResults && vitals.spo2 > 0) {
+            setShowResults(true);
           }
         }
         
@@ -106,15 +118,19 @@ const Index = () => {
       } else {
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
-          setHeartRateConfidence(0);
+        // Don't immediately reset heart rate if finger is removed
+        // This helps with display continuity
+        if (!lastSignal.fingerDetected && heartRate > 0 && heartRateConfidence > 0.8) {
+          setTimeout(() => {
+            setHeartRate(0);
+            setHeartRateConfidence(0);
+          }, 3000);
         }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartRateConfidence, showResults]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -123,9 +139,9 @@ const Index = () => {
       enterFullScreen();
       setIsMonitoring(true);
       setIsCameraOn(true);
-      setShowResults(false);
-      setHeartRate(0);
-      setHeartRateConfidence(0);
+      // Don't hide results immediately when starting a new measurement
+      // This helps users see previous results until new ones are available
+      // setShowResults(false);
       
       console.log("Starting monitoring - activating processors");
       startProcessing();
@@ -292,8 +308,12 @@ const Index = () => {
 
   // Log when vitalSigns change
   useEffect(() => {
-    console.log("Vital signs updated in state:", vitalSigns);
-  }, [vitalSigns]);
+    console.log("Vital signs updated in state:", {
+      ...vitalSigns,
+      updateTime: new Date().toISOString(),
+      isShowing: showResults
+    });
+  }, [vitalSigns, showResults]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
