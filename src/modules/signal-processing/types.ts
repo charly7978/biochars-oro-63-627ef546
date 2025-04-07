@@ -17,6 +17,9 @@ export interface SignalProcessingOptions {
   predictionWeight?: number;
   correctionThreshold?: number;
   signalEnhancementAmount?: number;
+  // Opciones adicionales necesarias para adaptive-predictor
+  adaptationRate?: number;
+  predictionHorizon?: number;
 }
 
 /**
