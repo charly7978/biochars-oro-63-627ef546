@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -106,6 +105,15 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
     }
     
+    // Store valid results for later retrieval
+    if (result && !isWeakSignal) {
+      // Only update if we have a valid result with meaningful values
+      if (result.spo2 > 0 || result.pressure !== "--/--" || result.glucose > 0) {
+        console.log("useVitalSignsProcessor: Storing valid result", result);
+        setLastValidResults(result);
+      }
+    }
+    
     // Log processed signals
     logSignalData(value, result, processedSignals.current);
     
@@ -114,16 +122,17 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   };
 
   /**
-   * Perform complete reset - start from zero
+   * Perform reset - return last valid results
    * No simulations or reference values
    */
   const reset = () => {
     resetProcessor();
-    clearArrhythmiaWindows();
-    setLastValidResults(null);
-    weakSignalsCountRef.current = 0;
     
-    return null;
+    // Keep last valid results to display to user after reset
+    const currentResults = lastValidResults;
+    console.log("useVitalSignsProcessor: Reset called, returning last valid results:", currentResults);
+    
+    return currentResults;
   };
   
   /**
@@ -143,7 +152,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults, // Now returning actual last valid results instead of null
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

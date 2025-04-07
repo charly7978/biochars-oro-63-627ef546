@@ -33,8 +33,8 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw background
-    ctx.fillStyle = '#1A1F2C'; // Dark background for better contrast
+    // Draw background with higher contrast
+    ctx.fillStyle = '#111827'; // Darker background for better contrast
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Draw grid if enabled
@@ -59,8 +59,8 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     const gridSizeX = 30;
     const gridSizeY = 15;
     
-    ctx.strokeStyle = '#2D3748'; // Darker grid lines
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = '#334155'; // Brighter grid lines for better visibility
+    ctx.lineWidth = 0.8;
     
     // Draw vertical grid lines
     for (let x = 0; x <= width; x += gridSizeX) {
@@ -99,10 +99,10 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     const scaledMin = midPoint - valueRange / 2;
     const scaledMax = midPoint + valueRange / 2;
     
-    // Draw line connecting RR intervals
+    // Draw line connecting RR intervals with higher visibility
     ctx.beginPath();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5; // Thicker line
     ctx.lineJoin = 'round';
     
     const stepX = width / (data.length - 1);
@@ -121,11 +121,23 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     
     ctx.stroke();
     
-    // Draw dots at each point
+    // Add a slight glow effect to the line for better visibility
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // Draw dots at each point with larger size
     for (let i = 0; i < data.length; i++) {
       const x = i * stepX;
       const normalizedValue = (data[i] - scaledMin) / (scaledMax - scaledMin);
       const y = height - (normalizedValue * height);
+      
+      ctx.beginPath();
+      ctx.fillStyle = '#ffffff'; // White center for contrast
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
       
       ctx.beginPath();
       ctx.fillStyle = color;
@@ -140,24 +152,27 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
     width: number, 
     height: number
   ) => {
-    ctx.font = '12px Inter, sans-serif';
+    ctx.font = 'bold 12px Inter, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     
-    // Background for metrics
-    ctx.fillStyle = 'rgba(26, 31, 44, 0.8)'; // Dark background with opacity
+    // Background for metrics with higher contrast
+    ctx.fillStyle = 'rgba(10, 10, 20, 0.85)'; // Darker background with higher opacity
     ctx.fillRect(10, 10, 150, 80);
+    ctx.strokeStyle = '#3B82F6'; // Blue border
+    ctx.lineWidth = 1;
+    ctx.strokeRect(10, 10, 150, 80);
     
-    ctx.fillStyle = '#F1F0FB'; // Light text for better contrast
+    ctx.fillStyle = '#FFFFFF'; // Brighter white text
     
-    // Draw key metrics
+    // Draw key metrics with improved contrast
     ctx.fillText(`SDNN: ${metrics.sdnn.toFixed(1)} ms`, 15, 15);
     ctx.fillText(`RMSSD: ${metrics.rmssd.toFixed(1)} ms`, 15, 35);
     ctx.fillText(`pNN50: ${metrics.pnn50.toFixed(1)}%`, 15, 55);
     
-    // Draw arrhythmia indicator if detected
+    // Draw arrhythmia indicator if detected with enhanced visibility
     if (metrics.hasArrhythmia) {
-      ctx.fillStyle = '#F97316'; // Orange for warning
+      ctx.fillStyle = '#F59E0B'; // Brighter orange for warning
       ctx.fillText('⚠️ Posible arritmia', 15, 75);
     }
   };
@@ -168,7 +183,7 @@ const HeartRateVariabilityChart: React.FC<HeartRateVariabilityChartProps> = ({
       width={width}
       height={height}
       style={{ width: `${width}px`, height: `${height}px` }}
-      className="rounded-md shadow-lg" // Add shadow for better visual separation
+      className="rounded-md shadow-lg border border-blue-500/20" // Added subtle border for better visual separation
     />
   );
 };
