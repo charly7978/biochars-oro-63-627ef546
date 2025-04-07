@@ -426,6 +426,16 @@ class DependencyManager {
     this.dependencies.clear();
     console.log('DependencyManager: Shutdown complete');
   }
+
+  /**
+   * Register a fallback function for a specific dependency
+   */
+  public registerFallbacks(substitutes: Map<string, () => any>): void {
+    for (const [name, fallbackFn] of substitutes.entries()) {
+      this.defensiveBackups[name] = fallbackFn;
+      console.log(`Registered fallback for ${name}`);
+    }
+  }
 }
 
 export default DependencyManager;
