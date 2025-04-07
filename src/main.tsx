@@ -4,6 +4,7 @@ import App from './App.tsx'
 import './index.css'
 import ErrorDefenseSystem from './core/error-defense/ErrorDefenseSystem';
 import DependencyManager from './core/error-defense/DependencyManager';
+import { CodeGuardianWidget } from './components/CodeGuardianWidget';
 
 // Pre-initialization error detection system
 const preloadErrorDetection = () => {
@@ -201,7 +202,12 @@ window.addEventListener('DOMContentLoaded', setupPerformanceObserver);
 if (isPreloadSuccessful) {
   // Render the app with enhanced error handling
   try {
-    createRoot(document.getElementById("root")!).render(<App />);
+    createRoot(document.getElementById("root")!).render(
+      <>
+        <App />
+        <CodeGuardianWidget position="bottom-right" />
+      </>
+    );
   } catch (error) {
     console.error('Fatal error during initial render:', error);
     
