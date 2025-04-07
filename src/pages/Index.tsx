@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -10,7 +9,6 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import ShareButton from "@/components/ShareButton";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
-import HeartRateDisplay from "@/components/HeartRateDisplay";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -27,7 +25,6 @@ const Index = () => {
     }
   });
   const [heartRate, setHeartRate] = useState(0);
-  const [heartRateConfidence, setHeartRateConfidence] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
@@ -67,10 +64,8 @@ const Index = () => {
     };
   }, []);
 
-  // Effect to update display from lastValidResults
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      console.log("Using lastValidResults:", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -78,26 +73,16 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      console.log("Processing signal:", {
-        fingerDetected: lastSignal.fingerDetected,
-        quality: lastSignal.quality,
-        filteredValue: lastSignal.filteredValue
-      });
-      
       const minQualityThreshold = 40;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        console.log("Heart beat result:", heartBeatResult);
-        
         if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
-          setHeartRateConfidence(heartBeatResult.confidence);
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
-            console.log("Vital signs updated:", vitals);
             setVitalSigns(vitals);
           }
         }
@@ -108,7 +93,6 @@ const Index = () => {
         
         if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
-          setHeartRateConfidence(0);
         }
       }
     } else if (!isMonitoring) {
@@ -125,9 +109,7 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
-      setHeartRateConfidence(0);
       
-      console.log("Starting monitoring - activating processors");
       startProcessing();
       startHeartBeatMonitoring();
       
@@ -167,13 +149,13 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      console.log("Saved results:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -193,7 +175,6 @@ const Index = () => {
     fullResetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
-    setHeartRateConfidence(0);
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
@@ -290,11 +271,6 @@ const Index = () => {
     }
   };
 
-  // Log when vitalSigns change
-  useEffect(() => {
-    console.log("Vital signs updated in state:", vitalSigns);
-  }, [vitalSigns]);
-
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
@@ -338,13 +314,6 @@ const Index = () => {
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
-            />
-          </div>
-
-          <div className="absolute top-20 right-4">
-            <HeartRateDisplay 
-              bpm={heartRate}
-              confidence={heartRateConfidence}
             />
           </div>
 

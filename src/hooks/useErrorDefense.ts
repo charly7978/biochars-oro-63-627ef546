@@ -1,3 +1,4 @@
+
 /**
  * Hook para integrar el Sistema de Defensa contra Errores
  * en componentes de React con capacidades de auto-reparación proactivas
@@ -12,7 +13,6 @@ import ErrorDefenseSystem, {
 import { performSystemDiagnostics } from '@/utils/signalLogging';
 import DependencyManager from '@/core/error-defense/DependencyManager';
 import SelfHealingSystem from '@/core/error-defense/SelfHealingSystem';
-import ImportErrorDefenseSystem from '@/core/error-defense/ImportErrorDefenseSystem';
 
 export interface ErrorDefenseState {
   isSystemHealthy: boolean;
@@ -30,7 +30,6 @@ export interface ErrorDefenseState {
     recoveredErrors: number;
     lastHealingCycle: string;
   } | null;
-  importErrorsStatus: any;
 }
 
 export function useErrorDefense(componentId?: string) {
@@ -41,28 +40,13 @@ export function useErrorDefense(componentId?: string) {
     totalErrors: 0,
     lastError: null,
     diagnostics: null,
-    healingMetrics: null,
-    importErrorsStatus: null
+    healingMetrics: null
   });
   
   // Get system instances
   const errorSystem = ErrorDefenseSystem.getInstance();
   const dependencyManager = DependencyManager.getInstance();
   const healingSystem = SelfHealingSystem.getInstance();
-  const [importErrorSystem, setImportErrorSystem] = useState<ImportErrorDefenseSystem | null>(null);
-  
-  // Initialize ImportErrorDefenseSystem
-  useEffect(() => {
-    try {
-      const system = ImportErrorDefenseSystem.getInstance();
-      system.initializeGlobalInterceptor();
-      setImportErrorSystem(system);
-      
-      console.log('useErrorDefense: ImportErrorDefenseSystem initialized');
-    } catch (error) {
-      console.error('Error initializing ImportErrorDefenseSystem in hook:', error);
-    }
-  }, []);
   
   // Register this component with the system
   useEffect(() => {
@@ -83,7 +67,6 @@ export function useErrorDefense(componentId?: string) {
         const status = errorSystem.getSystemStatus();
         const diagnostics = performSystemDiagnostics();
         const healingMetrics = healingSystem.getHealthMetrics();
-        const importErrors = importErrorSystem ? importErrorSystem.getStatus() : null;
         
         return {
           isSystemHealthy: status.isHealthy,
@@ -106,8 +89,7 @@ export function useErrorDefense(componentId?: string) {
             lastHealingCycle: healingMetrics.lastHealingCycle > 0 
               ? new Date(healingMetrics.lastHealingCycle).toISOString() 
               : 'never'
-          },
-          importErrorsStatus: importErrors
+          }
         };
       });
     });
@@ -116,7 +98,6 @@ export function useErrorDefense(componentId?: string) {
     const status = errorSystem.getSystemStatus();
     const initialDiagnostics = performSystemDiagnostics();
     const healingMetrics = healingSystem.getHealthMetrics();
-    const importErrors = importErrorSystem ? importErrorSystem.getStatus() : null;
     
     setErrorState({
       isSystemHealthy: status.isHealthy,
@@ -139,14 +120,13 @@ export function useErrorDefense(componentId?: string) {
         lastHealingCycle: healingMetrics.lastHealingCycle > 0 
           ? new Date(healingMetrics.lastHealingCycle).toISOString() 
           : 'never'
-      },
-      importErrorsStatus: importErrors
+      }
     });
     
     return () => {
       removeListener();
     };
-  }, [errorSystem, healingSystem, importErrorSystem]);
+  }, [errorSystem, healingSystem]);
   
   /**
    * Report an error from the component
@@ -190,10 +170,10 @@ export function useErrorDefense(componentId?: string) {
   }, [componentId, errorSystem]);
   
   /**
-   * Attempt recovery with enhanced self-healing strategies and import error handling
+   * Attempt recovery with enhanced self-healing strategies
    */
   const attemptRecovery = useCallback(() => {
-    console.log('Initiating advanced system recovery protocol with import error handling');
+    console.log('Initiating advanced system recovery protocol');
     
     // 1. Trigger self-healing cycle
     healingSystem.triggerHealingCycle();
@@ -306,53 +286,8 @@ export function useErrorDefense(componentId?: string) {
       }
     }));
     
-    // Específicamente manejar errores de importación
-    if (importErrorSystem) {
-      try {
-        // Hacer que el sistema de errores de importación resuelva cualquier problema pendiente
-        const importErrorStatus = importErrorSystem.getStatus();
-        console.log('Import error system status:', importErrorStatus);
-        
-        // Forzar acciones correctivas específicas para errores de importación
-        healingSystem.forcePreventiveAction('fix-missing-exports');
-        healingSystem.forcePreventiveAction('resolve-module-imports');
-        
-        // Add to recovery actions
-        const recoveryActions = [
-          'Import error system activated',
-          `Fixed ${importErrorStatus.resolvedErrors} import errors`,
-          'Module resolution system active'
-        ];
-        
-        // Registrar acciones específicas para resetDetectionStates
-        importErrorSystem.registerSubstitute(
-          '/src/modules/heart-beat/signal-quality.ts',
-          () => {
-            console.log('Using fallback resetDetectionStates from recovery');
-            return { weakSignalsCount: 0 };
-          },
-          'resetDetectionStates'
-        );
-        
-        // Update state with recovery actions for import errors
-        setErrorState(prevState => ({
-          ...prevState,
-          importErrorsStatus: importErrorSystem.getStatus(),
-          diagnostics: {
-            ...prevState.diagnostics!,
-            recommendations: [...(prevState.diagnostics?.recommendations || []), ...recoveryActions],
-            timestamp: Date.now()
-          }
-        }));
-        
-        return [...recoveryActions];
-      } catch (error) {
-        console.error('Error in import error recovery:', error);
-      }
-    }
-    
     return recoveryActions;
-  }, [errorSystem, healingSystem, dependencyManager, importErrorSystem]);
+  }, [errorSystem, healingSystem, dependencyManager]);
   
   /**
    * Periodically check system health
@@ -362,9 +297,6 @@ export function useErrorDefense(componentId?: string) {
     const status = errorSystem.getSystemStatus();
     const diagnostics = performSystemDiagnostics();
     const healingMetrics = healingSystem.getHealthMetrics();
-    
-    // Also check import error system
-    const importErrors = importErrorSystem ? importErrorSystem.getStatus() : null;
     
     // Trigger preemptive healing on health decline
     if (diagnostics.systemHealth === 'critical' || diagnostics.systemHealth === 'degraded') {
@@ -392,41 +324,11 @@ export function useErrorDefense(componentId?: string) {
         lastHealingCycle: healingMetrics.lastHealingCycle > 0 
           ? new Date(healingMetrics.lastHealingCycle).toISOString() 
           : 'never'
-      },
-      importErrorsStatus: importErrors
+      }
     }));
     
-    return !status.isHealthy || (importErrors && importErrors.detectedErrors > 0);
-  }, [errorSystem, healingSystem, importErrorSystem]);
-  
-  /**
-   * Fix specific export errors detected in the system
-   */
-  const fixExportError = useCallback((
-    modulePath: string, 
-    exportName: string, 
-    implementation: any
-  ) => {
-    if (importErrorSystem) {
-      try {
-        importErrorSystem.registerSubstitute(modulePath, implementation, exportName);
-        
-        console.log(`useErrorDefense: Fixed export error for ${exportName} in ${modulePath}`);
-        
-        // Update state
-        setErrorState(prevState => ({
-          ...prevState,
-          importErrorsStatus: importErrorSystem.getStatus()
-        }));
-        
-        return true;
-      } catch (error) {
-        console.error('Error fixing export:', error);
-      }
-    }
-    
-    return false;
-  }, [importErrorSystem]);
+    return !status.isHealthy;
+  }, [errorSystem, healingSystem]);
   
   /**
    * Force complete rebuilding of all critical processors
@@ -496,13 +398,8 @@ export function useErrorDefense(componentId?: string) {
     errorSystem.reset();
     healingSystem.reset();
     
-    // Also reset import error system
-    if (importErrorSystem) {
-      importErrorSystem.reset();
-    }
-    
     return "Forced system rebuild completed";
-  }, [attemptRecovery, errorSystem, healingSystem, dependencyManager, importErrorSystem]);
+  }, [attemptRecovery, errorSystem, healingSystem, dependencyManager]);
   
   return {
     errorState,
@@ -510,7 +407,6 @@ export function useErrorDefense(componentId?: string) {
     updateComponentStatus,
     attemptRecovery,
     checkForIssues,
-    forceRebuild,
-    fixExportError
+    forceRebuild
   };
 }
