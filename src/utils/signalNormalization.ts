@@ -42,3 +42,35 @@ export function adaptiveFilter(
   return alpha * value + (1 - alpha) * average;
 }
 
+/**
+ * Normalize a raw signal value to a standard range
+ * @param data The raw image data array or signal value
+ * @param min Optional minimum output value (default: 0)
+ * @param max Optional maximum output value (default: 1)
+ * @returns Normalized signal value in the range [min, max]
+ */
+export function normalizeSignalValue(
+  data: Uint8ClampedArray | number[], 
+  min: number = 0, 
+  max: number = 1
+): number {
+  // If the input is an array (like image data), compute the average
+  if (Array.isArray(data) || data instanceof Uint8ClampedArray) {
+    // For RGBA data, only consider the red channel for PPG
+    let sum = 0;
+    let count = 0;
+    
+    // Process every 4th element (red channel in RGBA)
+    for (let i = 0; i < data.length; i += 4) {
+      sum += data[i];
+      count++;
+    }
+    
+    // Calculate average and normalize to [min, max]
+    const avg = sum / (count || 1);
+    return min + (max - min) * (avg / 255);
+  }
+  
+  // If the input is a single number, just normalize it
+  return min + (max - min) * (data as number / 255);
+}

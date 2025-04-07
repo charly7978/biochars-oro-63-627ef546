@@ -58,6 +58,64 @@ export function applyVisualSmoothing(values: number[], alpha: number = 0.3): num
 }
 
 /**
+ * Optimize a canvas element for the device's pixel ratio
+ * @param canvas The canvas element to optimize
+ * @param width Desired width in CSS pixels
+ * @param height Desired height in CSS pixels
+ */
+export function optimizeCanvas(canvas: HTMLCanvasElement, width: number, height: number): void {
+  if (!canvas) return;
+  
+  const dpr = window.devicePixelRatio || 1;
+  
+  // Set display size (css pixels)
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  
+  // Set actual size in memory (scaled to account for extra pixel density)
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  
+  // Get context and scale all drawing operations by the dpr
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.scale(dpr, dpr);
+  }
+  
+  // Apply optimized rendering hints
+  if (ctx) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+  }
+}
+
+/**
+ * Optimize an HTML element for better rendering
+ * @param element The element to optimize
+ */
+export function optimizeElement(element: HTMLElement): void {
+  if (!element) return;
+  
+  // Add CSS properties that leverage GPU acceleration
+  element.style.transform = 'translateZ(0)';
+  element.style.backfaceVisibility = 'hidden';
+  element.style.perspective = '1000px';
+  
+  // Add class for CSS optimizations
+  element.classList.add('optimized-element');
+}
+
+/**
+ * Detect if the current device is a mobile device
+ * @returns Boolean indicating if the device is mobile
+ */
+export function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+/**
  * Hook to optimize frame rate for animations
  * @param callback Animation callback
  * @param fps Target frames per second

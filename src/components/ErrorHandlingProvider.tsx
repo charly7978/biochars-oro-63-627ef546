@@ -16,10 +16,12 @@ interface ErrorHandlingProviderProps {
  */
 export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) {
   const {
-    errorState,
-    attemptRecovery,
-    checkForIssues,
-    updateStatus
+    isActive,
+    errorStats,
+    startMonitoring,
+    stopMonitoring,
+    resetMonitoring,
+    reportError
   } = useErrorDetection();
   
   const [showWarning, setShowWarning] = useState<boolean>(false);
@@ -30,10 +32,12 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   // Check for issues periodically
   useEffect(() => {
     const checkInterval = setInterval(() => {
-      const { hasIssues, criticalIssues, message } = checkForIssues();
+      // Simple check based on error stats
+      const hasIssues = errorStats.count > 0;
+      const criticalIssues = errorStats.count > 5;
       
       setShowWarning(hasIssues);
-      setIssueMessage(message);
+      setIssueMessage(hasIssues ? `${errorStats.count} errors detected` : null);
       setIsCritical(criticalIssues);
       
       // Auto-recovery attempt for non-critical issues
@@ -52,36 +56,31 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     return () => {
       clearInterval(checkInterval);
     };
-  }, [checkForIssues, errorState, recoveryAttempted]);
+  }, [errorStats, recoveryAttempted]);
   
   // Handle recovery attempt
   const handleRecovery = async () => {
-    const success = await attemptRecovery();
-    if (success) {
-      setShowWarning(false);
-      updateStatus();
-      console.log("ErrorHandlingProvider: Recovery successful");
+    resetMonitoring();
+    setShowWarning(false);
+    console.log("ErrorHandlingProvider: Recovery attempted");
       
-      // Reset arrhythmia detection services if possible
-      try {
-        if (typeof window !== 'undefined') {
-          // Reset any global detection services
-          if ((window as any).heartBeatProcessor) {
-            (window as any).heartBeatProcessor.reset();
-            console.log("ErrorHandlingProvider: Reset heartBeatProcessor");
-          }
-          
-          // Clear any stale RR interval data
-          if (localStorage) {
-            localStorage.removeItem('arrhythmia_detection_state');
-            console.log("ErrorHandlingProvider: Cleared persisted arrhythmia state");
-          }
+    // Reset arrhythmia detection services if possible
+    try {
+      if (typeof window !== 'undefined') {
+        // Reset any global detection services
+        if ((window as any).heartBeatProcessor) {
+          (window as any).heartBeatProcessor.reset();
+          console.log("ErrorHandlingProvider: Reset heartBeatProcessor");
         }
-      } catch (error) {
-        console.error("ErrorHandlingProvider: Error during additional recovery steps", error);
+        
+        // Clear any stale RR interval data
+        if (localStorage) {
+          localStorage.removeItem('arrhythmia_detection_state');
+          console.log("ErrorHandlingProvider: Cleared persisted arrhythmia state");
+        }
       }
-    } else {
-      console.log("ErrorHandlingProvider: Recovery failed");
+    } catch (error) {
+      console.error("ErrorHandlingProvider: Error during additional recovery steps", error);
     }
   };
   
@@ -92,6 +91,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         setShowWarning(true);
         setIssueMessage("React error: " + error.message);
         setIsCritical(true);
+        reportError("REACT_ERROR", error.message, { stack: error.stack });
       }}
     >
       {/* Show warning banner for non-fatal issues */}

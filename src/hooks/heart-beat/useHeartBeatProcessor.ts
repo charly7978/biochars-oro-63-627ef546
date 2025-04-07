@@ -232,6 +232,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     requestBeep,
     startMonitoring,
     stopMonitoring,
-    arrhythmiaSegments: arrhythmiaSegmentsRef.current
+    // Fix the arrhythmia segments mapping to match the expected interface
+    arrhythmiaSegments: arrhythmiaSegmentsRef.current.map(segment => ({
+      start: segment.startTime,
+      end: segment.endTime
+    }))
   };
 };
