@@ -9,7 +9,7 @@ import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visuali
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
-import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
+import { resetDetectionStates, checkSignalQuality } from '../modules/heart-beat/signal-quality';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -74,43 +74,63 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     // Check for weak signal to detect finger removal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      value,
-      weakSignalsCountRef.current,
-      {
-        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
+    try {
+      const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+        value,
+        weakSignalsCountRef.current,
+        {
+          lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
+          maxWeakSignalCount: MAX_WEAK_SIGNALS
+        }
+      );
+      
+      weakSignalsCountRef.current = updatedWeakSignalsCount;
+      
+      // Process signal directly - no simulation
+      let result = processVitalSignal(value, rrData, isWeakSignal);
+      const currentTime = Date.now();
+      
+      // If arrhythmia is detected in real data, register visualization window
+      if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+        
+        // Window based on real heart rate
+        let windowWidth = 400;
+        
+        // Adjust based on real RR intervals
+        if (rrData && rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-4);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+        }
+        
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
-    );
-    
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Process signal directly - no simulation
-    let result = processVitalSignal(value, rrData, isWeakSignal);
-    const currentTime = Date.now();
-    
-    // If arrhythmia is detected in real data, register visualization window
-    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
-      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
       
-      // Window based on real heart rate
-      let windowWidth = 400;
+      // Log processed signals
+      logSignalData(value, result, processedSignals.current);
       
-      // Adjust based on real RR intervals
-      if (rrData && rrData.intervals.length > 0) {
-        const lastIntervals = rrData.intervals.slice(-4);
-        const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-        windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+      // Store valid results for later retrieval
+      if (result && (result.spo2 > 0 || result.pressure !== "--/--")) {
+        setLastValidResults(result);
       }
       
-      addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+      // Always return real result
+      return result;
+    } catch (error) {
+      console.error("Error in vital signs processing:", error);
+      // Return last valid results if available, or empty results
+      return lastValidResults || {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
     }
-    
-    // Log processed signals
-    logSignalData(value, result, processedSignals.current);
-    
-    // Always return real result
-    return result;
   };
 
   /**
@@ -120,10 +140,24 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const reset = () => {
     resetProcessor();
     clearArrhythmiaWindows();
-    setLastValidResults(null);
-    weakSignalsCountRef.current = 0;
     
-    return null;
+    // Store current results before resetting
+    const currentResults = lastValidResults;
+    
+    // Reset state
+    setLastValidResults(null);
+    
+    try {
+      // Reset weak signals counter
+      weakSignalsCountRef.current = 0;
+      const resetState = resetDetectionStates();
+      weakSignalsCountRef.current = resetState.weakSignalsCount;
+    } catch (error) {
+      console.error("Error resetting detection states:", error);
+      weakSignalsCountRef.current = 0;
+    }
+    
+    return currentResults;
   };
   
   /**
@@ -134,7 +168,17 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullResetProcessor();
     setLastValidResults(null);
     clearArrhythmiaWindows();
-    weakSignalsCountRef.current = 0;
+    
+    try {
+      // Reset weak signals counter
+      weakSignalsCountRef.current = 0;
+      const resetState = resetDetectionStates();
+      weakSignalsCountRef.current = resetState.weakSignalsCount;
+    } catch (error) {
+      console.error("Error resetting detection states:", error);
+      weakSignalsCountRef.current = 0;
+    }
+    
     clearLog();
   };
 
@@ -143,7 +187,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults, // Return the stored valid results
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

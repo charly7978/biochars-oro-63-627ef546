@@ -251,14 +251,23 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+    if (lastSignal && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
+      
+      if (lastSignal.fingerDetected && heartBeatResult.bpm > 0 && heartBeatResult.bpm < 200) {
+        setHeartRate(heartBeatResult.bpm);
+      }
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      
       if (vitals) {
+        console.log("Vital signs processed:", vitals);
         setVitalSigns(vitals);
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        
+        if (vitals.arrhythmiaStatus) {
+          const arrhythmiaCountValue = vitals.arrhythmiaStatus.split('|')[1];
+          setArrhythmiaCount(arrhythmiaCountValue || "--");
+        }
       }
       
       setSignalQuality(lastSignal.quality);

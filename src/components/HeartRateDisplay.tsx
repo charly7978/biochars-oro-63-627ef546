@@ -62,6 +62,11 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
     return "low";
   };
 
+  // Added console.log to debug the values
+  useEffect(() => {
+    console.log("HeartRateDisplay values:", { bpm, confidence, isReliable });
+  }, [bpm, confidence, isReliable]);
+
   return (
     <div 
       ref={containerRef}
