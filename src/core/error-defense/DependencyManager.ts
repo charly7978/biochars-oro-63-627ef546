@@ -1,3 +1,4 @@
+
 /**
  * DependencyManager - Proactively manages and initializes critical system dependencies
  * to prevent "dependency not available" errors before they happen
@@ -704,7 +705,8 @@ class DependencyManager {
       message: result.message,
       severity: result.severity,
       affectedFiles: [filePath],
-      description: result.name // Use description instead of name
+      // Fix: Use name instead of description which doesn't exist on the ValidationResult type
+      rule: result.name || 'unknown-rule'
     }));
   }
 }

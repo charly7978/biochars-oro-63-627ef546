@@ -1,4 +1,3 @@
-
 /**
  * useCodeGuardian - React hook for integrating Code Guardian validation
  * into components and tools without showing information to the user
@@ -22,10 +21,10 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
   const [isValidating, setIsValidating] = useState(false);
   const [lastValidated, setLastValidated] = useState<number | null>(null);
   
-  // Set default options
+  // Set default options - always silent by default as requested by user
   const opts = {
     autoValidate: options.autoValidate ?? true,
-    silent: options.silent ?? true // Default to silent mode per user's request
+    silent: options.silent ?? true
   };
   
   // Get dependency manager instance
@@ -40,7 +39,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
         message: result.message,
         severity: result.severity,
         affectedFiles: result.affectedFiles || [],
-        rule: result.description || 'unknown-rule', // Changed from result.name to result.description
+        rule: result.rule || 'unknown-rule',
         suggestions: result.suggestion ? [result.suggestion] : [],
         timestamp: Date.now()
       }));
@@ -57,7 +56,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
       setLastValidated(Date.now());
       
       // Log issues to console but don't display to user
-      if (issues.length > 0 && !opts.silent) {
+      if (issues.length > 0) {
         console.warn('Code Guardian found issues:', issues);
       }
       
@@ -68,7 +67,7 @@ export function useCodeGuardian(options: { autoValidate?: boolean; silent?: bool
     } finally {
       setIsValidating(false);
     }
-  }, [dependencyManager, transformResults, opts.silent]);
+  }, [dependencyManager, transformResults]);
   
   // Validate code changes before commit
   const validateChanges = useCallback((changedFiles: string[], additions: Record<string, string[]>, removals: Record<string, string[]>) => {
