@@ -5,7 +5,7 @@
  */
 
 import { useEffect } from 'react';
-import ErrorDefenseSystem from '../core/error-defense/ErrorDefenseSystem';
+import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '../core/error-defense/ErrorDefenseSystem';
 import DependencyManager from '../core/error-defense/DependencyManager';
 import SelfHealingSystem from '../core/error-defense/SelfHealingSystem';
 import { logSignalProcessing, LogLevel } from '../utils/signalLogging';
@@ -51,8 +51,8 @@ export function useAppInitialization() {
         errorSystem.reportError({
           id: '',
           timestamp: Date.now(),
-          category: errorSystem.ErrorCategory.OPERATIONAL,
-          severity: errorSystem.ErrorSeverity.HIGH,
+          category: ErrorCategory.OPERATIONAL,
+          severity: ErrorSeverity.HIGH,
           message: 'Error during application initialization',
           source: 'AppInitialization',
           stack: error instanceof Error ? error.stack : undefined,
