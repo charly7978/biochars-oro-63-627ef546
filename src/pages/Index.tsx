@@ -1,25 +1,32 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
-import { useSimpleVitalSigns } from "@/hooks/useSimpleVitalSigns";
+import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import ShareButton from "@/components/ShareButton";
-import HeartRateDisplay from "@/components/HeartRateDisplay";
-import { toast } from "sonner";
+import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
+  const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>({
+    spo2: 0,
+    pressure: "--/--",
+    arrhythmiaStatus: "--",
+    glucose: 0,
+    lipids: {
+      totalCholesterol: 0,
+      triglycerides: 0
+    }
+  });
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const [confidence, setConfidence] = useState(0);
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -32,14 +39,11 @@ const Index = () => {
   } = useHeartBeatProcessor();
   
   const { 
-    processHeartRate,
+    processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastResults: vitalSigns,
-    isProcessing: isVitalSignsProcessing,
-    startProcessing: startVitalSignsProcessing,
-    stopProcessing: stopVitalSignsProcessing
-  } = useSimpleVitalSigns();
+    lastValidResults
+  } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
     try {
@@ -61,10 +65,11 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    if (vitalSigns && !isMonitoring) {
+    if (lastValidResults && !isMonitoring) {
+      setVitalSigns(lastValidResults);
       setShowResults(true);
     }
-  }, [vitalSigns, isMonitoring]);
+  }, [lastValidResults, isMonitoring]);
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
@@ -75,11 +80,10 @@ const Index = () => {
         
         if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
-          setConfidence(heartBeatResult.confidence);
           
-          // Process vital signs with heartbeat data
-          if (heartBeatResult.bpm > 0) {
-            processHeartRate(heartBeatResult.bpm, heartBeatResult.confidence);
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            setVitalSigns(vitals);
           }
         }
         
@@ -89,13 +93,12 @@ const Index = () => {
         
         if (!lastSignal.fingerDetected && heartRate > 0) {
           setHeartRate(0);
-          setConfidence(0);
         }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processHeartRate, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -106,13 +109,9 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
-      setConfidence(0);
       
       startProcessing();
       startHeartBeatMonitoring();
-      startVitalSignsProcessing();
-      
-      toast.success("Medición iniciada. Coloque su dedo en la cámara.");
       
       setElapsedTime(0);
       
@@ -142,20 +141,21 @@ const Index = () => {
     setIsCameraOn(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    stopVitalSignsProcessing();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
     
-    resetVitalSigns();
-    setShowResults(true);
-    
-    toast.info("Medición completada");
+    const savedResults = resetVitalSigns();
+    if (savedResults) {
+      setVitalSigns(savedResults);
+      setShowResults(true);
+    }
     
     setElapsedTime(0);
     setSignalQuality(0);
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -165,7 +165,6 @@ const Index = () => {
     setShowResults(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    stopVitalSignsProcessing();
     resetHeartBeatProcessor();
     
     if (measurementTimerRef.current) {
@@ -176,10 +175,17 @@ const Index = () => {
     fullResetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
-    setConfidence(0);
+    setVitalSigns({ 
+      spo2: 0, 
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
+    });
     setSignalQuality(0);
-    
-    toast.success("Aplicación reiniciada");
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -305,7 +311,7 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              arrhythmiaStatus={vitalSigns?.arrhythmiaStatus || "--"}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
@@ -315,28 +321,40 @@ const Index = () => {
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
-              <div className="w-full">
-                <HeartRateDisplay 
-                  bpm={heartRate} 
-                  confidence={confidence} 
-                />
-              </div>
+              <VitalSign 
+                label="FRECUENCIA CARDÍACA"
+                value={heartRate || "--"}
+                unit="BPM"
+                highlighted={showResults}
+              />
               <VitalSign 
                 label="SPO2"
-                value={vitalSigns?.spo2 || "--"}
+                value={vitalSigns.spo2 || "--"}
                 unit="%"
                 highlighted={showResults}
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
-                value={vitalSigns?.pressure || "--/--"}
+                value={vitalSigns.pressure}
                 unit="mmHg"
                 highlighted={showResults}
               />
               <VitalSign 
-                label="ARRITMIA"
-                value={vitalSigns?.arrhythmiaStatus || "--"}
-                unit=""
+                label="GLUCOSA"
+                value={vitalSigns.glucose || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="COLESTEROL"
+                value={vitalSigns.lipids?.totalCholesterol || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="TRIGLICÉRIDOS"
+                value={vitalSigns.lipids?.triglycerides || "--"}
+                unit="mg/dL"
                 highlighted={showResults}
               />
             </div>
