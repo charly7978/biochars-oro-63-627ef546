@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import { toast } from '@/hooks/use-toast';
 
 interface VitalSignsResult {
   spo2: number;
@@ -156,11 +155,7 @@ export function useVitalSignsCalculator(options: Partial<VitalSignsCalculatorOpt
       console.error('Failed to create vital signs models:', error);
       isModelLoadingRef.current = false;
       
-      toast({
-        title: "Model initialization failed",
-        description: "Using basic estimation instead of TensorFlow",
-        variant: "destructive"
-      });
+      console.error("Model initialization failed: Using basic estimation instead of TensorFlow");
     }
   }, []);
   

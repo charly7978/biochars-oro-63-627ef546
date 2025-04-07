@@ -3,7 +3,6 @@ import { TFVitalSignsProcessor } from '../modules/vital-signs/TFVitalSignsProces
 import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
 import { RRIntervalData } from './heart-beat/types';
 import { initializeTensorFlow, disposeTensors } from '../utils/tfModelInitializer';
-import { toast } from './use-toast';
 
 export interface UseTensorFlowVitalSignsReturn {
   processSignal: (value: number, rrData?: RRIntervalData, isWeakSignal?: boolean) => Promise<VitalSignsResult>;
@@ -20,8 +19,6 @@ export interface UseTensorFlowVitalSignsReturn {
  * Hook for TensorFlow-based vital signs processing
  */
 export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
-  // ... keep existing code that uses the utility functions
-  
   // Mock implementation for now
   const [isTensorFlowReady, setIsTensorFlowReady] = useState<boolean>(false);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
@@ -44,11 +41,7 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
         
         if (!tfInitialized) {
           console.error("Failed to initialize TensorFlow");
-          toast({
-            title: "TensorFlow initialization failed",
-            description: "Advanced vital signs processing will be limited",
-            variant: "destructive"
-          });
+          console.error("TensorFlow initialization failed: Advanced vital signs processing will be limited");
           setIsInitializing(false);
           return;
         }
@@ -64,11 +57,7 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
         setIsInitializing(false);
       } catch (error) {
         console.error("Error initializing TensorFlow:", error);
-        toast({
-          title: "Initialization Error",
-          description: "Failed to set up vital signs processing",
-          variant: "destructive"
-        });
+        console.error("Initialization Error: Failed to set up vital signs processing");
         setIsInitializing(false);
       }
     };
@@ -88,7 +77,6 @@ export const useTensorFlowVitalSigns = (): UseTensorFlowVitalSignsReturn => {
     };
   }, []);
   
-  // Rest of the implementation...
   const processSignal = useCallback(async (
     value: number, 
     rrData?: RRIntervalData,
