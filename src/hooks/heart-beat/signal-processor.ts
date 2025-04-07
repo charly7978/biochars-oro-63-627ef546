@@ -1,4 +1,3 @@
-
 import { useCallback, useRef } from 'react';
 
 interface SignalProcessingResult {
@@ -10,7 +9,11 @@ interface SignalProcessingResult {
     lastPeakTime: number | null;
   };
   isArrhythmia?: boolean;
-  arrhythmiaCount?: number;
+  arrhythmiaCount: number;
+  arrhythmiaSegment?: {
+    startTime: number;
+    endTime: number | null;
+  };
 }
 
 export function useSignalProcessor() {
@@ -32,6 +35,10 @@ export function useSignalProcessor() {
     intervals: [],
     lastPeakTime: null
   });
+
+  // Arrhythmia segment tracking
+  const currentArrhythmiaSegmentRef = useRef<{startTime: number, endTime: number | null} | null>(null);
+  const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   
   /**
    * Process a real PPG signal value
@@ -130,6 +137,34 @@ export function useSignalProcessor() {
       }
     }
     
+    // Arrhythmia segment management
+    let arrhythmiaSegment = null;
+    if (currentBeatIsArrhythmiaRef.current) {
+      // If this is the start of a new arrhythmia
+      if (currentArrhythmiaSegmentRef.current === null) {
+        const now = Date.now();
+        currentArrhythmiaSegmentRef.current = {
+          startTime: now,
+          endTime: null
+        };
+        
+        // Add to segments list
+        arrhythmiaSegmentsRef.current.push(currentArrhythmiaSegmentRef.current);
+      }
+      
+      arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
+    } else if (currentArrhythmiaSegmentRef.current !== null) {
+      // End of arrhythmia segment
+      currentArrhythmiaSegmentRef.current.endTime = Date.now();
+      arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
+      currentArrhythmiaSegmentRef.current = null;
+    }
+    
+    // Keep only recent arrhythmia segments (last 5)
+    if (arrhythmiaSegmentsRef.current.length > 5) {
+      arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.slice(-5);
+    }
+    
     // Create RR data to return
     const rrData = {
       intervals: [...lastRRIntervalsRef.current],
@@ -142,7 +177,8 @@ export function useSignalProcessor() {
       isPeak: result.isPeak,
       rrData,
       isArrhythmia: currentBeatIsArrhythmiaRef.current,
-      arrhythmiaCount: 0
+      arrhythmiaCount: 0, // This will be set by the ArrhythmiaDetectionService
+      arrhythmiaSegment
     };
   }, []);
   
@@ -168,6 +204,10 @@ export function useSignalProcessor() {
       lastPeakTime: null
     };
     
+    // Reset arrhythmia segments
+    currentArrhythmiaSegmentRef.current = null;
+    arrhythmiaSegmentsRef.current = [];
+    
     console.log("SignalProcessor: Reset completed");
   }, []);
   
@@ -180,6 +220,8 @@ export function useSignalProcessor() {
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS,
-    lastRRDataRef
+    lastRRDataRef,
+    arrhythmiaSegmentsRef,
+    currentArrhythmiaSegmentRef
   };
 }

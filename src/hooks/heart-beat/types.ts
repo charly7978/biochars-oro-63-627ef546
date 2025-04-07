@@ -12,6 +12,10 @@ export interface HeartBeatResult {
     lastPeakTime: number | null;
   };
   isArrhythmia?: boolean;
+  arrhythmiaSegment?: {
+    startTime: number;
+    endTime: number | null;
+  };
 }
 
 /**
@@ -26,4 +30,5 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
+  arrhythmiaSegments?: Array<{startTime: number, endTime: number | null}>;
 }
