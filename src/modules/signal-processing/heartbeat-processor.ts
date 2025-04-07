@@ -14,6 +14,7 @@ import { AdaptivePredictor, createAdaptivePredictor } from './utils/adaptive-pre
 export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSignal> {
   // Almacenamiento de valores y picos
   private values: number[] = [];
+  private rawValues: number[] = []; // Almacenamiento de valores originales sin procesar
   private peakTimes: number[] = [];
   private rrIntervals: number[] = [];
   
@@ -27,10 +28,24 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
   private adaptiveToPeakHistory: boolean = true;
   private dynamicThresholdFactor: number = 0.6;
   
-  // Predictive modeling and adaptive control
+  // Predictive modeling and adaptive control - configuración más conservadora
   private adaptivePredictor: AdaptivePredictor;
   private useAdaptiveControl: boolean = true;
   private qualityEnhancedByPrediction: boolean = true;
+  private predictionWeight: number = 0.3; // Reducido de valor más alto para menor influencia
+  private correctionThreshold: number = 0.7; // Umbral más alto para aplicar correcciones
+  private signalEnhancementAmount: number = 0.5; // Limitador para la mejora de señal (0-1)
+  
+  // Transparencia y auditoría
+  private wasValueEnhanced: boolean = false;
+  private enhancementAmount: number = 0;
+  private dataManipulationLog: Array<{
+    timestamp: number,
+    originalValue: number,
+    enhancedValue: number,
+    enhancementType: string,
+    enhancementAmount: number
+  }> = [];
   
   constructor() {
     this.adaptivePredictor = createAdaptivePredictor();
@@ -38,11 +53,22 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
   
   /**
    * Procesa un valor y detecta picos cardíacos con algoritmos avanzados
+   * Modificado para ser más transparente y conservador en la manipulación
    */
   public processSignal(value: number): ProcessedHeartbeatSignal {
     const timestamp = Date.now();
     
-    // Apply adaptive prediction and control if enabled
+    // Almacenar el valor original sin procesar
+    this.rawValues.push(value);
+    if (this.rawValues.length > 30) {
+      this.rawValues.shift();
+    }
+    
+    // Configurar valores por defecto de transparencia
+    this.wasValueEnhanced = false;
+    this.enhancementAmount = 0;
+    
+    // Apply adaptive prediction and control if enabled - ahora más conservador
     let enhancedValue = value;
     let predictionQuality = 0;
     
@@ -50,11 +76,39 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
       const prediction = this.adaptivePredictor.processValue(value);
       predictionQuality = prediction.signalQuality;
       
-      // Use filtered value from predictor for enhanced peak detection
-      enhancedValue = prediction.filteredValue;
+      // Usar valor filtrado del predictor solo si la calidad es suficiente
+      // y limitado por el factor de mejora para reducir la manipulación
+      if (predictionQuality > this.correctionThreshold) {
+        // Calcular la diferencia entre el valor original y el predicho
+        const difference = prediction.filteredValue - value;
+        
+        // Aplicar solo un porcentaje de la corrección basado en la configuración
+        const limitedDifference = difference * this.signalEnhancementAmount;
+        
+        // Aplicar la corrección limitada
+        enhancedValue = value + limitedDifference;
+        
+        // Registrar la mejora para transparencia
+        this.wasValueEnhanced = true;
+        this.enhancementAmount = Math.abs(limitedDifference / (Math.abs(value) + 0.001));
+        
+        // Registrar para auditoría
+        this.dataManipulationLog.push({
+          timestamp,
+          originalValue: value,
+          enhancedValue,
+          enhancementType: 'adaptive_prediction',
+          enhancementAmount: this.enhancementAmount
+        });
+        
+        // Limitar el tamaño del log
+        if (this.dataManipulationLog.length > 100) {
+          this.dataManipulationLog.shift();
+        }
+      }
     }
     
-    // Almacenar valor en buffer
+    // Almacenar valor final en buffer
     this.values.push(enhancedValue);
     if (this.values.length > 30) {
       this.values.shift();
@@ -83,10 +137,12 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
           if (rrInterval > 0) {
             instantaneousBPM = 60000 / rrInterval;
             
-            // Almacenar intervalo RR para análisis de variabilidad
-            this.rrIntervals.push(rrInterval);
-            if (this.rrIntervals.length > 10) {
-              this.rrIntervals.shift();
+            // Solo almacenar intervalos RR de calidad suficiente
+            if (peakConfidence > 0.6) { // Umbral más alto para reducir falsos positivos
+              this.rrIntervals.push(rrInterval);
+              if (this.rrIntervals.length > 10) {
+                this.rrIntervals.shift();
+              }
             }
           }
         }
@@ -108,22 +164,31 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
       }
     }
     
-    // Calcular variabilidad del ritmo cardíaco
+    // Calcular variabilidad del ritmo cardíaco solo con datos de calidad
     const heartRateVariability = this.calculateHRV();
     
-    // Enhance confidence with prediction quality if enabled
-    if (this.qualityEnhancedByPrediction && this.useAdaptiveControl) {
-      peakConfidence = 0.7 * peakConfidence + 0.3 * (predictionQuality / 100);
+    // Enhance confidence with prediction quality if enabled - más conservador
+    if (this.qualityEnhancedByPrediction && this.useAdaptiveControl && predictionQuality > 50) {
+      // Usar un peso menor para la calidad de predicción
+      peakConfidence = 0.85 * peakConfidence + 0.15 * (predictionQuality / 100);
     }
     
     return {
       timestamp,
       value: enhancedValue,
+      rawValue: value, // Incluir el valor original para transparencia
       isPeak,
       peakConfidence,
       instantaneousBPM,
       rrInterval,
-      heartRateVariability
+      heartRateVariability,
+      // Añadir información de transparencia
+      enhancementMetadata: {
+        wasEnhanced: this.wasValueEnhanced,
+        enhancementAmount: this.enhancementAmount,
+        predictionQuality: predictionQuality / 100,
+        adaptiveControlEnabled: this.useAdaptiveControl
+      }
     };
   }
   
@@ -147,6 +212,7 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
   
   /**
    * Valida un pico usando análisis de forma de onda
+   * Criterios más estrictos para reducir falsos positivos
    */
   private validatePeak(value: number): { isValidPeak: boolean, confidence: number } {
     if (this.values.length < 5) {
@@ -157,6 +223,7 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     const segment = this.values.slice(-5);
     
     // Verificar patrón ascendente-descendente típico de un latido cardíaco real
+    // Criterios más estrictos para validación
     const hasCardiacPattern = 
       segment[0] < segment[1] && 
       segment[1] < segment[2] && 
@@ -176,8 +243,11 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     // Normalizar la prominencia para obtener la confianza (0-1)
     const confidence = Math.min(1, prominence / (this.peakThreshold * 2));
     
+    // Umbral más alto para reducir falsos positivos
+    const confidenceThreshold = 0.6; // Aumentado de 0.5
+    
     return { 
-      isValidPeak: confidence > 0.5,
+      isValidPeak: confidence > confidenceThreshold,
       confidence 
     };
   }
@@ -201,8 +271,11 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     const stdDev = Math.sqrt(variance);
     
     // Ajustar umbral basado en la distribución de la señal
-    // Uso de factor dinámico para mejor adaptación
-    this.peakThreshold = mean + (stdDev * this.dynamicThresholdFactor);
+    // Adaptación más gradual
+    const targetThreshold = mean + (stdDev * this.dynamicThresholdFactor);
+    
+    // Adaptar más lentamente (20% en lugar de reemplazo completo)
+    this.peakThreshold = 0.8 * this.peakThreshold + 0.2 * targetThreshold;
     
     // Limitar a valores razonables
     this.peakThreshold = Math.max(0.1, Math.min(0.8, this.peakThreshold));
@@ -210,18 +283,30 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
   
   /**
    * Calcula la variabilidad del ritmo cardíaco (HRV)
+   * Solo usa intervalos RR de alta calidad
    */
   private calculateHRV(): number | null {
-    if (this.rrIntervals.length < 3) return null;
+    // Se requieren más intervalos para un cálculo confiable
+    if (this.rrIntervals.length < 4) return null;
+    
+    // Filtrar valores extremos (eliminar el 10% superior e inferior)
+    const sortedIntervals = [...this.rrIntervals].sort((a, b) => a - b);
+    const filteredIntervals = sortedIntervals.slice(
+      Math.floor(sortedIntervals.length * 0.1),
+      Math.ceil(sortedIntervals.length * 0.9)
+    );
+    
+    // Si quedan muy pocos después del filtrado, no calcular
+    if (filteredIntervals.length < 3) return null;
     
     // Método RMSSD (Root Mean Square of Successive Differences)
     let sumSquaredDiffs = 0;
-    for (let i = 1; i < this.rrIntervals.length; i++) {
-      const diff = this.rrIntervals[i] - this.rrIntervals[i - 1];
+    for (let i = 1; i < filteredIntervals.length; i++) {
+      const diff = filteredIntervals[i] - filteredIntervals[i - 1];
       sumSquaredDiffs += diff * diff;
     }
     
-    return Math.sqrt(sumSquaredDiffs / (this.rrIntervals.length - 1));
+    return Math.sqrt(sumSquaredDiffs / (filteredIntervals.length - 1));
   }
   
   /**
@@ -229,12 +314,13 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
    */
   public configure(options: SignalProcessingOptions): void {
     if (options.amplificationFactor !== undefined) {
-      this.dynamicThresholdFactor = Math.max(0.3, Math.min(0.9, options.amplificationFactor / 2));
+      // Limitar el factor de amplificación a valores más conservadores
+      this.dynamicThresholdFactor = Math.max(0.3, Math.min(0.7, options.amplificationFactor / 2));
     }
     
     if (options.filterStrength !== undefined) {
       // Ajustar la distancia mínima entre picos según la fuerza de filtrado
-      this.minPeakDistance = 250 + (options.filterStrength * 100);
+      this.minPeakDistance = 250 + (options.filterStrength * 75); // Reducido el factor de 100 a 75
     }
     
     // Configure adaptive control options
@@ -245,6 +331,19 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
     if (options.qualityEnhancedByPrediction !== undefined) {
       this.qualityEnhancedByPrediction = options.qualityEnhancedByPrediction;
     }
+    
+    // Nuevas opciones para control más fino
+    if (options.predictionWeight !== undefined) {
+      this.predictionWeight = Math.max(0.1, Math.min(0.5, options.predictionWeight));
+    }
+    
+    if (options.correctionThreshold !== undefined) {
+      this.correctionThreshold = Math.max(0.5, Math.min(0.9, options.correctionThreshold));
+    }
+    
+    if (options.signalEnhancementAmount !== undefined) {
+      this.signalEnhancementAmount = Math.max(0.2, Math.min(0.8, options.signalEnhancementAmount));
+    }
   }
   
   /**
@@ -252,11 +351,15 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
    */
   public reset(): void {
     this.values = [];
+    this.rawValues = [];
     this.peakTimes = [];
     this.rrIntervals = [];
     this.lastPeakTime = null;
     this.lastPeakValue = 0;
     this.peakThreshold = 0.2;
+    this.dataManipulationLog = [];
+    this.wasValueEnhanced = false;
+    this.enhancementAmount = 0;
     
     // Reset adaptive predictor
     this.adaptivePredictor.reset();
@@ -267,6 +370,33 @@ export class HeartbeatProcessor implements SignalProcessor<ProcessedHeartbeatSig
    */
   public getAdaptivePredictorState(): any {
     return this.adaptivePredictor.getState();
+  }
+  
+  /**
+   * Get manipulation statistics for transparency
+   */
+  public getManipulationStats(): {
+    enhancedValuesCount: number,
+    averageEnhancementAmount: number,
+    manipulationLog: Array<{timestamp: number, originalValue: number, enhancedValue: number, enhancementType: string, enhancementAmount: number}>
+  } {
+    const enhancedValues = this.dataManipulationLog.filter(entry => entry.enhancementAmount > 0);
+    const avgAmount = enhancedValues.length > 0 
+      ? enhancedValues.reduce((sum, entry) => sum + entry.enhancementAmount, 0) / enhancedValues.length 
+      : 0;
+    
+    return {
+      enhancedValuesCount: enhancedValues.length,
+      averageEnhancementAmount: avgAmount,
+      manipulationLog: this.dataManipulationLog.slice(-20) // Últimas 20 entradas
+    };
+  }
+  
+  /**
+   * Get access to raw values buffer for transparency
+   */
+  public getRawValues(): number[] {
+    return [...this.rawValues];
   }
 }
 
