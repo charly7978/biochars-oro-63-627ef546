@@ -1,4 +1,5 @@
-name: NodeJS with Gulp
+
+name: NodeJS with Gulp and Code Protection
 
 on:
   push:
@@ -22,7 +23,12 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run Code Protection Shield
+      run: npm run code-protection
+
     - name: Build
-      run: |
-        npm install
-        gulp
+      run: gulp
+

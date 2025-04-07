@@ -2,6 +2,7 @@
 /**
  * Exportaciones del Sistema de Escudo Protector
  * Con soporte mejorado para procesamiento de señales PPG avanzado
+ * y nuevas funcionalidades para integración con CI/CD
  */
 
 export { CodeProtectionShield } from './CodeProtectionShield';
@@ -17,6 +18,13 @@ export * from './types';
 export { SignalIntegrityValidator } from './SignalIntegrityValidator';
 export { ProcessingValidation } from './ProcessingValidation';
 
+// Exportación de la configuración del Guardian
+export * from '../config/GuardianConfig';
+
+// Exportar el API CLI para uso con herramientas de CI/CD
+export * from './CIIntegration';
+
 // Exportar una instancia predeterminada del escudo protector
 import { CodeProtectionShield } from './CodeProtectionShield';
 export const shield = CodeProtectionShield.getInstance();
+
