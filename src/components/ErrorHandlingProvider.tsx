@@ -7,8 +7,8 @@ import { useErrorDefense } from '@/hooks/useErrorDefense';
 import ErrorBoundary from './ErrorBoundary';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '@/core/error-defense/ErrorDefenseSystem';
 import { SystemDiagnostics } from './SystemDiagnostics';
-import { toast } from '@/hooks/use-toast';
 import { evaluateSystemQuality } from '@/utils/signalLogging';
+import { showToast, commonToasts } from '@/utils/toast-utils';
 
 interface ErrorHandlingProviderProps {
   children: ReactNode;
@@ -20,7 +20,6 @@ interface ErrorHandlingProviderProps {
  */
 export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) {
   const {
-    isActive,
     errorStats,
     startMonitoring,
     stopMonitoring,
@@ -39,7 +38,6 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
   const [showWarning, setShowWarning] = useState<boolean>(false);
   const [issueMessage, setIssueMessage] = useState<string | null>(null);
   const [isCritical, setIsCritical] = useState<boolean>(false);
-  const [recoveryAttempted, setRecoveryAttempted] = useState<boolean>(false);
   const [showHealthIndicator, setShowHealthIndicator] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [systemQualityScore, setSystemQualityScore] = useState<number>(100);
@@ -60,14 +58,9 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     const qualityReport = evaluateSystemQuality();
     setSystemQualityScore(qualityReport.score);
     
-    // Initial health check and notification
+    // Initial health check - minimal notification
     setTimeout(() => {
       setShowHealthIndicator(true);
-      toast({
-        title: "Sistema de Defensa Activo",
-        description: `Estado inicial: ${qualityReport.summary}`,
-        variant: "default"
-      });
       setTimeout(() => setShowHealthIndicator(false), 3000);
     }, 2000);
     
@@ -77,7 +70,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     };
   }, [startMonitoring, stopMonitoring, updateComponentStatus]);
   
-  // Advanced periodic health check system
+  // Advanced periodic health check system with reduced notifications
   useEffect(() => {
     const checkInterval = setInterval(() => {
       // Verify error defense system
@@ -120,7 +113,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
       const qualityReport = evaluateSystemQuality();
       setSystemQualityScore(qualityReport.score);
       
-      // Intelligent auto-recovery system with throttling
+      // Intelligent auto-recovery system with throttling and minimal notifications
       const now = Date.now();
       if (combinedHasIssues && now - lastAutoRecovery > 60000) { // Max once per minute
         const shouldAutoRecover = 
@@ -133,13 +126,10 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           handleRecovery();
           setLastAutoRecovery(now);
           
-          // Notification based on severity
-          const notificationVariant = combinedIsCritical ? "destructive" : "default";
-          toast({
-            title: combinedIsCritical ? "Recuperación Crítica Iniciada" : "Auto-recuperación Iniciada",
-            description: "Sistema ejecutando procedimientos de restauración automáticos",
-            variant: notificationVariant
-          });
+          // Only notify for critical issues
+          if (combinedIsCritical) {
+            showToast("Recuperación Crítica Iniciada", "Sistema ejecutando procedimientos de restauración", "error");
+          }
         }
       }
       
@@ -152,7 +142,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     return () => {
       clearInterval(checkInterval);
     };
-  }, [errorStats, recoveryAttempted, checkForIssues, errorState, showDiagnostics, lastAutoRecovery]);
+  }, [errorStats, checkForIssues, errorState, showDiagnostics, lastAutoRecovery]);
   
   // Handle recovery attempt
   const handleRecovery = async () => {
@@ -163,33 +153,25 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
     setShowWarning(false);
     console.log("ErrorHandlingProvider: Recovery attempted");
     
-    // Notify about recovery steps based on severity
-    if (recoveryActions && recoveryActions.length > 0) {
-      const summary = `Acciones: ${recoveryActions.length > 1 ? 
-        recoveryActions[0] + " y " + (recoveryActions.length - 1) + " más" : 
-        recoveryActions[0]}`;
-        
-      toast({
-        title: "Recuperación en Proceso",
-        description: summary,
-        variant: "default"
-      });
+    // Only notify for significant recovery actions
+    if (recoveryActions && recoveryActions.length > 2) {
+      const summary = `Acciones: ${recoveryActions[0]} y ${recoveryActions.length - 1} más`;
+      showToast("Recuperación en Proceso", summary);
     }
   };
   
   // Handle forced rebuild
   const handleForceRebuild = async () => {
     if (window.confirm("Esta acción realizará una reconstrucción forzada del sistema. ¿Continuar?")) {
-      const result = forceRebuild();
+      forceRebuild();
       resetMonitoring();
       setShowWarning(false);
       console.log("ErrorHandlingProvider: Forced rebuild initiated");
       
-      toast({
-        title: "Reconstrucción Completa Iniciada",
-        description: "El sistema está siendo reconstruido desde cero",
-        variant: "destructive"
-      });
+      // Critical notification required for full rebuild
+      showToast("Reconstrucción Completa Iniciada", 
+        "El sistema está siendo reconstruido desde cero", 
+        "error");
     }
   };
   
@@ -218,15 +200,13 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
           metadata: { type: 'react_error' }
         });
         
-        // Critical error notification
-        toast({
-          title: "Error Crítico Detectado",
-          description: error.message.substring(0, 100) + (error.message.length > 100 ? '...' : ''),
-          variant: "destructive"
-        });
+        // Critical error notification - keep this one as it's important
+        showToast("Error Crítico Detectado", 
+          error.message.substring(0, 100) + (error.message.length > 100 ? '...' : ''), 
+          "error");
       }}
     >
-      {/* System health indicator with quality score */}
+      {/* System health indicator with quality score - show only when active */}
       {showHealthIndicator && (
         <div className="fixed top-2 right-2 z-50 transition-opacity duration-300">
           <div className={`flex flex-col items-end gap-1`}>
@@ -303,7 +283,7 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         </Alert>
       )}
       
-      {/* System Diagnostics (minimized if no issues) */}
+      {/* System Diagnostics - only show detailed view when explicitly requested */}
       {showDiagnostics ? (
         <div className="mb-4">
           <SystemDiagnostics minimal={false} />
