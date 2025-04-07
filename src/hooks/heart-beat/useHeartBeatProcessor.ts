@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
+import { RRAnalysisResult } from '../../hooks/arrhythmia/types';
 import { useBeepProcessor } from './beep-processor';
 import { useSignalProcessor } from './signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './types';
@@ -45,8 +46,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     lastValidBpmRef,
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS,
-    arrhythmiaSegmentsRef
+    MAX_CONSECUTIVE_WEAK_SIGNALS
   } = useSignalProcessor();
 
   useEffect(() => {
@@ -231,7 +231,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
     requestBeep,
     startMonitoring,
-    stopMonitoring,
-    arrhythmiaSegments: arrhythmiaSegmentsRef.current
+    stopMonitoring
   };
 };
