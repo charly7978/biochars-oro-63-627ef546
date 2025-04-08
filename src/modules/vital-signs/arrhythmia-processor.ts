@@ -34,6 +34,10 @@ export class ArrhythmiaProcessor {
   
   // Pattern detector
   private patternDetector = new ArrhythmiaPatternDetector();
+  
+  // Parameters for improved waveform visualization
+  private readonly ARRHYTHMIA_WINDOW_FACTOR = 2.5; // Window width factor for visualization
+  private readonly WINDOW_WIDTH_ADJUSTMENT = 1.1; // Fine-tuning for window width
 
   /**
    * Process real RR data for arrhythmia detection
@@ -140,10 +144,14 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
       
-      // Create visualization window around the arrhythmia event
-      const windowWidth = validIntervals.length >= 3 ?
-        (validIntervals.slice(-3).reduce((sum, val) => sum + val, 0) / 3) * 2.5 :
+      // Create visualization window around the arrhythmia event with enhanced dimensions
+      // This improves the visual representation without changing detection logic
+      let windowWidth = validIntervals.length >= 3 ?
+        (validIntervals.slice(-3).reduce((sum, val) => sum + val, 0) / 3) * this.ARRHYTHMIA_WINDOW_FACTOR :
         1500; // Default value if not enough intervals
+        
+      // Apply fine-tuning adjustment for better visualization
+      windowWidth *= this.WINDOW_WIDTH_ADJUSTMENT;
         
       this.arrhythmiaWindows.push({
         start: currentTime - windowWidth/2,

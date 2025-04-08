@@ -1,6 +1,7 @@
 
 /**
  * Functions for filtering PPG signals
+ * Enhanced for improved waveform visualization
  */
 
 /**
@@ -21,29 +22,65 @@ export function calculateMedian(values: number[]): number {
 
 /**
  * Apply a median filter to smooth signal and remove outliers
+ * Enhanced for better PPG waveform visualization
  */
 export function applyMedianFilter(value: number, buffer: number[], windowSize: number): number {
   const medianBuffer = [...buffer, value].slice(-windowSize);
+  
+  // Apply weighted median for better waveform continuity
+  if (medianBuffer.length >= 3) {
+    const medianValue = calculateMedian(medianBuffer);
+    // Subtle blending of raw and median values for natural peaks
+    return value * 0.3 + medianValue * 0.7; 
+  }
+  
   return calculateMedian(medianBuffer);
 }
 
 /**
  * Apply a moving average filter to smooth the signal
+ * Enhanced to preserve dynamic characteristics of the PPG waveform
  */
 export function applyMovingAverageFilter(value: number, buffer: number[], windowSize: number): number {
   const maBuffer = [...buffer, value].slice(-windowSize);
-  return maBuffer.reduce((sum, val) => sum + val, 0) / maBuffer.length;
+  
+  if (maBuffer.length <= 1) return value;
+  
+  // Calculate weighted moving average with more weight to recent values
+  // This maintains responsiveness while smoothing the signal
+  let weightedSum = 0;
+  let weightSum = 0;
+  
+  for (let i = 0; i < maBuffer.length; i++) {
+    // Exponential weighting favors recent values
+    const weight = Math.exp(0.5 * (i / (maBuffer.length - 1)));
+    weightedSum += maBuffer[i] * weight;
+    weightSum += weight;
+  }
+  
+  return weightSum > 0 ? weightedSum / weightSum : value;
 }
 
 /**
  * Apply an exponential moving average (EMA) filter
+ * Enhanced alpha adaptation for better waveform visualization
  */
 export function applyEMAFilter(value: number, prevSmoothed: number, alpha: number): number {
-  return alpha * value + (1 - alpha) * (prevSmoothed || value);
+  if (prevSmoothed === undefined || prevSmoothed === null) return value;
+  
+  // Dynamic alpha adjustment - more smoothing for small changes, less for large ones
+  // This preserves waveform peaks while smoothing noise
+  const delta = Math.abs(value - prevSmoothed);
+  const adaptiveAlpha = delta > 0.05 ? 
+    Math.min(alpha * 1.5, 0.9) : // Respond quickly to significant changes
+    Math.max(alpha * 0.9, 0.1);  // More smoothing for small variations
+  
+  return adaptiveAlpha * value + (1 - adaptiveAlpha) * prevSmoothed;
 }
 
 /**
  * Combined filter pipeline for PPG signal processing
+ * Enhanced for optimal waveform visualization
  */
 export function applyFilterPipeline(
   value: number, 
@@ -60,21 +97,21 @@ export function applyFilterPipeline(
   updatedMedianBuffer: number[],
   updatedMovingAvgBuffer: number[]
 } {
-  // Apply median filter
+  // Apply median filter with enhanced waveform preservation
   const medianFiltered = applyMedianFilter(value, medianBuffer, config.medianWindowSize);
   const updatedMedianBuffer = [...medianBuffer, value];
   if (updatedMedianBuffer.length > config.medianWindowSize) {
     updatedMedianBuffer.shift();
   }
   
-  // Apply moving average filter
+  // Apply enhanced moving average filter for better waveform visualization
   const movingAvgFiltered = applyMovingAverageFilter(medianFiltered, movingAvgBuffer, config.movingAvgWindowSize);
   const updatedMovingAvgBuffer = [...movingAvgBuffer, medianFiltered];
   if (updatedMovingAvgBuffer.length > config.movingAvgWindowSize) {
     updatedMovingAvgBuffer.shift();
   }
   
-  // Apply EMA filter
+  // Apply enhanced EMA filter with adaptive smoothing
   const filteredValue = applyEMAFilter(movingAvgFiltered, prevSmoothedValue, config.emaAlpha);
   
   return {
@@ -82,4 +119,29 @@ export function applyFilterPipeline(
     updatedMedianBuffer,
     updatedMovingAvgBuffer
   };
+}
+
+/**
+ * Harmonic enhancement for PPG waveforms
+ * Improves visualization of cardiac characteristics without affecting metrics
+ */
+export function enhanceWaveformHarmonics(value: number, prevValues: number[]): number {
+  if (prevValues.length < 3) return value;
+  
+  // Calculate slope direction to identify rising or falling edges
+  const recentSlope = (value - prevValues[prevValues.length - 1]);
+  const prevSlope = (prevValues[prevValues.length - 1] - prevValues[prevValues.length - 2]);
+  
+  // Detect dicrotic notch-like features and enhance them slightly
+  const slopeChange = (recentSlope * prevSlope <= 0);
+  
+  if (slopeChange) {
+    // Subtle enhancement of waveform features like dicrotic notch
+    // This is purely visual and doesn't affect measurements
+    const enhancementFactor = 0.08; // Very subtle enhancement
+    const direction = recentSlope >= 0 ? 1 : -1;
+    return value + (Math.abs(recentSlope) * enhancementFactor * direction);
+  }
+  
+  return value;
 }
