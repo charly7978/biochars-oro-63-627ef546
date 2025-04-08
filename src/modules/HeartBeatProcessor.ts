@@ -1,4 +1,10 @@
-// Using the internal class definition instead of importing the conflicting module
+
+import { HeartBeatConfig } from './heart-beat/config';
+import { applyFilterPipeline } from './heart-beat/signal-filters';
+import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
+import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
+import { HeartbeatAudioManager } from './heart-beat/audio-manager';
+import { checkSignalQuality, resetDetectionStates } from './heart-beat/signal-quality';
 
 export class HeartBeatProcessor {
   private readonly HEART_BPM_BUFFER_SIZE = 10;
