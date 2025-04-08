@@ -155,7 +155,8 @@ export function useSignalProcessor() {
         rrData: {
           intervals: [],
           lastPeakTime: null
-        }
+        },
+        isArrhythmia: false // Add missing property
       };
     }
   }, []);

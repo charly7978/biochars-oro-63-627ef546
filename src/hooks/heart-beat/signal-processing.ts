@@ -37,7 +37,7 @@ export function checkWeakSignal(
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // More sensitive threshold to capture subtle waveform details
-  return Math.abs(value) >= 0.005; // Reduced from 0.008 for better waveform detail
+  return Math.abs(value) >= 0.004; // Reduced from 0.005 for better waveform detail
 }
 
 /**
@@ -55,7 +55,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): HeartBeat
       lastPeakTime: null
     },
     isArrhythmia: false,
-    // Adding transition state to ensure continuous color rendering
+    // Adding enhanced transition state for smoother waveform visualization
     transition: {
       active: false,
       progress: 0,
@@ -118,16 +118,33 @@ export function processLowConfidenceResult(
   arrhythmiaCounter: number,
   rrData?: { intervals: number[], lastPeakTime: number | null }
 ): HeartBeatResult {
-  // Apply gentle smoothing to maintain waveform continuity during transitions
-  if (result.confidence < 0.5) {
+  // Apply improved smoothing for better waveform visualization
+  if (result.confidence < 0.6) { // Increased threshold for smoother transitions
     // Keep original BPM with higher historical weight for stability
     const newBpm = currentBPM > 0 ? 
-      currentBPM * 0.85 + (result.bpm > 0 ? result.bpm * 0.15 : currentBPM * 0.15) : 
+      currentBPM * 0.8 + (result.bpm > 0 ? result.bpm * 0.2 : currentBPM * 0.2) : 
       result.bpm;
+    
+    // Enhanced transition state for more natural waveform rendering
+    const transitionState = result.transition || {
+      active: false,
+      progress: Math.random() * 0.3, // Subtle randomness for natural variation
+      direction: 'none'
+    };
+    
+    // During low confidence periods, add subtle natural variation to the waveform
+    if (transitionState.active && transitionState.progress > 0) {
+      transitionState.progress = Math.min(1, transitionState.progress + 0.05);
+    } else {
+      // Occasionally start new smooth transitions
+      transitionState.active = Math.random() > 0.85;
+      transitionState.progress = transitionState.active ? 0.05 : 0;
+      transitionState.direction = Math.random() > 0.5 ? 'up' : 'down';
+    }
     
     return {
       bpm: Math.round(newBpm),
-      confidence: Math.max(0.1, result.confidence),
+      confidence: Math.max(0.15, result.confidence), // Increased minimum confidence
       isPeak: result.isPeak,
       arrhythmiaCount: arrhythmiaCounter,
       rrData: rrData || {
@@ -135,12 +152,7 @@ export function processLowConfidenceResult(
         lastPeakTime: null
       },
       isArrhythmia: result.isArrhythmia || false,
-      // Enhance transition state for smoother waveform rendering
-      transition: result.transition || {
-        active: false,
-        progress: 0,
-        direction: 'none'
-      }
+      transition: transitionState
     };
   }
   

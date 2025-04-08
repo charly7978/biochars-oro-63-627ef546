@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -36,8 +35,8 @@ export class ArrhythmiaProcessor {
   private patternDetector = new ArrhythmiaPatternDetector();
   
   // Parameters for improved waveform visualization
-  private readonly ARRHYTHMIA_WINDOW_FACTOR = 2.5; // Window width factor for visualization
-  private readonly WINDOW_WIDTH_ADJUSTMENT = 1.1; // Fine-tuning for window width
+  private readonly ARRHYTHMIA_WINDOW_FACTOR = 3.0; // Increased from 2.5 for better visualization
+  private readonly WINDOW_WIDTH_ADJUSTMENT = 1.15; // Increased from 1.1 for better visualization
 
   /**
    * Process real RR data for arrhythmia detection
@@ -144,18 +143,20 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
       
-      // Create visualization window around the arrhythmia event with enhanced dimensions
-      // This improves the visual representation without changing detection logic
+      // Enhanced arrhythmia window visualization for more natural presentation
+      // Calculate a more physiologically appropriate window size
       let windowWidth = validIntervals.length >= 3 ?
         (validIntervals.slice(-3).reduce((sum, val) => sum + val, 0) / 3) * this.ARRHYTHMIA_WINDOW_FACTOR :
-        1500; // Default value if not enough intervals
+        1800; // Increased default window width
         
-      // Apply fine-tuning adjustment for better visualization
+      // Apply enhanced fine-tuning adjustment for better visualization
       windowWidth *= this.WINDOW_WIDTH_ADJUSTMENT;
-        
+      
+      // Use asymmetric window to better represent arrhythmia event positioning
+      // Showing more context after the arrhythmia for better visualization
       this.arrhythmiaWindows.push({
-        start: currentTime - windowWidth/2,
-        end: currentTime + windowWidth/2
+        start: currentTime - windowWidth * 0.4, // Show less before arrhythmia
+        end: currentTime + windowWidth * 0.6    // Show more after arrhythmia
       });
       
       // Limit to the latest 3 windows for visualization

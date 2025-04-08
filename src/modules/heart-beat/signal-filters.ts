@@ -30,8 +30,8 @@ export function applyMedianFilter(value: number, buffer: number[], windowSize: n
   // Apply weighted median for better waveform continuity
   if (medianBuffer.length >= 3) {
     const medianValue = calculateMedian(medianBuffer);
-    // Subtle blending of raw and median values for natural peaks
-    return value * 0.3 + medianValue * 0.7; 
+    // Enhanced blending of raw and median values for natural peaks
+    return value * 0.35 + medianValue * 0.65; // Adjusted for more natural curves
   }
   
   return calculateMedian(medianBuffer);
@@ -52,8 +52,8 @@ export function applyMovingAverageFilter(value: number, buffer: number[], window
   let weightSum = 0;
   
   for (let i = 0; i < maBuffer.length; i++) {
-    // Exponential weighting favors recent values
-    const weight = Math.exp(0.5 * (i / (maBuffer.length - 1)));
+    // Improved exponential weighting for better cardiac waveform detail
+    const weight = Math.exp(0.65 * (i / (maBuffer.length - 1)));
     weightedSum += maBuffer[i] * weight;
     weightSum += weight;
   }
@@ -68,12 +68,12 @@ export function applyMovingAverageFilter(value: number, buffer: number[], window
 export function applyEMAFilter(value: number, prevSmoothed: number, alpha: number): number {
   if (prevSmoothed === undefined || prevSmoothed === null) return value;
   
-  // Dynamic alpha adjustment - more smoothing for small changes, less for large ones
+  // Dynamic alpha adjustment - more refined for cardiac waveform details
   // This preserves waveform peaks while smoothing noise
   const delta = Math.abs(value - prevSmoothed);
   const adaptiveAlpha = delta > 0.05 ? 
-    Math.min(alpha * 1.5, 0.9) : // Respond quickly to significant changes
-    Math.max(alpha * 0.9, 0.1);  // More smoothing for small variations
+    Math.min(alpha * 1.6, 0.92) : // More responsive to significant changes
+    Math.max(alpha * 0.85, 0.15);  // More smoothing for small variations
   
   return adaptiveAlpha * value + (1 - adaptiveAlpha) * prevSmoothed;
 }
@@ -136,9 +136,9 @@ export function enhanceWaveformHarmonics(value: number, prevValues: number[]): n
   const slopeChange = (recentSlope * prevSlope <= 0);
   
   if (slopeChange) {
-    // Subtle enhancement of waveform features like dicrotic notch
+    // Enhanced dicrotic notch and systolic peak visualization
     // This is purely visual and doesn't affect measurements
-    const enhancementFactor = 0.08; // Very subtle enhancement
+    const enhancementFactor = 0.1; // Increased from 0.08 for better visibility
     const direction = recentSlope >= 0 ? 1 : -1;
     return value + (Math.abs(recentSlope) * enhancementFactor * direction);
   }
