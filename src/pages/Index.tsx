@@ -121,11 +121,10 @@ const Index = () => {
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
           
-          if (newTime >= 30) {
+          if (newTime >= 45) {
             finalizeMeasurement();
-            return 30;
+            return 45;
           }
           return newTime;
         });
@@ -376,6 +375,12 @@ const Index = () => {
           </div>
         </div>
       </div>
+
+      {isMonitoring && (
+        <div className="absolute bottom-40 left-0 right-0 text-center">
+          <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 45s</span>
+        </div>
+      )}
     </div>
   );
 };

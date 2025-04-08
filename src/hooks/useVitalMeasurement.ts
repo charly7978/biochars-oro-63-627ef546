@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 
 interface VitalMeasurements {
@@ -34,7 +33,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       session: sessionId.current
     });
 
-    // Always reset to zero when stopping or not measuring
     if (!isMeasuring) {
       console.log('useVitalMeasurement - Reiniciando mediciones a cero', {
         prevValues: {...measurements},
@@ -58,7 +56,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       startTime: new Date(startTime).toISOString()
     });
     
-    // Reset measurements to zero at start
     setMeasurements({
       heartRate: 0,
       spo2: 0,
@@ -66,7 +63,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       arrhythmiaCount: 0
     });
     
-    const MEASUREMENT_DURATION = 30000;
+    const MEASUREMENT_DURATION = 45000;
 
     const updateMeasurements = () => {
       const processor = (window as any).heartBeatProcessor;
@@ -78,7 +75,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         return;
       }
 
-      // Use direct method to get BPM with no adjustments
       const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
       const bpm = Math.round(rawBPM);
       const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
@@ -93,7 +89,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         timestamp: new Date().toISOString()
       });
 
-      // Check for arrhythmia windows
       if (processor.getArrhythmiaWindows && typeof processor.getArrhythmiaWindows === 'function') {
         const windows = processor.getArrhythmiaWindows();
         if (windows && Array.isArray(windows) && windows.length > 0) {
@@ -101,10 +96,9 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         }
       }
 
-      // Update measurements directly without preserving previous values
       setMeasurements({
         heartRate: bpm,
-        spo2: 0, // These will be updated by the VitalSignsProcessor
+        spo2: 0,
         pressure: "--/--",
         arrhythmiaCount: arrhythmias
       });
@@ -151,8 +145,8 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
 
   return {
     ...measurements,
-    elapsedTime: Math.min(elapsedTime, 30),
-    isComplete: elapsedTime >= 30,
+    elapsedTime: Math.min(elapsedTime, 45),
+    isComplete: elapsedTime >= 45,
     arrhythmiaWindows
   };
 };
