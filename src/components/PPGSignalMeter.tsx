@@ -56,12 +56,12 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
-  const WINDOW_WIDTH_MS = 8000;
+  const WINDOW_WIDTH_MS = 7400;
   const CANVAS_WIDTH = 1200;
   const CANVAS_HEIGHT = 900;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 18.0;
+  const verticalScale = 12.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
