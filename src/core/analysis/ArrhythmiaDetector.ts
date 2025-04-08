@@ -9,6 +9,7 @@ export interface ArrhythmiaResult {
     rrVariation: number;
   } | null;
   count: number;
+  arrhythmiaWindows?: Array<{start: number, end: number}>;
 }
 
 export class ArrhythmiaDetector {
@@ -32,6 +33,7 @@ export class ArrhythmiaDetector {
     rmssd: number;
     rrVariation: number;
   } | null = null;
+  private arrhythmiaWindows: Array<{start: number, end: number}> = [];
 
   constructor() {
     this.reset();
@@ -51,7 +53,8 @@ export class ArrhythmiaDetector {
       return {
         arrhythmiaStatus: "normal",
         lastArrhythmiaData: this.lastArrhythmiaData,
-        count: this.arrhythmiaCounter
+        count: this.arrhythmiaCounter,
+        arrhythmiaWindows: [...this.arrhythmiaWindows]
       };
     }
     
@@ -87,13 +90,30 @@ export class ArrhythmiaDetector {
           rmssd,
           rrVariation
         };
+        
+        // Crear ventana de visualización alrededor del evento de arritmia
+        // Calcular ventana basada en intervalos RR reales
+        const windowWidth = rrData.intervals.length >= 3 ? 
+          (rrData.intervals.slice(-3).reduce((sum, val) => sum + val, 0) / 3) * 2.5 : 
+          1000; // Valor predeterminado si no hay suficientes intervalos
+        
+        this.arrhythmiaWindows.push({
+          start: currentTime - windowWidth/2,
+          end: currentTime + windowWidth/2
+        });
+        
+        // Limitar a las últimas 3 ventanas para la visualización
+        if (this.arrhythmiaWindows.length > 3) {
+          this.arrhythmiaWindows.shift();
+        }
       }
     }
     
     return {
       arrhythmiaStatus: hasArrhythmia ? "irregular" : "normal",
       lastArrhythmiaData: this.lastArrhythmiaData,
-      count: this.arrhythmiaCounter
+      count: this.arrhythmiaCounter,
+      arrhythmiaWindows: [...this.arrhythmiaWindows]
     };
   }
   
@@ -120,6 +140,10 @@ export class ArrhythmiaDetector {
     return this.arrhythmiaCounter;
   }
   
+  public getArrhythmiaWindows(): Array<{start: number, end: number}> {
+    return [...this.arrhythmiaWindows];
+  }
+  
   public reset(): void {
     this.lastArrhythmiaTime = 0;
     this.arrhythmiaCounter = 0;
@@ -128,5 +152,6 @@ export class ArrhythmiaDetector {
     this.lastRMSSD = 0;
     this.lastRRVariation = 0;
     this.lastArrhythmiaData = null;
+    this.arrhythmiaWindows = [];
   }
 }

@@ -26,6 +26,7 @@ export class ArrhythmiaProcessor {
   private arrhythmiaCount = 0;
   private lastArrhythmiaTime: number = 0;
   private startTime: number = Date.now();
+  private arrhythmiaWindows: Array<{start: number, end: number}> = [];
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
@@ -69,7 +70,8 @@ export class ArrhythmiaProcessor {
     
     return {
       arrhythmiaStatus: arrhythmiaStatusMessage,
-      lastArrhythmiaData
+      lastArrhythmiaData,
+      arrhythmiaWindows: [...this.arrhythmiaWindows]
     };
   }
 
@@ -138,10 +140,27 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
       
+      // Create visualization window around the arrhythmia event
+      const windowWidth = validIntervals.length >= 3 ?
+        (validIntervals.slice(-3).reduce((sum, val) => sum + val, 0) / 3) * 2.5 :
+        1500; // Default value if not enough intervals
+        
+      this.arrhythmiaWindows.push({
+        start: currentTime - windowWidth/2,
+        end: currentTime + windowWidth/2
+      });
+      
+      // Limit to the latest 3 windows for visualization
+      if (this.arrhythmiaWindows.length > 3) {
+        this.arrhythmiaWindows.shift();
+      }
+      
       console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED in real data", {
         arrhythmiaCount: this.arrhythmiaCount,
         timeSinceLast: timeSinceLastArrhythmia,
-        timestamp: currentTime
+        timestamp: currentTime,
+        windowWidth,
+        arrhythmiaWindows: this.arrhythmiaWindows
       });
     }
   }
@@ -158,6 +177,7 @@ export class ArrhythmiaProcessor {
     this.lastArrhythmiaTime = 0;
     this.startTime = Date.now();
     this.consecutiveAbnormalBeats = 0;
+    this.arrhythmiaWindows = [];
     this.patternDetector.resetPatternBuffer();
     
     console.log("ArrhythmiaProcessor: Processor reset", {
@@ -170,5 +190,12 @@ export class ArrhythmiaProcessor {
    */
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
+  }
+  
+  /**
+   * Get arrhythmia windows for visualization
+   */
+  public getArrhythmiaWindows(): Array<{start: number, end: number}> {
+    return [...this.arrhythmiaWindows];
   }
 }
