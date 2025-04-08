@@ -574,8 +574,21 @@ const PPGSignalMeter = memo(({
           renderCtx.strokeStyle = currentPathColor;
           renderCtx.moveTo(x2, y2);
         } else {
-          const cpx = (x1 + x2) / 2;
-          const cpy = y1 + (y2 - y1) * 0.2;
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          
+          let cpx, cpy;
+          
+          const isRising = y2 < y1;
+          
+          if (isRising) {
+            cpx = x1 + dx * 0.35;
+            cpy = y1 + dy * 0.8;
+          } else {
+            cpx = x1 + dx * 0.65;
+            cpy = y1 + dy * 0.3;
+          }
+          
           renderCtx.quadraticCurveTo(cpx, cpy, x2, y2);
         }
       }
