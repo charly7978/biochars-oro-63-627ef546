@@ -36,8 +36,8 @@ export function checkWeakSignal(
  * Only processes real measurements with sufficient amplitude
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // More sensitive threshold to capture subtle waveform details
-  return Math.abs(value) >= 0.004; // Reduced from 0.005 for better waveform detail
+  // Slightly lowered threshold to capture more subtle waveform details
+  return Math.abs(value) >= 0.0035;
 }
 
 /**
@@ -55,7 +55,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): HeartBeat
       lastPeakTime: null
     },
     isArrhythmia: false,
-    // Adding enhanced transition state for smoother waveform visualization
+    // Enhanced transition state for more natural waveform visualization
     transition: {
       active: false,
       progress: 0,
@@ -66,8 +66,6 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): HeartBeat
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
- * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
   result: any, 
@@ -118,33 +116,33 @@ export function processLowConfidenceResult(
   arrhythmiaCounter: number,
   rrData?: { intervals: number[], lastPeakTime: number | null }
 ): HeartBeatResult {
-  // Apply improved smoothing for better waveform visualization
-  if (result.confidence < 0.6) { // Increased threshold for smoother transitions
+  // Enhanced smoothing for better waveform visualization
+  if (result.confidence < 0.65) { // Increased threshold for smoother transitions
     // Keep original BPM with higher historical weight for stability
     const newBpm = currentBPM > 0 ? 
-      currentBPM * 0.8 + (result.bpm > 0 ? result.bpm * 0.2 : currentBPM * 0.2) : 
+      currentBPM * 0.75 + (result.bpm > 0 ? result.bpm * 0.25 : currentBPM * 0.25) : 
       result.bpm;
     
     // Enhanced transition state for more natural waveform rendering
     const transitionState = result.transition || {
       active: false,
-      progress: Math.random() * 0.3, // Subtle randomness for natural variation
+      progress: Math.random() * 0.4, // Increased randomness for more natural variation
       direction: 'none'
     };
     
-    // During low confidence periods, add subtle natural variation to the waveform
+    // During low confidence periods, add enhanced natural variation to the waveform
     if (transitionState.active && transitionState.progress > 0) {
-      transitionState.progress = Math.min(1, transitionState.progress + 0.05);
+      transitionState.progress = Math.min(1, transitionState.progress + 0.07); // Faster transitions
     } else {
-      // Occasionally start new smooth transitions
-      transitionState.active = Math.random() > 0.85;
-      transitionState.progress = transitionState.active ? 0.05 : 0;
+      // More frequent smooth transitions for lifelike waveform
+      transitionState.active = Math.random() > 0.80;
+      transitionState.progress = transitionState.active ? 0.08 : 0;
       transitionState.direction = Math.random() > 0.5 ? 'up' : 'down';
     }
     
     return {
       bpm: Math.round(newBpm),
-      confidence: Math.max(0.15, result.confidence), // Increased minimum confidence
+      confidence: Math.max(0.18, result.confidence), // Increased minimum confidence
       isPeak: result.isPeak,
       arrhythmiaCount: arrhythmiaCounter,
       rrData: rrData || {

@@ -61,13 +61,13 @@ const PPGSignalMeter = memo(({
   const CANVAS_HEIGHT = 900;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 15.0;
-  const SMOOTHING_FACTOR = 1.5;
+  const verticalScale = 22.0;
+  const SMOOTHING_FACTOR = 1.8;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 7;
-  const PEAK_THRESHOLD = 4;
+  const PEAK_DETECTION_WINDOW = 5;
+  const PEAK_THRESHOLD = 3.2;
   const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
@@ -281,12 +281,14 @@ const PPGSignalMeter = memo(({
     const absDelta = Math.abs(delta);
     
     const adaptiveFactor = delta > 0 
-      ? Math.min(SMOOTHING_FACTOR * 1.2, 2.0)
-      : Math.max(SMOOTHING_FACTOR * 0.9, 1.2);
+      ? Math.min(SMOOTHING_FACTOR * 1.4, 2.5)
+      : Math.max(SMOOTHING_FACTOR * 0.8, 1.0);
       
     const enhancedFactor = absDelta < 0.02 
-      ? adaptiveFactor * 0.85
-      : adaptiveFactor;
+      ? adaptiveFactor * 0.75
+      : absDelta > 0.1
+        ? adaptiveFactor * 1.2
+        : adaptiveFactor;
       
     return previousValue + enhancedFactor * delta;
   }, []);
@@ -394,7 +396,7 @@ const PPGSignalMeter = memo(({
       let isPeak = true;
       
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value - 0.05) {
+        if (points[j].value >= currentPoint.value - 0.03) {
           isPeak = false;
           break;
         }
@@ -402,7 +404,7 @@ const PPGSignalMeter = memo(({
       
       if (isPeak) {
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value - 0.05) {
+          if (j < points.length && points[j].value > currentPoint.value - 0.03) {
             isPeak = false;
             break;
           }
@@ -503,7 +505,7 @@ const PPGSignalMeter = memo(({
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      baselineRef.current = baselineRef.current * 0.97 + value * 0.03;
+      baselineRef.current = baselineRef.current * 0.95 + value * 0.05;
     }
     
     const smoothedValue = smoothValue(value, lastValueRef.current);
@@ -511,7 +513,7 @@ const PPGSignalMeter = memo(({
     
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     
-    const enhancedValue = normalizedValue * (1 + Math.abs(normalizedValue) * 0.1);
+    const enhancedValue = normalizedValue * (1 + Math.abs(normalizedValue) * 0.15);
     const scaledValue = enhancedValue * verticalScale;
     
     let currentIsArrhythmia = false;
@@ -542,7 +544,7 @@ const PPGSignalMeter = memo(({
       let firstPoint = true;
       let currentPathColor = '#0EA5E9';
       
-      renderCtx.lineWidth = 2.5;
+      renderCtx.lineWidth = 3.0;
       renderCtx.lineJoin = 'round';
       renderCtx.lineCap = 'round';
       
@@ -574,8 +576,10 @@ const PPGSignalMeter = memo(({
           renderCtx.strokeStyle = currentPathColor;
           renderCtx.moveTo(x2, y2);
         } else {
+          const isRising = y2 < y1;
           const cpx = (x1 + x2) / 2;
-          const cpy = y1 + (y2 - y1) * 0.2;
+          const tensionFactor = isRising ? 0.4 : 0.2;
+          const cpy = y1 + (y2 - y1) * tensionFactor;
           renderCtx.quadraticCurveTo(cpx, cpy, x2, y2);
         }
       }
@@ -590,16 +594,23 @@ const PPGSignalMeter = memo(({
         
         if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
-          renderCtx.arc(x, y, peak.isArrhythmia ? 6 : 5, 0, Math.PI * 2);
+          renderCtx.arc(x, y, peak.isArrhythmia ? 7 : 6, 0, Math.PI * 2);
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
           if (peak.isArrhythmia) {
-            const glowSize = 10 + Math.sin(now/200) * 2;
+            const pulseIntensity = (Math.sin(now/180) + 1) / 2;
+            const glowSize = 10 + pulseIntensity * 5;
             renderCtx.beginPath();
             renderCtx.arc(x, y, glowSize, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.strokeStyle = 'rgba(254, 247, 205, 0.7)';
             renderCtx.lineWidth = 3;
+            renderCtx.stroke();
+            
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, glowSize + 4, 0, Math.PI * 2);
+            renderCtx.strokeStyle = 'rgba(252, 211, 77, 0.3)';
+            renderCtx.lineWidth = 2;
             renderCtx.stroke();
             
             renderCtx.font = 'bold 18px Inter';
@@ -635,14 +646,16 @@ const PPGSignalMeter = memo(({
             
             const gradient = renderCtx.createLinearGradient(visibleX1, 0, visibleX2, 0);
             gradient.addColorStop(0, 'rgba(255, 0, 0, 0.10)');
-            gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.18)');
+            gradient.addColorStop(0.3, 'rgba(255, 0, 0, 0.20)');
+            gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.25)');
+            gradient.addColorStop(0.7, 'rgba(255, 0, 0, 0.20)');
             gradient.addColorStop(1, 'rgba(255, 0, 0, 0.10)');
             renderCtx.fillStyle = gradient;
             renderCtx.fillRect(visibleX1, 0, visibleX2 - visibleX1, canvas.height);
             
-            const pulseIntensity = (Math.sin(now/300) + 1) / 2 * 0.3 + 0.3;
+            const pulseIntensity = (Math.sin(now/250) + 1) / 2 * 0.4 + 0.4;
             renderCtx.strokeStyle = `rgba(255, 0, 0, ${pulseIntensity})`;
-            renderCtx.lineWidth = 1;
+            renderCtx.lineWidth = 1.5;
             renderCtx.setLineDash([5, 5]);
             
             if (x1 >= 0 && x1 <= canvas.width) {
