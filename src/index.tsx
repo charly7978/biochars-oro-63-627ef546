@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -7,6 +8,26 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
 import { toast } from "sonner";
+
+// Adding TypeScript interface for fullscreen options
+interface FullscreenOptions {
+  navigationUI?: "hide" | "show" | "auto";
+}
+
+// Add TypeScript definitions for vendor prefixed methods
+declare global {
+  interface HTMLElement {
+    webkitRequestFullscreen?: (options?: FullscreenOptions) => Promise<void>;
+    mozRequestFullScreen?: (options?: FullscreenOptions) => Promise<void>;
+    msRequestFullscreen?: (options?: FullscreenOptions) => Promise<void>;
+  }
+  
+  interface Window {
+    AndroidFullScreen?: {
+      immersiveMode: (success: () => void, error: () => void) => void;
+    };
+  }
+}
 
 const Index: React.FC = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -21,7 +42,7 @@ const Index: React.FC = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const measurementTimerRef = useRef(null);
+  const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -31,13 +52,13 @@ const Index: React.FC = () => {
     const elem = document.documentElement;
     try {
       if (elem.requestFullscreen) {
-        await elem.requestFullscreen({ navigationUI: "hide" });
+        await elem.requestFullscreen();
       } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
+        await elem.webkitRequestFullscreen();
       } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen({ navigationUI: "hide" });
+        await elem.mozRequestFullScreen();
       } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen({ navigationUI: "hide" });
+        await elem.msRequestFullscreen();
       }
       
       if (window.navigator.userAgent.match(/Android/i)) {
@@ -54,7 +75,7 @@ const Index: React.FC = () => {
   };
 
   useEffect(() => {
-    const preventScroll = (e) => e.preventDefault();
+    const preventScroll = (e: Event) => e.preventDefault();
     
     const lockOrientation = async () => {
       try {
@@ -68,7 +89,7 @@ const Index: React.FC = () => {
     
     const setMaxResolution = () => {
       if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = 1 / window.devicePixelRatio;
+        document.body.style.zoom = (1 / window.devicePixelRatio).toString();
       }
     };
     
@@ -116,9 +137,9 @@ const Index: React.FC = () => {
     
     measurementTimerRef.current = window.setInterval(() => {
       setElapsedTime(prev => {
-        if (prev >= 30) {
+        if (prev >= 45) { // Changed from 30 to 45 seconds
           stopMonitoring();
-          return 30;
+          return 45;
         }
         return prev + 1;
       });
@@ -283,7 +304,8 @@ const Index: React.FC = () => {
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              // Remove the reference to non-existent property
+              // rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
             />
           </div>
 
@@ -315,7 +337,7 @@ const Index: React.FC = () => {
 
           {isMonitoring && (
             <div className="absolute bottom-40 left-0 right-0 text-center">
-              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 30s</span>
+              <span className="text-xl font-medium text-gray-300">{elapsedTime}s / 45s</span>
             </div>
           )}
 
