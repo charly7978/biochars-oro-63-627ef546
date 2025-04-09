@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -62,14 +61,14 @@ const PPGSignalMeter = memo(({
   const CANVAS_HEIGHT = 900;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 5.0;
-  const SMOOTHING_FACTOR = 1.5;
+  const verticalScale = 6.5; // Increased from 5.0 for better peak amplitude
+  const SMOOTHING_FACTOR = 1.3; // Reduced from 1.5 for less smoothing, more natural peaks
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 7;
   // Reduced threshold for detecting more subtle peaks
-  const PEAK_THRESHOLD = 3.2; // Reduced from 4 to detect more subtle peaks
+  const PEAK_THRESHOLD = 2.8; // Reduced from 3.2 to detect more subtle peaks
   const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
@@ -284,11 +283,11 @@ const PPGSignalMeter = memo(({
     
     // Enhance waveform shaping for more pronounced physiological curves
     const adaptiveFactor = delta > 0 
-      ? Math.min(SMOOTHING_FACTOR * 1.3, 2.2) // Increased from 1.2 to 1.3 for more pronounced upstrokes
-      : Math.max(SMOOTHING_FACTOR * 0.85, 1.1); // Decreased from 0.9 to 0.85 for sharper downstrokes
+      ? Math.min(SMOOTHING_FACTOR * 1.4, 2.4) // Increased from 1.3 to 1.4 for more pronounced upstrokes
+      : Math.max(SMOOTHING_FACTOR * 0.8, 1.0); // Decreased from 0.85 to 0.8 for sharper downstrokes
       
     const enhancedFactor = absDelta < 0.02 
-      ? adaptiveFactor * 0.8 // Decreased from 0.85 to 0.8 for smoother small changes
+      ? adaptiveFactor * 0.75 // Decreased from 0.8 to 0.75 for smoother small changes
       : adaptiveFactor;
       
     return previousValue + enhancedFactor * delta;
@@ -527,7 +526,7 @@ const PPGSignalMeter = memo(({
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     
     // Enhanced waveform amplitude for better visualization
-    const enhancedValue = normalizedValue * (1 + Math.abs(normalizedValue) * 0.15); // Increased from 0.1 to 0.15
+    const enhancedValue = normalizedValue * (1 + Math.abs(normalizedValue) * 0.22); // Increased from 0.15 to 0.22
     const scaledValue = enhancedValue * verticalScale;
     
     let currentIsArrhythmia = false;
@@ -600,12 +599,12 @@ const PPGSignalMeter = memo(({
           
           if (isRising) {
             // Enhanced upstroke curve for more physiological appearance
-            cpx = x1 + dx * 0.3; // Changed from 0.35 to 0.3 for sharper upstroke
-            cpy = y1 + dy * 0.85; // Increased from 0.8 to 0.85 for more pronounced curve
+            cpx = x1 + dx * 0.25; // Changed from 0.3 to 0.25 for sharper upstroke
+            cpy = y1 + dy * 0.9; // Increased from 0.85 to 0.9 for more pronounced curve
           } else {
             // Enhanced downstroke curve for dicrotic notch-like appearance
-            cpx = x1 + dx * 0.7; // Increased from 0.65 to 0.7 for more delayed peak
-            cpy = y1 + dy * 0.25; // Decreased from 0.3 to 0.25 for sharper fall
+            cpx = x1 + dx * 0.75; // Increased from 0.7 to 0.75 for more delayed peak
+            cpy = y1 + dy * 0.2; // Decreased from 0.25 to 0.2 for sharper fall
           }
           
           renderCtx.quadraticCurveTo(cpx, cpy, x2, y2);
@@ -625,42 +624,42 @@ const PPGSignalMeter = memo(({
           // More prominent peak circles
           renderCtx.beginPath();
           // Larger circles for better visibility
-          const circleSize = peak.isArrhythmia ? 6.5 : 5.5; // Increased from 6/5
+          const circleSize = peak.isArrhythmia ? 7.5 : 6.5; // Increased from 6.5/5.5
           renderCtx.arc(x, y, circleSize, 0, Math.PI * 2);
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
           // Add subtle glow effect to peaks for better visibility
           renderCtx.beginPath();
-          renderCtx.arc(x, y, circleSize + 2, 0, Math.PI * 2);
-          renderCtx.strokeStyle = peak.isArrhythmia ? 'rgba(220, 38, 38, 0.3)' : 'rgba(14, 165, 233, 0.3)';
-          renderCtx.lineWidth = 1.5;
+          renderCtx.arc(x, y, circleSize + 3, 0, Math.PI * 2); // Increased from +2 to +3
+          renderCtx.strokeStyle = peak.isArrhythmia ? 'rgba(220, 38, 38, 0.4)' : 'rgba(14, 165, 233, 0.4)'; // Increased from 0.3 to 0.4
+          renderCtx.lineWidth = 2.0; // Increased from 1.5
           renderCtx.stroke();
           
           if (peak.isArrhythmia) {
             // Enhanced arrhythmia peak visualization
-            const glowSize = 12 + Math.sin(now/200) * 2.5; // Increased from 10 + sin*2
+            const glowSize = 14 + Math.sin(now/200) * 3.0; // Increased from 12 + sin*2.5 to 14 + sin*3.0
             renderCtx.beginPath();
             renderCtx.arc(x, y, glowSize, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEEF89'; // Brighter color than #FEF7CD
-            renderCtx.lineWidth = 3.5; // Increased from 3
+            renderCtx.strokeStyle = '#FEF08A'; // Brighter color than previous
+            renderCtx.lineWidth = 4.0; // Increased from 3.5
             renderCtx.stroke();
             
             // Add second pulsing glow for more emphasis
             renderCtx.beginPath();
-            renderCtx.arc(x, y, glowSize + 4 + Math.sin(now/300) * 2, 0, Math.PI * 2);
-            renderCtx.strokeStyle = 'rgba(254, 202, 87, 0.3)'; // Subtle outer glow
-            renderCtx.lineWidth = 2;
+            renderCtx.arc(x, y, glowSize + 5 + Math.sin(now/300) * 2.5, 0, Math.PI * 2); // Increased from +4 to +5
+            renderCtx.strokeStyle = 'rgba(254, 202, 87, 0.4)'; // Increased from 0.3 to 0.4
+            renderCtx.lineWidth = 2.5; // Increased from 2
             renderCtx.stroke();
             
             // More visible arrhythmia label
-            renderCtx.font = 'bold 19px Inter'; // Increased from 18px
-            renderCtx.fillStyle = '#F97316'; // Slightly adjusted color
+            renderCtx.font = 'bold 20px Inter'; // Increased from 19px
+            renderCtx.fillStyle = '#EF4444'; // Changed from #F97316 to a more prominent red
             renderCtx.textAlign = 'center';
             
             // Add subtle text shadow for better visibility
-            renderCtx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-            renderCtx.shadowBlur = 4;
+            renderCtx.shadowColor = 'rgba(0, 0, 0, 0.4)'; // Increased from 0.3
+            renderCtx.shadowBlur = 5; // Increased from 4
             renderCtx.shadowOffsetX = 0;
             renderCtx.shadowOffsetY = 1;
             renderCtx.fillText('ARRITMIA', x, y - 25);
@@ -696,17 +695,17 @@ const PPGSignalMeter = memo(({
             // Enhanced arrhythmia segment visualization
             // More pronounced gradient with stronger contrast
             const gradient = renderCtx.createLinearGradient(visibleX1, 0, visibleX2, 0);
-            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.12)'); // Increased from 0.10
-            gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.22)'); // Increased from 0.18
-            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.12)'); // Increased from 0.10
+            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.15)'); // Increased from 0.12
+            gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.25)'); // Increased from 0.22
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.15)'); // Increased from 0.12
             renderCtx.fillStyle = gradient;
             renderCtx.fillRect(visibleX1, 0, visibleX2 - visibleX1, canvas.height);
             
             // More visible pulsing effect for arrhythmia boundaries
-            const pulseIntensity = (Math.sin(now/250) + 1) / 2 * 0.4 + 0.35; // Enhanced pulsing
+            const pulseIntensity = (Math.sin(now/230) + 1) / 2 * 0.45 + 0.4; // Enhanced pulsing (changed from 250ms to 230ms)
             renderCtx.strokeStyle = `rgba(255, 0, 0, ${pulseIntensity})`;
-            renderCtx.lineWidth = 1.5; // Increased from 1
-            renderCtx.setLineDash([6, 4]); // Changed from [5, 5] for better visibility
+            renderCtx.lineWidth = 2.0; // Increased from 1.5
+            renderCtx.setLineDash([7, 3]); // Changed from [6, 4] for better visibility
             
             if (x1 >= 0 && x1 <= canvas.width) {
               renderCtx.beginPath();
@@ -718,8 +717,8 @@ const PPGSignalMeter = memo(({
               const indicatorHeight = 20;
               for (let y = 0; y < canvas.height; y += indicatorHeight * 3) {
                 renderCtx.beginPath();
-                renderCtx.moveTo(x1 - 4, y);
-                renderCtx.lineTo(x1 + 4, y + indicatorHeight);
+                renderCtx.moveTo(x1 - 5, y); // Increased from -4 to -5
+                renderCtx.lineTo(x1 + 5, y + indicatorHeight); // Increased from +4 to +5
                 renderCtx.stroke();
               }
             }
@@ -734,8 +733,8 @@ const PPGSignalMeter = memo(({
               const indicatorHeight = 20;
               for (let y = 0; y < canvas.height; y += indicatorHeight * 3) {
                 renderCtx.beginPath();
-                renderCtx.moveTo(x2 + 4, y);
-                renderCtx.lineTo(x2 - 4, y + indicatorHeight);
+                renderCtx.moveTo(x2 + 5, y); // Increased from +4 to +5
+                renderCtx.lineTo(x2 - 5, y + indicatorHeight); // Increased from -4 to -5
                 renderCtx.stroke();
               }
             }
@@ -745,22 +744,22 @@ const PPGSignalMeter = memo(({
             if (visibleX1 < visibleX2) {
               const labelX = (visibleX1 + visibleX2) / 2;
               // More visible arrhythmia label
-              renderCtx.font = 'bold 16px Inter'; // Increased from 14px
-              renderCtx.fillStyle = '#DC2626';
-              
+              renderCtx.font = 'bold 18px Inter'; // Increased from 16px
+              renderCtx.fillStyle = '#EF4444'; // Changed from #DC2626 to brighter red
+                
               // Add subtle glow effect to the label
-              renderCtx.shadowColor = 'rgba(255, 255, 255, 0.7)';
-              renderCtx.shadowBlur = 5;
+              renderCtx.shadowColor = 'rgba(255, 255, 255, 0.8)'; // Increased from 0.7
+              renderCtx.shadowBlur = 6; // Increased from 5
               renderCtx.textAlign = 'center';
-              renderCtx.fillText('ARRITMIA', labelX, 22); // Moved from 20 to 22
+              renderCtx.fillText('ARRITMIA', labelX, 22);
               renderCtx.shadowColor = 'transparent';
               renderCtx.shadowBlur = 0;
               
               // Draw attention indicator above the label
-              const attentionSize = 3 + Math.sin(now/200);
+              const attentionSize = 4 + Math.sin(now/180); // Increased from 3 + sin(now/200)
               renderCtx.beginPath();
               renderCtx.arc(labelX, 34, attentionSize, 0, Math.PI * 2);
-              renderCtx.fillStyle = '#DC2626';
+              renderCtx.fillStyle = '#EF4444'; // Changed from #DC2626
               renderCtx.fill();
             }
           }

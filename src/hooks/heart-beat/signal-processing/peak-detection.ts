@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.006; // Reduced from 0.008 for increased sensitivity
+  return Math.abs(value) >= 0.004; // Reduced from 0.006 for increased sensitivity
 }
 
 /**
@@ -53,7 +53,7 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Increased sensitivity for peak detection
-  if (result.isPeak && result.confidence > 0.04) { // Decreased from 0.05 for better sensitivity
+  if (result.isPeak && result.confidence > 0.03) { // Decreased from 0.04 for better sensitivity
     // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     

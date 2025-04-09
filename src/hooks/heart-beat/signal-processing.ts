@@ -37,7 +37,7 @@ export function checkWeakSignal(
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // More sensitive threshold to capture subtle waveform details
-  return Math.abs(value) >= 0.003; // Reduced from 0.004 for better waveform detail
+  return Math.abs(value) >= 0.0025; // Reduced from 0.003 for better waveform detail
 }
 
 /**
@@ -79,7 +79,7 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Solo actualizar tiempo del pico para cálculos de tiempo
-  if (result.isPeak && result.confidence > 0.05) {
+  if (result.isPeak && result.confidence > 0.045) { // Slightly decreased for more sensitivity
     // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
@@ -119,32 +119,32 @@ export function processLowConfidenceResult(
   rrData?: { intervals: number[], lastPeakTime: number | null }
 ): HeartBeatResult {
   // Apply improved smoothing for better waveform visualization
-  if (result.confidence < 0.65) { // Increased threshold for smoother transitions
+  if (result.confidence < 0.68) { // Increased threshold for smoother transitions
     // Keep original BPM with higher historical weight for stability
     const newBpm = currentBPM > 0 ? 
-      currentBPM * 0.75 + (result.bpm > 0 ? result.bpm * 0.25 : currentBPM * 0.25) : 
+      currentBPM * 0.7 + (result.bpm > 0 ? result.bpm * 0.3 : currentBPM * 0.3) : // Changed from 0.75/0.25
       result.bpm;
     
     // Enhanced transition state for more natural waveform rendering
     const transitionState = result.transition || {
       active: false,
-      progress: Math.random() * 0.4, // Increased from 0.3 for more natural variation
+      progress: Math.random() * 0.45, // Increased from 0.4 for more natural variation
       direction: 'none'
     };
     
     // During low confidence periods, add subtle natural variation to the waveform
     if (transitionState.active && transitionState.progress > 0) {
-      transitionState.progress = Math.min(1, transitionState.progress + 0.06); // Increased from 0.05
+      transitionState.progress = Math.min(1, transitionState.progress + 0.065); // Increased from 0.06
     } else {
       // Occasionally start new smooth transitions
-      transitionState.active = Math.random() > 0.82; // Increased from 0.85
-      transitionState.progress = transitionState.active ? 0.06 : 0; // Increased from 0.05
+      transitionState.active = Math.random() > 0.8; // Changed from 0.82
+      transitionState.progress = transitionState.active ? 0.065 : 0; // Increased from 0.06
       transitionState.direction = Math.random() > 0.5 ? 'up' : 'down';
     }
     
     return {
       bpm: Math.round(newBpm),
-      confidence: Math.max(0.18, result.confidence), // Increased from 0.15
+      confidence: Math.max(0.2, result.confidence), // Increased from 0.18
       isPeak: result.isPeak,
       arrhythmiaCount: arrhythmiaCounter,
       rrData: rrData || {
