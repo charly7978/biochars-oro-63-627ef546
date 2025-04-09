@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -30,19 +29,24 @@ export class SignalProcessor extends BaseProcessor {
   private fingerDetectionStartTime: number | null = null;
   
   // Signal quality variables - more relaxed thresholds for real signals
-  private readonly MIN_QUALITY_FOR_FINGER = 20; // Reduced for better sensitivity
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 1500; // Faster response
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.08; // Lower threshold for real signals
+  private readonly MIN_QUALITY_FOR_FINGER = 10; // Further reduced for better sensitivity
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 1200; // Faster response
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.05; // Lower threshold for real signals
   
   // Signal processing params
   private processingCount: number = 0;
+  private processingStartTime: number = 0;
+  
+  // Last detected amplitude
+  private lastDetectedAmplitude: number = 0;
   
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
-    this.signalValidator = new SignalValidator(0.005, 8); // More sensitive thresholds
+    this.signalValidator = new SignalValidator(0.003, 5); // More sensitive thresholds
+    this.processingStartTime = Date.now();
     
     console.log("SignalProcessor: Inicializado para procesamiento de señales REALES únicamente");
   }
@@ -103,7 +107,23 @@ export class SignalProcessor extends BaseProcessor {
       return true;
     }
     
-    // Otherwise, use the validator's pattern detection
+    // Calculate amplitude from recent values
+    if (this.rawPpgValues.length >= 10) {
+      const recentValues = this.rawPpgValues.slice(-10);
+      this.lastDetectedAmplitude = Math.max(...recentValues) - Math.min(...recentValues);
+      
+      // Use amplitude as additional indicator for finger presence
+      if (this.lastDetectedAmplitude >= this.MIN_SIGNAL_AMPLITUDE) {
+        const runningTime = Date.now() - this.processingStartTime;
+        
+        // Early return true if we have significant amplitude and have been running for a bit
+        if (runningTime > 2000) {
+          return true;
+        }
+      }
+    }
+    
+    // Otherwise, use the validator's pattern detection with lower threshold
     return this.signalValidator.isFingerDetected();
   }
   
@@ -128,7 +148,7 @@ export class SignalProcessor extends BaseProcessor {
     const medianFiltered = this.applyMedianFilter(value);
     
     // Step 2: Low pass filter to smooth the signal
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered, 0.25); // Adjusted alpha for better responsiveness
+    const lowPassFiltered = this.applyEMAFilter(medianFiltered, 0.35); // Adjusted alpha for better responsiveness
     
     // Step 3: Moving average for final smoothing
     const smaFiltered = this.applySMAFilter(lowPassFiltered);
@@ -146,8 +166,7 @@ export class SignalProcessor extends BaseProcessor {
     }
     
     // Check finger detection using pattern recognition with appropriate quality threshold
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
-                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    const fingerDetected = this.isFingerDetected();
     
     // Calculate signal amplitude from REAL data
     let amplitude = 0;
@@ -157,7 +176,7 @@ export class SignalProcessor extends BaseProcessor {
     }
     
     // More sensitive amplitude detection for real signals
-    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE || this.lastDetectedAmplitude >= this.MIN_SIGNAL_AMPLITUDE;
     
     // If finger is detected by pattern and has valid amplitude, confirm it
     if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
@@ -185,19 +204,26 @@ export class SignalProcessor extends BaseProcessor {
         });
       }
     } else if (!fingerDetected || !hasValidAmplitude) {
-      // Reset finger detection if lost or amplitude too low
-      if (this.fingerDetectionConfirmed) {
+      // Only reset if we've been unable to detect for a while
+      const consistentLossThreshold = 3000; // ms
+      const now = Date.now();
+      
+      if (this.fingerDetectionConfirmed && 
+          this.fingerDetectionStartTime && 
+          (now - this.fingerDetectionStartTime > consistentLossThreshold)) {
+        
         console.log("Signal processor: Detección de dedo perdida", {
           hasValidPattern: fingerDetected,
           hasValidAmplitude,
           amplitude,
-          quality: qualityValue
+          quality: qualityValue,
+          timeSinceLastDetection: this.fingerDetectionStartTime ? (now - this.fingerDetectionStartTime) : "N/A"
         });
+        
+        this.fingerDetectionConfirmed = false;
+        this.fingerDetectionStartTime = null;
+        this.rhythmBasedFingerDetection = false;
       }
-      
-      this.fingerDetectionConfirmed = false;
-      this.fingerDetectionStartTime = null;
-      this.rhythmBasedFingerDetection = false;
     }
     
     // Log filter results periodically
@@ -209,7 +235,8 @@ export class SignalProcessor extends BaseProcessor {
         sma: smaFiltered,
         quality: qualityValue,
         fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed,
-        amplitude
+        amplitude,
+        lastDetectedAmplitude: this.lastDetectedAmplitude
       });
     }
     
@@ -226,20 +253,23 @@ export class SignalProcessor extends BaseProcessor {
    */
   public calculateHeartRate(sampleRate: number = 30): number {
     // Use both filtered and raw values for better accuracy
-    const rawBpm = this.heartRateDetector.calculateHeartRate(this.rawPpgValues, sampleRate);
+    // First try with filtered values as they're more stable
     const filteredBpm = this.heartRateDetector.calculateHeartRate(this.ppgValues, sampleRate);
     
-    // Weighted average with more weight to filtered for stability
-    const bpm = rawBpm > 0 && filteredBpm > 0 
-      ? (filteredBpm * 0.7 + rawBpm * 0.3) 
-      : (filteredBpm > 0 ? filteredBpm : rawBpm);
+    // If that doesn't work well, try with raw values which may contain clearer peaks
+    const rawBpm = this.rawPpgValues.length >= 30 ? 
+      this.heartRateDetector.calculateHeartRate(this.rawPpgValues.slice(-30), sampleRate) : 0;
+    
+    // Use the most reliable result
+    const bpm = filteredBpm > 0 ? filteredBpm : rawBpm;
     
     console.log("Heart rate calculation from REAL data:", { 
       rawBpm,
       filteredBpm,
-      combinedBpm: bpm,
+      selectedBpm: bpm,
       rawBufferSize: this.rawPpgValues.length,
-      filteredBufferSize: this.ppgValues.length
+      filteredBufferSize: this.ppgValues.length,
+      amplitude: this.lastDetectedAmplitude
     });
     
     return bpm;
@@ -260,11 +290,14 @@ export class SignalProcessor extends BaseProcessor {
     super.reset();
     this.rawPpgValues = [];
     this.quality.reset();
+    this.filter.reset();
     this.signalValidator.resetFingerDetection();
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
     this.processingCount = 0;
+    this.processingStartTime = Date.now();
+    this.lastDetectedAmplitude = 0;
     
     console.log("SignalProcessor: Reset completado, todos los buffers y estado limpiados");
   }

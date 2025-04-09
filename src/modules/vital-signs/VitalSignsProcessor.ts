@@ -31,6 +31,12 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Signal quality and buffering
+  private signalQualityBuffer: number[] = [];
+  private startTime: number = Date.now();
+  private processedCount: number = 0;
+  private MIN_MEASUREMENTS_REQUIRED = 30;
 
   /**
    * Constructor that initializes all specialized processors
@@ -48,8 +54,8 @@ export class VitalSignsProcessor {
     this.lipidProcessor = new LipidProcessor();
     
     // Initialize validators and calculators
-    this.signalValidator = new SignalValidator(0.01, 15);
-    this.confidenceCalculator = new ConfidenceCalculator(0.15);
+    this.signalValidator = new SignalValidator(0.003, 8); // More sensitive thresholds
+    this.confidenceCalculator = new ConfidenceCalculator(0.1); // Reduced threshold
   }
   
   /**
@@ -60,17 +66,38 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal
-    if (!this.signalValidator.isValidSignal(ppgValue)) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+    this.processedCount++;
+    
+    // Check for near-zero or invalid signal
+    if (!this.isValidValue(ppgValue)) {
+      if (this.processedCount % 30 === 0) {
+        console.log("VitalSignsProcessor: Invalid signal value", { value: ppgValue });
+      }
       return ResultFactory.createEmptyResults();
     }
     
     // Apply filtering to the real PPG signal
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    const filterResult = this.signalProcessor.applyFilters(ppgValue);
+    
+    // Update signal quality buffer
+    this.updateSignalQualityBuffer(filterResult.quality);
+    
+    // Check if finger is detected
+    if (!filterResult.fingerDetected) {
+      if (this.processedCount % 30 === 0) {
+        console.log("VitalSignsProcessor: Finger not detected", {
+          fingerDetected: filterResult.fingerDetected,
+          quality: filterResult.quality,
+          value: ppgValue,
+          filtered: filterResult.filteredValue
+        });
+      }
+      return ResultFactory.createEmptyResults();
+    }
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
+                           rrData.intervals &&
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
@@ -78,33 +105,32 @@ export class VitalSignsProcessor {
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
     
-    // Limit the real data buffer
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
-    }
+    // Check if we have enough data points and signal quality
+    const avgQuality = this.calculateAverageQuality();
+    const signalQualityThreshold = this.getAdaptiveQualityThreshold();
     
-    // Check if we have enough data points
-    if (!this.signalValidator.hasEnoughData(ppgValues)) {
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
-    const amplitude = signalMax - signalMin;
-    
-    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
-      return ResultFactory.createEmptyResults();
+    if (ppgValues.length < this.MIN_MEASUREMENTS_REQUIRED || avgQuality < signalQualityThreshold) {
+      if (this.processedCount % 30 === 0) {
+        console.log("VitalSignsProcessor: Insufficient data or quality", {
+          dataPoints: ppgValues.length,
+          required: this.MIN_MEASUREMENTS_REQUIRED,
+          avgQuality,
+          threshold: signalQualityThreshold,
+          timeRunning: (Date.now() - this.startTime) / 1000,
+          processed: this.processedCount
+        });
+      }
+      
+      // Return empty results with arrhythmia data if available
+      return ResultFactory.createEmptyResultsWithArrhythmia(arrhythmiaResult.arrhythmiaStatus, arrhythmiaResult.lastArrhythmiaData);
     }
     
     // Calculate SpO2 using real data only
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45), avgQuality);
     
     // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90), avgQuality);
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
@@ -130,16 +156,19 @@ export class VitalSignsProcessor {
       triglycerides: 0
     };
 
-    console.log("VitalSignsProcessor: Results with confidence", {
-      spo2,
-      pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      glucose: finalGlucose,
-      glucoseConfidence,
-      lipidsConfidence,
-      signalAmplitude: amplitude,
-      confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
-    });
+    if (this.processedCount % 30 === 0) {
+      console.log("VitalSignsProcessor: Results with confidence", {
+        spo2,
+        pressure,
+        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+        glucose: finalGlucose,
+        glucoseConfidence,
+        lipidsConfidence,
+        signalQuality: avgQuality,
+        confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold(),
+        fingerDetected: filterResult.fingerDetected
+      });
+    }
 
     // Prepare result with all metrics
     return ResultFactory.createResult(
@@ -156,6 +185,55 @@ export class VitalSignsProcessor {
       arrhythmiaResult.lastArrhythmiaData
     );
   }
+  
+  /**
+   * Check if value is valid
+   */
+  private isValidValue(value: number): boolean {
+    return !isNaN(value) && isFinite(value) && Math.abs(value) < 1000;
+  }
+  
+  /**
+   * Update signal quality buffer
+   */
+  private updateSignalQualityBuffer(quality: number): void {
+    this.signalQualityBuffer.push(quality);
+    if (this.signalQualityBuffer.length > 10) {
+      this.signalQualityBuffer.shift();
+    }
+  }
+  
+  /**
+   * Calculate average signal quality
+   */
+  private calculateAverageQuality(): number {
+    if (this.signalQualityBuffer.length === 0) {
+      return 0;
+    }
+    
+    const sum = this.signalQualityBuffer.reduce((a, b) => a + b, 0);
+    return sum / this.signalQualityBuffer.length;
+  }
+  
+  /**
+   * Get adaptive quality threshold based on running time
+   */
+  private getAdaptiveQualityThreshold(): number {
+    const runningTimeMs = Date.now() - this.startTime;
+    
+    // Be more lenient in the first 10 seconds
+    if (runningTimeMs < 10000) {
+      return 15;
+    }
+    
+    // Then gradually increase the threshold
+    if (runningTimeMs < 20000) {
+      return 20;
+    }
+    
+    // Standard threshold
+    return 25;
+  }
 
   /**
    * Reset the processor to ensure a clean state
@@ -168,6 +246,7 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
+    this.signalQualityBuffer = [];
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null; // Always return null to ensure measurements start from zero
   }
@@ -193,6 +272,8 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
+    this.processedCount = 0;
+    this.startTime = Date.now();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }

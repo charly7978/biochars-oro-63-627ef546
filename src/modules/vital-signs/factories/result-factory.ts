@@ -1,18 +1,9 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
 import { VitalSignsResult } from '../types/vital-signs-result';
 
-/**
- * Factory for creating consistent VitalSignsResult objects
- * All methods work with real data only, no simulation
- */
 export class ResultFactory {
   /**
-   * Creates an empty result when there is no valid data
-   * Always returns zeros, no simulation
+   * Creates an empty result object with zeros for all values
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
@@ -23,18 +14,32 @@ export class ResultFactory {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
       }
     };
   }
   
   /**
-   * Creates a result with the given values
-   * Only for direct measurements
+   * Creates an empty result but maintains arrhythmia data
+   */
+  public static createEmptyResultsWithArrhythmia(
+    arrhythmiaStatus: string,
+    lastArrhythmiaData: any
+  ): VitalSignsResult {
+    return {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus,
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      },
+      lastArrhythmiaData
+    };
+  }
+  
+  /**
+   * Creates a result object with all the given values
    */
   public static createResult(
     spo2: number,
@@ -42,8 +47,12 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
-    confidence: { glucose: number; lipids: number; overall: number },
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
+    confidence?: {
+      glucose: number;
+      lipids: number;
+      overall: number;
+    },
+    lastArrhythmiaData?: any
   ): VitalSignsResult {
     return {
       spo2,
@@ -56,4 +65,3 @@ export class ResultFactory {
     };
   }
 }
-
