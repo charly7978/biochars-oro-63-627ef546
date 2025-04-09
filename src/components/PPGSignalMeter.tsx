@@ -29,7 +29,6 @@ const PPGSignalMeter = memo(({
   value, 
   quality, 
   isFingerDetected,
-  onStartMeasurement,
   onReset,
   arrhythmiaStatus,
   rawArrhythmiaData,
@@ -710,16 +709,6 @@ const PPGSignalMeter = memo(({
       </div>
 
       <div className="absolute bottom-2 left-0 right-0 p-4 flex justify-center z-10">
-        {!isFingerDetected && !preserveResults ? (
-          <button
-            onClick={onStartMeasurement}
-            className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-all duration-300 flex items-center gap-2"
-          >
-            <Fingerprint className="h-5 w-5" />
-            <span>Comenzar medición</span>
-          </button>
-        ) : null}
-        
         {preserveResults && (
           <button
             onClick={handleReset}
