@@ -1,3 +1,4 @@
+
 /**
  * Unified Signal Processor Web Worker
  * Handles signal processing, TensorFlow.js operations, and calibration
@@ -66,6 +67,10 @@ let isCalibrating = false;
 let calibrationSamples = 0;
 let calibrationStartTime = 0;
 
+// Signal quality tracking
+let qualityScores: number[] = [];
+let signalQuality = 0;
+
 /**
  * Initialize the worker with provided configuration
  */
@@ -98,7 +103,7 @@ async function initialize(workerConfig?: Partial<ProcessorConfig>): Promise<bool
 }
 
 /**
- * Process a single PPG signal value
+ * Process a single PPG signal value with integrated quality assessment
  */
 async function processSignal(value: number): Promise<any> {
   try {
@@ -113,13 +118,18 @@ async function processSignal(value: number): Promise<any> {
       signalBuffer.shift();
     }
     
+    // Calculate signal quality (simplified version for worker)
+    calculateSignalQuality(filtered);
+    
     // Update neural network buffers
     nnProcessor.updateSignalBuffer('heartRate', filtered);
     nnProcessor.updateSignalBuffer('spo2', filtered);
     nnProcessor.updateSignalBuffer('bloodPressure', filtered);
     nnProcessor.updateSignalBuffer('arrhythmia', filtered);
     
-    // Process vital signs
+    // Process vital signs with quality-based confidence adjustment
+    const confidenceAdjustment = Math.min(1, Math.max(0.5, signalQuality));
+    
     const heartRatePromise = nnProcessor.processSignal('heartRate', filtered);
     const spo2Promise = nnProcessor.processSignal('spo2', filtered);
     const bpPromise = nnProcessor.processSignal('bloodPressure', filtered);
@@ -133,6 +143,12 @@ async function processSignal(value: number): Promise<any> {
       arrhythmiaPromise
     ]);
     
+    // Adjust confidence based on signal quality
+    const adjustedHeartRate = heartRate ? {
+      bpm: Math.round(heartRate[0]),
+      confidence: heartRate[1] * confidenceAdjustment
+    } : null;
+    
     // Check for calibration status
     if (isCalibrating) {
       updateCalibration();
@@ -140,13 +156,10 @@ async function processSignal(value: number): Promise<any> {
     
     const processingTime = performance.now() - startTime;
     
-    // Return processed results
+    // Return processed results with quality information
     return {
       filtered,
-      heartRate: heartRate ? {
-        bpm: Math.round(heartRate[0]),
-        confidence: heartRate[1]
-      } : null,
+      heartRate: adjustedHeartRate,
       spo2: spo2 ? Math.round(spo2[0]) : null,
       bloodPressure: bloodPressure ? {
         systolic: Math.round(bloodPressure[0]),
@@ -158,12 +171,54 @@ async function processSignal(value: number): Promise<any> {
         progress: Math.min(100, (calibrationSamples / config.calibration.requiredSamples) * 100),
         remainingTime: Math.max(0, (config.calibration.durationMs - (Date.now() - calibrationStartTime)) / 1000)
       } : null,
+      signalQuality,
       processingTime
     };
   } catch (error) {
     console.error('[Worker] Signal processing error:', error);
     throw error;
   }
+}
+
+/**
+ * Calculate signal quality
+ */
+function calculateSignalQuality(value: number): void {
+  if (signalBuffer.length < 10) {
+    signalQuality = 0.5;
+    return;
+  }
+  
+  // Use recent signal for quality calculation
+  const recentSignal = signalBuffer.slice(-20);
+  
+  // Calculate amplitude
+  const min = Math.min(...recentSignal);
+  const max = Math.max(...recentSignal);
+  const amplitude = max - min;
+  
+  // Calculate stability
+  let stability = 0;
+  const diffs = [];
+  for (let i = 1; i < recentSignal.length; i++) {
+    diffs.push(Math.abs(recentSignal[i] - recentSignal[i-1]));
+  }
+  const avgDiff = diffs.reduce((sum, val) => sum + val, 0) / diffs.length;
+  stability = Math.max(0, 1 - (avgDiff * 10));
+  
+  // Calculate quality score
+  const qualityScore = amplitude > 0.05 ? 
+    (0.7 * Math.min(1, amplitude / 0.3)) + (0.3 * stability) : 
+    0.2;
+  
+  // Add to quality history
+  qualityScores.push(qualityScore);
+  if (qualityScores.length > 10) {
+    qualityScores.shift();
+  }
+  
+  // Use average of recent quality scores
+  signalQuality = qualityScores.reduce((sum, val) => sum + val, 0) / qualityScores.length;
 }
 
 /**
@@ -207,6 +262,8 @@ function reset(): void {
   lastProcessedValue = 0;
   isCalibrating = false;
   calibrationSamples = 0;
+  qualityScores = [];
+  signalQuality = 0;
   
   if (nnProcessor) {
     nnProcessor.reset();
@@ -218,12 +275,11 @@ function reset(): void {
 }
 
 /**
- * Process an image frame for PPG extraction
+ * Process an image frame for PPG extraction with quality assessment
  */
 async function processFrame(imageData: ImageData): Promise<any> {
   try {
     // Extract PPG signal from frame
-    // This is a simplified implementation
     let redSum = 0;
     let pixelCount = 0;
     
