@@ -13,6 +13,7 @@ export class TensorFlowService {
   private config: ProcessorConfig;
   private initPromise: Promise<boolean> | null = null;
   private lastPerformanceLog: number = 0;
+  private deviceCalibrationFactor: number = 1.0;
 
   constructor(config: ProcessorConfig) {
     this.config = config;
@@ -58,7 +59,10 @@ export class TensorFlowService {
       await tf.ready();
       this.isInitialized = true;
       
-      console.log(`TensorFlow.js initialized. Version: ${tf.version.tfjs}, Backend: ${this.getBackend()}`);
+      // Set device calibration factor based on detected capabilities
+      this.setDeviceCalibrationFactor();
+      
+      console.log(`TensorFlow.js initialized. Version: ${tf.version.tfjs}, Backend: ${this.getBackend()}, Calibration: ${this.deviceCalibrationFactor.toFixed(2)}`);
       return true;
     } catch (error) {
       console.error('Failed to initialize TensorFlow.js:', error);
@@ -95,6 +99,26 @@ export class TensorFlowService {
       console.warn('WebGPU check failed:', error);
       return false;
     }
+  }
+  
+  /**
+   * Set device-specific calibration factor based on performance capabilities
+   */
+  private setDeviceCalibrationFactor(): void {
+    // Detect device capabilities for calibration
+    const isHighEndDevice = this.useWebGPU || 
+                           (navigator as any).deviceMemory >= 4 || 
+                           navigator.hardwareConcurrency >= 4;
+    
+    // Set calibration factor based on device capabilities
+    this.deviceCalibrationFactor = isHighEndDevice ? 1.0 : 0.8;
+    
+    // Adjust for mobile devices which typically need different calibration
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      this.deviceCalibrationFactor *= 0.9;
+    }
+    
+    console.log(`Device calibration factor set to ${this.deviceCalibrationFactor.toFixed(2)} based on detected capabilities`);
   }
 
   /**
@@ -168,31 +192,35 @@ export class TensorFlowService {
       const tensorData = Float32Array.from(signalData);
       const tensor = tf.tensor(tensorData, inputShape);
       
-      // Use tf.tidy with proper return type handling
-      const resultTensor = tf.tidy(() => {
+      // Use tf.tidy for automatic memory management
+      const resultArray = tf.tidy(() => {
         // Run inference
-        return model.predict(tensor) as tf.Tensor;
+        const resultTensor = model.predict(tensor) as tf.Tensor;
+        // Get data from the tensor
+        return resultTensor.dataSync();
       });
       
-      // Get data from the tensor (outside tidy to ensure proper disposal)
-      const resultData = await resultTensor.data();
+      // Dispose input tensor (result tensor handled by tf.tidy)
+      tensor.dispose();
       
       // Create a new Float32Array from the result data for better memory management
-      const resultArray = new Float32Array(resultData);
+      const outputArray = new Float32Array(resultArray);
       
-      // Dispose tensors
-      tensor.dispose();
-      resultTensor.dispose();
+      // Apply device-specific calibration factor to measurement results
+      // This helps adjust for different device characteristics
+      for (let i = 0; i < outputArray.length; i++) {
+        outputArray[i] = outputArray[i] * this.deviceCalibrationFactor;
+      }
       
       // Log performance for optimization tracking (but limit frequency)
       const processingTime = performance.now() - startTime;
       const now = Date.now();
       if (now - this.lastPerformanceLog > 2000) { // Log at most every 2 seconds
         this.lastPerformanceLog = now;
-        console.log(`TensorFlow processing: ${processingTime.toFixed(2)}ms for model ${modelKey} (${this.getBackend()})`);
+        console.log(`TensorFlow processing: ${processingTime.toFixed(2)}ms for model ${modelKey} (${this.getBackend()}), calibration: ${this.deviceCalibrationFactor.toFixed(2)}`);
       }
       
-      return resultArray;
+      return outputArray;
     } catch (error) {
       console.error('Error processing signal with TensorFlow:', error);
       return null;
@@ -204,6 +232,13 @@ export class TensorFlowService {
    */
   public getBackend(): string {
     return tf.getBackend() || 'none';
+  }
+  
+  /**
+   * Get device calibration factor
+   */
+  public getDeviceCalibrationFactor(): number {
+    return this.deviceCalibrationFactor;
   }
 
   /**

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -30,6 +29,21 @@ export const useSignalQualityDetector = () => {
   const PEAK_DETECTION_THRESHOLD = 0.25; // Increased from 0.2
   const REQUIRED_CONSISTENT_PATTERNS = 4; // Increased from 3
   const MIN_SIGNAL_VARIANCE = 0.04; // New: minimum variance threshold to reject noise
+  
+  // Added person-specific adaptation
+  const uniqueSignatureRef = useRef<{
+    heartRate: number | null,
+    peakAmplitude: number | null,
+    variability: number | null
+  }>({
+    heartRate: null,
+    peakAmplitude: null,
+    variability: null
+  });
+  
+  // Added detection reset timer to force recalibration for different people
+  const lastResetTimeRef = useRef<number>(Date.now());
+  const FORCE_RESET_INTERVAL_MS = 30000; // Force recalibration every 30 seconds
   
   /**
    * Detect peaks in the signal history
@@ -112,12 +126,81 @@ export const useSignalQualityDetector = () => {
         lastPeakTimesRef.current = peaks;
         detectedRhythmicPatternsRef.current++;
         
+        // Calculate current signature
+        const avgInterval = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+        const heartRate = 60000 / avgInterval;
+        
+        // Get peak amplitudes for signature
+        const peakValues = peaks.map(peakTime => {
+          const peakPoint = recentSignals.find(s => s.time === peakTime);
+          return peakPoint ? peakPoint.value : 0;
+        });
+        
+        const avgPeakAmplitude = peakValues.reduce((a, b) => a + b, 0) / peakValues.length;
+        
+        // Calculate variability (standard deviation of intervals divided by mean)
+        const intervalMean = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+        const intervalVariance = validIntervals.reduce((a, b) => a + Math.pow(b - intervalMean, 2), 0) / validIntervals.length;
+        const variability = Math.sqrt(intervalVariance) / intervalMean;
+        
+        // Store unique signature if we don't have one yet
+        if (uniqueSignatureRef.current.heartRate === null) {
+          uniqueSignatureRef.current = {
+            heartRate,
+            peakAmplitude: avgPeakAmplitude,
+            variability
+          };
+          
+          console.log("Initial person signature established", {
+            heartRate: heartRate.toFixed(1),
+            peakAmplitude: avgPeakAmplitude.toFixed(3),
+            variability: variability.toFixed(3)
+          });
+        } 
+        // Otherwise validate against existing signature - if too different, it's a different person
+        else if (uniqueSignatureRef.current.heartRate !== null) {
+          const hrDiff = Math.abs(uniqueSignatureRef.current.heartRate! - heartRate);
+          const ampDiff = Math.abs(uniqueSignatureRef.current.peakAmplitude! - avgPeakAmplitude) / uniqueSignatureRef.current.peakAmplitude!;
+          const varDiff = Math.abs(uniqueSignatureRef.current.variability! - variability) / uniqueSignatureRef.current.variability!;
+          
+          // If significant changes detected, reset detection for new person
+          if (hrDiff > 15 || ampDiff > 0.4 || varDiff > 0.5) {
+            console.log("Different person detected - resetting signature", {
+              hrDiff,
+              ampDiff,
+              varDiff,
+              oldSignature: uniqueSignatureRef.current,
+              newSignature: { heartRate, peakAmplitude: avgPeakAmplitude, variability }
+            });
+            
+            // Reset detection for new person
+            reset();
+            
+            // Set new signature
+            uniqueSignatureRef.current = {
+              heartRate,
+              peakAmplitude: avgPeakAmplitude,
+              variability
+            };
+            
+            return false;
+          }
+          
+          // Gradually update signature for natural changes
+          uniqueSignatureRef.current = {
+            heartRate: uniqueSignatureRef.current.heartRate! * 0.9 + heartRate * 0.1,
+            peakAmplitude: uniqueSignatureRef.current.peakAmplitude! * 0.9 + avgPeakAmplitude * 0.1,
+            variability: uniqueSignatureRef.current.variability! * 0.9 + variability * 0.1
+          };
+        }
+        
         console.log("Consistent rhythm detected", {
           consistentIntervals,
           totalValidIntervals: validIntervals.length,
           peakCount: peaks.length,
           meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
-          patternCount: detectedRhythmicPatternsRef.current
+          patternCount: detectedRhythmicPatternsRef.current,
+          heartRate: heartRate.toFixed(1)
         });
         
         // If we've detected enough consistent patterns, confirm finger detection
@@ -126,7 +209,8 @@ export const useSignalQualityDetector = () => {
           console.log("Finger detection confirmed by consistent rhythm", {
             time: new Date(now).toISOString(),
             patternCount: detectedRhythmicPatternsRef.current,
-            peaks: peaks.length
+            peaks: peaks.length,
+            heartRate: heartRate.toFixed(1)
           });
           return true;
         }
@@ -148,6 +232,13 @@ export const useSignalQualityDetector = () => {
   const detectWeakSignal = (value: number): boolean => {
     const now = Date.now();
     
+    // Check if we need to force reset for new measurement session
+    if (now - lastResetTimeRef.current > FORCE_RESET_INTERVAL_MS) {
+      console.log("Forcing detection reset due to time interval");
+      reset();
+      lastResetTimeRef.current = now;
+    }
+    
     // Add current value to signal history
     signalHistoryRef.current.push({ time: now, value });
     
@@ -166,6 +257,15 @@ export const useSignalQualityDetector = () => {
         if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS * 2) {
           fingerDetectionConfirmedRef.current = false;
           detectedRhythmicPatternsRef.current = 0;
+          
+          // Reset signature after consistent weak signals
+          if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS * 3) {
+            uniqueSignatureRef.current = {
+              heartRate: null,
+              peakAmplitude: null,
+              variability: null
+            };
+          }
         }
       } else {
         // Faster recovery from false positives by reducing count more quickly
@@ -219,18 +319,35 @@ export const useSignalQualityDetector = () => {
     lastPeakTimesRef.current = [];
     detectedRhythmicPatternsRef.current = 0;
     fingerDetectionConfirmedRef.current = false;
+    // Don't reset signature - we want to maintain it for comparisons with new signals
+  };
+  
+  /**
+   * Full reset including signature for complete reset between users
+   */
+  const fullReset = () => {
+    reset();
+    uniqueSignatureRef.current = {
+      heartRate: null,
+      peakAmplitude: null,
+      variability: null
+    };
+    lastResetTimeRef.current = Date.now();
+    console.log("Full reset of signal quality detector including person signature");
   };
   
   return {
     detectWeakSignal,
     isFingerDetected,
     reset,
+    fullReset,
     consecutiveWeakSignalsRef,
     WEAK_SIGNAL_THRESHOLD,
     MAX_CONSECUTIVE_WEAK_SIGNALS,
     signalHistoryRef,
     lastPeakTimesRef,
     detectedRhythmicPatternsRef,
-    fingerDetectionConfirmedRef
+    fingerDetectionConfirmedRef,
+    uniqueSignatureRef
   };
 };

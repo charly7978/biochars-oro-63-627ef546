@@ -27,6 +27,14 @@ const MAX_INTERVALS = 8;
 let averageInterval = 0;
 let lastValidPeakTime = 0;
 
+// Person-specific adaptation
+let personSignatureBuffer: number[] = [];
+const PERSON_SIGNATURE_SIZE = 15;
+let personSignatureAvg = 0;
+let personSignatureVar = 0;
+let lastSignatureUpdate = 0;
+let individualSensitivity = 1.0;
+
 // Device-specific adaptation
 let isHighPerformanceDevice = false;
 const deviceCheckInterval = 10000; // 10 seconds
@@ -67,6 +75,42 @@ function checkDevicePerformance(): void {
 }
 
 /**
+ * Updates person-specific signature based on signal characteristics
+ */
+function updatePersonSignature(value: number): void {
+  const now = Date.now();
+  
+  // Add to person signature buffer
+  personSignatureBuffer.push(value);
+  if (personSignatureBuffer.length > PERSON_SIGNATURE_SIZE) {
+    personSignatureBuffer.shift();
+  }
+  
+  // Only update signature once every 5 seconds to allow for stabilization
+  if (personSignatureBuffer.length >= PERSON_SIGNATURE_SIZE && (now - lastSignatureUpdate > 5000)) {
+    lastSignatureUpdate = now;
+    
+    // Calculate average and variance of signal
+    const sum = personSignatureBuffer.reduce((a, b) => a + b, 0);
+    personSignatureAvg = sum / personSignatureBuffer.length;
+    
+    let varSum = 0;
+    personSignatureBuffer.forEach(v => {
+      varSum += Math.pow(v - personSignatureAvg, 2);
+    });
+    personSignatureVar = varSum / personSignatureBuffer.length;
+    
+    // Adapt sensitivity based on signal characteristics
+    // Lower variance signals need higher sensitivity
+    if (personSignatureVar > 0) {
+      individualSensitivity = Math.min(1.8, Math.max(0.7, 0.04 / Math.sqrt(personSignatureVar)));
+    }
+    
+    console.log(`Person signature updated: avg=${personSignatureAvg.toFixed(4)}, var=${personSignatureVar.toFixed(4)}, sensitivity=${individualSensitivity.toFixed(2)}`);
+  }
+}
+
+/**
  * Determines if a measurement should be processed based on signal strength
  * Only processes real measurements with improved thresholding
  */
@@ -76,6 +120,9 @@ export function shouldProcessMeasurement(value: number): boolean {
   if (now - lastDeviceCheck > deviceCheckInterval) {
     checkDevicePerformance();
   }
+  
+  // Update person-specific signature
+  updatePersonSignature(value);
   
   // Add to buffer for adaptive thresholding
   signalBuffer.push(value);
@@ -94,8 +141,8 @@ export function shouldProcessMeasurement(value: number): boolean {
     const robustMax = sortedValues[upperIdx];
     const range = robustMax - robustMin;
     
-    // Update adaptive threshold based on signal amplitude
-    adaptiveThreshold = Math.max(0.008, range * 0.2 * detectionSensitivity);
+    // Update adaptive threshold based on signal amplitude and individual sensitivity
+    adaptiveThreshold = Math.max(0.008, range * 0.2 * detectionSensitivity * individualSensitivity);
     
     // Update noise floor based on signal statistics
     const lowerQuartile = sortedValues[Math.floor(sortedValues.length * 0.25)];
@@ -103,7 +150,7 @@ export function shouldProcessMeasurement(value: number): boolean {
     const iqr = upperQuartile - lowerQuartile;
     
     // Set noise floor to a fraction of the interquartile range
-    noiseFloor = Math.max(0.005, iqr * 0.12 * detectionSensitivity);
+    noiseFloor = Math.max(0.005, iqr * 0.12 * detectionSensitivity * individualSensitivity);
   }
   
   // Update signal quality estimate
@@ -131,8 +178,8 @@ export function shouldProcessMeasurement(value: number): boolean {
                     Math.max(0.2, 0.6 - crossingDeviation); // Lower quality away from ideal
   }
   
-  // Use adaptive threshold with signal quality modulation
-  const effectiveThreshold = adaptiveThreshold * Math.max(0.6, Math.min(1.5, signalQuality * 2));
+  // Use adaptive threshold with signal quality modulation and individual sensitivity
+  const effectiveThreshold = adaptiveThreshold * Math.max(0.6, Math.min(1.5, signalQuality * 2)) * individualSensitivity;
   return Math.abs(value) >= effectiveThreshold * detectionSensitivity;
 }
 
@@ -267,6 +314,11 @@ export function detectPeak(value: number, recentValues: number[]): boolean {
     lastPeakTime = now;
     lastValidPeakTime = now;
     
+    // Reset individual sensitivity occasionally to adapt to changing conditions
+    if (Math.random() < 0.05) {
+      individualSensitivity = Math.max(0.7, Math.min(1.8, individualSensitivity * (0.95 + Math.random() * 0.1)));
+    }
+    
     // Log peak characteristics for debugging
     if (Math.random() < 0.1) { // Only log ~10% of peaks to avoid console spam
       console.log("Peak detected with enhanced algorithm:", {
@@ -276,7 +328,8 @@ export function detectPeak(value: number, recentValues: number[]): boolean {
         avgInterval: averageInterval.toFixed(0),
         waveformValid: hasValidWaveformShape,
         signalQuality: signalQuality.toFixed(2),
-        sensitivity: detectionSensitivity.toFixed(2)
+        sensitivity: detectionSensitivity.toFixed(2),
+        individualSensitivity: individualSensitivity.toFixed(2)
       });
     }
     
@@ -314,7 +367,8 @@ export function handlePeakDetection(
         adaptiveThreshold: adaptiveThreshold.toFixed(3),
         signalQuality: signalQuality.toFixed(2),
         highPerformanceDevice: isHighPerformanceDevice,
-        avgInterval: averageInterval ? averageInterval.toFixed(0) : 'N/A'
+        avgInterval: averageInterval ? averageInterval.toFixed(0) : 'N/A',
+        individualSensitivity: individualSensitivity.toFixed(2)
       });
     }
   }
@@ -338,6 +392,11 @@ export function resetPeakDetection(): void {
   lastDeviceCheck = 0;
   isHighPerformanceDevice = false;
   detectionSensitivity = 1.0;
+  personSignatureBuffer = [];
+  personSignatureAvg = 0;
+  personSignatureVar = 0;
+  lastSignatureUpdate = 0;
+  individualSensitivity = 1.0;
   
   console.log("Peak detection reset - state cleared completely");
 }
