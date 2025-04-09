@@ -112,71 +112,155 @@ export function calculateCorrelationQuality(
   let noiseSum = 0;
   let noiseCount = 0;
   
-  // Exclude areas around the dominant peak and its harmonics
   for (let i = 5; i < autocorr.length; i++) {
-    // Skip the peak and surrounding points
-    if (Math.abs(i - dominantPeak.lag) < 3 || 
-        Math.abs(i - 2 * dominantPeak.lag) < 3) {
-      continue;
+    // Skip the peak and its immediate neighbors
+    if (Math.abs(i - dominantPeak.lag) > 3) {
+      noiseSum += Math.abs(autocorr[i]);
+      noiseCount++;
     }
-    noiseSum += Math.abs(autocorr[i]);
-    noiseCount++;
   }
   
   const noiseFloor = noiseCount > 0 ? noiseSum / noiseCount : 0;
   
-  // Signal-to-noise ratio in the autocorrelation domain
-  const snr = noiseFloor > 0 ? peakHeight / noiseFloor : peakHeight;
+  // Calculate signal-to-noise ratio
+  const signalToNoise = noiseFloor > 0 ? peakHeight / noiseFloor : peakHeight;
   
-  // Calculate quality score (normalize SNR to 0-1 range)
-  const quality = Math.min(1, Math.max(0, (snr - 1.5) / 5));
+  // Calculate periodicity clarity - how much the peak stands out
+  const peakClarity = Math.min(1, Math.max(0, (peakHeight - noiseFloor) / Math.max(0.1, peakHeight)));
   
-  return quality;
+  // Check if peak is in a physiologically plausible range for heart rate
+  // Assuming 30Hz sampling, lag 15-50 corresponds roughly to 36-120 BPM
+  const isPlausibleRange = dominantPeak.lag >= 15 && dominantPeak.lag <= 50;
+  
+  // Final quality score combining multiple metrics
+  let qualityScore = peakClarity * 0.5 + Math.min(1, signalToNoise / 5) * 0.3;
+  
+  // Bonus for being in physiological range
+  if (isPlausibleRange) {
+    qualityScore += 0.2;
+  } else {
+    qualityScore *= 0.7; // Penalty for implausible heart rate
+  }
+  
+  return Math.min(1, Math.max(0, qualityScore));
 }
 
 /**
- * Complete frequency analysis workflow for PPG signals
- * @param signal - Input PPG signal
+ * Perform spectral analysis on signal using simplified discrete Fourier transform
+ * @param signal - Input signal values
  * @param sampleRate - Sampling rate in Hz
- * @returns Analysis results including heart rate and quality
+ * @returns Object with frequencies and magnitudes
  */
-export function analyzePPGFrequency(
+export function performSpectralAnalysis(
   signal: number[],
   sampleRate: number = 30
-): {
-  heartRate: number;
-  quality: number;
-  dominantPeak: { lag: number, height: number };
-} {
-  if (signal.length < 30) {
-    return {
-      heartRate: 0,
-      quality: 0,
-      dominantPeak: { lag: 0, height: 0 }
-    };
+): { frequencies: number[], magnitudes: number[] } {
+  if (signal.length < 10) {
+    return { frequencies: [], magnitudes: [] };
   }
   
-  // Calculate reasonable max lag based on minimum expected heart rate (30 BPM)
-  const maxLag = Math.min(Math.floor(signal.length / 2), Math.floor(sampleRate * 60 / 30));
+  // Normalize signal
+  const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+  const normalized = signal.map(val => val - mean);
   
-  // Calculate min lag based on maximum expected heart rate (180 BPM)
-  const minLag = Math.max(5, Math.floor(sampleRate * 60 / 180));
+  // Prepare output arrays
+  const frequencies: number[] = [];
+  const magnitudes: number[] = [];
   
-  // Calculate autocorrelation
-  const autocorr = calculateAutocorrelation(signal, maxLag);
+  // Calculate power at each frequency
+  // We're only interested in frequencies that could be heart rate (0.5-4 Hz)
+  const minFreq = 0.5; // 30 BPM
+  const maxFreq = 4.0; // 240 BPM
+  const freqStep = 0.05; // Resolution
   
-  // Find dominant peak
-  const dominantPeak = findDominantPeak(autocorr, minLag, maxLag);
+  for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
+    let realSum = 0;
+    let imagSum = 0;
+    
+    // Simplified DFT calculation for this frequency
+    for (let i = 0; i < normalized.length; i++) {
+      const phase = (2 * Math.PI * freq * i) / sampleRate;
+      realSum += normalized[i] * Math.cos(phase);
+      imagSum += normalized[i] * Math.sin(phase);
+    }
+    
+    frequencies.push(freq);
+    const magnitude = Math.sqrt(realSum * realSum + imagSum * imagSum) / normalized.length;
+    magnitudes.push(magnitude);
+  }
   
-  // Calculate heart rate from peak lag
-  const heartRate = lagToHeartRate(dominantPeak.lag, sampleRate);
+  return { frequencies, magnitudes };
+}
+
+/**
+ * Find dominant frequency in spectral analysis
+ * @param frequencies - Array of frequencies
+ * @param magnitudes - Array of magnitude values
+ * @returns Object with dominant frequency and its magnitude
+ */
+export function findDominantFrequency(
+  frequencies: number[],
+  magnitudes: number[]
+): { frequency: number, magnitude: number } {
+  if (frequencies.length === 0 || magnitudes.length === 0) {
+    return { frequency: 0, magnitude: 0 };
+  }
   
-  // Calculate quality score
-  const quality = calculateCorrelationQuality(autocorr, dominantPeak);
+  let maxIndex = 0;
+  let maxMagnitude = magnitudes[0];
+  
+  for (let i = 1; i < magnitudes.length; i++) {
+    if (magnitudes[i] > maxMagnitude) {
+      maxMagnitude = magnitudes[i];
+      maxIndex = i;
+    }
+  }
   
   return {
-    heartRate,
-    quality,
-    dominantPeak
+    frequency: frequencies[maxIndex],
+    magnitude: maxMagnitude
+  };
+}
+
+/**
+ * Calculate heart rate from spectral analysis
+ * @param frequencies - Array of frequencies
+ * @param magnitudes - Array of magnitude values
+ * @returns Estimated heart rate in BPM with confidence score
+ */
+export function calculateHeartRateFromSpectrum(
+  frequencies: number[],
+  magnitudes: number[]
+): { bpm: number, confidence: number } {
+  const dominant = findDominantFrequency(frequencies, magnitudes);
+  
+  if (dominant.frequency === 0) {
+    return { bpm: 0, confidence: 0 };
+  }
+  
+  // Convert Hz to BPM
+  const bpm = dominant.frequency * 60;
+  
+  // Calculate confidence based on magnitude and physiological plausibility
+  const isPlausible = bpm >= 40 && bpm <= 200;
+  
+  // Find secondary peaks for comparison
+  const sortedMagnitudes = [...magnitudes].sort((a, b) => b - a);
+  const secondHighestMagnitude = sortedMagnitudes.length > 1 ? sortedMagnitudes[1] : 0;
+  
+  // Calculate peak-to-noise ratio
+  const peakToNoise = secondHighestMagnitude > 0 ? 
+    dominant.magnitude / secondHighestMagnitude : 
+    dominant.magnitude;
+  
+  // Calculate confidence combining multiple factors
+  let confidence = Math.min(1, peakToNoise / 3) * 0.7;
+  
+  // Apply physiological plausibility factor
+  confidence = isPlausible ? confidence + 0.3 : confidence * 0.5;
+  
+  return {
+    bpm: Math.round(bpm),
+    confidence: Math.min(1, Math.max(0, confidence))
   };
 }
