@@ -1,4 +1,3 @@
-
 /**
  * TensorFlow-based signal processor for extracting and analyzing PPG signals
  * Enhanced with robust error handling, performance monitoring, and optimization
@@ -251,7 +250,10 @@ export class TFSignalProcessor {
         // Store quality history
         this.signalQualityHistory.push({
           timestamp: now,
-          ...qualityMetrics
+          quality: qualityMetrics.overall,
+          noise: qualityMetrics.noise,
+          stability: qualityMetrics.stability,
+          periodicity: qualityMetrics.periodicity
         });
         
         // Limit history size

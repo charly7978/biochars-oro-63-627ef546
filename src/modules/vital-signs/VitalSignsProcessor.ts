@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -73,8 +72,8 @@ export class VitalSignsProcessor {
     const arrhythmiaResult = rrData && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaService.detectArrhythmia(rrData) :
-                           { isArrhythmia: false, arrhythmiaStatus: "--", confidence: 0, timestamp: Date.now() };
+                           this.processArrhythmia(rrData.intervals) :
+                           { status: "NO ARRHYTHMIAS|0", data: null };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -133,7 +132,7 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Results with confidence", {
       spo2,
       pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      arrhythmiaStatus: arrhythmiaResult.status,
       glucose: finalGlucose,
       glucoseConfidence,
       lipidsConfidence,
@@ -145,7 +144,7 @@ export class VitalSignsProcessor {
     return ResultFactory.createResult(
       spo2,
       pressure,
-      arrhythmiaResult.arrhythmiaStatus,
+      arrhythmiaResult.status,
       finalGlucose,
       finalLipids,
       {
@@ -157,6 +156,56 @@ export class VitalSignsProcessor {
     );
   }
 
+  /**
+   * Process arrhythmia detection result to a compatible format for visualization
+   */
+  private formatArrhythmiaData(result: any): { timestamp: number; rmssd: number; rrVariation: number } {
+    // Make sure all required fields exist, with default values if needed
+    return {
+      timestamp: result.timestamp || Date.now(),
+      rmssd: result.rmssd || 0,
+      rrVariation: result.rrVariation || 0
+    };
+  }
+
+  /**
+   * Process signal to detect arrhythmias
+   * Uses direct measurement only
+   */
+  private processArrhythmia(rrIntervals: number[]): {
+    status: string;
+    data: any;
+  } {
+    try {
+      // Direct measurement with ArrhythmiaDetectionService
+      const result = this.arrhythmiaService.detectArrhythmia({
+        intervals: rrIntervals,
+        lastPeakTime: Date.now()
+      });
+
+      // Format results in compatible structure
+      if (result.isArrhythmia) {
+        const formattedData = this.formatArrhythmiaData(result);
+        
+        return {
+          status: `ARRHYTHMIA DETECTED|${this.arrhythmiaService.getArrhythmiaCount()}`,
+          data: formattedData
+        };
+      }
+
+      return {
+        status: `NO ARRHYTHMIAS|${this.arrhythmiaService.getArrhythmiaCount()}`,
+        data: null
+      };
+    } catch (error) {
+      console.error('Error in arrhythmia processing:', error);
+      return {
+        status: `ERROR|${this.arrhythmiaService.getArrhythmiaCount()}`,
+        data: null
+      };
+    }
+  }
+  
   /**
    * Reset the processor to ensure a clean state
    * No reference values or simulations
