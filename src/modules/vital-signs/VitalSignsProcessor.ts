@@ -15,12 +15,13 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 
 /**
- * Main vital signs processor
- * Integrates different specialized processors to calculate health metrics
- * Operates ONLY in direct measurement mode without reference values or simulation
+ * Procesador principal de signos vitales
+ * - Optimizado para procesamiento de señales REALES exclusivamente
+ * - Integra procesadores especializados con mayor sensibilidad a señales débiles
+ * - Implementa detección y validación avanzada sin simulaciones
  */
 export class VitalSignsProcessor {
-  // Specialized processors
+  // Procesadores especializados
   private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
   private arrhythmiaProcessor: ArrhythmiaProcessor;
@@ -28,24 +29,38 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // Validators and calculators
+  // Validadores y calculadores
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
   
-  // Signal quality and buffering
+  // Datos de calidad de señal
   private signalQualityBuffer: number[] = [];
   private startTime: number = Date.now();
   private processedCount: number = 0;
-  private MIN_MEASUREMENTS_REQUIRED = 30;
+  
+  // Umbral mínimo de mediciones REDUCIDO para mayor sensibilidad
+  private readonly MIN_MEASUREMENTS_REQUIRED = 20;
+
+  // Diagnóstico y estadísticas
+  private diagnostics = {
+    startTime: Date.now(),
+    totalProcessed: 0,
+    validFingerDetections: 0,
+    invalidSignalCount: 0,
+    maxSignalAmplitude: 0,
+    avgSignalQuality: 0,
+    stableReadingsCount: 0,
+    failureReasons: {} as Record<string, number>
+  };
 
   /**
-   * Constructor that initializes all specialized processors
-   * Using only direct measurement
+   * Constructor que inicializa procesadores especializados
+   * Solo medición directa con umbrales optimizados
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
+    console.log("VitalSignsProcessor: Inicializando instancia para medición directa con sensibilidad mejorada");
     
-    // Initialize specialized processors
+    // Inicializar procesadores especializados
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
@@ -53,124 +68,172 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    // Initialize validators and calculators
-    this.signalValidator = new SignalValidator(0.003, 8); // More sensitive thresholds
-    this.confidenceCalculator = new ConfidenceCalculator(0.1); // Reduced threshold
+    // Inicializar validadores con umbrales REDUCIDOS para mayor sensibilidad
+    this.signalValidator = new SignalValidator(0.001, 6); // Ultra sensible
+    this.confidenceCalculator = new ConfidenceCalculator(0.05); // Umbral mínimo de confianza
   }
   
   /**
-   * Processes the real PPG signal and calculates all vital signs
-   * Using ONLY direct measurements with no reference values or simulation
+   * Procesa señal PPG real y calcula todos los signos vitales
+   * Exclusivamente mediciones directas sin valores de referencia ni simulación
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     this.processedCount++;
+    this.diagnostics.totalProcessed++;
     
-    // Check for near-zero or invalid signal
+    // Verificar valor cerca de cero o inválido
     if (!this.isValidValue(ppgValue)) {
+      this.incrementFailureReason('invalid_value');
+      
       if (this.processedCount % 30 === 0) {
-        console.log("VitalSignsProcessor: Invalid signal value", { value: ppgValue });
-      }
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // Apply filtering to the real PPG signal
-    const filterResult = this.signalProcessor.applyFilters(ppgValue);
-    
-    // Update signal quality buffer
-    this.updateSignalQualityBuffer(filterResult.quality);
-    
-    // Check if finger is detected
-    if (!filterResult.fingerDetected) {
-      if (this.processedCount % 30 === 0) {
-        console.log("VitalSignsProcessor: Finger not detected", {
-          fingerDetected: filterResult.fingerDetected,
-          quality: filterResult.quality,
+        console.log("VitalSignsProcessor: Valor de señal inválido", { 
           value: ppgValue,
-          filtered: filterResult.filteredValue
+          processedCount: this.processedCount 
         });
       }
       return ResultFactory.createEmptyResults();
     }
     
-    // Process arrhythmia data if available and valid
+    // Aplicar filtrado a la señal PPG real con sensibilidad mejorada
+    const filterResult = this.signalProcessor.applyFilters(ppgValue);
+    
+    // Actualizar buffer de calidad de señal
+    this.updateSignalQualityBuffer(filterResult.quality);
+    
+    // Actualizar estadísticas de diagnóstico
+    this.diagnostics.maxSignalAmplitude = Math.max(
+      this.diagnostics.maxSignalAmplitude,
+      Math.abs(filterResult.filteredValue - ppgValue)
+    );
+    this.diagnostics.avgSignalQuality = this.calculateAverageQuality();
+    
+    // Verificar detección de dedo con umbrales más sensibles
+    if (!filterResult.fingerDetected) {
+      this.incrementFailureReason('finger_not_detected');
+      
+      if (this.processedCount % 20 === 0) {
+        console.log("VitalSignsProcessor: Dedo no detectado", {
+          fingerDetected: filterResult.fingerDetected,
+          quality: filterResult.quality,
+          processedCount: this.processedCount,
+          rawValue: ppgValue,
+          filteredValue: filterResult.filteredValue
+        });
+      }
+      return ResultFactory.createEmptyResults();
+    } else {
+      this.diagnostics.validFingerDetections++;
+    }
+    
+    // Procesar datos de arritmia si están disponibles
     const arrhythmiaResult = rrData && 
                            rrData.intervals &&
-                           rrData.intervals.length >= 3 && 
+                           rrData.intervals.length >= 2 && // Reducido para mayor sensibilidad
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values for processing
+    // Obtener valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
     
-    // Check if we have enough data points and signal quality
+    // Verificar si tenemos suficientes datos y calidad con umbral adaptativo
     const avgQuality = this.calculateAverageQuality();
     const signalQualityThreshold = this.getAdaptiveQualityThreshold();
     
-    if (ppgValues.length < this.MIN_MEASUREMENTS_REQUIRED || avgQuality < signalQualityThreshold) {
-      if (this.processedCount % 30 === 0) {
-        console.log("VitalSignsProcessor: Insufficient data or quality", {
+    if (ppgValues.length < this.MIN_MEASUREMENTS_REQUIRED) {
+      this.incrementFailureReason('insufficient_data_points');
+      
+      if (this.processedCount % 15 === 0) {
+        console.log("VitalSignsProcessor: Datos insuficientes", {
           dataPoints: ppgValues.length,
           required: this.MIN_MEASUREMENTS_REQUIRED,
-          avgQuality,
-          threshold: signalQualityThreshold,
-          timeRunning: (Date.now() - this.startTime) / 1000,
-          processed: this.processedCount
+          processedCount: this.processedCount
         });
       }
       
-      // Return empty results with arrhythmia data if available
-      return ResultFactory.createEmptyResultsWithArrhythmia(arrhythmiaResult.arrhythmiaStatus, arrhythmiaResult.lastArrhythmiaData);
+      return ResultFactory.createEmptyResultsWithArrhythmia(
+        arrhythmiaResult.arrhythmiaStatus,
+        arrhythmiaResult.lastArrhythmiaData
+      );
     }
     
-    // Calculate SpO2 using real data only
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
+    if (avgQuality < signalQualityThreshold) {
+      this.incrementFailureReason('low_signal_quality');
+      
+      if (this.processedCount % 15 === 0) {
+        console.log("VitalSignsProcessor: Calidad de señal insuficiente", {
+          avgQuality,
+          threshold: signalQualityThreshold,
+          processedCount: this.processedCount
+        });
+      }
+      
+      return ResultFactory.createEmptyResultsWithArrhythmia(
+        arrhythmiaResult.arrhythmiaStatus,
+        arrhythmiaResult.lastArrhythmiaData
+      );
+    }
     
-    // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    // Calcular SpO2 usando datos reales con ventana reducida para mayor sensibilidad
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-30)); // Reducido de 45 a 30
+    
+    // Calcular presión arterial usando características de señal real con ventana reducida
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-60), avgQuality); // Reducido de 90 a 60
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose with real data only
+    // Calcular glucosa con datos reales directos
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calculate lipids with real data only
+    // Calcular lípidos con datos reales directos
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate overall confidence
+    // Calcular confianza global con umbrales adaptados
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
       glucoseConfidence,
       lipidsConfidence
     );
 
-    // Only show values if confidence exceeds threshold
-    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
-    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? lipids : {
-      totalCholesterol: 0,
-      triglycerides: 0
-    };
+    // Mostrar valores solo si confianza supera umbral adaptativo
+    const confidenceThreshold = Math.max(0.05, this.confidenceCalculator.getConfidenceThreshold() * 
+                            (0.5 + (0.5 * Math.min(1, this.processedCount / 100))));
+    
+    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence, confidenceThreshold) ? 
+                        glucose : 0;
+                        
+    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence, confidenceThreshold) ? 
+                       lipids : { totalCholesterol: 0, triglycerides: 0 };
 
-    if (this.processedCount % 30 === 0) {
-      console.log("VitalSignsProcessor: Results with confidence", {
+    // Incrementar contador de lecturas estables
+    if (bp.systolic > 0 && spo2 > 0) {
+      this.diagnostics.stableReadingsCount++;
+    }
+
+    // Log periódico de diagnóstico
+    if (this.processedCount % 15 === 0) {
+      console.log("VitalSignsProcessor: Resultados procesados", {
         spo2,
         pressure,
         arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
         glucose: finalGlucose,
-        glucoseConfidence,
-        lipidsConfidence,
+        spo2Stats: this.spo2Processor.getSignalStats(),
         signalQuality: avgQuality,
-        confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold(),
-        fingerDetected: filterResult.fingerDetected
+        bufferSize: ppgValues.length,
+        processedCount: this.processedCount,
+        fingerDetected: filterResult.fingerDetected,
+        runningTime: (Date.now() - this.startTime) / 1000,
+        stableReadings: this.diagnostics.stableReadingsCount,
+        adaptiveThreshold: confidenceThreshold
       });
     }
 
-    // Prepare result with all metrics
+    // Crear resultado con todos los parámetros
     return ResultFactory.createResult(
       spo2,
       pressure,
@@ -187,14 +250,14 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Check if value is valid
+   * Verificar si el valor es válido con criterios menos estrictos
    */
   private isValidValue(value: number): boolean {
-    return !isNaN(value) && isFinite(value) && Math.abs(value) < 1000;
+    return !isNaN(value) && isFinite(value) && Math.abs(value) < 5000;
   }
   
   /**
-   * Update signal quality buffer
+   * Actualizar buffer de calidad de señal
    */
   private updateSignalQualityBuffer(quality: number): void {
     this.signalQualityBuffer.push(quality);
@@ -204,7 +267,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Calculate average signal quality
+   * Calcular calidad promedio de señal
    */
   private calculateAverageQuality(): number {
     if (this.signalQualityBuffer.length === 0) {
@@ -216,28 +279,40 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Get adaptive quality threshold based on running time
+   * Obtener umbral adaptativo de calidad basado en tiempo de ejecución
+   * Umbral REDUCIDO para mayor sensibilidad
    */
   private getAdaptiveQualityThreshold(): number {
     const runningTimeMs = Date.now() - this.startTime;
     
-    // Be more lenient in the first 10 seconds
+    // Ser más permisivo en los primeros 15 segundos
+    if (runningTimeMs < 5000) {
+      return 5; // Ultra permisivo al inicio
+    }
+    
     if (runningTimeMs < 10000) {
+      return 10;
+    }
+    
+    if (runningTimeMs < 15000) {
       return 15;
     }
     
-    // Then gradually increase the threshold
-    if (runningTimeMs < 20000) {
-      return 20;
-    }
-    
-    // Standard threshold
-    return 25;
+    // Umbral estándar reducido
+    return 20; // Reducido de 25
+  }
+  
+  /**
+   * Incrementar contador de razones de fallo para diagnóstico
+   */
+  private incrementFailureReason(reason: string): void {
+    this.diagnostics.failureReasons[reason] = (this.diagnostics.failureReasons[reason] || 0) + 1;
+    this.diagnostics.invalidSignalCount++;
   }
 
   /**
-   * Reset the processor to ensure a clean state
-   * No reference values or simulations
+   * Reinicia el procesador para garantizar estado limpio
+   * Sin valores de referencia ni simulaciones
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -247,34 +322,63 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.signalQualityBuffer = [];
-    console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null; // Always return null to ensure measurements start from zero
+    
+    // Reiniciar diagnósticos
+    this.diagnostics = {
+      startTime: Date.now(),
+      totalProcessed: 0,
+      validFingerDetections: 0,
+      invalidSignalCount: 0,
+      maxSignalAmplitude: 0,
+      avgSignalQuality: 0,
+      stableReadingsCount: 0,
+      failureReasons: {}
+    };
+    
+    console.log("VitalSignsProcessor: Reset completo - todos los procesadores reiniciados");
+    return null; // Siempre devolver null para garantizar mediciones desde cero
   }
   
   /**
-   * Get arrhythmia counter
+   * Obtener contador de arritmias
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaProcessor.getArrhythmiaCount();
   }
   
   /**
-   * Get the last valid results - always returns null
-   * Forces fresh measurements without reference values
+   * Obtener últimos resultados válidos (siempre devuelve null)
+   * Fuerza mediciones nuevas sin valores de referencia
    */
   public getLastValidResults(): VitalSignsResult | null {
-    return null; // Always return null to ensure measurements start from zero
+    return null; // Siempre null para garantizar mediciones desde cero
   }
   
   /**
-   * Completely reset the processor
-   * Ensures fresh start with no data carryover
+   * Reinicio completo del procesador
+   * Garantiza inicio fresco sin carryover de datos
    */
   public fullReset(): void {
     this.reset();
     this.processedCount = 0;
     this.startTime = Date.now();
-    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
+    console.log("VitalSignsProcessor: Reset completo - iniciando desde cero para medición directa");
+  }
+  
+  /**
+   * Obtener estadísticas de diagnóstico
+   */
+  public getDiagnostics(): any {
+    return {
+      ...this.diagnostics,
+      runningTime: (Date.now() - this.startTime) / 1000,
+      processedCount: this.processedCount,
+      signalQualityBufferSize: this.signalQualityBuffer.length,
+      currentQualityThreshold: this.getAdaptiveQualityThreshold(),
+      signalProcessorDiagnostics: this.signalProcessor.getDiagnostics(),
+      validationRate: this.diagnostics.totalProcessed > 0 ? 
+                    (this.diagnostics.validFingerDetections / this.diagnostics.totalProcessed) * 100 : 0
+    };
   }
 }
 

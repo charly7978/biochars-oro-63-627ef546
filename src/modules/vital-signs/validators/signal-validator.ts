@@ -4,403 +4,318 @@
  */
 
 /**
- * Validador de señales vitales completamente rediseñado
- * Implementa técnicas avanzadas de análisis de dominio de tiempo y frecuencia
- * Enfoque 100% en análisis directo sin simulación
+ * SignalValidator - Validador de señales PPG optimizado para sensibilidad máxima
+ * Detecta patrones cardíacos en señales débiles pero válidas
+ * Análisis de consistencia temporal y frecuencial en tiempo real
  */
 export class SignalValidator {
-  // Umbrales adaptativos
-  private readonly MIN_SIGNAL_VALUE = 0.001;
-  private readonly MAX_SIGNAL_VALUE = 1000;
-  private readonly MIN_HEART_RATE_FREQUENCY = 0.6; // ~36 BPM
-  private readonly MAX_HEART_RATE_FREQUENCY = 3.3; // ~200 BPM
+  // Umbral para amplitud mínima - REDUCIDO para mayor sensibilidad
+  private readonly minimumAmplitude: number;
   
-  // Buffers para análisis temporal y espectral
-  private readonly TIME_DOMAIN_BUFFER_SIZE = 60;
-  private timeDomainBuffer: number[] = [];
-  private readonly SPECTRAL_BUFFER_SIZE = 128;
-  private spectralBuffer: number[] = [];
+  // Ventana para detección de patrones - REDUCIDA para respuesta más rápida
+  private readonly patternWindow: number;
   
-  // Estado del detector de dedo
-  private fingerPresenceConfidence: number = 0;
+  // Historial de señal para análisis temporal
+  private signalHistory: number[] = [];
+  
+  // Detección de presencia de dedo
   private fingerDetected: boolean = false;
-  private consecutiveValidPatterns: number = 0;
-  private readonly MIN_CONSECUTIVE_PATTERNS = 4;
+  private fingerConfidence: number = 0;
+  private stableSignalCount: number = 0;
+  private stableSignalThreshold: number = 3;
   
-  // Métricas de calidad de señal
-  private signalQualityScore: number = 0;
-  private dominantFrequency: number = 0;
-  private spectralPower: number = 0;
-  private lastValidSignalTime: number = 0;
+  // Análisis de patrones y periodicidad
+  private lastPatternCheckTime: number = 0;
+  private readonly PATTERN_CHECK_INTERVAL: number = 500; // ms
+  private currentCorrelation: number = 0;
   
-  constructor(
-    private readonly minAmplitude: number = 0.01,
-    private readonly minDataPoints: number = 8,
-    private readonly adaptiveThreshold: boolean = true
-  ) {
-    console.log("SignalValidator: Nuevo validador con análisis espectral inicializado");
-  }
-  
+  // Estadísticas para diagnóstico
+  private stats = {
+    validationCalls: 0,
+    patternDetections: 0,
+    maxAmplitude: 0,
+    minAmplitude: Infinity,
+    totalAmplitude: 0,
+    signalToNoiseRatio: 0
+  };
+
   /**
-   * Verifica si un valor individual es una señal válida - enfoque completamente renovado
+   * Constructor con umbral adaptativo
+   * @param minimumAmplitude Amplitud mínima para señal válida (valor menor = más sensible)
+   * @param patternWindow Ventana de análisis para patrones (valor menor = más rápida respuesta)
    */
-  public isValidSignal(value: number): boolean {
-    // Validaciones básicas de formato
-    if (isNaN(value) || !isFinite(value)) {
+  constructor(minimumAmplitude: number = 0.002, patternWindow: number = 5) {
+    this.minimumAmplitude = minimumAmplitude;
+    this.patternWindow = patternWindow;
+    console.log("SignalValidator: Inicializado con alta sensibilidad", { 
+      minimumAmplitude,
+      patternWindow
+    });
+  }
+
+  /**
+   * Validar señal para detección avanzada de presencia de dedo
+   * @param value Valor PPG actual
+   * @returns Indicador de validez
+   */
+  public validateSignal(value: number): boolean {
+    this.stats.validationCalls++;
+    
+    // Actualizar historial de señal
+    this.signalHistory.push(value);
+    if (this.signalHistory.length > 30) {
+      this.signalHistory.shift();
+    }
+    
+    // No tenemos suficientes datos para analizar
+    if (this.signalHistory.length < this.patternWindow) {
       return false;
     }
     
-    // Rango básico de valores físicos
-    if (Math.abs(value) < this.MIN_SIGNAL_VALUE || Math.abs(value) > this.MAX_SIGNAL_VALUE) {
-      return false;
-    }
+    // Análisis de amplitud dinámico para mayor sensibilidad
+    const recentValues = this.signalHistory.slice(-this.patternWindow);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const amplitude = max - min;
     
-    // Actualizar buffer temporal con este valor
-    this.updateTimeBuffer(value);
+    // Actualizar estadísticas
+    this.stats.minAmplitude = Math.min(this.stats.minAmplitude, amplitude);
+    this.stats.maxAmplitude = Math.max(this.stats.maxAmplitude, amplitude);
+    this.stats.totalAmplitude += amplitude;
     
-    // Actualizar buffer espectral periódicamente
-    if (this.timeDomainBuffer.length % 2 === 0) {
-      this.updateSpectralBuffer(value);
-    }
+    // Adaptación dinámica a la señal actual - permite detectar señales más débiles
+    const effectiveThreshold = this.minimumAmplitude * 
+                              Math.max(0.5, Math.min(2.0, 1.0 / this.getCurrentSignalQuality()));
     
-    // Determinar si la señal es fisiológicamente plausible basado en su contexto temporal
-    const isPlausible = this.isPhysiologicallyPlausible();
-    
-    // Actualizar métricas temporales
-    this.updateTemporalMetrics();
-    
-    return isPlausible;
-  }
-  
-  /**
-   * Verifica si hay suficientes puntos de datos para análisis - enfoque más sensible
-   */
-  public hasEnoughData(values: number[]): boolean {
-    if (!values || values.length < this.minDataPoints) {
-      return false;
-    }
-    
-    // Verificar porcentaje de valores utilizables - más tolerante con ruido
-    const validValues = values.filter(v => this.quickSignalCheck(v));
-    return validValues.length >= Math.max(5, Math.floor(this.minDataPoints * 0.7));
-  }
-  
-  /**
-   * Verificación rápida para filtrar valores obviamente inválidos
-   */
-  private quickSignalCheck(value: number): boolean {
-    return !isNaN(value) && isFinite(value) && 
-           Math.abs(value) >= this.MIN_SIGNAL_VALUE && 
-           Math.abs(value) <= this.MAX_SIGNAL_VALUE;
-  }
-  
-  /**
-   * Verifica si la amplitud de la señal es suficiente - con umbrales adaptativos
-   */
-  public hasValidAmplitude(values: number[]): boolean {
-    if (values.length < 4) {
-      return false;
-    }
-    
-    // Usar ventana deslizante para mejor detección
-    const samplesForAnalysis = Math.min(values.length, 20);
-    const recentValues = values.slice(-samplesForAnalysis);
-    
-    const minValue = Math.min(...recentValues);
-    const maxValue = Math.max(...recentValues);
-    const amplitude = maxValue - minValue;
-    
-    // Usar umbral adaptativo si está habilitado
-    let effectiveThreshold = this.minAmplitude;
-    if (this.adaptiveThreshold) {
-      // Ajustar umbral basado en nivel de señal y tiempo transcurrido
-      const signalLevel = Math.abs(minValue + maxValue) / 2;
-      const timeSinceLastValid = Date.now() - this.lastValidSignalTime;
+    // Detectar amplitud mínima
+    if (amplitude < effectiveThreshold) {
+      // Reducir confianza pero no descartar inmediatamente
+      this.fingerConfidence = Math.max(0, this.fingerConfidence - 0.2);
+      this.stableSignalCount = 0;
       
-      if (timeSinceLastValid > 5000) {
-        // Ser más permisivo después de períodos sin señal válida
-        effectiveThreshold = Math.max(0.005, this.minAmplitude * 0.5);
-      } else if (signalLevel > 0.5) {
-        // Señales más fuertes requieren mayor amplitud relativa
-        effectiveThreshold = Math.max(this.minAmplitude, signalLevel * 0.02);
-      }
-    }
-    
-    const hasAmplitude = amplitude >= effectiveThreshold;
-    
-    // Actualizar tiempo de última señal válida
-    if (hasAmplitude) {
-      this.lastValidSignalTime = Date.now();
-    }
-    
-    return hasAmplitude;
-  }
-  
-  /**
-   * Método completamente nuevo: análisis de dominio de tiempo
-   * Detecta patrones fisiológicamente plausibles en tiempo real
-   */
-  private updateTimeBuffer(value: number): void {
-    this.timeDomainBuffer.push(value);
-    if (this.timeDomainBuffer.length > this.TIME_DOMAIN_BUFFER_SIZE) {
-      this.timeDomainBuffer.shift();
-    }
-  }
-  
-  /**
-   * Método completamente nuevo: análisis de dominio de frecuencia
-   * Identifica componentes de frecuencia dominantes para detección de ritmo cardíaco
-   */
-  private updateSpectralBuffer(value: number): void {
-    this.spectralBuffer.push(value);
-    if (this.spectralBuffer.length > this.SPECTRAL_BUFFER_SIZE) {
-      this.spectralBuffer.shift();
-    }
-    
-    // Analizar dominio de frecuencia periódicamente
-    if (this.spectralBuffer.length >= 32 && this.spectralBuffer.length % 4 === 0) {
-      this.performSpectralAnalysis();
-    }
-  }
-  
-  /**
-   * Método completamente nuevo: análisis espectral simplificado
-   * Identifica frecuencias dominantes en la señal sin FFT completa
-   */
-  private performSpectralAnalysis(): void {
-    if (this.spectralBuffer.length < 32) return;
-    
-    // Normalizar señal
-    const mean = this.spectralBuffer.reduce((sum, val) => sum + val, 0) / this.spectralBuffer.length;
-    const normalizedSignal = this.spectralBuffer.map(val => val - mean);
-    
-    // Analizar potencia en bandas de frecuencia relevantes para ritmo cardíaco
-    // 0.6Hz-3.3Hz (36-200 BPM)
-    const sampleRate = 30; // Asumimos 30 Hz como tasa de muestreo
-    const frequencyBins: {frequency: number, power: number}[] = [];
-    
-    // Escanear bandas de frecuencia relevantes para ritmo cardíaco
-    for (let freq = this.MIN_HEART_RATE_FREQUENCY; freq <= this.MAX_HEART_RATE_FREQUENCY; freq += 0.1) {
-      let powerReal = 0;
-      let powerImag = 0;
-      
-      // Calcular componentes de Fourier manualmente para esta frecuencia
-      for (let i = 0; i < normalizedSignal.length; i++) {
-        const phase = (i / sampleRate) * 2 * Math.PI * freq;
-        powerReal += normalizedSignal[i] * Math.cos(phase);
-        powerImag += normalizedSignal[i] * Math.sin(phase);
+      if (this.fingerConfidence < 0.3) {
+        this.fingerDetected = false;
       }
       
-      // Potencia total a esta frecuencia
-      const power = Math.sqrt(powerReal * powerReal + powerImag * powerImag) / normalizedSignal.length;
-      frequencyBins.push({ frequency: freq, power });
-    }
-    
-    // Encontrar frecuencia dominante
-    let maxPower = 0;
-    let maxFreq = 0;
-    
-    for (const bin of frequencyBins) {
-      if (bin.power > maxPower) {
-        maxPower = bin.power;
-        maxFreq = bin.frequency;
+      if (this.stats.validationCalls % 30 === 0) {
+        console.log("SignalValidator: Amplitud insuficiente", {
+          amplitud: amplitude,
+          umbralEfectivo: effectiveThreshold,
+          confianza: this.fingerConfidence
+        });
       }
+      
+      return this.fingerDetected;
     }
     
-    // Actualizar métricas espectrales
-    this.dominantFrequency = maxFreq;
-    this.spectralPower = maxPower;
+    // Analizar periodicidad y patrones fisiológicos cada cierto intervalo
+    const now = Date.now();
+    if (now - this.lastPatternCheckTime > this.PATTERN_CHECK_INTERVAL && this.signalHistory.length >= 20) {
+      this.lastPatternCheckTime = now;
+      this.currentCorrelation = this.detectCardiacPattern();
+      this.stats.patternDetections++;
+    }
     
-    // Calcular puntuación de calidad basada en potencia espectral y concentración
-    const totalPower = frequencyBins.reduce((sum, bin) => sum + bin.power, 0);
-    const powerRatio = totalPower > 0 ? maxPower / totalPower : 0;
-    
-    // Puntuación de calidad espectral (0-1)
-    // Mayor si hay un pico de frecuencia dominante claro
-    const spectralQuality = Math.min(1, powerRatio * 3);
-    
-    // Actualizar detección de presencia de dedo basada en análisis espectral
-    this.updateFingerDetection(spectralQuality, maxFreq);
-  }
-  
-  /**
-   * Método completamente nuevo: actualización de métricas temporales
-   * Analiza propiedades estadísticas de la señal en dominio de tiempo
-   */
-  private updateTemporalMetrics(): void {
-    if (this.timeDomainBuffer.length < 10) return;
-    
-    // Análisis de segmento reciente
-    const recentSegment = this.timeDomainBuffer.slice(-15);
-    
-    // Métricas básicas
-    const min = Math.min(...recentSegment);
-    const max = Math.max(...recentSegment);
-    const range = max - min;
-    const mean = recentSegment.reduce((sum, val) => sum + val, 0) / recentSegment.length;
-    
-    // Variabilidad de señal
-    const variability = recentSegment.reduce((sum, val) => sum + Math.abs(val - mean), 0) / recentSegment.length;
-    
-    // Detectar cruces por cero (indicador de periodicidad)
-    let zeroCrossings = 0;
-    for (let i = 1; i < recentSegment.length; i++) {
-      if ((recentSegment[i] - mean) * (recentSegment[i-1] - mean) < 0) {
-        zeroCrossings++;
+    // Incrementar confianza si tenemos patrones consistentes
+    if (this.currentCorrelation > 0.3) {
+      this.fingerConfidence = Math.min(1.0, this.fingerConfidence + 0.2);
+      this.stableSignalCount++;
+      
+      if (this.stableSignalCount >= this.stableSignalThreshold) {
+        this.fingerDetected = true;
       }
-    }
-    
-    // Detectar picos (otro indicador de periodicidad)
-    let peaks = 0;
-    for (let i = 1; i < recentSegment.length - 1; i++) {
-      if (recentSegment[i] > recentSegment[i-1] && recentSegment[i] > recentSegment[i+1]) {
-        peaks++;
-      }
-    }
-    
-    // Puntuación de calidad temporal (0-1)
-    const temporalQuality = Math.min(1, (
-      (range > this.minAmplitude ? 0.6 : 0) +
-      (peaks >= 1 && peaks <= 8 ? 0.2 : 0) +
-      (zeroCrossings >= 2 && zeroCrossings <= 12 ? 0.2 : 0)
-    ));
-    
-    // Combinar calidad temporal con espectral
-    this.signalQualityScore = 0.7 * temporalQuality + 0.3 * this.signalQualityScore;
-  }
-  
-  /**
-   * Método completamente nuevo: verificación de plausibilidad fisiológica
-   * Combina múltiples indicadores para determinar si la señal proviene de un sujeto humano
-   */
-  private isPhysiologicallyPlausible(): boolean {
-    // Siempre válido si hemos confirmado la presencia de un dedo
-    if (this.fingerDetected) {
-      return true;
-    }
-    
-    // Análisis básico si no tenemos suficientes datos
-    if (this.timeDomainBuffer.length < 10) {
-      return this.quickSignalCheck(this.timeDomainBuffer[this.timeDomainBuffer.length - 1]);
-    }
-    
-    // Verificar si la señal tiene características fisiológicamente plausibles
-    const isInHeartRateRange = this.dominantFrequency >= this.MIN_HEART_RATE_FREQUENCY && 
-                               this.dominantFrequency <= this.MAX_HEART_RATE_FREQUENCY;
-    
-    const hasAdequateQuality = this.signalQualityScore > 0.3;
-    
-    // Verificación de patrones fisiológicos
-    const segment = this.timeDomainBuffer.slice(-20);
-    const min = Math.min(...segment);
-    const max = Math.max(...segment);
-    const range = max - min;
-    
-    // La señal debe tener suficiente amplitud y estar en rango fisiológico
-    const hasMinimumViability = range > (this.minAmplitude * 0.7) && isInHeartRateRange;
-    
-    return hasMinimumViability || hasAdequateQuality;
-  }
-  
-  /**
-   * Método completamente nuevo: detección de presencia de dedo
-   * Basado en análisis de consistencia espectral y temporal
-   */
-  private updateFingerDetection(spectralQuality: number, dominantFreq: number): void {
-    // Verificar si la frecuencia dominante está en rango fisiológico de ritmo cardíaco
-    const isValidHeartRateFreq = dominantFreq >= this.MIN_HEART_RATE_FREQUENCY && 
-                                 dominantFreq <= this.MAX_HEART_RATE_FREQUENCY;
-    
-    // Aumentar confianza si hay un pico fisiológicamente plausible
-    if (isValidHeartRateFreq && spectralQuality > 0.3) {
-      this.consecutiveValidPatterns = Math.min(this.consecutiveValidPatterns + 1, this.MIN_CONSECUTIVE_PATTERNS * 2);
-      this.fingerPresenceConfidence = Math.min(1, this.fingerPresenceConfidence + 0.2);
     } else {
-      // Disminuir confianza gradualmente
-      this.consecutiveValidPatterns = Math.max(0, this.consecutiveValidPatterns - 0.5);
-      this.fingerPresenceConfidence = Math.max(0, this.fingerPresenceConfidence - 0.1);
+      // Reducir confianza gradualmente si no hay patrones
+      this.fingerConfidence = Math.max(0, this.fingerConfidence - 0.1);
+      this.stableSignalCount = Math.max(0, this.stableSignalCount - 0.5);
+      
+      if (this.fingerConfidence < 0.2) {
+        this.fingerDetected = false;
+      }
     }
     
-    // Actualizar estado de detección de dedo
-    if (!this.fingerDetected && this.consecutiveValidPatterns >= this.MIN_CONSECUTIVE_PATTERNS) {
-      this.fingerDetected = true;
-      console.log("SignalValidator: Dedo detectado por análisis espectro-temporal", {
-        confianza: this.fingerPresenceConfidence,
-        frecuenciaDominante: dominantFreq,
-        patronesConsecutivos: this.consecutiveValidPatterns
-      });
-    } else if (this.fingerDetected && this.consecutiveValidPatterns < (this.MIN_CONSECUTIVE_PATTERNS / 2)) {
-      this.fingerDetected = false;
-      console.log("SignalValidator: Dedo removido", {
-        confianza: this.fingerPresenceConfidence,
-        patronesConsecutivos: this.consecutiveValidPatterns
+    // Registro periódico para diagnóstico
+    if (this.stats.validationCalls % 50 === 0) {
+      console.log("SignalValidator: Estado de detección", {
+        fingerDetected: this.fingerDetected,
+        confianza: this.fingerConfidence.toFixed(2),
+        contadorEstable: this.stableSignalCount,
+        amplitud: amplitude.toFixed(4),
+        umbral: effectiveThreshold.toFixed(4),
+        correlación: this.currentCorrelation.toFixed(2),
+        calidadSeñal: this.getCurrentSignalQuality().toFixed(2)
       });
     }
+    
+    return this.fingerDetected;
   }
   
   /**
-   * Actualiza el análisis de patrón de dedo directamente con datos reales
+   * Detector avanzado de patrones cardíacos
+   * Analiza autocorrelación y características espectrales
    */
-  public trackSignalForPatternDetection(value: number): void {
-    // Ya no necesita implementación separada ya que está integrada en isValidSignal
-    this.isValidSignal(value);
+  private detectCardiacPattern(): number {
+    if (this.signalHistory.length < 20) return 0;
+    
+    // Obtener ventana de análisis
+    const signal = this.signalHistory.slice(-20);
+    
+    // Normalizar la señal
+    const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+    const normalizedSignal = signal.map(v => v - mean);
+    
+    // Calcular autocorrelación para detectar periodicidad
+    const correlations: number[] = [];
+    
+    // Buscar períodos típicos de ritmo cardíaco (aproximadamente 0.5-2.5 Hz)
+    for (let lag = 3; lag <= 15; lag++) {
+      let correlation = 0;
+      let count = 0;
+      
+      for (let i = 0; i < normalizedSignal.length - lag; i++) {
+        correlation += normalizedSignal[i] * normalizedSignal[i + lag];
+        count++;
+      }
+      
+      if (count > 0) {
+        correlations.push(correlation / count);
+      }
+    }
+    
+    // Sin correlaciones válidas
+    if (correlations.length === 0) return 0;
+    
+    // Encontrar pico de correlación (máxima correlación positiva)
+    const maxCorrelation = Math.max(...correlations);
+    
+    // Calcular variabilidad para determinar SNR
+    const variance = normalizedSignal.reduce((sum, val) => sum + val * val, 0) / normalizedSignal.length;
+    const signalToNoise = variance > 0 ? maxCorrelation / Math.sqrt(variance) : 0;
+    
+    // Actualizar estadística
+    this.stats.signalToNoiseRatio = (this.stats.signalToNoiseRatio * 0.7) + (signalToNoise * 0.3);
+    
+    // Normalizar resultado
+    return Math.max(0, Math.min(1, maxCorrelation * 2));
   }
   
   /**
-   * Verifica si hay un dedo detectado
+   * Calcular calidad actual de señal
+   */
+  private getCurrentSignalQuality(): number {
+    if (this.signalHistory.length < 10) return 1.0;
+    
+    // Obtener ventana reciente
+    const recentValues = this.signalHistory.slice(-10);
+    
+    // Calcular varianza para estimar ruido
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
+    
+    // Calcular rango para estimar señal
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const range = max - min;
+    
+    // Evitar división por cero
+    if (variance === 0 || range === 0) return 1.0;
+    
+    // Mejor calidad = mayor rango, menor varianza
+    const quality = range / Math.sqrt(variance);
+    
+    // Normalizar con factor de amplificación para señales débiles
+    return Math.max(0.5, Math.min(2.0, quality / 5));
+  }
+  
+  /**
+   * Comprobar si se ha detectado dedo
    */
   public isFingerDetected(): boolean {
     return this.fingerDetected;
   }
   
   /**
-   * Obtiene la calidad de señal actual
+   * Obtener nivel de confianza de detección
    */
-  public getSignalQuality(): number {
-    return this.signalQualityScore * 100; // Convertir a escala 0-100
+  public getFingerConfidence(): number {
+    return this.fingerConfidence;
   }
   
   /**
-   * Obtiene la frecuencia cardíaca estimada basada en análisis espectral
+   * Seguir la señal para detección de patrones sin validar
+   * Útil para recolección continua de datos
    */
-  public getEstimatedHeartRate(): number {
-    if (!this.fingerDetected || this.dominantFrequency < this.MIN_HEART_RATE_FREQUENCY) {
-      return 0;
+  public trackSignalForPatternDetection(value: number): void {
+    this.signalHistory.push(value);
+    if (this.signalHistory.length > 30) {
+      this.signalHistory.shift();
     }
-    return Math.round(this.dominantFrequency * 60);
+    
+    // Actualizar periodicidad cada cierto tiempo
+    const now = Date.now();
+    if (now - this.lastPatternCheckTime > this.PATTERN_CHECK_INTERVAL && this.signalHistory.length >= 20) {
+      this.lastPatternCheckTime = now;
+      this.currentCorrelation = this.detectCardiacPattern();
+      this.stats.patternDetections++;
+      
+      // Actualizar estado de detección basado solo en patrones
+      if (this.currentCorrelation > 0.3) {
+        this.stableSignalCount++;
+        if (this.stableSignalCount >= this.stableSignalThreshold) {
+          this.fingerDetected = true;
+          this.fingerConfidence = Math.min(1.0, this.fingerConfidence + 0.1);
+        }
+      } else {
+        this.stableSignalCount = Math.max(0, this.stableSignalCount - 0.5);
+        this.fingerConfidence = Math.max(0, this.fingerConfidence - 0.05);
+        
+        if (this.stableSignalCount < 1 && this.fingerConfidence < 0.2) {
+          this.fingerDetected = false;
+        }
+      }
+    }
   }
   
   /**
-   * Reinicia la detección de dedo
+   * Reiniciar detección de dedo
    */
   public resetFingerDetection(): void {
-    this.timeDomainBuffer = [];
-    this.spectralBuffer = [];
     this.fingerDetected = false;
-    this.fingerPresenceConfidence = 0;
-    this.consecutiveValidPatterns = 0;
-    this.lastValidSignalTime = 0;
-    this.dominantFrequency = 0;
-    this.spectralPower = 0;
-    this.signalQualityScore = 0;
+    this.fingerConfidence = 0;
+    this.stableSignalCount = 0;
+    this.signalHistory = [];
+    this.lastPatternCheckTime = 0;
+    this.currentCorrelation = 0;
+    
+    // Reiniciar estadísticas
+    this.stats = {
+      validationCalls: 0,
+      patternDetections: 0,
+      maxAmplitude: 0,
+      minAmplitude: Infinity,
+      totalAmplitude: 0,
+      signalToNoiseRatio: 0
+    };
+    
+    console.log("SignalValidator: Detección de dedo reiniciada");
   }
   
   /**
-   * Registra resultados de validación para propósitos de depuración
+   * Obtener estadísticas para diagnóstico
    */
-  public logValidationResults(isValid: boolean, amplitude: number, values: number[]): void {
-    console.log("SignalValidator: Resultados de validación - NUEVO ALGORITMO", {
-      isValid,
-      amplitude,
-      minAmplitudRequerida: this.minAmplitude,
-      puntosDeDatos: values.length,
-      minimoRequerido: this.minDataPoints,
-      ultimosValores: values.slice(-5),
+  public getStats(): any {
+    const avgAmplitude = this.stats.validationCalls > 0 
+      ? this.stats.totalAmplitude / this.stats.validationCalls 
+      : 0;
+      
+    return {
+      ...this.stats,
+      avgAmplitude,
+      currentThreshold: this.minimumAmplitude,
+      adaptiveThreshold: this.minimumAmplitude * Math.max(0.5, Math.min(2.0, 1.0 / this.getCurrentSignalQuality())),
       fingerDetected: this.fingerDetected,
-      consecutiveValidPatterns: this.consecutiveValidPatterns,
-      signalQuality: this.getSignalQuality(),
-      dominantFrequency: this.dominantFrequency,
-      estimatedHeartRate: this.getEstimatedHeartRate()
-    });
+      fingerConfidence: this.fingerConfidence,
+      correlation: this.currentCorrelation
+    };
   }
 }
