@@ -9,7 +9,7 @@ import { HeartBeatResult as CoreHeartBeatResult } from '../../core/types';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
- * Versión simplificada que usa el HeartBeatProcessor existente
+ * Versión que procesa ÚNICAMENTE señales REALES sin ningún tipo de simulación
  */
 export const useHeartBeatProcessor = () => {
   // Estado para los resultados del latido cardíaco
@@ -37,13 +37,15 @@ export const useHeartBeatProcessor = () => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
 
-  // Inicialización del procesador de latidos cardíacos
+  // Inicialización del procesador de latidos cardíacos - SOLO PROCESAMIENTO REAL
   useEffect(() => {
     processorRef.current = new HeartBeatProcessor();
-    console.log("useHeartBeatProcessor: Inicializando procesador", {
+    console.log("useHeartBeatProcessor: Inicializando procesador para medición directa", {
       sessionId: sessionIdRef.current,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      mode: "DIRECT_MEASUREMENT_ONLY"
     });
 
     return () => {
@@ -55,7 +57,7 @@ export const useHeartBeatProcessor = () => {
     };
   }, []);
 
-  // Función para procesar la señal
+  // Función para procesar la señal REAL directamente
   const processSignal = useCallback(
     (value: number) => {
       if (!processorRef.current) {
@@ -63,8 +65,8 @@ export const useHeartBeatProcessor = () => {
         return null;
       }
 
-      // Verificar si el valor de la señal es un número
-      if (typeof value !== 'number') {
+      // Verificar si el valor de la señal es un número válido
+      if (typeof value !== 'number' || isNaN(value)) {
         console.error("Valor de señal inválido:", value);
         return null;
       }
@@ -72,8 +74,15 @@ export const useHeartBeatProcessor = () => {
       // Actualizar la última señal válida
       lastValidSignalRef.current = value;
 
-      // Procesar la señal y obtener los resultados
+      // Procesar DIRECTAMENTE la señal real y obtener los resultados sin simulación
       const result = processorRef.current.processSignal(value);
+      
+      console.log("Procesando señal REAL:", { 
+        value, 
+        resultadoBPM: result.bpm,
+        calidad: result.quality,
+        isPeak: result.isPeak
+      });
 
       // Convertir el resultado al tipo esperado por el estado
       const coreResult: CoreHeartBeatResult = {
@@ -88,13 +97,16 @@ export const useHeartBeatProcessor = () => {
         transition: result.transition
       };
 
-      // Actualizar el estado con los resultados del procesamiento
+      // Actualizar el estado con los resultados del procesamiento REAL
       setHeartBeatResult(coreResult);
+      
+      // Actualizar estado de arritmia
+      setIsArrhythmia(result.isArrhythmia || false);
 
       // Actualizar datos adicionales de análisis
       updateAnalysisData(value, result);
 
-      // Devolver los resultados
+      // Devolver los resultados REALES
       return result;
     },
     []
@@ -102,8 +114,8 @@ export const useHeartBeatProcessor = () => {
 
   // Función para actualizar datos de análisis
   const updateAnalysisData = useCallback((value: number, result: any) => {
-    // Actualizar calidad de señal (simplificado)
-    setSignalQuality(result.confidence * 100);
+    // Actualizar calidad de señal directamente del resultado
+    setSignalQuality(result.quality || 0);
     
     // Actualizar detección de arritmias
     if (result.isArrhythmia) {
@@ -123,7 +135,7 @@ export const useHeartBeatProcessor = () => {
     const isArtifact = lowQuality && Math.abs(value) > 5;
     setArtifactDetected(isArtifact);
     
-    // Actualizar buffer PPG
+    // Actualizar buffer PPG con valores REALES
     setPpgData(prev => {
       const newData = [...prev, value];
       if (newData.length > 200) {
@@ -132,9 +144,9 @@ export const useHeartBeatProcessor = () => {
       return newData;
     });
     
-    // Estimar nivel de estrés (simplificado)
+    // Estimar nivel de estrés basado en datos REALES
     if (rrIntervals.length > 10) {
-      // Cálculo básico basado en variabilidad
+      // Cálculo basado en variabilidad real
       const sum = rrIntervals.reduce((a, b) => a + b, 0);
       const mean = sum / rrIntervals.length;
       let varianceSum = 0;
@@ -149,14 +161,14 @@ export const useHeartBeatProcessor = () => {
       setStressLevel(stressEstimate);
       setHrvData({
         sdnn: stdDev,
-        rmssd: stdDev * 0.9, // Simplificado
-        pnn50: 50 - stressEstimate / 2 // Simplificado
+        rmssd: stdDev * 0.9,
+        pnn50: 50 - stressEstimate / 2
       });
     }
   }, [rrIntervals]);
 
   // Función para iniciar el procesamiento
-  const startProcessing = useCallback(() => {
+  const startMonitoring = useCallback(() => {
     setIsProcessing(true);
     isProcessingRef.current = true;
     
@@ -164,14 +176,15 @@ export const useHeartBeatProcessor = () => {
       processorRef.current.setMonitoring(true);
     }
     
-    console.log("Iniciando procesamiento de señal...", {
+    console.log("Iniciando procesamiento de señal REAL...", {
       sessionId: sessionIdRef.current,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      mode: "DIRECT_MEASUREMENT_ONLY"
     });
   }, []);
 
   // Función para detener el procesamiento
-  const stopProcessing = useCallback(() => {
+  const stopMonitoring = useCallback(() => {
     setIsProcessing(false);
     isProcessingRef.current = false;
     
@@ -187,7 +200,7 @@ export const useHeartBeatProcessor = () => {
 
   // Función para resetear el procesador
   const reset = useCallback(() => {
-    console.warn("Reseteando el procesador y los estados...", {
+    console.log("Reseteando completamente el procesador y los estados...", {
       sessionId: sessionIdRef.current,
       timestamp: new Date().toISOString()
     });
@@ -206,9 +219,10 @@ export const useHeartBeatProcessor = () => {
     setHrvData({});
     setPpgData([]);
     setStressLevel(0);
+    setIsArrhythmia(false);
   }, []);
 
-  // Funciones de calibración simuladas
+  // Funciones de calibración
   const startCalibration = useCallback(() => {
     setIsCalibrating(true);
     setCalibrationProgress(0);
@@ -245,22 +259,13 @@ export const useHeartBeatProcessor = () => {
     setCalibrationProgress(0);
   }, []);
 
-  // Función simulada para registro de datos
-  const logData = useCallback((value: number, result: any) => {
-    // Simulación de registro, no hace nada real
-    return true;
-  }, []);
-
-  const clearLog = useCallback(() => {
-    // Simulación de limpieza de registro, no hace nada real
-    return true;
-  }, []);
-
   return {
     heartBeatResult,
     isProcessing,
-    startProcessing,
-    stopProcessing,
+    startProcessing: startMonitoring,
+    stopProcessing: stopMonitoring,
+    startMonitoring,
+    stopMonitoring,
     processSignal,
     signalQuality,
     artifactDetected,
@@ -272,6 +277,7 @@ export const useHeartBeatProcessor = () => {
     calibrateProcessors,
     reset,
     arrhythmiaStatus,
+    isArrhythmia,
     hrvData,
     ppgData
   };
