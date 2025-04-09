@@ -1,3 +1,4 @@
+
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 import { BloodPressureAnalyzer, BloodPressureResult } from '../../core/analysis/BloodPressureAnalyzer';
 import { SignalOptimizationManager } from '../../core/signal/SignalOptimizationManager';
@@ -84,11 +85,34 @@ export class BloodPressureProcessor {
     // Step 1: Apply signal optimization with bidirectional feedback
     const optimizedSignal = this.optimizeSignal(values);
     
+    // Log signal characteristics for debugging
+    console.log("BloodPressureProcessor: Signal characteristics", {
+      originalLength: values.length,
+      optimizedLength: optimizedSignal.signalData.length,
+      signalQuality: optimizedSignal.quality,
+      minValue: Math.min(...optimizedSignal.signalData),
+      maxValue: Math.max(...optimizedSignal.signalData),
+      amplitude: Math.max(...optimizedSignal.signalData) - Math.min(...optimizedSignal.signalData)
+    });
+    
     // Step 2: Get traditional physiological analysis
     const analyzerResult = this.analyzer.calculateBloodPressure(optimizedSignal.signalData);
     
     // Step 3: Get neural model prediction
     const neuralPrediction = this.neuralModel.predict(optimizedSignal.signalData);
+    
+    // Log both results for comparison
+    console.log("BloodPressureProcessor: BP Calculations", {
+      analyzer: {
+        systolic: analyzerResult.systolic,
+        diastolic: analyzerResult.diastolic,
+        confidence: analyzerResult.confidence
+      },
+      neural: {
+        systolic: neuralPrediction[0],
+        diastolic: neuralPrediction[1]
+      }
+    });
     
     // Step 4: Combine results with weighted fusion based on signal quality and confidence
     const fusedResult = this.fuseResults(
@@ -113,12 +137,17 @@ export class BloodPressureProcessor {
     }
 
     // Validate results are within physiological range
-    return {
+    const validatedResult = {
       systolic: this.validateSystolic(fusedResult.systolic),
       diastolic: this.validateDiastolic(fusedResult.diastolic, fusedResult.systolic),
       map: fusedResult.map || Math.round((fusedResult.systolic + 2 * fusedResult.diastolic) / 3),
       confidence: fusedResult.confidence
     };
+    
+    // Log final result for verification
+    console.log("BloodPressureProcessor: Final BP result", validatedResult);
+    
+    return validatedResult;
   }
   
   /**

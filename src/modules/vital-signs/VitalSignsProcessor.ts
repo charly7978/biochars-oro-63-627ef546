@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -95,11 +94,14 @@ export class VitalSignsProcessor {
     const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgValues.slice(-60));
     const heartRate = calculateHeartRateFromPeaks(peakIndices);
     
-    console.log("Signal analysis for BP calculation:", {
+    console.log("Signal analysis for vital signs calculation:", {
       peakCount: peakIndices.length,
       valleyCount: valleyIndices.length,
       estimatedHR: heartRate,
-      signalLength: ppgValues.length
+      signalLength: ppgValues.length,
+      signalMin: Math.min(...ppgValues.slice(-15)),
+      signalMax: Math.max(...ppgValues.slice(-15)),
+      signalAmplitude: Math.max(...ppgValues.slice(-15)) - Math.min(...ppgValues.slice(-15))
     });
     
     // Verify real signal amplitude is sufficient
@@ -142,11 +144,16 @@ export class VitalSignsProcessor {
       triglycerides: 0
     };
 
-    console.log("VitalSignsProcessor: Results with confidence", {
+    console.log("VitalSignsProcessor: Final measurement results", {
       spo2,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
+      bloodPressure: {
+        systolic: bp.systolic,
+        diastolic: bp.diastolic,
+        confidence: bp.confidence
+      },
       glucoseConfidence,
       lipidsConfidence,
       signalAmplitude: amplitude,
