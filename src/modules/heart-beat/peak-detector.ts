@@ -30,25 +30,25 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic
+  // Enhanced peak detection logic with improved sensitivity
   const isPeak =
-    derivative < config.derivativeThreshold &&
-    normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.98;
+    derivative < config.derivativeThreshold * 0.92 && // Reduced threshold by 8% for better sensitivity
+    normalizedValue > config.signalThreshold * 0.95 && // Reduced threshold by 5% for better sensitivity
+    lastValue > baseline * 0.97; // Slightly reduced from 0.98 for better detection
 
-  // Calculate confidence based on signal characteristics
+  // Calculate confidence based on signal characteristics with improved weighting
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.7), 0), // Reduced from 1.8 for better sensitivity
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.75), 0), // Reduced from 0.8 for better sensitivity
     1
   );
 
-  // Combined confidence score
-  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
+  // Combined confidence score with improved distribution
+  const confidence = (amplitudeConfidence * 0.55 + derivativeConfidence * 0.45); // Weighted more toward amplitude
 
   return { isPeak, confidence };
 }
@@ -77,15 +77,15 @@ export function confirmPeak(
   let isConfirmedPeak = false;
   let updatedLastConfirmedPeak = lastConfirmedPeak;
 
-  // Only proceed with peak confirmation if needed
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
+  // Enhanced peak confirmation with improved sensitivity
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 0.95) { // Reduced threshold by 5%
     // Need enough samples in buffer for confirmation
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values
-      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
-      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
+      // Improved confirmation logic for more subtle peaks
+      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2] * 0.98; // Added 2% tolerance
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3] * 0.98; // Added 2% tolerance
 
       if (goingDown1 || goingDown2) {
         isConfirmedPeak = true;
