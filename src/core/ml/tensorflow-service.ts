@@ -14,6 +14,12 @@ export class TensorFlowService {
   private initPromise: Promise<boolean> | null = null;
   private lastPerformanceLog: number = 0;
   private deviceCalibrationFactor: number = 1.0;
+  private realDeviceProfile: {
+    name: string;
+    performance: number;
+    memory: number;
+    customParams: Map<string, number>;
+  } | null = null;
 
   constructor(config: ProcessorConfig) {
     this.config = config;
@@ -36,11 +42,20 @@ export class TensorFlowService {
     try {
       console.log('TensorFlow.js initializing...');
       
+      // Create a real device profile based on capabilities
+      await this.createDeviceProfile();
+      
       // Check if WebGPU is available with more reliable detection
       if (this.config.useWebGPU && await this.isWebGPUAvailable()) {
         // Apply optimal memory settings before setting backend
         tf.env().set('WEBGPU_USE_PROGRAM_CACHE', true);
         tf.env().set('WEBGPU_CPU_FORWARD', false);
+        
+        // Additional WebGPU optimizations based on device profile
+        if (this.realDeviceProfile && this.realDeviceProfile.performance > 0.7) {
+          // High performance devices get additional optimizations
+          tf.env().set('WEBGPU_DEFERRED_SUBMIT_BATCH_SIZE', 8);
+        }
         
         await tf.setBackend('webgpu');
         this.useWebGPU = true;
@@ -62,7 +77,7 @@ export class TensorFlowService {
       // Set device calibration factor based on detected capabilities
       this.setDeviceCalibrationFactor();
       
-      console.log(`TensorFlow.js initialized. Version: ${tf.version.tfjs}, Backend: ${this.getBackend()}, Calibration: ${this.deviceCalibrationFactor.toFixed(2)}`);
+      console.log(`TensorFlow.js initialized. Version: ${tf.version.tfjs}, Backend: ${this.getBackend()}, Calibration: ${this.deviceCalibrationFactor.toFixed(2)}, Device: ${this.realDeviceProfile?.name || 'Unknown'}`);
       return true;
     } catch (error) {
       console.error('Failed to initialize TensorFlow.js:', error);
@@ -70,6 +85,80 @@ export class TensorFlowService {
     } finally {
       this.initPromise = null;
     }
+  }
+
+  /**
+   * Create a real device profile based on hardware capabilities
+   */
+  private async createDeviceProfile(): Promise<void> {
+    const ua = navigator.userAgent;
+    const hardwareConcurrency = navigator.hardwareConcurrency || 2;
+    const memory = (navigator as any).deviceMemory || 2;
+    let deviceName = 'Generic Device';
+    let performanceScore = 0.5;
+    const customParams = new Map<string, number>();
+    
+    // Detect device type and capabilities
+    if (/iPhone|iPad|iPod/.test(ua)) {
+      // iOS device detection with model estimation
+      const matches = ua.match(/iPhone OS (\d+)_/);
+      const iosVersion = matches ? parseInt(matches[1], 10) : 0;
+      
+      if (/iPhone/.test(ua)) {
+        const modelYear = iosVersion >= 15 ? 2021 : (iosVersion >= 13 ? 2019 : 2017);
+        deviceName = `iPhone (circa ${modelYear})`;
+        performanceScore = iosVersion >= 15 ? 0.85 : (iosVersion >= 13 ? 0.7 : 0.5);
+      } else if (/iPad/.test(ua)) {
+        const isModern = /iPad Pro/.test(ua) || iosVersion >= 14;
+        deviceName = isModern ? 'iPad Pro/Air' : 'iPad';
+        performanceScore = isModern ? 0.9 : 0.6;
+      }
+      
+      // Add iOS-specific optimizations
+      customParams.set('iosVersion', iosVersion);
+    } else if (/Android/.test(ua)) {
+      // Android device detection
+      const matches = ua.match(/Android (\d+)\.(\d+)/);
+      const androidVersion = matches ? parseFloat(`${matches[1]}.${matches[2]}`) : 0;
+      
+      // Detect high-end devices
+      const isHighEnd = /SM-G9|SM-N9|SM-S9|Pixel [4-9]|OnePlus [7-9]/.test(ua);
+      deviceName = isHighEnd ? 'High-end Android' : 'Android Device';
+      performanceScore = isHighEnd ? 0.8 : (androidVersion >= 10 ? 0.6 : 0.4);
+      
+      // Add Android-specific optimizations
+      customParams.set('androidVersion', androidVersion);
+    } else {
+      // Desktop detection
+      const isWindows = /Windows/.test(ua);
+      const isMac = /Macintosh|Mac OS X/.test(ua);
+      const isLinux = /Linux/.test(ua);
+      
+      if (isWindows) {
+        deviceName = 'Windows';
+        performanceScore = hardwareConcurrency >= 8 ? 0.9 : 0.7;
+      } else if (isMac) {
+        const isSilicon = /arm64/.test(ua.toLowerCase());
+        deviceName = isSilicon ? 'Mac (Apple Silicon)' : 'Mac (Intel)';
+        performanceScore = isSilicon ? 0.95 : 0.8;
+      } else if (isLinux) {
+        deviceName = 'Linux';
+        performanceScore = 0.75;
+      }
+    }
+    
+    // Adjust score based on concurrency
+    performanceScore *= (0.7 + (hardwareConcurrency / 16) * 0.3);
+    
+    // Set real device profile
+    this.realDeviceProfile = {
+      name: deviceName,
+      performance: performanceScore,
+      memory,
+      customParams
+    };
+    
+    console.log(`Device profile created: ${deviceName}, Performance: ${performanceScore.toFixed(2)}, Cores: ${hardwareConcurrency}, Memory: ${memory}GB`);
   }
 
   /**
@@ -93,7 +182,10 @@ export class TensorFlowService {
         return false;
       }
       
-      // Additional feature checking
+      // Additional feature checking - get adapter info
+      const adapterInfo = await adapter.requestAdapterInfo();
+      console.log('WebGPU adapter info:', adapterInfo);
+      
       return true;
     } catch (error) {
       console.warn('WebGPU check failed:', error);
@@ -105,17 +197,27 @@ export class TensorFlowService {
    * Set device-specific calibration factor based on performance capabilities
    */
   private setDeviceCalibrationFactor(): void {
-    // Detect device capabilities for calibration
-    const isHighEndDevice = this.useWebGPU || 
-                           (navigator as any).deviceMemory >= 4 || 
-                           navigator.hardwareConcurrency >= 4;
-    
-    // Set calibration factor based on device capabilities
-    this.deviceCalibrationFactor = isHighEndDevice ? 1.0 : 0.8;
-    
-    // Adjust for mobile devices which typically need different calibration
-    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-      this.deviceCalibrationFactor *= 0.9;
+    if (this.realDeviceProfile) {
+      // Use real device profile for calibration
+      this.deviceCalibrationFactor = 0.8 + (this.realDeviceProfile.performance * 0.4);
+      
+      // Adjust for mobile devices which typically need different calibration
+      if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        // Apply more conservative calibration for mobile
+        this.deviceCalibrationFactor *= 0.9;
+      }
+    } else {
+      // Fallback to basic detection if profile not available
+      const isHighEndDevice = this.useWebGPU || 
+                            (navigator as any).deviceMemory >= 4 || 
+                            navigator.hardwareConcurrency >= 4;
+      
+      this.deviceCalibrationFactor = isHighEndDevice ? 1.0 : 0.8;
+      
+      // Adjust for mobile devices which typically need different calibration
+      if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        this.deviceCalibrationFactor *= 0.9;
+      }
     }
     
     console.log(`Device calibration factor set to ${this.deviceCalibrationFactor.toFixed(2)} based on detected capabilities`);
@@ -217,7 +319,7 @@ export class TensorFlowService {
       const now = Date.now();
       if (now - this.lastPerformanceLog > 2000) { // Log at most every 2 seconds
         this.lastPerformanceLog = now;
-        console.log(`TensorFlow processing: ${processingTime.toFixed(2)}ms for model ${modelKey} (${this.getBackend()}), calibration: ${this.deviceCalibrationFactor.toFixed(2)}`);
+        console.log(`TensorFlow processing: ${processingTime.toFixed(2)}ms for model ${modelKey} (${this.getBackend()}), calibration: ${this.deviceCalibrationFactor.toFixed(2)}, device: ${this.realDeviceProfile?.name || 'Unknown'}`);
       }
       
       return outputArray;
@@ -239,6 +341,13 @@ export class TensorFlowService {
    */
   public getDeviceCalibrationFactor(): number {
     return this.deviceCalibrationFactor;
+  }
+  
+  /**
+   * Get real device profile
+   */
+  public getDeviceProfile(): any {
+    return this.realDeviceProfile;
   }
 
   /**

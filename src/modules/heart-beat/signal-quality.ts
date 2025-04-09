@@ -1,134 +1,113 @@
 
 /**
- * Functions for checking signal quality
- * Direct measurement only - NO simulation or data manipulation
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 /**
- * Check if the signal quality is sufficient for processing
- * Uses only real measurements without simulation
+ * Verifica la calidad de la señal para detección de dedo
+ * Utiliza técnicas adaptativas de umbral basadas en características de la señal
  */
 export function checkSignalQuality(
   value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number,
-    maxWeakSignalCount: number
+  currentWeakSignalsCount: number,
+  options?: { 
+    lowSignalThreshold?: number, 
+    maxWeakSignalCount?: number 
   }
-): {
-  isWeakSignal: boolean,
-  updatedWeakSignalsCount: number
-} {
-  // Safety checks for invalid input
-  if (isNaN(value)) {
-    console.warn("Signal quality received NaN value");
-    return { isWeakSignal: true, updatedWeakSignalsCount: consecutiveWeakSignalsCount + 1 };
-  }
+): { isWeakSignal: boolean, updatedWeakSignalsCount: number } {
+  // Valores por defecto
+  const weakSignalThreshold = options?.lowSignalThreshold || 0.25;
+  const maxWeakSignals = options?.maxWeakSignalCount || 5;
 
-  // Get actual threshold from config or use default
-  const threshold = config.lowSignalThreshold || 0.05;
-  const maxCount = config.maxWeakSignalCount || 10;
-  
-  // Check real signal against threshold
-  const isCurrentlyWeak = Math.abs(value) < threshold;
-  
-  // Update counter based on actual signal strength
-  let updatedCount = isCurrentlyWeak 
-    ? consecutiveWeakSignalsCount + 1 
-    : Math.max(0, consecutiveWeakSignalsCount - 2); // Decrease counter faster for good signals
-  
-  // Determine if signal is weak based on consecutive measurements
-  const isWeak = updatedCount >= maxCount;
-  
-  // Log for debugging if signal status changes
-  if ((isWeak && updatedCount === maxCount) || (!isWeak && updatedCount === 0)) {
-    console.log("Signal quality status change:", {
-      isWeak,
-      value: Math.abs(value),
-      threshold,
-      updatedCount,
-      maxCount
-    });
-  }
-  
-  return {
-    isWeakSignal: isWeak,
-    updatedWeakSignalsCount: updatedCount
-  };
-}
-
-/**
- * Reset detection states for fresh measurements
- */
-export function resetDetectionStates() {
-  console.log("Signal quality: Reset detection states");
-  return {
-    consecutiveWeakSignals: 0
-  };
-}
-
-/**
- * Check if finger is detected by identifying rhythmic patterns
- * Works only with real data, no simulation
- */
-export function isFingerDetectedByPattern(
-  signalHistory: Array<{time: number, value: number}>,
-  currentPatternCount: number
-): {
-  isFingerDetected: boolean,
-  patternCount: number
-} {
-  // Safety check for invalid or insufficient data
-  if (!signalHistory || signalHistory.length < 10) {
+  // Detectar señal débil
+  if (Math.abs(value) < weakSignalThreshold) {
+    // Incrementar contador de señales débiles
+    const updatedCount = currentWeakSignalsCount + 1;
+    const isWeak = updatedCount >= maxWeakSignals;
+    
     return { 
-      isFingerDetected: false, 
-      patternCount: 0 
+      isWeakSignal: isWeak, 
+      updatedWeakSignalsCount: updatedCount 
+    };
+  } else {
+    // Reducir contador de señales débiles más rápidamente (recuperación)
+    const updatedCount = Math.max(0, currentWeakSignalsCount - 2);
+    return { 
+      isWeakSignal: updatedCount >= maxWeakSignals, 
+      updatedWeakSignalsCount: updatedCount 
     };
   }
+}
+
+/**
+ * Calcula la variabilidad de la señal para detección de señal fisiológica
+ */
+export function calculateSignalVariability(buffer: number[]): number {
+  if (buffer.length < 5) return 0;
   
-  // Look for physiological patterns in real signal
-  let crossings = 0;
-  const recentValues = signalHistory.slice(-10);
-  const sum = recentValues.reduce((acc, point) => acc + point.value, 0); 
-  const mean = sum / recentValues.length;
+  // Calcular media y varianza
+  const mean = buffer.reduce((sum, val) => sum + val, 0) / buffer.length;
+  const variance = buffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / buffer.length;
   
-  // Count zero crossings (signal moving above/below mean)
-  for (let i = 1; i < recentValues.length; i++) {
-    if ((recentValues[i].value > mean && recentValues[i-1].value <= mean) ||
-        (recentValues[i].value <= mean && recentValues[i-1].value > mean)) {
-      crossings++;
-    }
+  // Normalizar varianza
+  const normalizedVariance = variance / (mean * mean + 0.001); // Evitar división por cero
+  
+  return normalizedVariance;
+}
+
+/**
+ * Validar que la señal esté en rango fisiológico
+ */
+export function validateSignalRange(value: number): boolean {
+  // Verificar que la señal esté en un rango razonable
+  return value >= -100 && value <= 100;
+}
+
+/**
+ * Calcular índice de calidad de la señal (0-100)
+ */
+export function calculateSignalQuality(
+  buffer: number[], 
+  options?: { 
+    minThreshold?: number, 
+    maxThreshold?: number 
   }
+): number {
+  if (buffer.length < 10) return 0;
   
-  // Check amplitude - a finger should produce a reasonable amplitude
-  const minValue = Math.min(...recentValues.map(point => point.value));
-  const maxValue = Math.max(...recentValues.map(point => point.value));
-  const amplitude = maxValue - minValue;
-  const hasReasonableAmplitude = amplitude > 0.02; // Lowered threshold for sensitivity
+  // Umbrales
+  const minThreshold = options?.minThreshold || 0.05;
+  const maxThreshold = options?.maxThreshold || 10;
   
-  // Physiological heart rate should have 2-5 crossings in this window
-  const hasPhysiologicalPattern = (crossings >= 1 && crossings <= 6) && hasReasonableAmplitude;
+  // Calcular variabilidad
+  const variability = calculateSignalVariability(buffer);
   
-  // Update pattern detection count with faster detection
-  let newPatternCount = hasPhysiologicalPattern 
-    ? currentPatternCount + 1 
-    : Math.max(0, currentPatternCount - 1);
+  // Calcular amplitud
+  const min = Math.min(...buffer);
+  const max = Math.max(...buffer);
+  const amplitude = max - min;
   
-  // Only detect finger after consistent pattern detection (reduced requirement)
-  const isDetected = newPatternCount >= 2; // Reduced from 3 for faster detection
+  // Calcular estabilidad
+  const recentValues = buffer.slice(-5);
+  const recentMean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+  const recentVar = recentValues.reduce((sum, val) => sum + Math.pow(val - recentMean, 2), 0) / recentValues.length;
+  const normalizedRecentVar = recentVar / (recentMean * recentMean + 0.001);
   
-  // Log status changes
-  if ((isDetected && newPatternCount === 2) || (!isDetected && newPatternCount === 0 && currentPatternCount > 0)) {
-    console.log("Finger detection status change:", {
-      isDetected,
-      crossings,
-      amplitude,
-      newPatternCount
-    });
-  }
+  // Factores de calidad (rango 0-1)
+  const amplitudeFactor = Math.min(1, Math.max(0, (amplitude - minThreshold) / (maxThreshold - minThreshold)));
   
-  return {
-    isFingerDetected: isDetected,
-    patternCount: newPatternCount
-  };
+  // Variabilidad óptima entre 0.01 y 0.5 (señales demasiado estables o demasiado variables son sospechosas)
+  const variabilityFactor = variability > 0.01 && variability < 0.5 ? 1 : Math.max(0, 1 - Math.abs(variability - 0.1) / 0.5);
+  
+  // Estabilidad reciente (menor variación = mayor calidad)
+  const stabilityFactor = Math.max(0, 1 - normalizedRecentVar * 10);
+  
+  // Calcular calidad final (0-100)
+  const quality = Math.min(100, Math.max(0, 
+    amplitudeFactor * 40 + 
+    variabilityFactor * 40 + 
+    stabilityFactor * 20
+  ));
+  
+  return Math.round(quality);
 }
