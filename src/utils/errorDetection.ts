@@ -157,19 +157,21 @@ export function logError(
       categoryData.count % 10 === 1 || // First, then every 10th error
       (errorRate > ERROR_RATE_THRESHOLD && now - categoryData.lastTime > 30000) // High rate but not too frequent alerts
     ) {
+      const variant = errorCount > 5 ? "destructive" : "default";
       toast({
         title: isCritical ? "Error Detected" : "Warning",
         description: `Issue detected in ${category}. Some features may not work correctly.`,
-        variant: isCritical ? "destructive" : "warning"
+        variant: variant
       });
     }
     
     // If abnormal state persists, suggest page reload
     if (abnormalStateDetected && consecutiveErrorCount > CONSECUTIVE_ERROR_THRESHOLD * 2) {
+      const variant = "destructive";
       toast({
         title: "Application Error",
         description: "Several issues detected. Consider reloading the page.",
-        variant: "destructive"
+        variant: variant
       });
     }
   } catch (metaError) {
