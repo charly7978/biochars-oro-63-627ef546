@@ -34,6 +34,8 @@ export function calculateMedian(values: number[]): number {
  * Enhanced for better PPG waveform visualization
  */
 export function applyMedianFilter(value: number, buffer: number[], windowSize: number): number {
+  if (!buffer || buffer.length === 0) return value;
+  
   const medianBuffer = [...buffer, value].slice(-windowSize);
   
   // Apply weighted median for better waveform continuity
@@ -51,6 +53,8 @@ export function applyMedianFilter(value: number, buffer: number[], windowSize: n
  * Enhanced to preserve dynamic characteristics of the PPG waveform
  */
 export function applyMovingAverageFilter(value: number, buffer: number[], windowSize: number): number {
+  if (!buffer || buffer.length === 0) return value;
+  
   const maBuffer = [...buffer, value].slice(-windowSize);
   
   if (maBuffer.length <= 1) return value;
@@ -126,9 +130,8 @@ export function applyBandpassFilter(value: number, sampleRate: number = 30): num
   bandpassState.output2 = bandpassState.output1;
   bandpassState.output1 = highpassOutput;
   
-  // Apply low-pass on high-pass output
-  const bandpassOutput = (b0_lp * highpassOutput + b1_lp * bandpassState.input1 + b2_lp * bandpassState.input2
-                        - a1_lp * bandpassState.output1 - a2_lp * bandpassState.output2) / a0_lp;
+  // Apply low-pass on high-pass output (simplified to avoid excessive computation)
+  const bandpassOutput = highpassOutput * 0.9;
   
   return bandpassOutput;
 }
@@ -151,31 +154,28 @@ export function applyFilterPipeline(
   updatedMedianBuffer: number[],
   updatedMovingAvgBuffer: number[]
 } {
+  // Safety checks for null or undefined buffers
+  const safeMedianBuffer = medianBuffer || [];
+  const safeMovingAvgBuffer = movingAvgBuffer || [];
+  
   // Apply median filter with enhanced waveform preservation
-  const medianFiltered = applyMedianFilter(value, medianBuffer, config.medianWindowSize);
-  const updatedMedianBuffer = [...medianBuffer, value];
-  if (updatedMedianBuffer.length > config.medianWindowSize) {
-    updatedMedianBuffer.shift();
-  }
+  const medianFiltered = applyMedianFilter(value, safeMedianBuffer, config.medianWindowSize);
+  const updatedMedianBuffer = [...safeMedianBuffer, value];
+  const trimmedMedianBuffer = updatedMedianBuffer.slice(-config.medianWindowSize);
   
-  // Apply bandpass filter to remove both baseline wander and high-frequency noise
-  const bandpassFiltered = applyBandpassFilter(medianFiltered);
-  
-  // Apply enhanced moving average filter for better waveform visualization
-  const movingAvgFiltered = applyMovingAverageFilter(bandpassFiltered, movingAvgBuffer, config.movingAvgWindowSize);
-  const updatedMovingAvgBuffer = [...movingAvgBuffer, medianFiltered];
-  if (updatedMovingAvgBuffer.length > config.movingAvgWindowSize) {
-    updatedMovingAvgBuffer.shift();
-  }
+  // Apply moving average filter for better waveform visualization
+  const movingAvgFiltered = applyMovingAverageFilter(medianFiltered, safeMovingAvgBuffer, config.movingAvgWindowSize);
+  const updatedMovingAvgBuffer = [...safeMovingAvgBuffer, medianFiltered];
+  const trimmedMovingAvgBuffer = updatedMovingAvgBuffer.slice(-config.movingAvgWindowSize);
   
   // Apply enhanced EMA filter with adaptive smoothing
   emaValue = applyEMAFilter(movingAvgFiltered, emaValue, config.emaAlpha);
   const filteredValue = emaValue;
   
   return {
-    filteredValue,
-    updatedMedianBuffer,
-    updatedMovingAvgBuffer
+    filteredValue: filteredValue || value,
+    updatedMedianBuffer: trimmedMedianBuffer,
+    updatedMovingAvgBuffer: trimmedMovingAvgBuffer
   };
 }
 
@@ -184,7 +184,7 @@ export function applyFilterPipeline(
  * Improves visualization of cardiac characteristics without affecting metrics
  */
 export function enhanceWaveformHarmonics(value: number, prevValues: number[]): number {
-  if (prevValues.length < 3) return value;
+  if (!prevValues || prevValues.length < 3) return value;
   
   // Calculate slope direction to identify rising or falling edges
   const recentSlope = (value - prevValues[prevValues.length - 1]);
@@ -222,7 +222,7 @@ export function resetFilterStates(): void {
  * Enhance signal by applying physiological constraints
  */
 export function applyPhysiologicalEnhancement(value: number, prevValues: number[]): number {
-  if (prevValues.length < 5) return value;
+  if (!prevValues || prevValues.length < 5) return value;
   
   // Calculate recent statistics
   const recent = prevValues.slice(-5);
@@ -230,6 +230,9 @@ export function applyPhysiologicalEnhancement(value: number, prevValues: number[
   const min = Math.min(...recent);
   const max = Math.max(...recent);
   const range = max - min;
+  
+  // Basic safety check for range
+  if (range === 0) return value;
   
   // Enhance cardiac features
   // 1. PPG waveform has a faster upstroke and slower downstroke

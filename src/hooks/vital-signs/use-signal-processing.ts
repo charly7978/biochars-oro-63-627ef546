@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -43,6 +44,21 @@ export const useSignalProcessing = () => {
       };
     }
     
+    // Validate input - NaN protection
+    if (isNaN(value)) {
+      console.warn("useVitalSignsProcessor: Received NaN value");
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        }
+      };
+    }
+    
     processedSignals.current++;
     
     // Apply gentle smoothing for better waveform continuity
@@ -65,8 +81,13 @@ export const useSignalProcessing = () => {
     }
     
     // Enhance harmonic characteristics of the signal by applying subtle resonance
-    // This improves waveform visualization without changing measurement values
     const enhancedValue = applyWaveformEnhancement(smoothedValue);
+    
+    // Validate RR data
+    const safeRrData = rrData && rrData.intervals && Array.isArray(rrData.intervals) ? rrData : {
+      intervals: [],
+      lastPeakTime: null
+    };
     
     // Logging for diagnostics
     if (processedSignals.current % 45 === 0) {
@@ -74,15 +95,15 @@ export const useSignalProcessing = () => {
         inputValue: value,
         smoothedValue: smoothedValue,
         enhancedValue: enhancedValue,
-        rrDataPresent: !!rrData,
-        rrIntervals: rrData?.intervals.length || 0,
+        rrDataPresent: !!safeRrData,
+        rrIntervals: safeRrData.intervals.length || 0,
         arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
         signalNumber: processedSignals.current
       });
     }
     
     // Process signal directly - no simulation
-    let result = processorRef.current.processSignal(enhancedValue, rrData);
+    let result = processorRef.current.processSignal(enhancedValue, safeRrData);
     
     // Store signal history for diagnostics
     if (processedSignals.current % 5 === 0) {
@@ -109,6 +130,9 @@ export const useSignalProcessing = () => {
    * This is purely visual and doesn't affect the measurement values
    */
   const applyWaveformEnhancement = useCallback((value: number): number => {
+    // Safety check
+    if (isNaN(value)) return 0;
+    
     // Parameter tuning for optimal waveform visualization
     const harmonicFactor = 0.15; // Subtle harmonic enhancement
     const naturalRangeAdjust = 0.02; // Very subtle range adjustment

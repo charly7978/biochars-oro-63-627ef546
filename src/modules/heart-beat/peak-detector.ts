@@ -22,6 +22,12 @@ export function detectPeak(
   isPeak: boolean;
   confidence: number;
 } {
+  // Safety checks for invalid input
+  if (isNaN(normalizedValue) || isNaN(derivative)) {
+    console.log("Peak detector received invalid inputs:", { normalizedValue, derivative });
+    return { isPeak: false, confidence: 0 };
+  }
+
   // Check minimum time between peaks
   if (lastPeakTime !== null) {
     const timeSinceLastPeak = currentTime - lastPeakTime;
@@ -31,10 +37,11 @@ export function detectPeak(
   }
 
   // Peak detection logic
-  const isPeak =
-    derivative < config.derivativeThreshold &&
-    normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.98;
+  const thresholdCheck = normalizedValue > config.signalThreshold;
+  const derivativeCheck = derivative < config.derivativeThreshold;
+  const baselineCheck = lastValue > baseline * 0.98;
+  
+  const isPeak = derivativeCheck && thresholdCheck && baselineCheck;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
@@ -68,8 +75,11 @@ export function confirmPeak(
   updatedBuffer: number[];
   updatedLastConfirmedPeak: boolean;
 } {
+  // Safety check for invalid buffer
+  const safeBuffer = peakConfirmationBuffer || [];
+  
   // Add value to confirmation buffer
-  const updatedBuffer = [...peakConfirmationBuffer, normalizedValue];
+  const updatedBuffer = [...safeBuffer, normalizedValue];
   if (updatedBuffer.length > 5) {
     updatedBuffer.shift();
   }
@@ -85,7 +95,7 @@ export function confirmPeak(
       
       // Confirm peak if followed by decreasing values
       const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
-      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
+      const goingDown2 = len >= 3 && updatedBuffer[len - 2] < updatedBuffer[len - 3];
 
       if (goingDown1 || goingDown2) {
         isConfirmedPeak = true;

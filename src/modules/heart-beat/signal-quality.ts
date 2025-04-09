@@ -19,6 +19,12 @@ export function checkSignalQuality(
   isWeakSignal: boolean,
   updatedWeakSignalsCount: number
 } {
+  // Safety checks for invalid input
+  if (isNaN(value)) {
+    console.warn("Signal quality received NaN value");
+    return { isWeakSignal: true, updatedWeakSignalsCount: consecutiveWeakSignalsCount + 1 };
+  }
+
   // Get actual threshold from config or use default
   const threshold = config.lowSignalThreshold || 0.05;
   const maxCount = config.maxWeakSignalCount || 10;
@@ -61,7 +67,8 @@ export function isFingerDetectedByPattern(
   isFingerDetected: boolean,
   patternCount: number
 } {
-  if (signalHistory.length < 10) {
+  // Safety check for invalid or insufficient data
+  if (!signalHistory || signalHistory.length < 10) {
     return { 
       isFingerDetected: false, 
       patternCount: 0 
@@ -71,7 +78,8 @@ export function isFingerDetectedByPattern(
   // Look for physiological patterns in real signal
   let crossings = 0;
   const recentValues = signalHistory.slice(-10);
-  const mean = recentValues.reduce((sum, point) => sum + point.value, 0) / recentValues.length;
+  const sum = recentValues.reduce((acc, point) => acc + point.value, 0); 
+  const mean = sum / recentValues.length;
   
   // Count zero crossings (signal moving above/below mean)
   for (let i = 1; i < recentValues.length; i++) {
