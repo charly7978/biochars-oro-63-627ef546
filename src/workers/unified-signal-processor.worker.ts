@@ -1,4 +1,3 @@
-
 /**
  * Unified Signal Processor Web Worker
  * Handles signal processing, TensorFlow.js operations, and calibration
@@ -46,6 +45,12 @@ const DEFAULT_CONFIG: ProcessorConfig = {
   calibration: {
     requiredSamples: 100,
     durationMs: 10000
+  },
+  nonInvasiveSettings: {
+    hemoglobinCalibrationFactor: 1.0,
+    glucoseCalibrationFactor: 1.0,
+    lipidCalibrationFactor: 1.0,
+    confidenceThreshold: 0.7
   }
 };
 

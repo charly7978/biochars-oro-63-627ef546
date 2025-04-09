@@ -6,9 +6,11 @@ import { RRData } from '../core/signal/PeakDetector';
 
 export interface UseVitalSignsProcessorReturn {
   processSignal: (value: number, rrData?: RRData) => VitalSignsResult;
-  reset: () => void;
+  reset: () => VitalSignsResult | null;
   calibrate: () => void;
   isCalibrating: boolean;
+  fullReset: () => void;
+  lastValidResults: VitalSignsResult | null;
 }
 
 /**
@@ -21,12 +23,15 @@ export const useVitalSignsProcessor = (
     new VitalSignsProcessor({ ...DEFAULT_PROCESSOR_CONFIG, ...config })
   );
   const [isCalibrating, setIsCalibrating] = useState<boolean>(false);
+  const [lastResults, setLastResults] = useState<VitalSignsResult | null>(null);
 
   /**
    * Process a signal value and return vital signs
    */
   const processSignal = useCallback((value: number, rrData?: RRData): VitalSignsResult => {
-    return processor.processSignal(value, rrData);
+    const results = processor.processSignal(value, rrData);
+    setLastResults(results);
+    return results;
   }, [processor]);
 
   /**
@@ -34,7 +39,17 @@ export const useVitalSignsProcessor = (
    */
   const reset = useCallback(() => {
     setIsCalibrating(false);
-  }, []);
+    return processor.reset();
+  }, [processor]);
+
+  /**
+   * Full reset of the processor
+   */
+  const fullReset = useCallback(() => {
+    setIsCalibrating(false);
+    setLastResults(null);
+    processor.fullReset();
+  }, [processor]);
 
   /**
    * Start calibration
@@ -48,6 +63,8 @@ export const useVitalSignsProcessor = (
     processSignal,
     reset,
     calibrate,
-    isCalibrating
+    isCalibrating,
+    fullReset,
+    lastValidResults: lastResults
   };
 };
