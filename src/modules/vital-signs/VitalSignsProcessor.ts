@@ -127,10 +127,10 @@ export class VitalSignsProcessor {
     }
     
     // Calculate SpO2 using real data only
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45), avgQuality);
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90), avgQuality);
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";

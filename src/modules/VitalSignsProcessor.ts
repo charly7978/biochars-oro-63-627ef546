@@ -147,6 +147,9 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
+    // Calculate average quality for measurements
+    const avgQuality = filterResult.quality;
+    
     // Calculate SpO2 using real PPG data - using both raw and filtered for validation
     const spo2Filtered = this.spo2Processor.calculateSpO2(filteredPpgValues.slice(-45));
     const spo2Raw = this.spo2Processor.calculateSpO2(rawPpgValues.slice(-45));

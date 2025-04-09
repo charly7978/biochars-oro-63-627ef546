@@ -17,7 +17,7 @@ export class SpO2Processor {
    * Calculates the oxygen saturation (SpO2) from real PPG values
    * No simulation or reference values are used
    */
-  public calculateSpO2(values: number[], signalQuality: number = 0): number {
+  public calculateSpO2(values: number[]): number {
     // Basic validation
     if (values.length < 20) {
       console.log("SpO2Processor: Insufficient data points for SpO2 calculation", {
@@ -65,15 +65,6 @@ export class SpO2Processor {
       return this.getLastValidSpo2(0);
     }
     
-    // Check signal quality
-    if (signalQuality < this.MIN_SIGNAL_QUALITY) {
-      console.log("SpO2Processor: Signal quality too low", { 
-        quality: signalQuality, 
-        threshold: this.MIN_SIGNAL_QUALITY
-      });
-      return this.getLastValidSpo2(0);
-    }
-    
     // Calculate perfusion index: ratio of pulsatile blood flow to non-pulsatile blood
     const perfusionIndex = ac / dc;
     
@@ -98,13 +89,6 @@ export class SpO2Processor {
       spO2 = Math.max(85, spO2 - 1);
     }
 
-    // Apply quality adjustment
-    if (signalQuality > 70) {
-      spO2 = Math.min(99, spO2 + 1);
-    } else if (signalQuality < 40) {
-      spO2 = Math.max(85, spO2 - 1);
-    }
-
     // Clamp to physiologically reasonable range
     spO2 = Math.max(85, Math.min(99, spO2));
 
@@ -116,7 +100,6 @@ export class SpO2Processor {
       perfusionIndex,
       amplitude,
       calculatedValue: spO2,
-      signalQuality,
       values: {
         min,
         max,
