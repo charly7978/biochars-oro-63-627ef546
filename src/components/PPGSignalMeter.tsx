@@ -293,10 +293,11 @@ const PPGSignalMeter = memo(({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#ffb3ba');
-    gradient.addColorStop(0.1, '#ffd2b3');
-    gradient.addColorStop(0.3, '#a9f6d5');
-    gradient.addColorStop(0.4, '#fff8b3');
+    gradient.addColorStop(0, '#ffc9c9');
+    gradient.addColorStop(0.1, '#fbf3c5');
+    gradient.addColorStop(0.3, '#c2fdbc');
+    gradient.addColorStop(0.5, '#e1c6fd');
+    gradient.addColorStop(0.7, '#fff8b3');
     gradient.addColorStop(1, '#666592');
     
     ctx.fillStyle = gradient;
