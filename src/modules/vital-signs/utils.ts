@@ -85,3 +85,19 @@ export function calculateHeartRateFromPeaks(
   
   return Math.round(heartRate);
 }
+
+/**
+ * Calcula el componente AC (amplitud pico a pico) de una señal real
+ */
+export function calculateAC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+/**
+ * Calcula el componente DC (valor promedio) de una señal real
+ */
+export function calculateDC(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, val) => sum + val, 0) / values.length;
+}

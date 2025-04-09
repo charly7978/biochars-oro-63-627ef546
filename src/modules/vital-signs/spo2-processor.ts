@@ -3,7 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateAC, calculateDC } from './utils';
+import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;
@@ -18,12 +18,16 @@ export class SpO2Processor {
       return this.getLastValidSpo2(1);
     }
 
-    const dc = calculateDC(values);
+    // Calculate DC component (average value)
+    const dc = values.reduce((sum, val) => sum + val, 0) / values.length;
+    
     if (dc === 0) {
       return this.getLastValidSpo2(1);
     }
 
-    const ac = calculateAC(values);
+    // Calculate AC component (peak-to-peak amplitude)
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+    const ac = calculateAmplitude(values, peakIndices, valleyIndices);
     
     const perfusionIndex = ac / dc;
     
