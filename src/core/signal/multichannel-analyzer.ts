@@ -1,172 +1,113 @@
 
 /**
- * Analizador multicanal para procesamiento PPG
- * Implementa análisis de RGB optimizado para fotopletismografía
+ * Analizador multicanal para señales PPG
+ * Procesa los canales RGB para obtener una mejor relación señal-ruido
  */
-import { calculateMultichannelPerfusionIndex } from '../../modules/vital-signs/utils/perfusion-utils';
-
 export class MultichannelAnalyzer {
-  // Configuración de pesos para análisis multicanal
-  private channelWeights = { red: 0.7, green: 0.25, blue: 0.05 };
+  // Pesos iniciales para cada canal
+  private channelWeights = {
+    red: 0.7,
+    green: 0.25,
+    blue: 0.05
+  };
   
-  // Historial de señales para análisis
+  // Historial de valores por canal para análisis de calidad
   private redValues: number[] = [];
   private greenValues: number[] = [];
   private blueValues: number[] = [];
   
-  // Tamaño del buffer de historial
-  private readonly HISTORY_SIZE = 20;
+  // Tamaño de buffer para análisis de calidad
+  private readonly ANALYSIS_BUFFER_SIZE = 50;
   
-  // Factores de ganancia adaptativos para cada canal
-  private redGain: number = 1.0;
-  private greenGain: number = 0.8;
-  private blueGain: number = 0.7;
+  // Factor de adaptación para pesos de canales
+  private readonly ADAPTATION_RATE = 0.05;
   
-  // Umbrales de intensidad óptima para detección
-  private readonly OPTIMAL_RED_RANGE = { min: 130, max: 220 };
-  private readonly OPTIMAL_GREEN_RANGE = { min: 100, max: 200 };
-  private readonly OPTIMAL_BLUE_RANGE = { min: 80, max: 180 };
+  // Última evaluación de SNR por canal
+  private lastSNR = {
+    red: 0,
+    green: 0,
+    blue: 0
+  };
   
   /**
-   * Procesa la región de interés (ROI) para extraer valor multicanal optimizado
+   * Extrae y analiza los canales RGB de la región de interés
+   * @param imageData Datos de la imagen
+   * @param roi Región de interés a analizar
+   * @returns Valores procesados por canal y valor ponderado
    */
   public processROI(
     imageData: ImageData, 
-    roi: { x: number, y: number, width: number, height: number }
-  ): { 
-    redValue: number, 
-    greenValue: number, 
-    blueValue: number, 
+    roi: {x: number, y: number, width: number, height: number}
+  ): {
+    redValue: number,
+    greenValue: number,
+    blueValue: number,
     weightedValue: number,
-    perfusionIndex: number 
+    perfusionIndex: number
   } {
-    // Extraer valores promedio de cada canal en la ROI
-    const { redAvg, greenAvg, blueAvg, redAC, greenAC, blueAC, redDC, greenDC, blueDC } = 
-      this.extractChannelValues(imageData, roi);
+    const { x, y, width, height } = roi;
+    const { data } = imageData;
     
-    // Guardar en historial
-    this.updateChannelHistory(redAvg, greenAvg, blueAvg);
+    let redSum = 0, greenSum = 0, blueSum = 0;
+    let pixelCount = 0;
     
-    // Aplicar optimización adaptativa de ganancias
-    this.optimizeChannelGains(redAvg, greenAvg, blueAvg);
+    // Extraer valores de canales RGB de la ROI
+    for (let dy = 0; dy < height; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        const imgX = x + dx;
+        const imgY = y + dy;
+        
+        // Verificar límites de la imagen
+        if (imgX >= 0 && imgX < imageData.width && imgY >= 0 && imgY < imageData.height) {
+          const i = (imgY * imageData.width + imgX) * 4;
+          
+          redSum += data[i];
+          greenSum += data[i + 1];
+          blueSum += data[i + 2];
+          pixelCount++;
+        }
+      }
+    }
     
-    // Aplicar ganancias a los valores
-    const redValueAmplified = redAvg * this.redGain;
-    const greenValueAmplified = greenAvg * this.greenGain;
-    const blueValueAmplified = blueAvg * this.blueGain;
+    // Calcular valores promedio por canal
+    const redValue = pixelCount > 0 ? redSum / pixelCount : 0;
+    const greenValue = pixelCount > 0 ? greenSum / pixelCount : 0;
+    const blueValue = pixelCount > 0 ? blueSum / pixelCount : 0;
     
-    // Calcular valor ponderado según pesos configurados
+    // Actualizar historial de valores
+    this.updateChannelHistory(redValue, greenValue, blueValue);
+    
+    // Adaptar pesos de canales basados en la calidad de la señal
+    this.adaptChannelWeights();
+    
+    // Calcular valor ponderado usando los pesos adaptados
     const weightedValue = 
-      (redValueAmplified * this.channelWeights.red) + 
-      (greenValueAmplified * this.channelWeights.green) + 
-      (blueValueAmplified * this.channelWeights.blue);
+      (redValue * this.channelWeights.red) + 
+      (greenValue * this.channelWeights.green) + 
+      (blueValue * this.channelWeights.blue);
     
-    // Calcular índice de perfusión multicanal mejorado
-    const perfusionIndex = calculateMultichannelPerfusionIndex(
-      redAC, redDC, 
-      greenAC, greenDC,
-      blueAC, blueDC,
-      this.channelWeights
-    );
+    // Calcular índice de perfusión multicanal
+    const perfusionIndex = this.calculateMultichannelPerfusionIndex();
     
     return {
-      redValue: redValueAmplified,
-      greenValue: greenValueAmplified,
-      blueValue: blueValueAmplified,
+      redValue,
+      greenValue,
+      blueValue,
       weightedValue,
       perfusionIndex
     };
   }
   
   /**
-   * Extrae valores promedio y componentes AC/DC de los canales RGB en la ROI
-   */
-  private extractChannelValues(
-    imageData: ImageData,
-    roi: { x: number, y: number, width: number, height: number }
-  ): { 
-    redAvg: number, 
-    greenAvg: number, 
-    blueAvg: number,
-    redAC: number,
-    greenAC: number,
-    blueAC: number,
-    redDC: number,
-    greenDC: number,
-    blueDC: number
-  } {
-    const { data, width } = imageData;
-    let redSum = 0, greenSum = 0, blueSum = 0;
-    let redMin = 255, redMax = 0;
-    let greenMin = 255, greenMax = 0;
-    let blueMin = 255, blueMax = 0;
-    let pixelCount = 0;
-    
-    // Asegurar que la ROI esté dentro de los límites de la imagen
-    const endX = Math.min(roi.x + roi.width, imageData.width);
-    const endY = Math.min(roi.y + roi.height, imageData.height);
-    const startX = Math.max(0, roi.x);
-    const startY = Math.max(0, roi.y);
-    
-    // Recorrer la ROI para extraer valores de canales
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * width + x) * 4;
-        
-        const red = data[i];
-        const green = data[i + 1];
-        const blue = data[i + 2];
-        
-        // Acumular sumas
-        redSum += red;
-        greenSum += green;
-        blueSum += blue;
-        
-        // Encontrar mínimos y máximos para componentes AC
-        redMin = Math.min(redMin, red);
-        redMax = Math.max(redMax, red);
-        
-        greenMin = Math.min(greenMin, green);
-        greenMax = Math.max(greenMax, green);
-        
-        blueMin = Math.min(blueMin, blue);
-        blueMax = Math.max(blueMax, blue);
-        
-        pixelCount++;
-      }
-    }
-    
-    // Calcular promedios (DC)
-    const redAvg = pixelCount > 0 ? redSum / pixelCount : 0;
-    const greenAvg = pixelCount > 0 ? greenSum / pixelCount : 0;
-    const blueAvg = pixelCount > 0 ? blueSum / pixelCount : 0;
-    
-    // Calcular componentes AC (amplitud de la señal)
-    const redAC = redMax - redMin;
-    const greenAC = greenMax - greenMin;
-    const blueAC = blueMax - blueMin;
-    
-    // Usar promedios como componentes DC
-    const redDC = redAvg;
-    const greenDC = greenAvg;
-    const blueDC = blueAvg;
-    
-    return {
-      redAvg, greenAvg, blueAvg,
-      redAC, greenAC, blueAC,
-      redDC, greenDC, blueDC
-    };
-  }
-  
-  /**
-   * Actualiza el historial de valores de canales
+   * Actualiza el historial de valores por canal
    */
   private updateChannelHistory(red: number, green: number, blue: number): void {
     this.redValues.push(red);
     this.greenValues.push(green);
     this.blueValues.push(blue);
     
-    if (this.redValues.length > this.HISTORY_SIZE) {
+    // Mantener tamaño de buffer limitado
+    if (this.redValues.length > this.ANALYSIS_BUFFER_SIZE) {
       this.redValues.shift();
       this.greenValues.shift();
       this.blueValues.shift();
@@ -174,89 +115,119 @@ export class MultichannelAnalyzer {
   }
   
   /**
-   * Optimiza las ganancias de canales dinámicamente
+   * Adapta los pesos de los canales basados en la calidad de la señal (SNR)
    */
-  private optimizeChannelGains(red: number, green: number, blue: number): void {
-    // Solo optimizar si tenemos suficientes datos
-    if (this.redValues.length < 5) return;
+  private adaptChannelWeights(): void {
+    // Solo adaptar si tenemos suficientes muestras
+    if (this.redValues.length < 20) return;
     
-    // Optimizar ganancia del canal rojo
-    if (red < this.OPTIMAL_RED_RANGE.min) {
-      this.redGain = Math.min(3.0, this.redGain * 1.05);
-    } else if (red > this.OPTIMAL_RED_RANGE.max) {
-      this.redGain = Math.max(0.5, this.redGain * 0.95);
-    }
+    // Calcular SNR para cada canal
+    const redSNR = this.calculateChannelSNR(this.redValues);
+    const greenSNR = this.calculateChannelSNR(this.greenValues);
+    const blueSNR = this.calculateChannelSNR(this.blueValues);
     
-    // Optimizar ganancia del canal verde
-    if (green < this.OPTIMAL_GREEN_RANGE.min) {
-      this.greenGain = Math.min(3.0, this.greenGain * 1.05);
-    } else if (green > this.OPTIMAL_GREEN_RANGE.max) {
-      this.greenGain = Math.max(0.5, this.greenGain * 0.95);
-    }
+    // Actualizar últimos valores de SNR
+    this.lastSNR = { red: redSNR, green: greenSNR, blue: blueSNR };
     
-    // Optimizar ganancia del canal azul
-    if (blue < this.OPTIMAL_BLUE_RANGE.min) {
-      this.blueGain = Math.min(3.0, this.blueGain * 1.05);
-    } else if (blue > this.OPTIMAL_BLUE_RANGE.max) {
-      this.blueGain = Math.max(0.5, this.blueGain * 0.95);
-    }
+    // Calcular suma total de SNR
+    const totalSNR = redSNR + greenSNR + blueSNR;
     
-    // Ajustar pesos de canal basados en calidad de señal
-    this.adjustChannelWeights();
-  }
-  
-  /**
-   * Ajusta los pesos de canales basados en calidad de señal
-   */
-  private adjustChannelWeights(): void {
-    if (this.redValues.length < 5) return;
-    
-    // Calcular variabilidad en cada canal
-    const redVariability = this.calculateVariability(this.redValues);
-    const greenVariability = this.calculateVariability(this.greenValues);
-    const blueVariability = this.calculateVariability(this.blueValues);
-    
-    // Normalizar medidas de variabilidad
-    const totalVariability = redVariability + greenVariability + blueVariability;
-    
-    if (totalVariability > 0) {
-      // Asignar más peso a canales con mayor variabilidad (con límites)
-      const redWeight = Math.min(0.8, Math.max(0.3, redVariability / totalVariability));
-      const greenWeight = Math.min(0.6, Math.max(0.1, greenVariability / totalVariability));
-      const blueWeight = Math.min(0.3, Math.max(0.05, blueVariability / totalVariability));
+    // Si tenemos señales válidas, ajustar pesos
+    if (totalSNR > 0) {
+      // Calcular nuevos pesos basados en SNR relativo
+      const newWeights = {
+        red: redSNR / totalSNR,
+        green: greenSNR / totalSNR,
+        blue: blueSNR / totalSNR
+      };
       
-      // Normalizar pesos
-      const totalWeight = redWeight + greenWeight + blueWeight;
-      
+      // Adaptar gradualmente los pesos para evitar cambios bruscos
       this.channelWeights = {
-        red: redWeight / totalWeight,
-        green: greenWeight / totalWeight,
-        blue: blueWeight / totalWeight
+        red: (1 - this.ADAPTATION_RATE) * this.channelWeights.red + this.ADAPTATION_RATE * newWeights.red,
+        green: (1 - this.ADAPTATION_RATE) * this.channelWeights.green + this.ADAPTATION_RATE * newWeights.green,
+        blue: (1 - this.ADAPTATION_RATE) * this.channelWeights.blue + this.ADAPTATION_RATE * newWeights.blue
       };
     }
   }
   
   /**
-   * Calcula variabilidad en un conjunto de valores
+   * Calcula la relación señal-ruido para un canal
+   * @param values Valores del canal
+   * @returns SNR estimado
    */
-  private calculateVariability(values: number[]): number {
-    if (values.length < 2) return 0;
+  private calculateChannelSNR(values: number[]): number {
+    if (values.length < 10) return 0;
     
-    // Calcular diferencias entre valores adyacentes
-    let variabilitySum = 0;
+    // Usar ventana de análisis reciente
+    const recentValues = values.slice(-20);
     
-    for (let i = 1; i < values.length; i++) {
-      variabilitySum += Math.abs(values[i] - values[i-1]);
+    // Calcular la media
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Calcular la varianza (componente de ruido)
+    let variance = 0;
+    for (const val of recentValues) {
+      variance += Math.pow(val - mean, 2);
     }
+    variance /= recentValues.length;
     
-    return variabilitySum / (values.length - 1);
+    // Calcular autocorrelación con retardo de 1 (componente de señal)
+    let autoCorr = 0;
+    for (let i = 1; i < recentValues.length; i++) {
+      autoCorr += (recentValues[i] - mean) * (recentValues[i-1] - mean);
+    }
+    autoCorr /= (recentValues.length - 1);
+    
+    // SNR estimado
+    return variance > 0 ? Math.abs(autoCorr) / variance : 0;
+  }
+  
+  /**
+   * Calcula un índice de perfusión basado en múltiples canales
+   * @returns Índice de perfusión mejorado
+   */
+  private calculateMultichannelPerfusionIndex(): number {
+    // Verificar si tenemos suficientes datos
+    if (this.redValues.length < 10) return 0;
+    
+    // Calcular índices de perfusión por canal
+    const redPI = this.calculateChannelPerfusionIndex(this.redValues);
+    const greenPI = this.calculateChannelPerfusionIndex(this.greenValues);
+    const bluePI = this.calculateChannelPerfusionIndex(this.blueValues);
+    
+    // Combinar índices ponderados por calidad de señal (SNR)
+    const combinedPI = 
+      (redPI * this.lastSNR.red) + 
+      (greenPI * this.lastSNR.green) + 
+      (bluePI * this.lastSNR.blue);
+    
+    const totalSNR = this.lastSNR.red + this.lastSNR.green + this.lastSNR.blue;
+    
+    return totalSNR > 0 ? combinedPI / totalSNR : redPI; // Usar red como fallback si no hay SNR
+  }
+  
+  /**
+   * Calcula el índice de perfusión para un canal específico
+   */
+  private calculateChannelPerfusionIndex(values: number[]): number {
+    if (values.length < 10) return 0;
+    
+    const recentValues = values.slice(-10);
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
+    
+    // PI = (AC/DC)
+    const ac = max - min;
+    const dc = (max + min) / 2;
+    
+    return dc > 0 ? ac / dc : 0;
   }
   
   /**
    * Obtiene los pesos actuales de los canales
    */
-  public getChannelWeights(): { red: number, green: number, blue: number } {
-    return { ...this.channelWeights };
+  public getChannelWeights(): {red: number, green: number, blue: number} {
+    return {...this.channelWeights};
   }
   
   /**
@@ -266,9 +237,18 @@ export class MultichannelAnalyzer {
     this.redValues = [];
     this.greenValues = [];
     this.blueValues = [];
-    this.redGain = 1.0;
-    this.greenGain = 0.8;
-    this.blueGain = 0.7;
-    this.channelWeights = { red: 0.7, green: 0.25, blue: 0.05 };
+    
+    // Restaurar pesos por defecto
+    this.channelWeights = {
+      red: 0.7,
+      green: 0.25,
+      blue: 0.05
+    };
+    
+    this.lastSNR = {
+      red: 0,
+      green: 0,
+      blue: 0
+    };
   }
 }

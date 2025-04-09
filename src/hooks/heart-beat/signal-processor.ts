@@ -11,21 +11,6 @@ import {
   processLowConfidenceResult
 } from './signal-processing';
 
-// Device capability detection for adaptive refresh
-const detectDeviceCapabilities = (): { isLowPower: boolean, refreshInterval: number } => {
-  // Check for low-end device indicators
-  const isLowMemory = (navigator as any).deviceMemory !== undefined && (navigator as any).deviceMemory < 4;
-  const isSlowCPU = (navigator as any).hardwareConcurrency !== undefined && (navigator as any).hardwareConcurrency < 4;
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  const isLowPower = (isLowMemory || isSlowCPU) && isMobile;
-  
-  // Set appropriate refresh interval
-  const refreshInterval = isLowPower ? 50 : 30; // 20Hz for low-power devices, 33Hz for standard
-  
-  return { isLowPower, refreshInterval };
-};
-
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
   const consistentBeatsCountRef = useRef<number>(0);
@@ -37,46 +22,6 @@ export function useSignalProcessor() {
   const consecutiveWeakSignalsRef = useRef<number>(0);
   const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
-  
-  // Web Worker reference
-  const workerRef = useRef<Worker | null>(null);
-  const isWorkerAvailableRef = useRef<boolean>(true);
-  const deviceCapabilitiesRef = useRef(detectDeviceCapabilities());
-  
-  // Initialize worker if supported
-  const initWorker = useCallback(() => {
-    if (typeof Worker === 'undefined') {
-      console.warn('Web Workers not supported in this browser, falling back to main thread processing');
-      isWorkerAvailableRef.current = false;
-      return;
-    }
-    
-    try {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-      }
-      
-      workerRef.current = new Worker(new URL('../../workers/signal-processor.worker.ts', import.meta.url), { type: 'module' });
-      
-      workerRef.current.onmessage = (event) => {
-        // Handle worker messages here if needed
-        if (event.data.type === 'ERROR') {
-          console.error('Worker error:', event.data.error);
-          isWorkerAvailableRef.current = false; // Fall back to main thread on error
-        }
-      };
-      
-      workerRef.current.onerror = (error) => {
-        console.error('Worker initialization error:', error);
-        isWorkerAvailableRef.current = false; // Fall back to main thread on error
-      };
-      
-      console.log('Signal processor worker initialized');
-    } catch (error) {
-      console.error('Failed to initialize worker:', error);
-      isWorkerAvailableRef.current = false;
-    }
-  }, []);
 
   const processSignal = useCallback((
     value: number,
@@ -167,27 +112,7 @@ export function useSignalProcessor() {
     calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
-    
-    // Reset worker if available
-    if (workerRef.current && isWorkerAvailableRef.current) {
-      workerRef.current.postMessage({ type: 'RESET' });
-    }
-    
-    // Re-detect device capabilities on reset
-    deviceCapabilitiesRef.current = detectDeviceCapabilities();
   }, []);
-
-  // Initialize worker on first load
-  useCallback(() => {
-    initWorker();
-    
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
-    };
-  }, [initWorker]);
 
   return {
     processSignal,
@@ -196,7 +121,6 @@ export function useSignalProcessor() {
     lastValidBpmRef,
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS,
-    deviceCapabilities: deviceCapabilitiesRef.current
+    MAX_CONSECUTIVE_WEAK_SIGNALS
   };
 }

@@ -71,3 +71,4 @@ export function analyzePerfusionQuality(perfusionIndex: number): number {
   
   return 95; // Cap at 95 for very high PIs
 }
+

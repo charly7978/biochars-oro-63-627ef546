@@ -55,18 +55,18 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
-  const WINDOW_WIDTH_MS = 7000;
+  const WINDOW_WIDTH_MS = 3500;
   const CANVAS_WIDTH = 1200;
-  const CANVAS_HEIGHT = 900;
-  const GRID_SIZE_X = 10;
+  const CANVAS_HEIGHT = 600;
+  const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 18.0;
-  const SMOOTHING_FACTOR = 1.6;
+  const verticalScale = 35.0;
+  const SMOOTHING_FACTOR = 1.5;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 7;
-  const PEAK_THRESHOLD = 4;
+  const PEAK_DETECTION_WINDOW = 8;
+  const PEAK_THRESHOLD = 3;
   const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
@@ -78,7 +78,7 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 250;
+  const MIN_BEEP_INTERVAL_MS = 350;
 
   useEffect(() => {
     const initAudio = async () => {
