@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -107,7 +106,7 @@ export class SignalValidator {
   
   /**
    * Detect rhythmic patterns in the signal history
-   * Uses physiological heartbeat patterns to detect finger presence
+   * Uses physiological characteristics of human finger (heartbeat patterns)
    */
   private detectRhythmicPatterns(): void {
     const now = Date.now();
