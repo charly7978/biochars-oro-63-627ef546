@@ -109,28 +109,9 @@ export class TensorFlowService {
       console.log(`Loading model: ${modelKey} from ${modelUrl}`);
       const loadStartTime = performance.now();
       
-      // Load model with optimization options
+      // Load model with standard options - removed custom weightLoaderFactory
       const model = await tf.loadLayersModel(modelUrl, {
-        strict: false,
-        weightLoaderFactory: () => {
-          // Apply custom weight loading optimization
-          return {
-            load: async (weightManifest) => {
-              // Standard loader implementation with improved caching
-              const fetchWeights = async (weightPath: string) => {
-                const response = await fetch(weightPath, { cache: 'force-cache' });
-                return response.arrayBuffer();
-              };
-              
-              // Load all weight files in parallel for better performance
-              const weightPromises = weightManifest.map(group => {
-                return Promise.all(group.paths.map(fetchWeights));
-              });
-              
-              return await Promise.all(weightPromises);
-            }
-          };
-        }
+        strict: false
       });
       
       const loadTime = performance.now() - loadStartTime;
@@ -181,18 +162,21 @@ export class TensorFlowService {
       const tensorData = Float32Array.from(signalData);
       const tensor = tf.tensor(tensorData, inputShape);
       
-      // Minimize memory allocations by using tidy for auto cleanup
-      const resultData = await tf.tidy(() => {
+      // Fixed: Using tf.tidy with proper return type handling
+      const resultTensor = tf.tidy(() => {
         // Run inference
-        const result = model.predict(tensor) as tf.Tensor;
-        return result.data();
+        return model.predict(tensor) as tf.Tensor;
       });
       
-      // Create a new Float32Array from the result data for better memory management
-      const resultArray = new Float32Array(Array.from(resultData));
+      // Get data from the tensor (outside tidy to ensure proper disposal)
+      const resultData = await resultTensor.data();
       
-      // Dispose input tensor (result tensor already disposed by tidy)
+      // Create a new Float32Array from the result data for better memory management
+      const resultArray = new Float32Array(resultData);
+      
+      // Dispose tensors
       tensor.dispose();
+      resultTensor.dispose();
       
       // Log performance for optimization tracking
       const processingTime = performance.now() - startTime;
