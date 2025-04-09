@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -20,11 +21,8 @@ export const useArrhythmiaVisualization = () => {
     // Limit to most recent arrhythmia windows for visualization
     setArrhythmiaWindows(prev => {
       const newWindows = [...prev, { start, end }];
-      // Keep only the most recent 5 windows for better visibility
-      return newWindows.slice(-5);
+      return newWindows.slice(-3);
     });
-    
-    console.log("ArrhythmiaVisualization: Added window", { start, end, timestamp: new Date().toISOString() });
   }, []);
   
   /**
@@ -32,7 +30,6 @@ export const useArrhythmiaVisualization = () => {
    */
   const clearArrhythmiaWindows = useCallback(() => {
     setArrhythmiaWindows([]);
-    console.log("ArrhythmiaVisualization: Cleared all windows");
   }, []);
   
   return {

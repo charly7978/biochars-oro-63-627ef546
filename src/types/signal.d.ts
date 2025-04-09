@@ -1,8 +1,4 @@
 
-/**
- * Type definitions for PPG signal processing
- */
-
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
@@ -47,7 +43,6 @@ export interface SignalProcessor {
   calibrate: () => Promise<boolean>;                    // Calibrar el procesador
   onSignalReady?: (signal: ProcessedSignal) => void;    // Callback de señal lista
   onError?: (error: ProcessingError) => void;           // Callback de error
-  processFrame?: (imageData: ImageData) => void;        // Procesar frame de imagen
 }
 
 /**

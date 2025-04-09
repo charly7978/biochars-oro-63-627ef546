@@ -7,7 +7,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs";
+import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -191,80 +191,75 @@ const Index = () => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(videoTrack);
     
-    if (typeof window !== 'undefined' && 'ImageCapture' in window) {
-      const imageCapture = new (window as any).ImageCapture(videoTrack);
-      
-      if (videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna para mejorar la señal PPG");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).catch(err => console.error("Error activando linterna:", err));
-      } else {
-        console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-      }
-      
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-      if (!tempCtx) {
-        console.error("No se pudo obtener el contexto 2D");
-        return;
-      }
-      
-      let lastProcessTime = 0;
-      const targetFrameInterval = 1000/30;
-      let frameCount = 0;
-      let lastFpsUpdateTime = Date.now();
-      let processingFps = 0;
-      
-      const processImage = async () => {
-        if (!isMonitoring) return;
-        
-        const now = Date.now();
-        const timeSinceLastProcess = now - lastProcessTime;
-        
-        if (timeSinceLastProcess >= targetFrameInterval) {
-          try {
-            const frame = await imageCapture.grabFrame();
-            
-            const targetWidth = Math.min(320, frame.width);
-            const targetHeight = Math.min(240, frame.height);
-            
-            tempCanvas.width = targetWidth;
-            tempCanvas.height = targetHeight;
-            
-            tempCtx.drawImage(
-              frame, 
-              0, 0, frame.width, frame.height, 
-              0, 0, targetWidth, targetHeight
-            );
-            
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-            
-            frameCount++;
-            lastProcessTime = now;
-            
-            if (now - lastFpsUpdateTime > 1000) {
-              processingFps = frameCount;
-              frameCount = 0;
-              lastFpsUpdateTime = now;
-              console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-            }
-          } catch (error) {
-            console.error("Error capturando frame:", error);
-          }
-        }
-        
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
-      };
-
-      processImage();
+    if (videoTrack.getCapabilities()?.torch) {
+      console.log("Activando linterna para mejorar la señal PPG");
+      videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      }).catch(err => console.error("Error activando linterna:", err));
     } else {
-      console.error("ImageCapture API is not supported in this browser");
+      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
     }
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+    if (!tempCtx) {
+      console.error("No se pudo obtener el contexto 2D");
+      return;
+    }
+    
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30;
+    let frameCount = 0;
+    let lastFpsUpdateTime = Date.now();
+    let processingFps = 0;
+    
+    const processImage = async () => {
+      if (!isMonitoring) return;
+      
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
+      
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          const frame = await imageCapture.grabFrame();
+          
+          const targetWidth = Math.min(320, frame.width);
+          const targetHeight = Math.min(240, frame.height);
+          
+          tempCanvas.width = targetWidth;
+          tempCanvas.height = targetHeight;
+          
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, targetWidth, targetHeight
+          );
+          
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          processFrame(imageData);
+          
+          frameCount++;
+          lastProcessTime = now;
+          
+          if (now - lastFpsUpdateTime > 1000) {
+            processingFps = frameCount;
+            frameCount = 0;
+            lastFpsUpdateTime = now;
+            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+          }
+        } catch (error) {
+          console.error("Error capturando frame:", error);
+        }
+      }
+      
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
+      }
+    };
+
+    processImage();
   };
 
   const handleToggleMonitoring = () => {
@@ -313,6 +308,8 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              arrhythmiaWindows={vitalSigns.arrhythmiaWindows}
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
