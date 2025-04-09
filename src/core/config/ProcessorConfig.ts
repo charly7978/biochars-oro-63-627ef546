@@ -25,6 +25,12 @@ export interface ProcessorConfig {
     requiredSamples: number;
     durationMs: number;
   };
+  nonInvasiveSettings: {
+    hemoglobinCalibrationFactor: number;
+    glucoseCalibrationFactor: number;
+    lipidCalibrationFactor: number;
+    confidenceThreshold: number;
+  };
 }
 
 // Default configuration
@@ -48,5 +54,11 @@ export const DEFAULT_PROCESSOR_CONFIG: ProcessorConfig = {
   calibration: {
     requiredSamples: 100,
     durationMs: 10000
+  },
+  nonInvasiveSettings: {
+    hemoglobinCalibrationFactor: 1.0,
+    glucoseCalibrationFactor: 1.0,
+    lipidCalibrationFactor: 1.0,
+    confidenceThreshold: 0.7
   }
 };

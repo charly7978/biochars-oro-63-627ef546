@@ -68,10 +68,13 @@ export function getTensorFlowInfo(): {
   device: string;
   isWebGPU: boolean;
 } {
+  const backend = tf.getBackend() || 'none';
+  const isWebGPU = backend === 'webgpu';
+  
   return {
     version: tf.version.tfjs,
-    backend: tf.getBackend() || 'none',
-    device: tf.engine().backendInstance ? 'WebGPU/WebGL' : 'CPU',
-    isWebGPU: tf.getBackend() === 'webgpu'
+    backend,
+    device: isWebGPU ? 'WebGPU' : backend === 'webgl' ? 'WebGL' : 'CPU',
+    isWebGPU
   };
 }
