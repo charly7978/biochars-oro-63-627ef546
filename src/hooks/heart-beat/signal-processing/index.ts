@@ -13,8 +13,7 @@ export {
   checkWeakSignal, 
   shouldProcessMeasurement, 
   createWeakSignalResult,
-  resetSignalQualityState,
-  isFingerDetected
+  resetSignalQualityState
 } from './signal-quality';
 
 export { 

@@ -1,138 +1,226 @@
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  getErrorDetectionStatus,
+  logError,
+  logSuccess,
+  resetErrorMetrics
+} from '../utils/errorDetection';
+import { toast } from './use-toast';
+import { disposeTensors } from '../utils/tfModelInitializer';
 
-export interface ErrorState {
-  hasErrors: boolean;
-  errorType: string | null;
-  lastErrorTime: number | null;
-  recoveryAttempts: number;
-  errorMessages: string[];
+interface ErrorDetectionState {
+  isRecoveryMode: boolean;
+  errorRate: number;
+  abnormalStateDetected: boolean;
+  categoryErrors: Record<string, { count: number; lastTime: number }>;
+  performanceIssues: boolean;
+  lastPerformanceCheck: number;
 }
 
-export const useErrorDetection = () => {
-  const [errorState, setErrorState] = useState<ErrorState>({
-    hasErrors: false,
-    errorType: null,
-    lastErrorTime: null,
-    recoveryAttempts: 0,
-    errorMessages: []
+/**
+ * Hook for accessing and managing the error detection system
+ * Provides error logging, status checking, and recovery mechanisms
+ */
+export function useErrorDetection() {
+  const [state, setState] = useState<ErrorDetectionState>({
+    isRecoveryMode: false,
+    errorRate: 0,
+    abnormalStateDetected: false,
+    categoryErrors: {},
+    performanceIssues: false,
+    lastPerformanceCheck: 0
   });
 
-  // Check for system issues
-  const checkForIssues = useCallback(() => {
-    // Get browser memory usage if available
-    let memoryUsage = 0;
-    if ((performance as any).memory) {
-      memoryUsage = ((performance as any).memory.usedJSHeapSize / (performance as any).memory.jsHeapSizeLimit) * 100;
+  // Update state from global error detection system
+  const updateStatus = useCallback(() => {
+    const status = getErrorDetectionStatus();
+    
+    // Extract category error counts
+    const categoryErrors: Record<string, { count: number; lastTime: number }> = {};
+    for (const [category, data] of Object.entries(status.categories)) {
+      categoryErrors[category] = {
+        count: data.count,
+        lastTime: data.lastTime
+      };
     }
     
-    // Check for common issue indicators
-    const slowResponsiveness = document.body ? document.body.getAttribute('data-slow') === 'true' : false;
-    const hasHighCPU = memoryUsage > 80;
-    const hasNetworkIssues = !navigator.onLine;
+    // Check performance issues
+    let performanceIssues = false;
+    if (status.recentPerformance.length > 0) {
+      // Check for low FPS
+      const recentFps = status.recentPerformance
+        .filter(p => p.fps !== null)
+        .map(p => p.fps);
+      
+      if (recentFps.length > 0) {
+        const avgFps = recentFps.reduce((sum, fps) => sum + (fps || 0), 0) / recentFps.length;
+        performanceIssues = avgFps < 15; // Consider below 15 FPS problematic
+      }
+      
+      // Check for high memory usage
+      const recentMemory = status.recentPerformance
+        .filter(p => p.memory !== null)
+        .map(p => p.memory);
+      
+      if (recentMemory.length > 0) {
+        const maxMemory = Math.max(...recentMemory.filter(m => m !== null) as number[]);
+        performanceIssues = performanceIssues || maxMemory > 200; // Over 200MB is problematic
+      }
+    }
     
-    const hasIssues = slowResponsiveness || hasHighCPU || hasNetworkIssues || errorState.hasErrors;
-    const criticalIssues = hasNetworkIssues || (memoryUsage > 90) || errorState.recoveryAttempts > 3;
-    
-    // Formulate message based on detected issues
-    let message = 'System issues detected';
-    if (slowResponsiveness) message = 'System responding slowly';
-    if (hasHighCPU) message = 'High resource usage detected';
-    if (hasNetworkIssues) message = 'Network connection issues detected';
-    if (errorState.hasErrors) message = 'Error recovery in progress';
-    
-    return {
-      hasIssues,
-      criticalIssues,
-      message
-    };
-  }, [errorState.hasErrors, errorState.recoveryAttempts]);
-
-  // Update error status
-  const updateStatus = useCallback(() => {
-    setErrorState(prev => ({
-      ...prev,
-      hasErrors: false,
-      errorType: null
-    }));
+    setState({
+      isRecoveryMode: status.isRecoveryMode,
+      errorRate: status.errorRate,
+      abnormalStateDetected: status.abnormalStateDetected,
+      categoryErrors,
+      performanceIssues,
+      lastPerformanceCheck: Date.now()
+    });
   }, []);
 
-  // Attempt recovery
+  // Set up periodic status checking
+  useEffect(() => {
+    // Initial update
+    updateStatus();
+    
+    // Check status periodically
+    const intervalId = setInterval(updateStatus, 5000); // Every 5 seconds
+    
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [updateStatus]);
+
+  /**
+   * Log a successful operation
+   */
+  const recordSuccess = useCallback((operation: string) => {
+    logSuccess(operation);
+  }, []);
+
+  /**
+   * Log an error with proper categorization
+   */
+  const recordError = useCallback((
+    category: string,
+    operation: string,
+    error: any,
+    isCritical: boolean = false
+  ) => {
+    logError(category, operation, error, isCritical);
+    
+    // Force status update after critical errors
+    if (isCritical) {
+      updateStatus();
+    }
+  }, [updateStatus]);
+
+  /**
+   * Attempt to recover from error state
+   */
   const attemptRecovery = useCallback(async () => {
     try {
-      // Increment recovery counter
-      setErrorState(prev => ({
-        ...prev,
-        recoveryAttempts: prev.recoveryAttempts + 1
-      }));
+      toast({
+        title: "Recovery Attempt",
+        description: "Attempting to recover from error state...",
+        variant: "default"
+      });
       
-      // Clear caches
-      if ('caches' in window) {
-        const cacheNames = await caches.keys();
-        await Promise.all(
-          cacheNames.map(name => caches.delete(name))
-        );
-      }
+      // Clean up TensorFlow resources
+      disposeTensors();
       
-      // Clear memory
-      if (window.gc) {
-        window.gc();
-      }
+      // Reset error metrics
+      resetErrorMetrics();
       
-      // Refresh all data stores
-      localStorage.removeItem('error_state');
+      // Force update status
+      updateStatus();
       
-      // Check if camera is in use and reset
-      if (navigator.mediaDevices) {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        
-        if (videoDevices.length > 0) {
-          const streams = await navigator.mediaDevices.getUserMedia({ video: true });
-          streams.getTracks().forEach(track => track.stop());
-        }
-      }
+      toast({
+        title: "Recovery Complete",
+        description: "System has attempted to recover from errors",
+        variant: "default"
+      });
+      
+      // Return after short delay to allow system to stabilize
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       return true;
     } catch (error) {
-      console.error('Error during recovery:', error);
-      
-      // Update error state
-      setErrorState(prev => ({
-        ...prev,
-        hasErrors: true,
-        errorType: 'recovery_failed',
-        lastErrorTime: Date.now(),
-        errorMessages: [...prev.errorMessages, 'Recovery attempt failed']
-      }));
+      toast({
+        title: "Recovery Failed",
+        description: "Could not recover from error state. Try reloading the page.",
+        variant: "destructive"
+      });
       
       return false;
     }
-  }, []);
+  }, [updateStatus]);
 
-  // Listen for errors
-  useEffect(() => {
-    const handleError = (event: ErrorEvent) => {
-      setErrorState(prev => ({
-        ...prev,
-        hasErrors: true,
-        errorType: 'uncaught_error',
-        lastErrorTime: Date.now(),
-        errorMessages: [...prev.errorMessages, event.message].slice(-5)
-      }));
-    };
+  /**
+   * Check if there are any issues that should be addressed
+   */
+  const checkForIssues = useCallback((): {
+    hasIssues: boolean;
+    criticalIssues: boolean;
+    message: string | null;
+  } => {
+    // Check if we're in an error state
+    if (state.isRecoveryMode || state.abnormalStateDetected) {
+      return {
+        hasIssues: true,
+        criticalIssues: true,
+        message: "System is in recovery mode due to errors"
+      };
+    }
     
-    window.addEventListener('error', handleError);
+    // Check error rate
+    if (state.errorRate > 0.1) { // More than 10% errors
+      return {
+        hasIssues: true,
+        criticalIssues: state.errorRate > 0.3,
+        message: `High error rate detected (${(state.errorRate * 100).toFixed(1)}%)`
+      };
+    }
     
-    return () => {
-      window.removeEventListener('error', handleError);
+    // Check for critical category errors
+    let totalErrors = 0;
+    for (const category in state.categoryErrors) {
+      totalErrors += state.categoryErrors[category].count;
+      
+      // If there are many errors in a specific category
+      if (state.categoryErrors[category].count > 10) {
+        return {
+          hasIssues: true,
+          criticalIssues: state.categoryErrors[category].count > 50,
+          message: `Multiple errors detected in ${category}`
+        };
+      }
+    }
+    
+    // Check for performance issues
+    if (state.performanceIssues) {
+      return {
+        hasIssues: true,
+        criticalIssues: false,
+        message: "Performance issues detected"
+      };
+    }
+    
+    // No issues detected
+    return {
+      hasIssues: false,
+      criticalIssues: false,
+      message: null
     };
-  }, []);
+  }, [state]);
 
   return {
-    errorState,
+    errorState: state,
+    recordSuccess,
+    recordError,
     attemptRecovery,
     checkForIssues,
     updateStatus
   };
-};
+}
