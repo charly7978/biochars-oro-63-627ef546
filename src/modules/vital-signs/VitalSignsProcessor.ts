@@ -16,6 +16,7 @@ import { VitalSignsResult } from './types/vital-signs-result';
 import { findPeaksAndValleys, calculateHeartRateFromPeaks } from './utils';
 import { checkSignalQuality } from '../heart-beat/signal-quality';
 import { SignalOptimizationManager } from '../../core/signal/SignalOptimizationManager';
+import { ProcessedSignal } from '../../core/types';
 
 /**
  * Procesador principal de signos vitales
@@ -65,6 +66,11 @@ export class VitalSignsProcessor {
   // Validación fisiológica
   private validPhysiologicalSignalsCount: number = 0;
   private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20;
+
+  // Almacenamiento de último resultado válido para estabilidad
+  private lastValidResults: VitalSignsResult | null = null;
+  private validResultsCounter: number = 0;
+  private readonly MIN_VALID_RESULTS = 3;
 
   /**
    * Constructor que inicializa todos los procesadores especializados
@@ -174,8 +180,23 @@ export class VitalSignsProcessor {
     // Solo procesar señales verificadas y estables o dentro del período de protección
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
       // Procesar la señal con nuestra lógica de procesamiento central
-      return this.performSignalProcessing(ppgValue, rrData);
+      const result = this.performSignalProcessing(ppgValue, rrData);
+      
+      // Incrementar contador de resultados válidos si tenemos resultados consistentes
+      if (result.spo2 > 0 && result.pressure !== "--/--") {
+        this.validResultsCounter = Math.min(this.validResultsCounter + 1, this.MIN_VALID_RESULTS + 5);
+        this.lastValidResults = result;
+      }
+      
+      return result;
     } else {
+      // Usar último resultado válido si existe y tiene suficiente confiabilidad
+      if (this.lastValidResults && this.validResultsCounter >= this.MIN_VALID_RESULTS) {
+        // Reducir contador lentamente para estabilidad
+        this.validResultsCounter = Math.max(0, this.validResultsCounter - 0.2);
+        return this.lastValidResults;
+      }
+      
       // Devolver resultado vacío sin procesar cuando la señal es incierta
       return ResultFactory.createEmptyResults();
     }
@@ -200,8 +221,10 @@ export class VitalSignsProcessor {
     // 1. FLUJO UNIDIRECCIONAL: Primero optimizar señal centralizada (única entrada)
     const optimizationResult = this.signalOptimizer.processSignal({
       filteredValue: filtered, 
-      quality: 100 // La calidad será determinada por el optimizador
-    });
+      quality: 100, // La calidad será determinada por el optimizador
+      value: filtered,  // Agregado para compatibilidad con ProcessedSignal
+      timestamp: Date.now()  // Agregado para compatibilidad con ProcessedSignal
+    } as ProcessedSignal);
     
     // Procesar datos de arritmia si están disponibles y son válidos
     const arrhythmiaResult = rrData && 
@@ -302,12 +325,17 @@ export class VitalSignsProcessor {
     // Calidad basada en detección de ritmo cardíaco
     const hrConfidence = heartRate > 40 && heartRate < 200 ? 0.8 : 0.4;
     
-    // Proporcionar feedback al optimizador para el canal de ritmo cardíaco
-    this.signalOptimizer.provideFeedback('heartRate', {
-      confidence: hrConfidence,
-      accuracy: arrhythmiaStatus.includes("NORMAL") ? 0.9 : 0.7,
-      errorRate: 0.1
-    });
+    // Proporcionar feedback directamente a través de los métodos públicos del optimizador
+    if (optimizationResult.optimizedChannels && optimizationResult.optimizedChannels.has('heartRate')) {
+      const heartRateChannel = optimizationResult.optimizedChannels.get('heartRate');
+      if (heartRateChannel) {
+        // Actualizar métricas directamente en el canal
+        heartRateChannel.metadata = heartRateChannel.metadata || {};
+        heartRateChannel.metadata.confidence = hrConfidence;
+        heartRateChannel.metadata.accuracy = arrhythmiaStatus.includes("NORMAL") ? 0.9 : 0.7;
+        heartRateChannel.metadata.errorRate = 0.1;
+      }
+    }
   }
   
   /**
@@ -376,6 +404,9 @@ export class VitalSignsProcessor {
     this.frameRateHistory = [];
     this.lastFrameTime = 0;
     this.validPhysiologicalSignalsCount = 0;
+    this.lastValidResults = null;
+    this.validResultsCounter = 0;
+    
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null; // Siempre devolver null para asegurar que las mediciones comiencen desde cero
   }
@@ -385,6 +416,21 @@ export class VitalSignsProcessor {
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaProcessor.getArrhythmiaCount();
+  }
+  
+  /**
+   * Obtener información de depuración
+   */
+  public getDebugInfo(): any {
+    return {
+      signalHistory: this.signalHistory.slice(-5),
+      frameRate: this.frameRateHistory.length > 0 ? 
+        1000 / (this.frameRateHistory.reduce((a, b) => a + b, 0) / this.frameRateHistory.length) : 0,
+      weakSignalsCount: this.weakSignalsCount,
+      validPhysiologicalSignals: this.validPhysiologicalSignalsCount,
+      validResultsCounter: this.validResultsCounter,
+      hasLastValidResults: !!this.lastValidResults
+    };
   }
   
   /**

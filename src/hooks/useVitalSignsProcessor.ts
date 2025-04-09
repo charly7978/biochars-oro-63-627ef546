@@ -27,6 +27,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
   
+  // Estabilidad de mediciones
+  const resultsHistoryRef = useRef<VitalSignsResult[]>([]);
+  const lastStableResultRef = useRef<VitalSignsResult | null>(null);
+  const stabilityCounterRef = useRef<number>(0);
+  const MIN_STABILITY_COUNT = 3;
+  
   const { 
     arrhythmiaWindows, 
     addArrhythmiaWindow, 
@@ -69,6 +75,61 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
+   * Verificar si un resultado es válido fisiológicamente
+   */
+  const isValidResult = (result: VitalSignsResult | null): boolean => {
+    if (!result) return false;
+    
+    // Verificar valores fisiológicos
+    const hasValidSpO2 = result.spo2 >= 80 && result.spo2 <= 100;
+    const hasValidPressure = result.pressure !== "--/--";
+    
+    return hasValidSpO2 || hasValidPressure;
+  };
+  
+  /**
+   * Mantener estabilidad en mediciones
+   */
+  const stabilizeResults = (result: VitalSignsResult): VitalSignsResult => {
+    // Agregar resultado a historial
+    resultsHistoryRef.current.push(result);
+    
+    // Limitar tamaño del historial
+    if (resultsHistoryRef.current.length > 10) {
+      resultsHistoryRef.current.shift();
+    }
+    
+    // Verificar si el resultado actual es válido
+    const isCurrentResultValid = isValidResult(result);
+    
+    // Si el resultado actual es válido, usarlo y aumentar contador de estabilidad
+    if (isCurrentResultValid) {
+      lastStableResultRef.current = result;
+      stabilityCounterRef.current = Math.min(stabilityCounterRef.current + 1, MIN_STABILITY_COUNT + 5);
+      return result;
+    }
+    
+    // Si tenemos un resultado estable anterior y suficiente estabilidad, usarlo
+    if (lastStableResultRef.current && stabilityCounterRef.current >= MIN_STABILITY_COUNT) {
+      // Reducir contador gradualmente para eventual transición
+      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 0.5);
+      return lastStableResultRef.current;
+    }
+    
+    // Buscar el resultado válido más reciente en el historial
+    for (let i = resultsHistoryRef.current.length - 1; i >= 0; i--) {
+      const historicalResult = resultsHistoryRef.current[i];
+      if (isValidResult(historicalResult)) {
+        lastStableResultRef.current = historicalResult;
+        return historicalResult;
+      }
+    }
+    
+    // Si no hay resultados válidos, devolver el original
+    return result;
+  };
+  
+  /**
    * Procesar señal PPG directamente
    * Sin simulación ni valores de referencia
    */
@@ -88,6 +149,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Procesar señal directamente - sin simulación
     let result = processVitalSignal(value, rrData, isWeakSignal);
     const currentTime = Date.now();
+    
+    // Estabilizar resultados para prevenir aparición/desaparición
+    result = stabilizeResults(result);
     
     // Si se detecta arritmia en datos reales, registrar ventana de visualización
     if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
@@ -109,7 +173,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Registrar señales procesadas
     logSignalData(value, result, processedSignals.current);
     
-    // Siempre devolver resultado real
+    // Actualizar último resultado válido
+    if (isValidResult(result)) {
+      setLastValidResults(result);
+    }
+    
+    // Siempre devolver resultado estabilizado
     return result;
   };
 
@@ -122,6 +191,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearArrhythmiaWindows();
     setLastValidResults(null);
     weakSignalsCountRef.current = 0;
+    resultsHistoryRef.current = [];
+    lastStableResultRef.current = null;
+    stabilityCounterRef.current = 0;
     
     return null;
   };
@@ -135,6 +207,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     setLastValidResults(null);
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
+    resultsHistoryRef.current = [];
+    lastStableResultRef.current = null;
+    stabilityCounterRef.current = 0;
     clearLog();
   };
 
@@ -143,8 +218,13 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Siempre devolver null para garantizar que las mediciones comiencen desde cero
+    lastValidResults, 
     arrhythmiaWindows,
-    debugInfo: getDebugInfo()
+    debugInfo: {
+      ...getDebugInfo(),
+      stabilityCounter: stabilityCounterRef.current,
+      hasStableResult: !!lastStableResultRef.current,
+      resultsHistoryLength: resultsHistoryRef.current.length
+    }
   };
 };
