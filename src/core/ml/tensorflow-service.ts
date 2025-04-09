@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 import { ProcessorConfig } from '../config/ProcessorConfig';
 
@@ -120,6 +119,13 @@ export class TensorFlowService {
       console.error('Error processing signal with TensorFlow:', error);
       return null;
     }
+  }
+
+  /**
+   * Get the current TensorFlow.js backend
+   */
+  public getBackend(): string {
+    return tf.getBackend() || 'none';
   }
 
   /**
