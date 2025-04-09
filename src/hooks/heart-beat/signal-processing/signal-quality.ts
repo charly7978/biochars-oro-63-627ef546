@@ -4,7 +4,7 @@
  * Enhanced functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection
  */
-import { checkSignalQuality, isFingerDetectedByPattern, resetDetectionStates } from '../../../modules/heart-beat/signal-quality';
+import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
 // Signal history for pattern detection with improved buffer size
 let signalHistory: Array<{time: number, value: number}> = [];

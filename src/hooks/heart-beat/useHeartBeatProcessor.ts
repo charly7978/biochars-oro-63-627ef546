@@ -148,7 +148,7 @@ export const useHeartBeatProcessor = () => {
     isProcessingRef.current = true;
     
     if (processorRef.current) {
-      processorRef.current.startMonitoring();
+      processorRef.current.setMonitoring(true);
     }
     
     console.log("Iniciando procesamiento de señal...", {
@@ -163,7 +163,7 @@ export const useHeartBeatProcessor = () => {
     isProcessingRef.current = false;
     
     if (processorRef.current) {
-      processorRef.current.stopMonitoring();
+      processorRef.current.setMonitoring(false);
     }
     
     console.log("Deteniendo procesamiento de señal...", {

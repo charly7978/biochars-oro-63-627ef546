@@ -112,10 +112,7 @@ export const useSignalProcessing = () => {
         value: enhancedValue,
         result: {
           arrhythmiaStatus: result.arrhythmiaStatus,
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose,
-          lipids: result.lipids
+          spo2: result.spo2
         }
       });
       

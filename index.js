@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -22,13 +22,7 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  
-  // Referencias para estabilidad de mediciones
   const measurementTimerRef = useRef(null);
-  const lastValidHeartRateRef = useRef(0);
-  const heartRateStabilityRef = useRef(0);
-  const lastValidVitalSignsRef = useRef({ spo2: 0, pressure: "--/--", arrhythmiaStatus: "--" });
-  const vitalSignsStabilityRef = useRef(0);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
@@ -110,64 +104,12 @@ const Index = () => {
     };
   }, []);
 
-  // Función para estabilizar el ritmo cardiaco
-  const stabilizeHeartRate = useCallback((newHeartRate) => {
-    // Verificar si el nuevo valor es fisiológicamente válido
-    const isValidHeartRate = newHeartRate >= 40 && newHeartRate <= 200;
-    
-    if (isValidHeartRate) {
-      // Actualizar último valor válido y aumentar estabilidad
-      lastValidHeartRateRef.current = newHeartRate;
-      heartRateStabilityRef.current = Math.min(heartRateStabilityRef.current + 1, 5);
-      return newHeartRate;
-    }
-    
-    // Si tenemos un valor válido anterior y suficiente estabilidad
-    if (lastValidHeartRateRef.current > 0 && heartRateStabilityRef.current >= 3) {
-      // Degradar lentamente la estabilidad
-      heartRateStabilityRef.current = Math.max(0, heartRateStabilityRef.current - 0.5);
-      return lastValidHeartRateRef.current;
-    }
-    
-    return newHeartRate;
-  }, []);
-  
-  // Función para estabilizar los signos vitales
-  const stabilizeVitalSigns = useCallback((newVitalSigns) => {
-    // Verificar si los nuevos valores son fisiológicamente válidos
-    const isValidSpO2 = newVitalSigns.spo2 >= 80 && newVitalSigns.spo2 <= 100;
-    const isValidPressure = newVitalSigns.pressure !== "--/--";
-    
-    if (isValidSpO2 || isValidPressure) {
-      // Actualizar últimos valores válidos y aumentar estabilidad
-      lastValidVitalSignsRef.current = { ...newVitalSigns };
-      vitalSignsStabilityRef.current = Math.min(vitalSignsStabilityRef.current + 1, 5);
-      return newVitalSigns;
-    }
-    
-    // Si tenemos valores válidos anteriores y suficiente estabilidad
-    if ((lastValidVitalSignsRef.current.spo2 > 0 || lastValidVitalSignsRef.current.pressure !== "--/--") && 
-        vitalSignsStabilityRef.current >= 3) {
-      // Degradar lentamente la estabilidad
-      vitalSignsStabilityRef.current = Math.max(0, vitalSignsStabilityRef.current - 0.5);
-      return lastValidVitalSignsRef.current;
-    }
-    
-    return newVitalSigns;
-  }, []);
-
   const startMonitoring = () => {
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
     startProcessing();
     setElapsedTime(0);
-    
-    // Resetear valores de estabilidad
-    lastValidHeartRateRef.current = 0;
-    heartRateStabilityRef.current = 0;
-    lastValidVitalSignsRef.current = { spo2: 0, pressure: "--/--", arrhythmiaStatus: "--" };
-    vitalSignsStabilityRef.current = 0;
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -204,11 +146,14 @@ const Index = () => {
     stopProcessing();
     resetVitalSigns();
     setElapsedTime(0);
-    
-    // Mantener los últimos valores estables por consistencia en UI
-    // pero reiniciar contadores de estabilidad
-    heartRateStabilityRef.current = 0;
-    vitalSignsStabilityRef.current = 0;
+    setHeartRate(0);
+    setVitalSigns({ 
+      spo2: 0, 
+      pressure: "--/--",
+      arrhythmiaStatus: "--" 
+    });
+    setArrhythmiaCount("--");
+    setSignalQuality(0);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -230,12 +175,6 @@ const Index = () => {
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
-    
-    // Reiniciar todos los valores de estabilidad
-    lastValidHeartRateRef.current = 0;
-    heartRateStabilityRef.current = 0;
-    lastValidVitalSignsRef.current = { spo2: 0, pressure: "--/--", arrhythmiaStatus: "--" };
-    vitalSignsStabilityRef.current = 0;
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -300,22 +239,17 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      
-      // Estabilizar ritmo cardíaco para prevenir parpadeo
-      const stableHeartRate = stabilizeHeartRate(heartBeatResult.bpm);
-      setHeartRate(stableHeartRate);
+      setHeartRate(heartBeatResult.bpm);
       
       const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
       if (vitals) {
-        // Estabilizar signos vitales para prevenir parpadeo
-        const stableVitals = stabilizeVitalSigns(vitals);
-        setVitalSigns(stableVitals);
-        setArrhythmiaCount(stableVitals.arrhythmiaStatus.split('|')[1] || "--");
+        setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
       setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, stabilizeHeartRate, stabilizeVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -374,7 +308,7 @@ const Index = () => {
                 />
                 <VitalSign 
                   label="ARRITMIAS"
-                  value={arrhythmiaCount}
+                  value={vitalSigns.arrhythmiaStatus}
                 />
               </div>
             </div>
