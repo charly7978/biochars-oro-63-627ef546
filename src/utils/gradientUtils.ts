@@ -69,7 +69,7 @@ export const drawCanvasGrid = (
   
   for (let y = 0; y <= height; y += gridSizeY) {
     ctx.moveTo(0, y);
-    ctx.lineTo(x, y);
+    ctx.lineTo(width, y); // Fixed the error here - was using undefined 'x' variable
     if (y % (gridSizeY * 5) === 0) {
       ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
       ctx.font = '10px Inter';
