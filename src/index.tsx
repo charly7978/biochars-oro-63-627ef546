@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -7,14 +6,14 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
+import VitalSignsPerformanceMetrics from "@/components/VitalSignsPerformanceMetrics";
 import { toast } from "sonner";
+import { tensorflowService } from "./core/tensorflow/TensorflowService";
 
-// Adding TypeScript interface for fullscreen options
 interface FullscreenOptions {
   navigationUI?: "hide" | "show" | "auto";
 }
 
-// Add TypeScript definitions for vendor prefixed methods
 declare global {
   interface HTMLElement {
     webkitRequestFullscreen?: (options?: FullscreenOptions) => Promise<void>;
@@ -36,17 +35,39 @@ const Index: React.FC = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--" 
+    arrhythmiaStatus: "--",
+    glucose: "--",
+    lipids: {
+      totalCholesterol: "--",
+      triglycerides: "--"
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  
+
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { processSignal: processHeartBeat } = useHeartBeatProcessor();
-  const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
+  const { 
+    processSignal: processVitalSigns, 
+    reset: resetVitalSigns,
+    debugInfo 
+  } = useVitalSignsProcessor();
+
+  useEffect(() => {
+    const initTensorflow = async () => {
+      try {
+        await tensorflowService.initialize();
+        console.log("TensorFlow.js initialized successfully");
+      } catch (error) {
+        console.error("Failed to initialize TensorFlow.js:", error);
+      }
+    };
+    
+    initTensorflow();
+  }, []);
 
   const enterFullScreen = async () => {
     const elem = document.documentElement;
@@ -137,7 +158,7 @@ const Index: React.FC = () => {
     
     measurementTimerRef.current = window.setInterval(() => {
       setElapsedTime(prev => {
-        if (prev >= 45) { // Changed from 30 to 45 seconds
+        if (prev >= 45) {
           stopMonitoring();
           return 45;
         }
@@ -170,7 +191,12 @@ const Index: React.FC = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: "--",
+      lipids: {
+        totalCholesterol: "--",
+        triglycerides: "--"
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -191,7 +217,12 @@ const Index: React.FC = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: "--",
+      lipids: {
+        totalCholesterol: "--",
+        triglycerides: "--"
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -202,7 +233,7 @@ const Index: React.FC = () => {
     }
   };
 
-  const handleStreamReady = (stream) => {
+  const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
@@ -225,31 +256,44 @@ const Index: React.FC = () => {
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = 320;
+    tempCanvas.height = 240;
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
     }
     
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30;
+    
     const processImage = async () => {
       if (!isMonitoring) return;
       
-      try {
-        const frame = await imageCapture.grabFrame();
-        tempCanvas.width = frame.width;
-        tempCanvas.height = frame.height;
-        tempCtx.drawImage(frame, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processFrame(imageData);
-        
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
+      
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          const frame = await imageCapture.grabFrame();
+          
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, tempCanvas.width, tempCanvas.height
+          );
+          
+          const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+          processFrame(imageData);
+          
+          lastProcessTime = now;
+        } catch (error) {
+          console.error("Error capturando frame:", error);
         }
-      } catch (error) {
-        console.error("Error capturando frame:", error);
-        if (isMonitoring) {
-          requestAnimationFrame(processImage);
-        }
+      }
+      
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
       }
     };
 
@@ -304,8 +348,6 @@ const Index: React.FC = () => {
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              // Remove the reference to non-existent property
-              // rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
             />
           </div>
 
@@ -330,6 +372,24 @@ const Index: React.FC = () => {
                 <VitalSign 
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
+                />
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                <VitalSign 
+                  label="GLUCOSA"
+                  value={vitalSigns.glucose || "--"}
+                  unit="mg/dL"
+                />
+                <VitalSign 
+                  label="COLESTEROL"
+                  value={vitalSigns.lipids?.totalCholesterol || "--"}
+                  unit="mg/dL"
+                />
+                <VitalSign 
+                  label="TRIGLICÉRIDOS"
+                  value={vitalSigns.lipids?.triglycerides || "--"}
+                  unit="mg/dL"
                 />
               </div>
             </div>
@@ -357,6 +417,8 @@ const Index: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <VitalSignsPerformanceMetrics vitalSignsProcessor={debugInfo} />
 
       <MeasurementConfirmationDialog
         open={showConfirmDialog}

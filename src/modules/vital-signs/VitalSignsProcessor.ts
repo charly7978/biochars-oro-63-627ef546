@@ -1,7 +1,9 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+import * as tf from '@tensorflow/tfjs';
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { ArrhythmiaProcessor } from './arrhythmia-processor';
@@ -13,11 +15,14 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { findPeaksAndValleys, calculateHeartRateFromPeaks } from './utils';
+import { tensorflowService } from '../../core/tensorflow/TensorflowService';
+import { EnhancedSignalProcessor } from '../../core/signal/EnhancedSignalProcessor';
 
 /**
  * Main vital signs processor
  * Integrates different specialized processors to calculate health metrics
  * Operates ONLY in direct measurement mode without reference values or simulation
+ * Enhanced with TensorFlow.js for improved performance and accuracy
  */
 export class VitalSignsProcessor {
   // Specialized processors
@@ -31,6 +36,10 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Enhanced processing with TensorFlow
+  private enhancedProcessor: EnhancedSignalProcessor;
+  private tfInitialized: boolean = false;
 
   /**
    * Constructor that initializes all specialized processors
@@ -50,11 +59,32 @@ export class VitalSignsProcessor {
     // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
+    
+    // Initialize enhanced processor with TensorFlow
+    this.enhancedProcessor = new EnhancedSignalProcessor();
+    
+    // Initialize TensorFlow.js in background
+    this.initializeTensorFlow();
+  }
+  
+  /**
+   * Initialize TensorFlow.js
+   */
+  private async initializeTensorFlow(): Promise<void> {
+    try {
+      await tensorflowService.initialize();
+      this.tfInitialized = true;
+      console.log("VitalSignsProcessor: TensorFlow.js initialized successfully");
+    } catch (error) {
+      console.error("VitalSignsProcessor: TensorFlow.js initialization failed", error);
+      this.tfInitialized = false;
+    }
   }
   
   /**
    * Processes the real PPG signal and calculates all vital signs
    * Using ONLY direct measurements with no reference values or simulation
+   * Enhanced with TensorFlow.js for improved accuracy
    */
   public processSignal(
     ppgValue: number,
@@ -90,19 +120,51 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
-    // Analyze signal characteristics 
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgValues.slice(-60));
-    const heartRate = calculateHeartRateFromPeaks(peakIndices);
+    // Use TensorFlow for enhanced signal analysis if available
+    let enhancedResult = null;
+    let heartRate = 0;
     
-    console.log("Signal analysis for vital signs calculation:", {
-      peakCount: peakIndices.length,
-      valleyCount: valleyIndices.length,
-      estimatedHR: heartRate,
-      signalLength: ppgValues.length,
-      signalMin: Math.min(...ppgValues.slice(-15)),
-      signalMax: Math.max(...ppgValues.slice(-15)),
-      signalAmplitude: Math.max(...ppgValues.slice(-15)) - Math.min(...ppgValues.slice(-15))
-    });
+    if (this.tfInitialized) {
+      try {
+        // Process signal using TensorFlow for better accuracy
+        enhancedResult = this.enhancedProcessor.processSignal(ppgValues.slice(-60));
+        
+        // Use enhanced peak detection for heart rate
+        heartRate = enhancedResult.characteristics.frequency * 60;
+      } catch (error) {
+        console.error("VitalSignsProcessor: TensorFlow processing error, falling back to standard", error);
+        enhancedResult = null;
+      }
+    }
+    
+    // Fallback to standard analysis if TensorFlow fails
+    if (!enhancedResult) {
+      // Analyze signal characteristics 
+      const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgValues.slice(-60));
+      heartRate = calculateHeartRateFromPeaks(peakIndices);
+      
+      console.log("Signal analysis for vital signs calculation:", {
+        peakCount: peakIndices.length,
+        valleyCount: valleyIndices.length,
+        estimatedHR: heartRate,
+        signalLength: ppgValues.length,
+        signalMin: Math.min(...ppgValues.slice(-15)),
+        signalMax: Math.max(...ppgValues.slice(-15)),
+        signalAmplitude: Math.max(...ppgValues.slice(-15)) - Math.min(...ppgValues.slice(-15))
+      });
+    } else {
+      // Log enhanced signal analysis results
+      console.log("Enhanced signal analysis for vital signs calculation:", {
+        peakCount: enhancedResult.peaks.length,
+        valleyCount: enhancedResult.valleys.length,
+        estimatedHR: heartRate,
+        signalQuality: enhancedResult.quality,
+        signalConfidence: enhancedResult.confidence,
+        amplitude: enhancedResult.characteristics.amplitude,
+        snr: enhancedResult.characteristics.snr,
+        perfusionIndex: enhancedResult.characteristics.perfusionIndex
+      });
+    }
     
     // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
@@ -115,7 +177,9 @@ export class VitalSignsProcessor {
     }
     
     // Calculate SpO2 using real data only
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
+    const spo2 = this.spo2Processor.calculateSpO2(
+      enhancedResult ? enhancedResult.processedSignal : ppgValues.slice(-45)
+    );
     
     // Calculate blood pressure using ONLY real signal characteristics
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
@@ -157,7 +221,8 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       signalAmplitude: amplitude,
-      confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
+      confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold(),
+      tensorflowEnabled: this.tfInitialized
     });
 
     // Prepare result with all metrics
@@ -213,6 +278,17 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
+  }
+  
+  /**
+   * Get TensorFlow backend information
+   */
+  public getTensorflowInfo(): object {
+    if (!this.tfInitialized) {
+      return { initialized: false, backend: 'none' };
+    }
+    
+    return tensorflowService.getBackendInfo();
   }
 }
 
