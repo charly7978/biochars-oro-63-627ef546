@@ -4,100 +4,40 @@
  */
 
 /**
- * Calculate signal amplitude based on real peaks and valleys
+ * Re-export utilities from individual files to maintain compatibility
+ * All functions process only real data without simulation.
  */
-export function calculateAmplitude(
-  signal: number[],
-  peakIndices: number[],
-  valleyIndices: number[]
-): number {
-  if (signal.length < 2 || peakIndices.length === 0 || valleyIndices.length === 0) {
-    return Math.max(...signal) - Math.min(...signal);
-  }
 
-  const peakValues = peakIndices.map(idx => signal[idx]);
-  const valleyValues = valleyIndices.map(idx => signal[idx]);
-  
-  const avgPeak = peakValues.reduce((sum, val) => sum + val, 0) / peakValues.length;
-  const avgValley = valleyValues.reduce((sum, val) => sum + val, 0) / valleyValues.length;
-  
-  return avgPeak - avgValley;
-}
+// Re-export signal processing utilities
+export {
+  calculateAC,
+  calculateDC,
+  calculateStandardDeviation,
+  calculateEMA,
+  normalizeValue
+} from './utils/signal-processing-utils';
 
-/**
- * Find peaks and valleys in a real physiological signal
- */
-export function findPeaksAndValleys(signal: number[]): {
-  peakIndices: number[];
-  valleyIndices: number[];
-} {
-  if (signal.length < 3) {
-    return { peakIndices: [], valleyIndices: [] };
-  }
+// Re-export peak detection utilities
+export {
+  findPeaksAndValleys,
+  calculateAmplitude
+} from './utils/peak-detection-utils';
 
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
-  
-  // Detect real peaks and valleys based on slope changes
-  for (let i = 1; i < signal.length - 1; i++) {
-    // Peak detection
-    if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1]) {
-      peakIndices.push(i);
-    }
-    // Valley detection
-    else if (signal[i] < signal[i - 1] && signal[i] < signal[i + 1]) {
-      valleyIndices.push(i);
-    }
-  }
-  
-  return { peakIndices, valleyIndices };
-}
+// Re-export filter utilities
+export {
+  applySMAFilter,
+  amplifySignal
+} from './utils/filter-utils';
 
-/**
- * Calculate heart rate from peak intervals
- */
-export function calculateHeartRateFromPeaks(
-  peakIndices: number[],
-  samplingRateHz: number = 25
-): number {
-  if (peakIndices.length < 2) {
-    return 0;
-  }
-  
-  // Calculate intervals between adjacent peaks
-  const intervals: number[] = [];
-  for (let i = 1; i < peakIndices.length; i++) {
-    intervals.push(peakIndices[i] - peakIndices[i - 1]);
-  }
-  
-  // Filter physiologically impossible intervals
-  const validIntervals = intervals.filter(interval => 
-    interval > samplingRateHz * 0.3 && interval < samplingRateHz * 2
-  );
-  
-  if (validIntervals.length === 0) {
-    return 0;
-  }
-  
-  // Convert to heart rate
-  const avgInterval = validIntervals.reduce((sum, interval) => sum + interval, 0) / validIntervals.length;
-  const heartRate = 60 * samplingRateHz / avgInterval;
-  
-  return Math.round(heartRate);
-}
+// Re-export perfusion utilities
+export {
+  calculatePerfusionIndex
+} from './utils/perfusion-utils';
 
-/**
- * Calcula el componente AC (amplitud pico a pico) de una señal real
- */
-export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
-
-/**
- * Calcula el componente DC (valor promedio) de una señal real
- */
-export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
-}
+// Re-export from core utils
+export {
+  calculateAC as getAC,
+  calculateDC as getDC,
+  calculateStandardDeviation as getStandardDeviation,
+  amplifySignal as getAmplifiedSignal
+} from '../../utils/vitalSignsUtils';
