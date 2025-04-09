@@ -1,6 +1,5 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
-import { ROIDetector } from '../core/signal/roi-detector';
-import { MultichannelAnalyzer } from '../core/signal/multichannel-analyzer';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -59,11 +58,6 @@ export class PPGSignalProcessor implements SignalProcessor {
   private stableFrameCount: number = 0;
   private lastStableValue: number = 0;
   
-  // Nuevas instancias para ROI dinámica y multicanal
-  private roiDetector: ROIDetector;
-  private multichannelAnalyzer: MultichannelAnalyzer;
-  private lastROI: ProcessedSignal['roi'] = { x: 0, y: 0, width: 100, height: 100 };
-  
   // Nuevos parámetros para análisis mejorado
   private consistencyHistory: number[] = []; // Historial para evaluar consistencia
   private readonly CONSISTENCY_BUFFER_SIZE = 8; // Tamaño de ventana para consistencia
@@ -80,11 +74,6 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly PERIODICITY_BUFFER_SIZE = 60; // Ventana para análisis de periodicidad
   private periodicityBuffer: number[] = [];
   private lastPeriodicityScore: number = 0;
-  
-  // Buffers de canales para análisis multicanal
-  private redBuffer: number[] = [];
-  private greenBuffer: number[] = [];
-  private blueBuffer: number[] = [];
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -92,12 +81,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   ) {
     this.kalmanFilter = new KalmanFilter();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
-    
-    // Inicializar componentes de análisis avanzado
-    this.roiDetector = new ROIDetector();
-    this.multichannelAnalyzer = new MultichannelAnalyzer();
-    
-    console.log("PPGSignalProcessor: Instancia creada con análisis multicanal y ROI dinámico");
+    console.log("PPGSignalProcessor: Instancia creada");
   }
 
   /**
@@ -113,15 +97,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.movementScores = [];
       this.periodicityBuffer = [];
       this.lastPeriodicityScore = 0;
-      
-      // Reiniciar componentes de análisis avanzado
-      this.roiDetector.reset();
-      this.multichannelAnalyzer.reset();
-      this.redBuffer = [];
-      this.greenBuffer = [];
-      this.blueBuffer = [];
-      
-      console.log("PPGSignalProcessor: Inicializado con análisis multicanal y ROI dinámico");
+      console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
       this.handleError("INIT_ERROR", "Error al inicializar el procesador");
@@ -150,11 +126,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consistencyHistory = [];
     this.movementScores = [];
     this.periodicityBuffer = [];
-    
-    // Detener componentes avanzados
-    this.roiDetector.reset();
-    this.multichannelAnalyzer.reset();
-    
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -212,32 +183,11 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
       this.lastProcessedTime = now;
       
-      // Detectar ROI óptima
-      const optimalROI = this.roiDetector.detectOptimalROI(imageData);
-      this.lastROI = optimalROI;
+      // Extraer canal rojo (principal para PPG)
+      const redValue = this.extractRedChannel(imageData);
       
-      // Analizar múltiples canales en la ROI
-      const {
-        redValue,
-        greenValue,
-        blueValue,
-        weightedValue,
-        perfusionIndex
-      } = this.multichannelAnalyzer.processROI(imageData, optimalROI);
-      
-      // Guardar valores de canales para análisis
-      this.redBuffer.push(redValue);
-      this.greenBuffer.push(greenValue);
-      this.blueBuffer.push(blueValue);
-      
-      if (this.redBuffer.length > 30) {
-        this.redBuffer.shift();
-        this.greenBuffer.shift();
-        this.blueBuffer.shift();
-      }
-      
-      // Aplicar filtrado al valor ponderado optimizado
-      const filtered = this.kalmanFilter.filter(weightedValue);
+      // Aplicar filtrado inicial para reducir ruido
+      const filtered = this.kalmanFilter.filter(redValue);
       
       // Almacenar para análisis
       this.lastValues.push(filtered);
@@ -260,6 +210,9 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Analizar la señal para determinar calidad y presencia del dedo
       const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue, movementScore);
       
+      // Calcular índice de perfusión
+      const perfusionIndex = this.calculatePerfusionIndex();
+      
       // Analizar periodicidad si tenemos suficientes datos
       if (this.periodicityBuffer.length > 30) {
         this.lastPeriodicityScore = this.analyzeSignalPeriodicity();
@@ -275,7 +228,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.lastROI,
+        roi: this.detectROI(redValue),
         perfusionIndex,
         spectrumData
       };
@@ -385,6 +338,50 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
+   * Extrae el canal rojo de un frame
+   * El canal rojo es el más sensible a cambios en volumen sanguíneo
+   */
+  private extractRedChannel(imageData: ImageData): number {
+    const data = imageData.data;
+    let redSum = 0;
+    let count = 0;
+    
+    // Analizar una parte más grande de la imagen (40% central)
+    const startX = Math.floor(imageData.width * 0.3);
+    const endX = Math.floor(imageData.width * 0.7);
+    const startY = Math.floor(imageData.height * 0.3);
+    const endY = Math.floor(imageData.height * 0.7);
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const i = (y * imageData.width + x) * 4;
+        redSum += data[i];  // Canal rojo
+        count++;
+      }
+    }
+    
+    const avgRed = redSum / count;
+    return avgRed;
+  }
+
+  /**
+   * Calcula índice de perfusión
+   */
+  private calculatePerfusionIndex(): number {
+    if (this.lastValues.length < 5) return 0;
+    
+    const recent = this.lastValues.slice(-5);
+    const min = Math.min(...recent);
+    const max = Math.max(...recent);
+    
+    // PI = (AC/DC)
+    const ac = max - min;
+    const dc = (max + min) / 2;
+    
+    return dc > 0 ? ac / dc : 0;
+  }
+
+  /**
    * Analiza la señal para determinar calidad y presencia de dedo
    * Incluye análisis de movimiento y periodicidad como factores
    */
@@ -444,10 +441,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     // Factor de periodicidad (buscar patrones cardíacos)
     const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
     
-    // Incluir factor de balance de canales del análisis multicanal
-    const channelWeights = this.multichannelAnalyzer.getChannelWeights();
-    const channelBalanceFactor = 1 - (Math.abs(channelWeights.red - 0.5) * 0.5);
-    
     // Calcular calidad ponderando múltiples factores
     let quality = 0;
     
@@ -457,13 +450,12 @@ export class PPGSignalProcessor implements SignalProcessor {
                                   (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
     const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
     
-    // Ponderación ajustada para incluir balance de canales
-    quality = Math.round((stabilityScore * 0.35 + 
-                        intensityScore * 0.25 + 
+    // Ponderación ajustada para ser más permisiva
+    quality = Math.round((stabilityScore * 0.4 + 
+                        intensityScore * 0.3 + 
                         variationScore * 0.1 + 
                         movementFactor * 0.1 + 
-                        periodicityFactor * 0.1 +
-                        channelBalanceFactor * 0.1) * 100);
+                        periodicityFactor * 0.1) * 100);
     
     // Detección de dedo más permisiva
     // Permitimos detección con calidad mínima más baja
@@ -536,7 +528,12 @@ export class PPGSignalProcessor implements SignalProcessor {
    * Detecta región de interés para análisis
    */
   private detectROI(redValue: number): ProcessedSignal['roi'] {
-    return this.lastROI;
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    };
   }
 
   /**

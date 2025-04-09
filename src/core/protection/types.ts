@@ -15,7 +15,7 @@ export interface ChangeLogEntry {
     fileName: string;
     moduleName: string;
   };
-  type: 'attempt' | 'success' | 'failure' | 'rollback';
+  type: 'attempt' | 'success' | 'failure' | 'rollback' | 'verification';
   details?: Record<string, any>;
 }
 
