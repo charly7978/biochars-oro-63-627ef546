@@ -7,13 +7,15 @@
 export * from './signal-quality';
 export * from './peak-detection';
 export * from './result-processor';
+export * from './adaptive-control';
 
 // Export specific functions for direct use
 export { 
   checkWeakSignal, 
   shouldProcessMeasurement, 
   createWeakSignalResult,
-  resetSignalQualityState
+  resetSignalQualityState,
+  isFingerDetected
 } from './signal-quality';
 
 export { 
@@ -24,3 +26,15 @@ export {
   updateLastValidBpm, 
   processLowConfidenceResult 
 } from './result-processor';
+
+export {
+  applyAdaptiveFilter,
+  predictNextValue,
+  correctSignalAnomalies,
+  updateQualityWithPrediction,
+  resetAdaptiveControl,
+  getAdaptiveModelState,
+  applyBayesianOptimization,
+  applyGaussianProcessModeling,
+  applyMixedModelPrediction
+} from './adaptive-control';
