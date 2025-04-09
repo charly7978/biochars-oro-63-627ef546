@@ -1,7 +1,9 @@
+
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import { logSignalProcessing, LogLevel } from '@/utils/signalLogging';
 
 interface Props {
@@ -59,6 +61,19 @@ class ErrorBoundary extends Component<Props, State> {
     // Call onError prop if provided
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
+    }
+    
+    // Report to monitoring system
+    const now = Date.now();
+    
+    // Don't spam with error toasts (max 1 per 10 seconds)
+    if (now - this.lastError > 10000) {
+      toast({
+        title: 'Component Error',
+        description: `An error occurred in a UI component. Try reloading if issues persist.`,
+        variant: 'destructive'
+      });
+      this.lastError = now;
     }
   }
 

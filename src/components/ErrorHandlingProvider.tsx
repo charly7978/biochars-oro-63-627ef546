@@ -1,13 +1,10 @@
+
 import React, { useState, useEffect, ReactNode } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, RefreshCw, ShieldCheck, Activity, BarChart } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useErrorDetection } from '@/hooks/useErrorDetection';
-import { useErrorDefense } from '@/hooks/useErrorDefense';
 import ErrorBoundary from './ErrorBoundary';
-import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from '@/core/error-defense/ErrorDefenseSystem';
-import { SystemDiagnostics } from './SystemDiagnostics';
-import { evaluateSystemQuality } from '@/utils/signalLogging';
 
 interface ErrorHandlingProviderProps {
   children: ReactNode;
@@ -19,142 +16,72 @@ interface ErrorHandlingProviderProps {
  */
 export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) {
   const {
-    errorStats,
-    startMonitoring,
-    stopMonitoring,
-    resetMonitoring,
-    reportError
-  } = useErrorDetection();
-  
-  const {
     errorState,
     attemptRecovery,
     checkForIssues,
-    updateComponentStatus,
-    forceRebuild
-  } = useErrorDefense('ErrorHandlingProvider');
+    updateStatus
+  } = useErrorDetection();
   
   const [showWarning, setShowWarning] = useState<boolean>(false);
   const [issueMessage, setIssueMessage] = useState<string | null>(null);
   const [isCritical, setIsCritical] = useState<boolean>(false);
-  const [showHealthIndicator, setShowHealthIndicator] = useState<boolean>(false);
-  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
-  const [systemQualityScore, setSystemQualityScore] = useState<number>(100);
-  const [lastAutoRecovery, setLastAutoRecovery] = useState<number>(0);
+  const [recoveryAttempted, setRecoveryAttempted] = useState<boolean>(false);
   
-  // Initialize defense system when loading
-  useEffect(() => {
-    // Ensure the system is initialized
-    const defenseSystem = ErrorDefenseSystem.getInstance();
-    
-    // Start error monitoring
-    startMonitoring();
-    
-    // Mark component as healthy
-    updateComponentStatus('healthy');
-    
-    // Perform initial system quality evaluation
-    const qualityReport = evaluateSystemQuality();
-    setSystemQualityScore(qualityReport.score);
-    
-    // Initial health check - minimal notification
-    setTimeout(() => {
-      setShowHealthIndicator(true);
-      setTimeout(() => setShowHealthIndicator(false), 3000);
-    }, 2000);
-    
-    return () => {
-      stopMonitoring();
-      defenseSystem.removeAllListeners();
-    };
-  }, [startMonitoring, stopMonitoring, updateComponentStatus]);
-  
-  // Advanced periodic health check system with reduced notifications
+  // Check for issues periodically
   useEffect(() => {
     const checkInterval = setInterval(() => {
-      // Verify error defense system
-      const hasIssues = checkForIssues();
+      const { hasIssues, criticalIssues, message } = checkForIssues();
       
-      // Check for errors from legacy system
-      const hasLegacyIssues = errorStats.count > 0;
-      const criticalLegacyIssues = errorStats.count > 5;
-      
-      // Temporarily show health indicator
-      setShowHealthIndicator(true);
-      setTimeout(() => setShowHealthIndicator(false), 2000);
-      
-      // Combine information from both systems
-      const combinedHasIssues = hasIssues || hasLegacyIssues;
-      const combinedIsCritical = 
-        (!errorState.isSystemHealthy && errorState.criticalErrors > 0) || 
-        criticalLegacyIssues;
-      
-      // Set alert state
-      setShowWarning(combinedHasIssues);
-      
-      // Build issue message
-      let message = null;
-      if (combinedHasIssues) {
-        if (errorState.criticalErrors > 0) {
-          message = `${errorState.criticalErrors} errores críticos detectados`;
-        } else if (errorState.highErrors > 0) {
-          message = `${errorState.highErrors} errores graves detectados`;
-        } else if (errorState.totalErrors > 0) {
-          message = `${errorState.totalErrors} errores detectados`;
-        } else if (hasLegacyIssues) {
-          message = `${errorStats.count} errores detectados`;
-        }
-      }
+      setShowWarning(hasIssues);
       setIssueMessage(message);
-      setIsCritical(combinedIsCritical);
+      setIsCritical(criticalIssues);
       
-      // Evaluate system quality score periodically
-      const qualityReport = evaluateSystemQuality();
-      setSystemQualityScore(qualityReport.score);
-      
-      // Intelligent auto-recovery system with throttling and minimal notifications
-      const now = Date.now();
-      if (combinedHasIssues && now - lastAutoRecovery > 60000) { // Max once per minute
-        const shouldAutoRecover = 
-          (qualityReport.score < 70) || // Poor quality score
-          (!combinedIsCritical && errorState.totalErrors > 3) || // Multiple non-critical errors
-          (hasLegacyIssues && errorStats.count > 2); // Multiple legacy errors
-          
-        if (shouldAutoRecover) {
-          console.log("ErrorHandlingProvider: Intelligent auto-recovery triggered");
-          handleRecovery();
-          setLastAutoRecovery(now);
-        }
-      }
-      
-      // Show diagnostics automatically for critical problems
-      if (combinedIsCritical && !showDiagnostics) {
-        setShowDiagnostics(true);
+      // Auto-recovery attempt for non-critical issues
+      if (hasIssues && !criticalIssues && !recoveryAttempted) {
+        console.log("ErrorHandlingProvider: Auto-recovery attempt for non-critical issue");
+        handleRecovery();
+        setRecoveryAttempted(true);
+        
+        // Reset recovery attempt flag after 30 seconds
+        setTimeout(() => {
+          setRecoveryAttempted(false);
+        }, 30000);
       }
     }, 10000); // Check every 10 seconds
     
     return () => {
       clearInterval(checkInterval);
     };
-  }, [errorStats, checkForIssues, errorState, showDiagnostics, lastAutoRecovery]);
+  }, [checkForIssues, errorState, recoveryAttempted]);
   
   // Handle recovery attempt
   const handleRecovery = async () => {
-    // Use unified recovery system
-    const recoveryActions = attemptRecovery();
-    resetMonitoring();
-    
-    setShowWarning(false);
-    console.log("ErrorHandlingProvider: Recovery attempted");
-  };
-  
-  // Handle forced rebuild
-  const handleForceRebuild = async () => {
-    if (window.confirm("Esta acción realizará una reconstrucción forzada del sistema. ¿Continuar?")) {
-      forceRebuild();
-      resetMonitoring();
+    const success = await attemptRecovery();
+    if (success) {
       setShowWarning(false);
-      console.log("ErrorHandlingProvider: Forced rebuild initiated");
+      updateStatus();
+      console.log("ErrorHandlingProvider: Recovery successful");
+      
+      // Reset arrhythmia detection services if possible
+      try {
+        if (typeof window !== 'undefined') {
+          // Reset any global detection services
+          if ((window as any).heartBeatProcessor) {
+            (window as any).heartBeatProcessor.reset();
+            console.log("ErrorHandlingProvider: Reset heartBeatProcessor");
+          }
+          
+          // Clear any stale RR interval data
+          if (localStorage) {
+            localStorage.removeItem('arrhythmia_detection_state');
+            console.log("ErrorHandlingProvider: Cleared persisted arrhythmia state");
+          }
+        }
+      } catch (error) {
+        console.error("ErrorHandlingProvider: Error during additional recovery steps", error);
+      }
+    } else {
+      console.log("ErrorHandlingProvider: Recovery failed");
     }
   };
   
@@ -165,56 +92,9 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         setShowWarning(true);
         setIssueMessage("React error: " + error.message);
         setIsCritical(true);
-        setShowDiagnostics(true);
-        
-        // Report to legacy system
-        reportError("REACT_ERROR", error.message, { stack: error.stack });
-        
-        // Report to new defense system
-        const defenseSystem = ErrorDefenseSystem.getInstance();
-        defenseSystem.reportError({
-          id: '',
-          timestamp: Date.now(),
-          category: ErrorCategory.RUNTIME,
-          severity: ErrorSeverity.CRITICAL,
-          message: error.message,
-          source: 'react',
-          stack: error.stack,
-          metadata: { type: 'react_error' }
-        });
       }}
     >
-      {/* System health indicator with quality score - show only when active */}
-      {showHealthIndicator && (
-        <div className="fixed top-2 right-2 z-50 transition-opacity duration-300">
-          <div className={`flex flex-col items-end gap-1`}>
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-              systemQualityScore > 80 ? 'bg-green-100 text-green-800' : 
-              systemQualityScore > 60 ? 'bg-amber-100 text-amber-800' : 
-              'bg-red-100 text-red-800'
-            }`}>
-              {systemQualityScore > 80 ? (
-                <ShieldCheck className="h-3 w-3" />
-              ) : (
-                <Activity className="h-3 w-3" />
-              )}
-              <span>Sistema {
-                systemQualityScore > 90 ? 'óptimo' : 
-                systemQualityScore > 80 ? 'estable' : 
-                systemQualityScore > 60 ? 'en recuperación' : 
-                'comprometido'
-              }</span>
-            </div>
-            
-            <div className="bg-background border rounded-full px-2 py-0.5 text-xs flex items-center gap-1 shadow-sm">
-              <BarChart className="h-3 w-3 text-muted-foreground" />
-              <span>Calidad: {systemQualityScore}%</span>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Warning banner for detected issues */}
+      {/* Show warning banner for non-fatal issues */}
       {showWarning && (
         <Alert
           variant={isCritical ? "destructive" : "default"}
@@ -222,52 +102,20 @@ export function ErrorHandlingProvider({ children }: ErrorHandlingProviderProps) 
         >
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>
-            {isCritical ? 'Error del Sistema Detectado' : 'Advertencia'}
+            {isCritical ? 'System Error Detected' : 'Warning'}
           </AlertTitle>
           <AlertDescription className="mt-2 flex items-center justify-between">
-            <span>{issueMessage || 'Problemas del sistema detectados'}</span>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex items-center gap-1"
-                onClick={handleRecovery}
-              >
-                <RefreshCw className="h-3 w-3" /> Recuperación Estándar
-              </Button>
-              
-              <Button
-                size="sm"
-                variant="secondary"
-                className="flex items-center gap-1"
-                onClick={() => setShowDiagnostics(!showDiagnostics)}
-              >
-                <Activity className="h-3 w-3" /> 
-                {showDiagnostics ? 'Ocultar Diagnóstico' : 'Mostrar Diagnóstico'}
-              </Button>
-              
-              {isCritical && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="flex items-center gap-1"
-                  onClick={handleForceRebuild}
-                >
-                  <RefreshCw className="h-3 w-3" /> Reconstrucción Forzada
-                </Button>
-              )}
-            </div>
+            <span>{issueMessage || 'System issues detected'}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-1"
+              onClick={handleRecovery}
+            >
+              <RefreshCw className="h-3 w-3" /> Attempt Recovery
+            </Button>
           </AlertDescription>
         </Alert>
-      )}
-      
-      {/* System Diagnostics - only show detailed view when explicitly requested */}
-      {showDiagnostics ? (
-        <div className="mb-4">
-          <SystemDiagnostics minimal={false} />
-        </div>
-      ) : (
-        <SystemDiagnostics minimal={true} />
       )}
       
       {/* Render children */}

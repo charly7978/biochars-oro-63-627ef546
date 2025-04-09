@@ -6,28 +6,54 @@
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating VitalSignsResult objects
- * Direct measurement only, no simulation
+ * Factory for creating consistent VitalSignsResult objects
+ * All methods work with real data only, no simulation
  */
 export class ResultFactory {
   /**
-   * Create a VitalSignsResult from measured values
-   * Direct measurement only, no simulation
+   * Creates an empty result when there is no valid data
+   * Always returns zeros, no simulation
    */
-  public createResult(params: Partial<VitalSignsResult>): VitalSignsResult {
+  public static createEmptyResults(): VitalSignsResult {
     return {
-      spo2: params.spo2 || 0,
-      pressure: params.pressure || "--/--",
-      arrhythmiaStatus: params.arrhythmiaStatus || "--",
-      glucose: params.glucose || 0,
-      lipids: params.lipids || {
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      lastArrhythmiaData: params.lastArrhythmiaData || null
+      confidence: {
+        glucose: 0,
+        lipids: 0,
+        overall: 0
+      }
+    };
+  }
+  
+  /**
+   * Creates a result with the given values
+   * Only for direct measurements
+   */
+  public static createResult(
+    spo2: number,
+    pressure: string,
+    arrhythmiaStatus: string,
+    glucose: number,
+    lipids: { totalCholesterol: number; triglycerides: number },
+    confidence: { glucose: number; lipids: number; overall: number },
+    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
+  ): VitalSignsResult {
+    return {
+      spo2,
+      pressure,
+      arrhythmiaStatus,
+      glucose,
+      lipids,
+      confidence,
+      lastArrhythmiaData
     };
   }
 }
 
-// For easier importing
-export const resultFactory = new ResultFactory();

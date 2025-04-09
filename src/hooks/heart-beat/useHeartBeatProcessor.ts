@@ -4,7 +4,7 @@ import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { useBeepProcessor } from './beep-processor';
 import { useSignalProcessor } from './signal-processor';
-import { HeartBeatResult, RRIntervalData, UseHeartBeatReturn } from './types';
+import { HeartBeatResult, UseHeartBeatReturn } from './types';
 import { ArrhythmiaDetectionService } from '../../services/ArrhythmiaDetectionService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
@@ -232,10 +232,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     requestBeep,
     startMonitoring,
     stopMonitoring,
-    // Fix the arrhythmia segments mapping to match the expected interface
-    arrhythmiaSegments: arrhythmiaSegmentsRef.current.map(segment => ({
-      start: segment.startTime,
-      end: segment.endTime
-    }))
+    arrhythmiaSegments: arrhythmiaSegmentsRef.current
   };
 };
