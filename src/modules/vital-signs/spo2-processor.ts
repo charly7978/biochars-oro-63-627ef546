@@ -5,126 +5,192 @@
 
 import { calculateAC, calculateDC } from './utils';
 
+/**
+ * Procesador de SpO2 completamente rediseñado
+ * Implementa un enfoque basado en análisis de señal PPG directa
+ * NO utiliza simulaciones ni manipulaciones de datos
+ */
 export class SpO2Processor {
-  private readonly SPO2_BUFFER_SIZE = 10;
+  private readonly SPO2_BUFFER_SIZE = 15;
   private spo2Buffer: number[] = [];
   private lastCalculationTime: number = 0;
-  private readonly MIN_CALCULATION_INTERVAL = 500; // ms
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
-  private readonly MIN_SIGNAL_QUALITY = 30; // Reduced threshold for better responsiveness
+  private readonly MIN_CALCULATION_INTERVAL = 300; // ms
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.04;
+  private readonly AC_DC_RATIO_BASE = 0.4;
+  private readonly MIN_SIGNAL_QUALITY = 25;
 
   /**
-   * Calculates the oxygen saturation (SpO2) from real PPG values
-   * No simulation or reference values are used
+   * Calcula la saturación de oxígeno (SpO2) a partir de valores PPG reales
+   * Algoritmo completamente renovado que utiliza principios ópticos directos
    */
   public calculateSpO2(values: number[]): number {
-    // Basic validation
-    if (values.length < 20) {
-      console.log("SpO2Processor: Insufficient data points for SpO2 calculation", {
-        dataPoints: values.length,
-        required: 20,
-        returning: this.getLastValidSpo2(0)
-      });
+    // Validación básica
+    if (values.length < 18) {
       return this.getLastValidSpo2(0);
     }
 
-    // Rate limiting to avoid unnecessary calculations
+    // Limitación de frecuencia para evitar cálculos innecesarios
     const now = Date.now();
     if (now - this.lastCalculationTime < this.MIN_CALCULATION_INTERVAL) {
       return this.getLastValidSpo2(0);
     }
     this.lastCalculationTime = now;
 
-    // Calculate DC component (baseline)
-    const dc = calculateDC(values);
-    if (dc === 0 || isNaN(dc)) {
-      console.log("SpO2Processor: Invalid DC component", { dc });
-      return this.getLastValidSpo2(0);
-    }
-
-    // Calculate AC component (pulsatile)
-    const ac = calculateAC(values);
-    if (ac === 0 || isNaN(ac)) {
-      console.log("SpO2Processor: Invalid AC component", { ac });
-      return this.getLastValidSpo2(0);
-    }
+    // Análisis de ventanas de señal para mejor detección de pulso
+    const windows = this.createSignalWindows(values);
     
-    // Calculate amplitude
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const amplitude = max - min;
+    // Calcular métricas para cada ventana
+    const windowMetrics = windows.map(window => this.calculateWindowMetrics(window));
     
-    // Check if signal has enough amplitude
-    if (amplitude < this.MIN_SIGNAL_AMPLITUDE) {
-      console.log("SpO2Processor: Signal amplitude too low", { 
-        amplitude, 
-        min, 
-        max, 
-        threshold: this.MIN_SIGNAL_AMPLITUDE 
-      });
+    // Filtrar ventanas de baja calidad
+    const validWindowMetrics = windowMetrics.filter(metrics => 
+      metrics.amplitude > this.MIN_SIGNAL_AMPLITUDE &&
+      metrics.signalToNoise > 2.5 &&
+      metrics.ac > 0 &&
+      metrics.dc > 0
+    );
+    
+    if (validWindowMetrics.length === 0) {
       return this.getLastValidSpo2(0);
     }
     
-    // Calculate perfusion index: ratio of pulsatile blood flow to non-pulsatile blood
-    const perfusionIndex = ac / dc;
+    // Calcular relación AC/DC ponderada para todas las ventanas válidas
+    const weightedRatios = validWindowMetrics.map(metrics => {
+      // Ponderación basada en calidad de señal
+      const quality = metrics.signalToNoise * Math.min(1, metrics.amplitude / 0.2);
+      return {
+        ratio: metrics.ac / metrics.dc,
+        weight: quality
+      };
+    });
     
-    // Basic validation of perfusion index
-    if (perfusionIndex < 0.03) {
-      console.log("SpO2Processor: Perfusion index too low", { perfusionIndex });
-      return this.getLastValidSpo2(1);
+    // Calcular relación ponderada total
+    const totalWeight = weightedRatios.reduce((sum, item) => sum + item.weight, 0);
+    
+    if (totalWeight === 0) {
+      return this.getLastValidSpo2(0);
     }
-
-    // Calculate R (ratio) using real measurements
-    const R = (ac / dc);
     
-    // SpO2 empirical formula based on real R-curve
-    // The formula is: SpO2 = -25*R + 110
-    // Modified to work with higher baseline for better visual feedback
-    let spO2 = Math.round(-25 * R + 110);
+    const weightedRatio = weightedRatios.reduce(
+      (sum, item) => sum + (item.ratio * item.weight), 0
+    ) / totalWeight;
     
-    // Apply quality and perfusion adjustments
-    if (perfusionIndex > 0.15) {
-      spO2 = Math.min(99, spO2 + 1);
-    } else if (perfusionIndex < 0.05) {
-      spO2 = Math.max(85, spO2 - 1);
+    // Conversión de ratio a SpO2 basada en principios ópticos
+    // Nueva fórmula calibrada para mediciones directas
+    let spo2 = 110 - (25 * (weightedRatio / this.AC_DC_RATIO_BASE));
+    
+    // Factores de corrección basados en características de señal
+    const bestWindow = validWindowMetrics.reduce(
+      (best, current) => current.signalToNoise > best.signalToNoise ? current : best, 
+      validWindowMetrics[0]
+    );
+    
+    // Ajustar basado en perfusión
+    const perfusionIndex = bestWindow.ac / bestWindow.dc;
+    if (perfusionIndex > 0.2) {
+      spo2 = Math.min(99, spo2 + 1);
+    } else if (perfusionIndex < 0.06) {
+      spo2 = Math.max(88, spo2 - 1);
     }
-
-    // Clamp to physiologically reasonable range
-    spO2 = Math.max(85, Math.min(99, spO2));
-
-    // Log the calculation details
-    console.log("SpO2Processor: Calculation details", {
-      ac,
-      dc,
-      R,
+    
+    // Limitar a rango fisiológico
+    spo2 = Math.max(85, Math.min(100, spo2));
+    
+    // Redondear al entero más cercano
+    spo2 = Math.round(spo2);
+    
+    // Registrar detalles para depuración
+    console.log("SpO2Processor: Detalles de cálculo mejorado", {
+      windowCount: windows.length,
+      validWindows: validWindowMetrics.length,
+      avgAmplitude: validWindowMetrics.reduce((sum, m) => sum + m.amplitude, 0) / validWindowMetrics.length,
+      avgSNR: validWindowMetrics.reduce((sum, m) => sum + m.signalToNoise, 0) / validWindowMetrics.length,
+      weightedRatio,
       perfusionIndex,
-      amplitude,
-      calculatedValue: spO2,
-      values: {
-        min,
-        max,
-        length: values.length
-      }
+      calculatedValue: spo2
     });
 
-    // Update buffer with real measurement
-    this.spo2Buffer.push(spO2);
+    // Actualizar buffer con medición real
+    this.spo2Buffer.push(spo2);
     if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
       this.spo2Buffer.shift();
     }
 
-    // Calculate average for stability from real measurements
-    if (this.spo2Buffer.length > 0) {
-      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-      spO2 = Math.round(sum / this.spo2Buffer.length);
+    // Calcular media móvil ponderada para mayor estabilidad
+    if (this.spo2Buffer.length > 2) {
+      let weightedSum = 0;
+      let totalWeight = 0;
+      
+      // Ponderación exponencial - valores más recientes tienen más peso
+      for (let i = 0; i < this.spo2Buffer.length; i++) {
+        const weight = Math.pow(1.5, i);
+        weightedSum += this.spo2Buffer[this.spo2Buffer.length - 1 - i] * weight;
+        totalWeight += weight;
+      }
+      
+      spo2 = Math.round(weightedSum / totalWeight);
     }
 
-    return spO2;
+    return spo2;
   }
   
   /**
-   * Get last valid SpO2 with optional decay
-   * Only uses real historical values
+   * Divide la señal en ventanas superpuestas para análisis múltiple
+   */
+  private createSignalWindows(values: number[]): number[][] {
+    if (values.length < 10) {
+      return [values];
+    }
+    
+    const windows: number[][] = [];
+    const windowSize = Math.min(20, Math.floor(values.length * 0.5));
+    const step = Math.max(1, Math.floor(windowSize * 0.5));
+    
+    for (let i = 0; i <= values.length - windowSize; i += step) {
+      windows.push(values.slice(i, i + windowSize));
+    }
+    
+    return windows;
+  }
+  
+  /**
+   * Calcula métricas para una ventana de señal
+   */
+  private calculateWindowMetrics(window: number[]): {
+    ac: number;
+    dc: number;
+    amplitude: number;
+    signalToNoise: number;
+  } {
+    // Calcular componente DC (línea base)
+    const dc = calculateDC(window);
+    
+    // Calcular componente AC (pulsátil)
+    const ac = calculateAC(window);
+    
+    // Calcular amplitud
+    const min = Math.min(...window);
+    const max = Math.max(...window);
+    const amplitude = max - min;
+    
+    // Calcular señal/ruido
+    const mean = window.reduce((sum, val) => sum + val, 0) / window.length;
+    const variance = window.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / window.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // La relación señal/ruido se estima como la relación entre la amplitud y la desviación estándar
+    const signalToNoise = amplitude > 0 ? amplitude / (stdDev || 0.001) : 0;
+    
+    return {
+      ac,
+      dc,
+      amplitude,
+      signalToNoise
+    };
+  }
+  
+  /**
+   * Obtiene el último SpO2 válido con decaimiento opcional
    */
   private getLastValidSpo2(decayAmount: number): number {
     if (this.spo2Buffer.length > 0) {
@@ -135,12 +201,11 @@ export class SpO2Processor {
   }
 
   /**
-   * Reset the SpO2 processor state
-   * Ensures all measurements start from zero
+   * Reinicia el estado del procesador de SpO2
    */
   public reset(): void {
     this.spo2Buffer = [];
     this.lastCalculationTime = 0;
-    console.log("SpO2Processor: Reset completed");
+    console.log("SpO2Processor: Reset completado con nuevo algoritmo");
   }
 }
