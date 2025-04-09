@@ -31,7 +31,7 @@ export function applyMedianFilter(value: number, buffer: number[], windowSize: n
   if (medianBuffer.length >= 3) {
     const medianValue = calculateMedian(medianBuffer);
     // Enhanced blending of raw and median values for natural peaks
-    return value * 0.4 + medianValue * 0.6; // Adjusted for more natural curves (less smoothing)
+    return value * 0.35 + medianValue * 0.65; // Adjusted for more natural curves
   }
   
   return calculateMedian(medianBuffer);
@@ -53,7 +53,7 @@ export function applyMovingAverageFilter(value: number, buffer: number[], window
   
   for (let i = 0; i < maBuffer.length; i++) {
     // Improved exponential weighting for better cardiac waveform detail
-    const weight = Math.exp(0.95 * (i / (maBuffer.length - 1))); // Increased from 0.85 for more pronounced peaks
+    const weight = Math.exp(0.65 * (i / (maBuffer.length - 1)));
     weightedSum += maBuffer[i] * weight;
     weightSum += weight;
   }
@@ -72,8 +72,8 @@ export function applyEMAFilter(value: number, prevSmoothed: number, alpha: numbe
   // This preserves waveform peaks while smoothing noise
   const delta = Math.abs(value - prevSmoothed);
   const adaptiveAlpha = delta > 0.05 ? 
-    Math.min(alpha * 2.0, 0.96) : // More responsive to significant changes (increased from 1.8)
-    Math.max(alpha * 0.7, 0.1);  // More smoothing for small variations (decreased from 0.75/0.12)
+    Math.min(alpha * 1.6, 0.92) : // More responsive to significant changes
+    Math.max(alpha * 0.85, 0.15);  // More smoothing for small variations
   
   return adaptiveAlpha * value + (1 - adaptiveAlpha) * prevSmoothed;
 }
@@ -138,7 +138,7 @@ export function enhanceWaveformHarmonics(value: number, prevValues: number[]): n
   if (slopeChange) {
     // Enhanced dicrotic notch and systolic peak visualization
     // This is purely visual and doesn't affect measurements
-    const enhancementFactor = 0.2; // Increased from 0.15 for better visibility
+    const enhancementFactor = 0.1; // Increased from 0.08 for better visibility
     const direction = recentSlope >= 0 ? 1 : -1;
     return value + (Math.abs(recentSlope) * enhancementFactor * direction);
   }

@@ -61,14 +61,13 @@ const PPGSignalMeter = memo(({
   const CANVAS_HEIGHT = 900;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 6.5; // Increased from 5.0 for better peak amplitude
-  const SMOOTHING_FACTOR = 1.3; // Reduced from 1.5 for less smoothing, more natural peaks
+  const verticalScale = 10.0;
+  const SMOOTHING_FACTOR = 1.5;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 7;
-  // Reduced threshold for detecting more subtle peaks
-  const PEAK_THRESHOLD = 2.8; // Reduced from 3.2 to detect more subtle peaks
+  const PEAK_THRESHOLD = 4;
   const MIN_PEAK_DISTANCE_MS = 250;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
@@ -281,13 +280,12 @@ const PPGSignalMeter = memo(({
     const delta = currentValue - previousValue;
     const absDelta = Math.abs(delta);
     
-    // Enhance waveform shaping for more pronounced physiological curves
     const adaptiveFactor = delta > 0 
-      ? Math.min(SMOOTHING_FACTOR * 1.4, 2.4) // Increased from 1.3 to 1.4 for more pronounced upstrokes
-      : Math.max(SMOOTHING_FACTOR * 0.8, 1.0); // Decreased from 0.85 to 0.8 for sharper downstrokes
+      ? Math.min(SMOOTHING_FACTOR * 1.2, 2.0)
+      : Math.max(SMOOTHING_FACTOR * 0.9, 1.2);
       
     const enhancedFactor = absDelta < 0.02 
-      ? adaptiveFactor * 0.75 // Decreased from 0.8 to 0.75 for smoother small changes
+      ? adaptiveFactor * 0.85
       : adaptiveFactor;
       
     return previousValue + enhancedFactor * delta;
@@ -393,37 +391,25 @@ const PPGSignalMeter = memo(({
       
       if (recentlyProcessed) continue;
       
-      // Enhanced peak detection with adaptive threshold
       let isPeak = true;
-      let peakStrength = 0;
       
-      // Calculate local peak strength for adaptive threshold
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value - 0.03) { // Reduced from 0.05 for more sensitivity
+        if (points[j].value >= currentPoint.value - 0.05) {
           isPeak = false;
           break;
         }
-        peakStrength += (currentPoint.value - points[j].value);
       }
       
       if (isPeak) {
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value - 0.03) { // Reduced from 0.05
+          if (j < points.length && points[j].value > currentPoint.value - 0.05) {
             isPeak = false;
             break;
-          }
-          if (j < points.length) {
-            peakStrength += (currentPoint.value - points[j].value);
           }
         }
       }
       
-      peakStrength = peakStrength / (PEAK_DETECTION_WINDOW * 2);
-      
-      // Use adaptive threshold based on peak strength
-      const adaptiveThreshold = Math.max(PEAK_THRESHOLD * 0.7, peakStrength * 1.2);
-      
-      if (isPeak && Math.abs(currentPoint.value) > adaptiveThreshold) {
+      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
         potentialPeaks.push({
           index: i,
           value: currentPoint.value,
@@ -525,8 +511,7 @@ const PPGSignalMeter = memo(({
     
     const normalizedValue = (baselineRef.current || 0) - smoothedValue;
     
-    // Enhanced waveform amplitude for better visualization
-    const enhancedValue = normalizedValue * (1 + Math.abs(normalizedValue) * 0.22); // Increased from 0.15 to 0.22
+    const enhancedValue = normalizedValue * (1 + Math.abs(normalizedValue) * 0.1);
     const scaledValue = enhancedValue * verticalScale;
     
     let currentIsArrhythmia = false;
@@ -589,24 +574,8 @@ const PPGSignalMeter = memo(({
           renderCtx.strokeStyle = currentPathColor;
           renderCtx.moveTo(x2, y2);
         } else {
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          
-          // Optimized curve parameters for more natural cardiac waveform shape
-          let cpx, cpy;
-          
-          const isRising = y2 < y1;
-          
-          if (isRising) {
-            // Enhanced upstroke curve for more physiological appearance
-            cpx = x1 + dx * 0.25; // Changed from 0.3 to 0.25 for sharper upstroke
-            cpy = y1 + dy * 0.9; // Increased from 0.85 to 0.9 for more pronounced curve
-          } else {
-            // Enhanced downstroke curve for dicrotic notch-like appearance
-            cpx = x1 + dx * 0.75; // Increased from 0.7 to 0.75 for more delayed peak
-            cpy = y1 + dy * 0.2; // Decreased from 0.25 to 0.2 for sharper fall
-          }
-          
+          const cpx = (x1 + x2) / 2;
+          const cpy = y1 + (y2 - y1) * 0.2;
           renderCtx.quadraticCurveTo(cpx, cpy, x2, y2);
         }
       }
@@ -615,58 +584,30 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Enhanced peak visualization
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
-          // More prominent peak circles
           renderCtx.beginPath();
-          // Larger circles for better visibility
-          const circleSize = peak.isArrhythmia ? 7.5 : 6.5; // Increased from 6.5/5.5
-          renderCtx.arc(x, y, circleSize, 0, Math.PI * 2);
+          renderCtx.arc(x, y, peak.isArrhythmia ? 6 : 5, 0, Math.PI * 2);
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
-          // Add subtle glow effect to peaks for better visibility
-          renderCtx.beginPath();
-          renderCtx.arc(x, y, circleSize + 3, 0, Math.PI * 2); // Increased from +2 to +3
-          renderCtx.strokeStyle = peak.isArrhythmia ? 'rgba(220, 38, 38, 0.4)' : 'rgba(14, 165, 233, 0.4)'; // Increased from 0.3 to 0.4
-          renderCtx.lineWidth = 2.0; // Increased from 1.5
-          renderCtx.stroke();
-          
           if (peak.isArrhythmia) {
-            // Enhanced arrhythmia peak visualization
-            const glowSize = 14 + Math.sin(now/200) * 3.0; // Increased from 12 + sin*2.5 to 14 + sin*3.0
+            const glowSize = 10 + Math.sin(now/200) * 2;
             renderCtx.beginPath();
             renderCtx.arc(x, y, glowSize, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEF08A'; // Brighter color than previous
-            renderCtx.lineWidth = 4.0; // Increased from 3.5
+            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
-            // Add second pulsing glow for more emphasis
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, glowSize + 5 + Math.sin(now/300) * 2.5, 0, Math.PI * 2); // Increased from +4 to +5
-            renderCtx.strokeStyle = 'rgba(254, 202, 87, 0.4)'; // Increased from 0.3 to 0.4
-            renderCtx.lineWidth = 2.5; // Increased from 2
-            renderCtx.stroke();
-            
-            // More visible arrhythmia label
-            renderCtx.font = 'bold 20px Inter'; // Increased from 19px
-            renderCtx.fillStyle = '#EF4444'; // Changed from #F97316 to a more prominent red
+            renderCtx.font = 'bold 18px Inter';
+            renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
-            
-            // Add subtle text shadow for better visibility
-            renderCtx.shadowColor = 'rgba(0, 0, 0, 0.4)'; // Increased from 0.3
-            renderCtx.shadowBlur = 5; // Increased from 4
-            renderCtx.shadowOffsetX = 0;
-            renderCtx.shadowOffsetY = 1;
             renderCtx.fillText('ARRITMIA', x, y - 25);
-            renderCtx.shadowColor = 'transparent';
           }
           
-          // Value display above peak
           renderCtx.font = 'bold 16px Inter';
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
@@ -692,35 +633,23 @@ const PPGSignalMeter = memo(({
             const visibleX1 = Math.max(0, x1);
             const visibleX2 = Math.min(canvas.width, x2);
             
-            // Enhanced arrhythmia segment visualization
-            // More pronounced gradient with stronger contrast
             const gradient = renderCtx.createLinearGradient(visibleX1, 0, visibleX2, 0);
-            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.15)'); // Increased from 0.12
-            gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.25)'); // Increased from 0.22
-            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.15)'); // Increased from 0.12
+            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.10)');
+            gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.18)');
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.10)');
             renderCtx.fillStyle = gradient;
             renderCtx.fillRect(visibleX1, 0, visibleX2 - visibleX1, canvas.height);
             
-            // More visible pulsing effect for arrhythmia boundaries
-            const pulseIntensity = (Math.sin(now/230) + 1) / 2 * 0.45 + 0.4; // Enhanced pulsing (changed from 250ms to 230ms)
+            const pulseIntensity = (Math.sin(now/300) + 1) / 2 * 0.3 + 0.3;
             renderCtx.strokeStyle = `rgba(255, 0, 0, ${pulseIntensity})`;
-            renderCtx.lineWidth = 2.0; // Increased from 1.5
-            renderCtx.setLineDash([7, 3]); // Changed from [6, 4] for better visibility
+            renderCtx.lineWidth = 1;
+            renderCtx.setLineDash([5, 5]);
             
             if (x1 >= 0 && x1 <= canvas.width) {
               renderCtx.beginPath();
               renderCtx.moveTo(x1, 0);
               renderCtx.lineTo(x1, canvas.height);
               renderCtx.stroke();
-              
-              // Add boundary indicators
-              const indicatorHeight = 20;
-              for (let y = 0; y < canvas.height; y += indicatorHeight * 3) {
-                renderCtx.beginPath();
-                renderCtx.moveTo(x1 - 5, y); // Increased from -4 to -5
-                renderCtx.lineTo(x1 + 5, y + indicatorHeight); // Increased from +4 to +5
-                renderCtx.stroke();
-              }
             }
             
             if (x2 >= 0 && x2 <= canvas.width) {
@@ -728,39 +657,16 @@ const PPGSignalMeter = memo(({
               renderCtx.moveTo(x2, 0);
               renderCtx.lineTo(x2, canvas.height);
               renderCtx.stroke();
-              
-              // Add boundary indicators
-              const indicatorHeight = 20;
-              for (let y = 0; y < canvas.height; y += indicatorHeight * 3) {
-                renderCtx.beginPath();
-                renderCtx.moveTo(x2 + 5, y); // Increased from +4 to +5
-                renderCtx.lineTo(x2 - 5, y + indicatorHeight); // Increased from -4 to -5
-                renderCtx.stroke();
-              }
             }
             
             renderCtx.setLineDash([]);
             
             if (visibleX1 < visibleX2) {
               const labelX = (visibleX1 + visibleX2) / 2;
-              // More visible arrhythmia label
-              renderCtx.font = 'bold 18px Inter'; // Increased from 16px
-              renderCtx.fillStyle = '#EF4444'; // Changed from #DC2626 to brighter red
-                
-              // Add subtle glow effect to the label
-              renderCtx.shadowColor = 'rgba(255, 255, 255, 0.8)'; // Increased from 0.7
-              renderCtx.shadowBlur = 6; // Increased from 5
+              renderCtx.font = 'bold 14px Inter';
+              renderCtx.fillStyle = '#DC2626';
               renderCtx.textAlign = 'center';
-              renderCtx.fillText('ARRITMIA', labelX, 22);
-              renderCtx.shadowColor = 'transparent';
-              renderCtx.shadowBlur = 0;
-              
-              // Draw attention indicator above the label
-              const attentionSize = 4 + Math.sin(now/180); // Increased from 3 + sin(now/200)
-              renderCtx.beginPath();
-              renderCtx.arc(labelX, 34, attentionSize, 0, Math.PI * 2);
-              renderCtx.fillStyle = '#EF4444'; // Changed from #DC2626
-              renderCtx.fill();
+              renderCtx.fillText('ARRITMIA', labelX, 20);
             }
           }
         }

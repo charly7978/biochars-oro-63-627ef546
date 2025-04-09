@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.004; // Reduced from 0.006 for increased sensitivity
+  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
 }
 
 /**
@@ -29,7 +29,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
       lastPeakTime: null
     },
     isArrhythmia: false,
-    // Enhanced transition state for smoother visualization
+    // Adding transition state to ensure continuous color rendering
     transition: {
       active: false,
       progress: 0,
@@ -52,8 +52,8 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Increased sensitivity for peak detection
-  if (result.isPeak && result.confidence > 0.03) { // Decreased from 0.04 for better sensitivity
+  // Solo actualizar tiempo del pico para cálculos de tiempo
+  if (result.isPeak && result.confidence > 0.05) {
     // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
