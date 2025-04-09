@@ -1,6 +1,8 @@
 
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 import { BloodPressureAnalyzer, BloodPressureResult } from '../../core/analysis/BloodPressureAnalyzer';
+import { SignalOptimizationManager } from '../../core/signal/SignalOptimizationManager';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 
 export class BloodPressureProcessor {
   // Buffer size for calculations
@@ -21,20 +23,42 @@ export class BloodPressureProcessor {
   
   // Core analyzer using direct physiological calculations
   private analyzer: BloodPressureAnalyzer;
+  // Neural model for enhanced prediction
+  private neuralModel: BloodPressureNeuralModel;
+  // Signal optimization manager for improved signal quality
+  private signalOptimizer: SignalOptimizationManager;
+  
   private lastCalculationTime: number = 0;
   private forceRecalculationInterval: number = 2000;
   
+  // Feedback data for optimization
+  private feedbackMetrics: {
+    accuracy: number;
+    stability: number;
+    physiologicalValidity: number;
+  } = {
+    accuracy: 0.5,
+    stability: 0.5,
+    physiologicalValidity: 0.5
+  };
+  
   constructor() {
     this.analyzer = new BloodPressureAnalyzer();
+    this.neuralModel = new BloodPressureNeuralModel();
+    this.signalOptimizer = new SignalOptimizationManager();
+    
+    console.log("BloodPressureProcessor: Initialized with neural model and signal optimization");
   }
 
   /**
    * Calculates blood pressure using real PPG signal features
-   * Direct measurement only - no simulation
+   * Integrates signal optimization, neural prediction and traditional analysis
    */
   public calculateBloodPressure(values: number[]): {
     systolic: number;
     diastolic: number;
+    map?: number;
+    confidence?: number;
   } {
     const currentTime = Date.now();
     
@@ -57,14 +81,30 @@ export class BloodPressureProcessor {
 
     // Update calculation time
     this.lastCalculationTime = currentTime;
-
-    // Use the real physiological analyzer
-    const result: BloodPressureResult = this.analyzer.calculateBloodPressure(values);
+    
+    // Step 1: Apply signal optimization with bidirectional feedback
+    const optimizedSignal = this.optimizeSignal(values);
+    
+    // Step 2: Get traditional physiological analysis
+    const analyzerResult = this.analyzer.calculateBloodPressure(optimizedSignal.signalData);
+    
+    // Step 3: Get neural model prediction
+    const neuralPrediction = this.neuralModel.predict(optimizedSignal.signalData);
+    
+    // Step 4: Combine results with weighted fusion based on signal quality and confidence
+    const fusedResult = this.fuseResults(
+      analyzerResult, 
+      { systolic: neuralPrediction[0], diastolic: neuralPrediction[1] },
+      optimizedSignal.quality
+    );
+    
+    // Step 5: Apply feedback based on results
+    this.provideFeedback(fusedResult, optimizedSignal.quality);
     
     // Store results in buffer for stability
-    if (result.systolic > 0 && result.diastolic > 0) {
-      this.systolicBuffer.push(result.systolic);
-      this.diastolicBuffer.push(result.diastolic);
+    if (fusedResult.systolic > 0 && fusedResult.diastolic > 0) {
+      this.systolicBuffer.push(fusedResult.systolic);
+      this.diastolicBuffer.push(fusedResult.diastolic);
       
       // Maintain buffer size
       if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
@@ -75,9 +115,150 @@ export class BloodPressureProcessor {
 
     // Validate results are within physiological range
     return {
-      systolic: this.validateSystolic(result.systolic),
-      diastolic: this.validateDiastolic(result.diastolic, result.systolic)
+      systolic: this.validateSystolic(fusedResult.systolic),
+      diastolic: this.validateDiastolic(fusedResult.diastolic, fusedResult.systolic),
+      map: fusedResult.map || Math.round((fusedResult.systolic + 2 * fusedResult.diastolic) / 3),
+      confidence: fusedResult.confidence
     };
+  }
+  
+  /**
+   * Optimize the PPG signal using the SignalOptimizationManager
+   * and apply bidirectional feedback
+   */
+  private optimizeSignal(values: number[]): { 
+    signalData: number[], 
+    quality: number 
+  } {
+    // Create a processed signal to feed into optimizer
+    const processedSignal = {
+      rawValue: values[values.length - 1],
+      filteredValue: values[values.length - 1],
+      quality: 0
+    };
+    
+    // Process through signal optimization manager
+    const optimizationResult = this.signalOptimizer.processSignal(processedSignal);
+    
+    // Get the optimized channel for blood pressure
+    const bpChannel = optimizationResult.optimizedChannels.get('bloodPressure') || 
+                    optimizationResult.optimizedChannels.get('heartRate');
+    
+    // If we have an optimized channel, use it, otherwise use original signal
+    const optimizedValues = bpChannel ? bpChannel.values : values;
+    const signalQuality = bpChannel ? bpChannel.quality / 100 : 0.5;
+    
+    // Apply bidirectional feedback to optimize signal
+    this.signalOptimizer.provideFeedback('bloodPressure', {
+      accuracy: this.feedbackMetrics.accuracy,
+      stability: this.feedbackMetrics.stability,
+      confidence: this.feedbackMetrics.physiologicalValidity
+    });
+    
+    return {
+      signalData: optimizedValues.slice(-300), // Take last 300 samples for processing
+      quality: signalQuality
+    };
+  }
+  
+  /**
+   * Fuse results from traditional and neural approaches
+   * based on signal quality and confidence
+   */
+  private fuseResults(
+    analyzerResult: BloodPressureResult,
+    neuralResult: { systolic: number, diastolic: number },
+    signalQuality: number
+  ): BloodPressureResult {
+    // Weight factors based on signal quality
+    // Higher quality signal gives more weight to neural model
+    const analyzerWeight = Math.max(0.3, 1 - signalQuality);
+    const neuralWeight = Math.max(0.3, signalQuality);
+    const totalWeight = analyzerWeight + neuralWeight;
+    
+    // Compute weighted average
+    const fusedSystolic = Math.round(
+      (analyzerResult.systolic * analyzerWeight + neuralResult.systolic * neuralWeight) / totalWeight
+    );
+    
+    const fusedDiastolic = Math.round(
+      (analyzerResult.diastolic * analyzerWeight + neuralResult.diastolic * neuralWeight) / totalWeight
+    );
+    
+    // Use analyzer's MAP calculation if available
+    const fusedMap = analyzerResult.map || Math.round((fusedSystolic + 2 * fusedDiastolic) / 3);
+    
+    // Compute fused confidence
+    const fusedConfidence = analyzerResult.confidence !== undefined ?
+      (analyzerResult.confidence * analyzerWeight + signalQuality * neuralWeight) / totalWeight :
+      signalQuality;
+    
+    console.log("BloodPressureProcessor: Fusion weights", {
+      analyzerWeight,
+      neuralWeight,
+      signalQuality,
+      analyzerValues: [analyzerResult.systolic, analyzerResult.diastolic],
+      neuralValues: [neuralResult.systolic, neuralResult.diastolic],
+      fusedValues: [fusedSystolic, fusedDiastolic],
+      confidence: fusedConfidence
+    });
+    
+    return {
+      systolic: fusedSystolic,
+      diastolic: fusedDiastolic,
+      map: fusedMap,
+      confidence: fusedConfidence
+    };
+  }
+  
+  /**
+   * Provide feedback to improve future measurements
+   */
+  private provideFeedback(result: BloodPressureResult, signalQuality: number): void {
+    // Calculate stability from buffer
+    let stability = 0.5;
+    
+    if (this.systolicBuffer.length >= 3) {
+      const systolicVariation = this.calculateVariation(this.systolicBuffer);
+      const diastolicVariation = this.calculateVariation(this.diastolicBuffer);
+      
+      // Lower variation = higher stability
+      stability = Math.max(0, Math.min(1, 1 - (systolicVariation + diastolicVariation) / 2));
+    }
+    
+    // Calculate physiological validity
+    const pulsePress = result.systolic - result.diastolic;
+    const isPhysiologicalValid = 
+      result.systolic > 90 && result.systolic < 180 &&
+      result.diastolic > 50 && result.diastolic < 110 &&
+      pulsePress > 20 && pulsePress < 80;
+    
+    const physiologicalValidity = isPhysiologicalValid ? Math.max(0.6, signalQuality) : 0.3;
+    
+    // Accuracy estimate (simplified)
+    const accuracy = result.confidence || signalQuality;
+    
+    // Update feedback metrics with smoothing
+    this.feedbackMetrics = {
+      accuracy: this.feedbackMetrics.accuracy * 0.7 + accuracy * 0.3,
+      stability: this.feedbackMetrics.stability * 0.7 + stability * 0.3,
+      physiologicalValidity: this.feedbackMetrics.physiologicalValidity * 0.7 + physiologicalValidity * 0.3
+    };
+    
+    console.log("BloodPressureProcessor: Feedback metrics updated", this.feedbackMetrics);
+  }
+  
+  /**
+   * Calculate variation coefficient for feedback
+   */
+  private calculateVariation(values: number[]): number {
+    if (values.length < 2) return 0;
+    
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    
+    return stdDev / mean; // Coefficient of variation
   }
 
   /**
@@ -118,6 +299,12 @@ export class BloodPressureProcessor {
     this.diastolicBuffer = [];
     this.lastCalculationTime = 0;
     this.analyzer.reset();
+    this.signalOptimizer.reset();
+    this.feedbackMetrics = {
+      accuracy: 0.5,
+      stability: 0.5,
+      physiologicalValidity: 0.5
+    };
     console.log("BloodPressureProcessor: Reset completed");
   }
 }
