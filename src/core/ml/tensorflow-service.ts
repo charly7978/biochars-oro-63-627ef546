@@ -1,3 +1,4 @@
+
 import * as tf from '@tensorflow/tfjs';
 import { ProcessorConfig } from '../config/ProcessorConfig';
 
@@ -10,6 +11,7 @@ export class TensorFlowService {
   private isInitialized: boolean = false;
   private useWebGPU: boolean = false;
   private config: ProcessorConfig;
+  private initPromise: Promise<boolean> | null = null;
 
   constructor(config: ProcessorConfig) {
     this.config = config;
@@ -20,28 +22,53 @@ export class TensorFlowService {
    */
   public async initialize(): Promise<boolean> {
     if (this.isInitialized) return true;
-
+    
+    // Use promise caching to prevent multiple simultaneous initializations
+    if (this.initPromise) return this.initPromise;
+    
+    this.initPromise = this._initializeInternal();
+    return this.initPromise;
+  }
+  
+  private async _initializeInternal(): Promise<boolean> {
     try {
       console.log('TensorFlow.js initializing...');
       
       // Check if WebGPU is available
       if (this.config.useWebGPU && await this.isWebGPUAvailable()) {
         await tf.setBackend('webgpu');
+        
+        // Apply memory optimization settings for WebGPU
+        if (tf.env().getFlags().WEBGPU_USE_PROGRAM_CACHE === undefined) {
+          tf.env().set('WEBGPU_USE_PROGRAM_CACHE', true);
+        }
+        
         this.useWebGPU = true;
         console.log('TensorFlow.js using WebGPU acceleration');
       } else {
         await tf.setBackend('webgl');
+        
+        // Apply memory optimization settings for WebGL
+        if (tf.env().getFlags().WEBGL_CPU_FORWARD === undefined) {
+          tf.env().set('WEBGL_CPU_FORWARD', false);
+        }
+        if (tf.env().getFlags().WEBGL_PACK === undefined) {
+          tf.env().set('WEBGL_PACK', true);
+        }
+        
         console.log('TensorFlow.js using WebGL fallback');
       }
       
       await tf.ready();
       this.isInitialized = true;
       
-      console.log(`TensorFlow.js initialized. Version: ${tf.version.tfjs}`);
+      console.log(`TensorFlow.js initialized. Version: ${tf.version.tfjs}, Backend: ${this.getBackend()}`);
       return true;
     } catch (error) {
       console.error('Failed to initialize TensorFlow.js:', error);
       return false;
+    } finally {
+      this.initPromise = null;
     }
   }
 
@@ -69,11 +96,58 @@ export class TensorFlowService {
    */
   public async loadModel(modelKey: string, modelUrl: string): Promise<tf.LayersModel | null> {
     try {
+      // Check cache first
       if (this.modelCache.has(modelKey)) {
         return this.modelCache.get(modelKey)!;
       }
 
-      const model = await tf.loadLayersModel(modelUrl);
+      // Ensure TensorFlow is initialized before loading
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+      
+      console.log(`Loading model: ${modelKey} from ${modelUrl}`);
+      const loadStartTime = performance.now();
+      
+      // Load model with optimization options
+      const model = await tf.loadLayersModel(modelUrl, {
+        strict: false,
+        weightLoaderFactory: () => {
+          // Apply custom weight loading optimization
+          return {
+            load: async (weightManifest) => {
+              // Standard loader implementation with improved caching
+              const fetchWeights = async (weightPath: string) => {
+                const response = await fetch(weightPath, { cache: 'force-cache' });
+                return response.arrayBuffer();
+              };
+              
+              // Load all weight files in parallel for better performance
+              const weightPromises = weightManifest.map(group => {
+                return Promise.all(group.paths.map(fetchWeights));
+              });
+              
+              return await Promise.all(weightPromises);
+            }
+          };
+        }
+      });
+      
+      const loadTime = performance.now() - loadStartTime;
+      console.log(`Model ${modelKey} loaded in ${loadTime.toFixed(2)}ms`);
+      
+      // Apply memory optimization if using WebGPU
+      if (this.useWebGPU) {
+        // Compile model for faster inference
+        if (model.compile && typeof model.compile === 'function') {
+          model.compile({
+            optimizer: 'sgd',
+            loss: 'meanSquaredError'
+          });
+        }
+      }
+      
+      // Cache model
       this.modelCache.set(modelKey, model);
       return model;
     } catch (error) {
@@ -83,7 +157,7 @@ export class TensorFlowService {
   }
 
   /**
-   * Process signal data through neural network
+   * Process signal data through neural network with optimized memory management
    */
   public async processSignal(
     signalData: number[], 
@@ -100,19 +174,31 @@ export class TensorFlowService {
         throw new Error(`Model ${modelKey} not loaded`);
       }
 
-      // Convert data to tensor
-      const tensor = tf.tensor(signalData, inputShape);
+      // Begin performance measurement
+      const startTime = performance.now();
       
-      // Run inference
-      const result = model.predict(tensor) as tf.Tensor;
+      // Create a memory-efficient tensor with proper typed array
+      const tensorData = Float32Array.from(signalData);
+      const tensor = tf.tensor(tensorData, inputShape);
       
-      // Get results and clean up tensors
-      const resultData = await result.data();
+      // Minimize memory allocations by using tidy for auto cleanup
+      const resultData = await tf.tidy(() => {
+        // Run inference
+        const result = model.predict(tensor) as tf.Tensor;
+        return result.data();
+      });
       
-      // Create a new Float32Array from the result data
+      // Create a new Float32Array from the result data for better memory management
       const resultArray = new Float32Array(Array.from(resultData));
       
-      tf.dispose([tensor, result]);
+      // Dispose input tensor (result tensor already disposed by tidy)
+      tensor.dispose();
+      
+      // Log performance for optimization tracking
+      const processingTime = performance.now() - startTime;
+      if (processingTime > 20) {
+        console.log(`TensorFlow processing took ${processingTime.toFixed(2)}ms for model ${modelKey}`);
+      }
       
       return resultArray;
     } catch (error) {
@@ -141,5 +227,14 @@ export class TensorFlowService {
     // Memory cleanup
     tf.disposeVariables();
     this.isInitialized = false;
+    
+    // Force garbage collection where supported
+    if (window.gc) {
+      try {
+        window.gc();
+      } catch (e) {
+        console.log('Manual garbage collection not available');
+      }
+    }
   }
 }
