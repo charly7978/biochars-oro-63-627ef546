@@ -1,11 +1,10 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
  * Functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection
  */
-import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
+import { checkSignalQuality as baseCheckSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 // Signal history for pattern detection
 let signalHistory: Array<{time: number, value: number}> = [];
@@ -119,7 +118,7 @@ export function checkWeakSignal(
     console.log("Finger detection lost due to consecutive weak signals:", consecutiveWeakSignalsCount);
   }
   
-  const result = checkSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
+  const result = baseCheckSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
   
   // If finger is confirmed but signal is weak, give benefit of doubt for longer
   if (fingDetectionConfirmed && result.isWeakSignal) {
@@ -188,5 +187,38 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
       intervals: [],
       lastPeakTime: null
     }
+  };
+}
+
+/**
+ * Detects rhythmic patterns in signal history that match heart rate characteristics
+ */
+function isFingerDetectedByPattern(
+  signalHistory: Array<{time: number, value: number}>, 
+  patternCount: number
+): { isFingerDetected: boolean, patternCount: number } {
+  // Default to current count if not enough data
+  if (signalHistory.length < 15) {
+    return { isFingerDetected: false, patternCount };
+  }
+  
+  // Simple peak detection in recent history
+  const recentValues = signalHistory.slice(-15).map(point => point.value);
+  let peaks = 0;
+  
+  for (let i = 1; i < recentValues.length - 1; i++) {
+    if (recentValues[i] > recentValues[i-1] && recentValues[i] > recentValues[i+1]) {
+      peaks++;
+    }
+  }
+  
+  // Check if pattern suggests finger presence (2-3 peaks in window is normal heart rate)
+  const hasPattern = peaks >= 2 && peaks <= 5;
+  const newPatternCount = hasPattern ? patternCount + 1 : Math.max(0, patternCount - 1);
+  
+  // Require consistent pattern detection
+  return {
+    isFingerDetected: newPatternCount >= 3,
+    patternCount: newPatternCount
   };
 }

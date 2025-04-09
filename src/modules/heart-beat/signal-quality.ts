@@ -33,3 +33,49 @@ export function checkSignalQuality(
     updatedWeakSignalsCount
   };
 }
+
+/**
+ * Reset all detection states for signal quality
+ */
+export function resetDetectionStates() {
+  return {
+    weakSignalsCount: 0,
+    lastDetectionTime: 0
+  };
+}
+
+/**
+ * Check for rhythmic pattern in signal history to detect finger presence
+ * @param signalHistory Array of signal measurements with timestamps
+ * @param patternCount Current count of detected patterns
+ * @returns Updated pattern detection status
+ */
+export function isFingerDetectedByPattern(
+  signalHistory: Array<{time: number, value: number}>, 
+  patternCount: number
+): { isFingerDetected: boolean, patternCount: number } {
+  // Default to current count if not enough data
+  if (signalHistory.length < 15) {
+    return { isFingerDetected: false, patternCount };
+  }
+  
+  // Simple peak detection in recent history
+  const recentValues = signalHistory.slice(-15).map(point => point.value);
+  let peaks = 0;
+  
+  for (let i = 1; i < recentValues.length - 1; i++) {
+    if (recentValues[i] > recentValues[i-1] && recentValues[i] > recentValues[i+1]) {
+      peaks++;
+    }
+  }
+  
+  // Check if pattern suggests finger presence (2-3 peaks in window is normal heart rate)
+  const hasPattern = peaks >= 2 && peaks <= 5;
+  const newPatternCount = hasPattern ? patternCount + 1 : Math.max(0, patternCount - 1);
+  
+  // Require consistent pattern detection
+  return {
+    isFingerDetected: newPatternCount >= 3,
+    patternCount: newPatternCount
+  };
+}
