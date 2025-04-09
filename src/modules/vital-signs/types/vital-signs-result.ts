@@ -16,6 +16,11 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
+  confidence?: {
+    glucose: number;
+    lipids: number;
+    overall: number;
+  };
   lastArrhythmiaData?: {
     timestamp: number;
     rmssd: number;
