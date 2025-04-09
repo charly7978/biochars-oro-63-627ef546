@@ -22,12 +22,6 @@ export function detectPeak(
   isPeak: boolean;
   confidence: number;
 } {
-  // Safety checks for invalid input
-  if (isNaN(normalizedValue) || isNaN(derivative)) {
-    console.log("Peak detector received invalid inputs:", { normalizedValue, derivative });
-    return { isPeak: false, confidence: 0 };
-  }
-
   // Check minimum time between peaks
   if (lastPeakTime !== null) {
     const timeSinceLastPeak = currentTime - lastPeakTime;
@@ -36,22 +30,20 @@ export function detectPeak(
     }
   }
 
-  // Enhanced peak detection logic
-  const thresholdCheck = normalizedValue > config.signalThreshold;
-  const derivativeCheck = derivative < config.derivativeThreshold;
-  // Relaxed baseline check for better sensitivity
-  const baselineCheck = lastValue > baseline * 0.85;
-  
-  const isPeak = derivativeCheck && thresholdCheck && baselineCheck;
+  // Peak detection logic
+  const isPeak =
+    derivative < config.derivativeThreshold &&
+    normalizedValue > config.signalThreshold &&
+    lastValue > baseline * 0.98;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.5), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.7), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
     1
   );
 
@@ -76,11 +68,8 @@ export function confirmPeak(
   updatedBuffer: number[];
   updatedLastConfirmedPeak: boolean;
 } {
-  // Safety check for invalid buffer
-  const safeBuffer = peakConfirmationBuffer || [];
-  
   // Add value to confirmation buffer
-  const updatedBuffer = [...safeBuffer, normalizedValue];
+  const updatedBuffer = [...peakConfirmationBuffer, normalizedValue];
   if (updatedBuffer.length > 5) {
     updatedBuffer.shift();
   }
@@ -89,14 +78,14 @@ export function confirmPeak(
   let updatedLastConfirmedPeak = lastConfirmedPeak;
 
   // Only proceed with peak confirmation if needed
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 0.85) { // Lower confidence requirement
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
     // Need enough samples in buffer for confirmation
-    if (updatedBuffer.length >= 2) { // Reduced from 3 for faster confirmation
+    if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values - relaxed conditions
+      // Confirm peak if followed by decreasing values
       const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
-      const goingDown2 = len >= 3 && updatedBuffer[len - 2] < updatedBuffer[len - 3];
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
 
       if (goingDown1 || goingDown2) {
         isConfirmedPeak = true;

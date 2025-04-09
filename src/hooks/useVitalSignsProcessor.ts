@@ -1,176 +1,150 @@
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { VitalSignsProcessor, VitalSignsResult } from '../core/VitalSignsProcessor';
-import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../core/config/ProcessorConfig';
-import { RRData } from '../core/signal/PeakDetector';
-import { UnifiedQualityEvaluator, QualityResult } from '../core/signal/unified-quality-evaluator';
-import { FeedbackSystem } from '../core/feedback/feedback-system';
-import { ProcessorFeedbackNetwork, ProcessorFeedbackListener } from '../core/feedback/processor-feedback-network';
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
 
-export interface UseVitalSignsProcessorReturn {
-  processSignal: (value: number, rrData?: RRData) => VitalSignsResult;
-  reset: () => VitalSignsResult | null;
-  calibrate: () => void;
-  isCalibrating: boolean;
-  fullReset: () => void;
-  lastValidResults: VitalSignsResult | null;
-  qualityResult: QualityResult | null;
-  feedbackSystem: FeedbackSystem;
-}
+import { useState, useRef, useEffect } from 'react';
+import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
+import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
+import { useSignalProcessing } from './vital-signs/use-signal-processing';
+import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
+import { UseVitalSignsProcessorReturn } from './vital-signs/types';
+import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 
 /**
- * Enhanced hook for using the VitalSignsProcessor with integrated feedback
- * and quality evaluation systems
+ * Hook for processing vital signs with direct algorithms only
+ * No simulation or reference values are used
  */
-export const useVitalSignsProcessor = (
-  config?: Partial<ProcessorConfig>
-): UseVitalSignsProcessorReturn => {
-  const [processor] = useState<VitalSignsProcessor>(() => 
-    new VitalSignsProcessor({ ...DEFAULT_PROCESSOR_CONFIG, ...config })
-  );
-  const [isCalibrating, setIsCalibrating] = useState<boolean>(false);
-  const [lastResults, setLastResults] = useState<VitalSignsResult | null>(null);
-  const [qualityResult, setQualityResult] = useState<QualityResult | null>(null);
+export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
+  // State management - only direct measurement, no simulation
+  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
-  // Create feedback systems
-  const feedbackSystemRef = useRef<FeedbackSystem>(new FeedbackSystem());
-  const qualityEvaluatorRef = useRef<UnifiedQualityEvaluator>(
-    new UnifiedQualityEvaluator({ ...DEFAULT_PROCESSOR_CONFIG, ...config }, feedbackSystemRef.current)
-  );
-  const feedbackNetworkRef = useRef<ProcessorFeedbackNetwork>(
-    new ProcessorFeedbackNetwork(feedbackSystemRef.current)
-  );
+  // Session tracking
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
-  // Buffer for signal history
-  const signalBufferRef = useRef<number[]>([]);
-  const MAX_BUFFER_SIZE = 100;
+  // Signal quality tracking
+  const weakSignalsCountRef = useRef<number>(0);
+  const LOW_SIGNAL_THRESHOLD = 0.05;
+  const MAX_WEAK_SIGNALS = 10;
   
-  // Register as a feedback listener
+  const { 
+    arrhythmiaWindows, 
+    addArrhythmiaWindow, 
+    clearArrhythmiaWindows 
+  } = useArrhythmiaVisualization();
+  
+  const { 
+    processSignal: processVitalSignal, 
+    initializeProcessor,
+    reset: resetProcessor, 
+    fullReset: fullResetProcessor,
+    getArrhythmiaCounter,
+    getDebugInfo,
+    processedSignals
+  } = useSignalProcessing();
+  
+  const { 
+    logSignalData, 
+    clearLog 
+  } = useVitalSignsLogging();
+  
+  // Initialize processor components - direct measurement only
   useEffect(() => {
-    const listener: ProcessorFeedbackListener = {
-      onFeedbackReceived: (feedback) => {
-        // Process incoming feedback
-        if (feedback.qualityResult) {
-          // Update quality result if from another processor
-          if (feedback.sourceProcessor !== 'vitalSignsProcessor') {
-            setQualityResult(prevQuality => {
-              if (!prevQuality) {
-                return feedback.qualityResult || null;
-              }
-              return {
-                ...prevQuality,
-                ...feedback.qualityResult,
-                metrics: {
-                  ...prevQuality.metrics,
-                  ...(feedback.qualityResult?.metrics || {})
-                }
-              };
-            });
-          }
-        }
-      }
-    };
-    
-    feedbackNetworkRef.current.registerProcessor('vitalSignsProcessor', listener);
-    
-    return () => {
-      feedbackNetworkRef.current.unregisterProcessor('vitalSignsProcessor', listener);
-    };
-  }, []);
-
-  /**
-   * Process a signal value and return vital signs with quality evaluation
-   */
-  const processSignal = useCallback((value: number, rrData?: RRData): VitalSignsResult => {
-    // Add value to signal buffer
-    signalBufferRef.current.push(value);
-    if (signalBufferRef.current.length > MAX_BUFFER_SIZE) {
-      signalBufferRef.current.shift();
-    }
-    
-    // Evaluate signal quality
-    const quality = qualityEvaluatorRef.current.evaluateQuality(
-      signalBufferRef.current, 
-      'vitalSignsProcessor'
-    );
-    
-    // Share quality result with other processors
-    feedbackNetworkRef.current.sendFeedback({
-      sourceProcessor: 'vitalSignsProcessor',
-      targetProcessor: 'all',
-      qualityResult: quality,
-      timestamp: Date.now()
+    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
+      sessionId: sessionId.current,
+      timestamp: new Date().toISOString()
     });
     
-    // Update quality result state
-    setQualityResult(quality);
+    // Create new instances for direct measurement
+    initializeProcessor();
     
-    // Process the signal only if quality is sufficient
-    const results = processor.processSignal(value, rrData);
-    
-    // Enhance results with quality information
-    const enhancedResults = {
-      ...results,
-      quality: {
-        score: quality.score,
-        isValid: quality.isValid
-      }
+    return () => {
+      console.log("useVitalSignsProcessor: Processor cleanup", {
+        sessionId: sessionId.current,
+        totalArrhythmias: getArrhythmiaCounter(),
+        processedSignals: processedSignals.current,
+        timestamp: new Date().toISOString()
+      });
     };
-    
-    // Update last results
-    setLastResults(enhancedResults);
-    
-    return enhancedResults;
-  }, [processor]);
-
+  }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
+  
   /**
-   * Reset the processor
+   * Process PPG signal directly
+   * No simulation or reference values
    */
-  const reset = useCallback(() => {
-    setIsCalibrating(false);
-    signalBufferRef.current = [];
-    qualityEvaluatorRef.current.reset();
-    return processor.reset();
-  }, [processor]);
-
-  /**
-   * Full reset of the processor
-   */
-  const fullReset = useCallback(() => {
-    setIsCalibrating(false);
-    setLastResults(null);
-    setQualityResult(null);
-    signalBufferRef.current = [];
-    qualityEvaluatorRef.current.reset();
-    feedbackSystemRef.current.clearFeedbacks();
-    feedbackNetworkRef.current.reset();
-    processor.fullReset();
-  }, [processor]);
-
-  /**
-   * Start calibration
-   */
-  const calibrate = useCallback(() => {
-    setIsCalibrating(true);
-    signalBufferRef.current = [];
-    processor.startCalibration();
-    
-    // Add feedback for calibration
-    feedbackSystemRef.current.addFeedback(
-      'Calibration started, please hold still',
-      'info',
-      { action: 'calibration', state: 'started' }
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
+    // Check for weak signal to detect finger removal using centralized function
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      value,
+      weakSignalsCountRef.current,
+      {
+        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: MAX_WEAK_SIGNALS
+      }
     );
-  }, [processor]);
+    
+    weakSignalsCountRef.current = updatedWeakSignalsCount;
+    
+    // Process signal directly - no simulation
+    let result = processVitalSignal(value, rrData, isWeakSignal);
+    const currentTime = Date.now();
+    
+    // If arrhythmia is detected in real data, register visualization window
+    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+      
+      // Window based on real heart rate
+      let windowWidth = 400;
+      
+      // Adjust based on real RR intervals
+      if (rrData && rrData.intervals.length > 0) {
+        const lastIntervals = rrData.intervals.slice(-4);
+        const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+        windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+      }
+      
+      addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+    }
+    
+    // Log processed signals
+    logSignalData(value, result, processedSignals.current);
+    
+    // Always return real result
+    return result;
+  };
+
+  /**
+   * Perform complete reset - start from zero
+   * No simulations or reference values
+   */
+  const reset = () => {
+    resetProcessor();
+    clearArrhythmiaWindows();
+    setLastValidResults(null);
+    weakSignalsCountRef.current = 0;
+    
+    return null;
+  };
+  
+  /**
+   * Perform full reset - clear all data
+   * No simulations or reference values
+   */
+  const fullReset = () => {
+    fullResetProcessor();
+    setLastValidResults(null);
+    clearArrhythmiaWindows();
+    weakSignalsCountRef.current = 0;
+    clearLog();
+  };
 
   return {
     processSignal,
     reset,
-    calibrate,
-    isCalibrating,
     fullReset,
-    lastValidResults: lastResults,
-    qualityResult,
-    feedbackSystem: feedbackSystemRef.current
+    arrhythmiaCounter: getArrhythmiaCounter(),
+    lastValidResults: null, // Always return null to ensure measurements start from zero
+    arrhythmiaWindows,
+    debugInfo: getDebugInfo()
   };
 };

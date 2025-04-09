@@ -1,10 +1,10 @@
 
 import { AdaptiveOptimizer, OptimizedChannel } from './AdaptiveOptimizer';
-import { ProcessorConfig } from '../config/ProcessorConfig';
+import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { ProcessedSignal } from '../types';
 
 /**
- * Interface for signal optimization results
+ * Interfaz para resultados de optimización de señal
  */
 export interface OptimizationResult {
   heartRate: {
@@ -18,10 +18,10 @@ export interface OptimizationResult {
 }
 
 /**
- * Signal Optimization Manager
+ * Gestor de optimización de señales
  * 
- * Coordinates processing between different optimized channels
- * and provides a unified interface for higher-level components
+ * Coordina el procesamiento entre diferentes canales optimizados
+ * y proporciona una interfaz unificada para los componentes de nivel superior
  */
 export class SignalOptimizationManager {
   private optimizer: AdaptiveOptimizer;
@@ -29,109 +29,98 @@ export class SignalOptimizationManager {
   private signalBuffer: number[] = [];
   private readonly bufferMaxSize: number = 300;
   
-  // Heart rate state
+  // Estado de latido cardíaco
   private lastHeartRateBpm: number = 0;
   private lastConfidence: number = 0;
   private heartRateBuffer: number[] = [];
   private readonly HR_BUFFER_SIZE = 5;
   
-  // Quality thresholds
+  // Umbrales de calidad
   private readonly QUALITY_THRESHOLD_LOW = 30;
   private readonly QUALITY_THRESHOLD_MEDIUM = 60;
   private readonly QUALITY_THRESHOLD_HIGH = 80;
   
   /**
-   * Constructor for the optimization manager
+   * Constructor del gestor de optimización
    */
-  constructor(config: ProcessorConfig) {
-    // Convert ProcessorConfig to AdaptiveOptimizerConfig
-    const optimizerConfig = {
-      learningRate: 0.15,
-      adaptationWindow: 20,
-      thresholds: {
-        signalQuality: 0.5,
-        signalAmplitude: 0.1,
-        signalStability: 0.3
-      }
-    };
-    
-    this.optimizer = new AdaptiveOptimizer(optimizerConfig);
+  constructor(config: ProcessorConfig = DEFAULT_PROCESSOR_CONFIG) {
+    this.optimizer = new AdaptiveOptimizer(config);
   }
   
   /**
-   * Process a new signal and return optimized result
+   * Procesa una nueva señal y devuelve resultado optimizado
    */
   public processSignal(signal: ProcessedSignal): OptimizationResult {
-    // Extract filtered value from signal
-    const { filteredValue } = signal;
+    // Extraer valor filtrado de la señal
+    const { filteredValue, quality } = signal;
     
-    // Store in buffer
+    // Almacenar en buffer
     this.signalBuffer.push(filteredValue);
     if (this.signalBuffer.length > this.bufferMaxSize) {
       this.signalBuffer.shift();
     }
     
-    // Process with adaptive optimizer
+    // Procesar con optimizador adaptativo
     const optimizedChannels = this.optimizer.processValue(filteredValue);
     
-    // Check heart rate channel
+    // Verificar canal de frecuencia cardíaca
     const heartRateChannel = optimizedChannels.get('heartRate');
     
-    // Calculate heart rate if enough data
+    // Calcular frecuencia cardíaca si hay suficientes datos
     let heartRate = this.lastHeartRateBpm;
     let confidence = this.lastConfidence;
     let dominantFrequency = 0;
     let isDominantFrequencyValid = false;
     
     if (heartRateChannel && heartRateChannel.values.length > 60) {
-      // Get dominant frequency from channel
+      // Obtener frecuencia dominante del canal
       dominantFrequency = heartRateChannel.metadata.dominantFrequency;
       
-      // Convert frequency to BPM
+      // Convertir frecuencia a BPM
       if (dominantFrequency > 0.5 && dominantFrequency < 3.5) {
         const bpm = dominantFrequency * 60;
         isDominantFrequencyValid = true;
         
-        // Verify physiological range
+        // Verificar que esté en rango fisiológico
         if (bpm >= 40 && bpm <= 200) {
-          // Store in frequency buffer
+          // Almacenar en buffer de frecuencia
           this.heartRateBuffer.push(bpm);
           if (this.heartRateBuffer.length > this.HR_BUFFER_SIZE) {
             this.heartRateBuffer.shift();
           }
           
-          // Calculate weighted average
+          // Calcular promedio ponderado
           let weightedSum = 0;
           let weightSum = 0;
           
           for (let i = 0; i < this.heartRateBuffer.length; i++) {
-            const weight = (i + 1); // Give more weight to recent values
+            const weight = (i + 1); // Dar más peso a valores recientes
             weightedSum += this.heartRateBuffer[i] * weight;
             weightSum += weight;
           }
           
           heartRate = Math.round(weightedSum / weightSum);
           
-          // Calculate confidence based on channel quality and periodicity score
+          // Calcular confianza basada en calidad de canal y score de periodicidad
           confidence = Math.min(1, 
             (heartRateChannel.quality / 100) * 0.6 + 
             heartRateChannel.metadata.periodicityScore * 0.4
           );
           
-          // Update state values
+          // Actualizar valores de estado
           this.lastHeartRateBpm = heartRate;
           this.lastConfidence = confidence;
         }
       }
     }
     
-    // Calculate overall quality
+    // Calcular calidad general
     const signalQuality = this.optimizer.getSignalQuality();
     
-    // Provide feedback to optimizer
+    // Proporcionar feedback al optimizador
     this.provideFeedbackToOptimizer(optimizedChannels, heartRate, confidence);
     
-    // Build optimization result
+    // Construir resultado de optimización
     const result: OptimizationResult = {
       heartRate: {
         value: heartRate,
@@ -143,35 +132,35 @@ export class SignalOptimizationManager {
       isDominantFrequencyValid
     };
     
-    // Store result
+    // Almacenar resultado
     this.lastOptimizationResult = result;
     
     return result;
   }
   
   /**
-   * Provide feedback to optimizer to improve future processing
+   * Proporciona feedback al optimizador para mejorar futuros procesamiento
    */
   private provideFeedbackToOptimizer(
     channels: Map<string, OptimizedChannel>,
     heartRate: number,
     confidence: number
   ): void {
-    // Feedback for heart rate channel
+    // Feedback para canal de frecuencia cardíaca
     if (channels.has('heartRate')) {
       const hrQuality = channels.get('heartRate')!.quality;
       
-      // Provide accuracy metric based on stability
+      // Proporcionar métrica de precisión basada en estabilidad
       let accuracy = 0;
       
       if (this.heartRateBuffer.length >= 3) {
-        // Calculate standard deviation
+        // Calcular desviación estándar
         const mean = this.heartRateBuffer.reduce((sum, hr) => sum + hr, 0) / this.heartRateBuffer.length;
         const variance = this.heartRateBuffer.reduce((sum, hr) => sum + Math.pow(hr - mean, 2), 0) / 
                         this.heartRateBuffer.length;
         const stdDev = Math.sqrt(variance);
         
-        // High accuracy = low relative standard deviation
+        // Alta precisión = baja desviación estándar relativa
         accuracy = Math.max(0, Math.min(1, 1 - (stdDev / mean) / 0.1));
       }
       
@@ -182,8 +171,8 @@ export class SignalOptimizationManager {
       });
     }
     
-    // Feedback for other channels based on heart rate channel performance
-    // (as it's the reference channel for validation)
+    // Feedback para otros canales basado en rendimiento de canal de ritmo cardíaco
+    // (ya que es el canal de referencia para validación)
     if (confidence > 0.7) {
       for (const [channelName, _] of channels.entries()) {
         if (channelName !== 'heartRate') {
@@ -197,28 +186,28 @@ export class SignalOptimizationManager {
   }
   
   /**
-   * Get last optimization result
+   * Obtiene el último resultado de optimización
    */
   public getLastResult(): OptimizationResult | null {
     return this.lastOptimizationResult;
   }
   
   /**
-   * Get values for a specific channel
+   * Obtiene valores de un canal específico
    */
   public getChannelValues(channelName: string): number[] {
     return this.optimizer.getChannelValues(channelName);
   }
   
   /**
-   * Get complete channel with metadata
+   * Obtiene canal completo con metadatos
    */
   public getChannel(channelName: string): OptimizedChannel | undefined {
     return this.optimizer.getChannel(channelName);
   }
   
   /**
-   * Reset optimizer state
+   * Restablece estado del optimizador
    */
   public reset(): void {
     this.optimizer.reset();
@@ -230,20 +219,9 @@ export class SignalOptimizationManager {
   }
   
   /**
-   * Update configuration
+   * Actualiza configuración
    */
   public updateConfig(config: Partial<ProcessorConfig>): void {
-    // Convert ProcessorConfig to AdaptiveOptimizerConfig
-    const optimizerConfig = {
-      learningRate: 0.15,
-      adaptationWindow: 20,
-      thresholds: {
-        signalQuality: 0.5,
-        signalAmplitude: 0.1,
-        signalStability: 0.3
-      }
-    };
-    
-    this.optimizer.setConfig(optimizerConfig);
+    this.optimizer.setConfig(config);
   }
 }

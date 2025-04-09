@@ -1,23 +1,19 @@
 
-/**
- * Type definitions for heart beat detection
- */
+import { RRAnalysisResult } from '../arrhythmia/types';
+
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
+}
 
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
+  filteredValue?: number;
   arrhythmiaCount: number;
-  rrData: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
-  isArrhythmia: boolean;
-  transition?: {
-    active: boolean;
-    progress: number;
-    direction: 'none' | 'up' | 'down';
-  };
+  isArrhythmia?: boolean;
+  rrData?: RRIntervalData;
 }
 
 export interface UseHeartBeatReturn {

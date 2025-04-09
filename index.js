@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -23,11 +24,8 @@ const Index = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
   
-  const rawValueBufferRef = useRef([]);
-  const lastProcessTime = useRef(Date.now());
-  
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat, getRawSignalData } = useHeartBeatProcessor();
+  const { processSignal: processHeartBeat } = useHeartBeatProcessor();
   const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
@@ -113,8 +111,6 @@ const Index = () => {
     startProcessing();
     setElapsedTime(0);
     
-    rawValueBufferRef.current = [];
-    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
     }
@@ -163,8 +159,6 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
-    rawValueBufferRef.current = [];
   };
 
   const stopMonitoring = () => {
@@ -186,8 +180,6 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
-    rawValueBufferRef.current = [];
   };
 
   const handleStreamReady = (stream) => {
@@ -213,36 +205,31 @@ const Index = () => {
     }
     
     const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+    const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
     }
     
-    let lastProcessedTime = 0;
-    const minProcessInterval = 33; // ~30fps
-    
     const processImage = async () => {
       if (!isMonitoring) return;
       
-      const now = Date.now();
-      if (now - lastProcessedTime >= minProcessInterval) {
-        try {
-          lastProcessedTime = now;
-          
-          const frame = await imageCapture.grabFrame();
-          tempCanvas.width = frame.width;
-          tempCanvas.height = frame.height;
-          tempCtx.drawImage(frame, 0, 0);
-          const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-          processFrame(imageData);
-        } catch (error) {
-          console.error("Error capturando frame:", error);
+      try {
+        const frame = await imageCapture.grabFrame();
+        tempCanvas.width = frame.width;
+        tempCanvas.height = frame.height;
+        tempCtx.drawImage(frame, 0, 0);
+        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
+        processFrame(imageData);
+        
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
         }
-      }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
+      } catch (error) {
+        console.error("Error capturando frame:", error);
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
       }
     };
 
@@ -250,39 +237,19 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      if (lastSignal.rawValue !== undefined) {
-        rawValueBufferRef.current.push(lastSignal.rawValue);
-        if (rawValueBufferRef.current.length > 300) {
-          rawValueBufferRef.current.shift();
-        }
+    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      setHeartRate(heartBeatResult.bpm);
+      
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
       }
       
-      if (lastSignal.fingerDetected) {
-        const rawValue = lastSignal.rawValue !== undefined ? lastSignal.rawValue : lastSignal.filteredValue;
-        const filteredValue = lastSignal.filteredValue;
-        
-        const heartBeatResult = processHeartBeat(filteredValue);
-        const rawSignal = getRawSignalData();
-        
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
-        }
-        
-        const now = Date.now();
-        if (now - lastProcessTime.current > 100) {
-          lastProcessTime.current = now;
-          const vitals = processVitalSigns(rawValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
-            setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
-          }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      }
+      setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, getRawSignalData]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -312,7 +279,6 @@ const Index = () => {
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
-              rawValue={lastSignal?.rawValue}
               quality={lastSignal?.quality || 0}
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
@@ -354,12 +320,18 @@ const Index = () => {
             </div>
           )}
 
-          <div className="h-[80px] grid grid-cols-1 gap-px bg-gray-900 mt-auto">
+          <div className="h-[80px] grid grid-cols-2 gap-px bg-gray-900 mt-auto">
             <button 
               onClick={startMonitoring}
               className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
             >
-              {isMonitoring ? "DETENER" : "INICIAR"}
+              INICIAR
+            </button>
+            <button 
+              onClick={stopMonitoring}
+              className="w-full h-full bg-black/80 text-2xl font-bold text-white active:bg-gray-800"
+            >
+              RESET
             </button>
           </div>
         </div>

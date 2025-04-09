@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -25,7 +26,6 @@ export class ArrhythmiaProcessor {
   private arrhythmiaCount = 0;
   private lastArrhythmiaTime: number = 0;
   private startTime: number = Date.now();
-  private arrhythmiaWindows: Array<{start: number, end: number}> = [];
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
@@ -33,10 +33,6 @@ export class ArrhythmiaProcessor {
   
   // Pattern detector
   private patternDetector = new ArrhythmiaPatternDetector();
-  
-  // Parameters for improved waveform visualization
-  private readonly ARRHYTHMIA_WINDOW_FACTOR = 3.0; // Increased from 2.5 for better visualization
-  private readonly WINDOW_WIDTH_ADJUSTMENT = 1.15; // Increased from 1.1 for better visualization
 
   /**
    * Process real RR data for arrhythmia detection
@@ -73,8 +69,7 @@ export class ArrhythmiaProcessor {
     
     return {
       arrhythmiaStatus: arrhythmiaStatusMessage,
-      lastArrhythmiaData,
-      arrhythmiaWindows: [...this.arrhythmiaWindows]
+      lastArrhythmiaData
     };
   }
 
@@ -143,33 +138,10 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
       
-      // Enhanced arrhythmia window visualization for more natural presentation
-      // Calculate a more physiologically appropriate window size
-      let windowWidth = validIntervals.length >= 3 ?
-        (validIntervals.slice(-3).reduce((sum, val) => sum + val, 0) / 3) * this.ARRHYTHMIA_WINDOW_FACTOR :
-        1800; // Increased default window width
-        
-      // Apply enhanced fine-tuning adjustment for better visualization
-      windowWidth *= this.WINDOW_WIDTH_ADJUSTMENT;
-      
-      // Use asymmetric window to better represent arrhythmia event positioning
-      // Showing more context after the arrhythmia for better visualization
-      this.arrhythmiaWindows.push({
-        start: currentTime - windowWidth * 0.4, // Show less before arrhythmia
-        end: currentTime + windowWidth * 0.6    // Show more after arrhythmia
-      });
-      
-      // Limit to the latest 3 windows for visualization
-      if (this.arrhythmiaWindows.length > 3) {
-        this.arrhythmiaWindows.shift();
-      }
-      
       console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED in real data", {
         arrhythmiaCount: this.arrhythmiaCount,
         timeSinceLast: timeSinceLastArrhythmia,
-        timestamp: currentTime,
-        windowWidth,
-        arrhythmiaWindows: this.arrhythmiaWindows
+        timestamp: currentTime
       });
     }
   }
@@ -186,7 +158,6 @@ export class ArrhythmiaProcessor {
     this.lastArrhythmiaTime = 0;
     this.startTime = Date.now();
     this.consecutiveAbnormalBeats = 0;
-    this.arrhythmiaWindows = [];
     this.patternDetector.resetPatternBuffer();
     
     console.log("ArrhythmiaProcessor: Processor reset", {
@@ -199,12 +170,5 @@ export class ArrhythmiaProcessor {
    */
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
-  }
-  
-  /**
-   * Get arrhythmia windows for visualization
-   */
-  public getArrhythmiaWindows(): Array<{start: number, end: number}> {
-    return [...this.arrhythmiaWindows];
   }
 }

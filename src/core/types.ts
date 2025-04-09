@@ -9,13 +9,6 @@ export interface HeartBeatResult {
     lastPeakTime: number | null;
   };
   isArrhythmia?: boolean;
-  quality?: number;
-  filteredValue?: number;
-  transition?: {
-    active: boolean;
-    progress: number;
-    direction: string;
-  };
 }
 
 export interface ProcessedSignal {

@@ -22,8 +22,7 @@ export function useArrhythmiaDetector() {
    * Using direct measurement algorithms only
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    if (!rrIntervals || rrIntervals.length < 5) {
-      console.log("Not enough RR intervals for arrhythmia detection");
+    if (rrIntervals.length < 5) {
       return {
         rmssd: 0,
         rrVariation: 0,
@@ -39,14 +38,6 @@ export function useArrhythmiaDetector() {
     
     // Calculate RR variation
     const variationRatio = calculateRRVariation(lastIntervals);
-    
-    // Log variation values for debugging
-    console.log("Arrhythmia detection values:", {
-      rmssd,
-      variationRatio,
-      lastIntervals,
-      stabilityCounter: stabilityCounterRef.current
-    });
     
     // More strict threshold
     let thresholdFactor = 0.25;
@@ -67,17 +58,10 @@ export function useArrhythmiaDetector() {
     // Require more stability before reporting arrhythmia
     const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
     
-    // Update arrhythmia state
-    lastIsArrhythmiaRef.current = isArrhythmia;
-    currentBeatIsArrhythmiaRef.current = isArrhythmia;
-    
     heartRateVariabilityRef.current.push(variationRatio);
     if (heartRateVariabilityRef.current.length > 20) {
       heartRateVariabilityRef.current.shift();
     }
-    
-    // Update stored RR intervals
-    lastRRIntervalsRef.current = [...rrIntervals];
     
     return {
       rmssd,
@@ -96,7 +80,6 @@ export function useArrhythmiaDetector() {
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
     currentBeatIsArrhythmiaRef.current = false;
-    console.log("Arrhythmia detector reset");
   }, []);
 
   return {
