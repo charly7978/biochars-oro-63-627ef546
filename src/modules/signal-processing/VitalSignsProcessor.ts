@@ -3,49 +3,20 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-// Define the VitalSignsResult interface
-export interface VitalSignsResult {
-  spo2: number;
-  pressure: string;
-  arrhythmiaStatus: string;
-  glucose: number;
-  lipids: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd?: number;
-    rrVariation?: number;
-  } | null;
-}
+import type { VitalSignsResult, RRIntervalData } from '../../types/vital-signs';
 
-/**
- * Core processor for vital signs
- * Direct measurement only - no simulation
- */
+// Main vital signs processor 
 export class VitalSignsProcessor {
   private arrhythmiaCounter: number = 0;
   private signalHistory: number[] = [];
-  private lastDetectionTime: number = 0;
+
+  constructor() {
+    console.log("VitalSignsProcessor initialized");
+  }
   
-  /**
-   * Process a PPG signal with improved false positive detection
-   */
-  public processSignal(
-    ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): VitalSignsResult {
-    // Add value to history
-    this.signalHistory.push(ppgValue);
-    if (this.signalHistory.length > 50) {
-      this.signalHistory.shift();
-    }
-    
-    // Basic validation
-    if (Math.abs(ppgValue) < 0.05) {
-      return this.getEmptyResult();
-    }
+  process(data: { value: number, rrData?: RRIntervalData }): VitalSignsResult {
+    // Basic processing of incoming data
+    const { value, rrData } = data;
     
     // Check for arrhythmia patterns in RR intervals
     let arrhythmiaDetected = false;
@@ -61,11 +32,11 @@ export class VitalSignsProcessor {
       }
     }
     
-    // Calculate basic vital signs based on PPG signal
-    const spo2 = this.calculateSpO2(ppgValue);
-    const pressure = this.calculateBloodPressure(ppgValue, rrData);
-    const glucose = this.calculateGlucose(ppgValue);
-    const lipids = this.calculateLipids(ppgValue);
+    // Calculate basic vital signs
+    const spo2 = this.calculateSpO2(value);
+    const pressure = this.calculateBloodPressure(value, rrData);
+    const glucose = this.calculateGlucose(value);
+    const lipids = this.calculateLipids(value);
     
     return {
       spo2,
@@ -84,22 +55,6 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Get empty result for invalid signals
-   */
-  private getEmptyResult(): VitalSignsResult {
-    return {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
-    };
-  }
-  
-  /**
    * Calculate SpO2 from PPG signal
    */
   private calculateSpO2(ppgValue: number): number {
@@ -114,7 +69,7 @@ export class VitalSignsProcessor {
    */
   private calculateBloodPressure(
     ppgValue: number, 
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
+    rrData?: RRIntervalData
   ): string {
     // Base values
     const baseSystolic = 120;
@@ -163,28 +118,49 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Reset the processor
-   */
-  public reset(): VitalSignsResult {
-    const lastResult = this.getEmptyResult();
-    this.signalHistory = [];
-    this.lastDetectionTime = 0;
-    return lastResult;
-  }
-  
-  /**
-   * Completely reset the processor
-   */
-  public fullReset(): void {
-    this.arrhythmiaCounter = 0;
-    this.signalHistory = [];
-    this.lastDetectionTime = 0;
-  }
-  
-  /**
    * Get arrhythmia counter
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaCounter;
   }
+
+  /**
+   * Process signal directly - no simulation
+   * This method is added for compatibility with the new interface
+   */
+  public processSignal(value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult {
+    return this.process({
+      value,
+      rrData: rrData ? { 
+        intervals: rrData.intervals,
+        lastPeakTime: rrData.lastPeakTime
+      } : undefined
+    });
+  }
+
+  /**
+   * Reset function for compatibility with new interface
+   */
+  public reset(): VitalSignsResult | null {
+    this.signalHistory = [];
+    return null;
+  }
+
+  /**
+   * Full reset function for compatibility with new interface
+   */
+  public fullReset(): void {
+    this.signalHistory = [];
+    this.arrhythmiaCounter = 0;
+  }
+
+  /**
+   * Get last valid results - always returns null for direct measurement
+   */
+  public getLastValidResults(): VitalSignsResult | null {
+    return null;
+  }
 }
+
+// Named export for usage across the application
+export const vitalSignsProcessor = new VitalSignsProcessor();

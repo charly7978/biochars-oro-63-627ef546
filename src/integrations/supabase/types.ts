@@ -9,6 +9,45 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      calibration_records: {
+        Row: {
+          created_at: string | null
+          diastolic: number
+          glucose: number
+          heart_rate: number
+          id: string
+          quality: number
+          spo2: number
+          systolic: number
+          timestamp: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          diastolic: number
+          glucose: number
+          heart_rate: number
+          id?: string
+          quality: number
+          spo2: number
+          systolic: number
+          timestamp: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          diastolic?: number
+          glucose?: number
+          heart_rate?: number
+          id?: string
+          quality?: number
+          spo2?: number
+          systolic?: number
+          timestamp?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       calibration_settings: {
         Row: {
           created_at: string
