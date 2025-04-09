@@ -13,6 +13,7 @@ import { ResultFactory } from './factories/result-factory';
 import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
+import { findPeaksAndValleys, calculateHeartRateFromPeaks } from './utils';
 
 /**
  * Main vital signs processor
@@ -90,6 +91,17 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
+    // Analyze signal characteristics 
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgValues.slice(-60));
+    const heartRate = calculateHeartRateFromPeaks(peakIndices);
+    
+    console.log("Signal analysis for BP calculation:", {
+      peakCount: peakIndices.length,
+      valleyCount: valleyIndices.length,
+      estimatedHR: heartRate,
+      signalLength: ppgValues.length
+    });
+    
     // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
@@ -103,7 +115,7 @@ export class VitalSignsProcessor {
     // Calculate SpO2 using real data only
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
-    // Calculate blood pressure using real signal characteristics only
+    // Calculate blood pressure using ONLY real signal characteristics
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 

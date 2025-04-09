@@ -107,4 +107,3 @@ export class BloodPressureAnalyzer {
     console.log("BloodPressureAnalyzer: Reset - preparado para nuevas mediciones");
   }
 }
-
