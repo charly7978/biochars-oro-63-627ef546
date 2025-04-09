@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { TensorFlowService } from '../core/ml/tensorflow-service';
 import { NeuralNetworkProcessor } from '../core/ml/neural-network-processor';
@@ -57,7 +56,6 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
         ...DEFAULT_PROCESSOR_CONFIG,
         useWebGPU: true, // Intentar usar WebGPU si está disponible
         bufferSize: 200,
-        fingerprintId: sessionId.current,
         neuralNetworks: {
           ...DEFAULT_PROCESSOR_CONFIG.neuralNetworks
         }

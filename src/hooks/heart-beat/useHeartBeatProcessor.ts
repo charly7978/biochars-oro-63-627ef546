@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
-import { HeartBeatResult } from '../../core/types';
+import { HeartBeatResult as CoreHeartBeatResult } from '../../core/types';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
@@ -13,7 +13,7 @@ import { HeartBeatResult } from '../../core/types';
  */
 export const useHeartBeatProcessor = () => {
   // Estado para los resultados del latido cardíaco
-  const [heartBeatResult, setHeartBeatResult] = useState<HeartBeatResult | null>(null);
+  const [heartBeatResult, setHeartBeatResult] = useState<CoreHeartBeatResult | null>(null);
   // Estado para indicar si el procesamiento está en curso
   const [isProcessing, setIsProcessing] = useState(false);
   // Referencia para el procesador de latidos cardíacos
@@ -72,11 +72,24 @@ export const useHeartBeatProcessor = () => {
       // Actualizar la última señal válida
       lastValidSignalRef.current = value;
 
-      // Simular el procesamiento de la señal y obtener los resultados
+      // Procesar la señal y obtener los resultados
       const result = processorRef.current.processSignal(value);
 
+      // Convertir el resultado al tipo esperado por el estado
+      const coreResult: CoreHeartBeatResult = {
+        bpm: result.bpm,
+        confidence: result.confidence,
+        isPeak: result.isPeak || false,
+        arrhythmiaCount: result.arrhythmiaCount,
+        isArrhythmia: result.isArrhythmia,
+        rrData: result.rrData,
+        quality: result.quality,
+        filteredValue: result.filteredValue,
+        transition: result.transition
+      };
+
       // Actualizar el estado con los resultados del procesamiento
-      setHeartBeatResult(result);
+      setHeartBeatResult(coreResult);
 
       // Actualizar datos adicionales de análisis
       updateAnalysisData(value, result);
