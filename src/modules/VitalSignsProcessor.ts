@@ -99,7 +99,7 @@ export class VitalSignsProcessor {
     }
     
     // Check for near-zero signal with more tolerance
-    if (!this.signalValidator.isValidSignal(ppgValue, 0.001)) { // More sensitive threshold
+    if (!this.signalValidator.isValidSignal(ppgValue)) { // Fixed: Removed the second argument
       if (this.processingCount % 10 === 0) {
         console.log("VitalSignsProcessor: Señal demasiado débil, devolviendo valores neutros", { value: ppgValue });
       }
@@ -124,7 +124,7 @@ export class VitalSignsProcessor {
     const rawPpgValues = this.signalProcessor.getRawPPGValues();
     
     // Check if we have enough data points for REAL processing with more sensitivity
-    if (!this.signalValidator.hasEnoughData(rawPpgValues, 8)) { // Reduced threshold
+    if (!this.signalValidator.hasEnoughData(rawPpgValues)) { // Fixed: Removed the second argument
       if (this.processingCount % 10 === 0) {
         console.log("VitalSignsProcessor: Datos insuficientes para análisis", { 
           bufferedRawValues: rawPpgValues.length,
@@ -147,7 +147,7 @@ export class VitalSignsProcessor {
     const signalMax = Math.max(...rawPpgValues.slice(-15));
     const amplitude = signalMax - signalMin;
     
-    if (!this.signalValidator.hasValidAmplitude(rawPpgValues, 0.05)) { // More sensitive threshold
+    if (!this.signalValidator.hasValidAmplitude(rawPpgValues)) { // Fixed: Removed the second argument
       if (this.processingCount % 10 === 0) {
         this.signalValidator.logValidationResults(false, amplitude, rawPpgValues);
       }
