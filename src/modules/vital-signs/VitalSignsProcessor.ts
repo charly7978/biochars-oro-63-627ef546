@@ -53,21 +53,10 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process data from an object parameter
-   * Added for backward compatibility
-   */
-  public processSignal(data: {
-    value: number, 
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
-  }): VitalSignsResult {
-    return this.process(data.value, data.rrData);
-  }
-  
-  /**
    * Processes the real PPG signal and calculates all vital signs
    * Using ONLY direct measurements with no reference values or simulation
    */
-  public process(
+  public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
@@ -115,10 +104,9 @@ export class VitalSignsProcessor {
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
-    // Updated to use the process method instead of calculateBloodPressure
-    const bpResult = this.bpProcessor.process(filtered);
-    const pressure = bpResult && bpResult.systolic > 0 && bpResult.diastolic > 0 
-      ? `${bpResult.systolic}/${bpResult.diastolic}` 
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    const pressure = bp.systolic > 0 && bp.diastolic > 0 
+      ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
     // Calculate glucose with real data only
@@ -161,7 +149,6 @@ export class VitalSignsProcessor {
       finalGlucose,
       finalLipids,
       {
-        spo2: 0.85, // Add spo2 confidence value
         glucose: glucoseConfidence,
         lipids: lipidsConfidence,
         overall: overallConfidence

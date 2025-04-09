@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -536,16 +537,14 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Handle a processing error
+   * Maneja errores del procesador
    */
   private handleError(code: string, message: string): void {
     console.error("PPGSignalProcessor: Error", code, message);
     const error: ProcessingError = {
       code,
       message,
-      timestamp: Date.now(),
-      severity: 'medium',
-      recoverable: true
+      timestamp: Date.now()
     };
     this.onError?.(error);
   }
