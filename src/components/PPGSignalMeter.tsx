@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
+import { createSoftRainbowGradient, drawCanvasGrid } from '../utils/gradientUtils';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -292,64 +293,12 @@ const PPGSignalMeter = memo(({
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Create a more nuanced, soft rainbow gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    const gradient = createSoftRainbowGradient(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Soft, pastel colors at the top with increasing intensity towards bottom
-    gradient.addColorStop(0, '#F2FCE2');     // Soft Mint Green - very light
-    gradient.addColorStop(0.1, '#FEF7CD');   // Soft Pale Yellow
-    gradient.addColorStop(0.3, '#FFDEE2');   // Soft Pastel Pink
-    gradient.addColorStop(0.5, '#E5DEFF');   // Soft Lavender
-    gradient.addColorStop(0.7, '#D3E4FD');   // Soft Sky Blue
-    gradient.addColorStop(1, '#666592');     // Deep Indigo - darker at bottom
-
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    ctx.globalAlpha = 0.03;
-    for (let i = 0; i < CANVAS_WIDTH; i += 20) {
-      for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
-        ctx.fillRect(i, j, 10, 10);
-      }
-    }
-    ctx.globalAlpha = 1.0;
-    
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
-    ctx.lineWidth = 0.5;
-    
-    for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, CANVAS_HEIGHT);
-      if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
-      }
-    }
-    
-    for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE_Y) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(CANVAS_WIDTH, y);
-      if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'right';
-        ctx.fillText(y.toString(), 15, y + 3);
-      }
-    }
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, CANVAS_HEIGHT / 2);
-    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    drawCanvasGrid(ctx, CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE_X, GRID_SIZE_Y);
     
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
@@ -752,4 +701,37 @@ const PPGSignalMeter = memo(({
           <Fingerprint
             className={`h-8 w-8 transition-colors duration-300 ${
               !displayFingerDetected ? 'text-gray-400' :
-              displayQuality > 65 ? 'text-green-50
+              displayQuality > 65 ? 'text-green-500' : 
+              displayQuality > 40 ? 'text-yellow-500' : 
+              'text-red-500'
+            }`}
+          />
+        </div>
+      </div>
+
+      <div className="absolute bottom-2 left-0 right-0 p-4 flex justify-center z-10">
+        {!isFingerDetected && !preserveResults ? (
+          <button
+            onClick={onStartMeasurement}
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-all duration-300 flex items-center gap-2"
+          >
+            <Fingerprint className="h-5 w-5" />
+            <span>Comenzar medición</span>
+          </button>
+        ) : null}
+        
+        {preserveResults && (
+          <button
+            onClick={handleReset}
+            className="bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-all duration-300 flex items-center gap-2"
+          >
+            <AlertCircle className="h-5 w-5" />
+            <span>Reiniciar</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
+
+export default PPGSignalMeter;
