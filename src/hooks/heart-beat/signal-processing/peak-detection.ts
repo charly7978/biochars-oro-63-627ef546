@@ -7,7 +7,7 @@
 
 // Buffer for adaptive thresholding
 let signalBuffer: number[] = [];
-const BUFFER_SIZE = 30; // Increased for better adaptive threshold calculation
+const BUFFER_SIZE = 35; // Increased for better adaptive threshold calculation
 let adaptiveThreshold = 0.02;
 let lastPeakValue = 0;
 let lastPeakTime = 0;
@@ -15,17 +15,68 @@ const MIN_PEAK_DISTANCE_MS = 250; // Minimum time between peaks (240bpm max)
 
 // Advanced peak detection state
 let lastValues: number[] = []; // Last few processed values
-const LAST_VALUES_BUFFER = 5; // Store last 5 values for slope analysis
+const LAST_VALUES_BUFFER = 7; // Increased buffer for better slope analysis
 let lastSlopes: number[] = []; // Store slopes for second derivative analysis
-const SLOPE_BUFFER = 3; // Store last 3 slopes for acceleration analysis
+const SLOPE_BUFFER = 4; // Increased for better acceleration analysis
 let noiseFloor = 0.01; // Dynamically adjusted noise floor
 let signalQuality = 0.5; // Signal quality estimate from 0-1
+
+// Peak consistency tracking
+let peakIntervals: number[] = [];
+const MAX_INTERVALS = 8;
+let averageInterval = 0;
+let lastValidPeakTime = 0;
+
+// Device-specific adaptation
+let isHighPerformanceDevice = false;
+const deviceCheckInterval = 10000; // 10 seconds
+let lastDeviceCheck = 0;
+let detectionSensitivity = 1.0; // Adjusted based on device capability
+
+/**
+ * Checks device performance to adapt parameters
+ */
+function checkDevicePerformance(): void {
+  const now = Date.now();
+  if (now - lastDeviceCheck < deviceCheckInterval) {
+    return;
+  }
+  
+  lastDeviceCheck = now;
+  
+  // Check for high-end device features
+  const hasGPU = !!navigator.gpu;
+  const memory = (navigator as any).deviceMemory; // May be undefined on some browsers
+  const highMemory = memory ? memory >= 4 : false;
+  
+  // Check processor (via rough performance estimate)
+  const start = performance.now();
+  let counter = 0;
+  for (let i = 0; i < 1000000; i++) {
+    counter += Math.sqrt(i);
+  }
+  const end = performance.now();
+  const cpuScore = 1000 / (end - start);
+  
+  isHighPerformanceDevice = hasGPU || highMemory || cpuScore > 1.5;
+  
+  // Adjust sensitivity based on device capability
+  detectionSensitivity = isHighPerformanceDevice ? 1.2 : 0.9;
+  
+  console.log(`Device performance check: High-performance=${isHighPerformanceDevice}, GPU=${hasGPU}, CPU Score=${cpuScore.toFixed(2)}, Sensitivity=${detectionSensitivity.toFixed(2)}`);
+}
 
 /**
  * Determines if a measurement should be processed based on signal strength
  * Only processes real measurements with improved thresholding
  */
 export function shouldProcessMeasurement(value: number): boolean {
+  // Run device performance check periodically
+  const now = Date.now();
+  if (now - lastDeviceCheck > deviceCheckInterval) {
+    checkDevicePerformance();
+  }
+  
   // Add to buffer for adaptive thresholding
   signalBuffer.push(value);
   if (signalBuffer.length > BUFFER_SIZE) {
@@ -33,22 +84,26 @@ export function shouldProcessMeasurement(value: number): boolean {
   }
   
   // Calculate signal dynamic range for adaptive threshold
-  if (signalBuffer.length >= 10) {
-    const min = Math.min(...signalBuffer);
-    const max = Math.max(...signalBuffer);
-    const range = max - min;
+  if (signalBuffer.length >= 12) {
+    // Sort for percentile-based calculations to remove outliers
+    const sortedValues = [...signalBuffer].sort((a, b) => a - b);
+    const lowerIdx = Math.floor(sortedValues.length * 0.1); // 10th percentile
+    const upperIdx = Math.floor(sortedValues.length * 0.9); // 90th percentile
+    
+    const robustMin = sortedValues[lowerIdx];
+    const robustMax = sortedValues[upperIdx];
+    const range = robustMax - robustMin;
     
     // Update adaptive threshold based on signal amplitude
-    adaptiveThreshold = Math.max(0.008, range * 0.2);
+    adaptiveThreshold = Math.max(0.008, range * 0.2 * detectionSensitivity);
     
     // Update noise floor based on signal statistics
-    const sortedValues = [...signalBuffer].sort((a, b) => a - b);
     const lowerQuartile = sortedValues[Math.floor(sortedValues.length * 0.25)];
     const upperQuartile = sortedValues[Math.floor(sortedValues.length * 0.75)];
     const iqr = upperQuartile - lowerQuartile;
     
     // Set noise floor to a fraction of the interquartile range
-    noiseFloor = Math.max(0.005, iqr * 0.1);
+    noiseFloor = Math.max(0.005, iqr * 0.12 * detectionSensitivity);
   }
   
   // Update signal quality estimate
@@ -67,14 +122,18 @@ export function shouldProcessMeasurement(value: number): boolean {
     // Physiological PPG should have reasonable zero crossing rate
     // Too few = poor signal, too many = noise
     const crossingRate = crossings / signalBuffer.length;
-    signalQuality = crossingRate >= 0.1 && crossingRate <= 0.5 ? 
-      Math.min(1, Math.max(0.2, 1 - Math.abs(0.25 - crossingRate) * 4)) : 
-      Math.max(0.1, signalQuality * 0.9);
+    
+    // Expected crossings for heart rate 40-180 BPM at 30fps: ~0.1-0.3 crossings per sample
+    const idealCrossingRate = 0.2;
+    const crossingDeviation = Math.abs(crossingRate - idealCrossingRate);
+    signalQuality = crossingDeviation < 0.1 ? 
+                    1 - crossingDeviation * 5 : // Higher quality near ideal rate
+                    Math.max(0.2, 0.6 - crossingDeviation); // Lower quality away from ideal
   }
   
   // Use adaptive threshold with signal quality modulation
-  const effectiveThreshold = adaptiveThreshold * Math.max(0.5, Math.min(1.5, signalQuality * 2));
-  return Math.abs(value) >= effectiveThreshold;
+  const effectiveThreshold = adaptiveThreshold * Math.max(0.6, Math.min(1.5, signalQuality * 2));
+  return Math.abs(value) >= effectiveThreshold * detectionSensitivity;
 }
 
 /**
@@ -110,6 +169,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
  * 2. First and second derivative analysis
  * 3. Waveform shape validation
  * 4. Time-domain constraints
+ * 5. Physiological consistency checks
  */
 export function detectPeak(value: number, recentValues: number[]): boolean {
   // Store value for slope analysis
@@ -156,7 +216,16 @@ export function detectPeak(value: number, recentValues: number[]): boolean {
   
   // Check minimum time between peaks to avoid false doubles
   const now = Date.now();
-  const hasMinimumInterval = (now - lastPeakTime) > (MIN_PEAK_DISTANCE_MS * Math.max(0.8, Math.min(1.2, 1 / signalQuality)));
+  
+  // Calculate expected interval based on recent peak history
+  let expectedInterval = MIN_PEAK_DISTANCE_MS;
+  if (peakIntervals.length >= 3) {
+    averageInterval = peakIntervals.reduce((sum, val) => sum + val, 0) / peakIntervals.length;
+    expectedInterval = averageInterval * 0.7; // Allow for heart rate increase
+  }
+  
+  const timeSinceLastPeak = now - lastPeakTime;
+  const hasMinimumInterval = timeSinceLastPeak > expectedInterval;
   
   // Check waveform shape characteristics (PPG specific)
   // The rising edge should be steeper than falling edge for PPG waves
@@ -165,23 +234,51 @@ export function detectPeak(value: number, recentValues: number[]): boolean {
   const fallingEdgeSlope = Math.abs(lastSlopes.filter(s => s < 0).reduce((sum, s) => sum + s, 0)) / 
     Math.max(1, lastSlopes.filter(s => s < 0).length);
   
-  const hasValidWaveformShape = risingEdgeSlope > fallingEdgeSlope * 0.7;
+  const hasValidWaveformShape = risingEdgeSlope > fallingEdgeSlope * 0.65;
+  
+  // Physiological consistency check - verify against expected timing pattern
+  let isPhysiologicallyConsistent = true;
+  if (peakIntervals.length >= 3 && lastValidPeakTime > 0) {
+    const timeSinceValidPeak = now - lastValidPeakTime;
+    const intervalDeviation = Math.abs(timeSinceValidPeak / averageInterval - Math.round(timeSinceValidPeak / averageInterval));
+    isPhysiologicallyConsistent = intervalDeviation < 0.4; // Should be close to a multiple of the average interval
+  }
   
   // Final validation combines multiple factors
-  if (isPeakHighEnough && hasMinimumInterval && (hasValidWaveformShape || signalQuality < 0.7)) {
+  if (isPeakHighEnough && hasMinimumInterval && 
+     (hasValidWaveformShape || signalQuality < 0.7) &&
+     (isPhysiologicallyConsistent || peakIntervals.length < 3)) {
+    
+    // Update peak history
     lastPeakValue = prev;
+    
+    // Only update intervals for valid peaks
+    if (lastPeakTime > 0) {
+      const interval = now - lastPeakTime;
+      // Only add if interval is physiologically plausible (30-200 BPM)
+      if (interval >= 300 && interval <= 2000) {
+        peakIntervals.push(interval);
+        if (peakIntervals.length > MAX_INTERVALS) {
+          peakIntervals.shift();
+        }
+      }
+    }
+    
     lastPeakTime = now;
+    lastValidPeakTime = now;
     
     // Log peak characteristics for debugging
-    console.log("Peak detected with enhanced algorithm:", {
-      value: prev,
-      threshold: adaptiveThreshold,
-      timeSinceLastPeak: now - lastPeakTime,
-      risingSlope: risingEdgeSlope.toFixed(4),
-      fallingSlope: fallingEdgeSlope.toFixed(4),
-      waveformValid: hasValidWaveformShape,
-      signalQuality: signalQuality.toFixed(2)
-    });
+    if (Math.random() < 0.1) { // Only log ~10% of peaks to avoid console spam
+      console.log("Peak detected with enhanced algorithm:", {
+        value: prev.toFixed(4),
+        threshold: adaptiveThreshold.toFixed(4),
+        timeSinceLastPeak: timeSinceLastPeak,
+        avgInterval: averageInterval.toFixed(0),
+        waveformValid: hasValidWaveformShape,
+        signalQuality: signalQuality.toFixed(2),
+        sensitivity: detectionSensitivity.toFixed(2)
+      });
+    }
     
     return true;
   }
@@ -204,25 +301,22 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Solo actualizar tiempo del pico para cálculos de tiempo
-  if (result.isPeak && result.confidence > 0.15) { // Reduced confidence threshold for better sensitivity
+  if (result.isPeak && result.confidence > 0.15) { // Kept lower threshold for better sensitivity
     // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
-    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
-    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
-      confianza: result.confidence,
-      valor: value,
-      tiempo: new Date(now).toISOString(),
-      // Log transition state if present
-      transicion: result.transition ? {
-        activa: result.transition.active,
-        progreso: result.transition.progress,
-        direccion: result.transition.direction
-      } : 'no hay transición',
-      isArrhythmia: result.isArrhythmia || false,
-      adaptiveThreshold: adaptiveThreshold,
-      signalQuality: signalQuality.toFixed(2)
-    });
+    // Log important peak information for measurement precision tracking
+    if (Math.random() < 0.05) { // Only log occasionally
+      console.log("Peak-detection: Pico detectado con precisión mejorada", {
+        confianza: result.confidence.toFixed(2),
+        valor: value.toFixed(3),
+        tiempo: new Date(now).toISOString(),
+        adaptiveThreshold: adaptiveThreshold.toFixed(3),
+        signalQuality: signalQuality.toFixed(2),
+        highPerformanceDevice: isHighPerformanceDevice,
+        avgInterval: averageInterval ? averageInterval.toFixed(0) : 'N/A'
+      });
+    }
   }
 }
 
@@ -238,5 +332,12 @@ export function resetPeakDetection(): void {
   lastSlopes = [];
   noiseFloor = 0.01;
   signalQuality = 0.5;
+  peakIntervals = [];
+  averageInterval = 0;
+  lastValidPeakTime = 0;
+  lastDeviceCheck = 0;
+  isHighPerformanceDevice = false;
+  detectionSensitivity = 1.0;
+  
   console.log("Peak detection reset - state cleared completely");
 }

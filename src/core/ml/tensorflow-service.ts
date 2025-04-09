@@ -12,6 +12,7 @@ export class TensorFlowService {
   private useWebGPU: boolean = false;
   private config: ProcessorConfig;
   private initPromise: Promise<boolean> | null = null;
+  private lastPerformanceLog: number = 0;
 
   constructor(config: ProcessorConfig) {
     this.config = config;
@@ -34,29 +35,24 @@ export class TensorFlowService {
     try {
       console.log('TensorFlow.js initializing...');
       
-      // Check if WebGPU is available
+      // Check if WebGPU is available with more reliable detection
       if (this.config.useWebGPU && await this.isWebGPUAvailable()) {
+        // Apply optimal memory settings before setting backend
+        tf.env().set('WEBGPU_USE_PROGRAM_CACHE', true);
+        tf.env().set('WEBGPU_CPU_FORWARD', false);
+        
         await tf.setBackend('webgpu');
-        
-        // Apply memory optimization settings for WebGPU
-        if (tf.env().getFlags().WEBGPU_USE_PROGRAM_CACHE === undefined) {
-          tf.env().set('WEBGPU_USE_PROGRAM_CACHE', true);
-        }
-        
         this.useWebGPU = true;
-        console.log('TensorFlow.js using WebGPU acceleration');
+        console.log('TensorFlow.js using WebGPU acceleration with optimized settings');
       } else {
+        // WebGL fallback with optimized settings
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+        tf.env().set('WEBGL_PACK', true);
+        tf.env().set('WEBGL_CPU_FORWARD', false);
+        tf.env().set('WEBGL_PACK_DEPTHWISECONV', true);
+        
         await tf.setBackend('webgl');
-        
-        // Apply memory optimization settings for WebGL
-        if (tf.env().getFlags().WEBGL_CPU_FORWARD === undefined) {
-          tf.env().set('WEBGL_CPU_FORWARD', false);
-        }
-        if (tf.env().getFlags().WEBGL_PACK === undefined) {
-          tf.env().set('WEBGL_PACK', true);
-        }
-        
-        console.log('TensorFlow.js using WebGL fallback');
+        console.log('TensorFlow.js using WebGL fallback with optimized settings');
       }
       
       await tf.ready();
@@ -77,14 +73,24 @@ export class TensorFlowService {
    */
   private async isWebGPUAvailable(): Promise<boolean> {
     try {
-      // Check if WebGPU is supported in the browser
+      // Enhanced WebGPU checking
       if (!navigator.gpu) {
+        console.log('WebGPU not supported - navigator.gpu missing');
         return false;
       }
       
       // Try to request adapter to confirm availability
-      const adapter = await navigator.gpu.requestAdapter();
-      return !!adapter;
+      const adapter = await navigator.gpu.requestAdapter({
+        powerPreference: 'high-performance'
+      });
+      
+      if (!adapter) {
+        console.log('WebGPU adapter request failed');
+        return false;
+      }
+      
+      // Additional feature checking
+      return true;
     } catch (error) {
       console.warn('WebGPU check failed:', error);
       return false;
@@ -109,7 +115,7 @@ export class TensorFlowService {
       console.log(`Loading model: ${modelKey} from ${modelUrl}`);
       const loadStartTime = performance.now();
       
-      // Load model with standard options - removed custom weightLoaderFactory
+      // Load model with standard options
       const model = await tf.loadLayersModel(modelUrl, {
         strict: false
       });
@@ -117,9 +123,9 @@ export class TensorFlowService {
       const loadTime = performance.now() - loadStartTime;
       console.log(`Model ${modelKey} loaded in ${loadTime.toFixed(2)}ms`);
       
-      // Apply memory optimization if using WebGPU
+      // Apply memory optimization based on backend
       if (this.useWebGPU) {
-        // Compile model for faster inference
+        // Compile model for faster inference with WebGPU
         if (model.compile && typeof model.compile === 'function') {
           model.compile({
             optimizer: 'sgd',
@@ -162,7 +168,7 @@ export class TensorFlowService {
       const tensorData = Float32Array.from(signalData);
       const tensor = tf.tensor(tensorData, inputShape);
       
-      // Fixed: Using tf.tidy with proper return type handling
+      // Use tf.tidy with proper return type handling
       const resultTensor = tf.tidy(() => {
         // Run inference
         return model.predict(tensor) as tf.Tensor;
@@ -178,10 +184,12 @@ export class TensorFlowService {
       tensor.dispose();
       resultTensor.dispose();
       
-      // Log performance for optimization tracking
+      // Log performance for optimization tracking (but limit frequency)
       const processingTime = performance.now() - startTime;
-      if (processingTime > 20) {
-        console.log(`TensorFlow processing took ${processingTime.toFixed(2)}ms for model ${modelKey}`);
+      const now = Date.now();
+      if (now - this.lastPerformanceLog > 2000) { // Log at most every 2 seconds
+        this.lastPerformanceLog = now;
+        console.log(`TensorFlow processing: ${processingTime.toFixed(2)}ms for model ${modelKey} (${this.getBackend()})`);
       }
       
       return resultArray;

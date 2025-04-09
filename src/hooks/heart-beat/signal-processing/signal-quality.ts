@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
@@ -16,7 +17,7 @@ let signalMean = 0;
 let signalVariance = 0;
 let signalSkewness = 0;  // Added to detect asymmetric patterns typical in PPG
 let consecutiveStableFrames = 0;
-const REQUIRED_STABLE_FRAMES = 20; // Increased from 15 for more reliable detection
+const REQUIRED_STABLE_FRAMES = 18; // Better balance between reliability and speed
 
 // Track time-based consistency
 let lastProcessTime = 0;
@@ -25,6 +26,43 @@ const MAX_ALLOWED_GAP_MS = 150; // Maximum time gap allowed between processing
 // Track rhythm metrics for physiological validation
 let rhythmQuality = 0;
 let heartRateTrend: number[] = [];
+
+// Device-specific adaptation
+let isHighEndDevice = false;
+let devicePerformanceScore = 0;
+const PERFORMANCE_CHECK_INTERVAL = 5000; // 5 seconds
+let lastDeviceCheck = 0;
+let frameRateHistory: number[] = [];
+
+/**
+ * Checks device performance and sets optimal thresholds
+ */
+function checkDevicePerformance(): void {
+  const now = Date.now();
+  if (now - lastDeviceCheck < PERFORMANCE_CHECK_INTERVAL) {
+    return;
+  }
+  
+  lastDeviceCheck = now;
+  
+  // Calculate frame rate
+  if (frameRateHistory.length >= 10) {
+    const intervals = frameRateHistory.slice(-10);
+    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const fps = 1000 / avgInterval;
+    
+    // Check device capabilities
+    const isHighPerformance = fps > 25;
+    const hardwareAcceleration = navigator.gpu !== undefined || 
+                               (window.WebGLRenderingContext !== undefined);
+    
+    // Score the device from 0-10
+    devicePerformanceScore = (fps / 30) * 5 + (hardwareAcceleration ? 5 : 0);
+    isHighEndDevice = devicePerformanceScore > 7;
+    
+    console.log(`Device performance check: Score ${devicePerformanceScore.toFixed(1)}/10, FPS: ${fps.toFixed(1)}, High-end: ${isHighEndDevice}`);
+  }
+}
 
 /**
  * Checks if the signal is too weak, indicating possible finger removal
@@ -45,7 +83,22 @@ export function checkWeakSignal(
   // Track signal history
   const now = Date.now();
   
-  // Check for large time gaps which indicate processing interruption (finger removed)
+  // Track frame rate for device adaptation
+  if (lastProcessTime > 0) {
+    const timeDiff = now - lastProcessTime;
+    if (timeDiff > 0 && timeDiff < 200) { // Valid frame
+      frameRateHistory.push(timeDiff);
+      if (frameRateHistory.length > 30) {
+        frameRateHistory.shift();
+      }
+    }
+    
+    // Check device performance periodically
+    checkDevicePerformance();
+  }
+  lastProcessTime = now;
+  
+  // Check for large time gaps which indicate processing interruption
   if (lastProcessTime > 0) {
     const timeDiff = now - lastProcessTime;
     if (timeDiff > MAX_ALLOWED_GAP_MS) {
@@ -58,7 +111,6 @@ export function checkWeakSignal(
       heartRateTrend = [];
     }
   }
-  lastProcessTime = now;
   
   signalHistory.push({ time: now, value });
   
@@ -66,7 +118,7 @@ export function checkWeakSignal(
   signalHistory = signalHistory.filter(point => now - point.time < 8000);
   
   // Calculate signal statistics for physiological validation
-  if (signalHistory.length > 15) {  // Increased from 10
+  if (signalHistory.length > 15) {
     const values = signalHistory.slice(-15).map(p => p.value);
     signalMean = values.reduce((sum, val) => sum + val, 0) / values.length;
     
@@ -84,9 +136,9 @@ export function checkWeakSignal(
     // Enhanced physiological check
     // 1. Variance should be neither too low (flat line) nor too high (noise)
     // 2. Skewness should be positive for typical PPG (asymmetric peaks)
-    const isPhysiological = signalVariance > 0.01 && 
-                           signalVariance < 0.4 && 
-                           signalSkewness > 0;
+    const varianceInRange = signalVariance > 0.005 && signalVariance < 0.5;
+    const hasPositiveSkew = signalSkewness > 0;
+    const isPhysiological = varianceInRange && hasPositiveSkew;
     
     if (isPhysiological) {
       consecutiveStableFrames++;
@@ -96,14 +148,14 @@ export function checkWeakSignal(
         updateRhythmMetrics();
       }
     } else {
-      consecutiveStableFrames = Math.max(0, consecutiveStableFrames - 2);  // Faster decay for non-physiological signals
+      consecutiveStableFrames = Math.max(0, consecutiveStableFrames - 2);
       
       // If we had confirmed detection but signal is no longer physiological, reset
       if (fingDetectionConfirmed && consecutiveStableFrames < REQUIRED_STABLE_FRAMES / 2) {
         console.log("Non-physiological signal detected - resetting finger detection", { 
-          variance: signalVariance,
-          skewness: signalSkewness,
-          rhythm: rhythmQuality
+          variance: signalVariance.toFixed(4),
+          skewness: signalSkewness.toFixed(2),
+          rhythm: rhythmQuality.toFixed(2)
         });
         fingDetectionConfirmed = false;
         patternDetectionCount = 0;
@@ -112,7 +164,6 @@ export function checkWeakSignal(
   }
   
   // Check for rhythmic patterns only if we have enough stable frames
-  // This prevents false detections from random noise
   if (consecutiveStableFrames >= REQUIRED_STABLE_FRAMES && !fingDetectionConfirmed) {
     const patternResult = isFingerDetectedByPattern(signalHistory, patternDetectionCount);
     patternDetectionCount = patternResult.patternCount;
@@ -123,10 +174,10 @@ export function checkWeakSignal(
       fingDetectionConfirmed = true;
       console.log("Finger detected by rhythmic pattern after physiological validation!", {
         time: new Date(now).toISOString(),
-        variance: signalVariance,
-        skewness: signalSkewness,
+        variance: signalVariance.toFixed(4),
+        skewness: signalSkewness.toFixed(2),
         stableFrames: consecutiveStableFrames,
-        rhythmQuality
+        rhythmQuality: rhythmQuality.toFixed(2)
       });
       
       return {
@@ -136,15 +187,18 @@ export function checkWeakSignal(
     }
   }
   
-  // Use higher thresholds if not specified
-  const finalConfig = {
-    lowSignalThreshold: config.lowSignalThreshold || 0.35, // Increased from 0.30
-    maxWeakSignalCount: config.maxWeakSignalCount || 8    // Increased from 6
+  // Adapt thresholds based on device capabilities
+  const adaptiveConfig = {
+    lowSignalThreshold: isHighEndDevice ? 
+      config.lowSignalThreshold * 1.1 : // Slightly higher for high-end
+      config.lowSignalThreshold * 0.9,  // Lower for low-end
+    maxWeakSignalCount: Math.round(config.maxWeakSignalCount * 
+      (isHighEndDevice ? 1.2 : 0.8))    // More/fewer frames based on device
   };
   
   // If finger detection was previously confirmed but we have many consecutive weak signals,
   // we should reset the finger detection status
-  if (fingDetectionConfirmed && consecutiveWeakSignalsCount > finalConfig.maxWeakSignalCount * 2) {
+  if (fingDetectionConfirmed && consecutiveWeakSignalsCount > adaptiveConfig.maxWeakSignalCount * 2) {
     fingDetectionConfirmed = false;
     patternDetectionCount = 0;
     consecutiveStableFrames = 0;
@@ -152,13 +206,13 @@ export function checkWeakSignal(
     console.log("Finger detection lost due to consecutive weak signals:", consecutiveWeakSignalsCount);
   }
   
-  const result = checkSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
+  const result = checkSignalQuality(value, consecutiveWeakSignalsCount, adaptiveConfig);
   
   // If finger is confirmed but signal is weak, give benefit of doubt for longer
   if (fingDetectionConfirmed && result.isWeakSignal) {
     // Higher tolerance for confirmed finger detection
     return {
-      isWeakSignal: result.updatedWeakSignalsCount >= finalConfig.maxWeakSignalCount * 2.0, // Increased multiplier
+      isWeakSignal: result.updatedWeakSignalsCount >= adaptiveConfig.maxWeakSignalCount * 2.0,
       updatedWeakSignalsCount: result.updatedWeakSignalsCount
     };
   }
@@ -176,9 +230,16 @@ function updateRhythmMetrics(): void {
   const peaks: number[] = [];
   const values = signalHistory.slice(-30).map(p => p.value);
   
-  // Find peaks in signal
-  for (let i = 1; i < values.length - 1; i++) {
-    if (values[i] > values[i-1] && values[i] > values[i+1]) {
+  // Find peaks in signal with improved algorithm
+  for (let i = 2; i < values.length - 2; i++) {
+    // A peak must be higher than its neighbors by a minimum amount
+    const minPeakProminence = 0.05;
+    
+    if (values[i] > values[i-1] && 
+        values[i] > values[i-2] &&
+        values[i] > values[i+1] && 
+        values[i] > values[i+2] &&
+        values[i] - Math.max(values[i-2], values[i+2]) > minPeakProminence) {
       peaks.push(i);
     }
   }
@@ -190,7 +251,6 @@ function updateRhythmMetrics(): void {
   }
   
   // Check if intervals are reasonable for heart rate
-  // (at 30 samples/sec, intervals should be around 15-30 samples for 60-120 BPM)
   if (intervals.length >= 2) {
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     const heartRate = 60 / (avgInterval / 30);  // Convert to BPM assuming 30 fps
@@ -204,7 +264,7 @@ function updateRhythmMetrics(): void {
     // Check if heart rate is physiologically plausible
     const isPlausibleRate = heartRate >= 40 && heartRate <= 180;
     
-    // Calculate interval consistency
+    // Calculate interval consistency with increased weight for regularity
     const intervalVariance = intervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / intervals.length;
     const intervalCoV = Math.sqrt(intervalVariance) / avgInterval;
     
@@ -218,7 +278,17 @@ function updateRhythmMetrics(): void {
     
     // Calculate overall rhythm quality
     const intervalScore = Math.max(0, 1 - intervalCoV);  // Lower CoV is better
-    rhythmQuality = isPlausibleRate ? (intervalScore * 0.7 + rateTrendScore * 0.3) : 0;
+    const peakCountScore = Math.min(1, peaks.length / 4); // Need at least 4 peaks
+    
+    // Apply more weight to physiological plausibility
+    rhythmQuality = isPlausibleRate ? 
+      (intervalScore * 0.5 + rateTrendScore * 0.3 + peakCountScore * 0.2) : 
+      Math.max(0, (intervalScore * 0.3 + rateTrendScore * 0.1 + peakCountScore * 0.1));
+    
+    // Log rhythm quality periodically 
+    if (intervals.length > 0 && Math.random() < 0.05) {
+      console.log(`Rhythm quality: ${rhythmQuality.toFixed(2)}, HR: ${heartRate.toFixed(0)} BPM, Intervals: ${intervals.length}, CoV: ${intervalCoV.toFixed(2)}`);
+    }
   } else {
     // Not enough intervals detected
     rhythmQuality = Math.max(0, rhythmQuality - 0.1); // Slowly decay if not detected
@@ -240,7 +310,12 @@ export function resetSignalQualityState() {
   lastProcessTime = 0;
   rhythmQuality = 0;
   heartRateTrend = [];
-  console.log("Signal quality state reset, including enhanced pattern detection");
+  frameRateHistory = [];
+  devicePerformanceScore = 0;
+  isHighEndDevice = false;
+  lastDeviceCheck = 0;
+  
+  console.log("Signal quality state reset, including enhanced pattern detection and device performance adaptation");
   
   return {
     consecutiveWeakSignals: 0
@@ -252,11 +327,18 @@ export function resetSignalQualityState() {
  * Enhanced with physiological validation
  */
 export function isFingerDetected(): boolean {
-  const patternConfirmation = fingDetectionConfirmed || (patternDetectionCount >= 4);  // Increased from 3
+  const patternConfirmation = fingDetectionConfirmed || (patternDetectionCount >= 4);
   const physiologicalConfirmation = consecutiveStableFrames >= REQUIRED_STABLE_FRAMES;
-  const rhythmConfirmation = rhythmQuality > 0.4;  // Minimum rhythm quality
+  const rhythmConfirmation = rhythmQuality > 0.35; // Slightly more forgiving threshold
   
-  return patternConfirmation && physiologicalConfirmation && rhythmConfirmation;
+  // For high-end devices, we can be more strict
+  if (isHighEndDevice) {
+    return patternConfirmation && physiologicalConfirmation && rhythmConfirmation;
+  }
+  
+  // For low-end devices, be more permissive
+  return patternConfirmation && 
+         (physiologicalConfirmation || rhythmConfirmation);
 }
 
 /**
@@ -266,12 +348,15 @@ export function isFingerDetected(): boolean {
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // If finger detection is confirmed by pattern, allow processing even if signal is slightly weak
-  if (fingDetectionConfirmed && consecutiveStableFrames >= REQUIRED_STABLE_FRAMES && rhythmQuality > 0.6) {
+  if (fingDetectionConfirmed && consecutiveStableFrames >= REQUIRED_STABLE_FRAMES && rhythmQuality > 0.5) {
     return Math.abs(value) >= 0.15; // Lower threshold for confirmed finger with good rhythm
   }
   
+  // Adaptive threshold based on device performance
+  const adaptiveThreshold = isHighEndDevice ? 0.35 : 0.28;
+  
   // Higher threshold to avoid processing weak signals (likely noise)
-  return Math.abs(value) >= 0.35; // Increased from 0.30
+  return Math.abs(value) >= adaptiveThreshold;
 }
 
 /**
