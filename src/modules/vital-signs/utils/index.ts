@@ -8,3 +8,4 @@ export * from './signal-processing-utils';
 export * from './peak-detection-utils';
 export * from './filter-utils';
 export * from './perfusion-utils';
+export * from './tensorflow-utils';
