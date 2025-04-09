@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -20,15 +21,18 @@ export class SignalProcessor extends BaseProcessor {
   private heartRateDetector: HeartRateDetector;
   private signalValidator: SignalValidator;
   
+  // Raw signal buffer for direct processing
+  private rawPpgValues: number[] = [];
+  
   // Finger detection state
   private rhythmBasedFingerDetection: boolean = false;
   private fingerDetectionConfirmed: boolean = false;
   private fingerDetectionStartTime: number | null = null;
   
-  // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 30; // Adjusted for real PPG signals
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 2000; // Decreased for faster response
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.15; // Adjusted for real signals
+  // Signal quality variables - more relaxed thresholds for real signals
+  private readonly MIN_QUALITY_FOR_FINGER = 20; // Reduced for better sensitivity
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 1500; // Faster response
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.08; // Lower threshold for real signals
   
   // Signal processing params
   private processingCount: number = 0;
@@ -38,22 +42,30 @@ export class SignalProcessor extends BaseProcessor {
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
-    this.signalValidator = new SignalValidator(0.01, 12); // Adjusted thresholds
+    this.signalValidator = new SignalValidator(0.005, 8); // More sensitive thresholds
     
     console.log("SignalProcessor: Inicializado para procesamiento de señales REALES únicamente");
   }
   
   /**
    * Apply Moving Average filter to real values
+   * Now maintains both raw and filtered values
    */
   public applySMAFilter(value: number): number {
     this.processingCount++;
+    
+    // Store raw value for direct processing
+    this.rawPpgValues.push(value);
+    if (this.rawPpgValues.length > 100) {
+      this.rawPpgValues.shift();
+    }
     
     // Log every 20th value
     if (this.processingCount % 20 === 0) {
       console.log("SignalProcessor: Aplicando filtro SMA a señal REAL", {
         valorOriginal: value,
-        bufferedValues: this.ppgValues.length
+        bufferedRawValues: this.rawPpgValues.length,
+        bufferedFilteredValues: this.ppgValues.length
       });
     }
     
@@ -75,6 +87,13 @@ export class SignalProcessor extends BaseProcessor {
   }
   
   /**
+   * Get raw PPG values for direct processing
+   */
+  public getRawPPGValues(): number[] {
+    return [...this.rawPpgValues];
+  }
+  
+  /**
    * Check if finger is detected based on rhythmic patterns
    * Uses physiological characteristics (heartbeat rhythm)
    */
@@ -93,8 +112,14 @@ export class SignalProcessor extends BaseProcessor {
    * No simulation is used
    * Incorporates rhythmic pattern-based finger detection
    */
-  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
+  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean, rawValue: number } {
     this.processingCount++;
+    
+    // Store raw value first for direct processing
+    this.rawPpgValues.push(value);
+    if (this.rawPpgValues.length > 100) {
+      this.rawPpgValues.shift();
+    }
     
     // Track the signal for pattern detection with REAL signal
     this.signalValidator.trackSignalForPatternDetection(value);
@@ -103,7 +128,7 @@ export class SignalProcessor extends BaseProcessor {
     const medianFiltered = this.applyMedianFilter(value);
     
     // Step 2: Low pass filter to smooth the signal
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered, 0.18); // Adjusted alpha
+    const lowPassFiltered = this.applyEMAFilter(medianFiltered, 0.25); // Adjusted alpha for better responsiveness
     
     // Step 3: Moving average for final smoothing
     const smaFiltered = this.applySMAFilter(lowPassFiltered);
@@ -131,7 +156,7 @@ export class SignalProcessor extends BaseProcessor {
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
     
-    // Require minimum amplitude for detection (physiological requirement)
+    // More sensitive amplitude detection for real signals
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
     
     // If finger is detected by pattern and has valid amplitude, confirm it
@@ -190,6 +215,7 @@ export class SignalProcessor extends BaseProcessor {
     
     return { 
       filteredValue: smaFiltered,
+      rawValue: value, // Now returning the raw value directly
       quality: qualityValue,
       fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
     };
@@ -199,11 +225,21 @@ export class SignalProcessor extends BaseProcessor {
    * Calculate heart rate from real PPG values
    */
   public calculateHeartRate(sampleRate: number = 30): number {
-    const bpm = this.heartRateDetector.calculateHeartRate(this.ppgValues, sampleRate);
+    // Use both filtered and raw values for better accuracy
+    const rawBpm = this.heartRateDetector.calculateHeartRate(this.rawPpgValues, sampleRate);
+    const filteredBpm = this.heartRateDetector.calculateHeartRate(this.ppgValues, sampleRate);
+    
+    // Weighted average with more weight to filtered for stability
+    const bpm = rawBpm > 0 && filteredBpm > 0 
+      ? (filteredBpm * 0.7 + rawBpm * 0.3) 
+      : (filteredBpm > 0 ? filteredBpm : rawBpm);
     
     console.log("Heart rate calculation from REAL data:", { 
-      bpm, 
-      bufferedValues: this.ppgValues.length
+      rawBpm,
+      filteredBpm,
+      combinedBpm: bpm,
+      rawBufferSize: this.rawPpgValues.length,
+      filteredBufferSize: this.ppgValues.length
     });
     
     return bpm;
@@ -222,6 +258,7 @@ export class SignalProcessor extends BaseProcessor {
    */
   public reset(): void {
     super.reset();
+    this.rawPpgValues = [];
     this.quality.reset();
     this.signalValidator.resetFingerDetection();
     this.fingerDetectionConfirmed = false;

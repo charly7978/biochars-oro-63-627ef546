@@ -26,6 +26,9 @@ export const useHeartBeatProcessor = () => {
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   // Referencia para el estado de procesamiento
   const isProcessingRef = useRef(false);
+  
+  // Nuevo: buffer directo para señales sin procesar
+  const rawSignalBufferRef = useRef<number[]>([]);
 
   // Estado para calibración y calidad de señal
   const [isCalibrating, setIsCalibrating] = useState(false);
@@ -54,6 +57,7 @@ export const useHeartBeatProcessor = () => {
         timestamp: new Date().toISOString()
       });
       processorRef.current = null;
+      rawSignalBufferRef.current = [];
     };
   }, []);
 
@@ -71,6 +75,12 @@ export const useHeartBeatProcessor = () => {
         return null;
       }
 
+      // Almacenar la señal sin procesar en el buffer directo
+      rawSignalBufferRef.current.push(value);
+      if (rawSignalBufferRef.current.length > 300) {
+        rawSignalBufferRef.current.splice(0, rawSignalBufferRef.current.length - 300);
+      }
+      
       // Actualizar la última señal válida
       lastValidSignalRef.current = value;
 
@@ -81,7 +91,8 @@ export const useHeartBeatProcessor = () => {
         value, 
         resultadoBPM: result.bpm,
         calidad: result.quality,
-        isPeak: result.isPeak
+        isPeak: result.isPeak,
+        bufferSize: rawSignalBufferRef.current.length
       });
 
       // Convertir el resultado al tipo esperado por el estado
@@ -220,6 +231,7 @@ export const useHeartBeatProcessor = () => {
     setPpgData([]);
     setStressLevel(0);
     setIsArrhythmia(false);
+    rawSignalBufferRef.current = [];
   }, []);
 
   // Funciones de calibración
@@ -259,6 +271,11 @@ export const useHeartBeatProcessor = () => {
     setCalibrationProgress(0);
   }, []);
 
+  // Función para obtener los datos de señal sin procesar
+  const getRawSignalData = useCallback(() => {
+    return [...rawSignalBufferRef.current];
+  }, []);
+
   return {
     heartBeatResult,
     isProcessing,
@@ -279,6 +296,7 @@ export const useHeartBeatProcessor = () => {
     arrhythmiaStatus,
     isArrhythmia,
     hrvData,
-    ppgData
+    ppgData,
+    getRawSignalData // Nueva función para acceder a datos sin procesar
   };
 };

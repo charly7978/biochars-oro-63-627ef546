@@ -8,10 +8,10 @@
  * All methods work with real data only, no simulation
  */
 export class SignalFilter {
-  // Improved filter parameters for better signal quality
-  private readonly SMA_WINDOW_SIZE = 8;          // Increased from 5 for smoother output
-  private readonly MEDIAN_WINDOW_SIZE = 5;       // Increased from 3 for better outlier rejection
-  private readonly LOW_PASS_ALPHA = 0.15;        // Reduced from 0.2 for more aggressive filtering
+  // Improved filter parameters for better signal quality with REAL signals
+  private readonly SMA_WINDOW_SIZE = 6;          // Reduced for better responsiveness
+  private readonly MEDIAN_WINDOW_SIZE = 3;       // Reduced for better responsiveness
+  private readonly LOW_PASS_ALPHA = 0.25;        // Increased for better responsiveness
   private readonly HIGH_PASS_ALPHA = 0.85;       // Added high-pass filter parameter
   
   // Buffer for advanced filtering techniques
@@ -35,11 +35,21 @@ export class SignalFilter {
   private signalAmplitude = 0.1;
   private noiseEstimate = 0.01;
   
+  // Direct signal pass-through buffers
+  private directSignalBuffer: number[] = [];
+  
   /**
    * Apply Moving Average filter to real values with improved window size
+   * Reduced window size for better responsiveness
    */
   public applySMAFilter(value: number, values: number[]): number {
     const windowSize = this.SMA_WINDOW_SIZE;
+    
+    // Add direct value to buffer
+    this.directSignalBuffer.push(value);
+    if (this.directSignalBuffer.length > 100) {
+      this.directSignalBuffer.shift();
+    }
     
     if (values.length < windowSize) {
       return value;
@@ -52,17 +62,26 @@ export class SignalFilter {
   
   /**
    * Apply Exponential Moving Average filter to real data
-   * with improved alpha parameter for smoother output
+   * with improved alpha parameter for better responsiveness
    */
   public applyEMAFilter(value: number, values: number[], alpha: number = this.LOW_PASS_ALPHA): number {
     if (values.length === 0) {
       return value;
     }
     
+    // Store direct value
+    this.directSignalBuffer.push(value);
+    if (this.directSignalBuffer.length > 100) {
+      this.directSignalBuffer.shift();
+    }
+    
     if (this.emaValue === null) {
       this.emaValue = value;
       return value;
     }
+    
+    // Calculate dynamic alpha - more adaptive to real signals
+    let effectiveAlpha = alpha;
     
     // Update adaptive alpha based on signal characteristics
     if (values.length > 10) {
@@ -79,20 +98,33 @@ export class SignalFilter {
       // Update noise estimate with exponential forgetting
       this.noiseEstimate = 0.95 * this.noiseEstimate + 0.05 * diff;
       
-      // Adaptive alpha - more smoothing for noisy signals, less for clean signals
+      // Adaptive alpha - more responsive for real signals
       const signalToNoise = this.signalAmplitude / Math.max(0.001, this.noiseEstimate);
-      this.adaptiveAlpha = Math.min(0.9, Math.max(0.1, alpha * Math.min(2, Math.max(0.5, signalToNoise))));
+      effectiveAlpha = Math.min(0.9, Math.max(0.2, alpha * Math.min(3, Math.max(0.5, signalToNoise)))); 
+      
+      // Enhanced responsiveness for real signals
+      if (diff > this.signalAmplitude * 2) {
+        // Big change - increase alpha to be more responsive
+        effectiveAlpha = Math.min(0.95, effectiveAlpha * 1.5);
+      }
     }
     
+    this.adaptiveAlpha = effectiveAlpha;
     this.emaValue = this.adaptiveAlpha * value + (1 - this.adaptiveAlpha) * this.emaValue;
     return this.emaValue;
   }
   
   /**
    * Apply median filter to real data with improved window size
-   * for better outlier rejection
+   * for better responsiveness
    */
   public applyMedianFilter(value: number, values: number[]): number {
+    // Store direct value
+    this.directSignalBuffer.push(value);
+    if (this.directSignalBuffer.length > 100) {
+      this.directSignalBuffer.shift();
+    }
+    
     // Update internal buffer for better continuity
     this.medianBuffer.push(value);
     if (this.medianBuffer.length > this.MEDIAN_WINDOW_SIZE) {
@@ -114,10 +146,24 @@ export class SignalFilter {
   }
   
   /**
+   * Get the direct signal buffer
+   * Provides access to unfiltered signal values
+   */
+  public getDirectSignalBuffer(): number[] {
+    return [...this.directSignalBuffer];
+  }
+  
+  /**
    * Apply bandpass filter to real data - combines low and high pass filtering
    * to remove both high-frequency noise and baseline wander
    */
   public applyBandpassFilter(value: number, values: number[]): number {
+    // Store direct value
+    this.directSignalBuffer.push(value);
+    if (this.directSignalBuffer.length > 100) {
+      this.directSignalBuffer.shift();
+    }
+    
     if (values.length === 0) {
       this.lastValues = [value];
       return value;
@@ -145,6 +191,12 @@ export class SignalFilter {
    * Uses biquad filter design for more accurate cutoff slopes
    */
   public applyIIRBandpassFilter(value: number): number {
+    // Store direct value
+    this.directSignalBuffer.push(value);
+    if (this.directSignalBuffer.length > 100) {
+      this.directSignalBuffer.shift();
+    }
+    
     // Normalized frequencies
     const w1 = 2 * Math.PI * this.BANDPASS_LOW_CUTOFF / this.SAMPLE_RATE;
     const w2 = 2 * Math.PI * this.BANDPASS_HIGH_CUTOFF / this.SAMPLE_RATE;
@@ -191,52 +243,27 @@ export class SignalFilter {
   }
   
   /**
-   * Apply notch filter to remove power line interference
-   */
-  public applyNotchFilter(value: number): number {
-    // Normalized frequency
-    const w0 = 2 * Math.PI * this.NOTCH_FREQUENCY / this.SAMPLE_RATE;
-    
-    // Filter coefficients
-    const alpha = Math.sin(w0) / (2 * this.Q_FACTOR);
-    const b0 = 1;
-    const b1 = -2 * Math.cos(w0);
-    const b2 = 1;
-    const a0 = 1 + alpha;
-    const a1 = -2 * Math.cos(w0);
-    const a2 = 1 - alpha;
-    
-    // Apply filter
-    const output = (b0 * value + b1 * this.notchInputs[0] + b2 * this.notchInputs[1]
-                   - a1 * this.notchOutputs[0] - a2 * this.notchOutputs[1]) / a0;
-    
-    // Update state
-    this.notchInputs[1] = this.notchInputs[0];
-    this.notchInputs[0] = value;
-    this.notchOutputs[1] = this.notchOutputs[0];
-    this.notchOutputs[0] = output;
-    
-    return output;
-  }
-  
-  /**
    * Apply combined filtering approach for optimal PPG signal quality
    * This uses a pipeline of filters to progressively clean the signal
+   * Maintains direct access to raw signal
    */
-  public applyOptimalFilter(value: number, values: number[]): number {
+  public applyOptimalFilter(value: number, values: number[]): {filteredValue: number, rawValue: number} {
+    // Store direct value
+    this.directSignalBuffer.push(value);
+    if (this.directSignalBuffer.length > 100) {
+      this.directSignalBuffer.shift();
+    }
+    
     // Step 1: Apply median filter to remove sudden spikes/outliers
     const medianFiltered = this.applyMedianFilter(value, values);
     
-    // Step 2: Apply notch filter for power line interference
-    const notchFiltered = this.applyNotchFilter(medianFiltered);
+    // Step 2: Apply EMA with adaptive alpha for final smoothing
+    const finalValue = this.applyEMAFilter(medianFiltered, values, this.adaptiveAlpha);
     
-    // Step 3: Apply IIR bandpass filter for frequency-selective filtering
-    const bandpassFiltered = this.applyIIRBandpassFilter(notchFiltered);
-    
-    // Step 4: Apply EMA with adaptive alpha for final smoothing
-    const finalValue = this.applyEMAFilter(bandpassFiltered, values, this.adaptiveAlpha);
-    
-    return finalValue;
+    return {
+      filteredValue: finalValue,
+      rawValue: value
+    };
   }
   
   /**
@@ -253,6 +280,7 @@ export class SignalFilter {
     this.adaptiveAlpha = this.LOW_PASS_ALPHA;
     this.signalAmplitude = 0.1;
     this.noiseEstimate = 0.01;
+    this.directSignalBuffer = [];
   }
   
   /**
@@ -262,13 +290,15 @@ export class SignalFilter {
     adaptiveAlpha: number,
     signalAmplitude: number,
     noiseEstimate: number,
-    signalToNoise: number
+    signalToNoise: number,
+    directBufferSize: number
   } {
     return {
       adaptiveAlpha: this.adaptiveAlpha,
       signalAmplitude: this.signalAmplitude,
       noiseEstimate: this.noiseEstimate,
-      signalToNoise: this.signalAmplitude / Math.max(0.001, this.noiseEstimate)
+      signalToNoise: this.signalAmplitude / Math.max(0.001, this.noiseEstimate),
+      directBufferSize: this.directSignalBuffer.length
     };
   }
 }
