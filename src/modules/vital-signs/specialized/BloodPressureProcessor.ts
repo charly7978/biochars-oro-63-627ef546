@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -287,5 +288,12 @@ export class BloodPressureProcessor extends BaseVitalSignProcessor<BloodPressure
     super.reset();
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
+  }
+
+  /**
+   * Process method for compatibility with the main VitalSignsProcessor
+   */
+  public process(value: number): BloodPressureResult {
+    return this.processValueImpl(value);
   }
 }

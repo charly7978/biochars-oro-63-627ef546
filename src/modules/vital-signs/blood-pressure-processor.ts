@@ -60,6 +60,7 @@ export class BloodPressureProcessor {
   
   /**
    * Process a PPG signal to extract blood pressure
+   * This is the main method to calculate blood pressure
    */
   public async process(value: number): Promise<BloodPressureResult> {
     // Base calculation using traditional method
@@ -167,5 +168,13 @@ export class BloodPressureProcessor {
    */
   public updateOptions(options: Partial<typeof this.processingOptions>): void {
     this.processingOptions = { ...this.processingOptions, ...options };
+  }
+
+  /**
+   * Reset the processor state
+   */
+  public reset(): void {
+    this.lastValidResult = null;
+    console.log("BloodPressureProcessor: Reset complete");
   }
 }
