@@ -53,14 +53,19 @@ export const useVitalSignsProcessor = (
         if (feedback.qualityResult) {
           // Update quality result if from another processor
           if (feedback.sourceProcessor !== 'vitalSignsProcessor') {
-            setQualityResult(prev => ({
-              ...prev,
-              ...feedback.qualityResult,
-              metrics: {
-                ...(prev?.metrics || {}),
-                ...(feedback.qualityResult?.metrics || {})
+            setQualityResult(prevQuality => {
+              if (!prevQuality) {
+                return feedback.qualityResult || null;
               }
-            }));
+              return {
+                ...prevQuality,
+                ...feedback.qualityResult,
+                metrics: {
+                  ...prevQuality.metrics,
+                  ...(feedback.qualityResult?.metrics || {})
+                }
+              };
+            });
           }
         }
       }

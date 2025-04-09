@@ -109,8 +109,10 @@ export class TensorFlowService {
       
       // Get results and clean up tensors
       const resultData = await result.data();
-      // Create a new Float32Array from the result data regardless of its original type
-      const resultArray = new Float32Array(resultData);
+      
+      // Create a new Float32Array from the result data
+      const resultArray = new Float32Array(Array.from(resultData));
+      
       tf.dispose([tensor, result]);
       
       return resultArray;

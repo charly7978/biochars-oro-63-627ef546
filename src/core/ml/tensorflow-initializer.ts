@@ -71,10 +71,20 @@ export function getTensorFlowInfo(): {
   const backend = tf.getBackend() || 'none';
   const isWebGPU = backend === 'webgpu';
   
+  // Get device info without accessing private properties
+  let device = 'Unknown';
+  if (isWebGPU) {
+    device = 'WebGPU';
+  } else if (backend === 'webgl') {
+    device = 'WebGL';
+  } else if (backend === 'cpu') {
+    device = 'CPU';
+  }
+  
   return {
     version: tf.version.tfjs,
     backend,
-    device: isWebGPU ? 'WebGPU' : backend === 'webgl' ? 'WebGL' : 'CPU',
+    device,
     isWebGPU
   };
 }

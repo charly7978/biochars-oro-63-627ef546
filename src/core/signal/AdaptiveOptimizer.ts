@@ -22,14 +22,36 @@ export interface OptimizationParameters {
   [key: string]: number;
 }
 
+export interface OptimizedChannel {
+  values: number[];
+  quality: number;
+  metadata: {
+    dominantFrequency: number;
+    periodicityScore: number;
+    [key: string]: any;
+  };
+}
+
 export class AdaptiveOptimizer {
   private config: AdaptiveOptimizerConfig;
   private history: OptimizationParameters[] = [];
   private optimizedParameters: {[key: string]: number} = {};
   private optimizedWeights: {[key: string]: number} = {};
+  private channels: Map<string, OptimizedChannel> = new Map();
+  private signalQuality: number = 0;
   
-  constructor(config: AdaptiveOptimizerConfig) {
-    this.config = config;
+  constructor(config: Partial<AdaptiveOptimizerConfig> | any) {
+    // Default config values
+    this.config = {
+      learningRate: 0.15,
+      adaptationWindow: 20,
+      thresholds: {
+        signalQuality: 0.5,
+        signalAmplitude: 0.1,
+        signalStability: 0.3
+      },
+      ...config
+    };
     
     // Initialize optimized parameters
     this.optimizedParameters = {
@@ -46,172 +68,231 @@ export class AdaptiveOptimizer {
       signalAmplitude: 0.3,
       signalStability: 0.3
     };
+
+    // Initialize channels
+    this.channels.set('heartRate', {
+      values: [],
+      quality: 0,
+      metadata: {
+        dominantFrequency: 0,
+        periodicityScore: 0
+      }
+    });
+
+    this.channels.set('spo2', {
+      values: [],
+      quality: 0,
+      metadata: {
+        dominantFrequency: 0,
+        periodicityScore: 0
+      }
+    });
   }
   
   /**
-   * Update optimization parameters with new signal metrics
+   * Process a value through the optimizer
    */
-  public updateParameters(params: OptimizationParameters): void {
-    // Store parameters in history
-    this.history.push({...params});
-    
-    // Limit history size
-    if (this.history.length > this.config.adaptationWindow) {
-      this.history.shift();
+  public processValue(value: number): Map<string, OptimizedChannel> {
+    // Update all channels with the new value
+    for (const [channelName, channel] of this.channels.entries()) {
+      channel.values.push(value);
+      
+      // Limit channel buffer size
+      if (channel.values.length > this.config.adaptationWindow * 2) {
+        channel.values.shift();
+      }
+      
+      // Update channel quality
+      channel.quality = this.calculateChannelQuality(channel.values, channelName);
+      
+      // Calculate dominant frequency for heart rate channel
+      if (channelName === 'heartRate' && channel.values.length > 20) {
+        channel.metadata.dominantFrequency = this.calculateDominantFrequency(channel.values);
+        channel.metadata.periodicityScore = this.calculatePeriodicityScore(channel.values);
+      }
     }
     
-    // Skip optimization if not enough data
-    if (this.history.length < 5) return;
+    // Update signal quality
+    this.updateSignalQuality();
     
-    // Calculate average values over the adaptation window
-    const avgParams: {[key: string]: number} = {};
-    
-    Object.keys(params).forEach(key => {
-      avgParams[key] = this.history.reduce((sum, p) => sum + (p[key] || 0), 0) / this.history.length;
-    });
-    
-    // Adapt parameters based on signal quality
-    this.adaptFilterStrength(avgParams.signalQuality, avgParams.signalStability);
-    this.adaptAmplificationFactor(avgParams.signalAmplitude);
-    this.adaptNoiseReductionLevel(avgParams.signalQuality);
-    this.adaptDetectionThreshold(avgParams.signalQuality, avgParams.signalStability);
-    
-    // Adapt weights for quality assessment
-    this.adaptQualityWeights(avgParams);
+    return this.channels;
   }
   
   /**
-   * Adapt filter strength based on signal quality and stability
+   * Calculate dominant frequency using simple peak analysis
    */
-  private adaptFilterStrength(signalQuality: number, signalStability: number): void {
-    const qualityFactor = Math.max(0, 1 - signalQuality);
-    const stabilityFactor = Math.max(0, 1 - signalStability);
+  private calculateDominantFrequency(values: number[]): number {
+    if (values.length < 20) return 0;
     
-    // Higher filter strength for lower quality and stability
-    let newFilterStrength = 0.3 + (0.5 * (qualityFactor + stabilityFactor) / 2);
+    const peaks = this.findPeaks(values);
+    if (peaks.length < 2) return 0;
     
-    // Apply learning rate
-    newFilterStrength = this.applyLearningRate(this.optimizedParameters.filterStrength, newFilterStrength);
+    // Calculate average time between peaks (in samples)
+    let totalInterval = 0;
+    for (let i = 1; i < peaks.length; i++) {
+      totalInterval += peaks[i] - peaks[i-1];
+    }
     
-    // Update parameter
-    this.optimizedParameters.filterStrength = Math.min(0.9, Math.max(0.1, newFilterStrength));
+    const avgInterval = totalInterval / (peaks.length - 1);
+    
+    // Convert to frequency (assuming 30Hz sample rate)
+    return avgInterval > 0 ? 30 / avgInterval : 0;
   }
   
   /**
-   * Adapt amplification factor based on signal amplitude
+   * Find peaks in signal
    */
-  private adaptAmplificationFactor(signalAmplitude: number): void {
-    // Lower amplitude signals need more amplification
-    const amplitudeFactor = Math.max(0, 1 - signalAmplitude);
-    let newAmplificationFactor = 1.0 + amplitudeFactor;
+  private findPeaks(values: number[]): number[] {
+    const peaks: number[] = [];
     
-    // Apply learning rate
-    newAmplificationFactor = this.applyLearningRate(
-      this.optimizedParameters.amplificationFactor, 
-      newAmplificationFactor
-    );
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i-1] && values[i] > values[i+1]) {
+        peaks.push(i);
+      }
+    }
     
-    // Update parameter
-    this.optimizedParameters.amplificationFactor = Math.min(2.5, Math.max(0.8, newAmplificationFactor));
+    return peaks;
   }
   
   /**
-   * Adapt noise reduction level based on signal quality
+   * Calculate periodicity score (0-1)
    */
-  private adaptNoiseReductionLevel(signalQuality: number): void {
-    // Higher noise reduction for lower quality signals
-    const qualityFactor = Math.max(0, 1 - signalQuality);
-    let newNoiseReductionLevel = 0.3 + (0.6 * qualityFactor);
+  private calculatePeriodicityScore(values: number[]): number {
+    if (values.length < 20) return 0;
     
-    // Apply learning rate
-    newNoiseReductionLevel = this.applyLearningRate(
-      this.optimizedParameters.noiseReductionLevel, 
-      newNoiseReductionLevel
-    );
+    const peaks = this.findPeaks(values);
+    if (peaks.length < 3) return 0;
     
-    // Update parameter
-    this.optimizedParameters.noiseReductionLevel = Math.min(0.9, Math.max(0.1, newNoiseReductionLevel));
+    // Calculate intervals between peaks
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    
+    // Calculate average and standard deviation
+    const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const variance = intervals.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / intervals.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // More consistent intervals = higher periodicity score
+    // Normalized coefficient of variation (lower is better)
+    const cv = avg > 0 ? stdDev / avg : 1;
+    
+    // Convert to score (0-1)
+    return Math.max(0, Math.min(1, 1 - cv));
   }
   
   /**
-   * Adapt detection threshold based on signal quality and stability
+   * Calculate quality for a specific channel
    */
-  private adaptDetectionThreshold(signalQuality: number, signalStability: number): void {
-    const qualityFactor = Math.max(0, 1 - signalQuality);
-    const stabilityFactor = Math.max(0, 1 - signalStability);
+  private calculateChannelQuality(values: number[], channelName: string): number {
+    if (values.length < 10) return 0;
     
-    // Higher threshold for lower quality and stability
-    let newDetectionThreshold = 0.2 + (0.3 * (qualityFactor + stabilityFactor) / 2);
+    // Get recent values
+    const recent = values.slice(-10);
     
-    // Apply learning rate
-    newDetectionThreshold = this.applyLearningRate(
-      this.optimizedParameters.detectionThreshold, 
-      newDetectionThreshold
-    );
+    // Calculate amplitude
+    const min = Math.min(...recent);
+    const max = Math.max(...recent);
+    const amplitude = max - min;
     
-    // Update parameter
-    this.optimizedParameters.detectionThreshold = Math.min(0.5, Math.max(0.1, newDetectionThreshold));
+    // Calculate stability (inverse of variations)
+    let stability = 0;
+    const diffs = [];
+    for (let i = 1; i < recent.length; i++) {
+      diffs.push(Math.abs(recent[i] - recent[i-1]));
+    }
+    const avgDiff = diffs.reduce((sum, val) => sum + val, 0) / diffs.length;
+    stability = Math.max(0, 1 - (avgDiff * 2));
+    
+    // For heart rate, use periodicity as a factor
+    let periodicity = 0;
+    if (channelName === 'heartRate' && this.channels.get('heartRate')) {
+      periodicity = this.channels.get('heartRate')!.metadata.periodicityScore;
+    }
+    
+    // Calculate quality score with weights from optimizer
+    const score = 
+      (amplitude > 0.05 ? amplitude / 0.3 : 0) * this.optimizedWeights.signalAmplitude + 
+      stability * this.optimizedWeights.signalStability + 
+      (periodicity || 0) * 0.3;
+    
+    // Scale to 0-100
+    return Math.min(100, score * 100);
   }
   
   /**
-   * Adapt weights for quality assessment
+   * Update overall signal quality based on all channels
    */
-  private adaptQualityWeights(avgParams: {[key: string]: number}): void {
-    // Determine most reliable metrics based on their consistency
-    const metrics = ['signalQuality', 'signalAmplitude', 'signalStability'];
-    const variances: {[key: string]: number} = {};
+  private updateSignalQuality(): void {
+    let totalQuality = 0;
+    let totalWeight = 0;
     
-    // Calculate variance for each metric
-    metrics.forEach(metric => {
-      const values = this.history.map(p => p[metric] || 0);
-      const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-      const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-      variances[metric] = variance;
-    });
+    for (const [channelName, channel] of this.channels.entries()) {
+      // Heart rate channel gets double weight
+      const weight = channelName === 'heartRate' ? 2 : 1;
+      totalQuality += channel.quality * weight;
+      totalWeight += weight;
+    }
     
-    // Calculate total inverse variance (lower variance = higher weight)
-    const totalInverseVariance = metrics.reduce((sum, metric) => {
-      return sum + (1 / (variances[metric] + 0.01)); // Add small constant to avoid division by zero
-    }, 0);
-    
-    // Update weights based on inverse variance (more stable metrics get higher weights)
-    metrics.forEach(metric => {
-      const inverseVariance = 1 / (variances[metric] + 0.01);
-      const targetWeight = inverseVariance / totalInverseVariance;
-      
-      // Apply learning rate to weight update
-      this.optimizedWeights[metric] = this.applyLearningRate(
-        this.optimizedWeights[metric],
-        targetWeight
-      );
-    });
-    
-    // Normalize weights to sum to 1
-    const sum = metrics.reduce((total, metric) => total + this.optimizedWeights[metric], 0);
-    metrics.forEach(metric => {
-      this.optimizedWeights[metric] /= sum;
-    });
+    this.signalQuality = totalWeight > 0 ? totalQuality / totalWeight : 0;
   }
   
   /**
-   * Apply learning rate to parameter updates
+   * Get the overall signal quality (0-100)
    */
-  private applyLearningRate(currentValue: number, targetValue: number): number {
-    return currentValue + (this.config.learningRate * (targetValue - currentValue));
+  public getSignalQuality(): number {
+    return this.signalQuality;
   }
   
   /**
-   * Get optimized parameters
+   * Provide feedback to the optimizer for a specific channel
    */
-  public getOptimizedParameters(): {[key: string]: number} {
-    return {...this.optimizedParameters};
+  public provideFeedback(channelName: string, feedback: {
+    accuracy?: number;
+    confidence?: number;
+    errorRate?: number;
+  }): void {
+    const channel = this.channels.get(channelName);
+    if (!channel) return;
+    
+    // Store feedback for future learning
+    channel.metadata.lastFeedback = feedback;
+    
+    // Update learning based on feedback
+    if (feedback.accuracy !== undefined && feedback.accuracy > 0.7) {
+      // High accuracy feedback can adjust weights
+      this.adjustWeights(channelName, feedback.accuracy);
+    }
   }
   
   /**
-   * Get optimized weights for quality assessment
+   * Adjust weights based on channel performance
    */
-  public getOptimizedWeights(): {[key: string]: number} {
-    return {...this.optimizedWeights};
+  private adjustWeights(channelName: string, accuracy: number): void {
+    // Simple weight adjustment based on accuracy
+    if (accuracy > 0.8) {
+      // Channel is performing well, increase its influence
+      if (channelName === 'heartRate') {
+        this.optimizedWeights.signalQuality = 
+          Math.min(0.5, this.optimizedWeights.signalQuality + 0.01);
+      }
+    }
+  }
+  
+  /**
+   * Get values for a specific channel
+   */
+  public getChannelValues(channelName: string): number[] {
+    const channel = this.channels.get(channelName);
+    return channel ? [...channel.values] : [];
+  }
+  
+  /**
+   * Get a specific channel
+   */
+  public getChannel(channelName: string): OptimizedChannel | undefined {
+    return this.channels.get(channelName);
   }
   
   /**
@@ -219,6 +300,16 @@ export class AdaptiveOptimizer {
    */
   public reset(): void {
     this.history = [];
+    
+    // Clear all channels
+    for (const channel of this.channels.values()) {
+      channel.values = [];
+      channel.quality = 0;
+      channel.metadata = {
+        dominantFrequency: 0,
+        periodicityScore: 0
+      };
+    }
     
     // Reset optimized parameters to defaults
     this.optimizedParameters = {
@@ -234,6 +325,18 @@ export class AdaptiveOptimizer {
       signalQuality: 0.4,
       signalAmplitude: 0.3,
       signalStability: 0.3
+    };
+    
+    this.signalQuality = 0;
+  }
+  
+  /**
+   * Update configuration
+   */
+  public setConfig(config: Partial<AdaptiveOptimizerConfig>): void {
+    this.config = {
+      ...this.config,
+      ...config
     };
   }
 }

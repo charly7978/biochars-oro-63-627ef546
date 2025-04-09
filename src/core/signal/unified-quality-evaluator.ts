@@ -1,329 +1,380 @@
 
-/**
- * Unified Signal Quality Evaluation System
- * Provides standardized quality assessment across all vital sign processors
- */
-
-import { SignalQuality } from '../../modules/vital-signs/processors/signal-quality';
-import { AdaptiveOptimizer } from './AdaptiveOptimizer';
 import { ProcessorConfig } from '../config/ProcessorConfig';
-import { FeedbackSystem, FeedbackLevel } from '../feedback/feedback-system';
+import { FeedbackSystem } from '../feedback/feedback-system';
 
+/**
+ * Quality metrics for vital sign signal evaluation
+ */
+export interface QualityMetrics {
+  amplitude: number;
+  stability: number;
+  periodicity: number;
+  snr: number;
+  physiological: number;
+}
+
+/**
+ * Quality evaluation result
+ */
 export interface QualityResult {
-  score: number;         // 0-1 score of overall quality
-  confidence: number;    // 0-1 confidence in the measurement
-  isValid: boolean;      // Whether the signal is valid enough for processing
-  metrics: {
-    amplitude: number;   // Signal amplitude
-    stability: number;   // Signal stability
-    periodicity: number; // Signal periodicity
-    snr: number;         // Signal-to-noise ratio
-    physiological: number; // Whether the signal matches physiological patterns
-  };
+  metrics: QualityMetrics;
+  score: number;
+  confidence: number;
+  isValid: boolean;
   feedback?: {
     message: string;
-    level: FeedbackLevel;
+    level: 'info' | 'warning' | 'error';
   };
 }
 
 /**
- * Unified system for evaluating signal quality across all vital signs processors
- * Integrates with feedback system and adaptive optimization
+ * Signal quality levels
+ */
+export enum SignalQualityLevel {
+  INVALID = 'invalid',
+  POOR = 'poor',
+  FAIR = 'fair',
+  GOOD = 'good',
+  EXCELLENT = 'excellent'
+}
+
+/**
+ * Unified signal quality evaluator
+ * Provides consistent quality assessment across all vital sign processors
  */
 export class UnifiedQualityEvaluator {
-  private signalQuality: SignalQuality;
-  private adaptiveOptimizer: AdaptiveOptimizer;
-  private feedbackSystem?: FeedbackSystem;
-  private signalHistory: number[] = [];
-  private qualityHistory: QualityResult[] = [];
-  private readonly MAX_HISTORY = 30;
+  private config: ProcessorConfig;
+  private feedbackSystem: FeedbackSystem;
+  private lastResult: QualityResult | null = null;
+  private signalHistory: number[][] = [];
+  private readonly MAX_HISTORY_LENGTH = 10;
   
-  // Sharing state between processors
-  private static sharedQualityState: Map<string, number> = new Map();
-  
-  constructor(config: ProcessorConfig, feedbackSystem?: FeedbackSystem) {
-    this.signalQuality = new SignalQuality();
-    this.adaptiveOptimizer = new AdaptiveOptimizer({
-      learningRate: 0.05,
-      adaptationWindow: 50,
-      thresholds: {
-        signalQuality: config.nonInvasiveSettings.confidenceThreshold,
-        signalAmplitude: 0.05,
-        signalStability: 0.1
-      }
-    });
+  constructor(config: ProcessorConfig, feedbackSystem: FeedbackSystem) {
+    this.config = config;
     this.feedbackSystem = feedbackSystem;
   }
   
   /**
-   * Evaluate signal quality with enhanced metrics
+   * Evaluate signal quality with multiple metrics
    */
-  public evaluateQuality(signal: number[], type: string): QualityResult {
-    if (signal.length < 5) {
-      return this.createLowQualityResult('Insufficient signal data');
-    }
-    
-    // Store current signal value
-    if (signal.length > 0) {
-      this.signalHistory.push(signal[signal.length - 1]);
-      if (this.signalHistory.length > this.MAX_HISTORY) {
-        this.signalHistory.shift();
-      }
-    }
+  public evaluateQuality(
+    signal: number[], 
+    sourceProcessor: string = 'unknown'
+  ): QualityResult {
+    // Update signal history
+    this.updateSignalHistory(signal);
     
     // Calculate quality metrics
-    const amplitude = this.calculateAmplitude(signal);
-    const stability = this.calculateStability(signal);
-    const periodicity = this.signalQuality.calculatePeriodicityQuality();
-    const snr = this.calculateSNR(signal);
-    const physiological = this.isPhysiologicallyValid(signal, type);
+    const metrics = this.calculateQualityMetrics(signal);
     
-    // Update the adaptive optimizer
-    this.adaptiveOptimizer.updateParameters({
-      signalQuality: physiological,
-      signalAmplitude: amplitude / 0.3, // Normalize to 0-1 range
-      signalStability: stability
-    });
+    // Calculate overall score
+    const score = this.calculateQualityScore(metrics);
     
-    // Calculate combined quality score using adaptive weighting
-    const weights = this.adaptiveOptimizer.getOptimizedWeights();
-    const weightedScore = (
-      amplitude * weights.signalAmplitude +
-      stability * weights.signalStability +
-      periodicity * 0.2 +
-      snr * 0.15 +
-      physiological * 0.25
-    );
+    // Determine validity threshold
+    const isValid = score > 0.3;
     
-    // Share quality metrics across processors
-    UnifiedQualityEvaluator.sharedQualityState.set(`${type}_quality`, weightedScore);
-    UnifiedQualityEvaluator.sharedQualityState.set(`${type}_amplitude`, amplitude);
-    UnifiedQualityEvaluator.sharedQualityState.set(`${type}_snr`, snr);
+    // Calculate confidence based on metrics consistency
+    const confidence = this.calculateConfidence(metrics);
     
-    // Determine confidence and validity
-    const confidence = this.calculateConfidence(weightedScore, type);
-    const isValid = confidence > 0.5 && amplitude > 0.03 && physiological > 0.4;
-    
-    // Generate quality result
-    const result: QualityResult = {
-      score: Math.min(1, Math.max(0, weightedScore)),
-      confidence,
-      isValid,
-      metrics: {
-        amplitude,
-        stability,
-        periodicity,
-        snr,
-        physiological
-      }
-    };
-    
-    // Generate feedback based on quality
-    result.feedback = this.generateFeedback(result);
-    
-    // Store quality history
-    this.qualityHistory.push(result);
-    if (this.qualityHistory.length > this.MAX_HISTORY) {
-      this.qualityHistory.shift();
+    // Generate feedback if quality is poor
+    let feedback;
+    if (score < 0.3) {
+      feedback = {
+        message: 'Signal quality is poor, please adjust sensor',
+        level: 'warning' as const
+      };
+      
+      this.feedbackSystem.addFeedback(
+        feedback.message,
+        feedback.level,
+        { sourceProcessor, quality: score }
+      );
     }
     
+    // Store result
+    const result: QualityResult = {
+      metrics,
+      score,
+      confidence,
+      isValid,
+      feedback
+    };
+    
+    this.lastResult = result;
     return result;
   }
   
   /**
-   * Check if signal is physiologically valid based on type
+   * Update signal history for trend analysis
    */
-  private isPhysiologicallyValid(signal: number[], type: string): number {
-    // Retrieve prior signal quality from other processors if available
-    const priorQualities = Array.from(UnifiedQualityEvaluator.sharedQualityState.entries())
-      .filter(([key]) => key.endsWith('_quality') && !key.startsWith(type))
-      .map(([, value]) => value);
+  private updateSignalHistory(signal: number[]): void {
+    // Only store recent values
+    const recentSignal = signal.slice(-30);
     
-    // Use shared information to improve validation
-    let priorQualityFactor = 1.0;
-    if (priorQualities.length > 0) {
-      const avgPriorQuality = priorQualities.reduce((sum, val) => sum + val, 0) / priorQualities.length;
-      priorQualityFactor = 0.7 + (0.3 * avgPriorQuality); // Blend with prior quality (70% current, 30% prior)
+    // Add to history
+    this.signalHistory.push(recentSignal);
+    
+    // Limit history size
+    if (this.signalHistory.length > this.MAX_HISTORY_LENGTH) {
+      this.signalHistory.shift();
     }
-    
-    // Use the signal quality class for physiological validation
-    const physiologicalScore = this.signalQuality.calculateSignalQuality(signal) * priorQualityFactor;
-    
-    return Math.min(1, Math.max(0, physiologicalScore));
   }
   
   /**
-   * Calculate signal amplitude
+   * Calculate all quality metrics
    */
-  private calculateAmplitude(signal: number[]): number {
-    if (signal.length < 2) return 0;
-    const recentValues = signal.slice(-15);
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
-    return max - min;
-  }
-  
-  /**
-   * Calculate signal stability
-   */
-  private calculateStability(signal: number[]): number {
-    if (signal.length < 5) return 0;
-    
-    const recentValues = signal.slice(-10);
-    const diffs = [];
-    
-    for (let i = 1; i < recentValues.length; i++) {
-      diffs.push(Math.abs(recentValues[i] - recentValues[i-1]));
-    }
-    
-    const avgDiff = diffs.reduce((sum, val) => sum + val, 0) / diffs.length;
-    const normalizedStability = Math.max(0, 1 - (avgDiff * 10)); // Lower diffs = higher stability
-    
-    return Math.min(1, normalizedStability);
-  }
-  
-  /**
-   * Calculate signal-to-noise ratio
-   */
-  private calculateSNR(signal: number[]): number {
-    if (signal.length < 10) return 0;
-    
-    // Get signal power
-    const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
-    const variance = signal.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / signal.length;
-    
-    // Estimate noise from signal quality class
-    const noiseLevel = this.signalQuality.getNoiseLevel();
-    
-    // Calculate SNR
-    if (noiseLevel === 0) return 1; // Avoid division by zero
-    const snr = variance / (noiseLevel * noiseLevel);
-    
-    // Normalize to 0-1 range
-    return Math.min(1, snr / 10);
-  }
-  
-  /**
-   * Calculate confidence in measurement based on quality history
-   */
-  private calculateConfidence(currentQuality: number, type: string): number {
-    if (this.qualityHistory.length < 3) return currentQuality;
-    
-    // Get recent quality scores
-    const recentScores = this.qualityHistory.slice(-5).map(q => q.score);
-    
-    // Check for stability in measurements
-    const avgScore = recentScores.reduce((sum, val) => sum + val, 0) / recentScores.length;
-    const scoreVariation = recentScores.reduce((sum, val) => sum + Math.pow(val - avgScore, 2), 0) / recentScores.length;
-    const stabilityFactor = Math.max(0, 1 - (scoreVariation * 5)); // Lower variation = higher stability
-    
-    // Incorporate other signal types if available
-    let crossSignalConfidence = 1.0;
-    if (type !== 'heartRate') {
-      const hrQuality = UnifiedQualityEvaluator.sharedQualityState.get('heartRate_quality') || 0;
-      crossSignalConfidence = 0.7 + (0.3 * hrQuality); // Heart rate quality affects other vital signs
-    }
-    
-    // Calculate weighted confidence
-    const confidence = currentQuality * 0.6 + stabilityFactor * 0.2 + crossSignalConfidence * 0.2;
-    
-    return Math.min(1, Math.max(0, confidence));
-  }
-  
-  /**
-   * Generate feedback based on quality assessment
-   */
-  private generateFeedback(quality: QualityResult): { message: string; level: FeedbackLevel } | undefined {
-    if (!this.feedbackSystem) return undefined;
-    
-    let message = '';
-    let level: FeedbackLevel = 'info';
-    
-    if (quality.score < 0.3) {
-      message = 'Signal quality is too low. Please adjust your finger position.';
-      level = 'error';
-    } else if (quality.score < 0.5) {
-      message = 'Signal quality could be improved. Keep your finger steady.';
-      level = 'warning';
-    } else if (quality.metrics.stability < 0.4) {
-      message = 'Try to keep your finger more stable for better readings.';
-      level = 'info';
-    } else if (quality.score > 0.8) {
-      message = 'Excellent signal quality, measurements are highly reliable.';
-      level = 'success';
-    }
-    
-    if (message && this.feedbackSystem) {
-      this.feedbackSystem.addFeedback(message, level, { qualityScore: quality.score });
-    }
-    
-    return message ? { message, level } : undefined;
-  }
-  
-  /**
-   * Create a low quality result with feedback
-   */
-  private createLowQualityResult(reason: string): QualityResult {
-    return {
-      score: 0,
-      confidence: 0,
-      isValid: false,
-      metrics: {
+  private calculateQualityMetrics(signal: number[]): QualityMetrics {
+    if (signal.length < 10) {
+      return {
         amplitude: 0,
         stability: 0,
         periodicity: 0,
         snr: 0,
         physiological: 0
-      },
-      feedback: {
-        message: reason,
-        level: 'error'
-      }
+      };
+    }
+    
+    // Use recent signal for calculations
+    const recentSignal = signal.slice(-30);
+    
+    // Calculate amplitude
+    const min = Math.min(...recentSignal);
+    const max = Math.max(...recentSignal);
+    const amplitude = Math.min(1, (max - min) / 0.5);
+    
+    // Calculate stability
+    const stability = this.calculateStability(recentSignal);
+    
+    // Calculate periodicity
+    const periodicity = this.calculatePeriodicity(recentSignal);
+    
+    // Calculate signal-to-noise ratio
+    const snr = this.calculateSNR(recentSignal);
+    
+    // Calculate physiological plausibility
+    const physiological = this.calculatePhysiologicalPlausibility(recentSignal);
+    
+    return {
+      amplitude,
+      stability,
+      periodicity,
+      snr,
+      physiological
     };
   }
   
   /**
-   * Get quality history
+   * Calculate signal stability (0-1)
    */
-  public getQualityHistory(): QualityResult[] {
-    return [...this.qualityHistory];
+  private calculateStability(signal: number[]): number {
+    if (signal.length < 10) return 0;
+    
+    // Calculate differences between adjacent samples
+    const diffs = [];
+    for (let i = 1; i < signal.length; i++) {
+      diffs.push(Math.abs(signal[i] - signal[i-1]));
+    }
+    
+    // Calculate average and standard deviation of differences
+    const avgDiff = diffs.reduce((sum, val) => sum + val, 0) / diffs.length;
+    const varDiff = diffs.reduce((sum, val) => sum + Math.pow(val - avgDiff, 2), 0) / diffs.length;
+    const stdDiff = Math.sqrt(varDiff);
+    
+    // Normalize to 0-1 (lower is better)
+    const normalizedStdDiff = Math.min(1, stdDiff / 0.1);
+    
+    // Convert to stability score (higher is better)
+    return Math.max(0, 1 - normalizedStdDiff);
   }
   
   /**
-   * Get current noise level
+   * Calculate signal periodicity (0-1)
    */
-  public getNoiseLevel(): number {
-    return this.signalQuality.getNoiseLevel();
+  private calculatePeriodicity(signal: number[]): number {
+    if (signal.length < 20) return 0;
+    
+    // Find peaks
+    const peaks = this.findPeaks(signal);
+    if (peaks.length < 3) return 0;
+    
+    // Calculate intervals between peaks
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    
+    // Calculate average and standard deviation
+    const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const variance = intervals.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / intervals.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // More consistent intervals = higher periodicity score
+    // Normalized coefficient of variation (lower is better)
+    const cv = avg > 0 ? stdDev / avg : 1;
+    
+    // Convert to score (0-1)
+    return Math.max(0, Math.min(1, 1 - cv));
   }
   
   /**
-   * Update noise level
+   * Find peaks in signal
    */
-  public updateNoiseLevel(rawValue: number, filteredValue: number): void {
-    this.signalQuality.updateNoiseLevel(rawValue, filteredValue);
+  private findPeaks(signal: number[]): number[] {
+    const peaks: number[] = [];
+    const threshold = 0.1;
+    
+    for (let i = 1; i < signal.length - 1; i++) {
+      if (signal[i] > signal[i-1] && signal[i] > signal[i+1] && signal[i] > threshold) {
+        peaks.push(i);
+      }
+    }
+    
+    return peaks;
   }
   
   /**
-   * Reset the evaluator
+   * Calculate signal-to-noise ratio (0-1)
+   */
+  private calculateSNR(signal: number[]): number {
+    if (signal.length < 10) return 0;
+    
+    // Use recent signal for calculations
+    const recentSignal = signal.slice(-30);
+    
+    // Calculate moving average as signal estimate
+    const windowSize = 5;
+    const smoothed = [];
+    
+    for (let i = 0; i < recentSignal.length; i++) {
+      let sum = 0;
+      let count = 0;
+      
+      for (let j = Math.max(0, i - windowSize); j <= Math.min(recentSignal.length - 1, i + windowSize); j++) {
+        sum += recentSignal[j];
+        count++;
+      }
+      
+      smoothed.push(sum / count);
+    }
+    
+    // Calculate signal power
+    let signalPower = 0;
+    for (let i = 0; i < smoothed.length; i++) {
+      signalPower += smoothed[i] * smoothed[i];
+    }
+    signalPower /= smoothed.length;
+    
+    // Calculate noise (residual)
+    let noisePower = 0;
+    for (let i = 0; i < recentSignal.length; i++) {
+      const noise = recentSignal[i] - smoothed[i];
+      noisePower += noise * noise;
+    }
+    noisePower /= recentSignal.length;
+    
+    // Avoid division by zero
+    if (noisePower < 0.0001) return 1;
+    
+    // Calculate SNR
+    const snr = signalPower / noisePower;
+    
+    // Normalize to 0-1
+    return Math.min(1, snr / 10);
+  }
+  
+  /**
+   * Calculate physiological plausibility (0-1)
+   */
+  private calculatePhysiologicalPlausibility(signal: number[]): number {
+    if (signal.length < 10) return 0;
+    
+    // Find peaks
+    const peaks = this.findPeaks(signal);
+    if (peaks.length < 2) return 0;
+    
+    // Calculate time between peaks (in samples)
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    
+    // Calculate implied heart rate (assuming 30Hz sampling)
+    // BPM = 60 * (sampling rate / average interval)
+    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const impliedBPM = avgInterval > 0 ? 60 * (30 / avgInterval) : 0;
+    
+    // Check if heart rate is in physiological range (40-200 BPM)
+    if (impliedBPM < 40 || impliedBPM > 200) return 0;
+    
+    // Higher score for rates closer to normal range (60-100 BPM)
+    let normalcy = 0;
+    if (impliedBPM >= 60 && impliedBPM <= 100) {
+      normalcy = 1;
+    } else if (impliedBPM < 60) {
+      normalcy = 1 - (60 - impliedBPM) / 20; // Linear decrease from 60 to 40 BPM
+    } else {
+      normalcy = 1 - (impliedBPM - 100) / 100; // Linear decrease from 100 to 200 BPM
+    }
+    
+    return Math.max(0, normalcy);
+  }
+  
+  /**
+   * Calculate overall quality score (0-1)
+   */
+  private calculateQualityScore(metrics: QualityMetrics): number {
+    // Weighted average of all metrics
+    return (
+      metrics.amplitude * 0.2 +
+      metrics.stability * 0.25 +
+      metrics.periodicity * 0.25 +
+      metrics.snr * 0.2 +
+      metrics.physiological * 0.1
+    );
+  }
+  
+  /**
+   * Calculate confidence in quality assessment (0-1)
+   */
+  private calculateConfidence(metrics: QualityMetrics): number {
+    // More history = higher confidence
+    const historyFactor = Math.min(1, this.signalHistory.length / this.MAX_HISTORY_LENGTH);
+    
+    // Higher metrics = higher confidence
+    const metricsAvg = (
+      metrics.amplitude +
+      metrics.stability +
+      metrics.periodicity +
+      metrics.snr +
+      metrics.physiological
+    ) / 5;
+    
+    return Math.min(1, historyFactor * 0.3 + metricsAvg * 0.7);
+  }
+  
+  /**
+   * Get quality level from score
+   */
+  public getQualityLevel(score: number): SignalQualityLevel {
+    if (score < 0.3) return SignalQualityLevel.INVALID;
+    if (score < 0.5) return SignalQualityLevel.POOR;
+    if (score < 0.7) return SignalQualityLevel.FAIR;
+    if (score < 0.9) return SignalQualityLevel.GOOD;
+    return SignalQualityLevel.EXCELLENT;
+  }
+  
+  /**
+   * Get last quality result
+   */
+  public getLastResult(): QualityResult | null {
+    return this.lastResult;
+  }
+  
+  /**
+   * Reset evaluator state
    */
   public reset(): void {
     this.signalHistory = [];
-    this.qualityHistory = [];
-    this.signalQuality.reset();
-    this.adaptiveOptimizer.reset();
-  }
-  
-  /**
-   * Get optimized parameters from adaptive optimizer
-   */
-  public getOptimizedParameters(): any {
-    return this.adaptiveOptimizer.getOptimizedParameters();
-  }
-  
-  /**
-   * Statically clear shared quality state
-   */
-  public static clearSharedState(): void {
-    UnifiedQualityEvaluator.sharedQualityState.clear();
+    this.lastResult = null;
   }
 }
