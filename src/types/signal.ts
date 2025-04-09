@@ -15,6 +15,11 @@ export interface ProcessedSignal {
     height: number;
   };
   perfusionIndex: number;
+  spectrumData?: {          // Adding spectrumData that was missing
+    frequencies: number[];
+    amplitudes: number[];
+    dominantFrequency: number;
+  };
 }
 
 /**
@@ -48,4 +53,37 @@ export enum VitalSignType {
   ARRHYTHMIA = 'arrhythmia',
   GLUCOSE = 'glucose',
   LIPIDS = 'lipids'
+}
+
+/**
+ * Return type for vital signs processor hook
+ */
+export interface UseVitalSignsProcessorReturn {
+  processSignal: (value: number, rrData?: any) => any;
+  reset: () => void;
+  fullReset: () => void;
+  arrhythmiaCounter: number;
+  lastValidResults: any | null;
+  arrhythmiaWindows: Array<{ start: number, end: number }>;
+  debugInfo: any;
+}
+
+/**
+ * Interface for vital signs result with confidence
+ */
+export interface VitalSignsResult {
+  spo2: number;
+  pressure: string;
+  arrhythmiaStatus: string;
+  glucose: number;
+  lipids: {
+    totalCholesterol: number;
+    triglycerides: number;
+  };
+  lastArrhythmiaData?: any;
+  confidence?: {
+    glucose: number;
+    lipids: number;
+    overall: number;
+  };
 }

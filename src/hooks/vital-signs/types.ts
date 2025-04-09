@@ -1,17 +1,13 @@
 
 /**
- * Interface for arrhythmia visualization window
+ * Return type for vital signs processor hook
  */
-export interface ArrhythmiaWindow {
-  start: number;
-  end: number;
-  isActive?: boolean;
-}
-
-/**
- * Interface for signal quality parameters
- */
-export interface SignalQualityParams {
-  lowSignalThreshold: number;
-  maxWeakSignalCount: number;
+export interface UseVitalSignsProcessorReturn {
+  processSignal: (value: number, rrData?: any) => any;
+  reset: () => void;
+  fullReset: () => void;
+  arrhythmiaCounter: number;
+  lastValidResults: any | null;
+  arrhythmiaWindows: Array<{ start: number, end: number }>;
+  debugInfo: any;
 }

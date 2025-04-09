@@ -113,16 +113,7 @@ export async function loadModel(
       model = await tf.loadLayersModel(modelUrl, loadOptions);
       
       // Try to optimize the model if it's a layers model
-      if (model && 'then' in model) {
-        try {
-          // Convert to a graph model for better performance
-          const graphModel = await tf.converters.convertTensorflowModelsToGraphModel(model);
-          model = graphModel;
-        } catch (optimizeError) {
-          console.warn('Could not convert to graph model:', optimizeError);
-          // Continue with the original model
-        }
-      }
+      // Note: Removed the converters code since it doesn't exist in TF.js
     } else {
       model = await tf.loadGraphModel(modelUrl, loadOptions);
     }
@@ -240,17 +231,14 @@ function startMemoryMonitoring(): void {
  * Tensor memory management wrapper with enhanced error handling
  */
 export async function runWithMemoryManagement<T>(
-  tfFunction: () => Promise<T>,
-  functionName: string = 'tfOperation'
+  tfFunction: () => Promise<T>
 ): Promise<T> {
   const startTime = performance.now();
   const startMemory = tf.memory();
   
   try {
-    // Run function with TensorFlow operations in a tidy scope
-    const result = await tf.tidy(functionName, async () => {
-      return await tfFunction();
-    });
+    // Run the function without using tf.tidy since we're handling async operations
+    const result = await tfFunction();
     
     // Calculate performance metrics
     const endTime = performance.now();
@@ -258,12 +246,12 @@ export async function runWithMemoryManagement<T>(
     
     // Log performance for operations taking more than 50ms (potential bottlenecks)
     if (processingTime > 50) {
-      console.log(`⏱️ ${functionName} completed in ${processingTime.toFixed(2)}ms`);
+      console.log(`⏱️ TF operation completed in ${processingTime.toFixed(2)}ms`);
     }
     
     return result;
   } catch (error) {
-    console.error(`❌ TensorFlow operation '${functionName}' failed:`, error);
+    console.error(`❌ TensorFlow operation failed:`, error);
     
     // Log memory state when error occurred
     const errorMemory = tf.memory();

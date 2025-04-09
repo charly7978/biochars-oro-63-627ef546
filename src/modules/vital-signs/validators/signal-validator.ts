@@ -1,10 +1,12 @@
-
 /**
  * Signal validator for vital signs
  */
 export class SignalValidator {
   private readonly minAmplitude: number;
   private readonly minDataPoints: number;
+  private signalHistory: number[] = [];
+  private patternDetected: boolean = false;
+  private lastDetectionTime: number = 0;
 
   constructor(minAmplitude: number = 0.01, minDataPoints: number = 15) {
     this.minAmplitude = minAmplitude;
@@ -57,5 +59,56 @@ export class SignalValidator {
    */
   public validateSignal(signal: number): boolean {
     return Math.abs(signal) >= 0.001;
+  }
+
+  /**
+   * Track signal for pattern detection
+   */
+  public trackSignalForPatternDetection(value: number): void {
+    this.signalHistory.push(value);
+    
+    // Keep history limited
+    if (this.signalHistory.length > 30) {
+      this.signalHistory.shift();
+    }
+    
+    // Check for patterns that might indicate finger presence
+    if (this.signalHistory.length >= 10) {
+      // Simple pattern detection algorithm
+      const recentValues = this.signalHistory.slice(-10);
+      let crossings = 0;
+      
+      for (let i = 1; i < recentValues.length; i++) {
+        if ((recentValues[i] > 0 && recentValues[i-1] <= 0) || 
+            (recentValues[i] < 0 && recentValues[i-1] >= 0)) {
+          crossings++;
+        }
+      }
+      
+      // If we detect reasonable zero-crossings (indicating a rhythmic pattern)
+      if (crossings >= 2 && crossings <= 5) {
+        this.patternDetected = true;
+        this.lastDetectionTime = Date.now();
+      } else if (Date.now() - this.lastDetectionTime > 3000) {
+        // Reset if no pattern detected for some time
+        this.patternDetected = false;
+      }
+    }
+  }
+  
+  /**
+   * Check if finger is detected based on signal pattern
+   */
+  public isFingerDetected(): boolean {
+    return this.patternDetected;
+  }
+  
+  /**
+   * Reset finger detection state
+   */
+  public resetFingerDetection(): void {
+    this.patternDetected = false;
+    this.signalHistory = [];
+    this.lastDetectionTime = 0;
   }
 }
