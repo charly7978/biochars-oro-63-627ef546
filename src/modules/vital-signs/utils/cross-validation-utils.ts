@@ -1,302 +1,305 @@
-
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * CrossValidator class - Implements cross-validation techniques
+ * for physiologically-plausible vital signs measurements
  */
-
-import { VitalSignsResult } from '../VitalSignsProcessor';
-
-export interface MeasurementValidationResult {
-  isValid: boolean;
-  confidence: number;
-  measuredValues: VitalSignsResult;
-}
-
-export interface CrossValidationConfig {
-  minSamplesRequired: number;
-  maxDeviation: {
-    heartRate: number;
-    spo2: number;
-    systolic: number;
-    diastolic: number;
-  };
-  minConfidenceThreshold: number;
-}
-
 export class CrossValidator {
-  private config: CrossValidationConfig;
-  private historicalMeasurements: VitalSignsResult[] = [];
+  private lastResults: any[] = [];
+  private readonly MAX_RESULTS = 5;
+  private confidenceScores: Map<string, number> = new Map();
+  private validationTimestamp: number = 0;
+  private validationThresholds: Map<string, { min: number, max: number }> = new Map();
+  private baselineValues: Map<string, number> = new Map();
   
-  /**
-   * Constructor para el validador cruzado
-   */
-  constructor(config?: Partial<CrossValidationConfig>) {
-    this.config = {
-      minSamplesRequired: 3,
-      maxDeviation: {
-        heartRate: 10,  // 10 BPM
-        spo2: 3,        // 3%
-        systolic: 15,   // 15 mmHg
-        diastolic: 10   // 10 mmHg
-      },
-      minConfidenceThreshold: 0.7,
-      ...config
-    };
+  constructor() {
+    this.initializeThresholds();
   }
   
   /**
-   * Añadir una nueva medición para validación cruzada
+   * Initialize physiologically plausible thresholds for each vital sign
    */
-  public addMeasurement(measurement: VitalSignsResult): void {
-    this.historicalMeasurements.push(measurement);
+  private initializeThresholds(): void {
+    // Heart rate thresholds (40-200 BPM)
+    this.validationThresholds.set('heartRate', { min: 40, max: 200 });
     
-    // Limitar el histórico a las últimas 5 mediciones
-    if (this.historicalMeasurements.length > 5) {
-      this.historicalMeasurements.shift();
+    // SpO2 thresholds (70-100%)
+    this.validationThresholds.set('spo2', { min: 70, max: 100 });
+    
+    // Blood pressure thresholds
+    this.validationThresholds.set('systolic', { min: 80, max: 200 });
+    this.validationThresholds.set('diastolic', { min: 40, max: 120 });
+    
+    // Respiratory rate thresholds (8-40 breaths per minute)
+    this.validationThresholds.set('respiratoryRate', { min: 8, max: 40 });
+  }
+  
+  /**
+   * Reset cross-validator state
+   */
+  public reset(): void {
+    this.lastResults = [];
+    this.confidenceScores.clear();
+    this.baselineValues.clear();
+    this.validationTimestamp = 0;
+  }
+  
+  /**
+   * Add a new result for cross-validation
+   */
+  public addResult(result: any): void {
+    // Add to results history
+    this.lastResults.unshift(result);
+    
+    // Trim to keep only recent results
+    if (this.lastResults.length > this.MAX_RESULTS) {
+      this.lastResults.pop();
+    }
+    
+    // Update validation timestamp
+    this.validationTimestamp = Date.now();
+    
+    // Update baseline values when we have enough data
+    if (this.lastResults.length >= 3) {
+      this.updateBaselines();
     }
   }
   
   /**
-   * Validar una medición contra el histórico
+   * Calculate confidence score for a vital sign
    */
-  public validateMeasurement(current: VitalSignsResult): MeasurementValidationResult {
-    // Si no tenemos suficientes muestras previas, consideramos la medición válida
-    if (this.historicalMeasurements.length < this.config.minSamplesRequired) {
-      return {
-        isValid: true,
-        confidence: 0.5, // Confianza media por falta de datos históricos
-        measuredValues: current
-      };
+  public calculateConfidence(vitalSign: string): number {
+    if (this.lastResults.length < 2) {
+      return 0.5; // Default medium confidence with insufficient data
     }
     
-    // Extraer métricas para comparación
-    const metrics = this.extractMetricsFromResults();
+    // Calculate agreement score based on recent measurements
+    const values = this.lastResults
+      .filter(r => r && r[vitalSign] !== undefined)
+      .map(r => r[vitalSign]);
     
-    // Calcular desviaciones de la medición actual respecto a las históricas
-    const deviations = this.calculateDeviations(current, metrics);
+    if (values.length < 2) {
+      return 0.5;
+    }
     
-    // Calcular puntuación de confianza
-    const confidenceScore = this.calculateConfidenceScore(deviations);
+    // Calculate variation coefficient
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    const cv = mean !== 0 ? stdDev / mean : 1;
     
-    // Determinar si la medición es válida
-    const isValid = confidenceScore >= this.config.minConfidenceThreshold;
+    // Convert to confidence score (lower variation = higher confidence)
+    let confidence = Math.max(0, Math.min(1, 1 - cv * 2));
     
-    // Aplicar correcciones a valores fuera de rango
-    const validatedMeasurement = isValid ? 
-                               current : 
-                               this.correctOutlierValues(current, metrics);
+    // Check if values are in physiological range
+    const thresholds = this.validationThresholds.get(vitalSign);
+    if (thresholds) {
+      const inRange = values.every(v => v >= thresholds.min && v <= thresholds.max);
+      if (!inRange) {
+        confidence *= 0.5; // Reduce confidence for non-physiological values
+      }
+    }
+    
+    // Store and return
+    this.confidenceScores.set(vitalSign, confidence);
+    return confidence;
+  }
+  
+  /**
+   * Validate a single value against expected physiological ranges and trends
+   */
+  public validateMeasurement(vitalSign: string, value: number): {
+    isValid: boolean,
+    confidence: number,
+    adjustedValue?: number
+  } {
+    // Get validation thresholds
+    const thresholds = this.validationThresholds.get(vitalSign) || { min: 0, max: 999 };
+    
+    // Check if value is within physiological range
+    const inRange = value >= thresholds.min && value <= thresholds.max;
+    
+    // Special handling for heart rate (may be reported as BPM or heartRate)
+    if (vitalSign === 'heartRate' && !inRange) {
+      // Try to check if 'bpm' field exists and use that instead
+      for (const result of this.lastResults) {
+        if (result && result.hasOwnProperty('bpm') && typeof result.bpm === 'number') {
+          const bpm = result.bpm;
+          if (bpm >= thresholds.min && bpm <= thresholds.max) {
+            return {
+              isValid: true,
+              confidence: 0.7,
+              adjustedValue: bpm
+            };
+          }
+        }
+      }
+    }
+    
+    // Calculate confidence
+    let confidence = this.calculateConfidence(vitalSign);
+    
+    // Check against baseline if we have one
+    const baseline = this.baselineValues.get(vitalSign);
+    let adjustedValue = value;
+    
+    if (baseline !== undefined) {
+      // If value deviates too much from baseline without physiological reason
+      const maxChange = this.getMaxPhysiologicalChange(vitalSign);
+      const deviation = Math.abs(value - baseline);
+      
+      if (deviation > maxChange && this.lastResults.length >= 3) {
+        // Reduce confidence if deviation is too large
+        confidence *= Math.max(0.5, 1 - (deviation - maxChange) / maxChange);
+        
+        // Suggest adjusted value by limiting the change rate
+        const direction = value > baseline ? 1 : -1;
+        adjustedValue = baseline + (direction * maxChange);
+      }
+    }
     
     return {
-      isValid,
-      confidence: confidenceScore,
-      measuredValues: validatedMeasurement
+      isValid: inRange,
+      confidence,
+      adjustedValue: adjustedValue !== value ? adjustedValue : undefined
     };
   }
   
   /**
-   * Extraer métricas de los resultados históricos
+   * Get the maximum physiologically plausible change for a vital sign
+   * in a short time period (typically between measurements)
    */
-  private extractMetricsFromResults(): { 
-    heartRates: number[], 
-    spo2s: number[], 
-    systolics: number[], 
-    diastolics: number[] 
-  } {
-    const heartRates: number[] = [];
-    const spo2s: number[] = [];
-    const systolics: number[] = [];
-    const diastolics: number[] = [];
+  private getMaxPhysiologicalChange(vitalSign: string): number {
+    switch (vitalSign) {
+      case 'heartRate':
+        return 15; // 15 BPM change between measurements
+      case 'bpm':
+        return 15; // 15 BPM change
+      case 'spo2':
+        return 5; // 5% SpO2 change
+      case 'systolic':
+        return 15; // 15 mmHg
+      case 'diastolic':
+        return 10; // 10 mmHg
+      case 'respiratoryRate':
+        return 5; // 5 breaths per minute
+      default:
+        return 999; // No limit for unknown vital signs
+    }
+  }
+  
+  /**
+   * Update baseline values for all tracked vital signs
+   */
+  private updateBaselines(): void {
+    // Get a list of all vital signs being tracked
+    const vitalSigns = new Set<string>();
     
-    this.historicalMeasurements.forEach(result => {
-      // Procesar frecuencia cardíaca
-      const bpm = result.bpm || result.heartRate;
-      if (typeof bpm === 'number' && bpm > 30 && bpm < 200) {
-        heartRates.push(bpm);
-      }
-      
-      // Procesar SpO2
-      if (typeof result.spo2 === 'number' && result.spo2 >= 80 && result.spo2 <= 100) {
-        spo2s.push(result.spo2);
-      }
-      
-      // Procesar presión arterial
-      if (result.pressure && result.pressure !== "--/--") {
-        const [systolic, diastolic] = result.pressure.split('/').map(Number);
-        if (systolic > 70 && systolic < 200) systolics.push(systolic);
-        if (diastolic > 40 && diastolic < 120) diastolics.push(diastolic);
+    this.lastResults.forEach(result => {
+      if (result) {
+        Object.keys(result).forEach(key => {
+          if (typeof result[key] === 'number') {
+            vitalSigns.add(key);
+          }
+        });
       }
     });
     
-    return { heartRates, spo2s, systolics, diastolics };
-  }
-  
-  /**
-   * Calcular desviaciones de la medición actual respecto a las históricas
-   */
-  private calculateDeviations(
-    current: VitalSignsResult, 
-    metrics: { 
-      heartRates: number[], 
-      spo2s: number[], 
-      systolics: number[], 
-      diastolics: number[] 
-    }
-  ): { 
-    heartRate: number, 
-    spo2: number, 
-    systolic: number, 
-    diastolic: number 
-  } {
-    // Calcular medianas para cada métrica
-    const medianHeartRate = this.calculateMedian(metrics.heartRates);
-    const medianSpo2 = this.calculateMedian(metrics.spo2s);
-    const medianSystolic = this.calculateMedian(metrics.systolics);
-    const medianDiastolic = this.calculateMedian(metrics.diastolics);
-    
-    // Extraer valores actuales
-    const currentBpm = current.bpm || current.heartRate || 0;
-    const currentSpo2 = current.spo2 || 0;
-    
-    let currentSystolic = 0;
-    let currentDiastolic = 0;
-    if (current.pressure && current.pressure !== "--/--") {
-      const [systolic, diastolic] = current.pressure.split('/').map(Number);
-      currentSystolic = systolic;
-      currentDiastolic = diastolic;
-    }
-    
-    // Calcular desviaciones absolutas
-    return {
-      heartRate: medianHeartRate ? Math.abs(currentBpm - medianHeartRate) : 0,
-      spo2: medianSpo2 ? Math.abs(currentSpo2 - medianSpo2) : 0,
-      systolic: medianSystolic ? Math.abs(currentSystolic - medianSystolic) : 0,
-      diastolic: medianDiastolic ? Math.abs(currentDiastolic - medianDiastolic) : 0
-    };
-  }
-  
-  /**
-   * Calcular puntuación de confianza basada en desviaciones
-   */
-  private calculateConfidenceScore(deviations: { 
-    heartRate: number, 
-    spo2: number, 
-    systolic: number, 
-    diastolic: number 
-  }): number {
-    // Normalizar cada desviación respecto a su máximo permitido
-    const heartRateScore = 1 - Math.min(1, deviations.heartRate / this.config.maxDeviation.heartRate);
-    const spo2Score = 1 - Math.min(1, deviations.spo2 / this.config.maxDeviation.spo2);
-    const systolicScore = deviations.systolic > 0 ? 
-                       1 - Math.min(1, deviations.systolic / this.config.maxDeviation.systolic) : 1;
-    const diastolicScore = deviations.diastolic > 0 ? 
-                        1 - Math.min(1, deviations.diastolic / this.config.maxDeviation.diastolic) : 1;
-    
-    // Calcular puntuación ponderada
-    // Damos más peso a frecuencia cardíaca y SpO2 que son más estables
-    const weightedScore = (
-      heartRateScore * 0.4 + 
-      spo2Score * 0.3 + 
-      systolicScore * 0.15 + 
-      diastolicScore * 0.15
-    );
-    
-    return weightedScore;
-  }
-  
-  /**
-   * Corregir valores fuera de rango con medianas históricas
-   */
-  private correctOutlierValues(
-    measurement: VitalSignsResult, 
-    metrics: { 
-      heartRates: number[], 
-      spo2s: number[], 
-      systolics: number[], 
-      diastolics: number[] 
-    }
-  ): VitalSignsResult {
-    const corrected = {...measurement};
-    
-    // Calcular medianas
-    const medianHeartRate = this.calculateMedian(metrics.heartRates);
-    const medianSpo2 = this.calculateMedian(metrics.spo2s);
-    const medianSystolic = this.calculateMedian(metrics.systolics);
-    const medianDiastolic = this.calculateMedian(metrics.diastolics);
-    
-    // Corregir frecuencia cardíaca si está fuera de rango
-    const currentBpm = measurement.bpm || measurement.heartRate || 0;
-    if (medianHeartRate && Math.abs(currentBpm - medianHeartRate) > this.config.maxDeviation.heartRate) {
-      if ("bpm" in corrected) corrected.bpm = medianHeartRate;
-      if ("heartRate" in corrected) corrected.heartRate = medianHeartRate;
-    }
-    
-    // Corregir SpO2 si está fuera de rango
-    if (medianSpo2 && Math.abs(measurement.spo2 - medianSpo2) > this.config.maxDeviation.spo2) {
-      corrected.spo2 = medianSpo2;
-    }
-    
-    // Corregir presión arterial si está fuera de rango
-    if (measurement.pressure && measurement.pressure !== "--/--") {
-      let [systolic, diastolic] = measurement.pressure.split('/').map(Number);
-      let needsCorrection = false;
+    // Update baseline for each vital sign
+    vitalSigns.forEach(sign => {
+      const values = this.lastResults
+        .filter(r => r && r[sign] !== undefined)
+        .map(r => r[sign]);
       
-      if (medianSystolic && Math.abs(systolic - medianSystolic) > this.config.maxDeviation.systolic) {
-        systolic = medianSystolic;
-        needsCorrection = true;
+      if (values.length >= 3) {
+        // Calculate median as baseline (more robust than mean)
+        const sortedValues = [...values].sort((a, b) => a - b);
+        const median = sortedValues[Math.floor(sortedValues.length / 2)];
+        this.baselineValues.set(sign, median);
+      }
+    });
+  }
+  
+  /**
+   * Reconcile results from multiple sources or measurement methods
+   */
+  public reconcileResults(...results: any[]): any {
+    if (results.length === 0) return null;
+    if (results.length === 1) return results[0];
+    
+    const reconciled: any = {};
+    const vitalSigns = new Set<string>();
+    
+    // Collect all vital sign keys
+    results.forEach(result => {
+      if (result) {
+        Object.keys(result).forEach(key => {
+          if (typeof result[key] === 'number') {
+            vitalSigns.add(key);
+          }
+        });
+      }
+    });
+    
+    // Reconcile each vital sign
+    vitalSigns.forEach(sign => {
+      const values = results
+        .filter(r => r && r[sign] !== undefined)
+        .map(r => r[sign]);
+      
+      if (values.length === 0) return;
+      
+      // Handle special case for heart rate which might be in bpm field
+      if (sign === 'heartRate') {
+        const bpmValues = results
+          .filter(r => r && r.bpm !== undefined)
+          .map(r => r.bpm);
+        
+        if (bpmValues.length > values.length) {
+          // Use bpm values if we have more of them
+          const median = [...bpmValues].sort((a, b) => a - b)[Math.floor(bpmValues.length / 2)];
+          reconciled[sign] = median;
+          return;
+        }
       }
       
-      if (medianDiastolic && Math.abs(diastolic - medianDiastolic) > this.config.maxDeviation.diastolic) {
-        diastolic = medianDiastolic;
-        needsCorrection = true;
+      // Calculate median (more robust than mean)
+      if (values.length > 0) {
+        const median = [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+        reconciled[sign] = median;
       }
+    });
+    
+    return reconciled;
+  }
+  
+  /**
+   * Check if the current results are consistent with previous ones
+   */
+  public checkConsistency(): boolean {
+    if (this.lastResults.length < 3) {
+      return true; // Not enough data to detect inconsistency
+    }
+    
+    for (const [sign, threshold] of this.validationThresholds.entries()) {
+      // Check each vital sign for consistency
+      const values = this.lastResults
+        .filter(r => r && (r[sign] !== undefined || (sign === 'heartRate' && r.bpm !== undefined)))
+        .map(r => r[sign] !== undefined ? r[sign] : r.bpm);
       
-      if (needsCorrection) {
-        corrected.pressure = `${systolic}/${diastolic}`;
+      if (values.length < 3) continue;
+      
+      // Calculate mean and standard deviation
+      const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+      const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+      const stdDev = Math.sqrt(variance);
+      
+      // Check if standard deviation is too high (inconsistent measurements)
+      const maxAllowedStdDev = (threshold.max - threshold.min) * 0.15; // 15% of range
+      if (stdDev > maxAllowedStdDev) {
+        return false;
       }
     }
     
-    return corrected;
+    return true;
   }
-  
-  /**
-   * Calcular la mediana de un array de números
-   */
-  private calculateMedian(values: number[]): number | null {
-    if (!values.length) return null;
-    
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    
-    if (sorted.length % 2 === 0) {
-      return (sorted[mid - 1] + sorted[mid]) / 2;
-    } else {
-      return sorted[mid];
-    }
-  }
-  
-  /**
-   * Reiniciar el validador
-   */
-  public reset(): void {
-    this.historicalMeasurements = [];
-  }
-}
-
-/**
- * Función utilitaria para validar un valor está en un rango fisiológico
- * @param value Valor a validar
- * @param min Mínimo fisiológico
- * @param max Máximo fisiológico
- * @param fallback Valor predeterminado si está fuera de rango
- */
-export function validatePhysiologicalValue(
-  value: number, 
-  min: number, 
-  max: number, 
-  fallback?: number
-): number {
-  if (value >= min && value <= max) {
-    return value;
-  }
-  
-  return fallback !== undefined ? fallback : (min + max) / 2;
 }

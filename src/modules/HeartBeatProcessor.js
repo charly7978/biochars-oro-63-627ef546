@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -287,5 +286,27 @@ export class HeartBeatProcessor {
     this.initAudio();
     
     console.log("HeartBeatProcessor: Reset complete - all values at zero");
+  }
+
+  autoResetIfSignalIsLow(amplitude) {
+    if (amplitude < this.LOW_SIGNAL_THRESHOLD) {
+      this.lowSignalCount++;
+      if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
+        this.resetDetectionStates();
+      }
+    } else {
+      this.lowSignalCount = 0;
+    }
+  }
+
+  resetDetectionStates() {
+    const resetState = resetDetectionStates();
+    this.lastPeakTime = resetState.lastPeakTime;
+    this.previousPeakTime = resetState.previousPeakTime;
+    this.lastConfirmedPeak = resetState.lastConfirmedPeak;
+    this.peakCandidateIndex = resetState.peakCandidateIndex;
+    this.peakCandidateValue = resetState.peakCandidateValue;
+    this.lowSignalCount = resetState.lowSignalCount;
+    console.log("HeartBeatProcessor: Reset detection states");
   }
 }

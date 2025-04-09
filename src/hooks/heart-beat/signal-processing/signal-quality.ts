@@ -1,11 +1,10 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
  * Enhanced functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection
  */
-import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
+import { checkSignalQuality, calculateSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
 // Signal history for pattern detection with improved buffer size
 let signalHistory: Array<{time: number, value: number}> = [];

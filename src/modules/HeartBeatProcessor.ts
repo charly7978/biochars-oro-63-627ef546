@@ -13,6 +13,17 @@ export interface HeartBeatResult {
   isArrhythmia: boolean;
   arrhythmiaCount: number;
   quality: number;
+  isPeak?: boolean;
+  rrData?: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
+  filteredValue?: number;
+  transition?: {
+    active: boolean;
+    progress: number;
+    direction: string;
+  };
 }
 
 export interface RRInterval {
@@ -112,7 +123,18 @@ export class HeartBeatProcessor {
         confidence: 0,
         isArrhythmia: false,
         arrhythmiaCount: 0,
-        quality: quality
+        quality: quality,
+        isPeak: false,
+        rrData: {
+          intervals: [],
+          lastPeakTime: null
+        },
+        filteredValue: filteredValue,
+        transition: {
+          active: false,
+          progress: 0,
+          direction: 'none'
+        }
       };
     }
     
@@ -145,7 +167,15 @@ export class HeartBeatProcessor {
       confidence,
       isArrhythmia,
       arrhythmiaCount,
-      quality
+      quality,
+      isPeak: false,
+      rrData: this.getRRIntervals(),
+      filteredValue,
+      transition: {
+        active: false,
+        progress: 0,
+        direction: 'none'
+      }
     };
     
     return result;
@@ -231,7 +261,15 @@ export class HeartBeatProcessor {
       confidence: this.fingerDetected ? this.signalQuality / 100 : 0,
       isArrhythmia: this.arrhythmiaWindows.length > 0,
       arrhythmiaCount: this.arrhythmiaWindows.length,
-      quality: this.signalQuality
+      quality: this.signalQuality,
+      isPeak: false,
+      rrData: this.getRRIntervals(),
+      filteredValue: this.currentSignal,
+      transition: {
+        active: false,
+        progress: 0,
+        direction: 'none'
+      }
     };
   }
   

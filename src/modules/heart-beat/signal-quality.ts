@@ -111,3 +111,74 @@ export function calculateSignalQuality(
   
   return Math.round(quality);
 }
+
+/**
+ * Detecta patrones rítmicos en la señal para identificar un dedo
+ */
+export function isFingerDetectedByPattern(
+  signalHistory: Array<{time: number, value: number}>,
+  currentPatternCount: number
+): { isFingerDetected: boolean, patternCount: number } {
+  // Implementación básica de detección de patrones rítmicos
+  // Busca secuencias de picos y valles que parezcan señal cardíaca
+  if (signalHistory.length < 15) {
+    return { isFingerDetected: false, patternCount: 0 };
+  }
+  
+  // Obtener solo los valores recientes (últimos 5 segundos)
+  const now = Date.now();
+  const recentSignals = signalHistory.filter(point => now - point.time < 5000);
+  
+  if (recentSignals.length < 10) {
+    return { isFingerDetected: false, patternCount: 0 };
+  }
+  
+  // Calcular primera derivada (cambios)
+  const values = recentSignals.map(s => s.value);
+  const derivatives = [];
+  for (let i = 1; i < values.length; i++) {
+    derivatives.push(values[i] - values[i-1]);
+  }
+  
+  // Contar cruces por cero (cambios de dirección)
+  let zeroCrossings = 0;
+  for (let i = 1; i < derivatives.length; i++) {
+    if ((derivatives[i-1] >= 0 && derivatives[i] < 0) || 
+        (derivatives[i-1] <= 0 && derivatives[i] > 0)) {
+      zeroCrossings++;
+    }
+  }
+  
+  // Un dedo debería mostrar cierta periodicidad (entre 3-12 cruces en 5 segundos)
+  const isPattern = zeroCrossings >= 4 && zeroCrossings <= 15;
+  
+  // Actualizar contador de patrones
+  let patternCount = currentPatternCount;
+  if (isPattern) {
+    patternCount = Math.min(patternCount + 1, 10);
+  } else {
+    patternCount = Math.max(0, patternCount - 1);
+  }
+  
+  // Se considera dedo detectado si tenemos suficientes patrones confirmados
+  return {
+    isFingerDetected: patternCount >= 4,
+    patternCount: patternCount
+  };
+}
+
+/**
+ * Reinicia los estados de detección de señal
+ * Esta función es usada por HeartBeatProcessor.js
+ */
+export function resetDetectionStates() {
+  console.log("Signal quality detection states reset");
+  return {
+    lastPeakTime: null,
+    previousPeakTime: null,
+    lastConfirmedPeak: false,
+    peakCandidateIndex: null,
+    peakCandidateValue: 0,
+    lowSignalCount: 0
+  };
+}
