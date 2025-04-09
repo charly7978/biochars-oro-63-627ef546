@@ -1,11 +1,10 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
  * Functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection
  */
-import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
+import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 // Signal history for pattern detection
 let signalHistory: Array<{time: number, value: number}> = [];
@@ -131,6 +130,61 @@ export function checkWeakSignal(
   }
   
   return result;
+}
+
+/**
+ * Implementation of the finger pattern detection
+ * Used internally by signal quality checking
+ */
+function isFingerDetectedByPattern(
+  signalHistory: Array<{time: number, value: number}>,
+  currentPatternCount: number
+): { isFingerDetected: boolean, patternCount: number } {
+  // Need at least 3 seconds of data
+  if (signalHistory.length < 30) {
+    return { isFingerDetected: false, patternCount: 0 };
+  }
+  
+  // Look for rhythmic patterns in the signal
+  // Simple peak detection for demonstration
+  const peaks = [];
+  for (let i = 1; i < signalHistory.length - 1; i++) {
+    if (signalHistory[i].value > signalHistory[i-1].value && 
+        signalHistory[i].value > signalHistory[i+1].value &&
+        signalHistory[i].value > 0.2) {
+      peaks.push(signalHistory[i].time);
+    }
+  }
+  
+  // Check if we have at least 3 peaks
+  if (peaks.length >= 3) {
+    // Calculate intervals between peaks
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    
+    // Check if intervals are consistent (physiological heart rate)
+    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const isConsistent = intervals.every(interval => 
+      Math.abs(interval - avgInterval) / avgInterval < 0.3 && // 30% variance allowed
+      interval > 500 && interval < 1500 // 40-120 BPM range (500-1500ms)
+    );
+    
+    if (isConsistent) {
+      const newPatternCount = currentPatternCount + 1;
+      return {
+        isFingerDetected: newPatternCount >= 3,
+        patternCount: newPatternCount
+      };
+    }
+  }
+  
+  // Reduce pattern count if no consistent pattern found
+  return {
+    isFingerDetected: false,
+    patternCount: Math.max(0, currentPatternCount - 1)
+  };
 }
 
 /**

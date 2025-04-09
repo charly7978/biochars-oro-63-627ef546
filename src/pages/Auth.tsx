@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -12,7 +11,6 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,11 +23,6 @@ const Auth = () => {
           password,
         });
         if (error) throw error;
-        
-        toast({
-          title: "Registro exitoso",
-          description: "Por favor, revisa tu email para confirmar tu cuenta.",
-        });
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -40,11 +33,8 @@ const Auth = () => {
         navigate("/");
       }
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      // Only log error to console, no toasts
+      console.error("Authentication error:", error.message);
     } finally {
       setLoading(false);
     }
