@@ -189,11 +189,22 @@ export class SpO2Processor {
     // Proporcionar feedback directo al optimizador a través de sus estructuras internas
     const oxygenationChannel = this.signalOptimizer.getChannel('oxygenation');
     if (oxygenationChannel) {
+      // Crear un objeto con metadata completo para evitar errores de tipo
+      const feedbackMetadata = {
+        gain: 1.0,
+        snr: perfusionIndex * 10,
+        periodicityScore: accuracy,
+        dominantFrequency: 1.0,
+        amplitudeNormalized: perfusionIndex,
+        optimizationLevel: confidence,
+        confidence: confidence,
+        accuracy: accuracy,
+        errorRate: 1 - accuracy
+      };
+      
       // Actualizar metadatos del canal directamente
       oxygenationChannel.metadata = oxygenationChannel.metadata || {};
-      oxygenationChannel.metadata.confidence = confidence;
-      oxygenationChannel.metadata.accuracy = accuracy;
-      oxygenationChannel.metadata.errorRate = 1 - accuracy;
+      Object.assign(oxygenationChannel.metadata, feedbackMetadata);
     }
   }
   

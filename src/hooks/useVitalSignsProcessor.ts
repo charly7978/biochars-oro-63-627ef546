@@ -83,8 +83,13 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Verificar valores fisiológicos
     const hasValidSpO2 = result.spo2 >= 80 && result.spo2 <= 100;
     const hasValidPressure = result.pressure !== "--/--";
+    const hasValidGlucose = result.glucose >= 70 && result.glucose <= 180;
+    const hasValidLipids = result.lipids?.totalCholesterol >= 100 && 
+                          result.lipids?.totalCholesterol <= 300 &&
+                          result.lipids?.triglycerides >= 50 &&
+                          result.lipids?.triglycerides <= 250;
     
-    return hasValidSpO2 || hasValidPressure;
+    return hasValidSpO2 || hasValidPressure || hasValidGlucose || hasValidLipids;
   };
   
   /**
@@ -222,8 +227,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     arrhythmiaWindows,
     debugInfo: {
       ...getDebugInfo(),
-      stabilityCounter: stabilityCounterRef.current,
       hasStableResult: !!lastStableResultRef.current,
+      stabilityCounter: stabilityCounterRef.current,
       resultsHistoryLength: resultsHistoryRef.current.length
     }
   };
