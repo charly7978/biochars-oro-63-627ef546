@@ -3,18 +3,25 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateAmplitude, findPeaksAndValleys } from './utils';
 import * as tf from '@tensorflow/tfjs';
 import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
+import { SignalOptimizationManager } from '../../core/signal/SignalOptimizationManager';
+import { normalizeSignal, getSpectralEntropy } from './utils/tensorflow-utils';
 
+/**
+ * Procesador especializado ÚNICAMENTE en calcular la saturación de oxígeno en sangre (SpO2)
+ * Utiliza optimización adaptativa para obtener la mejor señal para análisis de oxigenación
+ */
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;
   private spo2Buffer: number[] = [];
   private neuralModel: SpO2NeuralModel;
   private tensorflowInitialized: boolean = false;
+  private signalOptimizer: SignalOptimizationManager;
   
   constructor() {
     this.neuralModel = new SpO2NeuralModel();
+    this.signalOptimizer = new SignalOptimizationManager();
     this.initializeTensorFlow();
   }
   
@@ -44,24 +51,42 @@ export class SpO2Processor {
   }
 
   /**
-   * Calculates the oxygen saturation (SpO2) from real PPG values
-   * No simulation or reference values are used
+   * Calcula la saturación de oxígeno (SpO2) únicamente a partir de valores PPG reales
+   * No se utiliza simulación ni valores de referencia
+   * @param values Valores de señal PPG
+   * @returns Valor de SpO2 (porcentaje)
    */
   public calculateSpO2(values: number[]): number {
     if (values.length < 30) {
       return this.getLastValidSpo2(1);
     }
 
+    // Optimizar la señal específicamente para análisis de oxigenación
+    values.forEach(val => {
+      this.signalOptimizer.processSignal({
+        filteredValue: val,
+        quality: 100 // La calidad será determinada por el optimizador
+      });
+    });
+    
+    // Obtener el canal optimizado específicamente para oxigenación
+    const oxygenationChannel = this.signalOptimizer.getChannel('oxygenation');
+    
+    // Si el canal no está disponible o no es de suficiente calidad, usar datos originales
+    const optimizedValues = oxygenationChannel && oxygenationChannel.quality > 50 
+      ? oxygenationChannel.values.slice(-30)
+      : values.slice(-30);
+    
     // Use TensorFlow for processing if available
     if (this.tensorflowInitialized) {
       try {
-        return this.calculateSpO2WithTensorFlow(values);
+        return this.calculateSpO2WithTensorFlow(optimizedValues);
       } catch (error) {
         console.error("SpO2Processor: TensorFlow processing failed, falling back to standard processing", error);
-        return this.calculateSpO2Standard(values);
+        return this.calculateSpO2Standard(optimizedValues);
       }
     } else {
-      return this.calculateSpO2Standard(values);
+      return this.calculateSpO2Standard(optimizedValues);
     }
   }
 
@@ -70,27 +95,31 @@ export class SpO2Processor {
    */
   private calculateSpO2WithTensorFlow(values: number[]): number {
     // Create a tensor from the values
-    const tensor = tf.tensor1d(values);
-    
-    // Use the neural model for prediction if we have enough data
-    if (values.length >= 30) {
-      try {
-        // Use neural model to predict SpO2
-        const prediction = this.neuralModel.predict(values);
-        const spO2 = Math.round(prediction[0]);
-        
-        // Update buffer with predicted value
-        this.updateSpO2Buffer(spO2);
-        
-        // Return the average for stability
-        return this.getAverageSpO2();
-      } catch (error) {
-        console.error("SpO2Processor: Neural prediction failed", error);
-        // Fall back to standard calculation
-        return this.calculateSpO2Standard(values);
-      }
-    } else {
-      // Fall back to standard calculation
+    try {
+      // Normalizar señal para el modelo
+      const normalizedSignal = normalizeSignal(values);
+      
+      // Usar el modelo neural para predecir SpO2
+      const prediction = this.neuralModel.predict(normalizedSignal.arraySync() as number[]);
+      
+      // Liberar tensor para evitar fugas de memoria
+      normalizedSignal.dispose();
+      
+      const spO2 = Math.round(prediction[0]);
+      
+      // Actualizar buffer con el valor predicho
+      this.updateSpO2Buffer(spO2);
+      
+      // Devolver el promedio para mayor estabilidad
+      return this.getAverageSpO2();
+    } catch (error) {
+      console.error("SpO2Processor: Neural prediction failed", error);
+      
+      // Liberar recursos de TensorFlow
+      tf.engine().endScope();
+      tf.engine().startScope();
+      
+      // Recurrir al cálculo estándar
       return this.calculateSpO2Standard(values);
     }
   }
@@ -99,16 +128,17 @@ export class SpO2Processor {
    * Standard calculation method without TensorFlow
    */
   private calculateSpO2Standard(values: number[]): number {
-    // Calculate DC component (average value)
+    // Calcular componente DC (valor promedio)
     const dc = values.reduce((sum, val) => sum + val, 0) / values.length;
     
     if (dc === 0) {
       return this.getLastValidSpo2(1);
     }
 
-    // Calculate AC component (peak-to-peak amplitude)
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
-    const ac = calculateAmplitude(values, peakIndices, valleyIndices);
+    // Calcular componente AC (amplitud pico a pico)
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const ac = max - min;
     
     const perfusionIndex = ac / dc;
     
@@ -116,12 +146,12 @@ export class SpO2Processor {
       return this.getLastValidSpo2(2);
     }
 
-    // Direct calculation from real signal characteristics
+    // Cálculo directo a partir de características de señal real
     const R = (ac / dc);
     
     let spO2 = Math.round(98 - (15 * R));
     
-    // Adjust based on real perfusion quality
+    // Ajustar según calidad de perfusión real
     if (perfusionIndex > 0.15) {
       spO2 = Math.min(98, spO2 + 1);
     } else if (perfusionIndex < 0.08) {
@@ -130,15 +160,55 @@ export class SpO2Processor {
 
     spO2 = Math.min(98, spO2);
     
-    // Update buffer with calculated value
+    // Actualizar buffer con valor calculado
     this.updateSpO2Buffer(spO2);
     
-    // Return the average for stability
+    // Aplicar feedback al optimizador con el resultado
+    this.provideFeedbackToOptimizer(R, perfusionIndex, spO2);
+    
+    // Devolver el promedio para mayor estabilidad
     return this.getAverageSpO2();
   }
   
   /**
-   * Updates the SpO2 buffer with a new value
+   * Proporciona feedback al optimizador para mejorar la calidad de la señal
+   */
+  private provideFeedbackToOptimizer(R: number, perfusionIndex: number, spO2: number): void {
+    // Solo proporcionar feedback si tenemos un canal de oxigenación y un valor válido de SpO2
+    if (spO2 < 80 || spO2 > 100) return;
+    
+    // La confianza se basa en el índice de perfusión
+    const confidence = Math.min(1, perfusionIndex / 0.15);
+    
+    // La precisión se basa en la estabilidad del SpO2
+    const accuracy = this.spo2Buffer.length > 3 ? this.calculateSpO2Stability() : 0.5;
+    
+    // Proporcionar feedback al optimizador
+    this.signalOptimizer.provideFeedback('oxygenation', {
+      confidence,
+      accuracy,
+      errorRate: 1 - accuracy
+    });
+  }
+  
+  /**
+   * Calcula la estabilidad de las mediciones de SpO2
+   */
+  private calculateSpO2Stability(): number {
+    if (this.spo2Buffer.length < 3) return 0.5;
+    
+    // Calcular variación
+    const values = this.spo2Buffer;
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Alta estabilidad = baja variación
+    return Math.max(0, Math.min(1, 1 - (stdDev / 5)));
+  }
+  
+  /**
+   * Actualiza el buffer de SpO2 con un nuevo valor
    */
   private updateSpO2Buffer(spO2: number): void {
     this.spo2Buffer.push(spO2);
@@ -148,7 +218,7 @@ export class SpO2Processor {
   }
   
   /**
-   * Calculate average SpO2 from buffer
+   * Calcula el promedio de SpO2 del buffer
    */
   private getAverageSpO2(): number {
     if (this.spo2Buffer.length === 0) return 0;
@@ -158,8 +228,8 @@ export class SpO2Processor {
   }
   
   /**
-   * Get last valid SpO2 with optional decay
-   * Only uses real historical values
+   * Obtener el último valor válido de SpO2 con decaimiento opcional
+   * Solo utiliza valores históricos reales
    */
   private getLastValidSpo2(decayAmount: number): number {
     if (this.spo2Buffer.length > 0) {
@@ -170,13 +240,14 @@ export class SpO2Processor {
   }
 
   /**
-   * Reset the SpO2 processor state
-   * Ensures all measurements start from zero
+   * Reinicia el estado del procesador de SpO2
+   * Asegura que todas las mediciones comienzan desde cero
    */
   public reset(): void {
     this.spo2Buffer = [];
+    this.signalOptimizer.reset();
     
-    // Release TensorFlow memory
+    // Liberar memoria de TensorFlow
     if (this.tensorflowInitialized) {
       try {
         tf.disposeVariables();

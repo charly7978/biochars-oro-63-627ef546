@@ -15,14 +15,15 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { findPeaksAndValleys, calculateHeartRateFromPeaks } from './utils';
 import { checkSignalQuality } from '../heart-beat/signal-quality';
+import { SignalOptimizationManager } from '../../core/signal/SignalOptimizationManager';
 
 /**
- * Main vital signs processor
- * Integrates different specialized processors to calculate health metrics
- * Operates ONLY in direct measurement mode without reference values or simulation
+ * Procesador principal de signos vitales
+ * Coordina procesadores especializados para calcular métricas de salud
+ * Opera SOLO en modo de medición directa sin valores de referencia o simulación
  */
 export class VitalSignsProcessor {
-  // Specialized processors
+  // Procesadores especializados
   private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
   private arrhythmiaProcessor: ArrhythmiaProcessor;
@@ -30,46 +31,52 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   
-  // Validators and calculators
+  // Validadores y calculadores
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Optimizador central para toda la señal
+  private signalOptimizer: SignalOptimizationManager;
 
-  // Signal measurement parameters
+  // Parámetros de medición de señal
   private readonly PERFUSION_INDEX_THRESHOLD = 0.045;
   private readonly PEAK_THRESHOLD = 0.30;
   
-  // Guard period to prevent false positives
+  // Período de guardia para prevenir falsos positivos
   private readonly FALSE_POSITIVE_GUARD_PERIOD = 1200;
   private lastDetectionTime: number = 0;
   
-  // Counter for weak signals
+  // Contador de señales débiles
   private readonly LOW_SIGNAL_THRESHOLD = 0.20;
   private readonly MAX_WEAK_SIGNALS = 6;
   private weakSignalsCount: number = 0;
   
-  // Signal stability tracking
+  // Seguimiento de estabilidad de señal
   private signalHistory: number[] = [];
   private readonly HISTORY_SIZE = 15;
   private readonly STABILITY_THRESHOLD = 0.15;
   
-  // Frame rate tracking
+  // Seguimiento de velocidad de fotogramas
   private lastFrameTime: number = 0;
   private frameRateHistory: number[] = [];
   private readonly MIN_FRAME_RATE = 15;
   private readonly FRAME_CONSISTENCY_THRESHOLD = 0.5;
   
-  // Physiological validation
+  // Validación fisiológica
   private validPhysiologicalSignalsCount: number = 0;
   private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20;
 
   /**
-   * Constructor that initializes all specialized processors
-   * Using only direct measurement
+   * Constructor que inicializa todos los procesadores especializados
+   * Usando solo medición directa
    */
   constructor() {
     console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
     
-    // Initialize specialized processors
+    // Inicializar optimizador central PRIMERO
+    this.signalOptimizer = new SignalOptimizationManager();
+    
+    // Inicializar procesadores especializados - cada uno con responsabilidad única
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
@@ -77,7 +84,7 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    // Initialize validators and calculators
+    // Inicializar validadores y calculadores
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
     
@@ -86,17 +93,17 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Process a PPG signal with improved false positive detection
+   * Procesar una señal PPG con detección de falsos positivos mejorada
    */
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Apply enhanced verification
+    // Aplicar verificación mejorada
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
     
-    // Track frame rate for consistency
+    // Seguir velocidad de fotogramas para consistencia
     if (this.lastFrameTime > 0) {
       const frameDelta = now - this.lastFrameTime;
       this.frameRateHistory.push(frameDelta);
@@ -106,13 +113,13 @@ export class VitalSignsProcessor {
     }
     this.lastFrameTime = now;
     
-    // Check if frame rate is consistent enough for reliable detection
+    // Verificar si la velocidad de fotogramas es lo suficientemente consistente para detección confiable
     let frameRateConsistent = true;
     if (this.frameRateHistory.length >= 5) {
       const avgDelta = this.frameRateHistory.reduce((sum, delta) => sum + delta, 0) / this.frameRateHistory.length;
       const fps = 1000 / avgDelta;
       
-      // Calculate frame rate variance
+      // Calcular varianza de velocidad de fotogramas
       const variance = this.frameRateHistory.reduce((sum, delta) => sum + Math.pow(delta - avgDelta, 2), 0) / this.frameRateHistory.length;
       const normalizedVariance = variance / (avgDelta * avgDelta);
       
@@ -124,15 +131,15 @@ export class VitalSignsProcessor {
           normalizedVariance,
           frameDeltas: this.frameRateHistory
         });
-        // Reset detection if frame rate becomes inconsistent
+        // Reiniciar detección si la velocidad de fotogramas se vuelve inconsistente
         this.validPhysiologicalSignalsCount = 0;
       }
     }
     
-    // Update signal history for stability analysis
+    // Actualizar historial de señal para análisis de estabilidad
     this.updateSignalHistory(ppgValue);
     
-    // Enhanced signal verification with stability check
+    // Verificación de señal mejorada con comprobación de estabilidad
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       ppgValue,
       this.weakSignalsCount,
@@ -144,19 +151,19 @@ export class VitalSignsProcessor {
     
     this.weakSignalsCount = updatedWeakSignalsCount;
     
-    // Additional stability check to prevent false positives
+    // Verificación adicional de estabilidad para prevenir falsos positivos
     const isStable = this.checkSignalStability();
     
-    // Physiological validation
+    // Validación fisiológica
     if (!isWeakSignal && isStable && frameRateConsistent && Math.abs(ppgValue) > 0) {
-      // Signal appears valid from physiological perspective
+      // La señal parece válida desde una perspectiva fisiológica
       this.validPhysiologicalSignalsCount = Math.min(this.MIN_PHYSIOLOGICAL_SIGNALS + 10, this.validPhysiologicalSignalsCount + 1);
     } else {
-      // Reduce counter more slowly to maintain stability
+      // Reducir contador más lentamente para mantener estabilidad
       this.validPhysiologicalSignalsCount = Math.max(0, this.validPhysiologicalSignalsCount - 0.5);
     }
     
-    // Enhanced verification with stability requirement
+    // Verificación mejorada con requisito de estabilidad
     const hasPhysiologicalValidation = this.validPhysiologicalSignalsCount >= this.MIN_PHYSIOLOGICAL_SIGNALS;
     const signalVerified = !isWeakSignal && Math.abs(ppgValue) > 0 && isStable && frameRateConsistent;
     
@@ -164,58 +171,64 @@ export class VitalSignsProcessor {
       this.lastDetectionTime = now;
     }
     
-    // Only process verified and stable signals or within guard period
+    // Solo procesar señales verificadas y estables o dentro del período de protección
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
-      // Process the signal with our core processing logic
+      // Procesar la señal con nuestra lógica de procesamiento central
       return this.performSignalProcessing(ppgValue, rrData);
     } else {
-      // Return empty result without processing when signal is uncertain
+      // Devolver resultado vacío sin procesar cuando la señal es incierta
       return ResultFactory.createEmptyResults();
     }
   }
   
   /**
-   * Core processing logic for vital signs calculation
+   * Lógica central de procesamiento para cálculo de signos vitales
    */
   private performSignalProcessing(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal
+    // Verificar señal casi cero
     if (!this.signalValidator.isValidSignal(ppgValue)) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
     
-    // Apply filtering to the real PPG signal
+    // Aplicar filtrado a la señal PPG real
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // Process arrhythmia data if available and valid
+    // 1. FLUJO UNIDIRECCIONAL: Primero optimizar señal centralizada (única entrada)
+    const optimizationResult = this.signalOptimizer.processSignal({
+      filteredValue: filtered, 
+      quality: 100 // La calidad será determinada por el optimizador
+    });
+    
+    // Procesar datos de arritmia si están disponibles y son válidos
     const arrhythmiaResult = rrData && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values for processing
+    // Obtener valores PPG para procesamiento
     const ppgValues = this.signalProcessor.getPPGValues();
     ppgValues.push(filtered);
     
-    // Limit the real data buffer
+    // Limitar el buffer de datos reales
     if (ppgValues.length > 300) {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // Check if we have enough data points
+    // Verificar si tenemos suficientes puntos de datos
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
       return ResultFactory.createEmptyResults();
     }
     
-    // Analyze signal characteristics
+    // Analizar características de señal
     const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgValues.slice(-60));
     const heartRate = calculateHeartRateFromPeaks(peakIndices);
     
-    // Verify real signal amplitude is sufficient
+    // Verificar que la amplitud de señal real sea suficiente
     if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
       const signalMin = Math.min(...ppgValues.slice(-15));
       const signalMax = Math.max(...ppgValues.slice(-15));
@@ -224,37 +237,41 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
-    // Calculate SpO2 using real data only - delegate to specialized processor
+    // 2. DELEGACIÓN A ESPECIALISTAS: Calcular SpO2 usando solo datos reales
     const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
-    // Calculate blood pressure using ONLY real signal characteristics
+    // 3. DELEGACIÓN A ESPECIALISTAS: Calcular presión arterial usando SOLO características de señal real
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose with real data only
+    // 4. DELEGACIÓN A ESPECIALISTAS: Calcular glucosa con datos reales solamente
     const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calculate lipids with real data only
+    // 5. DELEGACIÓN A ESPECIALISTAS: Calcular lípidos con datos reales solamente
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate overall confidence
+    // 6. FINAL UNIDIRECCIONAL: Calcular confianza general
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
       glucoseConfidence,
       lipidsConfidence
     );
 
-    // Only show values if confidence exceeds threshold
+    // Solo mostrar valores si la confianza supera el umbral
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
     const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? lipids : {
       totalCholesterol: 0,
       triglycerides: 0
     };
 
-    // Prepare result with all metrics
+    // 7. FEEDBACK BIDIRECCIONAL: Proporcionar retroalimentación sobre la calidad de señal
+    // Este es el ÚNICO punto donde el flujo es bidireccional
+    this.provideFeedback(optimizationResult, heartRate, arrhythmiaResult.arrhythmiaStatus);
+
+    // Preparar resultado con todas las métricas
     return ResultFactory.createResult(
       spo2,
       pressure,
@@ -271,7 +288,30 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Update signal history for stability analysis
+   * Proporciona retroalimentación bidireccional al optimizador de señal
+   * ÚNICO punto de flujo bidireccional en el sistema
+   */
+  private provideFeedback(
+    optimizationResult: any,
+    heartRate: number,
+    arrhythmiaStatus: string
+  ): void {
+    // Solo proporcionar feedback si hay resultados válidos
+    if (!optimizationResult || heartRate < 40) return;
+    
+    // Calidad basada en detección de ritmo cardíaco
+    const hrConfidence = heartRate > 40 && heartRate < 200 ? 0.8 : 0.4;
+    
+    // Proporcionar feedback al optimizador para el canal de ritmo cardíaco
+    this.signalOptimizer.provideFeedback('heartRate', {
+      confidence: hrConfidence,
+      accuracy: arrhythmiaStatus.includes("NORMAL") ? 0.9 : 0.7,
+      errorRate: 0.1
+    });
+  }
+  
+  /**
+   * Actualizar historial de señal para análisis de estabilidad
    */
   private updateSignalHistory(ppgValue: number): void {
     this.signalHistory.push(ppgValue);
@@ -281,31 +321,31 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Check signal stability to prevent false positives
-   * Returns true if signal is stable enough to process
+   * Verificar estabilidad de señal para prevenir falsos positivos
+   * Devuelve true si la señal es lo suficientemente estable para procesar
    */
   private checkSignalStability(): boolean {
     if (this.signalHistory.length < this.HISTORY_SIZE / 2) {
       return false;
     }
     
-    // Calculate signal variation with more rigorous method
+    // Calcular variación de señal con método más riguroso
     const values = this.signalHistory.slice(-10);
     
-    // Check if we have a reasonable min/max range (too small = not physiological)
+    // Verificar si tenemos un rango mín/máx razonable (demasiado pequeño = no fisiológico)
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = max - min;
     
-    if (range < 0.10) { // Minimum physiological range
+    if (range < 0.10) { // Rango fisiológico mínimo
       return false;
     }
     
-    // Calculate variance normalized by the mean to detect inconsistent signals
+    // Calcular varianza normalizada por la media para detectar señales inconsistentes
     const sum = values.reduce((a, b) => a + b, 0);
     const mean = sum / values.length;
     
-    // Skip very low signals
+    // Omitir señales muy bajas
     if (mean < 0.05) {
       return false;
     }
@@ -313,13 +353,13 @@ export class VitalSignsProcessor {
     const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
     const normalizedVariance = variance / (mean * mean);
     
-    // Check if normalized variance is within physiological range (not too stable, not too chaotic)
+    // Verificar si la varianza normalizada está dentro del rango fisiológico (ni demasiado estable, ni demasiado caótica)
     return normalizedVariance > 0.05 && normalizedVariance < this.STABILITY_THRESHOLD;
   }
 
   /**
-   * Reset the processor to ensure a clean state
-   * No reference values or simulations
+   * Reiniciar el procesador para asegurar un estado limpio
+   * Sin valores de referencia o simulaciones
    */
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
@@ -328,6 +368,8 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
+    this.signalOptimizer.reset();
+    
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
     this.signalHistory = [];
@@ -335,19 +377,19 @@ export class VitalSignsProcessor {
     this.lastFrameTime = 0;
     this.validPhysiologicalSignalsCount = 0;
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null; // Always return null to ensure measurements start from zero
+    return null; // Siempre devolver null para asegurar que las mediciones comiencen desde cero
   }
   
   /**
-   * Get arrhythmia counter
+   * Obtener contador de arritmia
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaProcessor.getArrhythmiaCount();
   }
   
   /**
-   * Completely reset the processor
-   * Ensures fresh start with no data carryover
+   * Reiniciar completamente el procesador
+   * Asegura un inicio fresco sin traspaso de datos
    */
   public fullReset(): void {
     this.reset();
@@ -355,5 +397,5 @@ export class VitalSignsProcessor {
   }
 }
 
-// Re-export the VitalSignsResult type
+// Re-exportar el tipo VitalSignsResult
 export type { VitalSignsResult } from './types/vital-signs-result';

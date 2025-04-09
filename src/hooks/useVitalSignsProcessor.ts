@@ -12,17 +12,17 @@ import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 
 /**
- * Hook for processing vital signs with direct algorithms only
- * No simulation or reference values are used
+ * Hook para procesamiento de signos vitales con algoritmos directos solamente
+ * No se utilizan simulaciones ni valores de referencia
  */
 export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // State management - only direct measurement, no simulation
+  // Gestión de estado - solo medición directa, sin simulación
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
-  // Session tracking
+  // Seguimiento de sesión
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
-  // Signal quality tracking
+  // Seguimiento de calidad de señal
   const weakSignalsCountRef = useRef<number>(0);
   const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
@@ -48,14 +48,14 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearLog 
   } = useVitalSignsLogging();
   
-  // Initialize processor components - direct measurement only
+  // Inicializar componentes del procesador - solo medición directa
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
       sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
     
-    // Create new instances for direct measurement
+    // Crear nuevas instancias para medición directa
     initializeProcessor();
     
     return () => {
@@ -69,11 +69,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
-   * Process PPG signal directly
-   * No simulation or reference values
+   * Procesar señal PPG directamente
+   * Sin simulación ni valores de referencia
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
-    // Check for weak signal to detect finger removal using centralized function
+    // Verificar señal débil para detectar retiro del dedo usando función centralizada
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
       weakSignalsCountRef.current,
@@ -85,18 +85,18 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     weakSignalsCountRef.current = updatedWeakSignalsCount;
     
-    // Process signal directly - no simulation
+    // Procesar señal directamente - sin simulación
     let result = processVitalSignal(value, rrData, isWeakSignal);
     const currentTime = Date.now();
     
-    // If arrhythmia is detected in real data, register visualization window
+    // Si se detecta arritmia en datos reales, registrar ventana de visualización
     if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
       
-      // Window based on real heart rate
+      // Ventana basada en ritmo cardíaco real
       let windowWidth = 400;
       
-      // Adjust based on real RR intervals
+      // Ajustar basado en intervalos RR reales
       if (rrData && rrData.intervals.length > 0) {
         const lastIntervals = rrData.intervals.slice(-4);
         const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
@@ -106,16 +106,16 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
     }
     
-    // Log processed signals
+    // Registrar señales procesadas
     logSignalData(value, result, processedSignals.current);
     
-    // Always return real result
+    // Siempre devolver resultado real
     return result;
   };
 
   /**
-   * Perform complete reset - start from zero
-   * No simulations or reference values
+   * Realizar reinicio completo - comenzar desde cero
+   * Sin simulaciones ni valores de referencia
    */
   const reset = () => {
     resetProcessor();
@@ -127,8 +127,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   };
   
   /**
-   * Perform full reset - clear all data
-   * No simulations or reference values
+   * Realizar reinicio total - borrar todos los datos
+   * Sin simulaciones ni valores de referencia
    */
   const fullReset = () => {
     fullResetProcessor();
@@ -143,7 +143,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults: null, // Siempre devolver null para garantizar que las mediciones comiencen desde cero
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

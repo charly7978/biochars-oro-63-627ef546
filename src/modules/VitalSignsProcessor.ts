@@ -4,4 +4,6 @@
  */
 
 // Re-export the VitalSignsProcessor from the vital-signs module to prevent duplication
-export { VitalSignsProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+export { VitalSignsProcessor } from './vital-signs/VitalSignsProcessor';
+// Use 'export type' when re-exporting types with isolatedModules enabled
+export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';
