@@ -13,6 +13,7 @@ import { ResultFactory } from './vital-signs/factories/result-factory';
 import { SignalValidator } from './vital-signs/validators/signal-validator';
 import { ConfidenceCalculator } from './vital-signs/calculators/confidence-calculator';
 import { VitalSignsResult } from './vital-signs/types/vital-signs-result';
+import { FeedbackOptimizer } from './vital-signs/optimizers/feedback-optimizer';
 
 /**
  * Main vital signs processor
@@ -31,6 +32,9 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Feedback optimizer
+  private feedbackOptimizer: FeedbackOptimizer;
   
   // Debug and logging
   private lastRawValue: number = 0;
@@ -58,6 +62,9 @@ export class VitalSignsProcessor {
     // Initialize validators and calculators with MORE SENSITIVE thresholds for real signals
     this.signalValidator = new SignalValidator(0.005, 8);
     this.confidenceCalculator = new ConfidenceCalculator(0.10); // Lower threshold for better sensitivity
+    
+    // Initialize feedback optimizer
+    this.feedbackOptimizer = new FeedbackOptimizer();
     
     this.lastProcessTime = Date.now();
   }
@@ -150,12 +157,15 @@ export class VitalSignsProcessor {
     // Calculate average quality for measurements
     const avgQuality = filterResult.quality;
     
+    // Apply feedback optimization to improve measurement reliability
+    const optimizedSignal = this.feedbackOptimizer.optimize(filteredPpgValues, rawPpgValues, avgQuality);
+    
     // Calculate SpO2 using real PPG data - using both raw and filtered for validation
     const spo2Filtered = this.spo2Processor.calculateSpO2(filteredPpgValues.slice(-45));
     const spo2Raw = this.spo2Processor.calculateSpO2(rawPpgValues.slice(-45));
     // Cross-validate results to ensure consistency
     const spo2 = (Math.abs(spo2Filtered - spo2Raw) < 3) ? 
-                 (spo2Filtered * 0.7 + spo2Raw * 0.3) : // Weighted average if consistent
+                 Math.round(spo2Filtered * 0.7 + spo2Raw * 0.3) : // Weighted average if consistent
                  (spo2Filtered > 80 ? spo2Filtered : spo2Raw); // Otherwise take most plausible
     
     // Calculate blood pressure using real signal characteristics
@@ -167,74 +177,64 @@ export class VitalSignsProcessor {
                { // Weighted average if consistent
                  systolic: Math.round(bpFiltered.systolic * 0.7 + bpRaw.systolic * 0.3),
                  diastolic: Math.round(bpFiltered.diastolic * 0.7 + bpRaw.diastolic * 0.3)
-               } : 
-               (bpFiltered.systolic > 0 ? bpFiltered : bpRaw); // Otherwise take most plausible
+               } : bpFiltered;
     
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
     
-    // Calculate glucose with real data
-    const glucoseFiltered = this.glucoseProcessor.calculateGlucose(filteredPpgValues);
-    const glucoseRaw = this.glucoseProcessor.calculateGlucose(rawPpgValues);
-    // Cross-validate results
-    const glucose = Math.abs(glucoseFiltered - glucoseRaw) < 15 ?
-                   (glucoseFiltered * 0.6 + glucoseRaw * 0.4) : // Weighted if consistent
-                   (glucoseFiltered > 70 ? glucoseFiltered : glucoseRaw); // Otherwise most plausible
+    // Calculate glucose with real data only
+    const glucose = this.glucoseProcessor.calculateGlucose(optimizedSignal.optimizedValues);
+    const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    const glucoseConfidence = this.glucoseProcessor.getConfidence() * 1.2; // Boost confidence slightly
+    // Calculate lipids with real data only and adaptive processing
+    const lipids = this.lipidProcessor.calculateLipids(optimizedSignal.optimizedValues);
+    const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate lipids with real data and cross-validation
-    const lipidsFiltered = this.lipidProcessor.calculateLipids(filteredPpgValues);
-    const lipidsRaw = this.lipidProcessor.calculateLipids(rawPpgValues);
-    // Cross-validate results
-    const lipids = (Math.abs(lipidsFiltered.totalCholesterol - lipidsRaw.totalCholesterol) < 15) ?
-                  { // Weighted average if consistent
-                    totalCholesterol: lipidsFiltered.totalCholesterol * 0.6 + lipidsRaw.totalCholesterol * 0.4,
-                    triglycerides: lipidsFiltered.triglycerides * 0.6 + lipidsRaw.triglycerides * 0.4
-                  } :
-                  (lipidsFiltered.totalCholesterol > 150 ? lipidsFiltered : lipidsRaw);
-                  
-    const lipidsConfidence = this.lipidProcessor.getConfidence() * 1.2; // Boost confidence slightly
-    
-    // Calculate overall confidence based on real signal
+    // Calculate overall confidence with feedback optimization
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
       glucoseConfidence,
-      lipidsConfidence
+      lipidsConfidence,
+      optimizedSignal.optimizationQuality
     );
 
-    // More relaxed thresholds for showing results
-    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence * 1.2) ? glucose : 0;
-    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence * 1.2) ? lipids : {
+    // Only show values if confidence exceeds threshold
+    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
+    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? lipids : {
       totalCholesterol: 0,
       triglycerides: 0
     };
 
-    if (this.processingCount % 10 === 0 || Date.now() - this.lastProcessTime > 1000) {
-      this.lastProcessTime = Date.now();
-      console.log("VitalSignsProcessor: Resultados de mediciones REALES", {
+    // Provide feedback to the optimizer system
+    this.feedbackOptimizer.provideFeedback({
+      spo2: {
+        value: spo2,
+        consistency: Math.abs(spo2Filtered - spo2Raw) < 3 ? 'high' : 'medium'
+      },
+      bloodPressure: {
+        value: bp,
+        consistency: (Math.abs(bpFiltered.systolic - bpRaw.systolic) < 10) ? 'high' : 'medium'
+      },
+      signalQuality: avgQuality,
+      timestamp: Date.now()
+    });
+
+    if (this.processingCount % 30 === 0) {
+      console.log("VitalSignsProcessor: Results with confidence", {
         spo2,
-        spo2Filtered,
-        spo2Raw,
         pressure,
-        bpFiltered: `${bpFiltered.systolic}/${bpFiltered.diastolic}`,
-        bpRaw: `${bpRaw.systolic}/${bpRaw.diastolic}`,
         arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
         glucose: finalGlucose,
-        glucoseFiltered,
-        glucoseRaw,
-        lipids: finalLipids,
-        lipidsFiltered,
-        lipidsRaw,
-        signalAmplitude: amplitude,
-        confidence: overallConfidence,
-        directBufferSize: this.directPpgBuffer.length,
-        filteredBufferSize: filteredPpgValues.length,
-        rawBufferSize: rawPpgValues.length
+        glucoseConfidence,
+        lipidsConfidence,
+        signalQuality: avgQuality,
+        optimizationQuality: optimizedSignal.optimizationQuality,
+        confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold(),
+        fingerDetected
       });
     }
 
-    // Prepare result with all metrics from REAL measurements
+    // Prepare result with all metrics
     return ResultFactory.createResult(
       spo2,
       pressure,
@@ -249,7 +249,7 @@ export class VitalSignsProcessor {
       arrhythmiaResult.lastArrhythmiaData
     );
   }
-
+  
   /**
    * Reset the processor to ensure a clean state
    * No reference values or simulations
@@ -261,8 +261,9 @@ export class VitalSignsProcessor {
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
+    this.feedbackOptimizer.reset();
     this.directPpgBuffer = [];
-    console.log("VitalSignsProcessor: Reset completo - todos los procesadores reiniciados");
+    console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null; // Always return null to ensure measurements start from zero
   }
   
@@ -274,21 +275,22 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Get the last valid results - no caching to ensure real measurements
+   * Get the last valid results - always returns null
+   * Forces fresh measurements without reference values
    */
   public getLastValidResults(): VitalSignsResult | null {
-    return null;
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
-   * Completely reset the processor for fresh measurements
+   * Completely reset the processor
+   * Ensures fresh start with no data carryover
    */
   public fullReset(): void {
     this.reset();
     this.processingCount = 0;
-    this.lastRawValue = 0;
-    this.directPpgBuffer = [];
-    console.log("VitalSignsProcessor: Reset completo - preparado para nuevas mediciones reales");
+    this.lastProcessTime = Date.now();
+    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }
 
