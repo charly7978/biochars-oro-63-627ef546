@@ -1,4 +1,3 @@
-
 /**
  * Error detection and handling utilities
  */
@@ -16,100 +15,24 @@ interface ErrorEntry {
 // Error tracking
 const errorCounts: number[] = [];
 const errorLog: ErrorEntry[] = [];
-const categoryErrorCounts: Record<string, { count: number; lastTime: number }> = {};
-let abnormalStateDetected = false;
-let isRecoveryMode = false;
-let errorRate = 0;
-
-// Performance tracking
-interface PerformanceEntry {
-  timestamp: number;
-  fps: number | null;
-  memory: number | null;
-}
-const recentPerformance: PerformanceEntry[] = [];
-
-export interface ErrorDetectionStatus {
-  isRecoveryMode: boolean;
-  errorRate: number;
-  abnormalStateDetected: boolean;
-  categories: Record<string, { count: number; lastTime: number }>;
-  recentPerformance: PerformanceEntry[];
-}
-
-/**
- * Get current error detection status
- */
-export function getErrorDetectionStatus(): ErrorDetectionStatus {
-  return {
-    isRecoveryMode,
-    errorRate,
-    abnormalStateDetected,
-    categories: {...categoryErrorCounts},
-    recentPerformance: [...recentPerformance]
-  };
-}
-
-/**
- * Reset error metrics
- */
-export function resetErrorMetrics(): void {
-  errorCounts.length = 0;
-  errorLog.length = 0;
-  Object.keys(categoryErrorCounts).forEach(key => {
-    categoryErrorCounts[key] = { count: 0, lastTime: 0 };
-  });
-  abnormalStateDetected = false;
-  isRecoveryMode = false;
-  errorRate = 0;
-  recentPerformance.length = 0;
-}
-
-/**
- * Log a successful operation
- */
-export function logSuccess(operation: string): void {
-  // Update error rate calculation
-  const now = Date.now();
-  const total = errorCounts.length + 1; // +1 for this success
-  errorRate = errorCounts.length / total;
-}
 
 /**
  * Log an error and track its frequency
  */
-export function logError(
-  category: string, 
-  operation: string, 
-  error: any, 
-  isCritical: boolean = false
-): void {
+export function logError(message: string) {
   const now = Date.now();
   errorCounts.push(now);
-  errorLog.push({ timestamp: now, message: `${category}/${operation}: ${error}` });
-  
-  // Track category errors
-  if (!categoryErrorCounts[category]) {
-    categoryErrorCounts[category] = { count: 0, lastTime: 0 };
-  }
-  categoryErrorCounts[category].count++;
-  categoryErrorCounts[category].lastTime = now;
+  errorLog.push({ timestamp: now, message });
   
   // Remove old errors
   while (errorCounts.length > 0 && now - errorCounts[0] > ERROR_RESET_INTERVAL) {
     errorCounts.shift();
   }
   
-  // Update error rate calculation
-  const total = errorCounts.length + 1; // +1 to avoid division by zero
-  errorRate = errorCounts.length / total;
-  
   // Check if error limit has been reached
-  if (errorCounts.length > MAX_ERROR_LIMIT || isCritical) {
-    const errorMessage = `${category} errors detected. System may be unstable. Last error: ${operation}`;
+  if (errorCounts.length > MAX_ERROR_LIMIT) {
+    const errorMessage = `Too many errors detected. System may be unstable. Last error: ${message}`;
     console.error(errorMessage);
-    
-    abnormalStateDetected = true;
     
     // Show toast notification
     toast({
@@ -118,10 +41,8 @@ export function logError(
       variant: "destructive"
     });
     
-    // Enter recovery mode if too many errors
-    if (errorCounts.length > MAX_ERROR_LIMIT * 2) {
-      isRecoveryMode = true;
-    }
+    // Optionally, trigger a system reset or fallback mechanism
+    // resetSystem();
   }
 }
 
@@ -203,7 +124,7 @@ export function checkSignalValue(value: number) {
       toast({
         title: "Signal Processing Error",
         description: message,
-        variant: "destructive"
+        variant: "destructive" // Changed from "warning" to "destructive"
       });
       
       invalidSignalCount = 0; // Reset counter
@@ -234,7 +155,7 @@ export function checkSignalQuality(variance: number) {
       toast({
         title: "Warning",
         description: "Signal quality is low",
-        variant: "default"
+        variant: "default" // Changed from "warning" to "default"
       });
       
       lowQualityCount = 0; // Reset counter
@@ -255,12 +176,8 @@ let memoryCheckInterval: any;
  */
 export function startMemoryMonitoring() {
   memoryCheckInterval = setInterval(() => {
-    // Check if window.performance.memory is available (Chrome only)
-    if (typeof window !== 'undefined' && 
-        window.performance && 
-        (window.performance as any).memory) {
-      
-      const memoryUsage = (window.performance as any).memory.usedJSHeapSize / (1024 * 1024); // in MB
+    if (typeof window !== 'undefined' && window.performance && window.performance.memory) {
+      const memoryUsage = window.performance.memory.usedJSHeapSize / (1024 * 1024); // in MB
       
       if (memoryUsage > MEMORY_USAGE_THRESHOLD) {
         const message = `Excessive memory usage detected: ${memoryUsage.toFixed(2)} MB`;
@@ -271,6 +188,9 @@ export function startMemoryMonitoring() {
           description: message,
           variant: "destructive"
         });
+        
+        // Optionally, trigger garbage collection or reduce memory usage
+        // collectGarbage();
       }
     }
   }, 5000); // Check every 5 seconds

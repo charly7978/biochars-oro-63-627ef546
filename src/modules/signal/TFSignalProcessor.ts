@@ -32,9 +32,7 @@ export class TFSignalProcessor {
     stability: number;
     periodicity: number;
   }> = [];
-  private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE: number = 100;
-
+  
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
@@ -245,7 +243,23 @@ export class TFSignalProcessor {
           this.signalBuffer.shift();
         }
         
-        this.updateSignalHistory(processed);
+        // Calculate signal quality metrics
+        const qualityMetrics = calculateSignalQuality(this.signalBuffer);
+        this.signalQualityScore = qualityMetrics.overall;
+        
+        // Store quality history
+        this.signalQualityHistory.push({
+          timestamp: now,
+          quality: qualityMetrics.overall,
+          noise: qualityMetrics.noise,
+          stability: qualityMetrics.stability,
+          periodicity: qualityMetrics.periodicity
+        });
+        
+        // Limit history size
+        if (this.signalQualityHistory.length > 100) {
+          this.signalQualityHistory.shift();
+        }
         
         // Detect finger presence based on signal characteristics
         const isFingerDetected = this.signalQualityScore > 40 && 
@@ -560,30 +574,5 @@ export class TFSignalProcessor {
       recoveryTime: this.recoveryMode ? Date.now() - this.recoveryStartTime : 0,
       qualityHistory: this.signalQualityHistory.slice(-5) // Just the most recent entries
     };
-  }
-
-  private updateSignalHistory(ppgValue: number): void {
-    this.signalHistory.push(ppgValue);
-    if (this.signalHistory.length > this.HISTORY_SIZE) {
-      this.signalHistory.shift();
-    }
-
-    // Calculate signal quality metrics
-    const qualityMetrics = calculateSignalQuality(this.signalBuffer);
-    this.signalQualityScore = qualityMetrics.overall;
-    
-    // Store quality history
-    this.signalQualityHistory.push({
-      timestamp: Date.now(),
-      quality: qualityMetrics.overall,
-      noise: qualityMetrics.noise,
-      stability: qualityMetrics.stability,
-      periodicity: qualityMetrics.periodicity
-    });
-    
-    // Limit history size
-    if (this.signalQualityHistory.length > 100) {
-      this.signalQualityHistory.shift();
-    }
   }
 }

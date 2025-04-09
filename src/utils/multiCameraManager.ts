@@ -1,10 +1,9 @@
-
 import { logSignalProcessing, LogLevel } from './signalLogging';
 
 interface CameraSetting {
-  width: number | { ideal: number };
-  height: number | { ideal: number };
-  frameRate: number | { ideal: number };
+  width: number;
+  height: number;
+  frameRate: number;
   facingMode: 'user' | 'environment';
 }
 
@@ -79,9 +78,9 @@ export class MultiCameraManager {
       
       // Fallback to any available camera
       const settings: CameraSetting = {
-        width: { ideal: preferredWidth },
-        height: { ideal: preferredHeight },
-        frameRate: { ideal: preferredFrameRate },
+        width: preferredWidth,
+        height: preferredHeight,
+        frameRate: preferredFrameRate,
         facingMode: preferredFacingMode
       };
       
