@@ -1,202 +1,227 @@
-
 import { useCallback, useRef } from 'react';
-import { HeartBeatResult } from './types';
-import { HeartBeatConfig } from '../../modules/heart-beat/config';
-import { 
-  checkWeakSignal, 
-  shouldProcessMeasurement, 
-  createWeakSignalResult, 
-  handlePeakDetection,
-  updateLastValidBpm,
-  processLowConfidenceResult
-} from './signal-processing';
 
-// Device capability detection for adaptive refresh
-const detectDeviceCapabilities = (): { isLowPower: boolean, refreshInterval: number } => {
-  // Check for low-end device indicators
-  const isLowMemory = (navigator as any).deviceMemory !== undefined && (navigator as any).deviceMemory < 4;
-  const isSlowCPU = (navigator as any).hardwareConcurrency !== undefined && (navigator as any).hardwareConcurrency < 4;
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  const isLowPower = (isLowMemory || isSlowCPU) && isMobile;
-  
-  // Set appropriate refresh interval
-  const refreshInterval = isLowPower ? 50 : 30; // 20Hz for low-power devices, 33Hz for standard
-  
-  return { isLowPower, refreshInterval };
-};
+interface SignalProcessingResult {
+  bpm: number;
+  confidence: number;
+  isPeak: boolean;
+  rrData: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
+  isArrhythmia?: boolean;
+  arrhythmiaCount: number;
+  arrhythmiaSegment?: {
+    startTime: number;
+    endTime: number | null;
+  };
+}
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
-  const consistentBeatsCountRef = useRef<number>(0);
+  const previousPeakTimesRef = useRef<number[]>([]);
   const lastValidBpmRef = useRef<number>(0);
-  const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
-  
-  // Simple reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
   
-  // Web Worker reference
-  const workerRef = useRef<Worker | null>(null);
-  const isWorkerAvailableRef = useRef<boolean>(true);
-  const deviceCapabilitiesRef = useRef(detectDeviceCapabilities());
+  // Constants
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 10;
+  const MAX_PEAK_TIMES = 20;
+  const MIN_PEAK_INTERVAL_MS = 300;
+  const MAX_PEAK_INTERVAL_MS = 1500;
   
-  // Initialize worker if supported
-  const initWorker = useCallback(() => {
-    if (typeof Worker === 'undefined') {
-      console.warn('Web Workers not supported in this browser, falling back to main thread processing');
-      isWorkerAvailableRef.current = false;
-      return;
-    }
-    
-    try {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-      }
-      
-      workerRef.current = new Worker(new URL('../../workers/signal-processor.worker.ts', import.meta.url), { type: 'module' });
-      
-      workerRef.current.onmessage = (event) => {
-        // Handle worker messages here if needed
-        if (event.data.type === 'ERROR') {
-          console.error('Worker error:', event.data.error);
-          isWorkerAvailableRef.current = false; // Fall back to main thread on error
-        }
-      };
-      
-      workerRef.current.onerror = (error) => {
-        console.error('Worker initialization error:', error);
-        isWorkerAvailableRef.current = false; // Fall back to main thread on error
-      };
-      
-      console.log('Signal processor worker initialized');
-    } catch (error) {
-      console.error('Failed to initialize worker:', error);
-      isWorkerAvailableRef.current = false;
-    }
-  }, []);
+  // Recovery state
+  const signalRecoveryTimeoutRef = useRef<number | null>(null);
+  const lastRRDataRef = useRef<{intervals: number[], lastPeakTime: number | null}>({
+    intervals: [],
+    lastPeakTime: null
+  });
 
+  // Arrhythmia segment tracking
+  const currentArrhythmiaSegmentRef = useRef<{startTime: number, endTime: number | null} | null>(null);
+  const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
+  
+  /**
+   * Process a real PPG signal value
+   */
   const processSignal = useCallback((
     value: number,
     currentBPM: number,
     confidence: number,
     processor: any,
-    requestImmediateBeep: (value: number) => boolean,
+    requestBeep: (value: number) => boolean,
     isMonitoringRef: React.MutableRefObject<boolean>,
     lastRRIntervalsRef: React.MutableRefObject<number[]>,
     currentBeatIsArrhythmiaRef: React.MutableRefObject<boolean>
-  ): HeartBeatResult => {
+  ): SignalProcessingResult => {
     if (!processor) {
-      return createWeakSignalResult();
-    }
-
-    try {
-      calibrationCounterRef.current++;
-      
-      // Check for weak signal
-      const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
-        value, 
-        consecutiveWeakSignalsRef.current, 
-        {
-          lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
-          maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
-        }
-      );
-      
-      consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
-      
-      if (isWeakSignal) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
-      }
-      
-      // Only process signals with sufficient amplitude
-      if (!shouldProcessMeasurement(value)) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter());
-      }
-      
-      // Process real signal
-      const result = processor.processSignal(value);
-      const rrData = processor.getRRIntervals();
-      
-      if (rrData && rrData.intervals.length > 0) {
-        lastRRIntervalsRef.current = [...rrData.intervals];
-      }
-      
-      // Handle peak detection
-      handlePeakDetection(
-        result, 
-        lastPeakTimeRef, 
-        requestImmediateBeep, 
-        isMonitoringRef,
-        value
-      );
-      
-      // Update last valid BPM if it's reasonable
-      updateLastValidBpm(result, lastValidBpmRef);
-      
-      lastSignalQualityRef.current = result.confidence;
-
-      // Process result
-      return processLowConfidenceResult(
-        result, 
-        currentBPM, 
-        processor.getArrhythmiaCounter(),
-        rrData
-      );
-    } catch (error) {
-      console.error('useHeartBeatProcessor: Error processing signal', error);
       return {
-        bpm: currentBPM,
+        bpm: 0,
         confidence: 0,
         isPeak: false,
-        arrhythmiaCount: 0,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+        rrData: { intervals: [], lastPeakTime: null },
+        arrhythmiaCount: 0
       };
     }
+    
+    // Process the signal with the processor
+    const result = processor.processSignal(value);
+    
+    if (result.confidence < 0.1) {
+      consecutiveWeakSignalsRef.current++;
+      
+      // If too many weak signals, gradually reduce BPM rather than dropping to 0
+      if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK_SIGNALS && lastValidBpmRef.current > 0) {
+        result.bpm = Math.max(0, lastValidBpmRef.current - 1);
+        result.confidence = Math.max(0.1, confidence - 0.05);
+      }
+    } else {
+      consecutiveWeakSignalsRef.current = 0;
+      
+      // Store the BPM if it's valid
+      if (result.bpm > 40 && result.bpm < 200 && result.confidence > 0.4) {
+        lastValidBpmRef.current = result.bpm;
+        lastSignalQualityRef.current = result.confidence;
+      }
+    }
+    
+    // Handle peaks and RR intervals with improved persistence
+    if (result.isPeak && isMonitoringRef.current) {
+      const now = Date.now();
+      
+      // Check if this peak is within physiological limits of the last one
+      let validPeak = true;
+      if (lastPeakTimeRef.current !== null) {
+        const interval = now - lastPeakTimeRef.current;
+        validPeak = interval >= MIN_PEAK_INTERVAL_MS && interval <= MAX_PEAK_INTERVAL_MS;
+      }
+      
+      if (validPeak) {
+        // If we're in beep mode and confidence is good, request a beep
+        if (result.confidence > 0.4) {
+          requestBeep(value);
+        }
+        
+        // Update RR intervals for arrhythmia detection
+        const prevPeakTime = lastPeakTimeRef.current;
+        lastPeakTimeRef.current = now;
+        
+        // Save previous peak time for interval calculation
+        previousPeakTimesRef.current.push(now);
+        if (previousPeakTimesRef.current.length > MAX_PEAK_TIMES) {
+          previousPeakTimesRef.current.shift();
+        }
+        
+        // Calculate intervals between peaks
+        if (prevPeakTime) {
+          const interval = now - prevPeakTime;
+          
+          // Only use physiologically plausible intervals
+          if (interval >= MIN_PEAK_INTERVAL_MS && interval <= MAX_PEAK_INTERVAL_MS) {
+            // Update RR intervals with the new interval
+            const newIntervals = [...lastRRIntervalsRef.current, interval];
+            
+            // Keep only the last 20 intervals
+            if (newIntervals.length > 20) {
+              lastRRIntervalsRef.current = newIntervals.slice(-20);
+            } else {
+              lastRRIntervalsRef.current = newIntervals;
+            }
+            
+            // Store last RR data for recovery
+            lastRRDataRef.current = {
+              intervals: [...lastRRIntervalsRef.current],
+              lastPeakTime: lastPeakTimeRef.current
+            };
+          }
+        }
+      }
+    }
+    
+    // Arrhythmia segment management
+    let arrhythmiaSegment = null;
+    if (currentBeatIsArrhythmiaRef.current) {
+      // If this is the start of a new arrhythmia
+      if (currentArrhythmiaSegmentRef.current === null) {
+        const now = Date.now();
+        currentArrhythmiaSegmentRef.current = {
+          startTime: now,
+          endTime: null
+        };
+        
+        // Add to segments list
+        arrhythmiaSegmentsRef.current.push(currentArrhythmiaSegmentRef.current);
+      }
+      
+      arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
+    } else if (currentArrhythmiaSegmentRef.current !== null) {
+      // End of arrhythmia segment
+      currentArrhythmiaSegmentRef.current.endTime = Date.now();
+      arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
+      currentArrhythmiaSegmentRef.current = null;
+    }
+    
+    // Keep only recent arrhythmia segments (last 5)
+    if (arrhythmiaSegmentsRef.current.length > 5) {
+      arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.slice(-5);
+    }
+    
+    // Create RR data to return
+    const rrData = {
+      intervals: [...lastRRIntervalsRef.current],
+      lastPeakTime: lastPeakTimeRef.current
+    };
+    
+    return {
+      bpm: result.bpm,
+      confidence: result.confidence,
+      isPeak: result.isPeak,
+      rrData,
+      isArrhythmia: currentBeatIsArrhythmiaRef.current,
+      arrhythmiaCount: 0, // This will be set by the ArrhythmiaDetectionService
+      arrhythmiaSegment
+    };
   }, []);
-
+  
+  /**
+   * Reset signal processing state
+   */
   const reset = useCallback(() => {
     lastPeakTimeRef.current = null;
-    consistentBeatsCountRef.current = 0;
+    previousPeakTimesRef.current = [];
     lastValidBpmRef.current = 0;
-    calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
     
-    // Reset worker if available
-    if (workerRef.current && isWorkerAvailableRef.current) {
-      workerRef.current.postMessage({ type: 'RESET' });
+    // Clear any recovery timeout
+    if (signalRecoveryTimeoutRef.current) {
+      clearTimeout(signalRecoveryTimeoutRef.current);
+      signalRecoveryTimeoutRef.current = null;
     }
     
-    // Re-detect device capabilities on reset
-    deviceCapabilitiesRef.current = detectDeviceCapabilities();
-  }, []);
-
-  // Initialize worker on first load
-  useCallback(() => {
-    initWorker();
-    
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
+    // Reset last RR data
+    lastRRDataRef.current = {
+      intervals: [],
+      lastPeakTime: null
     };
-  }, [initWorker]);
-
+    
+    // Reset arrhythmia segments
+    currentArrhythmiaSegmentRef.current = null;
+    arrhythmiaSegmentsRef.current = [];
+    
+    console.log("SignalProcessor: Reset completed");
+  }, []);
+  
   return {
     processSignal,
     reset,
     lastPeakTimeRef,
+    previousPeakTimesRef,
     lastValidBpmRef,
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS,
-    deviceCapabilities: deviceCapabilitiesRef.current
+    lastRRDataRef,
+    arrhythmiaSegmentsRef,
+    currentArrhythmiaSegmentRef
   };
 }

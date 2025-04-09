@@ -7,6 +7,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
+import ShareButton from "@/components/ShareButton";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 
 const Index = () => {
@@ -291,12 +292,15 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
-          <div className="px-4 py-2 flex justify-around items-center bg-black/20">
+          <div className="px-4 py-2 flex justify-between items-center bg-black/20">
             <div className="text-white text-lg">
               Calidad: {signalQuality}
             </div>
-            <div className="text-white text-lg">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+            <div className="flex items-center gap-2">
+              <ShareButton />
+              <div className="text-white text-lg">
+                {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+              </div>
             </div>
           </div>
 
@@ -308,8 +312,6 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              arrhythmiaWindows={vitalSigns.arrhythmiaWindows}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
