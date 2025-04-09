@@ -36,21 +36,22 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic
+  // Enhanced peak detection logic
   const thresholdCheck = normalizedValue > config.signalThreshold;
   const derivativeCheck = derivative < config.derivativeThreshold;
-  const baselineCheck = lastValue > baseline * 0.98;
+  // Relaxed baseline check for better sensitivity
+  const baselineCheck = lastValue > baseline * 0.85;
   
   const isPeak = derivativeCheck && thresholdCheck && baselineCheck;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.5), 0),
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.7), 0),
     1
   );
 
@@ -88,12 +89,12 @@ export function confirmPeak(
   let updatedLastConfirmedPeak = lastConfirmedPeak;
 
   // Only proceed with peak confirmation if needed
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 0.85) { // Lower confidence requirement
     // Need enough samples in buffer for confirmation
-    if (updatedBuffer.length >= 3) {
+    if (updatedBuffer.length >= 2) { // Reduced from 3 for faster confirmation
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values
+      // Confirm peak if followed by decreasing values - relaxed conditions
       const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
       const goingDown2 = len >= 3 && updatedBuffer[len - 2] < updatedBuffer[len - 3];
 

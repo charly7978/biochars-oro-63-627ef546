@@ -35,10 +35,21 @@ export function checkSignalQuality(
   // Update counter based on actual signal strength
   let updatedCount = isCurrentlyWeak 
     ? consecutiveWeakSignalsCount + 1 
-    : 0;
+    : Math.max(0, consecutiveWeakSignalsCount - 2); // Decrease counter faster for good signals
   
   // Determine if signal is weak based on consecutive measurements
   const isWeak = updatedCount >= maxCount;
+  
+  // Log for debugging if signal status changes
+  if ((isWeak && updatedCount === maxCount) || (!isWeak && updatedCount === 0)) {
+    console.log("Signal quality status change:", {
+      isWeak,
+      value: Math.abs(value),
+      threshold,
+      updatedCount,
+      maxCount
+    });
+  }
   
   return {
     isWeakSignal: isWeak,
@@ -89,16 +100,32 @@ export function isFingerDetectedByPattern(
     }
   }
   
-  // Physiological heart rate should have 2-5 crossings in this window
-  const hasPhysiologicalPattern = crossings >= 2 && crossings <= 5;
+  // Check amplitude - a finger should produce a reasonable amplitude
+  const minValue = Math.min(...recentValues.map(point => point.value));
+  const maxValue = Math.max(...recentValues.map(point => point.value));
+  const amplitude = maxValue - minValue;
+  const hasReasonableAmplitude = amplitude > 0.02; // Lowered threshold for sensitivity
   
-  // Update pattern detection count
+  // Physiological heart rate should have 2-5 crossings in this window
+  const hasPhysiologicalPattern = (crossings >= 1 && crossings <= 6) && hasReasonableAmplitude;
+  
+  // Update pattern detection count with faster detection
   let newPatternCount = hasPhysiologicalPattern 
     ? currentPatternCount + 1 
     : Math.max(0, currentPatternCount - 1);
   
-  // Only detect finger after consistent pattern detection
-  const isDetected = newPatternCount >= 3;
+  // Only detect finger after consistent pattern detection (reduced requirement)
+  const isDetected = newPatternCount >= 2; // Reduced from 3 for faster detection
+  
+  // Log status changes
+  if ((isDetected && newPatternCount === 2) || (!isDetected && newPatternCount === 0 && currentPatternCount > 0)) {
+    console.log("Finger detection status change:", {
+      isDetected,
+      crossings,
+      amplitude,
+      newPatternCount
+    });
+  }
   
   return {
     isFingerDetected: isDetected,
