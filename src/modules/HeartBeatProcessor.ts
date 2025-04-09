@@ -190,4 +190,14 @@ export class HeartBeatProcessor {
     this.weakSignalsCount = 0;
     console.log("HeartBeatProcessor: Estados de detección reiniciados");
   }
+  
+  /**
+   * Get RR intervals for heart rate analysis
+   */
+  public getRRIntervals(): { intervals: number[], lastPeakTime: number | null } {
+    return {
+      intervals: this.beatProcessor.getRRIntervals(),
+      lastPeakTime: this.beatProcessor.getLastPeakTime()
+    };
+  }
 }

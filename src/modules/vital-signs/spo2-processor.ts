@@ -1,9 +1,22 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { SpO2Processor as BaseSpO2Processor } from './processors/spo2-processor';
+/**
+ * Base processor class for SpO2 calculations
+ */
+export class BaseSpO2Processor {
+  protected lastValidSpO2: number = 0;
+  
+  constructor() {}
+  
+  /**
+   * Reset the processor
+   */
+  public reset(): void {
+    this.lastValidSpO2 = 0;
+  }
+}
 
 // Tipo para metadata de calibración
 type CalibrationMetadata = {
@@ -118,6 +131,22 @@ export class SpO2Processor extends BaseSpO2Processor {
     }
     
     return this.lastValidSpO2;
+  }
+  
+  /**
+   * Calculates SpO2 from PPG values
+   */
+  public calculateSpO2(ppgValues: number[]): number {
+    if (ppgValues.length < this.MIN_SAMPLES) {
+      return 0;
+    }
+    
+    // Process the data with existing methods
+    for (const value of ppgValues) {
+      this.processPPG(value, true);
+    }
+    
+    return this.lastValidSpO2 || 0;
   }
   
   /**
