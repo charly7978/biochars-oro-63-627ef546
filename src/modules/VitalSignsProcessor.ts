@@ -3,10 +3,8 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
-import { VitalSignsResult } from './vital-signs/types/vital-signs-result';
+import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 import { checkSignalQuality } from './heart-beat/signal-quality';
-import { RRIntervalData } from '../hooks/heart-beat/types';
 
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
@@ -57,7 +55,7 @@ export class VitalSignsProcessor {
    */
   public processSignal(
     ppgValue: number,
-    rrData?: RRIntervalData
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     // Apply enhanced verification
     const now = Date.now();
@@ -133,8 +131,7 @@ export class VitalSignsProcessor {
     
     // Only process verified and stable signals or within guard period
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
-      const result = this.processor.processSignal(ppgValue, rrData);
-      return result;
+      return this.processor.processSignal(ppgValue, rrData);
     } else {
       // Return empty result without processing when signal is uncertain
       return {
