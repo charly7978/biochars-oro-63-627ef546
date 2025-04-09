@@ -3,44 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { initializeTensorFlow, disposeTensors, getMemoryUsage } from '../utils/tfModelInitializer';
 import { toast } from './use-toast';
-
-// Create simple logging functions since the imports were causing errors
-const LogLevel = {
-  INFO: 'info',
-  ERROR: 'error',
-  WARN: 'warn'
-};
-
-const logSignalProcessing = (level: string, component: string, message: string, data?: any) => {
-  const logPrefix = `[${component}] `;
-  switch (level) {
-    case LogLevel.INFO:
-      console.log(logPrefix + message, data);
-      break;
-    case LogLevel.ERROR:
-      console.error(logPrefix + message, data);
-      break;
-    case LogLevel.WARN:
-      console.warn(logPrefix + message, data);
-      break;
-    default:
-      console.log(logPrefix + message, data);
-  }
-};
-
-const trackPerformanceAsync = async <T>(category: string, operation: string, fn: () => Promise<T>): Promise<T> => {
-  const start = performance.now();
-  try {
-    const result = await fn();
-    const duration = performance.now() - start;
-    logSignalProcessing(LogLevel.INFO, category, `${operation} completed in ${duration.toFixed(2)}ms`);
-    return result;
-  } catch (error) {
-    const duration = performance.now() - start;
-    logSignalProcessing(LogLevel.ERROR, category, `${operation} failed after ${duration.toFixed(2)}ms`, { error });
-    throw error;
-  }
-};
+import { logSignalProcessing, LogLevel, trackPerformanceAsync } from '../utils/signalLogging';
 
 interface UseTensorFlowIntegrationReturn {
   isTensorFlowReady: boolean;
@@ -83,7 +46,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
         logSignalProcessing(
           LogLevel.INFO, 
           'TensorFlow', 
-          `Initializing TensorFlow.js (attempt ${initializationAttemptsRef.current})`
+          `Initializing TensorFlow.js (attempt ${initializationAttemptsRef.current})`,
+          { timestamp: new Date().toISOString() }
         );
         
         // Track initialization performance
@@ -112,7 +76,13 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
           logSignalProcessing(
             LogLevel.INFO, 
             'TensorFlow', 
-            'TensorFlow.js initialized successfully'
+            'TensorFlow.js initialized successfully', 
+            {
+              version,
+              backend,
+              webgl: hasWebGL,
+              webgpu: hasWebGPU
+            }
           );
           
           // Initialize memory monitoring
@@ -139,7 +109,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
         logSignalProcessing(
           LogLevel.ERROR,
           'TensorFlow',
-          'Error during TensorFlow initialization'
+          'Error during TensorFlow initialization',
+          { error }
         );
         
         setIsTensorFlowReady(false);
@@ -168,7 +139,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
         logSignalProcessing(
           LogLevel.WARN, 
           'TensorFlow', 
-          'Error disposing TensorFlow resources on unmount'
+          'Error disposing TensorFlow resources on unmount',
+          { error }
         );
       }
     };
@@ -195,7 +167,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
             logSignalProcessing(
               LogLevel.WARN,
               'TensorFlow',
-              'High memory usage detected'
+              'High memory usage detected',
+              { tensors: usage.numTensors, megabytes: usage.numMB.toFixed(2) }
             );
             
             // Automatic cleanup if critically high
@@ -203,7 +176,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
               logSignalProcessing(
                 LogLevel.WARN,
                 'TensorFlow',
-                'Critical memory usage - performing emergency cleanup'
+                'Critical memory usage - performing emergency cleanup',
+                { tensors: usage.numTensors, megabytes: usage.numMB.toFixed(2) }
               );
               
               disposeTensors();
@@ -219,7 +193,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
           logSignalProcessing(
             LogLevel.WARN, 
             'TensorFlow',
-            'Error checking TensorFlow memory'
+            'Error checking TensorFlow memory',
+            { error }
           );
         }
       }
@@ -270,10 +245,9 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
         logSignalProcessing(
           LogLevel.INFO,
           'TensorFlow',
-          'TensorFlow.js reinitialized successfully'
+          'TensorFlow.js reinitialized successfully',
+          { backend: tf.getBackend() }
         );
-        
-        return true;
       } else {
         setIsTensorFlowReady(false);
         
@@ -288,14 +262,16 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
           'TensorFlow',
           'TensorFlow.js reinitialization failed'
         );
-        
-        return false;
       }
+      
+      setIsInitializing(false);
+      return success;
     } catch (error) {
       logSignalProcessing(
         LogLevel.ERROR,
         'TensorFlow',
-        'Error during TensorFlow reinitialization'
+        'Error during TensorFlow reinitialization',
+        { error }
       );
       
       setIsTensorFlowReady(false);
@@ -308,8 +284,6 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
       });
       
       return false;
-    } finally {
-      setIsInitializing(false);
     }
   }, [startMemoryMonitoring]);
   
@@ -324,7 +298,8 @@ export function useTensorFlowIntegration(): UseTensorFlowIntegrationReturn {
       logSignalProcessing(
         LogLevel.ERROR,
         'TensorFlow',
-        'Error disposing TensorFlow resources'
+        'Error disposing TensorFlow resources',
+        { error }
       );
     }
   }, []);

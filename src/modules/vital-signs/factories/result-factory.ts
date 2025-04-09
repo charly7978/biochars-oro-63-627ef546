@@ -1,12 +1,18 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating standardized VitalSignsResult objects
+ * Factory for creating consistent VitalSignsResult objects
+ * All methods work with real data only, no simulation
  */
 export class ResultFactory {
   /**
-   * Create an empty result with default values
+   * Creates an empty result when there is no valid data
+   * Always returns zeros, no simulation
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
@@ -17,21 +23,27 @@ export class ResultFactory {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
+      },
+      confidence: {
+        glucose: 0,
+        lipids: 0,
+        overall: 0
       }
     };
   }
   
   /**
-   * Create a result with confidence values
+   * Creates a result with the given values
+   * Only for direct measurements
    */
   public static createResult(
     spo2: number,
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
-    lipids: { totalCholesterol: number, triglycerides: number },
-    confidence?: { glucose: number, lipids: number, overall: number },
-    lastArrhythmiaData?: any
+    lipids: { totalCholesterol: number; triglycerides: number },
+    confidence: { glucose: number; lipids: number; overall: number },
+    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
     return {
       spo2,
@@ -43,37 +55,5 @@ export class ResultFactory {
       lastArrhythmiaData
     };
   }
-  
-  /**
-   * Create a result from raw measurement data
-   */
-  public static createFromRawData(
-    spo2Value: number,
-    systolic: number,
-    diastolic: number,
-    arrhythmiaStatus: string,
-    glucoseValue: number,
-    cholesterol: number,
-    triglycerides: number,
-    confidence?: { glucose: number, lipids: number, overall: number },
-    lastArrhythmiaData?: any
-  ): VitalSignsResult {
-    // Format blood pressure
-    const pressure = systolic > 0 && diastolic > 0 ? 
-      `${systolic}/${diastolic}` : 
-      "--/--";
-    
-    return {
-      spo2: spo2Value,
-      pressure,
-      arrhythmiaStatus,
-      glucose: glucoseValue,
-      lipids: {
-        totalCholesterol: cholesterol,
-        triglycerides
-      },
-      confidence,
-      lastArrhythmiaData
-    };
-  }
 }
+
