@@ -1,5 +1,5 @@
 
-// This component doesn't show any toasts as per user's request
 export function Toaster() {
+  // Return null instead of rendering a toast
   return null;
 }

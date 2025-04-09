@@ -1,4 +1,3 @@
-
 /**
  * DependencyManager - Proactively manages and initializes critical system dependencies
  * to prevent "dependency not available" errors before they happen
@@ -7,7 +6,6 @@
 import { VitalSignsProcessor } from '../../modules/VitalSignsProcessor';
 import { logSignalProcessing, LogLevel } from '../../utils/signalLogging';
 import ErrorDefenseSystem, { ErrorCategory, ErrorSeverity } from './ErrorDefenseSystem';
-import TypeScriptValidator from './TypeScriptValidator';
 
 interface ManagedDependency {
   name: string;
@@ -18,55 +16,6 @@ interface ManagedDependency {
   errorMessage?: string;
 }
 
-// Code Guardian validation criteria
-interface ValidationRule {
-  name: string;
-  description: string;
-  check: (codebase: CodebaseState) => ValidationResult;
-}
-
-interface ValidationResult {
-  passed: boolean;
-  message: string;
-  severity: 'warning' | 'error' | 'critical';
-  affectedFiles?: string[];
-  name?: string;
-}
-
-// Representation of codebase state for validation
-interface CodebaseState {
-  components: Map<string, ComponentInfo>;
-  imports: Map<string, ImportInfo[]>;
-  dependencies: Map<string, DependencyInfo>;
-  duplications: DuplicationInfo[];
-}
-
-interface ComponentInfo {
-  name: string;
-  path: string;
-  imports: string[];
-  size: number;
-  complexity: number;
-}
-
-interface ImportInfo {
-  source: string;
-  target: string;
-  isUsed: boolean;
-}
-
-interface DependencyInfo {
-  name: string;
-  version: string;
-  isRequired: boolean;
-}
-
-interface DuplicationInfo {
-  pattern: string;
-  locations: string[];
-  severity: number;
-}
-
 class DependencyManager {
   private static instance: DependencyManager;
   private dependencies: Map<string, ManagedDependency> = new Map();
@@ -74,19 +23,8 @@ class DependencyManager {
   private readonly CHECK_INTERVAL = 5000; // 5 seconds
   private defensiveBackups: Record<string, () => any> = {};
   
-  // Code Guardian specific
-  private validationRules: ValidationRule[] = [];
-  private codebaseState: CodebaseState = {
-    components: new Map(),
-    imports: new Map(),
-    dependencies: new Map(),
-    duplications: []
-  };
-  private lastValidationResult: ValidationResult[] = [];
-  
   private constructor() {
     this.initializeDefensiveBackups();
-    this.initializeCodeGuardian();
     this.startProactiveInitialization();
     console.log('DependencyManager: Initialized and running proactive dependency management');
   }
@@ -99,155 +37,6 @@ class DependencyManager {
       DependencyManager.instance = new DependencyManager();
     }
     return DependencyManager.instance;
-  }
-  
-  /**
-   * Initialize Code Guardian with validation rules
-   */
-  private initializeCodeGuardian(): void {
-    // Add validation rules
-    this.validationRules = [
-      {
-        name: 'duplicate-components',
-        description: 'Detects duplicate component implementations',
-        check: (codebase) => {
-          const duplicateComponents = Array.from(codebase.components.values())
-            .filter(comp => codebase.duplications.some(dup => 
-              dup.locations.includes(comp.path) && dup.severity > 0.7));
-          
-          return {
-            passed: duplicateComponents.length === 0,
-            message: duplicateComponents.length > 0 
-              ? `Found ${duplicateComponents.length} potentially duplicate components` 
-              : 'No duplicate components detected',
-            severity: 'warning',
-            affectedFiles: duplicateComponents.map(c => c.path),
-            name: 'duplicate-components'
-          };
-        }
-      },
-      {
-        name: 'unused-imports',
-        description: 'Detects imports that are not used',
-        check: (codebase) => {
-          const unusedImports = Array.from(codebase.imports.values())
-            .flat()
-            .filter(imp => !imp.isUsed);
-          
-          return {
-            passed: unusedImports.length === 0,
-            message: unusedImports.length > 0 
-              ? `Found ${unusedImports.length} unused imports` 
-              : 'All imports are used correctly',
-            severity: 'warning',
-            affectedFiles: [...new Set(unusedImports.map(i => i.source))],
-            name: 'unused-imports'
-          };
-        }
-      },
-      {
-        name: 'oversized-components',
-        description: 'Detects components that are too large and should be split',
-        check: (codebase) => {
-          const largeComponents = Array.from(codebase.components.values())
-            .filter(comp => comp.size > 300 || comp.complexity > 15);
-          
-          return {
-            passed: largeComponents.length === 0,
-            message: largeComponents.length > 0 
-              ? `Found ${largeComponents.length} components that are too large (>300 lines)` 
-              : 'All components are appropriately sized',
-            severity: 'warning',
-            affectedFiles: largeComponents.map(c => c.path),
-            name: 'oversized-components'
-          };
-        }
-      },
-      {
-        name: 'circular-dependencies',
-        description: 'Detects circular dependencies that could cause issues',
-        check: (codebase) => {
-          // This is a simplified check - a real implementation would trace import graphs
-          const potentialCircular = [] as string[];
-          codebase.imports.forEach((imports, file) => {
-            imports.forEach(imp => {
-              const targetImports = codebase.imports.get(imp.target);
-              if (targetImports?.some(i => i.target === file)) {
-                potentialCircular.push(`${file} ↔ ${imp.target}`);
-              }
-            });
-          });
-          
-          return {
-            passed: potentialCircular.length === 0,
-            message: potentialCircular.length > 0
-              ? `Found ${potentialCircular.length} potential circular dependencies` 
-              : 'No circular dependencies detected',
-            severity: 'error',
-            affectedFiles: [...new Set(potentialCircular.flatMap(p => p.split(' ↔ ')))],
-            name: 'circular-dependencies'
-          };
-        }
-      }
-    ];
-    
-    console.log('DependencyManager: Code Guardian initialized with validation rules');
-  }
-  
-  /**
-   * Update codebase state from file system
-   * This would normally be called by an IDE extension that analyzes the files
-   */
-  public updateCodebaseState(newState: Partial<CodebaseState>): void {
-    this.codebaseState = { ...this.codebaseState, ...newState };
-    this.validateCodebase();
-  }
-  
-  /**
-   * Validate codebase against rules
-   */
-  public validateCodebase(): ValidationResult[] {
-    this.lastValidationResult = this.validationRules.map(rule => rule.check(this.codebaseState));
-    
-    // Log validation issues
-    const failures = this.lastValidationResult.filter(r => !r.passed);
-    if (failures.length > 0) {
-      logSignalProcessing(
-        LogLevel.WARN,
-        'CodeGuardian',
-        `Found ${failures.length} potential code issues`,
-        { issues: failures }
-      );
-      
-      // Report critical issues to the error system
-      const criticalIssues = failures.filter(f => f.severity === 'critical');
-      if (criticalIssues.length > 0) {
-        const errorSystem = ErrorDefenseSystem.getInstance();
-        criticalIssues.forEach(issue => {
-          errorSystem.reportError({
-            id: '',
-            timestamp: Date.now(),
-            category: ErrorCategory.RUNTIME,
-            severity: ErrorSeverity.HIGH,
-            message: `Code Guardian: ${issue.message}`,
-            source: 'CodeGuardian',
-            metadata: {
-              rule: issue.name || '',
-              affectedFiles: issue.affectedFiles
-            }
-          });
-        });
-      }
-    }
-    
-    return this.lastValidationResult;
-  }
-  
-  /**
-   * Get validation results for developer feedback
-   */
-  public getValidationResults(): ValidationResult[] {
-    return this.lastValidationResult;
   }
   
   /**
@@ -636,83 +425,6 @@ class DependencyManager {
     
     this.dependencies.clear();
     console.log('DependencyManager: Shutdown complete');
-  }
-
-  /**
-   * Register a fallback function for a specific dependency
-   */
-  public registerFallbacks(substitutes: Map<string, () => any>): void {
-    for (const [name, fallbackFn] of substitutes.entries()) {
-      this.defensiveBackups[name] = fallbackFn;
-      console.log(`Registered fallback for ${name}`);
-    }
-  }
-  
-  /**
-   * Validate code changes before they are committed
-   * This would be called by IDE extensions or pre-commit hooks
-   */
-  public validateCodeChanges(
-    changedFiles: string[], 
-    additions: Record<string, string[]>,
-    removals: Record<string, string[]>
-  ): ValidationResult[] {
-    // Update codebase state with changes
-    const tempState = { ...this.codebaseState };
-    
-    // Simulate applying the changes to get validation results
-    changedFiles.forEach(file => {
-      // Here we would update the codebase model with the changes
-      // This is a simplified version - a real implementation would parse the code
-      
-      if (additions[file]?.length > 0) {
-        // Check for potential duplications
-        const addedLines = additions[file].join('\n');
-        if (addedLines.length > 100) {
-          tempState.duplications.push({
-            pattern: addedLines.substring(0, 100),
-            locations: [file],
-            severity: 0.5 // Medium severity
-          });
-        }
-      }
-    });
-    
-    // Run validation on this temporary state
-    const results = this.validationRules.map(rule => rule.check(tempState));
-    
-    // Log validation pre-commit issues
-    const failures = results.filter(r => !r.passed);
-    if (failures.length > 0) {
-      logSignalProcessing(
-        LogLevel.WARN,
-        'CodeGuardian',
-        `Pre-commit validation found ${failures.length} potential issues`,
-        { issues: failures }
-      );
-    }
-    
-    return results;
-  }
-  
-  /**
-   * Check for potential TypeScript errors
-   * This would be integrated with the TypeScript compiler API
-   */
-  public validateTypeScript(code: string, filePath: string): ValidationResult[] {
-    // Use the TypeScriptValidator to validate the code
-    const validator = TypeScriptValidator.getInstance();
-    const validationResults = validator.validateCode(code, filePath);
-    
-    // Transform the TypeScriptValidator results to our ValidationResult format
-    return validationResults.map(result => ({
-      passed: result.passed,
-      message: result.message,
-      severity: result.severity,
-      affectedFiles: [filePath],
-      // Make sure we use the name property which exists, not description
-      rule: result.name || 'unknown-rule'
-    }));
   }
 }
 

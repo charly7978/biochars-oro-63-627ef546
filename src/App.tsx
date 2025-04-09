@@ -1,3 +1,4 @@
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -8,15 +9,24 @@ import DependencyMonitor from "./core/error-defense/DependencyMonitor";
 import { evaluateSystemQuality } from "./utils/signalLogging";
 
 const App = () => {
+  // Initialize defense systems
   useEffect(() => {
+    // Initialize error defense system
     const errorDefense = ErrorDefenseSystem.getInstance();
+    
+    // Initialize dependency monitor
     const dependencyMonitor = DependencyMonitor.getInstance();
     
+    // Run comprehensive system verification on startup with minimal logging
     const startupVerification = async () => {
       try {
         await dependencyMonitor.checkAllDependencies();
         const qualityReport = evaluateSystemQuality();
+        
+        // Only log to console, removed system toasts
         console.log('System startup verification:', qualityReport);
+        
+        // Preemptively reset error defense system if quality is compromised
         if (qualityReport.score < 80) {
           errorDefense.reset();
           console.warn('System quality below threshold, performing preventive reset');
@@ -26,12 +36,16 @@ const App = () => {
       }
     };
     
+    // Run verification after a short delay to allow components to initialize
     const verificationTimer = setTimeout(startupVerification, 1500);
+    
+    // Set up periodic verification with reduced frequency
     const periodicVerificationInterval = setInterval(() => {
       dependencyMonitor.checkAllDependencies();
-    }, 300000);
+    }, 300000); // Every 5 minutes
     
     return () => {
+      // Shutdown systems when unmounting
       errorDefense.shutdown();
       dependencyMonitor.shutdown();
       clearTimeout(verificationTimer);
@@ -46,6 +60,7 @@ const App = () => {
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        {/* Removed all Toaster components */}
       </ErrorHandlingProvider>
     </Router>
   );

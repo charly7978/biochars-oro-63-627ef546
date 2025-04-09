@@ -1,5 +1,5 @@
 
-// Re-export completely disabled toast hooks per user's request
+// Re-export completely disabled toast hooks
 export const useToast = () => ({
   toasts: [],
   toast: () => ({ id: "", dismiss: () => {}, update: () => {} }),
