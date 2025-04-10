@@ -34,3 +34,41 @@ export const disposeModel = (model: tf.LayersModel | tf.GraphModel): void => {
     }
   }
 };
+
+// Function to dispose tensors and free memory
+export const disposeTensors = (tensors: tf.Tensor | tf.Tensor[] | null): void => {
+  if (!tensors) return;
+  
+  try {
+    if (Array.isArray(tensors)) {
+      tensors.forEach(tensor => {
+        if (tensor && tensor.dispose) {
+          tensor.dispose();
+        }
+      });
+    } else if (tensors && tensors.dispose) {
+      tensors.dispose();
+    }
+  } catch (error) {
+    console.error('Error disposing tensors:', error);
+  }
+};
+
+// Utility to run operations with automatic memory management
+export const runWithMemoryManagement = async <T>(
+  operation: () => Promise<T>,
+  cleanup?: () => void
+): Promise<T> => {
+  try {
+    const result = await operation();
+    return result;
+  } finally {
+    // Clean up any tensors that might be left
+    if (cleanup) {
+      cleanup();
+    }
+    // Force garbage collection of tensors
+    tf.engine().endScope();
+    tf.engine().startScope();
+  }
+};

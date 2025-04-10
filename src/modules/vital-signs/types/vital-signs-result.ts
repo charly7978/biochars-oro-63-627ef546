@@ -16,4 +16,5 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  confidence?: number; // Added confidence property to fix type errors
 }

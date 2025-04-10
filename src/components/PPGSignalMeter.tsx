@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -49,7 +48,12 @@ const PPGSignalMeter = memo(({
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null, isHeartbeatLevel: boolean}>>([]);
+  const arrhythmiaSegmentsRef = useRef<Array<{
+    startTime: number, 
+    endTime: number | null, 
+    isHeartbeatLevel: boolean,
+    peakIndex?: number
+  }>>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
@@ -237,11 +241,11 @@ const PPGSignalMeter = memo(({
       const now = Date.now();
       
       if (now - lastArrhythmiaTime.current > 1000) {
-        console.log("New arrhythmia heartbeat detected");
+        console.log("New arrhythmia heartbeat detected - START marking arrhythmia segment");
         
         let heartbeatDuration = AVERAGE_HEARTBEAT_DURATION_MS;
         
-        if (peaksRef.current.length >= 2) {
+        if (peaksRef.current && peaksRef.current.length >= 2) {
           const recentPeaks = peaksRef.current.slice(-3);
           if (recentPeaks.length >= 2) {
             const intervals = [];
@@ -253,11 +257,17 @@ const PPGSignalMeter = memo(({
           }
         }
         
+        const currentPeakIndex = peaksRef.current ? peaksRef.current.length - 1 : -1;
         const newSegment = {
           startTime: now,
-          endTime: now + heartbeatDuration,
-          isHeartbeatLevel: true
+          endTime: null,
+          isHeartbeatLevel: true,
+          peakIndex: currentPeakIndex >= 0 ? currentPeakIndex : undefined
         };
+        
+        if (!arrhythmiaSegmentsRef.current) {
+          arrhythmiaSegmentsRef.current = [];
+        }
         
         arrhythmiaSegmentsRef.current.push(newSegment);
         
@@ -269,8 +279,6 @@ const PPGSignalMeter = memo(({
         
         if (dataBufferRef.current) {
           const existingPoints = dataBufferRef.current.getPoints();
-          // Fix for the "undefined (reading 'filter')" error:
-          // Only proceed if existingPoints is defined
           if (existingPoints && existingPoints.length) {
             const preArrhythmiaPoints = existingPoints.slice(-10);
             newWaveformCapture.points.push(...preArrhythmiaPoints.map(p => ({...p})));
@@ -289,20 +297,27 @@ const PPGSignalMeter = memo(({
       
       lastArrhythmiaTime.current = now;
       
-      const activeWaveform = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
-      if (activeWaveform && !activeWaveform.endTime) {
-        if (dataBufferRef.current) {
+      if (completeArrhythmiaWaveformsRef.current && completeArrhythmiaWaveformsRef.current.length > 0) {
+        const activeWaveform = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
+        if (activeWaveform && !activeWaveform.endTime && dataBufferRef.current) {
           const latestPoints = dataBufferRef.current.getPoints();
-          // Fix: Check if latestPoints exists before accessing it
           if (latestPoints && latestPoints.length > 0) {
-            const pointWithArrhythmia = {...latestPoints[0], isArrhythmia: true};
+            const pointWithArrhythmia = {...latestPoints[latestPoints.length - 1], isArrhythmia: true};
             activeWaveform.points.push(pointWithArrhythmia);
           }
         }
       }
-    } else if (!isArrhythmia && lastArrhythmiaTime.current > 0 && Date.now() - lastArrhythmiaTime.current > 800) {
-      // Fix: Check if completeArrhythmiaWaveformsRef.current has items before accessing by index
-      if (completeArrhythmiaWaveformsRef.current.length > 0) {
+    } else if (!isArrhythmia && lastArrhythmiaTime.current > 0 && Date.now() - lastArrhythmiaTime.current > 600) {
+      console.log("Arrhythmia beat has ended - END marking arrhythmia segment");
+      
+      if (arrhythmiaSegmentsRef.current && arrhythmiaSegmentsRef.current.length > 0) {
+        const activeSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
+        if (activeSegment && !activeSegment.endTime) {
+          activeSegment.endTime = Date.now();
+        }
+      }
+      
+      if (completeArrhythmiaWaveformsRef.current && completeArrhythmiaWaveformsRef.current.length > 0) {
         const activeWaveform = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
         if (activeWaveform && !activeWaveform.endTime) {
           activeWaveform.endTime = Date.now();
@@ -451,7 +466,8 @@ const PPGSignalMeter = memo(({
           ctx.fillStyle = '#ef4444';
           ctx.font = 'bold 24px Inter';
           ctx.textAlign = 'left';
-          const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
+          const redPeaksCount = peaksRef.current ? 
+            peaksRef.current.filter(peak => peak.isArrhythmia).length : 0;
           ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
         }
       }
@@ -466,9 +482,9 @@ const PPGSignalMeter = memo(({
     for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
       const currentPoint = points[i];
       
-      const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
-      );
+      const recentlyProcessed = peaksRef.current ? 
+        peaksRef.current.some(peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS) : 
+        false;
       
       if (recentlyProcessed) continue;
       
@@ -500,6 +516,10 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    if (!peaksRef.current) {
+      peaksRef.current = [];
+    }
+    
     for (const peak of potentialPeaks) {
       const tooClose = peaksRef.current.some(
         existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
@@ -523,20 +543,25 @@ const PPGSignalMeter = memo(({
   }, []);
 
   const drawArrhythmiaRegions = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    // Make sure arrhythmiaSegmentsRef.current is initialized before using
     if (!arrhythmiaSegmentsRef.current) {
       arrhythmiaSegmentsRef.current = [];
+      return;
     }
     
     const activeArrhythmiaSegments = arrhythmiaSegmentsRef.current.filter(
-      segment => now - (segment.endTime || now) < WINDOW_WIDTH_MS
+      segment => now - (segment.startTime || now) < WINDOW_WIDTH_MS
     );
     
     for (const segment of activeArrhythmiaSegments) {
       const startX = CANVAS_WIDTH - ((now - segment.startTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-      const endX = segment.endTime 
-        ? CANVAS_WIDTH - ((now - segment.endTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS)
-        : CANVAS_WIDTH;
+      
+      let endX;
+      if (segment.endTime) {
+        endX = CANVAS_WIDTH - ((now - segment.endTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+      } else {
+        const estimatedDuration = AVERAGE_HEARTBEAT_DURATION_MS;
+        endX = CANVAS_WIDTH - ((now - (segment.startTime + estimatedDuration)) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+      }
       
       if (startX < CANVAS_WIDTH && endX > 0) {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
@@ -547,31 +572,51 @@ const PPGSignalMeter = memo(({
           CANVAS_HEIGHT
         );
         
-        if (!segment.endTime || now - segment.startTime < 1000) {
+        if (startX >= 0 && startX <= CANVAS_WIDTH) {
           const pulseAmount = (Math.sin(now / 200) + 1) / 2;
           
-          if (startX >= 0 && startX <= CANVAS_WIDTH) {
-            ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + pulseAmount * 0.4})`;
-            ctx.lineWidth = 2 + pulseAmount * 2;
-            ctx.setLineDash([5, 3]);
-            ctx.beginPath();
-            ctx.moveTo(startX, 0);
-            ctx.lineTo(startX, CANVAS_HEIGHT);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
-            ctx.font = 'bold 12px Inter';
-            ctx.textAlign = 'center';
-            ctx.fillText('ARRITMIA', startX + (endX - startX)/2, 20);
-          }
+          ctx.strokeStyle = `rgba(239, 68, 68, ${0.6 + pulseAmount * 0.4})`;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 3]);
+          ctx.beginPath();
+          ctx.moveTo(startX, 0);
+          ctx.lineTo(startX, CANVAS_HEIGHT);
+          ctx.stroke();
+          
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+          ctx.font = 'bold 12px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText('INICIO ARRITMIA', startX + 10, 40);
+        }
+        
+        if (segment.endTime && endX >= 0 && endX <= CANVAS_WIDTH) {
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 2]);
+          ctx.beginPath();
+          ctx.moveTo(endX, 0);
+          ctx.lineTo(endX, CANVAS_HEIGHT);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
+          ctx.font = 'bold 12px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText('FIN ARRITMIA', endX - 10, 40);
+        }
+        
+        const centerX = startX + (endX - startX)/2;
+        if (centerX >= 0 && centerX <= CANVAS_WIDTH) {
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+          ctx.font = 'bold 18px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText('ARRITMIA', centerX, 20);
         }
       }
     }
   }, []);
 
   const visualizeArrhythmiaWaveforms = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    // Check if completeArrhythmiaWaveformsRef.current exists before using it
     if (!completeArrhythmiaWaveformsRef.current) {
       completeArrhythmiaWaveformsRef.current = [];
       return;
@@ -700,7 +745,6 @@ const PPGSignalMeter = memo(({
     dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
-    // Make sure points exist before calling detectPeaks
     if (points && points.length) {
       detectPeaks(points, now);
     }
@@ -752,7 +796,6 @@ const PPGSignalMeter = memo(({
       
       visualizeArrhythmiaWaveforms(renderCtx, now);
       
-      // Make sure peaksRef.current exists before using it
       if (peaksRef.current && peaksRef.current.length) {
         peaksRef.current.forEach(peak => {
           const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
