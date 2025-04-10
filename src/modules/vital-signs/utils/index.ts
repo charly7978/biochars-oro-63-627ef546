@@ -1,24 +1,10 @@
 
-// Export utility functions from different modules
-export { 
-  applySMAFilter, 
-  amplifySignal 
-} from './filter-utils';
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
 
-export { 
-  calculatePerfusionIndex 
-} from './perfusion-utils';
-
-export { 
-  calculateAC, 
-  calculateDC, 
-  calculateStandardDeviation, 
-  calculateEMA, 
-  normalizeValue 
-} from './signal-processing-utils';
-
-// Export peak detection utilities
-export { 
-  findPeaksAndValleys, 
-  calculateAmplitude 
-} from './peak-detection-utils';
+// Re-export all utility functions from their respective files
+export * from './signal-processing-utils';
+export * from './peak-detection-utils';
+export * from './filter-utils';
+export * from './perfusion-utils';

@@ -8,7 +8,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/types/vital-signs";
+import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
 
 const Index = () => {
@@ -18,15 +18,14 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>({
     spo2: 0,
     pressure: "--/--",
+    arrhythmiaStatus: "--",
     glucose: 0,
     lipids: {
       totalCholesterol: 0,
       triglycerides: 0
     },
-    hydration: 0,
-    arrhythmia: null,
-    confidence: 0,
-    timestamp: Date.now()
+    hemoglobin: 0,
+    hydration: 0
   });
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -80,18 +79,13 @@ const Index = () => {
       const minQualityThreshold = 40;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        // Process the signal value as a single number
-        const signalValue = Array.isArray(lastSignal.filteredValue) 
-          ? lastSignal.filteredValue[0] // Take first value if array
-          : lastSignal.filteredValue;   // Otherwise use directly
-          
-        const heartBeatResult = processHeartBeat(signalValue);
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
           
           try {
-            const vitals = processVitalSigns(signalValue, heartBeatResult.rrData);
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
             }
@@ -191,15 +185,14 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
+      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hydration: 0,
-      arrhythmia: null,
-      confidence: 0,
-      timestamp: Date.now()
+      hemoglobin: 0,
+      hydration: 0
     });
     setSignalQuality(0);
   };
@@ -294,11 +287,6 @@ const Index = () => {
     return 'text-red-500';
   };
 
-  // Extract the arrhythmia status from the result object in a safe way
-  const getArrhythmiaStatus = (vitalSigns: VitalSignsResult) => {
-    return vitalSigns.arrhythmia?.arrhythmiaStatus || "--";
-  };
-
   return (
     <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
@@ -337,7 +325,7 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              arrhythmiaStatus={getArrhythmiaStatus(vitalSigns)}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
@@ -403,7 +391,7 @@ const Index = () => {
               />
               <VitalSign 
                 label="HEMOGLOBINA"
-                value={Math.round((vitalSigns.spo2 || 0) * 0.15 + 2) || "--"}
+                value={Math.round(vitalSigns.hemoglobin) || "--"}
                 unit="g/dL"
                 highlighted={showResults}
                 compact={false}

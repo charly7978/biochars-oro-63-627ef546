@@ -30,9 +30,6 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // Ensure value is a string or number, not an object
-  const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
-
   return (
     <div 
       className={cn(
@@ -63,7 +60,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
           className="inline-flex items-center"
           style={{ animation: highlighted ? animations["number-highlight"] : "none" }}
         >
-          {displayValue}
+          {value}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
         {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}

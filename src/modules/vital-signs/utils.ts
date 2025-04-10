@@ -17,7 +17,7 @@ export {
   normalizeValue
 } from './utils/signal-processing-utils';
 
-// Re-export peak detection utilities only once
+// Re-export peak detection utilities
 export {
   findPeaksAndValleys,
   calculateAmplitude
@@ -41,5 +41,3 @@ export {
   calculateStandardDeviation as getStandardDeviation,
   amplifySignal as getAmplifiedSignal
 } from '../../utils/vitalSignsUtils';
-
-// Don't redefine functions that are already exported

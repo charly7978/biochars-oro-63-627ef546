@@ -1,5 +1,5 @@
 
-import { VitalSignsResult, LipidsResult, ArrhythmiaProcessingResult } from '../../../types/vital-signs';
+import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
  * Factory for creating standardized vital signs results
@@ -14,6 +14,7 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
+    hemoglobin: number,
     hydration: number,
     glucoseConfidence?: number,
     lipidsConfidence?: number,
@@ -22,16 +23,16 @@ export class ResultFactory {
   ): VitalSignsResult {
     return {
       spo2,
-      pressure,  // Ensure this is a string, not an object
-      arrhythmia: arrhythmiaStatus === "--" ? null : {
-        arrhythmiaStatus,
-        confidence: 0.85
-      },
+      pressure,
+      arrhythmiaStatus,
       glucose,
       lipids,
+      hemoglobin,
       hydration,
-      confidence: overallConfidence || 0,
-      timestamp: Date.now()
+      glucoseConfidence,
+      lipidsConfidence,
+      overallConfidence,
+      lastArrhythmiaData
     };
   }
 
@@ -42,29 +43,14 @@ export class ResultFactory {
     return {
       spo2: 0,
       pressure: "--/--",
+      arrhythmiaStatus: "--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hydration: 0,
-      arrhythmia: null,
-      confidence: 0,
-      timestamp: Date.now()
-    };
-  }
-
-  public static createArrhythmiaResult(status: string, confidence: number): ArrhythmiaProcessingResult {
-    return {
-      arrhythmiaStatus: status,
-      confidence: confidence
-    };
-  }
-
-  public static createLipidsResult(totalCholesterol: number, triglycerides: number): LipidsResult {
-    return {
-      totalCholesterol,
-      triglycerides
+      hemoglobin: 0,
+      hydration: 0
     };
   }
 }

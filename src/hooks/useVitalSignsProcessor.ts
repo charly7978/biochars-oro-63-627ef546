@@ -1,10 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { VitalSignsResult } from '../types/vital-signs';
+import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
 import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
@@ -92,12 +91,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Add safe null check for arrhythmiaStatus
       if (result && 
-          result.arrhythmia && 
-          result.arrhythmia.arrhythmiaStatus && 
-          typeof result.arrhythmia.arrhythmiaStatus === 'string' && 
-          result.arrhythmia.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-          result.arrhythmia.lastArrhythmiaData) {
-        const arrhythmiaTime = result.arrhythmia.lastArrhythmiaData.timestamp;
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
         let windowWidth = 400;
@@ -124,15 +122,14 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       return {
         spo2: 0,
         pressure: "--/--",
+        arrhythmiaStatus: "--",
         glucose: 0,
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
         },
-        hydration: 0,
-        arrhythmia: null,
-        confidence: 0,
-        timestamp: Date.now()
+        hemoglobin: 0,
+        hydration: 0
       };
     }
   };
