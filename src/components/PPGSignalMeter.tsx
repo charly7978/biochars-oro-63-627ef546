@@ -90,6 +90,13 @@ const PPGSignalMeter = memo(({
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
+  const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
+    return arrhythmiaSegmentsRef.current.some(segment => {
+      const endTime = segment.endTime || Date.now();
+      return pointTime >= segment.startTime && pointTime <= endTime;
+    });
+  }, []);
+
   useEffect(() => {
     const initAudio = async () => {
       try {
@@ -309,7 +316,7 @@ const PPGSignalMeter = memo(({
         ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
       }
     }
-  }, [arrhythmiaStatus, showArrhythmiaAlert]);
+  }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
@@ -404,13 +411,6 @@ const PPGSignalMeter = memo(({
       segment => now - (segment.endTime || now) < WINDOW_WIDTH_MS
     );
   }, [WINDOW_WIDTH_MS]);
-
-  const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
-    return arrhythmiaSegmentsRef.current.some(segment => {
-      const endTime = segment.endTime || Date.now();
-      return pointTime >= segment.startTime && pointTime <= endTime;
-    });
-  }, []);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
