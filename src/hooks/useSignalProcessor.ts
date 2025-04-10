@@ -43,12 +43,17 @@ export const useSignalProcessor = () => {
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
+      // Handle both array and single number for filtered value
+      const signalValue = Array.isArray(signal.filteredValue) 
+        ? signal.filteredValue[0] 
+        : signal.filteredValue;
+      
       // Update signal statistics
       setSignalStats(prev => {
         return {
-          minValue: Math.min(prev.minValue, signal.filteredValue),
-          maxValue: Math.max(prev.maxValue, signal.filteredValue),
-          avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
+          minValue: Math.min(prev.minValue, signalValue),
+          maxValue: Math.max(prev.maxValue, signalValue),
+          avgValue: (prev.avgValue * prev.totalValues + signalValue) / (prev.totalValues + 1),
           totalValues: prev.totalValues + 1
         };
       });

@@ -122,18 +122,17 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Return safe fallback values on error that include hydration
       return {
-        spO2: 0,
-        bloodPressure: {
-          systolic: 0,
-          diastolic: 0
-        },
+        spo2: 0,
+        pressure: "--/--",
         glucose: 0,
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
         },
         hydration: 0,
-        arrhythmia: null
+        arrhythmia: null,
+        confidence: 0,
+        timestamp: Date.now()
       };
     }
   };

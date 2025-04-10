@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -293,6 +294,11 @@ const Index = () => {
     return 'text-red-500';
   };
 
+  // Extract the arrhythmia status from the result object in a safe way
+  const getArrhythmiaStatus = (vitalSigns: VitalSignsResult) => {
+    return vitalSigns.arrhythmia?.arrhythmiaStatus || "--";
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
@@ -331,7 +337,7 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
+              arrhythmiaStatus={getArrhythmiaStatus(vitalSigns)}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
