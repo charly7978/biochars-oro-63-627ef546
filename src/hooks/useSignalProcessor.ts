@@ -34,7 +34,7 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
 
-  // Set up processor callbacks and cleanup
+  // Set up processor callbacks
   useEffect(() => {
     // Signal callback for REAL data
     const onSignalReady = (signal: ProcessedSignal) => {
@@ -68,20 +68,21 @@ export const useSignalProcessor = () => {
       setError(error);
     };
 
-    // Set callbacks
+    // Add custom properties to processor for callbacks
     processor.onSignalReady = onSignalReady;
     processor.onError = onError;
 
-    // Initialize processor for real measurements
-    processor.initialize().catch(error => {
-      console.error("useSignalProcessor: Error de inicialización:", error);
-    });
+    // No need to call initialize as it doesn't exist
+    console.log("useSignalProcessor: Processor initialized");
 
     // Cleanup
     return () => {
-      processor.stop();
+      // Stop processing if needed
+      if (isProcessing) {
+        processor.reset(); // Use reset instead of stop
+      }
     };
-  }, [processor]);
+  }, [processor, isProcessing]);
 
   /**
    * Start processing real signals
@@ -99,7 +100,7 @@ export const useSignalProcessor = () => {
     });
     
     processor.reset(); // Reset processor first
-    processor.start();
+    // No need to call start, just set the state
   }, [processor]);
 
   /**
@@ -109,7 +110,7 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Deteniendo procesamiento de señales REALES");
     
     setIsProcessing(false);
-    processor.stop();
+    processor.reset(); // Use reset instead of stop
   }, [processor]);
 
   /**

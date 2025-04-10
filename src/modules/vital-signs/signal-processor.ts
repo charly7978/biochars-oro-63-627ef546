@@ -6,6 +6,10 @@ export class SignalProcessor {
   private ppgValues: number[] = [];
   private readonly FILTER_WINDOW_SIZE = 5;
   
+  // Add custom properties for callbacks
+  public onSignalReady?: (signal: any) => void;
+  public onError?: (error: any) => void;
+  
   /**
    * Apply Simple Moving Average filter to smooth signal
    */
