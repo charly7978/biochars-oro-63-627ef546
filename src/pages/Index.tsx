@@ -7,8 +7,9 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import ShareButton from "@/components/ShareButton";
+import BidirectionalFeedbackStatus from "@/components/BidirectionalFeedbackStatus";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { useUnifiedProcessor } from "@/hooks/useUnifiedProcessor";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -44,6 +45,14 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+
+  const {
+    result: unifiedResult,
+    startMonitoring: startUnifiedMonitoring,
+    stopMonitoring: stopUnifiedMonitoring,
+    reset: resetUnifiedProcessor,
+    processFrame: processUnifiedFrame
+  } = useUnifiedProcessor();
 
   const enterFullScreen = async () => {
     try {
@@ -99,6 +108,22 @@ const Index = () => {
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+
+  useEffect(() => {
+    if (isMonitoring && lastSignal) {
+      const dummyData = new Uint8ClampedArray(4);
+      const dummyImageData = new ImageData(dummyData, 1, 1);
+      processUnifiedFrame(dummyImageData);
+    }
+  }, [isMonitoring, lastSignal, processUnifiedFrame]);
+
+  useEffect(() => {
+    if (isMonitoring) {
+      startUnifiedMonitoring();
+    } else {
+      stopUnifiedMonitoring();
+    }
+  }, [isMonitoring, startUnifiedMonitoring, stopUnifiedMonitoring]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -292,15 +317,12 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
-          <div className="px-4 py-2 flex justify-between items-center bg-black/20">
+          <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-lg">
               Calidad: {signalQuality}
             </div>
-            <div className="flex items-center gap-2">
-              <ShareButton />
-              <div className="text-white text-lg">
-                {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
-              </div>
+            <div className="text-white text-lg">
+              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
 
@@ -318,6 +340,8 @@ const Index = () => {
           </div>
 
           <AppTitle />
+
+          <BidirectionalFeedbackStatus isActive={true} />
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">

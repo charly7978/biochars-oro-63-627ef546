@@ -6,6 +6,7 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
+import BidirectionalFeedbackStatus from "@/components/BidirectionalFeedbackStatus";
 import { toast } from "sonner";
 
 const Index = () => {
@@ -15,12 +16,7 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--",
-    glucose: 0,
-    lipids: {
-      totalCholesterol: 0,
-      triglycerides: 0
-    }
+    arrhythmiaStatus: "--" 
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
@@ -154,12 +150,7 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      arrhythmiaStatus: "--" 
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -180,12 +171,7 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      }
+      arrhythmiaStatus: "--" 
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -302,6 +288,9 @@ const Index = () => {
             />
           </div>
 
+          {/* Always show feedback component for debugging */}
+          <BidirectionalFeedbackStatus isActive={true} />
+
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
               <div className="grid grid-cols-4 gap-2">
@@ -309,24 +298,20 @@ const Index = () => {
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
                   unit="BPM"
-                  calibrationProgress={vitalSigns.calibration?.progress.heartRate}
                 />
                 <VitalSign 
                   label="SPO2"
                   value={vitalSigns.spo2 || "--"}
                   unit="%"
-                  calibrationProgress={vitalSigns.calibration?.progress.spo2}
                 />
                 <VitalSign 
                   label="PRESIÓN ARTERIAL"
                   value={vitalSigns.pressure}
                   unit="mmHg"
-                  calibrationProgress={vitalSigns.calibration?.progress.pressure}
                 />
                 <VitalSign 
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
-                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
                 />
               </div>
             </div>
