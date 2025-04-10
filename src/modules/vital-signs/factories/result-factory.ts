@@ -32,6 +32,7 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
+    hemoglobin?: number,
     confidence?: { glucose: number; lipids: number; overall: number },
     lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
@@ -41,7 +42,7 @@ export class ResultFactory {
       arrhythmiaStatus,
       glucose,
       lipids,
-      hemoglobin: this.calculateDefaultHemoglobin(spo2),
+      hemoglobin: hemoglobin ?? this.calculateDefaultHemoglobin(spo2),
       confidence,
       lastArrhythmiaData
     };
