@@ -54,11 +54,12 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
     return () => clearInterval(interval);
   }, [isActive]);
   
-  if (!isActive) return null;
+  // Make sure it's visible even when not active, for debugging purposes
+  // if (!isActive) return null;
   
   return (
-    <div className="absolute bottom-16 left-4 right-4 z-10 bg-black/30 backdrop-blur-sm rounded-lg p-2 text-[8px]">
-      <div className="flex items-center justify-center mb-1">
+    <div className="absolute bottom-16 left-4 right-4 z-10 bg-black/60 backdrop-blur-sm rounded-lg p-3 text-[9px] border border-blue-500/30 shadow-lg">
+      <div className="flex items-center justify-center mb-2">
         <ArrowRightLeft className="h-3 w-3 text-blue-400 mr-1" />
         <span className="text-white/90 font-semibold">Feedback Bidireccional</span>
       </div>

@@ -1,4 +1,3 @@
-
 /**
  * Unified Processor Hook
  * Provides a single integration point for signal processing, vital signs, and heart rate
@@ -101,24 +100,20 @@ export function useUnifiedProcessor() {
     }
   });
   
-  // Update result when lastResult changes
   useEffect(() => {
     if (lastResult) {
-      // Get current feedback state
       const feedbackState = getGlobalFeedbackState();
       
-      // Update signal quality in the feedback system
       const updatedFeedback = updateSignalQualityFeedback(
         feedbackState,
         {
           signalStrength: lastResult.quality / 100,
           noiseLevel: 1 - (lastResult.quality / 100),
-          stabilityScore: lastResult.stability || 0.5,
+          stabilityScore: lastResult.quality ? lastResult.quality / 100 : 0.5,
           fingerDetectionConfidence: lastResult.fingerDetected ? 0.9 : 0.1
         }
       );
       
-      // Update vital signs feedback
       const updatedVitalFeedback = updateVitalSignsFeedback(
         updatedFeedback,
         {
@@ -128,15 +123,12 @@ export function useUnifiedProcessor() {
         }
       );
       
-      // Update global state
       updateGlobalFeedbackState(updatedVitalFeedback);
       
-      // Periodically log feedback state for debugging
       if (Math.random() < 0.05) {
         logFeedbackState(updatedVitalFeedback, "useUnifiedProcessor");
       }
       
-      // Calculate feedback quality indicators
       const signalOptimization = (
         updatedVitalFeedback.signalQuality.stabilityScore * 0.4 +
         (1 - updatedVitalFeedback.signalQuality.noiseLevel) * 0.6
@@ -172,26 +164,21 @@ export function useUnifiedProcessor() {
     }
   }, [lastResult, elapsedTime, isProcessing, arrhythmiaCount]);
   
-  // Start processing
   const startMonitoring = useCallback(() => {
-    // Reset feedback state
     updateGlobalFeedbackState(createInitialFeedbackState());
     
     startProcessing();
     toast.success("Medición iniciada");
   }, [startProcessing]);
   
-  // Stop processing
   const stopMonitoring = useCallback(() => {
     stopCentralProcessing();
     toast.info("Medición detenida");
   }, [stopCentralProcessing]);
   
-  // Reset everything
   const reset = useCallback(() => {
     resetCentralProcessor();
     
-    // Reset feedback state
     updateGlobalFeedbackState(createInitialFeedbackState());
     
     setResult({
@@ -222,19 +209,12 @@ export function useUnifiedProcessor() {
   }, [resetCentralProcessor]);
   
   return {
-    // Results
     result,
-    
-    // Methods for signal processing
     processSignal,
     processFrame,
-    
-    // Control functions
     startMonitoring,
     stopMonitoring,
     reset,
-    
-    // Status
     isProcessing,
     elapsedTime
   };

@@ -272,7 +272,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -317,7 +316,7 @@ const Index = () => {
 
           <AppTitle />
 
-          <BidirectionalFeedbackStatus isActive={isMonitoring} />
+          <BidirectionalFeedbackStatus isActive={true} />
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
