@@ -160,8 +160,10 @@ export class TensorFlowModelRegistry {
     
     // Use the methods available in tf.engine() for cleanup
     const engine = tf.engine();
-    if (typeof engine.startScope === 'function') {
+    if (engine) {
+      // Force garbage collection with memory cleanup
       engine.endScope();
+      engine.startScope();
     }
     
     console.log('TensorFlow Model Registry disposed');

@@ -47,29 +47,10 @@ export class ResultFactory {
       hemoglobin,
       // Store confidence values individually rather than as a nested object
       // to prevent rendering issues
-      glucoseConfidence: glucoseConfidence,
-      lipidsConfidence: lipidsConfidence,
-      overallConfidence: overallConfidence,
+      glucoseConfidence,
+      lipidsConfidence,
+      overallConfidence,
       lastArrhythmiaData
     };
-  }
-  
-  /**
-   * Calculate a default hemoglobin value based on SpO2
-   * This is a simple approximation for demonstration purposes
-   */
-  private static calculateDefaultHemoglobin(spo2: number): number {
-    if (spo2 <= 0) return 0;
-    
-    // Very basic approximation
-    // Normally hemoglobin would be measured directly
-    // This is just to demonstrate the feature
-    const base = 14;
-    
-    if (spo2 > 95) return base + Math.random();
-    if (spo2 > 90) return base - 1 + Math.random();
-    if (spo2 > 85) return base - 2 + Math.random();
-    
-    return base - 3 + Math.random();
   }
 }

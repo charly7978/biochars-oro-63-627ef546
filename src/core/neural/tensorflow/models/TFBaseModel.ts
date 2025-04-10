@@ -2,80 +2,125 @@
 import * as tf from '@tensorflow/tfjs';
 
 /**
- * Interfaz base para modelos TensorFlow
+ * Options for TensorFlow model configuration
  */
 export interface TFModelOptions {
-  inputShape: number[];
-  outputShape: number[];
-  modelName: string;
-  version: string;
+  inputSize: number;
+  useWebGL?: boolean;
+  useBatchNorm?: boolean;
+  useQuantization?: boolean;
+  useRegularization?: boolean;
 }
 
 /**
- * Clase base para modelos TensorFlow
+ * Base class for TensorFlow.js models
  */
 export abstract class TFBaseModel {
   protected model: tf.LayersModel | null = null;
-  protected readonly inputShape: number[];
-  protected readonly outputShape: number[];
-  protected readonly modelName: string;
-  protected readonly version: string;
-  protected isInitialized: boolean = false;
+  protected isLoaded: boolean = false;
+  protected inputSize: number;
+  protected options: TFModelOptions;
+  protected lastPredictionTime: number = 0;
   
   constructor(options: TFModelOptions) {
-    this.inputShape = options.inputShape;
-    this.outputShape = options.outputShape;
-    this.modelName = options.modelName;
-    this.version = options.version;
+    this.options = options;
+    this.inputSize = options.inputSize;
   }
   
   /**
-   * Inicializa el modelo
+   * Initialize model - load or create
    */
-  abstract initialize(): Promise<void>;
+  public async initialize(): Promise<void> {
+    if (this.isLoaded) return;
+    
+    try {
+      console.log(`Initializing ${this.getModelName()} model with input size ${this.inputSize}`);
+      
+      // Attempt to load pretrained model
+      const model = await this.loadModel();
+      
+      if (model) {
+        this.model = model;
+        console.log(`Loaded pretrained ${this.getModelName()} model`);
+      } else {
+        // Create model architecture if no pretrained model available
+        this.model = await this.createModel();
+        console.log(`Created new ${this.getModelName()} model`);
+      }
+      
+      // Compile the model
+      this.compileModel();
+      
+      this.isLoaded = true;
+      
+      // Log model summary
+      this.logModelSummary();
+    } catch (error) {
+      console.error(`Error initializing ${this.getModelName()} model:`, error);
+      throw error;
+    }
+  }
   
   /**
-   * Realiza una predicción
+   * Get the name of the model
    */
-  abstract predict(input: number[]): Promise<number[]>;
+  abstract getModelName(): string;
   
   /**
-   * Libera recursos del modelo
+   * Create model architecture
    */
-  dispose(): void {
+  protected abstract createModel(): Promise<tf.LayersModel>;
+  
+  /**
+   * Load pretrained model weights
+   */
+  protected abstract loadModel(): Promise<tf.LayersModel | null>;
+  
+  /**
+   * Compile the model with appropriate optimizer and loss
+   */
+  protected abstract compileModel(): void;
+  
+  /**
+   * Make prediction with the model
+   */
+  public abstract predict(input: number[]): Promise<number[]>;
+  
+  /**
+   * Log model summary information
+   */
+  protected logModelSummary(): void {
+    if (!this.model) return;
+    
+    const totalParams = this.getTotalParams();
+    
+    console.log(`${this.getModelName()} model summary:`);
+    console.log(`- Total parameters: ${totalParams}`);
+    console.log(`- Input shape: ${JSON.stringify(this.model.inputs[0].shape)}`);
+    console.log(`- Output shape: ${JSON.stringify(this.model.outputs[0].shape)}`);
+  }
+  
+  /**
+   * Get total parameter count
+   */
+  protected getTotalParams(): number {
+    let total = 0;
+    if (this.model) {
+      this.model.weights.forEach(w => {
+        total += w.shape.reduce((a, b) => a * b, 1);
+      });
+    }
+    return total;
+  }
+  
+  /**
+   * Dispose of model resources
+   */
+  public dispose(): void {
     if (this.model) {
       this.model.dispose();
       this.model = null;
     }
-    this.isInitialized = false;
-  }
-  
-  /**
-   * Obtiene información del modelo
-   */
-  getInfo(): {
-    name: string;
-    version: string;
-    inputShape: number[];
-    outputShape: number[];
-    isInitialized: boolean;
-  } {
-    return {
-      name: this.modelName,
-      version: this.version,
-      inputShape: this.inputShape,
-      outputShape: this.outputShape,
-      isInitialized: this.isInitialized
-    };
-  }
-  
-  /**
-   * Indica si el modelo está inicializado
-   */
-  isReady(): boolean {
-    return this.isInitialized && this.model !== null;
+    this.isLoaded = false;
   }
 }
-
-// Export types for reuse - Fixed the export syntax
-export type { TFModelOptions };
