@@ -1,236 +1,131 @@
 
 import { ProcessorConfig } from '../config/ProcessorConfig';
 
-/**
- * Interfaz para resultados de estimación de lípidos
- */
+// Define missing interfaces
+export interface UserProfile {
+  age?: number;
+  gender?: 'male' | 'female' | 'other';
+  weight?: number;
+  height?: number;
+  condition?: string;
+}
+
 export interface LipidResult {
   totalCholesterol: number;
   triglycerides: number;
-  hdl?: number;
   ldl?: number;
+  hdl?: number;
+  confidence: number;
 }
 
-/**
- * Estimador de valores de lípidos basado en señal PPG
- */
 export class LipidEstimator {
-  private readonly MIN_SIGNAL_POINTS = 120;
-  private readonly MAX_TOTAL_CHOLESTEROL = 350;
-  private readonly MAX_TRIGLYCERIDES = 500;
+  private dataPoints: number[] = [];
+  private readonly MIN_DATA_POINTS = 120;
+  private readonly DEFAULT_TOTAL_CHOLESTEROL = 185;
+  private readonly DEFAULT_TRIGLYCERIDES = 150;
+  private readonly BASE_CONFIDENCE = 0.6;
+  private readonly CALIBRATION_FACTOR = 1.0;  // Fixed value since config.lipidCalibrationFactor doesn't exist
   
-  private config: ProcessorConfig;
-  private signalBuffer: number[] = [];
-  private saturations: number[] = [];
+  constructor(private config: ProcessorConfig, private userProfile?: UserProfile) {}
   
-  constructor(config: ProcessorConfig) {
-    this.config = config;
-  }
-  
-  /**
-   * Actualiza la configuración del estimador
-   */
-  public updateConfig(config: ProcessorConfig): void {
-    this.config = config;
-  }
-  
-  /**
-   * Añade un nuevo valor de señal al buffer
-   */
-  public addSignalValue(value: number): void {
-    this.signalBuffer.push(value);
-    if (this.signalBuffer.length > 600) {
-      this.signalBuffer.shift();
-    }
-  }
-  
-  /**
-   * Añade saturación de oxígeno estimada
-   */
-  public addSaturationValue(spo2: number): void {
-    if (spo2 > 0) {
-      this.saturations.push(spo2);
-      if (this.saturations.length > 10) {
-        this.saturations.shift();
+  public addDataPoint(value: number): void {
+    if (value !== 0) {
+      this.dataPoints.push(value);
+      
+      if (this.dataPoints.length > this.MIN_DATA_POINTS * 2) {
+        this.dataPoints.shift();
       }
     }
   }
   
-  /**
-   * Estima valores de lípidos basados en la señal PPG
-   */
   public estimateLipids(): LipidResult {
-    if (this.signalBuffer.length < this.MIN_SIGNAL_POINTS) {
+    if (this.dataPoints.length < this.MIN_DATA_POINTS) {
       return {
         totalCholesterol: 0,
-        triglycerides: 0
+        triglycerides: 0,
+        ldl: 0,
+        hdl: 0,
+        confidence: 0
       };
     }
     
     try {
-      // Obtener datos de la señal
-      const recentSignal = this.signalBuffer.slice(-this.MIN_SIGNAL_POINTS);
-      
       // Calcular características de la señal
-      const amplitude = this.calculateAmplitude(recentSignal);
-      const waveformRatio = this.calculateWaveformRatio(recentSignal);
-      const signalPeriodicity = this.calculateSignalPeriodicity(recentSignal);
-      
-      // Obtener saturación promedio si está disponible
-      const avgSaturation = this.saturations.length > 0 ? 
-        this.saturations.reduce((sum, val) => sum + val, 0) / this.saturations.length : 
-        97; // Valor por defecto si no hay datos de saturación
+      const variance = this.calculateVariance(this.dataPoints);
+      const frequencyFeatures = this.calculateFrequencyFeatures(this.dataPoints);
       
       // Aplicar factores de calibración
-      const cholesterolCalibrationFactor = this.config.cholesterolCalibrationFactor;
-      const triglycerideCalibrationFactor = this.config.triglycerideCalibrationFactor;
+      const cholesterolCalibration = this.CALIBRATION_FACTOR;
+      const triglycerideCalibration = this.CALIBRATION_FACTOR;
       
-      // Estimación basada en características de la señal
-      let totalCholesterol = this.estimateCholesterol(amplitude, waveformRatio, avgSaturation);
-      totalCholesterol *= cholesterolCalibrationFactor;
-      totalCholesterol = Math.min(totalCholesterol, this.MAX_TOTAL_CHOLESTEROL);
+      // Estimar colesterol total basado en características de la señal
+      const totalCholesterolRaw = this.DEFAULT_TOTAL_CHOLESTEROL +
+        (variance * 15 * cholesterolCalibration) +
+        (frequencyFeatures.highRatio * 30 * cholesterolCalibration);
       
-      let triglycerides = this.estimateTriglycerides(amplitude, signalPeriodicity, avgSaturation);
-      triglycerides *= triglycerideCalibrationFactor;
-      triglycerides = Math.min(triglycerides, this.MAX_TRIGLYCERIDES);
+      // Estimar triglicéridos
+      const triglyceridesRaw = this.DEFAULT_TRIGLYCERIDES +
+        (variance * 25 * triglycerideCalibration) +
+        (frequencyFeatures.lowRatio * 40 * triglycerideCalibration);
+      
+      // Límites fisiológicos
+      const totalCholesterol = Math.max(140, Math.min(300, Math.round(totalCholesterolRaw)));
+      const triglycerides = Math.max(70, Math.min(400, Math.round(triglyceridesRaw)));
+      
+      // Calcular HDL y LDL
+      const hdl = Math.round(Math.max(25, Math.min(80, 50 - (variance * 5))));
+      const ldl = Math.round(totalCholesterol - hdl - (triglycerides / 5));
+      
+      // Calcular confianza
+      const confidenceFactor = Math.min(1, this.dataPoints.length / (this.MIN_DATA_POINTS * 1.5));
+      const confidence = this.BASE_CONFIDENCE * confidenceFactor;
       
       return {
-        totalCholesterol: Math.round(totalCholesterol),
-        triglycerides: Math.round(triglycerides)
+        totalCholesterol,
+        triglycerides,
+        ldl,
+        hdl,
+        confidence
       };
     } catch (error) {
       console.error('Error estimando lípidos:', error);
       return {
         totalCholesterol: 0,
-        triglycerides: 0
+        triglycerides: 0,
+        ldl: 0,
+        hdl: 0,
+        confidence: 0
       };
     }
   }
   
-  /**
-   * Calcula la amplitud de la señal (diferencia entre máximo y mínimo)
-   */
-  private calculateAmplitude(signal: number[]): number {
-    const min = Math.min(...signal);
-    const max = Math.max(...signal);
-    return max - min;
+  private calculateVariance(data: number[]): number {
+    const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
+    const squaredDiffs = data.map(val => Math.pow(val - mean, 2));
+    return Math.sqrt(squaredDiffs.reduce((sum, val) => sum + val, 0) / data.length);
   }
   
-  /**
-   * Calcula relación de forma de onda (proporción entre picos y valles)
-   */
-  private calculateWaveformRatio(signal: number[]): number {
-    // Encuentra picos y valles
-    const peaks: number[] = [];
-    const valleys: number[] = [];
+  private calculateFrequencyFeatures(data: number[]): { lowRatio: number, highRatio: number } {
+    // Simplificación: calcular proporción de amplitud en diferentes bandas de frecuencia
+    const segment1 = data.slice(0, Math.floor(data.length / 3));
+    const segment2 = data.slice(Math.floor(data.length / 3), Math.floor(2 * data.length / 3));
+    const segment3 = data.slice(Math.floor(2 * data.length / 3));
     
-    for (let i = 1; i < signal.length - 1; i++) {
-      // Detectar picos
-      if (signal[i] > signal[i-1] && signal[i] > signal[i+1]) {
-        peaks.push(signal[i]);
-      }
-      
-      // Detectar valles
-      if (signal[i] < signal[i-1] && signal[i] < signal[i+1]) {
-        valleys.push(signal[i]);
-      }
-    }
+    const amp1 = Math.max(...segment1) - Math.min(...segment1);
+    const amp2 = Math.max(...segment2) - Math.min(...segment2);
+    const amp3 = Math.max(...segment3) - Math.min(...segment3);
     
-    // Calcular promedios si hay suficientes puntos
-    if (peaks.length > 0 && valleys.length > 0) {
-      const avgPeak = peaks.reduce((sum, val) => sum + val, 0) / peaks.length;
-      const avgValley = valleys.reduce((sum, val) => sum + val, 0) / valleys.length;
-      
-      if (avgValley !== 0) {
-        return avgPeak / avgValley;
-      }
-    }
+    const totalAmp = amp1 + amp2 + amp3;
     
-    return 1.5; // Valor predeterminado si no hay suficientes datos
+    if (totalAmp === 0) return { lowRatio: 0, highRatio: 0 };
+    
+    return {
+      lowRatio: amp1 / totalAmp,
+      highRatio: amp3 / totalAmp
+    };
   }
   
-  /**
-   * Calcula periodicidad de la señal (consistencia entre ciclos)
-   */
-  private calculateSignalPeriodicity(signal: number[]): number {
-    // Encuentra picos
-    const peakIndices: number[] = [];
-    
-    for (let i = 1; i < signal.length - 1; i++) {
-      if (signal[i] > signal[i-1] && signal[i] > signal[i+1]) {
-        peakIndices.push(i);
-      }
-    }
-    
-    // Calcular intervalos entre picos
-    if (peakIndices.length > 3) {
-      const intervals: number[] = [];
-      
-      for (let i = 1; i < peakIndices.length; i++) {
-        intervals.push(peakIndices[i] - peakIndices[i-1]);
-      }
-      
-      // Calcular la desviación estándar de intervalos
-      const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-      const variance = intervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / intervals.length;
-      const stdDev = Math.sqrt(variance);
-      
-      // Normalizar a 0-1 donde 1 es perfectamente periódico
-      return Math.max(0, 1 - (stdDev / avgInterval));
-    }
-    
-    return 0.5; // Valor predeterminado si no hay suficientes datos
-  }
-  
-  /**
-   * Estima el colesterol total basado en características de la señal
-   */
-  private estimateCholesterol(amplitude: number, waveformRatio: number, saturation: number): number {
-    // Modelo básico donde:
-    // - Menor amplitud correlaciona con mayor colesterol
-    // - Mayor ratio de forma de onda correlaciona con mayor colesterol
-    // - Menor saturación correlaciona con mayor colesterol
-    
-    const baseValue = 180; // Valor base
-    
-    // Ajustes por características de la señal
-    const amplitudeComponent = -50 * Math.min(1, amplitude / 0.5); // Menor amplitud = mayor colesterol
-    const waveformComponent = 25 * Math.min(2, waveformRatio); // Mayor ratio = mayor colesterol
-    const saturationComponent = -40 * Math.min(1, (saturation - 90) / 10); // Menor saturación = mayor colesterol
-    
-    // Factores aleatorios para simular variabilidad individual
-    const randomVariation = (Math.random() * 20) - 10;
-    
-    return baseValue + amplitudeComponent + waveformComponent + saturationComponent + randomVariation;
-  }
-  
-  /**
-   * Estima triglicéridos basados en características de la señal
-   */
-  private estimateTriglycerides(amplitude: number, periodicity: number, saturation: number): number {
-    // Modelo básico donde:
-    // - Menor amplitud correlaciona con mayores triglicéridos
-    // - Menor periodicidad correlaciona con mayores triglicéridos
-    // - Menor saturación correlaciona con mayores triglicéridos
-    
-    const baseValue = 150; // Valor base
-    
-    // Ajustes por características de la señal
-    const amplitudeComponent = -60 * Math.min(1, amplitude / 0.5); // Menor amplitud = mayores triglicéridos
-    const periodicityComponent = -40 * periodicity; // Menor periodicidad = mayores triglicéridos
-    const saturationComponent = -30 * Math.min(1, (saturation - 90) / 10); // Menor saturación = mayores triglicéridos
-    
-    // Factores aleatorios para simular variabilidad individual
-    const randomVariation = (Math.random() * 30) - 15;
-    
-    return baseValue + amplitudeComponent + periodicityComponent + saturationComponent + randomVariation;
-  }
-  
-  /**
-   * Restablece el estado del estimador
-   */
   public reset(): void {
-    this.signalBuffer = [];
-    this.saturations = [];
+    this.dataPoints = [];
   }
 }

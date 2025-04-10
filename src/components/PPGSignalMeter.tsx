@@ -1,17 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint } from 'lucide-react';
-import { CircularBuffer } from '../utils/CircularBuffer';
+import { Fingerprint, AlertCircle } from 'lucide-react';
+import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { useSignalValidation } from '../hooks/useSignalValidation';
-import SignalValidationBox from './SignalValidationBox';
-import { validateFullSignal } from '../core/RealSignalValidator';
-
-interface PPGDataPointExtended {
-  time: number;
-  value: number;
-  isArrhythmia?: boolean;
-}
+import { ArrhythmiaDetector, ArrhythmiaEvent } from '../modules/heart-beat/ArrhythmiaDetector';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -29,7 +21,11 @@ interface PPGSignalMeterProps {
   isArrhythmia?: boolean;
 }
 
-const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({ 
+interface PPGDataPointExtended extends PPGDataPoint {
+  isArrhythmia?: boolean;
+}
+
+const PPGSignalMeter = memo(({ 
   value, 
   quality, 
   isFingerDetected,
@@ -39,9 +35,9 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   rawArrhythmiaData,
   preserveResults = false,
   isArrhythmia = false
-}) => {
+}: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended>>(new CircularBuffer<PPGDataPointExtended>(600));
+  const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
   const baselineRef = useRef<number | null>(null);
   const lastValueRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number>();
@@ -55,19 +51,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
+  const arrhythmiaDetectorRef = useRef<ArrhythmiaDetector>(new ArrhythmiaDetector());
+  const arrhythmiaEventsRef = useRef<ArrhythmiaEvent[]>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
-
-  const { 
-    validation, 
-    addValue: addValidationValue, 
-    validateSignal, 
-    startValidation, 
-    stopValidation, 
-    reset: resetValidation
-  } = useSignalValidation();
 
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
@@ -94,7 +83,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 350;
 
-  const triggerHeartbeatFeedback = useHeartbeatFeedback();
+  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -137,7 +126,9 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         return false;
       }
       
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      const feedbackType: HeartbeatFeedbackType = isArrhythmia ? 'arrhythmia' : 'normal';
+      console.log(`PPGSignalMeter: Activando feedback tipo: ${feedbackType}`);
+      triggerHeartbeatFeedback(feedbackType);
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -150,6 +141,9 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   }, [triggerHeartbeatFeedback]);
 
   useEffect(() => {
+    if (!dataBufferRef.current) {
+      dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
+    }
     if (preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
@@ -162,7 +156,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
-    if (qualityHistoryRef.current.length > 9) {
+    if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
       qualityHistoryRef.current.shift();
     }
     
@@ -171,11 +165,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
-
-    if (isFingerDetected && value !== 0) {
-      addValidationValue(value);
-    }
-  }, [quality, isFingerDetected, value, addValidationValue]);
+  }, [quality, isFingerDetected]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -230,6 +220,36 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
+  }, []);
+
+  const drawArrhythmiaCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, type: ArrhythmiaEvent['type']) => {
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, 2 * Math.PI);
+
+    switch (type) {
+      case 'bradycardia':
+        ctx.fillStyle = '#3B82F6';
+        break;
+      case 'tachycardia':
+        ctx.fillStyle = '#F97316';
+        break;
+      case 'extrasystole':
+        ctx.fillStyle = '#EF4444';
+        break;
+      case 'irregular':
+        ctx.fillStyle = '#A855F7';
+        break;
+      default:
+        ctx.fillStyle = '#9CA3AF';
+        break;
+    }
+
+    ctx.fill();
+
+    ctx.font = '12px Inter';
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.fillText(type, x, y - 12);
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -372,6 +392,63 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
+        
+        if (peaksRef.current.length >= 2) {
+          const lastPeak = peaksRef.current[peaksRef.current.length - 2];
+          const currentPeak = peaksRef.current[peaksRef.current.length - 1];
+          
+          const rr = currentPeak.time - lastPeak.time;
+          
+          const arrhythmia = arrhythmiaDetectorRef.current.update(rr);
+          
+          if (arrhythmia) {
+            console.log(`Arritmia detectada: ${arrhythmia.type} - BPM: ${arrhythmia.bpm.toFixed(1)}`);
+            arrhythmiaEventsRef.current.push(arrhythmia);
+            
+            if (arrhythmiaEventsRef.current.length > 10) {
+              arrhythmiaEventsRef.current.shift();
+            }
+            
+            triggerHeartbeatFeedback(arrhythmia.type);
+            
+            if (navigator.vibrate) {
+              try {
+                navigator.vibrate([100, 50, 100]);
+                console.log('Vibración de arritmia activada');
+              } catch (err) {
+                console.error('Error al activar vibración:', err);
+              }
+            }
+          } else {
+            if (navigator.vibrate) {
+              try {
+                if (quality < 40) {
+                  navigator.vibrate([30, 30]);
+                  console.log('Vibración de señal débil activada');
+                } else {
+                  let rmssd = 0;
+                  if (peaksRef.current.length >= 6) {
+                    const lastTimes = peaksRef.current.slice(-6).map(p => p.time);
+                    const intervals = lastTimes.slice(1).map((t, i) => t - lastTimes[i]);
+                    const diffs = intervals.slice(1).map((iv, i) => iv - intervals[i]);
+                    const squaredDiffs = diffs.map(d => d * d);
+                    rmssd = Math.sqrt(squaredDiffs.reduce((sum, d) => sum + d, 0) / squaredDiffs.length);
+                  }
+                  
+                  if (rmssd < 20) {
+                    navigator.vibrate([20]);
+                    console.log('Vibración de ritmo tenso activada (rmssd bajo)');
+                  } else {
+                    navigator.vibrate([10]);
+                    console.log('Vibración de latido normal activada');
+                  }
+                }
+              } catch (err) {
+                console.error('Error al activar vibración:', err);
+              }
+            }
+          }
+        }
       }
     }
     
@@ -380,7 +457,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, []);
+  }, [quality, triggerHeartbeatFeedback]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -460,9 +537,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
-
-    const ppgOptimized = points.map(p => p.value);
-    const result = validateFullSignal(ppgOptimized);
     
     let shouldBeep = false;
     
@@ -543,6 +617,15 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           }
         }
       });
+      
+      arrhythmiaEventsRef.current.forEach(arrhythmia => {
+        const x = canvas.width - ((now - arrhythmia.timestamp) * canvas.width / WINDOW_WIDTH_MS);
+        const y = canvas.height / 2;
+        
+        if (x >= 0 && x <= canvas.width) {
+          drawArrhythmiaCircle(renderCtx, x, y, arrhythmia.type);
+        }
+      });
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -561,7 +644,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
+  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, drawArrhythmiaCircle]);
 
   useEffect(() => {
     renderSignal();
@@ -578,34 +661,20 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     peaksRef.current = [];
     arrhythmiaSegmentsRef.current = [];
     pendingBeepPeakIdRef.current = null;
-    resetValidation();
+    arrhythmiaEventsRef.current = [];
+    arrhythmiaDetectorRef.current.reset();
     onReset();
-  }, [onReset, resetValidation]);
-
-  useEffect(() => {
-    if (isFingerDetected) {
-      startValidation();
-    } else {
-      stopValidation();
-    }
-    return () => {
-      stopValidation();
-    };
-  }, [isFingerDetected, startValidation, stopValidation]);
+  }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= 3;
-
-  const points = dataBufferRef.current?.getPoints() || [];
-  const ppgOptimized = points.map(p => p.value);
-  const result = validateFullSignal(ppgOptimized);
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
         ref={canvasRef}
-        width={1200}
-        height={900}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
         className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
         style={{
           transform: 'translate3d(0,0,0)',
@@ -618,17 +687,18 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
-          
-          {isFingerDetected && (
-            <SignalValidationBox
-              result={result}
-              ppg={ppgOptimized}
-              lastBeepTime={lastBeepTimeRef.current}
-              lastFrameTime={lastRenderTimeRef.current}
-              calibrationInProgress={false}
-              optimizerWorking={false}
-            />
-          )}
+          <div className="w-[180px]">
+            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
+              <div
+                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
+                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
+              />
+            </div>
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+              {getQualityText(quality)}
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-col items-center">
@@ -663,6 +733,8 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       </div>
     </div>
   );
-};
+});
 
-export default memo(PPGSignalMeter);
+PPGSignalMeter.displayName = 'PPGSignalMeter';
+
+export default PPGSignalMeter;

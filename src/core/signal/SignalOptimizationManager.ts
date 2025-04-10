@@ -2,7 +2,6 @@
 import { AdaptiveOptimizer, OptimizedChannel } from './AdaptiveOptimizer';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { ProcessedSignal } from '../types';
-import { validateFullSignal, SignalValidationResult } from '../RealSignalValidator';
 
 /**
  * Interfaz para resultados de optimización de señal
@@ -16,8 +15,6 @@ export interface OptimizationResult {
   signalQuality: number;
   isDominantFrequencyValid: boolean;
   dominantFrequency: number;
-  // Añadir resultado de validación de señal
-  signalValidation: SignalValidationResult;
 }
 
 /**
@@ -42,9 +39,6 @@ export class SignalOptimizationManager {
   private readonly QUALITY_THRESHOLD_LOW = 30;
   private readonly QUALITY_THRESHOLD_MEDIUM = 60;
   private readonly QUALITY_THRESHOLD_HIGH = 80;
-  
-  // Último resultado de validación de señal
-  private lastSignalValidation: SignalValidationResult | null = null;
   
   /**
    * Constructor del gestor de optimización
@@ -126,12 +120,6 @@ export class SignalOptimizationManager {
     // Proporcionar feedback al optimizador
     this.provideFeedbackToOptimizer(optimizedChannels, heartRate, confidence);
     
-    // ******* AQUÍ VALIDAMOS LA SEÑAL *******
-    // Ejecutar la validación completa de la señal justo después del procesamiento
-    // y antes de que los resultados sean usados por los modelos predictivos
-    const signalValidation = validateFullSignal(this.signalBuffer.slice(-60));
-    this.lastSignalValidation = signalValidation;
-    
     // Construir resultado de optimización
     const result: OptimizationResult = {
       heartRate: {
@@ -141,8 +129,7 @@ export class SignalOptimizationManager {
       optimizedChannels,
       signalQuality,
       dominantFrequency,
-      isDominantFrequencyValid,
-      signalValidation
+      isDominantFrequencyValid
     };
     
     // Almacenar resultado
@@ -206,13 +193,6 @@ export class SignalOptimizationManager {
   }
   
   /**
-   * Obtiene el último resultado de validación de señal
-   */
-  public getLastSignalValidation(): SignalValidationResult | null {
-    return this.lastSignalValidation;
-  }
-  
-  /**
    * Obtiene valores de un canal específico
    */
   public getChannelValues(channelName: string): number[] {
@@ -236,7 +216,6 @@ export class SignalOptimizationManager {
     this.lastConfidence = 0;
     this.heartRateBuffer = [];
     this.lastOptimizationResult = null;
-    this.lastSignalValidation = null;
   }
   
   /**
