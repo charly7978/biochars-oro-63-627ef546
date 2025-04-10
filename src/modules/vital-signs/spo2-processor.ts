@@ -27,21 +27,19 @@ export class SpO2Processor {
     
     const perfusionIndex = ac / dc;
     
-    if (perfusionIndex < 0.03) { // Reduced from 0.06 for better sensitivity
-      return this.getLastValidSpo2(1); // Reduced decay from 2 to 1
+    if (perfusionIndex < 0.06) {
+      return this.getLastValidSpo2(2);
     }
 
-    // Direct calculation from real signal characteristics using improved formula
+    // Direct calculation from real signal characteristics
     const R = (ac / dc);
     
-    // Mejorada fórmula de cálculo basada en la relación real entre R y SpO2
-    // Utiliza una curva más precisa para la relación R-ratio y SpO2
-    let spO2 = Math.round(110 - (25 * R));
+    let spO2 = Math.round(98 - (15 * R));
     
-    // Adjust based on real perfusion quality with better sensitivity
-    if (perfusionIndex > 0.12) { // Reduced from 0.15
-      spO2 = Math.min(99, spO2 + 2);
-    } else if (perfusionIndex < 0.06) { // Reduced from 0.08
+    // Adjust based on real perfusion quality
+    if (perfusionIndex > 0.15) {
+      spO2 = Math.min(98, spO2 + 1);
+    } else if (perfusionIndex < 0.08) {
       spO2 = Math.max(0, spO2 - 1);
     }
 

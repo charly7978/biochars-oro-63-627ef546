@@ -11,7 +11,6 @@ import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 
 const Index = () => {
-  // Estados principales
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -29,12 +28,8 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  
-  // Referencias
   const measurementTimerRef = useRef<number | null>(null);
-  const lastProcessedValueRef = useRef<number>(0);
   
-  // Hooks de procesamiento
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
@@ -70,65 +65,50 @@ const Index = () => {
     };
   }, []);
 
-  // Cuando hay resultados válidos disponibles
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      console.log("Últimos resultados válidos actualizados:", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Procesar señales y actualizar UI
+  // Process signal only if we have good quality and finger detection
   useEffect(() => {
-    if (!lastSignal || !isMonitoring) return;
-    
-    // Solo procesar si hay cambios significativos en el valor para evitar procesamiento innecesario
-    const currentValue = lastSignal.filteredValue;
-    const valueDiff = Math.abs(currentValue - lastProcessedValueRef.current);
-    
-    // Si el valor es similar al anterior y ya hemos procesado antes, no procesar de nuevo
-    if (valueDiff < 0.001 && lastProcessedValueRef.current > 0) {
-      return;
-    }
-    
-    // Actualizar el último valor procesado
-    lastProcessedValueRef.current = currentValue;
-    
-    // Solo procesar si la calidad es suficiente y el dedo está detectado
-    if (lastSignal.fingerDetected && lastSignal.quality >= 40) {
-      console.log("Procesando señal con calidad:", lastSignal.quality);
+    if (lastSignal && isMonitoring) {
+      // Only process if the quality is sufficient and the finger is detected
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
       
-      // Procesar para ritmo cardíaco
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      
-      // Solo actualizar ritmo cardíaco si la confianza es suficiente
-      if (heartBeatResult.confidence > 0.4) { 
-        setHeartRate(heartBeatResult.bpm);
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        // Procesar signos vitales con datos RR si están disponibles
-        try {
-          const vitalsResult = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          // IMPORTANTE: solo actualizar si tenemos resultados válidos
-          if (vitalsResult) {
-            console.log("Actualizando signos vitales:", vitalsResult);
-            setVitalSigns(vitalsResult);
+        // Only update heart rate if confidence is sufficient
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
+          setHeartRate(heartBeatResult.bpm);
+          
+          // Add null checks
+          try {
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+            if (vitals) {
+              setVitalSigns(vitals);
+            }
+          } catch (error) {
+            console.error("Error processing vital signs:", error);
           }
-        } catch (error) {
-          console.error("Error processing vital signs:", error);
+        }
+        
+        setSignalQuality(lastSignal.quality);
+      } else {
+        // When no quality signal, update signal quality but not values
+        setSignalQuality(lastSignal.quality);
+        
+        // If finger not detected for a while, reset heart rate to zero
+        if (!lastSignal.fingerDetected && heartRate > 0) {
+          setHeartRate(0);
         }
       }
-      
-      // Siempre actualizar calidad de señal
-      setSignalQuality(lastSignal.quality);
-    } else {
-      // Actualizar solo calidad cuando no hay buena señal
-      setSignalQuality(lastSignal.quality);
-      
-      // Si el dedo no se detecta por un tiempo, resetear ritmo
-      if (!lastSignal.fingerDetected && heartRate > 0) {
-        setHeartRate(0);
-      }
+    } else if (!isMonitoring) {
+      // If not monitoring, maintain zero values
+      setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
@@ -136,16 +116,14 @@ const Index = () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
-      console.log("Iniciando medición");
       enterFullScreen();
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0);
-      lastProcessedValueRef.current = 0;
+      setHeartRate(0); // Reset heart rate explicitly
       
       startProcessing();
-      startHeartBeatMonitoring();
+      startHeartBeatMonitoring(); // Update the processor state
       
       setElapsedTime(0);
       
@@ -174,7 +152,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
+    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -183,14 +161,13 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      console.log("Guardando resultados finales:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0);
+    setHeartRate(0); // Reset heart rate explicitly
   };
 
   const handleReset = () => {
@@ -222,7 +199,6 @@ const Index = () => {
       hemoglobin: 0
     });
     setSignalQuality(0);
-    lastProcessedValueRef.current = 0;
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -308,7 +284,6 @@ const Index = () => {
     }
   };
 
-  // Renderizado de la interfaz
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',

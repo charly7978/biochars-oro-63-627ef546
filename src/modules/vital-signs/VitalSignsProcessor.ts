@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -13,6 +12,7 @@ import { ResultFactory } from './factories/result-factory';
 import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
+import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
 
 /**
  * Main vital signs processor
@@ -27,16 +27,11 @@ export class VitalSignsProcessor {
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
+  private processor: CoreProcessor;
   
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
-  
-  // Valores de referencia para lípidos - asegurar consistencia
-  private readonly MIN_CHOLESTEROL = 130; // Mínimo fisiológico (mg/dL)
-  private readonly MAX_CHOLESTEROL = 220; // Límite superior más conservador (mg/dL)
-  private readonly MIN_TRIGLYCERIDES = 50; // Mínimo fisiológico (mg/dL)
-  private readonly MAX_TRIGLYCERIDES = 170; // Límite superior más conservador (mg/dL)
 
   // Signal measurement parameters
   private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
@@ -66,9 +61,6 @@ export class VitalSignsProcessor {
   private validPhysiologicalSignalsCount: number = 0;
   private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
   
-  // Arrhythmia counter
-  private arrhythmiaCounter: number = 0;
-  
   /**
    * Constructor that initializes all specialized processors
    * Using only direct measurement
@@ -83,6 +75,7 @@ export class VitalSignsProcessor {
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
+    this.processor = new CoreProcessor();
     
     // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
@@ -139,7 +132,6 @@ export class VitalSignsProcessor {
     
     // Enhanced signal verification with stability check
     const { isWeakSignal, updatedWeakSignalsCount } = this.checkSignalQuality(ppgValue);
-    this.weakSignalsCount = updatedWeakSignalsCount;
     
     // Additional stability check to prevent false positives
     const isStable = this.checkSignalStability();
@@ -179,11 +171,6 @@ export class VitalSignsProcessor {
                              rrData.intervals.every(i => i > 300 && i < 2000) ?
                              this.arrhythmiaProcessor.processRRData(rrData) :
                              { arrhythmiaStatus: "--", lastArrhythmiaData: null };
-      
-      // If arrhythmia detected, increment counter
-      if (arrhythmiaResult.arrhythmiaStatus && arrhythmiaResult.arrhythmiaStatus.includes("ARRITMIA")) {
-        this.arrhythmiaCounter++;
-      }
       
       // Get PPG values for processing
       const ppgValues = this.signalProcessor.getPPGValues();
@@ -367,8 +354,7 @@ export class VitalSignsProcessor {
     this.frameRateHistory = [];
     this.lastFrameTime = 0;
     this.validPhysiologicalSignalsCount = 0;
-    this.arrhythmiaCounter = 0;
-    return null;
+    return this.processor.reset();
   }
   
   /**
@@ -382,14 +368,14 @@ export class VitalSignsProcessor {
     this.frameRateHistory = [];
     this.lastFrameTime = 0;
     this.validPhysiologicalSignalsCount = 0;
-    this.arrhythmiaCounter = 0;
+    this.processor.fullReset();
   }
   
   /**
    * Get arrhythmia counter
    */
   public getArrhythmiaCounter(): number {
-    return this.arrhythmiaCounter;
+    return this.processor.getArrhythmiaCounter();
   }
 
   /**

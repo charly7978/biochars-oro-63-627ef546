@@ -5,16 +5,16 @@
  */
 export class GlucoseProcessor {
   private confidence: number = 0;
-  private readonly MIN_SAMPLES = 15; // Reduced from 20 for faster processing
+  private readonly MIN_SAMPLES = 20; // Increased required samples
   private readonly GLUCOSE_BASELINE = 90; // Standard fasting reference
   
-  // Adjusted weight factors to better utilize real signal data
-  private readonly PERFUSION_FACTOR = 0.65; // Increased from 0.5 for better sensitivity
-  private readonly AMPLITUDE_FACTOR = 0.20; // Increased from 0.15 for better sensitivity
-  private readonly FREQUENCY_FACTOR = 0.25; // Increased from 0.20 for better sensitivity
-  private readonly PHASE_FACTOR = 0.15; // Increased from 0.10 for better sensitivity
-  private readonly AREA_UNDER_CURVE_FACTOR = 0.18; // Increased from 0.12 for better sensitivity
-  private readonly SIGNAL_WINDOW_SIZE = 4; // Reduced from 5 for faster response
+  // Conservative weight factors to prevent over-estimation
+  private readonly PERFUSION_FACTOR = 0.5; // Reduced from 0.75
+  private readonly AMPLITUDE_FACTOR = 0.15; // Reduced from 0.22
+  private readonly FREQUENCY_FACTOR = 0.20; // Reduced from 0.30
+  private readonly PHASE_FACTOR = 0.10; // Reduced from 0.15
+  private readonly AREA_UNDER_CURVE_FACTOR = 0.12; // Reduced from 0.18
+  private readonly SIGNAL_WINDOW_SIZE = 5;
   
   // Tracking of calibration samples and previous values for stability
   private readonly STABILITY_WINDOW = 5; // Increased stability window
@@ -46,12 +46,12 @@ export class GlucoseProcessor {
       return 0; // Not enough data
     }
     
-    // Validate signal quality with reduced thresholds
+    // Validate signal quality
     const signalVariability = this.calculateVariability(ppgValues);
     const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
     
-    // If signal quality is too poor, return 0 - reduced thresholds for better sensitivity
-    if (signalAmplitude < 0.02 || signalVariability > 0.95) { // Reduced amplitude threshold from 0.05, increased variability threshold from 0.8
+    // If signal quality is too poor, return 0
+    if (signalAmplitude < 0.05 || signalVariability > 0.8) {
       this.confidence = 0;
       this.hasQualityData = false;
       console.log("GlucoseProcessor: Signal quality too poor", { 
