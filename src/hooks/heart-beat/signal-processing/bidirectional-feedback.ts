@@ -1,3 +1,4 @@
+
 import { FeedbackState } from './types';
 
 /**
@@ -298,5 +299,5 @@ export function applyBidirectionalFeedback(
   }
 }
 
-// Exportar getGlobalFeedbackState
-export { getGlobalFeedbackState };
+// Remove the erroneous export that's causing the issue
+// export { getGlobalFeedbackState };
