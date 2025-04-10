@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -287,14 +288,15 @@ const Index = () => {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-black" style={{ 
+    <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
       width: '100vw',
       maxWidth: '100vw',
       maxHeight: '100vh',
       overflow: 'hidden',
       paddingTop: 'env(safe-area-inset-top)',
-      paddingBottom: 'env(safe-area-inset-bottom)'
+      paddingBottom: 'env(safe-area-inset-bottom)',
+      background: 'linear-gradient(to bottom, #9b87f5 0%, #D6BCFA 15%, #8B5CF6 30%, #D946EF 45%, #F97316 60%, #0EA5E9 75%, #1A1F2C 85%, #221F26 92%, #222222 100%)'
     }}>
       <div className="flex-1 relative">
         <div className="absolute inset-0">
