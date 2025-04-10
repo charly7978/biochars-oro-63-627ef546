@@ -1,6 +1,5 @@
 
 import { useEffect, useRef } from 'react';
-import { beatDispatcher } from '../core/BeatDispatcher';
 
 /**
  * Hook que proporciona retroalimentación táctil y auditiva para los latidos cardíacos
@@ -19,21 +18,8 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
     
-    // Escuchar eventos de beatDispatcher para feedback automático
-    const handleExternalBeat = (time: number, position: number) => {
-      // Solo responder a latidos muy recientes (menos de 1 segundo)
-      const now = Date.now() / 1000; // convertir a segundos para comparar con time
-      if (now - time < 1) {
-        trigger();
-      }
-    };
-    
-    beatDispatcher.addListener(handleExternalBeat);
-    
     // Cleanup al desmontar
     return () => {
-      beatDispatcher.removeListener(handleExternalBeat);
-      
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         audioCtxRef.current.close().catch(err => {
           console.error('Error cerrando el contexto de audio:', err);
