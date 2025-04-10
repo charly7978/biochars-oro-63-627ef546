@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer } from '../utils/CircularBuffer';
@@ -6,8 +5,8 @@ import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
 import { useSignalValidation } from '../hooks/useSignalValidation';
 import SignalValidationBox from './SignalValidationBox';
+import { validateFullSignal } from '../core/RealSignalValidator';
 
-// Define the interfaces needed for the component
 interface PPGDataPointExtended {
   time: number;
   value: number;
@@ -57,13 +56,10 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   
-  // Configuración de audio mejorada
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
-  const heartbeatSoundRef = useRef<HTMLAudioElement | null>(null);
 
-  // Use the signal validation hook
   const { 
     validation, 
     addValue: addValidationValue, 
@@ -73,7 +69,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     reset: resetValidation
   } = useSignalValidation();
 
-  // Constants for the component
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
   const CANVAS_HEIGHT = 900;
@@ -101,16 +96,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
-  // Initialize the audio context and preload the heartbeat sound
   useEffect(() => {
-    console.log("PPGSignalMeter: Inicializando sistema de audio");
-    
-    // Precargar el sonido de latido cardíaco
-    const heartbeatSound = new Audio('/sounds/heartbeat.mp3');
-    heartbeatSound.load();
-    heartbeatSoundRef.current = heartbeatSound;
-    
-    // Inicializar AudioContext (necesario para Web Audio API)
     const initAudio = async () => {
       try {
         if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
@@ -119,12 +105,9 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
-            console.log("PPGSignalMeter: Audio Context resumido con éxito");
           }
           
-          // Reproducir un beep silencioso para activar el audio en navegadores que requieren interacción
-          const silentBeep = await playBeep(0.01);
-          console.log("PPGSignalMeter: Beep de inicialización:", silentBeep ? "exitoso" : "fallido");
+          await playBeep(0.01);
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
@@ -140,20 +123,12 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         });
         audioContextRef.current = null;
       }
-      
-      if (heartbeatSoundRef.current) {
-        heartbeatSoundRef.current.pause();
-        heartbeatSoundRef.current = null;
-      }
     };
   }, []);
 
-  // Función mejorada para reproducir beep con garantía de sonido
   const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
     try {
       const now = Date.now();
-      
-      // Verificar el intervalo mínimo para evitar beeps muy seguidos
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
         console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
           timeSinceLastBeep: now - lastBeepTimeRef.current,
@@ -162,49 +137,8 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         return false;
       }
       
-      console.log("PPGSignalMeter: Intentando reproducir beep", {
-        volumen: volume,
-        esArritmia: isArrhythmia,
-        tiempo: new Date(now).toISOString()
-      });
-      
-      // Usar el archivo de audio precargado (más confiable en móviles)
-      if (heartbeatSoundRef.current) {
-        heartbeatSoundRef.current.volume = volume;
-        heartbeatSoundRef.current.currentTime = 0;
-        
-        const playPromise = heartbeatSoundRef.current.play();
-        if (playPromise !== undefined) {
-          await playPromise;
-          console.log("PPGSignalMeter: Beep reproducido exitosamente con Audio");
-        }
-      } 
-      // Método alternativo usando Web Audio API
-      else if (audioContextRef.current) {
-        const oscillator = audioContextRef.current.createOscillator();
-        const gainNode = audioContextRef.current.createGain();
-        
-        oscillator.type = 'sine';
-        oscillator.frequency.value = isArrhythmia ? BEEP_SECONDARY_FREQUENCY : BEEP_PRIMARY_FREQUENCY;
-        
-        gainNode.gain.value = volume;
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContextRef.current.destination);
-        
-        oscillator.start();
-        oscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000);
-        
-        console.log("PPGSignalMeter: Beep reproducido exitosamente con Web Audio API");
-      } else {
-        console.warn("PPGSignalMeter: No hay método de audio disponible");
-        return false;
-      }
-      
-      // Activar retroalimentación háptica
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
-      // Actualizar el tiempo del último beep
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
       
@@ -215,7 +149,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [triggerHeartbeatFeedback]);
 
-  // Update signal buffer
   useEffect(() => {
     if (preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
@@ -227,27 +160,23 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [preserveResults, isFingerDetected]);
 
-  // Process quality measurements and add values to validation
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
     if (qualityHistoryRef.current.length > 9) {
       qualityHistoryRef.current.shift();
     }
     
-    // Update finger detection counter
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
     } else {
       consecutiveFingerFramesRef.current = 0;
     }
 
-    // Add current value to the validation buffer
     if (isFingerDetected && value !== 0) {
       addValidationValue(value);
     }
   }, [quality, isFingerDetected, value, addValidationValue]);
 
-  // Initialize canvas
   useEffect(() => {
     const offscreen = document.createElement('canvas');
     offscreen.width = CANVAS_WIDTH;
@@ -265,7 +194,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, []);
 
-  // Get average quality
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
@@ -281,7 +209,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     return weightSum > 0 ? weightedSum / weightSum : 0;
   }, []);
 
-  // Get quality color
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
@@ -291,7 +218,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     return 'from-red-500 to-rose-500';
   }, [getAverageQuality]);
 
-  // Get quality text
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
@@ -301,13 +227,11 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     return 'Señal débil';
   }, [getAverageQuality]);
 
-  // Smooth value function
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
   }, []);
 
-  // Draw grid function
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#E5DEFF');
@@ -394,12 +318,8 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert]);
 
-  // Detect peaks function with logging mejorado
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
-    if (points.length < PEAK_DETECTION_WINDOW) {
-      console.log("PPGSignalMeter: No hay suficientes puntos para detección de picos");
-      return;
-    }
+    if (points.length < PEAK_DETECTION_WINDOW) return;
     
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
     
@@ -431,12 +351,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       }
       
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
-        console.log("PPGSignalMeter: Pico potencial detectado", {
-          time: currentPoint.time,
-          value: currentPoint.value,
-          isArrhythmia: currentPoint.isArrhythmia || false
-        });
-        
         potentialPeaks.push({
           index: i,
           value: currentPoint.value,
@@ -452,12 +366,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       );
       
       if (!tooClose) {
-        console.log("PPGSignalMeter: Nuevo pico añadido a la lista", {
-          time: peak.time,
-          value: peak.value,
-          isArrhythmia: peak.isArrhythmia
-        });
-        
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
@@ -474,7 +382,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
-  // Render signal function con sonido garantizado
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -553,6 +460,19 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
+
+    const ppgOptimized = points.map(p => p.value);
+    const result = validateFullSignal(ppgOptimized);
+    const badSegments = result.badSegments;
+    
+    badSegments.forEach(([start, end]) => {
+      const xStart = canvas.width - ((now - start) * canvas.width / WINDOW_WIDTH_MS);
+      const xEnd = canvas.width - ((now - end) * canvas.width / WINDOW_WIDTH_MS);
+      renderCtx.fillStyle = 'rgba(255, 0, 0, 0.12)';
+      renderCtx.fillRect(xEnd, 0, xStart - xEnd, canvas.height);
+    });
+    
+    let shouldBeep = false;
     
     if (points.length > 1) {
       let firstPoint = true;
@@ -597,7 +517,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         renderCtx.stroke();
       }
       
-      // Dibuja los picos y activa el beep
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - peak.value;
@@ -607,30 +526,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
           renderCtx.arc(x, y, 5, 0, Math.PI * 2);
           renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
-          
-          // Reproducir beep cuando el pico se está dibujando y no se ha reproducido aún
-          if (
-            !peak.beepPlayed &&
-            peak.time < now &&
-            now - peak.time < 70 && // Tolerancia ajustada a 70ms para mayor sensibilidad
-            consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES
-          ) {
-            console.log('PICO DETECTADO - REPRODUCIENDO BEEP', {
-              peakTime: peak.time,
-              currentTime: now,
-              timeDiff: now - peak.time,
-              isArrhythmia: peak.isArrhythmia,
-              isBeepPlayed: peak.beepPlayed
-            });
-
-            playBeep(BEEP_VOLUME, peak.isArrhythmia);
-            peak.beepPlayed = true;
-          }
-          
-          renderCtx.font = 'bold 16px Inter';
-          renderCtx.fillStyle = '#000000';
-          renderCtx.textAlign = 'center';
-          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
           
           if (peak.isArrhythmia) {
             renderCtx.beginPath();
@@ -644,6 +539,16 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 25);
           }
+          
+          renderCtx.font = 'bold 16px Inter';
+          renderCtx.fillStyle = '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          
+          if (!peak.beepPlayed) {
+            shouldBeep = true;
+            peak.beepPlayed = true;
+          }
         }
       });
     }
@@ -655,11 +560,17 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
       }
     }
     
+    if (shouldBeep && isFingerDetected && 
+        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
+      playBeep(1.0, isArrhythmia || 
+        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+    }
+    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
 
-  // Initialize rendering
   useEffect(() => {
     renderSignal();
     
@@ -670,7 +581,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     };
   }, [renderSignal]);
 
-  // Reset function
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
@@ -680,7 +590,6 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     onReset();
   }, [onReset, resetValidation]);
 
-  // Start the validation when monitoring starts
   useEffect(() => {
     if (isFingerDetected) {
       startValidation();
@@ -694,6 +603,10 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= 3;
+
+  const points = dataBufferRef.current?.getPoints() || [];
+  const ppgOptimized = points.map(p => p.value);
+  const result = validateFullSignal(ppgOptimized);
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -714,7 +627,16 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
           
-          {isFingerDetected && <SignalValidationBox result={validation} />}
+          {isFingerDetected && (
+            <SignalValidationBox
+              result={result}
+              ppg={ppgOptimized}
+              lastBeepTime={lastBeepTimeRef.current}
+              lastFrameTime={lastRenderTimeRef.current}
+              calibrationInProgress={false}
+              optimizerWorking={false}
+            />
+          )}
         </div>
 
         <div className="flex flex-col items-center">
@@ -735,19 +657,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
 
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
-          onClick={() => {
-            // Activar audio en respuesta a la interacción del usuario
-            if (audioContextRef.current && audioContextRef.current.state !== 'running') {
-              audioContextRef.current.resume().then(() => {
-                console.log("Audio Context reanudado por interacción del usuario");
-                // Reproducir un beep de prueba para verificar audio
-                playBeep(0.5);
-              });
-            }
-            
-            // Luego iniciar la medición
-            onStartMeasurement();
-          }}
+          onClick={onStartMeasurement}
           className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           INICIAR

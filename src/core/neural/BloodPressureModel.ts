@@ -1,3 +1,4 @@
+
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -37,26 +38,26 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       'BloodPressureNeuralModel',
       [300], // 5 segundos de señal @ 60Hz
       [2],   // Salida: [sistólica, diastólica] en mmHg
-      '2.2.0' // Updated version for increased sensitivity
+      '2.1.0'
     );
     
-    // Enhanced feature extraction layers
-    this.conv1 = new Conv1DLayer(1, 32, 11, 1, 'relu'); // Reduced kernel size from 15 to 11 for more sensitivity
+    // Feature extraction layers
+    this.conv1 = new Conv1DLayer(1, 32, 15, 1, 'relu');
     this.bn1 = new BatchNormLayer(32);
     
-    // Optimized residual blocks
+    // Residual blocks
     this.residualBlock1 = new ResidualBlock(32, 7);
     this.residualBlock2 = new ResidualBlock(32, 5);
     
-    // Enhanced systolic branch
-    this.systolicBranch1 = new DenseLayer(32, 28, undefined, undefined, 'relu'); // Increased from 24 to 28
-    this.systolicBranch2 = new DenseLayer(28, 14, undefined, undefined, 'relu'); // Increased from 12 to 14
-    this.systolicOutput = new DenseLayer(14, 1, undefined, undefined, 'linear');
+    // Systolic branch
+    this.systolicBranch1 = new DenseLayer(32, 24, undefined, undefined, 'relu');
+    this.systolicBranch2 = new DenseLayer(24, 12, undefined, undefined, 'relu');
+    this.systolicOutput = new DenseLayer(12, 1, undefined, undefined, 'linear');
     
-    // Enhanced diastolic branch
-    this.diastolicBranch1 = new DenseLayer(32, 28, undefined, undefined, 'relu'); // Increased from 24 to 28
-    this.diastolicBranch2 = new DenseLayer(28, 14, undefined, undefined, 'relu'); // Increased from 12 to 14
-    this.diastolicOutput = new DenseLayer(14, 1, undefined, undefined, 'linear');
+    // Diastolic branch
+    this.diastolicBranch1 = new DenseLayer(32, 24, undefined, undefined, 'relu');
+    this.diastolicBranch2 = new DenseLayer(24, 12, undefined, undefined, 'relu');
+    this.diastolicOutput = new DenseLayer(12, 1, undefined, undefined, 'linear');
   }
   
   /**
@@ -68,7 +69,7 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     const startTime = Date.now();
     
     try {
-      // Preprocesar entrada con mayor sensibilidad
+      // Preprocesar entrada
       const processedInput = this.preprocessInput(input);
       
       // Forward pass - extracción de características
@@ -79,7 +80,7 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       features = this.residualBlock1.forward(features);
       features = this.residualBlock2.forward(features);
       
-      // Global average pooling con preservación de características
+      // Global average pooling
       const pooled = this.globalAveragePooling(features);
       
       // Rama sistólica
@@ -92,12 +93,12 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       diastolicOut = this.diastolicBranch2.forward(diastolicOut);
       diastolicOut = this.diastolicOutput.forward(diastolicOut);
       
-      // Aplicar restricciones fisiológicas con rango más amplio
-      // Sistólica: 85-185 mmHg (ampliado desde 90-180)
-      const systolic = Math.max(85, Math.min(185, 115 + systolicOut[0] * 1.1)); // Added multiplier for sensitivity
+      // Aplicar restricciones fisiológicas
+      // Sistólica: 90-180 mmHg
+      const systolic = Math.max(90, Math.min(180, 115 + systolicOut[0]));
       
-      // Diastólica: 55-115 mmHg (ampliado desde 60-110)
-      const diastolic = Math.max(55, Math.min(115, 75 + diastolicOut[0] * 1.1)); // Added multiplier for sensitivity
+      // Diastólica: 60-110 mmHg
+      const diastolic = Math.max(60, Math.min(110, 75 + diastolicOut[0]));
       
       // Asegurar que sistólica > diastólica por al menos 20 mmHg
       const adjustedDiastolic = Math.min(diastolic, systolic - 20);
@@ -113,74 +114,61 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
   
   /**
    * Preprocesa la señal para análisis de presión arterial
-   * con mayor sensibilidad a cambios sutiles
    */
   private preprocessInput(input: Tensor1D): Tensor1D {
     // Ajustar longitud
     if (input.length < this.inputShape[0]) {
-      // Duplicate signal for small inputs instead of zero padding
-      const repeats = Math.ceil(this.inputShape[0] / input.length);
-      let repeated: number[] = [];
-      for (let i = 0; i < repeats; i++) {
-        repeated = [...repeated, ...input];
-      }
-      input = repeated.slice(0, this.inputShape[0]);
+      const padding = Array(this.inputShape[0] - input.length).fill(0);
+      input = [...input, ...padding];
     } else if (input.length > this.inputShape[0]) {
       input = input.slice(-this.inputShape[0]);
     }
     
-    // Aplicar filtro mejorado
-    let processed = this.enhancedBandpassFilter(input);
+    // Aplicar filtro
+    let processed = this.bandpassFilter(input);
     
-    // Normalizar con amplificación
+    // Normalizar
     const { min, max } = this.findMinMax(processed);
     if (max > min) {
-      // Apply enhanced normalization with slight amplification of variations
-      processed = processed.map(v => {
-        const normalized = (v - min) / (max - min);
-        // Enhance small variations for better sensitivity
-        return 0.5 + (normalized - 0.5) * 1.15; // Amplify deviations from mean
-      });
+      processed = processed.map(v => (v - min) / (max - min));
     }
     
     return processed;
   }
   
   /**
-   * Aplica un filtro paso banda mejorado para mayor sensibilidad
+   * Aplica un filtro paso banda simplificado
    */
-  private enhancedBandpassFilter(signal: Tensor1D): Tensor1D {
-    // Aplicar promedio móvil ponderado para filtro paso bajo
-    const lpfSignal = this.weightedMovingAverage(signal, 5);
+  private bandpassFilter(signal: Tensor1D): Tensor1D {
+    // Aplicar promedio móvil para filtro paso bajo
+    const lpfWindow = 5;
+    const lpfSignal = this.movingAverage(signal, lpfWindow);
     
-    // Aplicar derivador para filtro paso alto con menor atenuación
+    // Aplicar derivador para filtro paso alto
     const hpfSignal: Tensor1D = [];
     for (let i = 0; i < signal.length; i++) {
-      // Reduced attenuation factor from 0.95 to 0.90 for higher sensitivity
-      hpfSignal.push(signal[i] - 0.90 * (lpfSignal[i] || 0));
+      hpfSignal.push(signal[i] - 0.95 * (lpfSignal[i] || 0));
     }
     
     return hpfSignal;
   }
   
   /**
-   * Implementa promedio móvil ponderado para mayor precisión
+   * Implementa promedio móvil
    */
-  private weightedMovingAverage(signal: Tensor1D, window: number): Tensor1D {
+  private movingAverage(signal: Tensor1D, window: number): Tensor1D {
     const result: Tensor1D = [];
     
     for (let i = 0; i < signal.length; i++) {
       let sum = 0;
-      let weightSum = 0;
+      let count = 0;
       
       for (let j = Math.max(0, i - window); j <= Math.min(signal.length - 1, i + window); j++) {
-        // Apply higher weights to values closer to center
-        const weight = 1 - Math.abs(i - j) / (window + 1);
-        sum += signal[j] * weight;
-        weightSum += weight;
+        sum += signal[j];
+        count++;
       }
       
-      result.push(sum / weightSum);
+      result.push(sum / count);
     }
     
     return result;
@@ -202,36 +190,14 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
   }
   
   /**
-   * Enhanced global average pooling with sensitivity to feature importance
+   * Global average pooling implementation
    */
   private globalAveragePooling(features: Tensor1D[]): Tensor1D {
     const result: Tensor1D = [];
     
     for (let f = 0; f < features.length; f++) {
-      // Enhanced pooling that gives more weight to stronger activations
-      const values = features[f];
-      const { min, max } = this.findMinMax(values);
-      const range = max - min;
-      
-      if (range > 0) {
-        // Weighted average giving more importance to higher values
-        let weightedSum = 0;
-        let weightSum = 0;
-        
-        for (const val of values) {
-          // Normalize value and use as weight
-          const normalized = (val - min) / range;
-          const weight = 1 + normalized; // Values from 1 to 2 based on strength
-          
-          weightedSum += val * weight;
-          weightSum += weight;
-        }
-        
-        result.push(weightedSum / weightSum);
-      } else {
-        // If all values are the same, use simple average
-        result.push(values.reduce((acc, val) => acc + val, 0) / values.length);
-      }
+      const sum = features[f].reduce((acc, val) => acc + val, 0);
+      result.push(sum / features[f].length);
     }
     
     return result;
@@ -241,25 +207,25 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     let count = 0;
     
     // Conv layers
-    count += (11 * 1 * 32) + 32;
+    count += (15 * 1 * 32) + 32;
     
     // Residual blocks
     count += 2 * ((7 * 32 * 32) + 32 + (7 * 32 * 32) + 32);
     
     // Dense layers - systolic
-    count += (32 * 28) + 28;
-    count += (28 * 14) + 14;
-    count += (14 * 1) + 1;
+    count += (32 * 24) + 24;
+    count += (24 * 12) + 12;
+    count += (12 * 1) + 1;
     
     // Dense layers - diastolic
-    count += (32 * 28) + 28;
-    count += (28 * 14) + 14;
-    count += (14 * 1) + 1;
+    count += (32 * 24) + 24;
+    count += (24 * 12) + 12;
+    count += (12 * 1) + 1;
     
     return count;
   }
   
   get architecture(): string {
-    return `Enhanced CNN-ResNet-Dual (${this.parameterCount} params)`;
+    return `CNN-ResNet-Dual (${this.parameterCount} params)`;
   }
 }
