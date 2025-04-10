@@ -1,178 +1,162 @@
 
 import * as tf from '@tensorflow/tfjs';
 import { TFBaseModel, TFModelOptions } from './TFBaseModel';
-import { TensorUtils } from '../TensorAdapter';
 
 /**
- * TensorFlow model for heart rate prediction from PPG signals
+ * Modelo TensorFlow para detectar ritmo cardíaco
  */
 export class TFHeartRateModel extends TFBaseModel {
-  private readonly MIN_HEART_RATE: number = 40;
-  private readonly MAX_HEART_RATE: number = 200;
-  private readonly DEFAULT_INPUT_SIZE: number = 300;
+  private lastPredictionTime: number = 0;
+  private predictionDuration: number = 0;
   
-  constructor(options?: Partial<TFModelOptions>) {
+  constructor() {
     super({
-      inputSize: options?.inputSize || 300,
-      useWebGL: options?.useWebGL !== undefined ? options.useWebGL : true,
-      useBatchNorm: options?.useBatchNorm !== undefined ? options.useBatchNorm : true,
-      useQuantization: options?.useQuantization !== undefined ? options.useQuantization : false,
-      useRegularization: options?.useRegularization !== undefined ? options.useRegularization : true,
+      inputShape: [300],
+      outputShape: [1],
+      modelName: 'HeartRateModel',
+      version: '1.0.0'
     });
   }
   
   /**
-   * Get model name
+   * Inicializa el modelo
    */
-  getModelName(): string {
-    return 'HeartRate';
-  }
-  
-  /**
-   * Create the model architecture
-   */
-  protected async createModel(): Promise<tf.LayersModel> {
-    const { inputSize, useBatchNorm, useRegularization } = this.options;
-    
-    // Create model
-    const input = tf.input({ shape: [inputSize, 1] });
-    
-    // Use sequential processing to create smaller model
-    const convModule = (x: tf.SymbolicTensor, filters: number, kernelSize: number, poolSize: number = 2): tf.SymbolicTensor => {
-      // Add padding for causal convolution
-      const padded = tf.layers.zeroPadding1d({ padding: [kernelSize - 1, 0] }).apply(x) as tf.SymbolicTensor;
-      
-      // Apply convolution
-      let conv = tf.layers.conv1d({
-        filters,
-        kernelSize,
-        activation: 'relu',
-        kernelRegularizer: useRegularization ? tf.regularizers.l2({ l2: 0.001 }) : null,
-      }).apply(padded) as tf.SymbolicTensor;
-      
-      // Add batch normalization if needed
-      if (useBatchNorm) {
-        conv = tf.layers.batchNormalization().apply(conv) as tf.SymbolicTensor;
-      }
-      
-      // Apply max pooling
-      return tf.layers.maxPooling1d({ poolSize }).apply(conv) as tf.SymbolicTensor;
-    };
-    
-    // Create a custom lambda layer using functional API
-    const createLambdaLayer = (func: (x: tf.Tensor) => tf.Tensor) => {
-      return (input: tf.SymbolicTensor) => {
-        const lambdaLayer = tf.layers.layer({
-          name: 'customLambda',
-          computeOutputShape: (inputShape) => inputShape,
-          call: (inputs: tf.Tensor | tf.Tensor[], kwargs) => {
-            return func(Array.isArray(inputs) ? inputs[0] : inputs);
-          }
-        });
-        return lambdaLayer.apply(input);
-      };
-    };
-    
-    // Create the network using functional API
-    let x = input;
-    
-    // Standard deviation calculation as a custom lambda layer
-    const stdLayer = createLambdaLayer((x: tf.Tensor) => {
-      return tf.tidy(() => {
-        const mean = tf.mean(x, 1, true);
-        const variance = tf.mean(tf.square(tf.sub(x, mean)), 1, true);
-        return tf.sqrt(variance);
-      });
-    });
-    
-    // Apply convolutional layers
-    x = convModule(x, 16, 5, 2);
-    x = convModule(x, 32, 5, 2);
-    x = convModule(x, 64, 3, 2);
-    x = convModule(x, 128, 3, 2);
-    
-    // Flatten results
-    x = tf.layers.flatten().apply(x) as tf.SymbolicTensor;
-    
-    // Apply dense layers
-    x = tf.layers.dense({ units: 64, activation: 'relu' }).apply(x) as tf.SymbolicTensor;
-    x = tf.layers.dropout({ rate: 0.2 }).apply(x) as tf.SymbolicTensor;
-    x = tf.layers.dense({ units: 32, activation: 'relu' }).apply(x) as tf.SymbolicTensor;
-    
-    // Output layer for heart rate (single value)
-    const output = tf.layers.dense({ units: 1, activation: 'linear' }).apply(x) as tf.SymbolicTensor;
-    
-    // Create model
-    const model = tf.model({ inputs: input, outputs: output });
-    
-    return model;
-  }
-  
-  /**
-   * Compile the model
-   */
-  protected compileModel(): void {
-    if (!this.model) {
-      throw new Error('Model not created');
-    }
-    
-    this.model.compile({
-      optimizer: tf.train.adam({ learningRate: 0.001 }),
-      loss: 'meanSquaredError',
-      metrics: ['meanAbsoluteError']
-    });
-  }
-  
-  /**
-   * Load pretrained model
-   */
-  protected async loadModel(): Promise<tf.LayersModel | null> {
-    // For now, we have no pretrained model to load
-    return null;
-  }
-  
-  /**
-   * Make heart rate prediction from PPG signal
-   */
-  public async predict(ppgValues: number[]): Promise<number[]> {
-    // Verify model is loaded
-    if (!this.model || !this.isLoaded) {
-      await this.initialize();
-    }
-    
-    // Start prediction timing
-    const startTime = performance.now();
-    
-    // Preprocess input
-    const tensorInput = TensorUtils.preprocessForConv1D(ppgValues, this.inputSize);
+  async initialize(): Promise<void> {
+    if (this.isInitialized) return;
     
     try {
-      // Execute prediction
-      const prediction = this.model!.predict(tensorInput) as tf.Tensor;
+      console.log('Initializing HeartRateModel');
       
-      // Convert to number
+      // Create a simple model for heart rate detection
+      const input = tf.input({shape: [this.inputShape[0], 1]});
+      
+      // First convolutional block
+      const conv1 = tf.layers.conv1d({
+        filters: 16,
+        kernelSize: 5,
+        padding: 'same',
+        activation: 'relu'
+      }).apply(input);
+      
+      const pool1 = tf.layers.maxPooling1d({poolSize: 2}).apply(conv1);
+      
+      // Second convolutional block
+      const conv2 = tf.layers.conv1d({
+        filters: 32,
+        kernelSize: 3,
+        padding: 'same',
+        activation: 'relu'
+      }).apply(pool1);
+      
+      const pool2 = tf.layers.maxPooling1d({poolSize: 2}).apply(conv2);
+      
+      // Custom operation for signal processing
+      // Replace lambda with a standard layer implementation
+      const processed = tf.layers.flatten().apply(pool2);
+      
+      // Calculate statistics
+      const dense1 = tf.layers.dense({
+        units: 64,
+        activation: 'relu'
+      }).apply(processed);
+      
+      const dropout = tf.layers.dropout({rate: 0.2}).apply(dense1);
+      
+      const dense2 = tf.layers.dense({
+        units: 32,
+        activation: 'relu'
+      }).apply(dropout);
+      
+      // Output heart rate
+      const output = tf.layers.dense({
+        units: 1,
+        activation: 'linear'
+      }).apply(dense2);
+      
+      // Create and compile model
+      this.model = tf.model({
+        inputs: input as tf.SymbolicTensor,
+        outputs: output as tf.SymbolicTensor
+      });
+      
+      this.model.compile({
+        optimizer: 'adam',
+        loss: 'meanSquaredError'
+      });
+      
+      this.isInitialized = true;
+      console.log('HeartRateModel initialized successfully');
+    } catch (error) {
+      console.error('Error initializing HeartRateModel:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Predicts heart rate from PPG signal
+   */
+  async predict(input: number[]): Promise<number[]> {
+    this.lastPredictionTime = Date.now();
+    
+    try {
+      if (!this.isInitialized || !this.model) {
+        await this.initialize();
+      }
+      
+      // Format input
+      const inputTensor = this.preprocessInput(input);
+      
+      // Run prediction
+      const prediction = this.model!.predict(inputTensor) as tf.Tensor;
       const result = await prediction.data();
       
-      // Constrain to physiological range
-      const heartRate = Math.min(this.MAX_HEART_RATE, 
-        Math.max(this.MIN_HEART_RATE, Math.round(result[0])));
-      
-      // Clean up tensors
+      // Clean up
+      inputTensor.dispose();
       prediction.dispose();
-      tensorInput.dispose();
       
-      // End prediction timing
-      const endTime = performance.now();
-      const elapsedTime = endTime - startTime;
-      this.lastPredictionTime = elapsedTime;
+      // Calculate prediction time
+      this.predictionDuration = Date.now() - this.lastPredictionTime;
       
-      console.log(`Heart rate prediction: ${heartRate} BPM (took ${elapsedTime.toFixed(2)} ms)`);
-      
+      // Process result
+      const heartRate = Math.max(40, Math.min(200, Math.round(Array.from(result)[0])));
       return [heartRate];
     } catch (error) {
-      console.error('Error making heart rate prediction:', error);
-      tensorInput.dispose();
-      return [75]; // Default fallback
+      console.error('Error predicting heart rate:', error);
+      this.predictionDuration = Date.now() - this.lastPredictionTime;
+      return [0]; // Default value on error
     }
+  }
+  
+  /**
+   * Preprocess input data for model
+   */
+  private preprocessInput(data: number[]): tf.Tensor {
+    // Ensure correct length
+    let processedData = [...data];
+    if (processedData.length < this.inputShape[0]) {
+      // Pad with zeros
+      const padding = Array(this.inputShape[0] - processedData.length).fill(0);
+      processedData = [...processedData, ...padding];
+    } else if (processedData.length > this.inputShape[0]) {
+      // Truncate
+      processedData = processedData.slice(0, this.inputShape[0]);
+    }
+    
+    // Create a 3D tensor [batch, timesteps, features]
+    return tf.tensor3d([processedData.map(v => [v])], [1, this.inputShape[0], 1]);
+  }
+  
+  /**
+   * Get prediction time in milliseconds
+   */
+  getPredictionTime(): number {
+    return this.predictionDuration;
+  }
+  
+  /**
+   * Get model architecture information
+   */
+  getArchitecture(): string {
+    return 'CNN-1D';
   }
 }

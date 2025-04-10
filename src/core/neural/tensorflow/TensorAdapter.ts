@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 
 /**
@@ -43,11 +42,8 @@ export class TensorUtils {
       paddedInput = input.slice(0, inputSize);
     }
     
-    // Create a nested array structure first
-    const formattedInput = paddedInput.map(v => [v]);
-    
     // Convertir a tensor 3D [1, inputSize, 1] para Conv1D
-    return tf.tensor3d([formattedInput], [1, inputSize, 1]);
+    return tf.tensor3d([paddedInput.map(v => [v])], [1, inputSize, 1]);
   }
   
   /**
