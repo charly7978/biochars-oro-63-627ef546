@@ -1,4 +1,3 @@
-
 import { createSignalProcessor } from './signal-processing';
 import { PeakDetector, type RRData } from './signal/PeakDetector';
 import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
@@ -264,7 +263,7 @@ export class VitalSignsProcessor {
     };
     
     // Datos precalculados con métodos convencionales
-    const conventionalHeartRate = peakInfo.heartRate;
+    const conventionalHeartRate = peakInfo.heartRate || 0;
     const conventionalSpo2 = this.calculateSpO2(this.ppgValues);
     const conventionalBloodPressure = this.bpAnalyzer.analyze(this.ppgValues);
     
@@ -446,18 +445,19 @@ export class VitalSignsProcessor {
     ready: boolean;
     models: Array<{id: string; name: string; version: string; architecture: string}>;
   } {
-    const modelInfo = this.neuralNetworkReady ? 
-      this.tfModelRegistry.getModelInfo() : [];
+    // Use getAllModels instead of getModelInfo
+    const models = this.neuralNetworkReady ? 
+      Array.from(this.tfModelRegistry.getAllModels().entries()).map(([id, model]) => ({
+        id,
+        name: (model as any).name || 'Unknown',
+        version: (model as any).version || '1.0.0',
+        architecture: (model as any).architecture || 'Unknown'
+      })) : [];
       
     return {
       enabled: this.useNeuralNetworks,
       ready: this.neuralNetworkReady,
-      models: modelInfo.map(m => ({
-        id: m.id,
-        name: m.name,
-        version: m.version,
-        architecture: m.architecture
-      }))
+      models
     };
   }
   
@@ -491,9 +491,9 @@ export class VitalSignsProcessor {
     this.reset();
     this.lastValidResults = null;
     
-    // Reiniciar modelos TensorFlow
+    // Use dispose instead of resetModels
     if (this.neuralNetworkReady) {
-      this.tfModelRegistry.resetModels();
+      this.tfModelRegistry.dispose();
     }
   }
   

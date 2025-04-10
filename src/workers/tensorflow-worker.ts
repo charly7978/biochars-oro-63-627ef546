@@ -1,4 +1,3 @@
-
 /**
  * Web Worker para procesamiento con TensorFlow.js
  * Ejecuta inferencia de modelos en segundo plano
@@ -156,7 +155,8 @@ async function predict(modelType: string, inputData: number[]): Promise<number[]
       tensor = tf.tensor2d([inputData], [1, inputData.length]);
     } else {
       // Para modelos convolucionales que requieren entrada 3D
-      tensor = tf.tensor3d([inputData], [1, inputData.length, 1]);
+      const reshapedInput = [inputData]; // Wrap in array first
+      tensor = tf.tensor3d(reshapedInput, [1, inputData.length, 1]);
     }
     
     // Realizar predicción

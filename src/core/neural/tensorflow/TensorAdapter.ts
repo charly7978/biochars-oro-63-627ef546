@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 
 /**
@@ -43,8 +42,9 @@ export class TensorUtils {
       paddedInput = input.slice(0, inputSize);
     }
     
-    // Convertir a tensor 3D [1, inputSize, 1] para Conv1D
-    return tf.tensor3d([paddedInput], [1, inputSize, 1]);
+    // Convertir a tensor 3D [1, inputSize, 1] para Conv1D con correccion de tipo
+    const reshapedInput = [paddedInput]; // Wrap in array first for correct shape
+    return tf.tensor3d(reshapedInput, [1, inputSize, 1]);
   }
   
   /**

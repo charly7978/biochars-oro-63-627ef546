@@ -1,267 +1,198 @@
 
 import * as tf from '@tensorflow/tfjs';
 import { TFBaseModel } from './TFBaseModel';
+import { Tensor1D } from '../../NeuralNetworkBase';
 import { TensorUtils } from '../TensorAdapter';
 
 /**
- * Modelo de ritmo cardíaco basado en TensorFlow.js
- * Implementa una red neural convolucional con mecanismo de atención
+ * Modelo para predicción de frecuencia cardíaca basado en TensorFlow.js
  */
 export class TFHeartRateModel extends TFBaseModel {
-  private modelReady: boolean = false;
-  private modelLoading: boolean = false;
-  private modelLoadPromise: Promise<void> | null = null;
+  private readonly INPUT_SIZE = 300;
+  private readonly OUTPUT_SIZE = 1;
+  private readonly VERSION = '1.0.0';
+  private readonly ACTIVATION = 'relu';
+  private readonly KERNEL_SIZE = 5;
   
   constructor() {
     super(
-      'TFHeartRateModel',
-      [300], // Ventana de entrada - 300 muestras de PPG
-      [1],   // Salida - ritmo cardíaco (BPM)
-      '3.0.0'
+      'HeartRate',
+      [300], // inputShape
+      [1],   // outputShape
+      '1.0.0'
     );
   }
   
   /**
-   * Inicializa el modelo, intentando cargarlo desde IndexedDB primero
+   * Inicializa el modelo de TensorFlow
    */
   protected async initModel(): Promise<void> {
-    if (this.modelReady || this.modelLoading) {
-      if (this.modelLoading && this.modelLoadPromise) {
-        await this.modelLoadPromise;
-      }
-      return;
-    }
-    
-    this.modelLoading = true;
-    
     try {
-      this.modelLoadPromise = (async () => {
-        try {
-          // Intentar cargar el modelo guardado
-          const modelUrl = 'indexeddb://heartrate-model';
-          this.tfModel = await tf.loadLayersModel(modelUrl)
-            .catch(() => null);
-          
-          // Si no existe, crear uno nuevo
-          if (!this.tfModel) {
-            console.log('TFHeartRateModel: Creando modelo nuevo');
-            this.tfModel = this.createModel();
-            
-            // Guardar para uso futuro
-            await this.tfModel.save('indexeddb://heartrate-model');
-          } else {
-            console.log('TFHeartRateModel: Modelo cargado desde IndexedDB');
-          }
-          
-          this.modelReady = true;
-        } catch (error) {
-          console.error('TFHeartRateModel: Error inicializando modelo:', error);
-          
-          // Crear modelo en memoria como fallback
-          this.tfModel = this.createModel();
-          this.modelReady = true;
-        }
-      })();
+      // Intentar cargar modelo preexistente desde storage
+      this.tfModel = await tf.loadLayersModel('indexeddb://heart-rate-model')
+        .catch(() => null);
       
-      await this.modelLoadPromise;
-    } finally {
-      this.modelLoading = false;
-      this.modelLoadPromise = null;
+      if (!this.tfModel) {
+        // Crear modelo desde cero
+        this.tfModel = this.createModel();
+        
+        // Guardar para uso futuro
+        await this.tfModel.save('indexeddb://heart-rate-model')
+          .catch(err => console.error('Error guardando modelo:', err));
+      }
+    } catch (error) {
+      console.error('Error inicializando modelo de frecuencia cardíaca:', error);
+      // Crear modelo en memoria como fallback
+      this.tfModel = this.createModel();
     }
   }
   
   /**
-   * Crea un modelo de red neural convolucional para detección de ritmo cardíaco
+   * Crea un modelo CNN para procesar señales PPG
    */
   protected createModel(): tf.LayersModel {
-    // Crear un modelo secuencial
-    const inputShape = [this.inputShape[0], 1];
-    const input = tf.input({shape: inputShape});
+    // Input layer
+    const input = tf.input({shape: [this.INPUT_SIZE]});
     
-    // Capa convolucional 1D para extraer características
+    // Reshape para conv1d [batchSize, timeSteps, features]
+    const reshapedInput = tf.layers.reshape({targetShape: [this.INPUT_SIZE, 1]}).apply(input);
+    
+    // Primer bloque convolucional
     let x = tf.layers.conv1d({
       filters: 16,
-      kernelSize: 5,
-      strides: 1,
+      kernelSize: this.KERNEL_SIZE,
       padding: 'same',
-      activation: 'relu',
+      activation: this.ACTIVATION,
       kernelInitializer: 'heNormal'
-    }).apply(input);
+    }).apply(reshapedInput);
     
-    // Normalización por lotes
-    x = tf.layers.batchNormalization().apply(x);
-    
-    // Pooling para reducir dimensionalidad
     x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
     
-    // Capa convolucional 2
+    // Segundo bloque convolucional
     x = tf.layers.conv1d({
       filters: 32,
-      kernelSize: 5,
+      kernelSize: 3,
       padding: 'same',
-      activation: 'relu',
+      activation: this.ACTIVATION,
       kernelInitializer: 'heNormal'
     }).apply(x);
     
-    x = tf.layers.batchNormalization().apply(x);
     x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
     
-    // Capa convolucional 3
+    // Tercer bloque convolucional
     x = tf.layers.conv1d({
       filters: 64,
       kernelSize: 3,
       padding: 'same',
-      activation: 'relu',
+      activation: this.ACTIVATION,
       kernelInitializer: 'heNormal'
     }).apply(x);
     
-    x = tf.layers.batchNormalization().apply(x);
     x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
     
-    // Mecanismo de atención simplificado
-    const attentionOutput = this.createAttentionMechanism(x);
+    // Análisis de características
+    x = tf.layers.flatten().apply(x);
     
-    // Aplanar para capas densas
-    x = tf.layers.flatten().apply(attentionOutput);
-    
-    // Capas densas para predicción final
+    // Normalización y capas densas
     x = tf.layers.dense({
-      units: 64, 
-      activation: 'relu',
+      units: 64,
+      activation: this.ACTIVATION,
       kernelInitializer: 'heNormal'
     }).apply(x);
     
-    x = tf.layers.dropout({rate: 0.3}).apply(x);
+    x = tf.layers.dropout({rate: 0.2}).apply(x);
     
-    x = tf.layers.dense({
-      units: 32, 
-      activation: 'relu',
-      kernelInitializer: 'heNormal'
-    }).apply(x);
-    
-    // Capa de salida para BPM
-    const output = tf.layers.dense({
+    // Custom scalar multiplication using a dense layer
+    const scaleLayer = tf.layers.dense({
       units: 1,
-      activation: 'linear'
-    }).apply(x);
+      useBias: false,
+      kernelInitializer: tf.initializers.constant({value: 0.5})
+    });
     
-    // Construir y compilar modelo
-    const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
+    // Apply scale layer
+    const scaled = scaleLayer.apply(x);
     
+    // Capa de salida
+    const output = tf.layers.dense({
+      units: this.OUTPUT_SIZE,
+      activation: 'linear',
+      kernelInitializer: 'heNormal'
+    }).apply(scaled);
+    
+    // Crear modelo
+    const model = tf.model({inputs: input, outputs: output});
+    
+    // Compilar
     model.compile({
-      optimizer: tf.train.adam(0.001),
+      optimizer: 'adam',
       loss: 'meanSquaredError',
-      metrics: ['mae']
+      metrics: ['mse']
     });
     
     return model;
   }
   
   /**
-   * Implementa un mecanismo de atención simplificado
+   * Aplica calibración a los datos de entrada
    */
-  private createAttentionMechanism(input: tf.SymbolicTensor): tf.SymbolicTensor {
-    // Transformer-style self attention
-    const inputShape = input.shape as tf.Shape;
-    const sequenceLength = inputShape[1] as number;
-    const featureDimension = inputShape[2] as number;
-    
-    // Projection for query, key, value
-    const query = tf.layers.dense({units: featureDimension}).apply(input);
-    const key = tf.layers.dense({units: featureDimension}).apply(input);
-    const value = tf.layers.dense({units: featureDimension}).apply(input);
-    
-    // Calculate attention scores
-    const scoreLayer = tf.layers.dot({axes: [2, 2]});
-    
-    // @ts-ignore: TS doesn't recognize the apply method with multiple inputs
-    const scores = scoreLayer.apply([query, key]);
-    
-    // Scale scores
-    const scaled = tf.layers.lambda({
-      function: (x: tf.Tensor) => tf.div(x, Math.sqrt(featureDimension))
-    }).apply(scores);
-    
-    // Apply softmax
-    const weights = tf.layers.softmax().apply(scaled);
-    
-    // Apply attention weights
-    const weightedLayer = tf.layers.dot({axes: [2, 1]});
-    
-    // @ts-ignore: TS doesn't recognize the apply method with multiple inputs
-    const contextVector = weightedLayer.apply([weights, value]);
-    
-    // Concatenate with original input (residual connection)
-    const concatenateLayer = tf.layers.concatenate({axis: 2});
-    
-    // @ts-ignore: TS doesn't recognize the apply method with multiple inputs
-    const output = concatenateLayer.apply([input, contextVector]);
-    
-    return output;
+  protected applyInputCalibration(input: Tensor1D): Tensor1D {
+    // Normalizar señal
+    return TensorUtils.normalizeInput(input, 0, 1);
   }
   
   /**
-   * Preprocesa la entrada para el modelo
+   * Preprocesa los datos para predicción
    */
-  protected applyInputCalibration(input: number[]): number[] {
-    // Aplicar normalización
-    const normalized = TensorUtils.normalizeInput(input, -1, 1);
+  private preprocessInput(ppgValues: number[]): number[] {
+    // Ensure we have exactly INPUT_SIZE values
+    const paddedValues = TensorUtils.padArray(ppgValues, this.INPUT_SIZE);
     
-    // Aplicar suavizado
-    const smoothed = TensorUtils.movingAverage(normalized, 5);
+    // Apply filtering and normalization
+    const filtered = TensorUtils.movingAverage(paddedValues, 3);
+    const normalized = TensorUtils.normalizeInput(filtered, 0, 1);
     
-    return smoothed;
+    return normalized;
   }
   
   /**
-   * Aplica calibración a la salida
+   * Procesa la predicción a través del modelo
    */
-  protected applyOutputCalibration(output: number[]): number[] {
-    // Aplicar factor de calibración
-    const calibrated = output.map(val => val * this.calibrationFactor);
-    
-    // Limitar a rango fisiológico (30-220 BPM)
-    return calibrated.map(val => Math.max(30, Math.min(220, val)));
-  }
-  
-  /**
-   * Actualiza el modelo con nuevos datos de entrenamiento (fine-tuning)
-   */
-  public async updateModel(inputs: number[][], targets: number[][]): Promise<void> {
-    if (!this.tfModel) {
-      await this.initModel();
-    }
-    
+  async predictAsync(input: Tensor1D): Promise<Tensor1D> {
     try {
-      // Convertir datos a tensores
-      const xs = tf.tensor3d(inputs.map(input => 
-        TensorUtils.padArray(input, this.inputShape[0])
-      ), [inputs.length, this.inputShape[0], 1]);
+      // Asegurar que el modelo está inicializado
+      if (!this.tfModel) {
+        await this.initModel();
+      }
       
-      const ys = tf.tensor2d(targets);
+      const startTime = performance.now();
       
-      // Configurar entrenamiento
-      await this.tfModel!.fit(xs, ys, {
-        epochs: 5,
-        batchSize: 32,
-        shuffle: true,
-        callbacks: {
-          onEpochEnd: (epoch, logs) => {
-            console.log(`Época ${epoch}: pérdida = ${logs?.loss}`);
-          }
-        }
-      });
+      // Preprocesar entrada
+      const preprocessed = this.preprocessInput(input);
+      
+      // Convert to proper tensor shape for the model
+      const tensor = tf.tensor2d([preprocessed], [1, this.INPUT_SIZE]);
+      
+      // Ejecutar predicción
+      const prediction = await this.tfModel!.predict(tensor) as tf.Tensor;
+      const result = Array.from(await prediction.data());
       
       // Limpiar tensores
-      xs.dispose();
-      ys.dispose();
+      tensor.dispose();
+      prediction.dispose();
       
-      // Guardar modelo actualizado
-      await this.tfModel!.save('indexeddb://heartrate-model');
+      // Aplicar calibración de salida
+      const calibratedOutput = this.applyOutputCalibration(result);
       
-      console.log('TFHeartRateModel: Modelo actualizado y guardado');
+      // Ajustar resultado para rango fisiológico
+      const heartRate = Math.max(40, Math.min(200, calibratedOutput[0]));
+      
+      // Actualizar tiempo de predicción
+      this.lastPredictionTime = performance.now() - startTime;
+      
+      return [heartRate];
     } catch (error) {
-      console.error('TFHeartRateModel: Error actualizando modelo:', error);
+      console.error(`Error en predicción de frecuencia cardíaca:`, error);
+      return [0];
     }
   }
 }

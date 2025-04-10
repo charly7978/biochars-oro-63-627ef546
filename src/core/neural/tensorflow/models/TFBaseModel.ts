@@ -193,5 +193,5 @@ export abstract class TFBaseModel extends BaseNeuralModel implements CalibrableM
   }
 }
 
-// Re-exportar la interfaz para que esté disponible
-export { CalibrableModel } from '../TensorFlowModelRegistry';
+// Re-export the type with proper syntax
+export type { CalibrableModel } from '../TensorFlowModelRegistry';

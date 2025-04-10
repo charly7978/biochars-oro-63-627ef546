@@ -1,8 +1,13 @@
-
 import * as tf from '@tensorflow/tfjs';
 import { TensorFlowConfig } from './TensorFlowConfig';
 import { DEFAULT_TENSORFLOW_CONFIG } from './TensorFlowConfig';
-import { CalibrableModel } from './models/TFBaseModel';
+
+// Define the CalibrableModel interface
+export interface CalibrableModel {
+  setCalibrationFactor(factor: number): void;
+  onCalibrationStarted(): void;
+  getPredictionTime(): number;
+}
 
 /**
  * Registro central de modelos TensorFlow
@@ -84,16 +89,16 @@ export class TensorFlowModelRegistry {
         tf.env().set('WEBGL_VERSION', 2);
         tf.env().set('WEBGL_MAX_TEXTURE_SIZE', 16384);
         
-        // Limitar memoria
-        const bytesPerMB = 1048576;
-        const limitBytes = this.config.memoryOptions.gpuMemoryLimitMB * bytesPerMB;
-        tf.engine().configureNextOpHandler((op) => {
-          if (tf.memory().numBytes > limitBytes) {
-            tf.engine().endScope();
-            tf.engine().startScope();
-          }
-          return op();
-        });
+        // Custom memory management without using configureNextOpHandler
+        if (this.config.memoryOptions.enableAutoGarbageCollection) {
+          // Schedule periodic cleanup
+          setInterval(() => {
+            if (tf.memory().numBytes > this.config.memoryOptions.gpuMemoryLimitMB * 1048576) {
+              tf.engine().endScope();
+              tf.engine().startScope();
+            }
+          }, 5000);
+        }
       }
       
       // Configuraciones avanzadas para WebGL/WebGPU
@@ -130,7 +135,10 @@ export class TensorFlowModelRegistry {
     
     // Comprobar WebGL
     try {
-      if (await tf.backend().isWebGLSupported()) {
+      // Fixed approach to checking WebGL support
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      if (gl) {
         supported.push('webgl');
       }
     } catch (e) {
@@ -246,11 +254,4 @@ export class TensorFlowModelRegistry {
     
     console.log('TensorFlowModelRegistry: Todos los modelos liberados');
   }
-}
-
-// Interfaz para modelos calibrables
-export interface CalibrableModel {
-  setCalibrationFactor(factor: number): void;
-  onCalibrationStarted(): void;
-  getPredictionTime(): number;
 }
