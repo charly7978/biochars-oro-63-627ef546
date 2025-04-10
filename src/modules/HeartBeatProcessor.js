@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -7,7 +8,7 @@ import { applyFilterPipeline } from './heart-beat/signal-filters';
 import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
 import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
 import { HeartbeatAudioManager } from './heart-beat/audio-manager';
-import { checkSignalQuality, resetSignalQualityState } from './heart-beat/signal-quality';
+import { checkSignalQuality, resetDetectionStates } from './heart-beat/signal-quality';
 
 export class HeartBeatProcessor {
   // Import configuration from config module
