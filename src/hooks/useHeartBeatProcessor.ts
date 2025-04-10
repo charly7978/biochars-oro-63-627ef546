@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -5,19 +6,7 @@ import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
-import { HeartBeatResult } from './heart-beat/types';
-import { validateFullSignal } from '../core/RealSignalValidator';
-
-export interface UseHeartBeatReturn {
-  currentBPM: number;
-  confidence: number;
-  processSignal: (value: number) => HeartBeatResult;
-  reset: () => void;
-  isArrhythmia: boolean;
-  requestBeep: (value: number) => boolean;
-  startMonitoring: () => void;
-  stopMonitoring: () => void;
-}
+import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -30,6 +19,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
+  // Hooks para procesamiento y detección, sin funcionalidad de beep
   const { 
     requestImmediateBeep, 
     processBeepQueue, 
@@ -58,9 +48,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS
   } = useSignalProcessor();
-
-  const signalValidationBufferRef = useRef<number[]>([]);
-  const MAX_VALIDATION_BUFFER_SIZE = 60;
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -106,6 +93,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
+  // Esta función ahora no hace nada, el beep está centralizado en PPGSignalMeter
   const requestBeep = useCallback((value: number): boolean => {
     console.log('useHeartBeatProcessor: Beep ELIMINADO - Todo el sonido SOLO en PPGSignalMeter', {
       value,
@@ -129,18 +117,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
           lastPeakTime: null
         }
       };
-    }
-
-    signalValidationBufferRef.current.push(value);
-    if (signalValidationBufferRef.current.length > MAX_VALIDATION_BUFFER_SIZE) {
-      signalValidationBufferRef.current.shift();
-    }
-    
-    if (signalValidationBufferRef.current.length % 10 === 0 && signalValidationBufferRef.current.length >= 30) {
-      const validation = validateFullSignal(signalValidationBufferRef.current);
-      if (!validation.valid && validation.color === 'red') {
-        console.warn('Señal de mala calidad detectada:', validation.warnings);
-      }
     }
 
     const result = processSignalInternal(
@@ -197,8 +173,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
-    
-    signalValidationBufferRef.current = [];
     
     cleanupBeepProcessor();
   }, [resetArrhythmiaDetector, resetSignalProcessor, cleanupBeepProcessor]);

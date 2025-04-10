@@ -92,7 +92,7 @@ export class VitalSignsProcessor {
     
     this.peakDetector = new PeakDetector();
     this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.bpAnalyzer = new BloodPressureAnalyzer(fullConfig);
+    this.bpAnalyzer = new BloodPressureAnalyzer();
     this.glucoseEstimator = new GlucoseEstimator(fullConfig);
     this.lipidEstimator = new LipidEstimator(fullConfig);
     this.hemoglobinEstimator = new HemoglobinEstimator(fullConfig);
@@ -189,12 +189,12 @@ export class VitalSignsProcessor {
     const spo2 = this.calculateSpO2(this.ppgValues);
     
     // Calcular presión arterial
-    const bloodPressure = this.bpAnalyzer.estimate();
+    const bloodPressure = this.bpAnalyzer.calculateBloodPressure(this.ppgValues);
     
     // Calcular métricas no invasivas
-    const glucose = this.glucoseEstimator.estimate();
-    const lipids = this.lipidEstimator.estimateLipids();
-    const hemoglobin = this.hemoglobinEstimator.estimate();
+    const glucose = this.glucoseEstimator.estimate(this.ppgValues);
+    const lipids = this.lipidEstimator.estimate(this.ppgValues);
+    const hemoglobin = this.hemoglobinEstimator.estimate(this.ppgValues);
     
     // Actualizar conteo de muestras de calibración
     if (this.isCalibrating) {
@@ -211,7 +211,7 @@ export class VitalSignsProcessor {
     // Crear resultado
     const result: VitalSignsResult = {
       spo2,
-      pressure: bloodPressure,
+      pressure: `${bloodPressure.systolic}/${bloodPressure.diastolic}`,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose,
       lipids,
