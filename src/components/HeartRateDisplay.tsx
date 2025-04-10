@@ -6,9 +6,10 @@ import { AlertCircle, Heart } from 'lucide-react';
 interface HeartRateDisplayProps {
   bpm: number;
   confidence: number;
+  waveformAnalysis?: any; // Añadido para análisis de forma de onda
 }
 
-const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
+const HeartRateDisplay = memo(({ bpm, confidence, waveformAnalysis }: HeartRateDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const isReliable = confidence > 0.5;
   const [isAnimating, setIsAnimating] = useState(false);
@@ -42,6 +43,14 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
     };
   }, [bpm, isReliable]);
   
+  // Procesar el análisis de forma de onda si está disponible
+  useEffect(() => {
+    if (waveformAnalysis) {
+      console.log("Análisis de forma de onda recibido:", waveformAnalysis);
+      // Aquí se puede implementar visualización adicional basada en el análisis
+    }
+  }, [waveformAnalysis]);
+  
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
     if (bpm > 100) return "medical-warning-text";
@@ -62,6 +71,13 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
     return "low";
   };
 
+  // Determinar si hay alguna anomalía en la forma de onda
+  const hasWaveformAnomaly = () => {
+    if (!waveformAnalysis) return false;
+    // Implementar lógica para detectar anomalías en la forma de onda
+    return waveformAnalysis.hasAnomaly;
+  };
+
   return (
     <div 
       ref={containerRef}
@@ -73,6 +89,12 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
         {getReliabilityIndicator() === "low" && (
           <div className="relative" title="Signal quality is low">
             <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+          </div>
+        )}
+        
+        {hasWaveformAnomaly() && (
+          <div className="relative" title="Waveform anomaly detected">
+            <AlertCircle className="h-3.5 w-3.5 text-red-500" />
           </div>
         )}
       </div>
@@ -102,6 +124,13 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
             }`}
             style={{ width: `${Math.min(100, confidence * 100)}%` }}
           />
+        </div>
+      )}
+      
+      {/* Waveform analysis indicator (optional) */}
+      {waveformAnalysis && (
+        <div className="mt-1 text-xs text-gray-400/80">
+          {waveformAnalysis.message || "Análisis de forma de onda"}
         </div>
       )}
     </div>

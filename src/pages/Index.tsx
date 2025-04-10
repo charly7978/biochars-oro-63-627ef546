@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -7,6 +8,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
+import HeartRateDisplay from "@/components/HeartRateDisplay";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 
 const Index = () => {
@@ -24,6 +26,13 @@ const Index = () => {
     }
   });
   const [heartRate, setHeartRate] = useState(0);
+  const [heartBeatData, setHeartBeatData] = useState({
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: 0,
+    waveformAnalysis: null
+  });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
@@ -78,6 +87,15 @@ const Index = () => {
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        
+        // Process heart beat data with waveform analysis
+        setHeartBeatData({
+          bpm: heartBeatResult.bpm,
+          confidence: heartBeatResult.confidence,
+          isPeak: heartBeatResult.isPeak,
+          arrhythmiaCount: heartBeatResult.arrhythmiaCount || 0,
+          waveformAnalysis: heartBeatResult.waveformAnalysis // Añadir análisis de forma de onda
+        });
         
         // Only update heart rate if confidence is sufficient
         if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
@@ -277,7 +295,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -324,11 +341,10 @@ const Index = () => {
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
-              <VitalSign 
-                label="FRECUENCIA CARDÍACA"
-                value={heartRate || "--"}
-                unit="BPM"
-                highlighted={showResults}
+              <HeartRateDisplay 
+                bpm={heartBeatData.bpm} 
+                confidence={heartBeatData.confidence}
+                waveformAnalysis={heartBeatData.waveformAnalysis} // Pasar análisis a la visualización
               />
               <VitalSign 
                 label="SPO2"
