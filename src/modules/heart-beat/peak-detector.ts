@@ -1,12 +1,8 @@
 
 /**
- * Peak detection utilities for heart rate processing
- * Provides functions to detect and confirm peaks in PPG signals
+ * Peak detection functionality for heart beat processing
  */
 
-/**
- * Interface for peak detection parameters
- */
 interface PeakDetectionOptions {
   minPeakTimeMs: number;
   derivativeThreshold: number;
@@ -14,120 +10,87 @@ interface PeakDetectionOptions {
 }
 
 /**
- * Detects potential peaks in the PPG signal
+ * Detect a peak in the heart rate signal
  * 
- * @param normalizedValue Current normalized signal value
- * @param derivative Current signal derivative
- * @param baseline Current signal baseline
- * @param lastValue Previous signal value
- * @param lastPeakTime Time of last detected peak
- * @param currentTime Current timestamp
- * @param options Detection parameters
- * @returns Object with peak detection result and confidence
+ * @param normalizedValue The normalized signal value
+ * @param smoothDerivative The smoothed derivative of the signal
+ * @param baseline The signal baseline
+ * @param lastValue The previous signal value
+ * @param lastPeakTime Time of the last detected peak
+ * @param currentTime Current time
+ * @param options Detection configuration options
+ * @returns Result indicating if a peak was detected and with what confidence
  */
 export function detectPeak(
   normalizedValue: number,
-  derivative: number,
+  smoothDerivative: number,
   baseline: number,
   lastValue: number,
   lastPeakTime: number | null,
   currentTime: number,
   options: PeakDetectionOptions
 ): { isPeak: boolean; confidence: number } {
-  // Check if enough time has passed since the last peak
-  if (lastPeakTime !== null) {
-    const timeSinceLastPeak = currentTime - lastPeakTime;
-    if (timeSinceLastPeak < options.minPeakTimeMs) {
-      return { isPeak: false, confidence: 0 };
-    }
-  }
-
-  // Basic peak detection: negative derivative (coming down from peak) and sufficient amplitude
-  const isPeak = 
-    derivative < options.derivativeThreshold &&
-    normalizedValue > options.signalThreshold &&
-    lastValue > baseline * 0.98;
-
-  // Calculate confidence based on signal strength and derivative magnitude
-  let amplitudeConfidence = 0;
-  let derivativeConfidence = 0;
+  const { minPeakTimeMs, derivativeThreshold, signalThreshold } = options;
   
-  if (isPeak) {
-    // Calculate confidence based on how far above the threshold we are
-    amplitudeConfidence = Math.min(
-      Math.max(Math.abs(normalizedValue) / (options.signalThreshold * 1.8), 0),
-      1
-    );
-    
-    // Calculate confidence based on derivative strength
-    derivativeConfidence = Math.min(
-      Math.max(Math.abs(derivative) / Math.abs(options.derivativeThreshold * 0.8), 0),
-      1
-    );
+  // Check if enough time has passed since the last peak
+  if (lastPeakTime && currentTime - lastPeakTime < minPeakTimeMs) {
+    return { isPeak: false, confidence: 0 };
   }
-
-  // Combine confidence metrics
-  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
-
+  
+  // Check if the signal value is strong enough
+  if (Math.abs(normalizedValue) < signalThreshold) {
+    return { isPeak: false, confidence: 0 };
+  }
+  
+  // Detect peak by derivative sign change (from positive to negative)
+  const isPeak = smoothDerivative < -derivativeThreshold && lastValue > baseline;
+  
+  // Calculate confidence based on signal strength and derivative magnitude
+  const confidence = isPeak 
+    ? Math.min(1, (Math.abs(normalizedValue) / signalThreshold) * 0.5 + 
+               (Math.abs(smoothDerivative) / derivativeThreshold) * 0.5)
+    : 0;
+  
   return { isPeak, confidence };
 }
 
 /**
- * Confirms a peak detection to reduce false positives
+ * Confirm a peak to reduce false positives
  * 
- * @param isPeak Whether initial peak detection was positive
- * @param normalizedValue Current normalized signal value
- * @param lastConfirmedPeak Whether last point was already confirmed as peak
- * @param peakConfirmationBuffer Buffer of recent values for confirmation
- * @param minConfidence Minimum required confidence
- * @param confidence Current confidence value
- * @returns Object with confirmation result and updated state
+ * @param isPeak Whether a peak was detected
+ * @param value Current signal value
+ * @param lastConfirmedPeak Whether the last processed value was a confirmed peak
+ * @param buffer Buffer for peak confirmation
+ * @param minConfidence Minimum confidence threshold for confirmation
+ * @param confidence Confidence of the current peak detection
+ * @returns Updated confirmation state
  */
 export function confirmPeak(
   isPeak: boolean,
-  normalizedValue: number,
+  value: number,
   lastConfirmedPeak: boolean,
-  peakConfirmationBuffer: number[],
+  buffer: number[],
   minConfidence: number,
   confidence: number
-): { 
-  isConfirmedPeak: boolean; 
-  updatedBuffer: number[]; 
-  updatedLastConfirmedPeak: boolean;
-} {
-  // Add current value to the confirmation buffer
-  const updatedBuffer = [...peakConfirmationBuffer, normalizedValue];
-  if (updatedBuffer.length > 5) {
-    updatedBuffer.shift();
+): { isConfirmedPeak: boolean; updatedBuffer: number[]; updatedLastConfirmedPeak: boolean } {
+  // If we already confirmed a peak, we need to wait for non-peak values
+  if (lastConfirmedPeak) {
+    return {
+      isConfirmedPeak: false,
+      updatedBuffer: buffer,
+      updatedLastConfirmedPeak: isPeak // Keep true until no more peak
+    };
   }
-
-  // Default result - no peak confirmed
-  let isConfirmedPeak = false;
-  let updatedLastConfirmedPeak = lastConfirmedPeak;
-
-  // Only proceed if this is a potential peak, not already confirmed, and confidence is sufficient
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
-    // We need a few samples to confirm the peak
-    if (updatedBuffer.length >= 3) {
-      const len = updatedBuffer.length;
-      
-      // Confirm peak if values after it are going down (indicating we passed the peak)
-      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
-      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
-
-      if (goingDown1 || goingDown2) {
-        isConfirmedPeak = true;
-        updatedLastConfirmedPeak = true;
-      }
-    }
-  } else if (!isPeak) {
-    // Reset confirmed flag when not at a peak
-    updatedLastConfirmedPeak = false;
-  }
-
+  
+  // Update confirmation buffer
+  const updatedBuffer = [...buffer, value].slice(-5);
+  
+  // Confirm the peak if the detection has sufficient confidence
+  const isConfirmedPeak = isPeak && confidence >= minConfidence;
+  
   return {
     isConfirmedPeak,
     updatedBuffer,
-    updatedLastConfirmedPeak
+    updatedLastConfirmedPeak: isConfirmedPeak
   };
 }

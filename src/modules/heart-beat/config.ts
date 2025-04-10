@@ -1,40 +1,40 @@
 
 /**
- * Configuration settings for HeartBeatProcessor
+ * Configuration constants for the heart beat processor
  */
+
 export const HeartBeatConfig = {
-  // Signal processing settings
-  SAMPLE_RATE: 30,
-  WINDOW_SIZE: 60,
-  MIN_BPM: 40,
-  MAX_BPM: 200,
-  SIGNAL_THRESHOLD: 0.60,
-  MIN_CONFIDENCE: 0.50,
-  DERIVATIVE_THRESHOLD: -0.03,
-  MIN_PEAK_TIME_MS: 300,
-  WARMUP_TIME_MS: 2000,
+  // Signal processing parameters
+  SAMPLE_RATE: 30,           // Expected sampling rate in Hz
+  WINDOW_SIZE: 60,           // Signal processing window size
+  SIGNAL_THRESHOLD: 0.05,    // Minimum amplitude for peak detection
+  MIN_CONFIDENCE: 0.25,      // Minimum confidence for peak confirmation
+  DERIVATIVE_THRESHOLD: 0.008, // Threshold for derivative-based peak detection
+  MIN_PEAK_TIME_MS: 300,     // Minimum time between peaks (ms)
+  WARMUP_TIME_MS: 2000,      // Initial warmup period (ms)
 
-  // Filter settings - adjusted for direct measurements only
-  MEDIAN_FILTER_WINDOW: 3,
-  MOVING_AVERAGE_WINDOW: 5,
-  EMA_ALPHA: 0.3,
-  BASELINE_FACTOR: 0.995,
-
-  // Audio settings
-  BEEP_PRIMARY_FREQUENCY: 880,
-  BEEP_SECONDARY_FREQUENCY: 440,
-  BEEP_DURATION: 80,
-  BEEP_VOLUME: 0.8,
-  MIN_BEEP_INTERVAL_MS: 250,
-
-  // Signal quality settings - adjusted for direct measurements
-  LOW_SIGNAL_THRESHOLD: 0.05,
-  LOW_SIGNAL_FRAMES: 10,
+  // Filter parameters
+  MEDIAN_FILTER_WINDOW: 5,   // Window size for median filter
+  MOVING_AVERAGE_WINDOW: 5,  // Window size for moving average filter
+  EMA_ALPHA: 0.3,            // Alpha factor for exponential moving average
+  BASELINE_FACTOR: 0.95,     // Factor for baseline adjustment
   
-  // Arrhythmia visualization settings - preserved for real data visualization
-  ARRHYTHMIA_INDICATOR_SIZE: 10,
-  ARRHYTHMIA_PULSE_COLOR: '#FEF7CD', // Yellow highlight for arrhythmia circles
-  ARRHYTHMIA_PULSE_COLOR_END: '#F97316', // Orange text for arrhythmia labels
-  ARRHYTHMIA_ANIMATION_DURATION_MS: 800,
-  ARRHYTHMIA_TRANSITION_DURATION_MS: 180 // Duration for smooth color transition
+  // Physiological limits
+  MIN_BPM: 40,               // Minimum physiologically valid BPM
+  MAX_BPM: 200,              // Maximum physiologically valid BPM
+  
+  // Audio feedback parameters
+  BEEP_PRIMARY_FREQUENCY: 550,   // Primary beep frequency (Hz)
+  BEEP_SECONDARY_FREQUENCY: 1100, // Secondary beep frequency (Hz)
+  BEEP_DURATION: 100,        // Beep duration (ms)
+  BEEP_VOLUME: 0.2,          // Beep volume (0-1)
+  MIN_BEEP_INTERVAL_MS: 250, // Minimum time between beeps (ms)
+  
+  // Signal quality thresholds
+  LOW_SIGNAL_THRESHOLD: 0.05, // Threshold for low signal detection
+  LOW_SIGNAL_FRAMES: 10,     // Consecutive low signal frames to trigger reset
+  
+  // Special flags
+  FORCE_IMMEDIATE_BEEP: false, // Flag to force immediate beep on peak detection
+  SKIP_TIMING_VALIDATION: false // Flag to skip timing validation for testing
 };
