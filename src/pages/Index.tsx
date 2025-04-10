@@ -1,5 +1,5 @@
-
 import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -9,9 +9,10 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
-import { Droplet } from "lucide-react";
+import { Droplet, BarChart2 } from "lucide-react";
 
 const Index = () => {
+  const navigate = useNavigate();
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -407,12 +408,21 @@ const Index = () => {
                 variant="monitor"
               />
             </div>
-            <div className="w-1/2">
+            <div className="w-1/4">
               <MonitorButton 
                 isMonitoring={isMonitoring} 
                 onToggle={handleReset} 
                 variant="reset"
               />
+            </div>
+            <div className="w-1/4">
+              <button 
+                onClick={() => navigate('/charts')}
+                className="w-full px-2 py-3 bg-purple-600/70 hover:bg-purple-600/90 text-white rounded-lg flex items-center justify-center"
+                disabled={isMonitoring}
+              >
+                <BarChart2 className="w-6 h-6" />
+              </button>
             </div>
           </div>
         </div>
