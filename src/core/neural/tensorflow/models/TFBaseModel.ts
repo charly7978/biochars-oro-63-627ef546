@@ -2,7 +2,7 @@
 import * as tf from '@tensorflow/tfjs';
 import { BaseNeuralModel, Tensor1D } from '../../NeuralNetworkBase';
 import { TensorUtils } from '../TensorAdapter';
-import { CalibrableModel } from '../TensorFlowModelRegistry';
+import { TensorFlowModelRegistry, CalibrableModel } from '../TensorFlowModelRegistry';
 
 /**
  * Clase base para todos los modelos de TensorFlow
@@ -13,6 +13,7 @@ export abstract class TFBaseModel extends BaseNeuralModel implements CalibrableM
   protected calibrationFactor: number = 1.0;
   protected isCalibrating: boolean = false;
   protected lastPredictionTime: number = 0;
+  protected modelRegistry: TensorFlowModelRegistry;
   
   constructor(
     name: string,
@@ -21,6 +22,7 @@ export abstract class TFBaseModel extends BaseNeuralModel implements CalibrableM
     version: string
   ) {
     super(name, inputShape, outputShape, version);
+    this.modelRegistry = TensorFlowModelRegistry.getInstance();
     this.initModel();
   }
   
@@ -170,6 +172,16 @@ export abstract class TFBaseModel extends BaseNeuralModel implements CalibrableM
   }
   
   /**
+   * Libera recursos del modelo
+   */
+  async dispose(): Promise<void> {
+    if (this.tfModel) {
+      this.tfModel.dispose();
+      this.tfModel = null;
+    }
+  }
+  
+  /**
    * Implementación de propiedades abstractas
    */
   get parameterCount(): number {
@@ -180,3 +192,6 @@ export abstract class TFBaseModel extends BaseNeuralModel implements CalibrableM
     return `TensorFlow (${this.parameterCount} params)`;
   }
 }
+
+// Re-exportar la interfaz para que esté disponible
+export { CalibrableModel } from '../TensorFlowModelRegistry';

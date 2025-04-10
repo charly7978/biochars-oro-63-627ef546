@@ -1,30 +1,24 @@
 
 import * as tf from '@tensorflow/tfjs';
-import { TensorFlowConfig, DEFAULT_TENSORFLOW_CONFIG } from './TensorFlowConfig';
-import { BaseNeuralModel } from '../NeuralNetworkBase';
+import { TensorFlowConfig } from './TensorFlowConfig';
+import { DEFAULT_TENSORFLOW_CONFIG } from './TensorFlowConfig';
+import { CalibrableModel } from './models/TFBaseModel';
 
 /**
- * Interface extendida para modelos que soportan calibración
- */
-export interface CalibrableModel {
-  onCalibrationStarted?: () => void;
-  setCalibrationFactor?: (factor: number) => void;
-}
-
-/**
- * Registro centralizado de modelos TensorFlow
- * Gestiona la creación, carga y acceso a modelos
+ * Registro central de modelos TensorFlow
+ * Gestiona todos los modelos, su carga y calibración
  */
 export class TensorFlowModelRegistry {
   private static instance: TensorFlowModelRegistry;
-  private models: Map<string, BaseNeuralModel & Partial<CalibrableModel>> = new Map();
-  private modelInitialized: Map<string, boolean> = new Map();
-  private config: TensorFlowConfig;
   private isInitialized: boolean = false;
+  private isInitializing: boolean = false;
+  private models: Map<string, CalibrableModel> = new Map();
+  private config: TensorFlowConfig;
+  private supportedBackends: string[] = [];
+  private activeBackend: string = '';
   
   private constructor(config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG) {
     this.config = config;
-    this.initialize();
   }
   
   /**
@@ -33,17 +27,48 @@ export class TensorFlowModelRegistry {
   public static getInstance(config?: TensorFlowConfig): TensorFlowModelRegistry {
     if (!TensorFlowModelRegistry.instance) {
       TensorFlowModelRegistry.instance = new TensorFlowModelRegistry(config);
+    } else if (config) {
+      TensorFlowModelRegistry.instance.setConfig(config);
     }
+    
     return TensorFlowModelRegistry.instance;
   }
   
   /**
-   * Inicializa TensorFlow con la configuración especificada
+   * Inicializa TensorFlow.js con la configuración especificada
    */
-  private async initialize(): Promise<void> {
+  public async initialize(): Promise<boolean> {
+    if (this.isInitialized) return true;
+    if (this.isInitializing) {
+      return new Promise<boolean>((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (this.isInitialized) {
+            clearInterval(checkInterval);
+            resolve(true);
+          }
+        }, 100);
+      });
+    }
+    
+    this.isInitializing = true;
+    
     try {
-      // Configurar el backend
-      await tf.setBackend(this.config.backend);
+      console.log('TensorFlowModelRegistry: Inicializando TensorFlow.js');
+      
+      // Determinar backends disponibles
+      this.supportedBackends = await this.detectSupportedBackends();
+      
+      // Configurar backend preferido si está disponible
+      if (this.supportedBackends.includes(this.config.backend)) {
+        await tf.setBackend(this.config.backend);
+      } else if (this.supportedBackends.includes('webgl')) {
+        await tf.setBackend('webgl');
+      } else {
+        await tf.setBackend('cpu');
+      }
+      
+      // Guardar backend activo
+      this.activeBackend = tf.getBackend();
       
       // Aplicar configuraciones de memoria
       if (this.config.memoryOptions.useFloat16) {
@@ -55,142 +80,177 @@ export class TensorFlowModelRegistry {
       }
       
       if (this.config.memoryOptions.gpuMemoryLimitMB > 0) {
-        tf.env().set('WEBGL_MAX_TEXTURE_SIZE', this.config.memoryOptions.gpuMemoryLimitMB * 1024 * 1024);
+        tf.env().set('WEBGL_RENDERER_PREFERENCE', 'high-performance');
+        tf.env().set('WEBGL_VERSION', 2);
+        tf.env().set('WEBGL_MAX_TEXTURE_SIZE', 16384);
+        
+        // Limitar memoria
+        const bytesPerMB = 1048576;
+        const limitBytes = this.config.memoryOptions.gpuMemoryLimitMB * bytesPerMB;
+        tf.engine().configureNextOpHandler((op) => {
+          if (tf.memory().numBytes > limitBytes) {
+            tf.engine().endScope();
+            tf.engine().startScope();
+          }
+          return op();
+        });
       }
       
-      console.log(`TensorFlow.js inicializado con backend: ${tf.getBackend()}`);
-      this.isInitialized = true;
-    } catch (error) {
-      console.error('Error inicializando TensorFlow:', error);
-      // Intentar fallback a CPU
-      try {
-        await tf.setBackend('cpu');
-        console.log('Fallback a backend CPU completado');
-        this.isInitialized = true;
-      } catch (fallbackError) {
-        console.error('Error en fallback a CPU:', fallbackError);
+      // Configuraciones avanzadas para WebGL/WebGPU
+      if (this.config.advancedOptions.enablePlatformOptimizations) {
+        tf.env().set('CPU_HANDOFF_SIZE_THRESHOLD', 128);
+        tf.env().set('WEBGL_USE_SHAPES_UNIFORMS', true);
+        tf.env().set('WEBGL_PACK_BINARY_OPERATIONS', true);
       }
+      
+      // Configurar prioridad para WebGPU si está disponible y preferido
+      if (this.config.advancedOptions.preferWebGPU && this.supportedBackends.includes('webgpu')) {
+        // WebGPU es experimental en TF.js, pero intentamos activarlo si está configurado
+        tf.env().set('WEBGPU_USE_COMPUTE', true);
+      }
+      
+      console.log(`TensorFlowModelRegistry: TensorFlow.js inicializado usando backend ${this.activeBackend}`);
+      console.log('TensorFlowModelRegistry: Backends disponibles:', this.supportedBackends);
+      
+      this.isInitialized = true;
+      this.isInitializing = false;
+      return true;
+    } catch (error) {
+      console.error('TensorFlowModelRegistry: Error inicializando TensorFlow.js:', error);
+      this.isInitializing = false;
+      throw error;
     }
   }
   
   /**
-   * Registra un modelo en el registro
+   * Detecta los backends de TensorFlow soportados en el dispositivo
    */
-  public registerModel(id: string, model: BaseNeuralModel & Partial<CalibrableModel>): void {
+  private async detectSupportedBackends(): Promise<string[]> {
+    const supported = [];
+    
+    // Comprobar WebGL
+    try {
+      if (await tf.backend().isWebGLSupported()) {
+        supported.push('webgl');
+      }
+    } catch (e) {
+      console.log('WebGL no soportado:', e);
+    }
+    
+    // Comprobar WebGPU (experimental)
+    try {
+      if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+        supported.push('webgpu');
+      }
+    } catch (e) {
+      console.log('WebGPU no soportado:', e);
+    }
+    
+    // WASM siempre se considera disponible
+    supported.push('wasm');
+    
+    // CPU siempre disponible como fallback
+    supported.push('cpu');
+    
+    return supported;
+  }
+  
+  /**
+   * Registra un nuevo modelo en el registro
+   */
+  public registerModel(id: string, model: CalibrableModel): void {
     this.models.set(id, model);
-    this.modelInitialized.set(id, false);
-    console.log(`Modelo registrado: ${id}`);
+    console.log(`TensorFlowModelRegistry: Modelo registrado: ${id}`);
   }
   
   /**
-   * Obtiene un modelo por su ID
+   * Obtiene un modelo del registro
    */
-  public getModel<T extends BaseNeuralModel & Partial<CalibrableModel>>(id: string): T | null {
-    const model = this.models.get(id) as T;
-    if (!model) return null;
-    
-    // Inicializar si es la primera vez
-    if (!this.modelInitialized.get(id)) {
-      console.log(`Inicializando modelo: ${id}`);
-      this.modelInitialized.set(id, true);
-    }
-    
-    return model;
+  public getModel<T extends CalibrableModel>(id: string): T | null {
+    return (this.models.get(id) as T) || null;
   }
   
   /**
-   * Obtiene todos los modelos registrados
+   * Obtiene todos los modelos del registro
    */
-  public getAllModels(): Map<string, BaseNeuralModel & Partial<CalibrableModel>> {
+  public getAllModels(): Map<string, CalibrableModel> {
     return this.models;
   }
   
   /**
-   * Notifica a todos los modelos que se ha iniciado calibración
+   * Notifica a todos los modelos que la calibración ha comenzado
    */
   public notifyCalibrationStarted(): void {
-    this.models.forEach((model) => {
-      if (typeof model.onCalibrationStarted === 'function') {
-        model.onCalibrationStarted();
-      }
-    });
+    for (const model of this.models.values()) {
+      model.onCalibrationStarted();
+    }
   }
   
   /**
-   * Reinicia un modelo específico o todos
+   * Establece una nueva configuración
    */
-  public resetModels(specificId?: string): void {
-    if (specificId) {
-      const model = this.models.get(specificId);
-      if (model) {
-        console.log(`Reiniciando modelo: ${specificId}`);
-        // Crear una nueva instancia
-        this.models.set(specificId, new (Object.getPrototypeOf(model).constructor)());
-        this.modelInitialized.set(specificId, false);
+  public setConfig(config: TensorFlowConfig): void {
+    this.config = config;
+    
+    // Si ya está inicializado, aplicar cambios que no requieran reinicio
+    if (this.isInitialized) {
+      if (this.config.memoryOptions.useFloat16) {
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+      } else {
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', false);
       }
-    } else {
-      // Reiniciar todos los modelos
-      console.log('Reiniciando todos los modelos');
-      const modelIds = Array.from(this.models.keys());
-      for (const id of modelIds) {
-        const model = this.models.get(id);
-        if (model) {
-          this.models.set(id, new (Object.getPrototypeOf(model).constructor)());
-          this.modelInitialized.set(id, false);
-        }
+      
+      if (this.config.memoryOptions.enableTensorPacking) {
+        tf.env().set('WEBGL_PACK', true);
+      } else {
+        tf.env().set('WEBGL_PACK', false);
       }
     }
   }
   
   /**
-   * Libera recursos utilizados por los modelos
+   * Obtiene la configuración actual
+   */
+  public getConfig(): TensorFlowConfig {
+    return this.config;
+  }
+  
+  /**
+   * Obtiene el backend activo
+   */
+  public getActiveBackend(): string {
+    return this.activeBackend;
+  }
+  
+  /**
+   * Obtiene los backends soportados
+   */
+  public getSupportedBackends(): string[] {
+    return this.supportedBackends;
+  }
+  
+  /**
+   * Libera recursos y limpia el registro
    */
   public async dispose(): Promise<void> {
-    // Liberar memoria de TensorFlow
-    await tf.disposeVariables();
+    for (const model of this.models.values()) {
+      if (typeof (model as any).dispose === 'function') {
+        await (model as any).dispose();
+      }
+    }
     
-    // Limpiar modelos
     this.models.clear();
-    this.modelInitialized.clear();
     
-    console.log('Modelos TensorFlow liberados');
-  }
-  
-  /**
-   * Devuelve información sobre todos los modelos registrados
-   */
-  public getModelInfo(): Array<{
-    id: string;
-    name: string;
-    version: string;
-    initialized: boolean;
-    architecture: string;
-    backend: string;
-  }> {
-    return Array.from(this.models.entries()).map(([id, model]) => ({
-      id,
-      name: model.getModelInfo().name,
-      version: model.getModelInfo().version,
-      initialized: this.modelInitialized.get(id) || false,
-      architecture: model.architecture,
-      backend: tf.getBackend() || 'unknown'
-    }));
-  }
-  
-  /**
-   * Actualiza la configuración de TensorFlow
-   */
-  public async updateConfig(newConfig: Partial<TensorFlowConfig>): Promise<void> {
-    this.config = { ...this.config, ...newConfig };
+    // Limpiar tensores no utilizados
+    tf.dispose();
     
-    // Reinicializar con nueva configuración
-    await this.initialize();
+    console.log('TensorFlowModelRegistry: Todos los modelos liberados');
   }
 }
 
-/**
- * Función de utilidad para acceso rápido a modelos
- */
-export function getTFModel<T extends BaseNeuralModel & Partial<CalibrableModel>>(id: string): T | null {
-  return TensorFlowModelRegistry.getInstance().getModel<T>(id);
+// Interfaz para modelos calibrables
+export interface CalibrableModel {
+  setCalibrationFactor(factor: number): void;
+  onCalibrationStarted(): void;
+  getPredictionTime(): number;
 }
