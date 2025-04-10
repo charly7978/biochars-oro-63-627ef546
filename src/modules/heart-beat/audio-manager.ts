@@ -1,23 +1,30 @@
 
 /**
- * Audio manager for heart beat sounds
+ * Audio management for heartbeat sounds
  */
 
-interface HeartbeatAudioOptions {
+interface HeartbeatAudioConfig {
   primaryFrequency: number;
   secondaryFrequency: number;
   duration: number;
   volume: number;
 }
 
+/**
+ * Manages audio for heartbeat sounds
+ */
 export class HeartbeatAudioManager {
-  private context: AudioContext | null = null;
-  private options: HeartbeatAudioOptions;
-  private isReady: boolean = false;
+  private audioContext: AudioContext | null = null;
+  private config: HeartbeatAudioConfig;
+  private isAudioReady: boolean = false;
   private lastBeepTime: number = 0;
+  private beepPromise: Promise<boolean> | null = null;
   
-  constructor(options: HeartbeatAudioOptions) {
-    this.options = options;
+  /**
+   * Create a new audio manager for heartbeat sounds
+   */
+  constructor(config: HeartbeatAudioConfig) {
+    this.config = config;
   }
   
   /**
@@ -25,86 +32,132 @@ export class HeartbeatAudioManager {
    */
   public async initAudio(): Promise<boolean> {
     try {
-      // Create audio context only when needed
-      if (!this.context) {
-        this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Check if AudioContext is supported
+      if (typeof AudioContext === 'undefined') {
+        console.error("HeartbeatAudioManager: AudioContext not supported");
+        return false;
       }
       
-      // Resume context if not running
-      if (this.context.state !== 'running') {
-        await this.context.resume();
+      // Create audio context if not already created
+      if (!this.audioContext) {
+        this.audioContext = new AudioContext();
+        console.log("HeartbeatAudioManager: Audio context created with state:", this.audioContext.state);
       }
       
-      this.isReady = true;
+      // Resume context if suspended
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+        console.log("HeartbeatAudioManager: Audio context resumed");
+      }
+      
+      this.isAudioReady = true;
       return true;
-    } catch (err) {
-      console.error('HeartbeatAudioManager: Error initializing audio', err);
-      this.isReady = false;
+    } catch (error) {
+      console.error("HeartbeatAudioManager: Error initializing audio", error);
+      this.isAudioReady = false;
       return false;
     }
   }
   
   /**
-   * Play a beep sound
+   * Play a heartbeat sound
    */
-  public async playBeep(volume: number = 0.7): Promise<boolean> {
+  public async playBeep(volume: number = this.config.volume): Promise<boolean> {
+    // Check if we already have a pending beep
+    if (this.beepPromise) {
+      return this.beepPromise;
+    }
+    
+    // Create new beep promise
+    this.beepPromise = this.playBeepInternal(volume);
+    const result = await this.beepPromise;
+    this.beepPromise = null;
+    return result;
+  }
+  
+  /**
+   * Internal method to play heartbeat sound
+   */
+  private async playBeepInternal(volume: number): Promise<boolean> {
     try {
-      // Check if we're ready to play sound
-      if (!this.isReady || !this.context) {
-        await this.initAudio();
+      // Initialize audio if not ready
+      if (!this.isAudioReady) {
+        const initialized = await this.initAudio();
+        if (!initialized) return false;
       }
       
-      if (!this.context) {
-        console.error('HeartbeatAudioManager: Audio context not available');
+      // Check if context is available
+      if (!this.audioContext) {
+        console.error("HeartbeatAudioManager: No audio context available");
         return false;
       }
       
-      // Enforce minimum time between beeps
+      // Enforce minimum interval between beeps
       const now = Date.now();
-      if (now - this.lastBeepTime < this.options.duration * 2) {
+      if (now - this.lastBeepTime < 200) {
         return false;
       }
-      
       this.lastBeepTime = now;
       
-      // Create oscillator for beep
-      const oscillator = this.context.createOscillator();
-      const gainNode = this.context.createGain();
+      // Create gain node for volume control
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = Math.min(1, Math.max(0, volume));
+      gainNode.connect(this.audioContext.destination);
       
-      // Set up audio nodes
-      oscillator.type = 'sine';
-      oscillator.frequency.value = this.options.primaryFrequency;
-      gainNode.gain.value = volume * this.options.volume;
+      // Create primary oscillator
+      const primaryOsc = this.audioContext.createOscillator();
+      primaryOsc.type = 'sine';
+      primaryOsc.frequency.value = this.config.primaryFrequency;
+      primaryOsc.connect(gainNode);
       
-      // Connect nodes
-      oscillator.connect(gainNode);
-      gainNode.connect(this.context.destination);
+      // Create secondary oscillator for richer sound
+      const secondaryOsc = this.audioContext.createOscillator();
+      secondaryOsc.type = 'triangle';
+      secondaryOsc.frequency.value = this.config.secondaryFrequency;
       
-      // Schedule beep start/stop
-      oscillator.start();
-      oscillator.stop(this.context.currentTime + this.options.duration / 1000);
+      // Create gain node for secondary oscillator
+      const secondaryGain = this.audioContext.createGain();
+      secondaryGain.gain.value = volume * 0.3; // Lower volume for secondary
+      secondaryOsc.connect(secondaryGain);
+      secondaryGain.connect(this.audioContext.destination);
       
-      // Clean up after beep is done
-      setTimeout(() => {
-        oscillator.disconnect();
-        gainNode.disconnect();
-      }, this.options.duration + 50);
+      // Calculate duration in seconds
+      const durationSeconds = this.config.duration / 1000;
+      
+      // Set envelope for natural sound
+      gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
+      gainNode.gain.linearRampToValueAtTime(0, this.audioContext.currentTime + durationSeconds);
+      
+      secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+      secondaryGain.gain.linearRampToValueAtTime(volume * 0.3, this.audioContext.currentTime + 0.01);
+      secondaryGain.gain.linearRampToValueAtTime(0, this.audioContext.currentTime + durationSeconds);
+      
+      // Start and stop oscillators
+      primaryOsc.start();
+      secondaryOsc.start();
+      
+      primaryOsc.stop(this.audioContext.currentTime + durationSeconds);
+      secondaryOsc.stop(this.audioContext.currentTime + durationSeconds);
       
       return true;
     } catch (error) {
-      console.error('HeartbeatAudioManager: Error playing beep', error);
+      console.error("HeartbeatAudioManager: Error playing beep", error);
       return false;
     }
   }
   
   /**
-   * Clean up resources
+   * Check if audio is initialized and ready
    */
-  public dispose(): void {
-    if (this.context) {
-      this.context.close();
-      this.context = null;
-    }
-    this.isReady = false;
+  public isReady(): boolean {
+    return this.isAudioReady && !!this.audioContext;
+  }
+  
+  /**
+   * Get audio context state
+   */
+  public getAudioState(): string {
+    return this.audioContext ? this.audioContext.state : 'unavailable';
   }
 }

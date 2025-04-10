@@ -1,125 +1,102 @@
 /**
- * BPM calculation utilities for heart rate detection
+ * Utilities for BPM (beats per minute) calculation
  */
 
 /**
- * Update BPM history with new value
+ * Update the BPM history with a new interval
  * 
  * @param bpmHistory Array of recent BPM values
- * @param newBPM New BPM value to add
- * @param maxSize Maximum history size
- * @param minBPM Minimum valid BPM
- * @param maxBPM Maximum valid BPM
- * @returns Updated BPM history
+ * @param interval New RR interval in milliseconds
+ * @param minBpm Minimum physiologically valid BPM
+ * @param maxBpm Maximum physiologically valid BPM
+ * @returns Updated BPM history array
  */
 export function updateBPMHistory(
-  bpmHistory: number[], 
-  newBPM: number, 
-  maxSize: number = 10,
-  minBPM: number = 40,
-  maxBPM: number = 200
+  bpmHistory: number[],
+  interval: number,
+  minBpm: number = 40,
+  maxBpm: number = 200
 ): number[] {
-  // Validate BPM is within physiological range
-  if (newBPM >= minBPM && newBPM <= maxBPM) {
-    // Add to history
-    const updatedHistory = [...bpmHistory, newBPM];
+  // Convert interval to BPM
+  const instantBPM = 60000 / interval;
+  
+  // Only add valid BPM values
+  if (instantBPM >= minBpm && instantBPM <= maxBpm) {
+    const updatedHistory = [...bpmHistory, instantBPM];
     
-    // Trim if needed
-    if (updatedHistory.length > maxSize) {
-      return updatedHistory.slice(-maxSize);
+    // Keep a reasonable history size
+    if (updatedHistory.length > 12) {
+      return updatedHistory.slice(-12);
     }
     
     return updatedHistory;
   }
   
-  // Invalid BPM, return unchanged history
   return bpmHistory;
 }
 
 /**
- * Calculate current BPM from RR intervals
- * 
- * @param rrInterval RR interval in milliseconds
- * @returns BPM value
- */
-export function calculateCurrentBPM(rrInterval: number): number {
-  if (!rrInterval || rrInterval === 0) return 0;
-  
-  // Convert ms to BPM: 60000 ms / RR interval
-  return 60000 / rrInterval;
-}
-
-/**
- * Apply exponential smoothing to BPM
- * 
- * @param currentBPM Current BPM
- * @param smoothBPM Previous smoothed BPM
- * @param alpha Smoothing factor (0-1)
- * @returns Smoothed BPM
- */
-export function smoothBPM(currentBPM: number, smoothBPM: number, alpha: number = 0.3): number {
-  // If no previous smooth value, use current
-  if (smoothBPM === 0) {
-    return currentBPM;
-  }
-  
-  // Apply smoothing
-  return alpha * currentBPM + (1 - alpha) * smoothBPM;
-}
-
-/**
- * Calculate final BPM with outlier rejection
+ * Calculate current BPM from history
  * 
  * @param bpmHistory Array of recent BPM values
- * @returns Final BPM value
+ * @returns Current BPM or 0 if insufficient data
  */
-export function calculateFinalBPM(bpmHistory: number[]): number {
-  if (bpmHistory.length < 3) {
+export function calculateCurrentBPM(bpmHistory: number[]): number {
+  if (bpmHistory.length < 2) {
     return 0;
   }
   
-  // Sort values to remove outliers
+  // Sort the history and trim outliers
   const sorted = [...bpmHistory].sort((a, b) => a - b);
+  const trimmed = sorted.slice(1, -1);
   
-  // Remove outliers (10% from each end)
-  const trimSize = Math.max(1, Math.floor(sorted.length * 0.1));
-  const trimmed = sorted.slice(trimSize, sorted.length - trimSize);
-  
-  // Calculate average of remaining values
   if (trimmed.length === 0) {
-    return Math.round(sorted[Math.floor(sorted.length / 2)]);
+    return bpmHistory[bpmHistory.length - 1];
   }
   
-  const sum = trimmed.reduce((acc, val) => acc + val, 0);
-  return Math.round(sum / trimmed.length);
+  // Calculate average of trimmed values
+  const sum = trimmed.reduce((a, b) => a + b, 0);
+  return sum / trimmed.length;
 }
 
 /**
- * Calculate confidence level based on BPM stability
+ * Apply smoothing to BPM
  * 
- * @param bpmHistory Array of recent BPM values
- * @returns Confidence value (0-1)
+ * @param currentBPM Current calculated BPM
+ * @param smoothedBPM Previous smoothed BPM
+ * @param alpha Weight factor for smoothing (0-1)
+ * @returns Smoothed BPM
  */
-export function calculateBPMConfidence(bpmHistory: number[]): number {
-  if (bpmHistory.length < 3) {
-    return 0.1;
+export function smoothBPM(currentBPM: number, smoothedBPM: number, alpha: number = 0.2): number {
+  if (smoothedBPM === 0) {
+    return currentBPM;
   }
   
-  // Calculate variance
-  const avg = bpmHistory.reduce((sum, val) => sum + val, 0) / bpmHistory.length;
-  let variance = 0;
-  
-  for (const bpm of bpmHistory) {
-    variance += Math.pow(bpm - avg, 2);
+  return alpha * currentBPM + (1 - alpha) * smoothedBPM;
+}
+
+/**
+ * Calculate final BPM with additional filtering
+ * 
+ * @param bpmHistory Complete BPM history
+ * @returns Final filtered BPM or 0 if insufficient data
+ */
+export function calculateFinalBPM(bpmHistory: number[]): number {
+  if (bpmHistory.length < 5) {
+    return 0;
   }
   
-  variance /= bpmHistory.length;
+  // Sort and trim outliers using percentile method
+  const sorted = [...bpmHistory].sort((a, b) => a - b);
+  const cutPercentage = 0.1; // Trim 10% from each end
+  const cut = Math.round(sorted.length * cutPercentage);
+  const finalSet = sorted.slice(cut, sorted.length - cut);
   
-  // Higher variance = lower confidence
-  const varianceComponent = Math.max(0, 1 - variance / 400);
+  if (finalSet.length === 0) {
+    return 0;
+  }
   
-  // More data points = higher confidence
-  const sizeComponent = Math.min(1, bpmHistory.length / 8);
-  
-  return Math.min(1, (varianceComponent * 0.7) + (sizeComponent * 0.3));
+  // Calculate average
+  const sum = finalSet.reduce((acc, val) => acc + val, 0);
+  return Math.round(sum / finalSet.length);
 }
