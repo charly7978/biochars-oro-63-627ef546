@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { getGlobalFeedbackState } from '../hooks/heart-beat/signal-processing/signal-quality';
-import { ArrowRightLeft, Signal, Activity, Heart, AlertTriangle } from 'lucide-react';
+import { ArrowRightLeft, Signal, Activity, Heart, AlertTriangle, Info } from 'lucide-react';
 
 interface BidirectionalFeedbackStatusProps {
   isActive: boolean;
@@ -39,13 +39,14 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
   
   const [updateCount, setUpdateCount] = useState(0);
   const [lastUpdateTime, setLastUpdateTime] = useState('');
+  const [debugInfo, setDebugInfo] = useState('No updates');
   
   useEffect(() => {
-    // Siempre obtener datos de retroalimentación
+    // Poll feedback data frequently to detect real changes
     const interval = setInterval(() => {
       const feedback = getGlobalFeedbackState();
       
-      // Detectar cambios significativos para confirmar que el sistema está activo
+      // Detect significant changes to confirm system is active
       const hasSignificantChanges = 
         Math.abs(previousValuesRef.current.signalStrength - feedback.signalQuality.signalStrength) > 0.01 ||
         Math.abs(previousValuesRef.current.heartRateConfidence - feedback.heartRate.confidence) > 0.01 ||
@@ -61,19 +62,23 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
           'ahora-oxígeno': feedback.vitalSigns.spo2Quality.toFixed(2)
         });
         
-        // Actualizar contador de cambios y tiempo
+        // Update counter and timestamp on real change
         setUpdateCount(prev => prev + 1);
-        setLastUpdateTime(new Date().toISOString().substr(11, 8));
+        const now = new Date();
+        setLastUpdateTime(now.toISOString().substr(11, 12));
+        
+        // Update debug info with exact values that changed
+        setDebugInfo(`${now.toISOString().substr(11, 12)} - Signal: ${previousValuesRef.current.signalStrength.toFixed(2)} → ${feedback.signalQuality.signalStrength.toFixed(2)}, HR: ${previousValuesRef.current.heartRateConfidence.toFixed(2)} → ${feedback.heartRate.confidence.toFixed(2)}`);
       }
       
-      // Actualizar valores previos
+      // Update previous values
       previousValuesRef.current = {
         signalStrength: feedback.signalQuality.signalStrength,
         heartRateConfidence: feedback.heartRate.confidence,
         spo2Quality: feedback.vitalSigns.spo2Quality
       };
       
-      // Log detallado para depuración
+      // Detailed log for debugging
       console.log('Estado actual de retroalimentación bidireccional:', {
         señal: {
           intensidad: (feedback.signalQuality.signalStrength * 100).toFixed(1) + '%',
@@ -117,20 +122,22 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
         glucoseReliability: feedback.vitalSigns.glucoseReliability || 0,
         lipidsReliability: feedback.vitalSigns.lipidsReliability || 0
       });
-    }, 250); // Más frecuente para mayor precisión
+    }, 150); // Poll more frequently to better detect real changes
     
     return () => clearInterval(interval);
   }, []);
   
   return (
-    <div className="absolute bottom-16 left-4 right-4 z-10 bg-black/80 backdrop-blur-sm rounded-lg p-3 text-[9px] border border-blue-500/80 shadow-lg shadow-blue-900/20">
+    <div className="absolute inset-x-4 top-20 z-30 bg-black/80 backdrop-blur-sm rounded-lg p-3 text-[10px] border border-blue-500/80 shadow-lg shadow-blue-900/20 transition-all duration-300">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center">
           <ArrowRightLeft className="h-3 w-3 text-blue-400 mr-1" />
-          <span className="text-white/90 font-semibold">Retroalimentación Bidireccional</span>
+          <span className="text-white/90 font-semibold">Sistema Integrado de Retroalimentación</span>
         </div>
-        <div className="text-green-400 text-[8px]">
-          Cambios: {updateCount} | Último: {lastUpdateTime}
+        <div className="text-green-400 text-[8px] flex items-center space-x-1">
+          <span>Cambios detectados: {updateCount}</span>
+          <span>|</span>
+          <span className="font-mono">Último: {lastUpdateTime}</span>
         </div>
       </div>
       
@@ -139,6 +146,7 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
           <div className="flex items-center mb-1">
             <Signal className="h-2.5 w-2.5 text-green-400 mr-0.5" />
             <span className="text-white/80">Señal</span>
+            <span className="ml-1 text-[7px] text-green-300">{(signalQuality.signalStrength * 100).toFixed(1)}%</span>
           </div>
           <div className="grid grid-cols-2 gap-x-1 gap-y-0.5">
             <div className="text-white/60">Intensidad:</div>
@@ -215,12 +223,12 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
         </div>
       </div>
       
-      <div className="mt-1 pt-1 border-t border-gray-700 text-white/60 text-[8px] flex justify-between">
-        <div>Procesamiento en tiempo real</div>
-        <div className="flex items-center">
+      <div className="mt-1 pt-1 border-t border-gray-700 flex justify-between items-center">
+        <div className="text-white/60 text-[8px] flex items-center">
           <AlertTriangle className="h-2 w-2 text-yellow-400 mr-0.5" />
-          <span>Sistema operando con datos genuinos</span>
+          <span>Sistema operando únicamente con datos reales</span>
         </div>
+        <div className="text-[7px] text-blue-300 font-mono">{debugInfo}</div>
       </div>
     </div>
   );

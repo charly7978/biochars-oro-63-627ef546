@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -32,7 +33,7 @@ export function getGlobalFeedbackState(): FeedbackState {
 export function updateGlobalFeedbackState(newState: FeedbackState): void {
   globalFeedbackState = newState;
   
-  // Añadir logs detallados para probar que los cambios realmente ocurren
+  // Log detailed updates to verify real-time changes
   console.log("Sistema de retroalimentación actualizado:", {
     timestamp: new Date().toISOString(),
     señal: {

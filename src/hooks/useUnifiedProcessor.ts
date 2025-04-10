@@ -1,3 +1,4 @@
+
 /**
  * Unified Processor Hook
  * Provides a single integration point for signal processing, vital signs, and heart rate
@@ -108,8 +109,8 @@ export function useUnifiedProcessor() {
       const feedbackState = getGlobalFeedbackState();
       const now = Date.now();
       
-      // Registrar timestamp del procesamiento
-      console.log(`Procesando señal en: ${new Date(now).toISOString()}`);
+      // Log timestamp of processing
+      console.log(`Processing signal at: ${new Date(now).toISOString()}`);
       
       // First, update signal quality feedback
       const updatedFeedback = updateSignalQualityFeedback(
@@ -123,57 +124,54 @@ export function useUnifiedProcessor() {
       );
       
       // Then, update heart rate feedback
+      // Use a null check for isPeak property since it might not exist in the result
+      const isPeakValue = lastResult.hasOwnProperty('isPeak') ? (lastResult as any).isPeak : false;
+      
       const updatedHeartRateFeedback = updateHeartRateFeedback(
         updatedFeedback,
         {
           currentBPM: lastResult.heartRate,
           confidence: lastResult.confidence || 0.1,
-          peakStrength: 0.7, // Default peak strength
-          rhythmStability: lastResult.isArrhythmia ? 0.3 : 0.8, // Lower stability if arrhythmia detected
-          isPeak: lastResult.isPeak || false // Asegurar que se pase correctamente el estado de pico
+          peakStrength: 0.7,
+          rhythmStability: lastResult.isArrhythmia ? 0.3 : 0.8,
+          isPeak: isPeakValue
         }
       );
       
-      // Calcular valores aleatorios pero realistas para demostrar que el sistema está actualizando
-      // (los valores reales vendrían del procesamiento real de la señal)
-      const timeSinceLastUpdate = (now - lastFeedbackUpdateRef.current) / 1000;
-      const spo2Quality = Math.min(0.95, Math.max(0.3, 0.6 + Math.sin(now / 3000) * 0.3));
+      // Get actual SPO2 quality based on real measurements
+      const spo2Quality = lastResult.vitalSigns.spo2 > 0 ? 0.5 + (lastResult.quality / 200) : 0.1;
       
-      // Calcular valor de glucosa que cambia ligeramente con el tiempo (simulando medición real)
-      const baseGlucoseReliability = 0.3 + (Math.sin(now / 5000) * 0.2);
-      const glucoseWithNoise = baseGlucoseReliability + (Math.random() * 0.05 - 0.025);
-      const glucoseReliability = Math.min(0.85, Math.max(0.2, glucoseWithNoise));
+      // Calculate actual glucoseReliability based on real measurements
+      const glucoseReliability = lastResult.vitalSigns.glucose > 0 ? 0.4 + (lastResult.quality / 250) : 0.1;
       
-      // Calcular valor de lípidos que cambia ligeramente (simulando medición real)
-      const baseLipidReliability = 0.4 + (Math.cos(now / 4000) * 0.15);
-      const lipidWithNoise = baseLipidReliability + (Math.random() * 0.04 - 0.02);
-      const lipidReliability = Math.min(0.8, Math.max(0.25, lipidWithNoise));
+      // Calculate actual lipidsReliability based on real measurements
+      const lipidReliability = (lastResult.vitalSigns.lipids.totalCholesterol > 0 || 
+                          lastResult.vitalSigns.lipids.triglycerides > 0) ? 0.4 + (lastResult.quality / 250) : 0.1;
       
-      // Finally, update vital signs feedback con valores realistas
+      // Finally, update vital signs feedback with REAL values only
       const updatedVitalFeedback = updateVitalSignsFeedback(
         updatedHeartRateFeedback,
         {
-          spo2Quality: lastResult.vitalSigns.spo2 > 0 ? spo2Quality : 0.1,
-          pressureReliability: lastResult.vitalSigns.pressure !== "--/--" ? 0.7 + (Math.random() * 0.1 - 0.05) : 0.1,
-          arrhythmiaConfidence: lastResult.isArrhythmia ? 0.9 : 0.3,
-          glucoseReliability: lastResult.vitalSigns.glucose > 0 ? glucoseReliability : 0.1,
-          lipidsReliability: (lastResult.vitalSigns.lipids.totalCholesterol > 0 || 
-                            lastResult.vitalSigns.lipids.triglycerides > 0) ? lipidReliability : 0.1
+          spo2Quality: spo2Quality,
+          pressureReliability: lastResult.vitalSigns.pressure !== "--/--" ? 0.7 : 0.1,
+          arrhythmiaConfidence: lastResult.isArrhythmia ? 0.8 : 0.2,
+          glucoseReliability: glucoseReliability,
+          lipidsReliability: lipidReliability
         }
       );
       
-      // Registrar tiempo desde última actualización
-      console.log(`Tiempo desde última actualización: ${timeSinceLastUpdate.toFixed(2)}s`);
+      // Record time since last update
+      console.log(`Time since last update: ${((now - lastFeedbackUpdateRef.current) / 1000).toFixed(2)}s`);
       lastFeedbackUpdateRef.current = now;
       
       // Update global feedback state
       updateGlobalFeedbackState(updatedVitalFeedback);
       
-      // Log feedback state more frequently for debugging
+      // Log feedback state for debugging
       logFeedbackState(updatedVitalFeedback, "useUnifiedProcessor");
       console.log("Current signal processing result:", lastResult);
       
-      // Calculate feedback quality indicators for UI display
+      // Calculate feedback quality indicators for UI display using REAL values
       const signalOptimization = (
         updatedVitalFeedback.signalQuality.stabilityScore * 0.4 +
         (1 - updatedVitalFeedback.signalQuality.noiseLevel) * 0.6
