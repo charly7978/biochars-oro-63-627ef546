@@ -1,3 +1,4 @@
+
 import * as tf from '@tensorflow/tfjs';
 
 /**
@@ -42,7 +43,8 @@ export class TensorUtils {
       paddedInput = input.slice(0, inputSize);
     }
     
-    // Convertir a tensor 3D [1, inputSize, 1] para Conv1D
+    // Convertir a tensor 3D [1, inputSize, 1] para Conv1D 
+    // Using proper tensor creation with correct shape
     return tf.tensor3d([paddedInput.map(v => [v])], [1, inputSize, 1]);
   }
   

@@ -57,10 +57,16 @@ export class TensorFlowModelRegistry {
       // Check available backends
       this.supportedBackends = ['cpu'];
       
-      if (tf.backend().getGPGPUContext) {
-        this.supportedBackends.push('webgl');
+      // Check for WebGL support
+      if (tf.backend() && typeof window !== 'undefined') {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (gl !== null) {
+          this.supportedBackends.push('webgl');
+        }
       }
       
+      // Check for WebGPU support
       if (typeof (window as any).WebGPUComputeContext !== 'undefined') {
         this.supportedBackends.push('webgpu');
       }
@@ -119,6 +125,24 @@ export class TensorFlowModelRegistry {
   }
   
   /**
+   * Gets all registered models
+   */
+  public getAllModels(): Map<string, any> {
+    return new Map(this.models);
+  }
+  
+  /**
+   * Notifies all models that calibration has started
+   */
+  public notifyCalibrationStarted(): void {
+    for (const model of this.models.values()) {
+      if (model && typeof model.onCalibrationStarted === 'function') {
+        model.onCalibrationStarted();
+      }
+    }
+  }
+  
+  /**
    * Libera todos los modelos
    */
   public dispose(): void {
@@ -133,9 +157,50 @@ export class TensorFlowModelRegistry {
     
     // Limpiar memoria de TensorFlow
     tf.disposeVariables();
-    tf.engine().dispose(); // Changed from purgeUnusedTensors
+    
+    // Use the methods available in tf.engine() for cleanup
+    const engine = tf.engine();
+    if (typeof engine.startScope === 'function') {
+      engine.endScope();
+    }
     
     console.log('TensorFlow Model Registry disposed');
+  }
+  
+  /**
+   * Reset models to their initial state
+   */
+  public resetModels(specificId?: string): void {
+    if (specificId && this.models.has(specificId)) {
+      const model = this.models.get(specificId);
+      if (model && typeof model.reset === 'function') {
+        model.reset();
+      }
+    } else {
+      // Reset all models
+      for (const model of this.models.values()) {
+        if (model && typeof model.reset === 'function') {
+          model.reset();
+        }
+      }
+    }
+  }
+  
+  /**
+   * Gets information about the model registry
+   */
+  public getModelInfo(): {
+    modelsCount: number;
+    activeBackend: string;
+    supportedBackends: string[];
+    initialized: boolean;
+  } {
+    return {
+      modelsCount: this.models.size,
+      activeBackend: this.activeBackend,
+      supportedBackends: this.supportedBackends,
+      initialized: this.initialized
+    };
   }
   
   /**
