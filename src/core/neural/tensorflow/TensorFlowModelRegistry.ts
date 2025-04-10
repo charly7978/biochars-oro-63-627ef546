@@ -9,6 +9,8 @@ export class TensorFlowModelRegistry {
   private static instance: TensorFlowModelRegistry;
   private models: Map<string, any> = new Map();
   private initialized: boolean = false;
+  private activeBackend: string = '';
+  private supportedBackends: string[] = [];
   
   private constructor() {
     // Singleton
@@ -52,19 +54,47 @@ export class TensorFlowModelRegistry {
    */
   private async setupTensorFlow(): Promise<void> {
     try {
-      // Intentar usar WebGL si está disponible
+      // Check available backends
+      this.supportedBackends = ['cpu'];
+      
+      if (tf.backend().getGPGPUContext) {
+        this.supportedBackends.push('webgl');
+      }
+      
+      if (typeof (window as any).WebGPUComputeContext !== 'undefined') {
+        this.supportedBackends.push('webgpu');
+      }
+      
+      // Try to use WebGL if available
       await tf.setBackend('webgl')
         .catch(() => tf.setBackend('cpu'));
       
-      // Optimizaciones de memoria
+      // Store active backend
+      this.activeBackend = tf.getBackend();
+      
+      // Optimizations
       tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
       tf.env().set('WEBGL_PACK', true);
       
-      console.log(`TensorFlow initialized with ${tf.getBackend()} backend`);
+      console.log(`TensorFlow initialized with ${this.activeBackend} backend`);
     } catch (error) {
       console.error('Error setting up TensorFlow:', error);
       throw error;
     }
+  }
+  
+  /**
+   * Returns the active backend
+   */
+  public getActiveBackend(): string {
+    return this.activeBackend;
+  }
+  
+  /**
+   * Returns the supported backends
+   */
+  public getSupportedBackends(): string[] {
+    return [...this.supportedBackends];
   }
   
   /**
@@ -103,7 +133,7 @@ export class TensorFlowModelRegistry {
     
     // Limpiar memoria de TensorFlow
     tf.disposeVariables();
-    tf.engine().purgeUnusedTensors();
+    tf.engine().dispose(); // Changed from purgeUnusedTensors
     
     console.log('TensorFlow Model Registry disposed');
   }

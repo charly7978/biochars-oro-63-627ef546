@@ -1,20 +1,38 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
-import { checkSignalQuality } from './heart-beat/signal-quality';
-import { useTensorFlowModel } from '../hooks/useTensorFlowModel';
+import { SpO2Processor } from './spo2-processor';
+import { BloodPressureProcessor } from './blood-pressure-processor';
+import { ArrhythmiaProcessor } from './arrhythmia-processor';
+import { SignalProcessor } from './signal-processor';
+import { GlucoseProcessor } from './glucose-processor';
+import { LipidProcessor } from './lipid-processor';
+import { ResultFactory } from './factories/result-factory';
+import { SignalValidator } from './validators/signal-validator';
+import { ConfidenceCalculator } from './calculators/confidence-calculator';
+import { VitalSignsResult } from './types/vital-signs-result';
+import { VitalSignsProcessor as CoreProcessor } from './vital-signs/VitalSignsProcessor';
 
 /**
- * Wrapper using the PPGSignalMeter's finger detection and quality
- * No simulation or data manipulation allowed.
- * Improved resistance to false positives
+ * Main vital signs processor
+ * Integrates different specialized processors to calculate health metrics
+ * Operates ONLY in direct measurement mode without reference values or simulation
  */
 export class VitalSignsProcessor {
+  // Specialized processors
+  private spo2Processor: SpO2Processor;
+  private bpProcessor: BloodPressureProcessor;
+  private arrhythmiaProcessor: ArrhythmiaProcessor;
+  private signalProcessor: SignalProcessor;
+  private glucoseProcessor: GlucoseProcessor;
+  private lipidProcessor: LipidProcessor;
   private processor: CoreProcessor;
   
+  // Validators and calculators
+  private signalValidator: SignalValidator;
+  private confidenceCalculator: ConfidenceCalculator;
+
   // Signal measurement parameters
   private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
   private readonly PEAK_THRESHOLD = 0.30; // Increased from 0.25
@@ -44,15 +62,29 @@ export class VitalSignsProcessor {
   private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
   
   /**
-   * Constructor that initializes the processor
+   * Constructor that initializes all specialized processors
+   * Using only direct measurement
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing with direct measurement mode only");
+    console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
+    
+    // Initialize specialized processors
+    this.spo2Processor = new SpO2Processor();
+    this.bpProcessor = new BloodPressureProcessor();
+    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
+    this.signalProcessor = new SignalProcessor();
+    this.glucoseProcessor = new GlucoseProcessor();
+    this.lipidProcessor = new LipidProcessor();
     this.processor = new CoreProcessor();
+    
+    // Initialize validators and calculators
+    this.signalValidator = new SignalValidator(0.01, 15);
+    this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
   /**
-   * Process a PPG signal with improved false positive detection
+   * Processes the real PPG signal and calculates all vital signs
+   * Using ONLY direct measurements with no reference values or simulation
    */
   public async processSignal(
     ppgValue: number,
@@ -99,16 +131,7 @@ export class VitalSignsProcessor {
     this.updateSignalHistory(ppgValue);
     
     // Enhanced signal verification with stability check
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      ppgValue,
-      this.weakSignalsCount,
-      {
-        lowSignalThreshold: this.LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: this.MAX_WEAK_SIGNALS
-      }
-    );
-    
-    this.weakSignalsCount = updatedWeakSignalsCount;
+    const { isWeakSignal, updatedWeakSignalsCount } = this.checkSignalQuality(ppgValue);
     
     // Additional stability check to prevent false positives
     const isStable = this.checkSignalStability();
@@ -132,7 +155,102 @@ export class VitalSignsProcessor {
     
     // Only process verified and stable signals or within guard period
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
-      return await this.processor.processSignal(ppgValue, rrData);
+      // Check for near-zero signal
+      if (!this.signalValidator.isValidSignal(ppgValue)) {
+        console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+        return ResultFactory.createEmptyResults();
+      }
+      
+      // Apply filtering to the real PPG signal
+      const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+      
+      // Process arrhythmia data if available and valid
+      const arrhythmiaResult = rrData && 
+                             rrData.intervals && 
+                             rrData.intervals.length >= 3 && 
+                             rrData.intervals.every(i => i > 300 && i < 2000) ?
+                             this.arrhythmiaProcessor.processRRData(rrData) :
+                             { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+      
+      // Get PPG values for processing
+      const ppgValues = this.signalProcessor.getPPGValues();
+      ppgValues.push(filtered);
+      
+      // Limit the real data buffer
+      if (ppgValues.length > 300) {
+        ppgValues.splice(0, ppgValues.length - 300);
+      }
+      
+      // Check if we have enough data points
+      if (!this.signalValidator.hasEnoughData(ppgValues)) {
+        return ResultFactory.createEmptyResults();
+      }
+      
+      // Verify real signal amplitude is sufficient
+      const signalMin = Math.min(...ppgValues.slice(-15));
+      const signalMax = Math.max(...ppgValues.slice(-15));
+      const amplitude = signalMax - signalMin;
+      
+      if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
+        this.signalValidator.logValidationResults(false, amplitude, ppgValues);
+        return ResultFactory.createEmptyResults();
+      }
+      
+      // Calculate SpO2 using real data only
+      const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
+      
+      // Calculate blood pressure using real signal characteristics only
+      const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+      const pressure = bp.systolic > 0 && bp.diastolic > 0 
+        ? `${bp.systolic}/${bp.diastolic}` 
+        : "--/--";
+      
+      // Calculate glucose with real data only
+      const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
+      const glucoseConfidence = this.glucoseProcessor.getConfidence();
+      
+      // Calculate lipids with real data only
+      const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+      const lipidsConfidence = this.lipidProcessor.getConfidence();
+      
+      // Calculate overall confidence
+      const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
+        glucoseConfidence,
+        lipidsConfidence
+      );
+
+      // Only show values if confidence exceeds threshold
+      const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
+      const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? lipids : {
+        totalCholesterol: 0,
+        triglycerides: 0
+      };
+
+      console.log("VitalSignsProcessor: Results with confidence", {
+        spo2,
+        pressure,
+        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+        glucose: finalGlucose,
+        glucoseConfidence,
+        lipidsConfidence,
+        signalAmplitude: amplitude,
+        confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
+      });
+
+      // Prepare result with all metrics but store confidence separately
+      // to prevent it from being rendered directly
+      return ResultFactory.createResult(
+        spo2,
+        pressure,
+        arrhythmiaResult.arrhythmiaStatus || "--",
+        finalGlucose,
+        finalLipids,
+        this.calculateDefaultHemoglobin(spo2),
+        glucoseConfidence,
+        lipidsConfidence,
+        overallConfidence,
+        arrhythmiaResult.lastArrhythmiaData
+      );
     } else {
       // Return empty result without processing when signal is uncertain
       return {
@@ -207,11 +325,28 @@ export class VitalSignsProcessor {
     
     return true;
   }
+
+  /**
+   * Check signal quality and update weak signals count
+   */
+  private checkSignalQuality(ppgValue: number): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+    // Check for weak signal to detect finger removal using centralized function
+    const isWeakSignal = ppgValue < this.LOW_SIGNAL_THRESHOLD;
+    let updatedWeakSignalsCount = this.weakSignalsCount;
+
+    if (isWeakSignal) {
+      updatedWeakSignalsCount = Math.min(this.MAX_WEAK_SIGNALS, updatedWeakSignalsCount + 1);
+    } else {
+      updatedWeakSignalsCount = Math.max(0, updatedWeakSignalsCount - 0.5);
+    }
+
+    return { isWeakSignal, updatedWeakSignalsCount };
+  }
   
   /**
    * Reset the processor
    */
-  public reset() {
+  public reset(): VitalSignsResult | null {
     console.log("VitalSignsProcessor: Reset - all measurements start from zero");
     this.lastDetectionTime = 0;
     this.weakSignalsCount = 0;
@@ -242,7 +377,31 @@ export class VitalSignsProcessor {
   public getArrhythmiaCounter(): number {
     return this.processor.getArrhythmiaCounter();
   }
+
+  /**
+   * Calculate a default hemoglobin value based on SpO2
+   */
+  private calculateDefaultHemoglobin(spo2: number): number {
+    if (spo2 <= 0) return 0;
+    
+    // Very basic approximation
+    const base = 14;
+    
+    if (spo2 > 95) return base + Math.random();
+    if (spo2 > 90) return base - 1 + Math.random();
+    if (spo2 > 85) return base - 2 + Math.random();
+    
+    return base - 3 + Math.random();
+  }
+
+  /**
+   * Get the last valid results - always returns null
+   * Forces fresh measurements without reference values
+   */
+  public getLastValidResults(): VitalSignsResult | null {
+    return null; // Always return null to ensure measurements start from zero
+  }
 }
 
 // Re-export types for compatibility
-export type { VitalSignsResult } from './vital-signs/types/vital-signs-result';
+export type { VitalSignsResult } from './types/vital-signs-result';

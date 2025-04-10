@@ -77,5 +77,5 @@ export abstract class TFBaseModel {
   }
 }
 
-// Export types for reuse
+// Export types for reuse - Fixed the export syntax
 export type { TFModelOptions };
