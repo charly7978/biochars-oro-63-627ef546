@@ -13,3 +13,11 @@ export interface UseVitalSignsProcessorReturn {
   arrhythmiaWindows: {start: number, end: number}[];
   debugInfo: any;
 }
+
+/**
+ * Estructura para ventanas de arritmia
+ */
+export interface ArrhythmiaWindow {
+  start: number;
+  end: number;
+}

@@ -11,6 +11,7 @@ import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 
 const Index = () => {
+  // Estados principales
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -28,8 +29,12 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const measurementTimerRef = useRef<number | null>(null);
   
+  // Referencias
+  const measurementTimerRef = useRef<number | null>(null);
+  const lastProcessedValueRef = useRef<number>(0);
+  
+  // Hooks de procesamiento
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
@@ -68,6 +73,7 @@ const Index = () => {
   // Cuando hay resultados válidos disponibles
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
+      console.log("Últimos resultados válidos actualizados:", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -77,8 +83,22 @@ const Index = () => {
   useEffect(() => {
     if (!lastSignal || !isMonitoring) return;
     
+    // Solo procesar si hay cambios significativos en el valor para evitar procesamiento innecesario
+    const currentValue = lastSignal.filteredValue;
+    const valueDiff = Math.abs(currentValue - lastProcessedValueRef.current);
+    
+    // Si el valor es similar al anterior y ya hemos procesado antes, no procesar de nuevo
+    if (valueDiff < 0.001 && lastProcessedValueRef.current > 0) {
+      return;
+    }
+    
+    // Actualizar el último valor procesado
+    lastProcessedValueRef.current = currentValue;
+    
     // Solo procesar si la calidad es suficiente y el dedo está detectado
     if (lastSignal.fingerDetected && lastSignal.quality >= 40) {
+      console.log("Procesando señal con calidad:", lastSignal.quality);
+      
       // Procesar para ritmo cardíaco
       const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
@@ -116,14 +136,16 @@ const Index = () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
+      console.log("Iniciando medición");
       enterFullScreen();
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0); // Reset heart rate explicitly
+      setHeartRate(0);
+      lastProcessedValueRef.current = 0;
       
       startProcessing();
-      startHeartBeatMonitoring(); // Update the processor state
+      startHeartBeatMonitoring();
       
       setElapsedTime(0);
       
@@ -152,7 +174,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring(); // Stop monitoring to prevent beeps
+    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -161,13 +183,14 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
+      console.log("Guardando resultados finales:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0); // Reset heart rate explicitly
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -199,6 +222,7 @@ const Index = () => {
       hemoglobin: 0
     });
     setSignalQuality(0);
+    lastProcessedValueRef.current = 0;
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -284,6 +308,7 @@ const Index = () => {
     }
   };
 
+  // Renderizado de la interfaz
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',

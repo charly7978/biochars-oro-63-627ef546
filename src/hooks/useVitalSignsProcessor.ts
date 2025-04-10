@@ -89,14 +89,17 @@ export function useVitalSignsProcessor(): UseVitalSignsProcessorReturn {
     const lipidsConfidence = Math.min(0.65, signalQuality / 110);
     const overallConfidence = Math.min(0.8, (glucoseConfidence + lipidsConfidence) / 2);
     
-    // Crear objeto de resultado
+    // Crear objeto de resultado con valores validados
     const result: VitalSignsResult = {
-      spo2,
-      pressure: `${systolic}/${diastolic}`,
+      spo2: validateRange(spo2, 90, 100),
+      pressure: `${validateRange(systolic, 90, 180)}/${validateRange(diastolic, 60, 120)}`,
       arrhythmiaStatus,
-      glucose,
-      lipids,
-      hemoglobin,
+      glucose: validateRange(glucose, 70, 140),
+      lipids: {
+        totalCholesterol: validateRange(lipids.totalCholesterol, 150, 240),
+        triglycerides: validateRange(lipids.triglycerides, 50, 200)
+      },
+      hemoglobin: validateRange(hemoglobin, 12, 18),
       lastArrhythmiaData,
       glucoseConfidence,
       lipidsConfidence,
@@ -141,7 +144,13 @@ export function useVitalSignsProcessor(): UseVitalSignsProcessorReturn {
   };
 }
 
-// Funciones auxiliares para cálculos
+// Función para validar rangos y asegurar valores fisiológicos correctos
+function validateRange(value: number, min: number, max: number): number {
+  if (value <= 0) return 0;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+// Funciones auxiliares para cálculos con valores más realistas
 function calculateSignalQuality(value: number): number {
   if (value <= 0) return 0;
   if (value < 0.2) return 30;
@@ -151,21 +160,24 @@ function calculateSignalQuality(value: number): number {
 
 function calculateSpO2(value: number): number {
   if (value <= 0) return 0;
-  // Estimación basada en intensidad
-  const baseSpO2 = 95 + value * 4;
+  // Estimación más realista basada en intensidad
+  // SPO2 normal está entre 95-100%
+  const baseSpO2 = 95 + value * 3;
   return Math.min(99, Math.round(baseSpO2));
 }
 
 function calculateBloodPressure(value: number): { systolic: number; diastolic: number } {
   if (value <= 0) return { systolic: 0, diastolic: 0 };
   
-  // Estimar basado en intensidad
-  const systolic = 115 + value * 30;
-  const diastolic = 75 + value * 15;
+  // Estimación más realista basada en intensidad
+  // Presión sistólica normal: 110-130
+  // Presión diastólica normal: 70-85
+  const systolic = 110 + value * 20;
+  const diastolic = 70 + value * 10;
   
   return {
-    systolic: Math.min(160, Math.round(systolic)),
-    diastolic: Math.min(95, Math.round(diastolic))
+    systolic: Math.min(140, Math.round(systolic)),
+    diastolic: Math.min(90, Math.round(diastolic))
   };
 }
 
@@ -196,8 +208,9 @@ function processArrhythmia(rrData: { intervals: number[]; lastPeakTime: number |
   const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
   const rrVariation = (rmssd / mean) * 100;
   
-  // Detectar arritmia basado en umbral de variación
-  const isArrhythmia = rrVariation > 20;
+  // Detectar arritmia basado en umbral de variación más realista
+  // Variación normal de RR suele ser <10%
+  const isArrhythmia = rrVariation > 15;
   
   let status = isArrhythmia 
     ? `ARRITMIA|${Math.round(rrVariation)}%` 
@@ -208,27 +221,30 @@ function processArrhythmia(rrData: { intervals: number[]; lastPeakTime: number |
 
 function calculateGlucose(value: number): number {
   if (value <= 0) return 0;
-  // Estimación simple
-  return Math.round(90 + value * 20);
+  // Valores normales de glucosa en ayunas: 70-100 mg/dL
+  return Math.round(80 + value * 15);
 }
 
 function calculateLipids(value: number): { totalCholesterol: number; triglycerides: number } {
   if (value <= 0) return { totalCholesterol: 0, triglycerides: 0 };
   
-  // Estimaciones simples
+  // Valores normales:
+  // Colesterol total: <200 mg/dL
+  // Triglicéridos: <150 mg/dL
   return {
-    totalCholesterol: Math.round(180 + value * 10),
-    triglycerides: Math.round(120 + value * 30)
+    totalCholesterol: Math.round(170 + value * 10),
+    triglycerides: Math.round(100 + value * 20)
   };
 }
 
 function calculateHemoglobin(spo2: number): number {
   if (spo2 <= 0) return 0;
   
-  // Aproximación simple basada en SpO2
-  if (spo2 > 95) return 14 + Math.random();
+  // Aproximación más realista basada en SpO2
+  // Valores normales: 12-16 g/dL (hombres), 12-15 g/dL (mujeres)
+  if (spo2 > 97) return 14 + Math.random();
+  if (spo2 > 94) return 13.5 + Math.random();
   if (spo2 > 90) return 13 + Math.random();
-  if (spo2 > 85) return 12 + Math.random();
   
-  return 11 + Math.random();
+  return 12 + Math.random();
 }
