@@ -6,7 +6,7 @@
 // Buffers para detección de patrones
 let patternDetectionBuffer: number[] = [];
 let patternConsistencyCounter = 0;
-const MIN_PATTERN_COUNT = 2; // Reducido de 3 a 2
+const MIN_PATTERN_COUNT = 1; // Reducido de 2 a 1
 const MAX_PATTERN_BUFFER = 120;
 
 /**
@@ -20,8 +20,8 @@ export function isFingerDetectedByPattern(
   signalHistory: Array<{time: number, value: number}>,
   currentPatternCount: number
 ): { isFingerDetected: boolean, patternCount: number } {
-  // Necesitamos suficientes puntos para analizar (reducido de 30 a 20)
-  if (signalHistory.length < 20) {
+  // Necesitamos suficientes puntos para analizar (reducido de 20 a 15)
+  if (signalHistory.length < 15) {
     return {
       isFingerDetected: false,
       patternCount: 0
@@ -29,7 +29,7 @@ export function isFingerDetectedByPattern(
   }
   
   // Extraer valores recientes para análisis
-  const recentValues = signalHistory.slice(-20).map(p => p.value);
+  const recentValues = signalHistory.slice(-15).map(p => p.value);
   
   // Calcular diferencias entre puntos consecutivos para detectar variación rítmica
   const diffs: number[] = [];
@@ -45,8 +45,8 @@ export function isFingerDetectedByPattern(
     }
   }
   
-  // Más de 4 cambios de signo en 20 puntos suele indicar un patrón cardíaco (reducido de 6 a 4)
-  const isRhythmicPattern = signChanges >= 4;
+  // Más de 3 cambios de signo en 15 puntos indica un patrón cardíaco (reducido de 4 a 3)
+  const isRhythmicPattern = signChanges >= 3;
   
   // Actualizar contador de patrones
   let updatedPatternCount = currentPatternCount;
@@ -91,9 +91,9 @@ export function checkSignalQuality(
   isWeakSignal: boolean;
   updatedWeakSignalsCount: number;
 } {
-  // Reducir umbral para mayor sensibilidad
-  const threshold = config.lowSignalThreshold || 0.03; // Reducido de 0.05 a 0.03
-  const maxWeakCount = config.maxWeakSignalCount || 15; // Aumentado de 10 a 15 para mayor tolerancia
+  // Valores reducidos para mayor sensibilidad
+  const threshold = config.lowSignalThreshold || 0.02; // Reducido de 0.03 a 0.02
+  const maxWeakCount = config.maxWeakSignalCount || 20; // Aumentado de 15 a 20 para mayor tolerancia
   
   // Update pattern detection buffer
   patternDetectionBuffer.push(value);
@@ -101,13 +101,13 @@ export function checkSignalQuality(
     patternDetectionBuffer.shift();
   }
   
-  // Check if signal is weak
+  // Check if signal is weak, pero con criterio más flexible
   const isWeak = Math.abs(value) < threshold;
   
   // Update consecutive weak signals counter
   let updatedCount = isWeak 
     ? consecutiveWeakSignalsCount + 1
-    : 0;
+    : Math.max(0, consecutiveWeakSignalsCount - 2); // Decrementar más rápido
   
   // Determine if signal is too weak - requiere más señales débiles consecutivas
   const isTooWeak = updatedCount >= maxWeakCount;
