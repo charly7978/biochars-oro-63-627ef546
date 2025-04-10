@@ -323,7 +323,7 @@ export class VitalSignsProcessor {
     return this.lastValidResults || ResultFactory.createEmptyResults();
   }
 
-  public getArrhythmiaCounter(): number {
+  public getArrhythmiaCount(): number {
     return this.arrhythmiaCounter;
   }
 }

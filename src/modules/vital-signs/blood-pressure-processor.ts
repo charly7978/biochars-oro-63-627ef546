@@ -99,13 +99,7 @@ export class BloodPressureProcessor {
       noiseSum += diff;
     }
     
-    return Math.min(1, noiseSum / (signal.length - 2) / calculateAmplitude(signal));
-  }
-  calculateSignalQuality(ppgSignal: number[]): number {
-    throw new Error('Method not implemented.');
-  }
-  calculateNoiseLevel(signal: { hammingWindow: (windowLength: number) => import("@tensorflow/tfjs-core").Tensor1D; hannWindow: (windowLength: number) => import("@tensorflow/tfjs-core").Tensor1D; frame: (signal: import("@tensorflow/tfjs-core").Tensor1D, frameLength: number, frameStep: number, padEnd?: boolean, padValue?: number) => import("@tensorflow/tfjs-core").Tensor<import("@tensorflow/tfjs-core").Rank>; stft: (signal: import("@tensorflow/tfjs-core").Tensor1D, frameLength: number, frameStep: number, fftLength?: number, windowFn?: (length: number) => import("@tensorflow/tfjs-core").Tensor1D) => import("@tensorflow/tfjs-core").Tensor<import("@tensorflow/tfjs-core").Rank>; }): any {
-    throw new Error('Method not implemented.');
+    return Math.min(1, noiseSum / (signal.length - 2) / calculateAmplitude(signal, 0.1, 10));
   }
 
   /**
@@ -121,7 +115,7 @@ export class BloodPressureProcessor {
       motionSum += Math.max(shortTermDiff, longTermDiff);
     }
     
-    return Math.min(1, motionSum / (signal.length - 3) / calculateAmplitude(signal));
+    return Math.min(1, motionSum / (signal.length - 3) / calculateAmplitude(signal, 0.1, 10));
   }
 
   /**
