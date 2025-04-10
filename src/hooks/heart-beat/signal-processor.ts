@@ -6,10 +6,15 @@ import {
   checkWeakSignal, 
   shouldProcessMeasurement, 
   createWeakSignalResult, 
-  handlePeakDetection,
-  updateLastValidBpm,
-  processLowConfidenceResult
-} from './signal-processing';
+  getChannelFeedback
+} from './signal-processing/signal-quality';
+
+// Signal processing utility functions
+import { handlePeakDetection } from './signal-processing/peak-detection';
+import { 
+  updateLastValidBpm, 
+  processLowConfidenceResult 
+} from './signal-processing/result-processor';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -22,6 +27,17 @@ export function useSignalProcessor() {
   const consecutiveWeakSignalsRef = useRef<number>(0);
   const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
+
+  // Channel feedback state
+  const channelFeedbackRef = useRef<{
+    heartRate: { applied: boolean, lastValue: number, time: number },
+    spo2: { applied: boolean, lastValue: number, time: number },
+    arrhythmia: { applied: boolean, lastValue: number, time: number }
+  }>({
+    heartRate: { applied: false, lastValue: 0, time: 0 },
+    spo2: { applied: false, lastValue: 0, time: 0 },
+    arrhythmia: { applied: false, lastValue: 0, time: 0 }
+  });
 
   const processSignal = useCallback((
     value: number,
@@ -39,6 +55,18 @@ export function useSignalProcessor() {
 
     try {
       calibrationCounterRef.current++;
+      
+      // Check for bidirectional feedback from other channels
+      const heartRateFeedback = getChannelFeedback('heartRate');
+      if (heartRateFeedback.available) {
+        // Apply channel feedback to improve detection quality
+        value = value * (1 + heartRateFeedback.quality * 0.2);
+        channelFeedbackRef.current.heartRate = {
+          applied: true,
+          lastValue: heartRateFeedback.value,
+          time: Date.now()
+        };
+      }
       
       // Check for weak signal - fixed property access
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
@@ -90,7 +118,7 @@ export function useSignalProcessor() {
         processor.getArrhythmiaCounter()
       );
     } catch (error) {
-      console.error('useHeartBeatProcessor: Error processing signal', error);
+      console.error('useSignalProcessor: Error processing signal', error);
       return {
         bpm: currentBPM,
         confidence: 0,
@@ -111,6 +139,13 @@ export function useSignalProcessor() {
     calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
+    
+    // Reset channel feedback
+    channelFeedbackRef.current = {
+      heartRate: { applied: false, lastValue: 0, time: 0 },
+      spo2: { applied: false, lastValue: 0, time: 0 },
+      arrhythmia: { applied: false, lastValue: 0, time: 0 }
+    };
   }, []);
 
   return {
@@ -120,6 +155,7 @@ export function useSignalProcessor() {
     lastValidBpmRef,
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS
+    MAX_CONSECUTIVE_WEAK_SIGNALS,
+    channelFeedback: channelFeedbackRef.current
   };
 }

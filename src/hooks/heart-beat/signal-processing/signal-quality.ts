@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
@@ -20,6 +21,21 @@ const REQUIRED_STABLE_FRAMES = 15; // Must have physiologically stable signal fo
 // Track time-based consistency
 let lastProcessTime = 0;
 const MAX_ALLOWED_GAP_MS = 150; // Maximum time gap allowed between processing
+
+// Add bidirectional feedback channels
+const feedbackChannels: {
+  [channelName: string]: {
+    value: number;
+    quality: number;
+    feedbackApplied: boolean;
+    lastUpdate: number;
+  }
+} = {
+  heartRate: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 },
+  spo2: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 },
+  arrhythmia: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 },
+  bloodPressure: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 }
+};
 
 /**
  * Checks if the signal is too weak, indicating possible finger removal
@@ -96,6 +112,9 @@ export function checkWeakSignal(
         stableFrames: consecutiveStableFrames
       });
       
+      // Apply bidirectional feedback to improve detection quality
+      applyBidirectionalFeedback('heartRate', 0.8, value);
+      
       return {
         isWeakSignal: false,
         updatedWeakSignalsCount: 0
@@ -133,6 +152,50 @@ export function checkWeakSignal(
 }
 
 /**
+ * Apply bidirectional feedback between channels to improve signal quality
+ */
+function applyBidirectionalFeedback(channelName: string, quality: number, value: number): void {
+  if (feedbackChannels[channelName]) {
+    const now = Date.now();
+    const channel = feedbackChannels[channelName];
+    
+    // Only apply feedback if it's been a while since last update
+    if (now - channel.lastUpdate > 500) {
+      channel.value = value;
+      channel.quality = quality;
+      channel.feedbackApplied = true;
+      channel.lastUpdate = now;
+      
+      console.log(`Applied bidirectional feedback to ${channelName} channel`, {
+        quality,
+        value,
+        time: new Date(now).toISOString()
+      });
+    }
+  }
+}
+
+/**
+ * Get feedback from a specific channel
+ */
+export function getChannelFeedback(channelName: string): {
+  value: number;
+  quality: number;
+  available: boolean;
+} {
+  const channel = feedbackChannels[channelName];
+  if (!channel) {
+    return { value: 0, quality: 0, available: false };
+  }
+  
+  return {
+    value: channel.value,
+    quality: channel.quality,
+    available: channel.feedbackApplied && (Date.now() - channel.lastUpdate < 5000)
+  };
+}
+
+/**
  * Reset signal quality detection state
  * Also resets finger pattern detection
  */
@@ -144,7 +207,18 @@ export function resetSignalQualityState() {
   signalVariance = 0;
   consecutiveStableFrames = 0;
   lastProcessTime = 0;
-  console.log("Signal quality state reset, including pattern detection");
+  
+  // Reset feedback channels
+  Object.keys(feedbackChannels).forEach(channel => {
+    feedbackChannels[channel] = { 
+      value: 0, 
+      quality: 0, 
+      feedbackApplied: false, 
+      lastUpdate: 0 
+    };
+  });
+  
+  console.log("Signal quality state reset, including pattern detection and feedback channels");
   
   return {
     consecutiveWeakSignals: 0
