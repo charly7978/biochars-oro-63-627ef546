@@ -1,9 +1,11 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
  */
 
 import { toast } from "@/hooks/use-toast";
+import { ArrhythmiaEvent } from "../modules/heart-beat/ArrhythmiaDetector";
 
 // Configuración de sonidos
 const successSoundUrl = '/sounds/success.mp3';
@@ -28,10 +30,13 @@ export const FeedbackService = {
   vibrate: (pattern: number | number[] = 200) => {
     if ('vibrate' in navigator) {
       try {
+        console.log(`🔆 Activando vibración con patrón:`, pattern);
         navigator.vibrate(pattern);
       } catch (error) {
         console.error('Error al activar vibración:', error);
       }
+    } else {
+      console.warn('API de vibración no disponible en este dispositivo');
     }
   },
 
@@ -40,10 +45,51 @@ export const FeedbackService = {
     if ('vibrate' in navigator) {
       try {
         // Patrón más distintivo para arritmias (triple pulso con pausa)
-        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
+        const pattern = [100, 50, 100, 50, 100, 300, 100];
+        console.log(`⚠️ Activando vibración de arritmia con patrón:`, pattern);
+        navigator.vibrate(pattern);
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
       }
+    } else {
+      console.warn('API de vibración no disponible en este dispositivo');
+    }
+  },
+
+  // Retroalimentación háptica específica por tipo de arritmia
+  vibrateSpecificArrhythmia: (type: ArrhythmiaEvent['type']) => {
+    if ('vibrate' in navigator) {
+      try {
+        let pattern: number[];
+        
+        switch (type) {
+          case 'bradycardia':
+            // Patrón lento y fuerte para bradicardia
+            pattern = [150, 100, 150];
+            break;
+          case 'tachycardia':
+            // Patrón rápido para taquicardia
+            pattern = [50, 30, 50, 30, 50, 30, 50];
+            break;
+          case 'extrasystole':
+            // Patrón con un pulso extra para extrasístole
+            pattern = [100, 50, 50, 150, 100];
+            break;
+          case 'irregular':
+            // Patrón irregular para ritmo irregular
+            pattern = [70, 120, 40, 90, 140, 60];
+            break;
+          default:
+            pattern = [100, 50, 100, 50, 100];
+        }
+        
+        console.log(`⚠️ Activando vibración de ${type} con patrón:`, pattern);
+        navigator.vibrate(pattern);
+      } catch (error) {
+        console.error(`Error al activar vibración de ${type}:`, error);
+      }
+    } else {
+      console.warn('API de vibración no disponible en este dispositivo');
     }
   },
 
@@ -129,6 +175,37 @@ export const FeedbackService = {
         6000
       );
     }
+  },
+
+  // Retroalimentación para tipos específicos de arritmia
+  signalSpecificArrhythmia: (event: ArrhythmiaEvent) => {
+    FeedbackService.vibrateSpecificArrhythmia(event.type);
+    FeedbackService.playSound('heartbeat');
+    
+    let title = '¡Atención!';
+    let message = '';
+    
+    switch (event.type) {
+      case 'bradycardia':
+        message = `Ritmo cardíaco lento detectado: ${Math.round(event.bpm)} BPM`;
+        break;
+      case 'tachycardia':
+        message = `Ritmo cardíaco acelerado detectado: ${Math.round(event.bpm)} BPM`;
+        break;
+      case 'irregular':
+        message = 'Se ha detectado un ritmo cardíaco irregular';
+        break;
+      case 'extrasystole':
+        message = 'Se ha detectado un latido prematuro (extrasístole)';
+        break;
+    }
+    
+    FeedbackService.showToast(
+      title, 
+      message, 
+      'warning',
+      6000
+    );
   },
 
   // Retroalimentación para medición completada
