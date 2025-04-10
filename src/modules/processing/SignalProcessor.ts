@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -374,51 +373,54 @@ export class SignalProcessor {
     }
     
     // Obtener último dato PPG
-    const lastPPG = this.ppgBuffer[this.ppgBuffer.length - 1];
-    
-    // Aplicar filtrado EMA para suavizar
-    let filteredValue = lastPPG.rawValue;
-    if (this.ppgBuffer.length > 1) {
-      const prevData = this.ppgBuffer[this.ppgBuffer.length - 2];
-      filteredValue = prevData.rawValue * (1 - this.ALPHA_PPG) + 
-                     lastPPG.rawValue * this.ALPHA_PPG;
-    }
-    
-    // Normalizar señal (0-1)
-    let normalizedValue = 0;
-    if (this.ppgBuffer.length >= 10) {
-      const recentValues = this.ppgBuffer.slice(-10).map(p => p.rawValue);
-      const minValue = Math.min(...recentValues);
-      const maxValue = Math.max(...recentValues);
+    const ppgSignalData = this.ppgBuffer[this.ppgBuffer.length - 1];
+    if (ppgSignalData && ppgSignalData.rawValues) {
+      const value = ppgSignalData.rawValues[ppgSignalData.rawValues.length - 1];
       
-      if (maxValue > minValue) {
-        normalizedValue = (filteredValue - minValue) / (maxValue - minValue);
+      // Aplicar filtrado EMA para suavizar
+      let filteredValue = value;
+      if (this.ppgBuffer.length > 1) {
+        const prevData = this.ppgBuffer[this.ppgBuffer.length - 2];
+        filteredValue = prevData.rawValue * (1 - this.ALPHA_PPG) + 
+                       value * this.ALPHA_PPG;
       }
+      
+      // Normalizar señal (0-1)
+      let normalizedValue = 0;
+      if (this.ppgBuffer.length >= 10) {
+        const recentValues = this.ppgBuffer.slice(-10).map(p => p.rawValue);
+        const minValue = Math.min(...recentValues);
+        const maxValue = Math.max(...recentValues);
+        
+        if (maxValue > minValue) {
+          normalizedValue = (filteredValue - minValue) / (maxValue - minValue);
+        }
+      }
+      
+      // Calcular índice de perfusión
+      const perfusionIndex = this.calculatePerfusionIndex();
+      
+      // Estimar frecuencia dominante de la señal PPG
+      let frequency = null;
+      if (this.ppgBuffer.length >= 10 && this.signalQuality >= this.QUALITY_THRESHOLD) {
+        frequency = this.estimateSignalFrequency();
+      }
+      
+      // Crear datos procesados
+      const processedData: ProcessedPPGData = {
+        timestamp: Date.now(),
+        rawValue: value,
+        filteredValue,
+        normalizedValue,
+        quality: this.signalQuality,
+        fingerDetected: this.fingerDetected,
+        perfusionIndex,
+        frequency
+      };
+      
+      // Publicar datos procesados
+      eventBus.publish(EventType.PROCESSED_PPG, processedData);
     }
-    
-    // Calcular índice de perfusión
-    const perfusionIndex = this.calculatePerfusionIndex();
-    
-    // Estimar frecuencia dominante de la señal PPG
-    let frequency = null;
-    if (this.ppgBuffer.length >= 10 && this.signalQuality >= this.QUALITY_THRESHOLD) {
-      frequency = this.estimateSignalFrequency();
-    }
-    
-    // Crear datos procesados
-    const processedData: ProcessedPPGData = {
-      timestamp: Date.now(),
-      rawValue: lastPPG.rawValue,
-      filteredValue,
-      normalizedValue,
-      quality: this.signalQuality,
-      fingerDetected: this.fingerDetected,
-      perfusionIndex,
-      frequency
-    };
-    
-    // Publicar datos procesados
-    eventBus.publish(EventType.PROCESSED_PPG, processedData);
   }
   
   /**

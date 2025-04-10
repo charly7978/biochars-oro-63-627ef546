@@ -71,13 +71,25 @@ export interface FeedbackRequest {
   data: any;
 }
 
+// Necesario definir estas interfaces para corregir errores de tipo
+export interface ProcessedSignalData {
+  timestamp: number;
+  quality: number;
+  filteredValue: number;
+  perfusionIndex: number;
+  channelData?: {
+    red: number;
+    ir: number;
+  };
+}
+
 export class SignalOptimizer {
   // Canales para cada signo vital
   private heartRateBuffer: ProcessedHeartbeatData[] = [];
-  private spo2Buffer: ProcessedPPGData[] = [];
-  private bloodPressureBuffer: ProcessedPPGData[] = [];
-  private glucoseBuffer: ProcessedPPGData[] = [];
-  private lipidsBuffer: ProcessedPPGData[] = [];
+  private spo2Buffer: ProcessedSignalData[] = [];
+  private bloodPressureBuffer: ProcessedSignalData[] = [];
+  private glucoseBuffer: ProcessedSignalData[] = [];
+  private lipidsBuffer: ProcessedSignalData[] = [];
   private arrhythmiaBuffer: ProcessedHeartbeatData[] = [];
   
   // Estado del optimizador
@@ -173,26 +185,37 @@ export class SignalOptimizer {
   private handleProcessedPPG(data: ProcessedPPGData): void {
     if (!this.isRunning) return;
     
+    const signalData: ProcessedSignalData = {
+      timestamp: data.timestamp,
+      quality: data.quality || 50,
+      filteredValue: data.filteredValue,
+      perfusionIndex: data.perfusionIndex || 0,
+      channelData: {
+        red: data.redValue || 0,
+        ir: data.irValue || 0
+      }
+    };
+    
     // Añadir a buffer de SpO2
-    this.spo2Buffer.push(data);
+    this.spo2Buffer.push(signalData);
     if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
       this.spo2Buffer.shift();
     }
     
     // Añadir a buffer de presión arterial
-    this.bloodPressureBuffer.push(data);
+    this.bloodPressureBuffer.push(signalData);
     if (this.bloodPressureBuffer.length > this.BP_BUFFER_SIZE) {
       this.bloodPressureBuffer.shift();
     }
     
     // Añadir a buffer de glucosa
-    this.glucoseBuffer.push(data);
+    this.glucoseBuffer.push(signalData);
     if (this.glucoseBuffer.length > this.GLUCOSE_BUFFER_SIZE) {
       this.glucoseBuffer.shift();
     }
     
     // Añadir a buffer de lípidos
-    this.lipidsBuffer.push(data);
+    this.lipidsBuffer.push(signalData);
     if (this.lipidsBuffer.length > this.LIPIDS_BUFFER_SIZE) {
       this.lipidsBuffer.shift();
     }
@@ -223,10 +246,10 @@ export class SignalOptimizer {
         this.optimizeBloodPressureWithFeedback(request);
         break;
       case 'glucose':
-        this.optimizeGlucoseWithFeedback(request);
+        this.optimizeGlucose(request);
         break;
       case 'lipids':
-        this.optimizeLipidsWithFeedback(request);
+        this.optimizeLipids(request);
         break;
       case 'arrhythmia':
         this.optimizeArrhythmiaWithFeedback(request);
@@ -270,7 +293,7 @@ export class SignalOptimizer {
       const weightedValues = validData.map(data => {
         return {
           bpm: data.bpm,
-          weight: data.quality / 100
+          weight: (data as any).quality ? (data as any).quality / 100 : 0.8
         };
       });
       
@@ -286,7 +309,7 @@ export class SignalOptimizer {
         const optimizedBpm = Math.round(weightedBpm / totalWeight);
         
         // Calcular confianza
-        const avgQuality = validData.reduce((sum, data) => sum + data.quality, 0) / validData.length;
+        const avgQuality = validData.reduce((sum, data) => sum + ((data as any).quality || 80), 0) / validData.length;
         
         // Crear datos optimizados
         const optimizedData: OptimizedHeartRate = {
@@ -327,7 +350,7 @@ export class SignalOptimizer {
       
       // Calcular ponderación adaptativa basada en retroalimentación
       const adaptiveWeighting = validData.map(data => {
-        let weight = data.quality / 100;
+        let weight = (data as any).quality ? (data as any).quality / 100 : 0.8;
         
         // Ajustar peso según retroalimentación
         if (targetConsistency > 0) {
@@ -358,7 +381,7 @@ export class SignalOptimizer {
           timestamp: Date.now(),
           heartRate: optimizedBpm,
           adaptationApplied: true,
-          confidence: Math.min(100, validData.reduce((sum, data) => sum + data.quality, 0) / validData.length)
+          confidence: Math.min(100, validData.reduce((sum, data) => sum + ((data as any).quality || 80), 0) / validData.length)
         };
         
         // Enviar respuesta específica para esta solicitud
@@ -397,8 +420,8 @@ export class SignalOptimizer {
       if (dcComponent === 0) return;
       
       // Extraer datos Rojo e IR de señales PPG de alta calidad
-      const redData = [];
-      const irData = [];
+      const redData: number[] = [];
+      const irData: number[] = [];
       
       // Recolectar datos de canales específicos
       for (const data of qualityData) {
@@ -459,8 +482,8 @@ export class SignalOptimizer {
       }
       
       // Extraer datos de canales específicos
-      const redData = [];
-      const irData = [];
+      const redData: number[] = [];
+      const irData: number[] = [];
       
       // Recolectar datos específicos para SpO2
       for (const data of qualityData) {
@@ -522,7 +545,7 @@ export class SignalOptimizer {
   /**
    * Calcula confianza adaptativa basada en retroalimentación
    */
-  private calculateAdaptiveConfidence(data: ProcessedPPGData[], feedbackParams: any): number {
+  private calculateAdaptiveConfidence(data: ProcessedSignalData[], feedbackParams: any): number {
     // Calidad base
     const avgQuality = data.reduce((sum, d) => sum + d.quality, 0) / data.length;
     
@@ -709,12 +732,13 @@ export class SignalOptimizer {
   /**
    * Optimizar señal para glucosa
    */
-  private optimizeGlucose(): void {
+  private optimizeGlucose(request?: FeedbackRequest): void {
     if (this.glucoseBuffer.length < this.GLUCOSE_BUFFER_SIZE / 2) return;
     
     try {
       // Filtrar datos de calidad
-      const qualityData = this.glucoseBuffer.filter(data => data.quality > 40);
+      const qualityThreshold = request?.data?.qualityThreshold || 40;
+      const qualityData = this.glucoseBuffer.filter(data => data.quality > qualityThreshold);
       
       if (qualityData.length < 5) return;
       
@@ -739,15 +763,27 @@ export class SignalOptimizer {
         confidence
       };
       
-      // Publicar datos optimizados que el módulo de cálculo usará para determinar el valor final
-      eventBus.publish(EventType.OPTIMIZED_GLUCOSE, {
+      // Si hay retroalimentación, incluir respuesta específica
+      let responseData: any = {
         ...optimizedData,
         signalMean,
         perfusionMean,
         signalVariability,
         stability,
         adaptationReady: true
-      });
+      };
+      
+      if (request) {
+        responseData.feedbackResponse = {
+          requestId: request.requestId,
+          timestamp: Date.now(),
+          adaptationApplied: true,
+          confidence
+        };
+      }
+      
+      // Publicar datos optimizados que el módulo de cálculo usará para determinar el valor final
+      eventBus.publish(EventType.OPTIMIZED_GLUCOSE, responseData);
       
     } catch (error) {
       console.error('Error optimizando glucosa:', error);
@@ -757,12 +793,13 @@ export class SignalOptimizer {
   /**
    * Optimizar señal para lípidos 
    */
-  private optimizeLipids(): void {
+  private optimizeLipids(request?: FeedbackRequest): void {
     if (this.lipidsBuffer.length < this.LIPIDS_BUFFER_SIZE / 2) return;
     
     try {
       // Filtrar datos de calidad
-      const qualityData = this.lipidsBuffer.filter(data => data.quality > 35);
+      const qualityThreshold = request?.data?.qualityThreshold || 35;
+      const qualityData = this.lipidsBuffer.filter(data => data.quality > qualityThreshold);
       
       if (qualityData.length < 8) return;
       
@@ -787,14 +824,26 @@ export class SignalOptimizer {
         confidence
       };
       
-      // Publicar datos optimizados para que el módulo de cálculo determine valores finales
-      eventBus.publish(EventType.OPTIMIZED_LIPIDS, {
+      // Si hay retroalimentación, incluir respuesta específica
+      let responseData: any = {
         ...optimizedData,
         signalMean,
         perfusionMean,
         signalAC,
         adaptationReady: true
-      });
+      };
+      
+      if (request) {
+        responseData.feedbackResponse = {
+          requestId: request.requestId,
+          timestamp: Date.now(),
+          adaptationApplied: true,
+          confidence
+        };
+      }
+      
+      // Publicar datos optimizados para que el módulo de cálculo determine valores finales
+      eventBus.publish(EventType.OPTIMIZED_LIPIDS, responseData);
       
     } catch (error) {
       console.error('Error optimizando lípidos:', error);

@@ -76,9 +76,46 @@ export interface VitalSignsResult {
     rrVariation: number;
     detected: boolean;
     timestamp: number;
-    windows?: number[][];
+    windows?: any[][];
   };
   reliability: number;
+}
+
+// Agregamos las interfaces que faltaban para el sistema de cámara
+export interface CameraConfig {
+  width: number;
+  height: number;
+  fps: number;
+  facingMode: 'user' | 'environment';
+}
+
+export interface RawSignalFrame {
+  timestamp: number;
+  imageData: ImageData;
+  width: number;
+  height: number;
+  roi?: ROIData;
+}
+
+// Interfaces para extracción de señal
+export interface PPGSignal {
+  timestamp: number;
+  value: number;
+  quality: number;
+}
+
+export interface PPGSignalData {
+  timestamp: number;
+  rawValues: number[];
+  filteredValue: number;
+  quality: number;
+}
+
+export interface HeartBeatResult {
+  timestamp: number;
+  bpm: number; 
+  peaks: number[];
+  quality: number;
 }
 
 /**
