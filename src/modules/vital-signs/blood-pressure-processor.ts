@@ -1,7 +1,7 @@
+
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 import { IntelligentCalibrationSystem } from '../../core/calibration/IntelligentCalibrationSystem';
-import { signal } from '@tensorflow/tfjs';
 
 /**
  * Procesador de presión arterial que usa modelo neuronal y calibración inteligente
@@ -82,7 +82,7 @@ export class BloodPressureProcessor {
    * Calcula la calidad de la señal
    */
   private calculateSignalQuality(signal: number[]): number {
-    const amplitude = calculateAmplitude([signal[signal.length - 1]], 0.1, 10);
+    const amplitude = calculateAmplitude(signal, 0.1, 10);
     const noiseLevel = this.calculateNoiseLevel(signal);
     return Math.max(0, Math.min(1, (amplitude / 2) * (1 - noiseLevel)));
   }
@@ -99,7 +99,7 @@ export class BloodPressureProcessor {
       noiseSum += diff;
     }
     
-    return Math.min(1, noiseSum / (signal.length - 2) / calculateAmplitude([signal[signal.length - 1]], 0.1, 10));
+    return Math.min(1, noiseSum / (signal.length - 2) / calculateAmplitude(signal, 0.1, 10));
   }
 
   /**
@@ -115,7 +115,7 @@ export class BloodPressureProcessor {
       motionSum += Math.max(shortTermDiff, longTermDiff);
     }
     
-    return Math.min(1, motionSum / (signal.length - 3) / calculateAmplitude([signal[signal.length - 1]], 0.1, 10));
+    return Math.min(1, motionSum / (signal.length - 3) / calculateAmplitude(signal, 0.1, 10));
   }
 
   /**

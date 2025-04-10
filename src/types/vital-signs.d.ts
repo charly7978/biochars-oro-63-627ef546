@@ -1,13 +1,13 @@
+
 export interface VitalSignsResult {
-  spO2: number;
-  bloodPressure: {
-    systolic: number;
-    diastolic: number;
-  };
+  spo2: number;
+  pressure: string;  // Changed from object to string
   glucose: number;
   lipids: LipidsResult;
   hydration: number;
   arrhythmia: ArrhythmiaProcessingResult | null;
+  confidence?: number;
+  timestamp: number;
 }
 
 export interface LipidsResult {

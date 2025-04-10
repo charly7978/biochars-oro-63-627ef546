@@ -1,3 +1,4 @@
+
 import { VitalSignsResult, LipidsResult, ArrhythmiaProcessingResult } from '../../../types/vital-signs';
 
 /**
@@ -21,7 +22,7 @@ export class ResultFactory {
   ): VitalSignsResult {
     return {
       spo2,
-      pressure,
+      pressure,  // Ensure this is a string, not an object
       arrhythmia: arrhythmiaStatus === "--" ? null : {
         arrhythmiaStatus,
         confidence: 0.85

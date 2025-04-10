@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -55,10 +56,12 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Inicializando con configuración optimizada");
     
     // Configurar TensorFlow
-    tf.setBackend(OPTIMIZED_TENSORFLOW_CONFIG.backend);
-    tf.ready().then(() => {
-      console.log("TensorFlow inicializado con backend:", tf.getBackend());
-    });
+    if (OPTIMIZED_TENSORFLOW_CONFIG && typeof tf.setBackend === 'function') {
+      tf.setBackend(OPTIMIZED_TENSORFLOW_CONFIG.backendName || 'cpu');
+      tf.ready().then(() => {
+        console.log("TensorFlow inicializado con backend:", tf.getBackend());
+      });
+    }
 
     // Inicializar procesadores especializados
     this.spo2Processor = new SpO2Processor();
@@ -235,11 +238,7 @@ export class VitalSignsProcessor {
 
   async processBloodPressure(signal: ProcessedSignal): Promise<{ systolic: number; diastolic: number }> {
     const preparedSignal = this.prepareSignal(signal);
-    const bp = this.bpProcessor.calculateBloodPressure(preparedSignal);
-    return {
-      systolic: Math.round(bp.systolic),
-      diastolic: Math.round(bp.diastolic)
-    };
+    return this.bpProcessor.calculateBloodPressure(preparedSignal);
   }
 
   async processGlucose(signal: ProcessedSignal): Promise<number> {
@@ -306,9 +305,12 @@ export class VitalSignsProcessor {
   ): VitalSignsResult {
     const meetsThreshold = this.confidenceCalculator.meetsThreshold.bind(this.confidenceCalculator);
 
+    // Make sure pressure is formatted as a string
+    const formattedPressure = this.formatPressure(pressure);
+
     return {
       spo2,
-      pressure: this.formatPressure(pressure),
+      pressure: formattedPressure,
       glucose: meetsThreshold(glucoseConfidence) ? glucose : 0,
       lipids: meetsThreshold(lipidsConfidence) ? lipids : {
         totalCholesterol: 0,
@@ -319,10 +321,6 @@ export class VitalSignsProcessor {
       confidence: overallConfidence,
       timestamp: Date.now()
     };
-  }
-
-  private calculateHemoglobin(spo2: number): number {
-    return Math.round(spo2 * 0.15 + 2);
   }
 
   public reset(): VitalSignsResult | null {
