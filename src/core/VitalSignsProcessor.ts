@@ -9,6 +9,9 @@ import { LipidEstimator } from './analysis/LipidEstimator';
 import { HemoglobinEstimator } from './analysis/HemoglobinEstimator';
 import type { ProcessedSignal } from './types';
 import { UserProfile } from './types';
+import { TensorFlowModelRegistry } from './neural/tensorflow/TensorFlowModelRegistry';
+import { TFHeartRateModel } from './neural/tensorflow/models/TFHeartRateModel';
+import { DEFAULT_TENSORFLOW_CONFIG } from './neural/tensorflow/TensorFlowConfig';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -37,6 +40,11 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
+  neuralNetworkInfo?: {
+    modelsUsed: string[];
+    confidence: number;
+    processingTime: number;
+  };
 }
 
 /**
@@ -44,6 +52,7 @@ export interface VitalSignsResult {
  * - Arquitectura modular que elimina duplicidades
  * - Enfoque en precisión y consistencia
  * - Optimizado para diversos dispositivos móviles
+ * - Integración con TensorFlow.js para procesamiento avanzado
  */
 export class VitalSignsProcessor {
   // Componentes de procesamiento
@@ -82,8 +91,14 @@ export class VitalSignsProcessor {
   // Buffer de señal PPG
   private ppgValues: number[] = [];
   
+  // Integración TensorFlow
+  private tfModelRegistry: TensorFlowModelRegistry;
+  private useNeuralNetworks: boolean = true;
+  private neuralNetworkReady: boolean = false;
+  private neuralNetworkInitializing: boolean = false;
+  
   /**
-   * Constructor del procesador unificado
+   * Constructor del procesador unificado con soporte para TensorFlow
    */
   constructor(config: Partial<ProcessorConfig> = {}) {
     const fullConfig = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
@@ -109,7 +124,36 @@ export class VitalSignsProcessor {
     this.signalProcessor.createChannel('arrhythmia');
     this.signalProcessor.createChannel('bloodPressure');
     
-    console.log('Procesador de signos vitales unificado inicializado');
+    // Inicializar TensorFlow
+    this.tfModelRegistry = TensorFlowModelRegistry.getInstance(DEFAULT_TENSORFLOW_CONFIG);
+    this.initTensorFlow();
+    
+    console.log('Procesador de signos vitales unificado inicializado con soporte TensorFlow');
+  }
+  
+  /**
+   * Inicializa modelos TensorFlow
+   */
+  private async initTensorFlow(): Promise<void> {
+    if (this.neuralNetworkInitializing) return;
+    
+    this.neuralNetworkInitializing = true;
+    
+    try {
+      // Registrar modelos de TensorFlow
+      const heartRateModel = new TFHeartRateModel();
+      this.tfModelRegistry.registerModel('heartRate', heartRateModel);
+      
+      // Más modelos serán registrados aquí...
+      
+      this.neuralNetworkReady = true;
+      console.log('Modelos TensorFlow inicializados correctamente');
+    } catch (error) {
+      console.error('Error inicializando modelos TensorFlow:', error);
+      this.useNeuralNetworks = false;
+    } finally {
+      this.neuralNetworkInitializing = false;
+    }
   }
   
   /**
@@ -142,6 +186,11 @@ export class VitalSignsProcessor {
     this.calibrationTimer = setTimeout(() => {
       this.completeCalibration();
     }, this.CALIBRATION_DURATION_MS);
+    
+    // Notificar a TensorFlow sobre inicio de calibración
+    if (this.useNeuralNetworks && this.neuralNetworkReady) {
+      this.tfModelRegistry.notifyCalibrationStarted();
+    }
     
     console.log('Calibración iniciada');
   }
@@ -179,12 +228,12 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Procesa una señal PPG y genera resultados de signos vitales
+   * Procesa una señal PPG y genera resultados de signos vitales con TensorFlow
    */
-  public processSignal(
+  public async processSignal(
     ppgValue: number,
     rrData?: RRData
-  ): VitalSignsResult {
+  ): Promise<VitalSignsResult> {
     // Añadir valor a buffer
     this.ppgValues.push(ppgValue);
     if (this.ppgValues.length > DEFAULT_PROCESSOR_CONFIG.bufferSize) {
@@ -207,13 +256,54 @@ export class VitalSignsProcessor {
       this.arrhythmiaCounter++;
     }
     
-    // Calcular SpO2
-    const spo2 = this.calculateSpO2(this.ppgValues);
+    // Variables para información neural
+    const neuralNetworkInfo = {
+      modelsUsed: [] as string[],
+      confidence: 0,
+      processingTime: 0
+    };
     
-    // Calcular presión arterial
-    const bloodPressure = this.bpAnalyzer.analyze(this.ppgValues);
+    // Datos precalculados con métodos convencionales
+    const conventionalHeartRate = peakInfo.heartRate;
+    const conventionalSpo2 = this.calculateSpO2(this.ppgValues);
+    const conventionalBloodPressure = this.bpAnalyzer.analyze(this.ppgValues);
     
-    // Calcular métricas no invasivas
+    // Variables para resultados finales
+    let heartRate = conventionalHeartRate;
+    let spo2 = conventionalSpo2;
+    let bloodPressure = conventionalBloodPressure;
+    
+    // Usar TensorFlow si está disponible y hay suficientes datos
+    if (this.useNeuralNetworks && this.neuralNetworkReady && this.ppgValues.length >= 200 && quality > 50) {
+      try {
+        // Obtener timestamp para medir tiempo de procesamiento
+        const neuralStartTime = performance.now();
+        
+        // Procesar frecuencia cardíaca con TensorFlow
+        const heartRateModel = this.tfModelRegistry.getModel<TFHeartRateModel>('heartRate');
+        if (heartRateModel) {
+          const tfHeartRate = await heartRateModel.predict(this.ppgValues.slice(-300));
+          
+          // Combinar resultados (70% neural, 30% convencional)
+          heartRate = Math.round(tfHeartRate[0] * 0.7 + conventionalHeartRate * 0.3);
+          neuralNetworkInfo.modelsUsed.push('heartRate');
+        }
+        
+        // Añadir otros modelos cuando estén disponibles
+        
+        // Calcular tiempo de procesamiento
+        neuralNetworkInfo.processingTime = performance.now() - neuralStartTime;
+        
+        // Calcular confianza basada en calidad de señal
+        neuralNetworkInfo.confidence = Math.min(100, quality * 1.2) / 100;
+        
+      } catch (error) {
+        console.error('Error en procesamiento neural:', error);
+        // Fallback a métodos convencionales (ya asignados)
+      }
+    }
+    
+    // Procesar estimaciones no invasivas
     const glucose = this.glucoseEstimator.analyze(this.ppgValues);
     const lipids = this.lipidEstimator.analyze(this.ppgValues);
     const hemoglobin = this.hemoglobinEstimator.analyze(this.ppgValues);
@@ -240,6 +330,11 @@ export class VitalSignsProcessor {
       hemoglobin,
       lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
     };
+    
+    // Añadir información neural si se usó
+    if (neuralNetworkInfo.modelsUsed.length > 0) {
+      result.neuralNetworkInfo = neuralNetworkInfo;
+    }
     
     // Añadir información de calibración si está en proceso
     if (this.isCalibrating) {
@@ -331,6 +426,42 @@ export class VitalSignsProcessor {
   }
   
   /**
+   * Activa o desactiva el uso de redes neuronales
+   */
+  public setUseNeuralNetworks(enabled: boolean): void {
+    this.useNeuralNetworks = enabled;
+    console.log(`Redes neuronales ${enabled ? 'activadas' : 'desactivadas'}`);
+    
+    // Inicializar TensorFlow si se activa y no está listo
+    if (enabled && !this.neuralNetworkReady && !this.neuralNetworkInitializing) {
+      this.initTensorFlow();
+    }
+  }
+  
+  /**
+   * Obtiene información sobre modelos neuronales
+   */
+  public getNeuralNetworkInfo(): {
+    enabled: boolean;
+    ready: boolean;
+    models: Array<{id: string; name: string; version: string; architecture: string}>;
+  } {
+    const modelInfo = this.neuralNetworkReady ? 
+      this.tfModelRegistry.getModelInfo() : [];
+      
+    return {
+      enabled: this.useNeuralNetworks,
+      ready: this.neuralNetworkReady,
+      models: modelInfo.map(m => ({
+        id: m.id,
+        name: m.name,
+        version: m.version,
+        architecture: m.architecture
+      }))
+    };
+  }
+  
+  /**
    * Reinicia el procesador manteniendo parámetros de calibración
    */
   public reset(): VitalSignsResult | null {
@@ -359,6 +490,11 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.reset();
     this.lastValidResults = null;
+    
+    // Reiniciar modelos TensorFlow
+    if (this.neuralNetworkReady) {
+      this.tfModelRegistry.resetModels();
+    }
   }
   
   /**
