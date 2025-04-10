@@ -8,7 +8,7 @@
  * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
 
-import { SignalProcessingFilters } from '../utils/SignalProcessingFilters';
+import { applyBandpassFilter, applyEMAFilter, applySMAFilter, KalmanFilter } from '../utils/SignalProcessingFilters';
 import { ProcessedPPGData } from '../types/signal';
 
 /**
@@ -17,13 +17,31 @@ import { ProcessedPPGData } from '../types/signal';
  */
 export class SignalOptimizer {
   private readonly MOVING_AVERAGE_WINDOW = 5;
-  private bandpassFilter: SignalProcessingFilters;
+  private kalmanFilter: KalmanFilter;
   private movingAverageBuffer: number[] = [];
   private lastOptimizedValue = 0;
+  private bandpassBuffer: { input: number[]; output: number[] } = { input: [], output: [] };
+  private isRunning = false;
   
   constructor() {
-    this.bandpassFilter = new SignalProcessingFilters();
+    this.kalmanFilter = new KalmanFilter(0.01, 0.1);
     this.reset();
+  }
+  
+  /**
+   * Inicia el optimizador
+   */
+  public start(): void {
+    this.isRunning = true;
+    console.log("SignalOptimizer: Optimizador iniciado");
+  }
+  
+  /**
+   * Detiene el optimizador
+   */
+  public stop(): void {
+    this.isRunning = false;
+    console.log("SignalOptimizer: Optimizador detenido");
   }
   
   /**
@@ -32,6 +50,10 @@ export class SignalOptimizer {
    * @returns Datos optimizados
    */
   public optimizeSignal(data: ProcessedPPGData): ProcessedPPGData {
+    if (!this.isRunning) {
+      return data;
+    }
+    
     // Si no hay detección de dedo, no optimizar
     if (!data.fingerDetected) {
       return {
@@ -42,15 +64,29 @@ export class SignalOptimizer {
     }
     
     // 1. Filtro de paso de banda para eliminar ruido
-    const filteredValue = this.bandpassFilter.applyBandpassFilter(data.rawValue);
+    const { filteredValue: bandpassFiltered, updatedBuffer } = applyBandpassFilter(
+      data.rawValue,
+      this.bandpassBuffer,
+      0.5,
+      4.0
+    );
+    this.bandpassBuffer = updatedBuffer;
     
-    // 2. Filtro de media móvil para suavizar
-    const smoothedValue = this.applyMovingAverage(filteredValue);
+    // 2. Filtro de Kalman para suavizado adicional
+    const kalmanFiltered = this.kalmanFilter.filter(bandpassFiltered);
     
-    // 3. Normalización para mantener valores consistentes
+    // 3. Filtro de media móvil para suavizar
+    const { filteredValue: smoothedValue, updatedBuffer: smaBuffer } = applySMAFilter(
+      kalmanFiltered,
+      this.movingAverageBuffer,
+      this.MOVING_AVERAGE_WINDOW
+    );
+    this.movingAverageBuffer = smaBuffer;
+    
+    // 4. Normalización para mantener valores consistentes
     const normalizedValue = this.normalizeSignal(smoothedValue);
     
-    // 4. Calcular calidad de señal
+    // 5. Calcular calidad de señal
     const signalQuality = this.calculateSignalQuality(normalizedValue, data.rawValue);
     
     // Actualizar último valor
@@ -61,20 +97,6 @@ export class SignalOptimizer {
       filteredValue: normalizedValue,
       quality: signalQuality
     };
-  }
-  
-  /**
-   * Aplica un filtro de media móvil para suavizar la señal
-   */
-  private applyMovingAverage(value: number): number {
-    this.movingAverageBuffer.push(value);
-    
-    if (this.movingAverageBuffer.length > this.MOVING_AVERAGE_WINDOW) {
-      this.movingAverageBuffer.shift();
-    }
-    
-    const sum = this.movingAverageBuffer.reduce((a, b) => a + b, 0);
-    return sum / this.movingAverageBuffer.length;
   }
   
   /**
@@ -118,12 +140,27 @@ export class SignalOptimizer {
   }
   
   /**
+   * Aplica un filtro de paso de banda simple
+   */
+  public applyBandpassFilter(value: number): number {
+    const { filteredValue, updatedBuffer } = applyBandpassFilter(
+      value,
+      this.bandpassBuffer,
+      0.5,
+      4.0
+    );
+    this.bandpassBuffer = updatedBuffer;
+    return filteredValue;
+  }
+  
+  /**
    * Reinicia todos los buffers y filtros
    */
   public reset(): void {
     this.movingAverageBuffer = [];
+    this.bandpassBuffer = { input: [], output: [] };
     this.lastOptimizedValue = 0;
-    this.bandpassFilter.reset();
+    this.kalmanFilter = new KalmanFilter(0.01, 0.1);
   }
 }
 
