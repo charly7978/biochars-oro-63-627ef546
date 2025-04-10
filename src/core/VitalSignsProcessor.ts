@@ -1,5 +1,5 @@
 
-import { createSignalProcessor } from './signal-processing';
+import { SignalCoreProcessor } from './signal-processing/SignalCoreProcessor';
 import { PeakDetector, type RRData } from './signal/PeakDetector';
 import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
 import { BloodPressureAnalyzer } from './analysis/BloodPressureAnalyzer';
@@ -47,7 +47,7 @@ export interface VitalSignsResult {
  */
 export class VitalSignsProcessor {
   // Componentes de procesamiento
-  private signalProcessor = createSignalProcessor();
+  private signalProcessor: SignalCoreProcessor;
   private peakDetector: PeakDetector;
   private arrhythmiaDetector: ArrhythmiaDetector;
   private bpAnalyzer: BloodPressureAnalyzer;
@@ -103,11 +103,12 @@ export class VitalSignsProcessor {
     this.lipidEstimator = new LipidEstimator(fullConfig);
     this.hemoglobinEstimator = new HemoglobinEstimator(fullConfig);
     
-    // Create specialized channels in the signal processor
-    this.signalProcessor.createChannel('heartbeat');
-    this.signalProcessor.createChannel('spo2');
-    this.signalProcessor.createChannel('arrhythmia');
-    this.signalProcessor.createChannel('bloodPressure');
+    // Inicializar procesador de señal central
+    this.signalProcessor = new SignalCoreProcessor({
+      bufferSize: fullConfig.bufferSize,
+      sampleRate: fullConfig.sampleRate,
+      channels: ['heartbeat', 'spo2', 'arrhythmia', 'bloodPressure']
+    });
     
     console.log('Procesador de signos vitales unificado inicializado');
   }
