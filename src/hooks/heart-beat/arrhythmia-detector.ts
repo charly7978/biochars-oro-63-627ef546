@@ -4,14 +4,13 @@
  */
 
 import { useCallback, useRef } from 'react';
-import { ArrhythmiaDetectionService } from '../../services/ArrhythmiaDetectionService';
+import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
 
 /**
  * Hook for arrhythmia detection based on real RR interval data
  * No simulation or data manipulation is used - direct measurement only
  */
 export function useArrhythmiaDetector() {
-  const detectionServiceRef = useRef<ArrhythmiaDetectionService | null>(null);
   const heartRateVariabilityRef = useRef<number[]>([]);
   const stabilityCounterRef = useRef<number>(0);
   const lastRRIntervalsRef = useRef<number[]>([]);
@@ -23,33 +22,52 @@ export function useArrhythmiaDetector() {
    * Using direct measurement algorithms only
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    // Initialize the service if needed
-    if (!detectionServiceRef.current) {
-      detectionServiceRef.current = new ArrhythmiaDetectionService();
-      console.log("ArrhythmiaDetector: Detection service initialized");
+    if (rrIntervals.length < 5) {
+      return {
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: Date.now(),
+        isArrhythmia: false
+      };
     }
     
-    // Prepare RR data
-    const rrData = {
-      intervals: rrIntervals,
-      lastPeakTime: Date.now()
-    };
+    const lastIntervals = rrIntervals.slice(-5);
     
-    // Process detection
-    const result = detectionServiceRef.current.detectArrhythmia(rrData);
+    // Calculate RMSSD (Root Mean Square of Successive Differences)
+    const rmssd = calculateRMSSD(lastIntervals);
     
-    // Store internal states for persistence
-    heartRateVariabilityRef.current = detectionServiceRef.current.getPersistedIntervals().slice(-10);
-    lastRRIntervalsRef.current = rrIntervals;
-    lastIsArrhythmiaRef.current = currentBeatIsArrhythmiaRef.current;
-    currentBeatIsArrhythmiaRef.current = result.isArrhythmia;
-    stabilityCounterRef.current = detectionServiceRef.current.getDiagnosticInfo().stabilityCounter;
+    // Calculate RR variation
+    const variationRatio = calculateRRVariation(lastIntervals);
+    
+    // More strict threshold
+    let thresholdFactor = 0.25;
+    if (stabilityCounterRef.current > 15) {
+      thresholdFactor = 0.20;
+    } else if (stabilityCounterRef.current < 5) {
+      thresholdFactor = 0.30;
+    }
+    
+    const isIrregular = variationRatio > thresholdFactor;
+    
+    if (!isIrregular) {
+      stabilityCounterRef.current = Math.min(30, stabilityCounterRef.current + 1);
+    } else {
+      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
+    }
+    
+    // Require more stability before reporting arrhythmia
+    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
+    
+    heartRateVariabilityRef.current.push(variationRatio);
+    if (heartRateVariabilityRef.current.length > 20) {
+      heartRateVariabilityRef.current.shift();
+    }
     
     return {
-      rmssd: result.rmssd || 0,
-      rrVariation: result.rrVariation || 0,
-      timestamp: result.timestamp,
-      isArrhythmia: result.isArrhythmia
+      rmssd,
+      rrVariation: variationRatio,
+      timestamp: Date.now(),
+      isArrhythmia
     };
   }, []);
 
@@ -57,19 +75,11 @@ export function useArrhythmiaDetector() {
    * Reset all tracking data
    */
   const reset = useCallback(() => {
-    if (detectionServiceRef.current) {
-      detectionServiceRef.current.reset();
-    } else {
-      detectionServiceRef.current = new ArrhythmiaDetectionService();
-    }
-    
     heartRateVariabilityRef.current = [];
     stabilityCounterRef.current = 0;
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
     currentBeatIsArrhythmiaRef.current = false;
-    
-    console.log("ArrhythmiaDetector: Reset completed");
   }, []);
 
   return {
