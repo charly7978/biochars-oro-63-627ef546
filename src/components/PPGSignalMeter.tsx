@@ -282,8 +282,8 @@ const PPGSignalMeter = memo(({
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, CANVAS_HEIGHT / 2 - 30);
-    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2 - 30);
+    ctx.moveTo(0, CANVAS_HEIGHT / 2 - 50);
+    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2 - 50);
     ctx.stroke();
     ctx.setLineDash([]);
     
@@ -510,10 +510,10 @@ const PPGSignalMeter = memo(({
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = (canvas.height / 2 - 30) - prevPoint.value;
+        const y1 = (canvas.height / 2 - 50) - prevPoint.value;
         
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = (canvas.height / 2 - 30) - point.value;
+        const y2 = (canvas.height / 2 - 50) - point.value;
         
         const pointIsArrhythmia = isPointInArrhythmiaSegment(point.time) || point.isArrhythmia;
         
@@ -537,7 +537,7 @@ const PPGSignalMeter = memo(({
       
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2 - 30 - peak.value;
+        const y = canvas.height / 2 - 50 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
