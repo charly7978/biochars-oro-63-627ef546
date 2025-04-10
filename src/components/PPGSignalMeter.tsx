@@ -510,10 +510,10 @@ const PPGSignalMeter = memo(({
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = canvas.height / 2 - prevPoint.value;
+        const y1 = (canvas.height / 2 + 15) - prevPoint.value;
         
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = canvas.height / 2 - point.value;
+        const y2 = (canvas.height / 2 + 15) - point.value;
         
         const pointIsArrhythmia = isPointInArrhythmiaSegment(point.time) || point.isArrhythmia;
         
