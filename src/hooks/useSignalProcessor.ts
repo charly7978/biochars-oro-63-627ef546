@@ -72,7 +72,7 @@ export const useSignalProcessor = () => {
     processor.onSignalReady = onSignalReady;
     processor.onError = onError;
 
-    // Initialize processor - we need to call this for compatibility
+    // Initialize processor
     processor.initialize().catch(error => {
       console.error("useSignalProcessor: Error de inicialización:", error);
     });
