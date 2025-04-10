@@ -1,5 +1,6 @@
 
 import { useEffect, useRef } from 'react';
+import { VitalSignsConfig } from '../core/config/VitalSignsConfig';
 
 /**
  * Tipos de retroalimentación para latidos
@@ -38,15 +39,14 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled || !audioCtxRef.current) return;
 
+    // Get feedback config based on type
+    const config = type === 'normal' 
+      ? VitalSignsConfig.feedback.HEARTBEAT_NORMAL
+      : VitalSignsConfig.feedback.HEARTBEAT_ARRHYTHMIA;
+
     // Patrones de vibración
     if ('vibrate' in navigator) {
-      if (type === 'normal') {
-        // Vibración simple para latido normal
-        navigator.vibrate(50);
-      } else if (type === 'arrhythmia') {
-        // Patrón de vibración distintivo para arritmia (pulso doble)
-        navigator.vibrate([50, 100, 100]);
-      }
+      navigator.vibrate(config.VIBRATION_PATTERN);
     }
 
     // Generar un bip con características según el tipo
@@ -54,24 +54,15 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    if (type === 'normal') {
-      // Tono normal para latido regular
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-    } else if (type === 'arrhythmia') {
-      // Tono más grave y duradero para arritmia
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    }
+    osc.type = config.AUDIO_TYPE as OscillatorType;
+    osc.frequency.setValueAtTime(config.AUDIO_FREQUENCY, ctx.currentTime);
+    gain.gain.setValueAtTime(config.AUDIO_GAIN, ctx.currentTime);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    // Mayor duración para arritmias
-    osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+    osc.stop(ctx.currentTime + config.AUDIO_DURATION);
   };
 
   return trigger;

@@ -1,4 +1,3 @@
-
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
@@ -16,4 +15,9 @@ export interface ProcessedSignal {
   timestamp: number;
   quality: number;
   filteredValue: number;
+}
+
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
 }
