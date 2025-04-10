@@ -331,7 +331,7 @@ const Index = () => {
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 top-[45%] bottom-[55px] bg-black/10 px-2 py-2">
+          <div className="absolute inset-x-0 top-[40%] bottom-[100px] bg-black/10 px-2 py-2">
             <div className="grid grid-cols-2 h-full gap-1">
               <div className="col-span-2 grid grid-cols-2 gap-1 mb-1">
                 <VitalSign 
