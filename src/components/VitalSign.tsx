@@ -35,10 +35,9 @@ const VitalSign: React.FC<VitalSignProps> = ({
       className={cn(
         "rounded-lg p-2 flex flex-col items-center justify-center transition-all duration-300",
         highlighted 
-          ? "bg-gradient-to-br from-[hsl(var(--medical-panel)/0.6)] to-[hsl(var(--medical-bg)/0.4)] border border-[hsl(var(--medical-border)/0.3)]" 
-          : "bg-gray-800/20 backdrop-blur-sm",
-        compact ? "h-auto" : "h-full",
-        "glass-medical-panel"  // Adding glassmorphism effect
+          ? "bg-gradient-to-br from-[hsl(var(--medical-panel))] to-[hsl(var(--medical-bg))] border border-[hsl(var(--medical-border))]" 
+          : "bg-gray-800/30",
+        compact ? "h-auto" : "h-full"
       )}
     >
       <div className="text-xs sm:text-sm font-medium text-[hsl(var(--medical-subdued))] uppercase tracking-wide mb-1">
