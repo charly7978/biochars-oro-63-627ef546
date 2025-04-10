@@ -7,14 +7,15 @@ export interface SignalValidationResult {
   color: string;
   label: string;
   warnings: string[];
-  badSegments: [number, number][];
+  badSegments: Array<[number, number]>; // Add badSegments property to store invalid time segments
 }
 
 export function validateFullSignal(ppg: number[]): SignalValidationResult {
   const base = evaluateSignalQuality(ppg);
   const warnings: string[] = [];
-  const badSegments: [number, number][] = [];
-  
+  const badSegments: Array<[number, number]> = [];
+  const now = Date.now();
+
   // Verificar señal básica
   if (base.level < 0.4) warnings.push('Energía o forma insuficiente');
 
@@ -22,13 +23,28 @@ export function validateFullSignal(ppg: number[]): SignalValidationResult {
   let invertedPicos = 0;
   let rrOutOfRange = 0;
   let noPicos = true;
-  let segmentStart: number | null = null;
-  const now = Date.now();
+  let badSegmentStart: number | null = null;
 
   for (let i = 1; i < ppg.length - 1; i++) {
     const prev = ppg[i - 1];
     const curr = ppg[i];
     const next = ppg[i + 1];
+    
+    // Determine time for this point in the ppg array (approximate based on array index)
+    const timeForIndex = now - ((ppg.length - i) * (5500 / ppg.length));
+    
+    const isPointValid = Math.abs(curr) > 0.1 && Math.abs(curr - prev) < 1.5;
+    
+    // Start a bad segment
+    if (isPointValid === false && badSegmentStart === null) {
+      badSegmentStart = timeForIndex;
+    }
+    
+    // End a bad segment
+    if (isPointValid === true && badSegmentStart !== null) {
+      badSegments.push([badSegmentStart, timeForIndex]);
+      badSegmentStart = null;
+    }
 
     // Detectar picos
     if (curr > prev && curr > next && curr > 0.3) {
@@ -40,19 +56,11 @@ export function validateFullSignal(ppg: number[]): SignalValidationResult {
     if (curr < prev && curr < next && curr < -0.2) {
       invertedPicos++;
     }
-    
-    // Marcar segmentos de tiempo con variabilidad anormal
-    const delta = Math.abs(curr - prev);
-    if (delta < 0.2 || delta > 5) {
-      if (segmentStart === null) segmentStart = now - (ppg.length - i) * 33; // Estimación de tiempo aproximada
-    } else if (segmentStart !== null) {
-      badSegments.push([segmentStart, now - (ppg.length - i) * 33]);
-      segmentStart = null;
-    }
   }
   
-  if (segmentStart !== null) {
-    badSegments.push([segmentStart, now]);
+  // Close any open bad segment
+  if (badSegmentStart !== null) {
+    badSegments.push([badSegmentStart, now]);
   }
 
   if (noPicos) warnings.push('Sin latidos detectados');
