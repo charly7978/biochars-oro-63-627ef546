@@ -206,6 +206,17 @@ export class VitalSignsProcessor {
     const arrhythmiaResult = this.arrhythmiaDetector.processRRData(rrData);
     if (arrhythmiaResult.arrhythmiaStatus.includes("ARRITMIA")) {
       this.arrhythmiaCounter++;
+      
+      // Activar vibración y sonido distintivo al detectar arritmia
+      if (typeof window !== 'undefined') {
+        if ('vibrate' in window.navigator) {
+          window.navigator.vibrate([200, 100, 200]); // Patrón de vibración: vibra, pausa, vibra
+        }
+        
+        // Reproducir sonido de arritmia
+        const audio = new Audio('/public/sounds/error.mp3');
+        audio.play().catch(e => console.error('Error al reproducir sonido de arritmia:', e));
+      }
     }
     
     // Calcular SpO2
