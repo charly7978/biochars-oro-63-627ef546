@@ -139,12 +139,20 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      const lastPoint = dataBufferRef.current?.getLast();
+      const prevPoint = dataBufferRef.current?.get(dataBufferRef.current.size() - 2);
       
-      lastBeepTimeRef.current = now;
-      pendingBeepPeakIdRef.current = null;
+      if (lastPoint && prevPoint) {
+        const isPeak = lastPoint.value > prevPoint.value;
+        if (isPeak) {
+          triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+          lastBeepTimeRef.current = now;
+          pendingBeepPeakIdRef.current = null;
+          return true;
+        }
+      }
       
-      return true;
+      return false;
     } catch (err) {
       console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
