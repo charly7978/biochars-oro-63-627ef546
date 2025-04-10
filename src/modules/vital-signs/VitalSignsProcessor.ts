@@ -4,6 +4,7 @@
 
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
+import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
@@ -11,7 +12,6 @@ import { ResultFactory } from './factories/result-factory';
 import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
-import { ArrhythmiaDetectionService } from '../../services/ArrhythmiaDetectionService';
 
 /**
  * Main vital signs processor
@@ -22,7 +22,7 @@ export class VitalSignsProcessor {
   // Specialized processors
   private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaService: ArrhythmiaDetectionService;
+  private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
@@ -41,7 +41,7 @@ export class VitalSignsProcessor {
     // Initialize specialized processors
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
-    this.arrhythmiaService = new ArrhythmiaDetectionService();
+    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
@@ -52,10 +52,21 @@ export class VitalSignsProcessor {
   }
   
   /**
+   * Process data from an object parameter
+   * Added for backward compatibility
+   */
+  public processSignal(data: {
+    value: number, 
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
+  }): VitalSignsResult {
+    return this.process(data.value, data.rrData);
+  }
+  
+  /**
    * Processes the real PPG signal and calculates all vital signs
    * Using ONLY direct measurements with no reference values or simulation
    */
-  public processSignal(
+  public process(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
@@ -72,15 +83,8 @@ export class VitalSignsProcessor {
     const arrhythmiaResult = rrData && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaService.detectArrhythmia(rrData) :
-                           { 
-                             isArrhythmia: false, 
-                             arrhythmiaStatus: "--", 
-                             confidence: 0, 
-                             timestamp: Date.now(),
-                             rmssd: 0,     // Ensure these values are always provided
-                             rrVariation: 0 // Ensure these values are always provided
-                           };
+                           this.arrhythmiaProcessor.processRRData(rrData) :
+                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -159,7 +163,7 @@ export class VitalSignsProcessor {
         lipids: lipidsConfidence,
         overall: overallConfidence
       },
-      arrhythmiaResult
+      arrhythmiaResult.lastArrhythmiaData
     );
   }
 
@@ -170,7 +174,7 @@ export class VitalSignsProcessor {
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
-    this.arrhythmiaService.reset();
+    this.arrhythmiaProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
@@ -182,7 +186,7 @@ export class VitalSignsProcessor {
    * Get arrhythmia counter
    */
   public getArrhythmiaCounter(): number {
-    return this.arrhythmiaService.getArrhythmiaCount();
+    return this.arrhythmiaProcessor.getArrhythmiaCount();
   }
   
   /**

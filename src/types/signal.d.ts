@@ -1,4 +1,8 @@
 
+/**
+ * Type definitions for PPG signal processing
+ */
+
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
@@ -43,14 +47,7 @@ export interface SignalProcessor {
   calibrate: () => Promise<boolean>;                    // Calibrar el procesador
   onSignalReady?: (signal: ProcessedSignal) => void;    // Callback de señal lista
   onError?: (error: ProcessingError) => void;           // Callback de error
-}
-
-/**
- * RR Interval data interface for consistency
- */
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
+  processFrame?: (imageData: ImageData) => void;        // Procesar frame de imagen
 }
 
 /**

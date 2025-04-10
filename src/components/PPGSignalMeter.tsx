@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -54,13 +55,6 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
 
-  // Buffer to store complete arrhythmia waveforms
-  const completeArrhythmiaWaveformsRef = useRef<Array<{
-    startTime: number;
-    endTime: number | null;
-    points: PPGDataPointExtended[];
-  }>>([]);
-  
   const WINDOW_WIDTH_MS = 3500;
   const CANVAS_WIDTH = 1200;
   const CANVAS_HEIGHT = 600;
@@ -79,9 +73,6 @@ const PPGSignalMeter = memo(({
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  // Store more data points for arrhythmia visualization
-  const ARRHYTHMIA_MEMORY_BUFFER_SIZE = 1200;
-  const MAX_ARRHYTHMIA_SEGMENTS = 5;
 
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
@@ -231,105 +222,6 @@ const PPGSignalMeter = memo(({
       consecutiveFingerFramesRef.current = 0;
     }
   }, [quality, isFingerDetected]);
-
-  // Track arrhythmia events for visualization
-  useEffect(() => {
-    if (isArrhythmia && dataBufferRef.current) {
-      const now = Date.now();
-      
-      // If this is a new arrhythmia event
-      if (now - lastArrhythmiaTime.current > 1000) {
-        console.log("New arrhythmia event detected, starting segment tracking");
-        
-        // Start a new arrhythmia segment
-        const newSegment = {
-          startTime: now,
-          endTime: null,
-          points: [] as PPGDataPointExtended[]
-        };
-        
-        // Capture already existing points from before the arrhythmia started (pre-arrhythmia context)
-        const existingPoints = dataBufferRef.current.getPoints();
-        const preArrhythmiaPoints = existingPoints.slice(-30); // Get last 30 points for context
-        
-        // Add pre-arrhythmia points to the segment
-        newSegment.points.push(...preArrhythmiaPoints.map(p => ({...p})));
-        
-        // Add to waveform collection
-        completeArrhythmiaWaveformsRef.current.push(newSegment);
-        
-        // Add visual marker
-        arrhythmiaSegmentsRef.current.push({
-          startTime: now,
-          endTime: null
-        });
-        
-        // Limit saved arrhythmia segments
-        if (completeArrhythmiaWaveformsRef.current.length > MAX_ARRHYTHMIA_SEGMENTS) {
-          completeArrhythmiaWaveformsRef.current.shift();
-        }
-        if (arrhythmiaSegmentsRef.current.length > MAX_ARRHYTHMIA_SEGMENTS) {
-          arrhythmiaSegmentsRef.current.shift();
-        }
-      }
-      
-      // Update the last arrhythmia timestamp
-      lastArrhythmiaTime.current = now;
-      
-      // Update active arrhythmia segment with new data points
-      const activeSegment = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
-      if (activeSegment && !activeSegment.endTime) {
-        // Add current point to the segment
-        if (dataBufferRef.current) {
-          const latestPoints = dataBufferRef.current.getPoints().slice(-1);
-          if (latestPoints.length > 0) {
-            // Mark this point as part of an arrhythmia
-            const pointWithArrhythmia = {...latestPoints[0], isArrhythmia: true};
-            activeSegment.points.push(pointWithArrhythmia);
-          }
-        }
-      }
-    } else if (lastArrhythmiaTime.current > 0 && Date.now() - lastArrhythmiaTime.current > 1000) {
-      // If arrhythmia has ended, close the active segment
-      const activeSegment = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
-      if (activeSegment && !activeSegment.endTime) {
-        activeSegment.endTime = Date.now();
-        console.log("Arrhythmia event ended, capturing complete waveform", {
-          startTime: new Date(activeSegment.startTime).toISOString(),
-          endTime: new Date(activeSegment.endTime).toISOString(),
-          pointsCount: activeSegment.points.length
-        });
-        
-        // Add post-arrhythmia context (continue capturing for a short time after arrhythmia ends)
-        const capturePostArrhythmiaContext = () => {
-          if (dataBufferRef.current && activeSegment) {
-            const latestPoints = dataBufferRef.current.getPoints().slice(-1);
-            if (latestPoints.length > 0) {
-              activeSegment.points.push({...latestPoints[0]});
-            }
-            
-            // Continue capturing for half a second after arrhythmia ends
-            if (activeSegment.points.length < 50 || 
-                Date.now() - (activeSegment.endTime || 0) < 500) {
-              requestAnimationFrame(capturePostArrhythmiaContext);
-            } else {
-              console.log("Post-arrhythmia context capture complete", {
-                totalPoints: activeSegment.points.length
-              });
-              
-              // Close the visual segment marker
-              const activeVisualSegment = arrhythmiaSegmentsRef.current[arrhythmiaSegmentsRef.current.length - 1];
-              if (activeVisualSegment && !activeVisualSegment.endTime) {
-                activeVisualSegment.endTime = Date.now();
-              }
-            }
-          }
-        };
-        
-        capturePostArrhythmiaContext();
-      }
-    }
-  }, [isArrhythmia]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -545,159 +437,6 @@ const PPGSignalMeter = memo(({
       .slice(-MAX_PEAKS_TO_DISPLAY);
   }, []);
 
-  // This is the critical function that needs fixing - completely revised to properly
-  // highlight only the red waveform sections with red background
-  const drawArrhythmiaRegions = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    // Get only the active arrhythmia segments that are visible in the current time window
-    const activeArrhythmiaSegments = arrhythmiaSegmentsRef.current.filter(
-      segment => (segment.endTime === null || now - segment.endTime < WINDOW_WIDTH_MS) && 
-                 (now - segment.startTime < WINDOW_WIDTH_MS)
-    );
-    
-    // CRITICAL FIX: Draw arrhythmia background regions PRECISELY
-    // Only highlight regions where RED waveforms appear - nowhere else
-    for (const segment of activeArrhythmiaSegments) {
-      // Calculate the x positions that correspond exactly to the red waveform start and end
-      const startX = CANVAS_WIDTH - ((now - segment.startTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-      
-      // Use segment's end time if it exists, otherwise use current time (for active segments)
-      const endX = segment.endTime
-        ? CANVAS_WIDTH - ((now - segment.endTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS)
-        : CANVAS_WIDTH;
-    
-      // Only draw if the segment is at least partially visible
-      if (startX < CANVAS_WIDTH && endX > 0) {
-        console.log(`Drawing arrhythmia segment: startX=${startX}, endX=${endX}, width=${endX-startX}`);
-        
-        // Draw a semi-transparent red rectangle ONLY for the arrhythmia segment
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';  // Light red, semi-transparent
-        ctx.fillRect(
-          Math.max(0, startX), 
-          0, 
-          Math.min(endX - startX, CANVAS_WIDTH - startX), 
-          CANVAS_HEIGHT
-        );
-        
-        // Add visible boundaries with dashed lines at start and end points
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';  // Darker red
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);  // Dashed line
-    
-        // Left boundary (segment start) if visible - RED WAVEFORM START
-        if (startX >= 0 && startX <= CANVAS_WIDTH) {
-          ctx.beginPath();
-          ctx.moveTo(startX, 0);
-          ctx.lineTo(startX, CANVAS_HEIGHT);
-          ctx.stroke();
-        }
-        
-        // Right boundary (segment end) if visible - RED WAVEFORM END
-        if (segment.endTime && endX >= 0 && endX <= CANVAS_WIDTH) {
-          ctx.beginPath();
-          ctx.moveTo(endX, 0);
-          ctx.lineTo(endX, CANVAS_HEIGHT);
-          ctx.stroke();
-        }
-        
-        ctx.setLineDash([]);  // Reset dash pattern
-        
-        // Add "ARRITMIA DETECTADA" label
-        // FIXED: Only draw label if enough space and ensure it's centered in the segment
-        if (Math.abs(endX - startX) > 80) {
-          const labelX = (startX + endX) / 2;
-          const labelY = 70; // Position the label higher to make it more visible
-          
-          // Draw label background with higher contrast
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.9)'; // More intense red background
-          const labelWidth = 200;
-          const labelHeight = 26;
-          ctx.fillRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
-          
-          // Draw label text with larger font and stroke for better visibility
-          ctx.fillStyle = 'white';
-          ctx.font = 'bold 16px Inter';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('ARRITMIA DETECTADA', labelX, labelY);
-          ctx.strokeStyle = 'black';
-          ctx.lineWidth = 0.5;
-          ctx.strokeText('ARRITMIA DETECTADA', labelX, labelY);
-        }
-      }
-    }
-  }, [CANVAS_HEIGHT, CANVAS_WIDTH, WINDOW_WIDTH_MS]);
-
-  // Function to visualize all arrhythmia waveforms
-  const visualizeArrhythmiaWaveforms = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    // Draw saved arrhythmia segments as overlay
-    if (completeArrhythmiaWaveformsRef.current.length > 0) {
-      // Draw the complete waveform of the last arrhythmia
-      const lastArrhythmia = completeArrhythmiaWaveformsRef.current[completeArrhythmiaWaveformsRef.current.length - 1];
-      
-      // Only show the waveform if it's recent or if it's complete and we're not actively monitoring
-      if (lastArrhythmia && ((now - (lastArrhythmia.endTime || now) < WINDOW_WIDTH_MS) || (!isFingerDetected && preserveResults))) {
-        // Draw the complete arrhythmia waveform with a special highlight
-        if (lastArrhythmia.points.length > 1) {
-          // First, draw a special background for this arrhythmia region
-          const startX = CANVAS_WIDTH - ((now - lastArrhythmia.startTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-          const endX = lastArrhythmia.endTime 
-            ? CANVAS_WIDTH - ((now - lastArrhythmia.endTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS)
-            : CANVAS_WIDTH;
-          
-          if (startX < CANVAS_WIDTH && endX > 0) {
-            // Draw full waveform with highlight
-            ctx.save();
-            ctx.beginPath();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#DC2626'; // Strong red for arrhythmia line
-            
-            // Draw each point of the waveform
-            let isFirstPoint = true;
-            for (const point of lastArrhythmia.points) {
-              const x = CANVAS_WIDTH - ((now - point.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-              const y = CANVAS_HEIGHT / 2 - point.value;
-              
-              if (x >= 0 && x <= CANVAS_WIDTH) {
-                if (isFirstPoint) {
-                  ctx.moveTo(x, y);
-                  isFirstPoint = false;
-                } else {
-                  ctx.lineTo(x, y);
-                }
-              }
-            }
-            
-            ctx.stroke();
-            
-            // Add glow effect to highlight the arrhythmia waveform
-            ctx.shadowColor = 'rgba(220, 38, 38, 0.7)';
-            ctx.shadowBlur = 8;
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.restore();
-            
-            // Add a label over the arrhythmia
-            if (Math.abs(endX - startX) > 80) {
-              const labelX = (startX + endX) / 2;
-              const labelY = 50;
-              
-              // Draw label background
-              ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
-              const labelWidth = 100;
-              ctx.fillRect(labelX - labelWidth/2, labelY - 10, labelWidth, 20);
-              
-              // Draw label text
-              ctx.fillStyle = 'white';
-              ctx.font = 'bold 12px Inter';
-              ctx.textAlign = 'center';
-              ctx.fillText('ARRITMIA DETECTADA', labelX, labelY + 4);
-            }
-          }
-        }
-      }
-    }
-  }, [isFingerDetected, preserveResults]);
-
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
@@ -730,13 +469,7 @@ const PPGSignalMeter = memo(({
       drawGrid(renderCtx);
     }
     
-    // Draw arrhythmia regions first so they appear behind the signal
-    drawArrhythmiaRegions(renderCtx, now);
-    
     if (preserveResults && !isFingerDetected) {
-      // If preserving results but no finger detected, draw the saved arrhythmia waveforms
-      visualizeArrhythmiaWaveforms(renderCtx, now);
-      
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
         const visibleCtx = canvas.getContext('2d', { alpha: false });
         if (visibleCtx) {
@@ -752,4 +485,227 @@ const PPGSignalMeter = memo(({
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
-      baselineRef.current = baselineRef
+      baselineRef.current = baselineRef.current * 0.95 + value * 0.05;
+    }
+    
+    const smoothedValue = smoothValue(value, lastValueRef.current);
+    lastValueRef.current = smoothedValue;
+    
+    const normalizedValue = (baselineRef.current || 0) - smoothedValue;
+    const scaledValue = normalizedValue * verticalScale;
+    
+    let currentIsArrhythmia = false;
+    if (rawArrhythmiaData && 
+        arrhythmiaStatus?.includes("ARRITMIA") && 
+        now - rawArrhythmiaData.timestamp < 1000) {
+      currentIsArrhythmia = true;
+      lastArrhythmiaTime.current = now;
+    } else if (isArrhythmia) {
+      currentIsArrhythmia = true;
+      lastArrhythmiaTime.current = now;
+    }
+    
+    const dataPoint: PPGDataPointExtended = {
+      time: now,
+      value: scaledValue,
+      isArrhythmia: currentIsArrhythmia
+    };
+    
+    dataBufferRef.current.push(dataPoint);
+    
+    const points = dataBufferRef.current.getPoints();
+    detectPeaks(points, now);
+    
+    let shouldBeep = false;
+    
+    if (points.length > 1) {
+      let firstPoint = true;
+      let currentPathColor = '#0EA5E9'; // Default blue color
+      
+      for (let i = 1; i < points.length; i++) {
+        const prevPoint = points[i - 1];
+        const point = points[i];
+        
+        const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y1 = canvas.height / 2 - prevPoint.value;
+        
+        const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y2 = canvas.height / 2 - point.value;
+        
+        if (firstPoint) {
+          renderCtx.beginPath();
+          renderCtx.strokeStyle = prevPoint.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          renderCtx.lineWidth = 2;
+          renderCtx.lineJoin = 'round';
+          renderCtx.lineCap = 'round';
+          renderCtx.moveTo(x1, y1);
+          firstPoint = false;
+          currentPathColor = prevPoint.isArrhythmia ? '#DC2626' : '#0EA5E9';
+        }
+        
+        // If current point has different arrhythmia status than current path
+        if ((point.isArrhythmia && currentPathColor === '#0EA5E9') || 
+            (!point.isArrhythmia && currentPathColor === '#DC2626')) {
+          // Complete current path
+          renderCtx.lineTo(x2, y2);
+          renderCtx.stroke();
+          
+          // Start new path with different color
+          renderCtx.beginPath();
+          currentPathColor = point.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          renderCtx.strokeStyle = currentPathColor;
+          renderCtx.moveTo(x2, y2);
+        } else {
+          // Continue current path
+          renderCtx.lineTo(x2, y2);
+        }
+      }
+      
+      // Complete the last path if needed
+      if (!firstPoint) {
+        renderCtx.stroke();
+      }
+      
+      peaksRef.current.forEach(peak => {
+        const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = canvas.height / 2 - peak.value;
+        
+        if (x >= 0 && x <= canvas.width) {
+          renderCtx.beginPath();
+          renderCtx.arc(x, y, 5, 0, Math.PI * 2);
+          renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          renderCtx.fill();
+          
+          if (peak.isArrhythmia) {
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
+            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.lineWidth = 3;
+            renderCtx.stroke();
+            
+            renderCtx.font = 'bold 18px Inter'; // Increased from 14px to 18px
+            renderCtx.fillStyle = '#F97316';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText('ARRITMIA', x, y - 25);
+          }
+          
+          renderCtx.font = 'bold 16px Inter'; // Increased from 14px to 16px
+          renderCtx.fillStyle = '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          
+          if (!peak.beepPlayed) {
+            shouldBeep = true;
+            peak.beepPlayed = true;
+          }
+        }
+      });
+    }
+    
+    if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
+      const visibleCtx = canvas.getContext('2d', { alpha: false });
+      if (visibleCtx) {
+        visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+      }
+    }
+    
+    if (shouldBeep && isFingerDetected && 
+        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
+      playBeep(1.0);
+    }
+    
+    lastRenderTimeRef.current = currentTime;
+    animationFrameRef.current = requestAnimationFrame(renderSignal);
+  }, [value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep]);
+
+  useEffect(() => {
+    renderSignal();
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [renderSignal]);
+
+  const handleReset = useCallback(() => {
+    setShowArrhythmiaAlert(false);
+    peaksRef.current = [];
+    arrhythmiaSegmentsRef.current = [];
+    pendingBeepPeakIdRef.current = null;
+    onReset();
+  }, [onReset]);
+
+  const displayQuality = getAverageQuality();
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+
+  return (
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
+      <canvas
+        ref={canvasRef}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
+        style={{
+          transform: 'translate3d(0,0,0)',
+          backfaceVisibility: 'hidden',
+          contain: 'paint layout size',
+          imageRendering: 'crisp-edges'
+        }}
+      />
+
+      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
+        <div className="flex items-center gap-2 ml-2">
+          <span className="text-lg font-bold text-black/80">PPG</span>
+          <div className="w-[180px]">
+            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
+              <div
+                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
+                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
+              />
+            </div>
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+              {getQualityText(quality)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <Fingerprint
+            className={`h-8 w-8 transition-colors duration-300 ${
+              !displayFingerDetected ? 'text-gray-400' :
+              displayQuality > 65 ? 'text-green-500' :
+              displayQuality > 40 ? 'text-yellow-500' :
+              'text-red-500'
+            }`}
+            strokeWidth={1.5}
+          />
+          <span className="text-[8px] text-center font-medium text-black/80">
+            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+          </span>
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
+        <button 
+          onClick={onStartMeasurement}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          INICIAR
+        </button>
+        <button 
+          onClick={handleReset}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          RESET
+        </button>
+      </div>
+    </div>
+  );
+});
+
+PPGSignalMeter.displayName = 'PPGSignalMeter';
+
+export default PPGSignalMeter;
