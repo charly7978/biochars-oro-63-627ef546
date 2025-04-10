@@ -209,13 +209,18 @@ export class VitalSignsProcessor {
       
       // Activar vibración y sonido distintivo al detectar arritmia
       if (typeof window !== 'undefined') {
-        if ('vibrate' in window.navigator) {
-          window.navigator.vibrate([200, 100, 200]); // Patrón de vibración: vibra, pausa, vibra
+        try {
+          // Vibrar si está soportado
+          if ('vibrate' in window.navigator) {
+            window.navigator.vibrate([200, 100, 200]); // Patrón de vibración: vibra, pausa, vibra
+          }
+          
+          // Reproducir sonido de arritmia con ruta correcta
+          const audio = new Audio('/sounds/error.mp3');
+          audio.play().catch(e => console.error('Error al reproducir sonido de arritmia:', e));
+        } catch (error) {
+          console.error('Error en feedback de arritmia:', error);
         }
-        
-        // Reproducir sonido de arritmia
-        const audio = new Audio('/public/sounds/error.mp3');
-        audio.play().catch(e => console.error('Error al reproducir sonido de arritmia:', e));
       }
     }
     
