@@ -1,74 +1,61 @@
 
-/**
- * TensorFlow model initialization utilities
- */
-
-import * as tf from '@tensorflow/tfjs';
-
-// Function to initialize TensorFlow and load models
-export const initializeTensorFlow = async (): Promise<boolean> => {
+// Remove the converters usage on line 119 since it doesn't exist
+// Replace with a simple check and log
+if (model && 'then' in model) {
   try {
-    // Initialize TensorFlow backend
-    await tf.ready();
-    console.log('TensorFlow backend ready:', tf.getBackend());
-    return true;
-  } catch (error) {
-    console.error('Error initializing TensorFlow:', error);
-    return false;
+    // Cannot convert to graph model since converters API is not available
+    console.warn('Model conversion to graph model not available in this TensorFlow.js version');
+    // Continue with the original model
+  } catch (optimizeError) {
+    console.warn('Could not convert to graph model:', optimizeError);
+    // Continue with the original model
   }
-};
+}
 
-// Get memory usage statistics from TensorFlow
-export const getMemoryUsage = (): tf.MemoryInfo => {
-  return tf.memory();
-};
-
-// Function to dispose a TensorFlow model and free resources
-export const disposeModel = (model: tf.LayersModel | tf.GraphModel): void => {
-  if (model) {
-    try {
-      model.dispose();
-      console.log('Model disposed successfully');
-    } catch (error) {
-      console.error('Error disposing model:', error);
-    }
-  }
-};
-
-// Function to dispose tensors and free memory
-export const disposeTensors = (tensors: tf.Tensor | tf.Tensor[] | null): void => {
-  if (!tensors) return;
+// Fix the runWithMemoryManagement function to handle the proper types for tf.tidy
+/**
+ * Tensor memory management wrapper with enhanced error handling
+ */
+export async function runWithMemoryManagement<T>(
+  tfFunction: () => Promise<T>,
+  functionName: string = 'tfOperation'
+): Promise<T> {
+  const startTime = performance.now();
+  const startMemory = tf.memory();
   
   try {
-    if (Array.isArray(tensors)) {
-      tensors.forEach(tensor => {
-        if (tensor && tensor.dispose) {
-          tensor.dispose();
-        }
-      });
-    } else if (tensors && tensors.dispose) {
-      tensors.dispose();
-    }
-  } catch (error) {
-    console.error('Error disposing tensors:', error);
-  }
-};
-
-// Utility to run operations with automatic memory management
-export const runWithMemoryManagement = async <T>(
-  operation: () => Promise<T>,
-  cleanup?: () => void
-): Promise<T> => {
-  try {
-    const result = await operation();
-    return result;
-  } finally {
-    // Clean up any tensors that might be left
-    if (cleanup) {
-      cleanup();
-    }
-    // Force garbage collection of tensors
+    // Since we can't use async functions directly with tf.tidy, we'll run our operation
+    // and then clean up manually after it completes
+    const result = await tfFunction();
+    
+    // Clean up tensors after the operation
     tf.engine().endScope();
-    tf.engine().startScope();
+    
+    // Calculate performance metrics
+    const endTime = performance.now();
+    const processingTime = endTime - startTime;
+    
+    // Log performance for operations taking more than 50ms (potential bottlenecks)
+    if (processingTime > 50) {
+      console.log(`⏱️ ${functionName} completed in ${processingTime.toFixed(2)}ms`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error(`❌ TensorFlow operation '${functionName}' failed:`, error);
+    
+    // Log memory state when error occurred
+    const errorMemory = tf.memory();
+    console.error('Memory state at error:', {
+      numTensors: errorMemory.numTensors,
+      numBytes: (errorMemory.numBytes / (1024 * 1024)).toFixed(2) + ' MB'
+    });
+    
+    // Do emergency cleanup
+    tf.engine().endScope();
+    disposeTensors();
+    
+    // Rethrow the error
+    throw error;
   }
-};
+}

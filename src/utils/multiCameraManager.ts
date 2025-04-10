@@ -1,4 +1,3 @@
-
 import { logSignalProcessing, LogLevel } from './signalLogging';
 
 interface CameraSetting {
