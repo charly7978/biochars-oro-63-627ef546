@@ -25,5 +25,23 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
-  playRealHeartbeatSound?: (volume: number) => Promise<boolean>; // Nueva función para reproducir sonido real
+}
+
+export interface PPGDataPoint {
+  time: number;
+  value: number;
+  isPeak: boolean;
+  isArrhythmia?: boolean;
+}
+
+export interface CardiacMetrics {
+  bpm: number;
+  confidence: number;
+  rrVariability: number;
+  rrIntervalAvg?: number;
+  rrIntervalMin?: number;
+  rrIntervalMax?: number;
+  waveformAmplitude?: number;
+  qualityScore: number;
+  arrhythmiaCount: number;
 }
