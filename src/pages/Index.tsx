@@ -111,7 +111,9 @@ const Index = () => {
 
   useEffect(() => {
     if (isMonitoring && lastSignal) {
-      processUnifiedFrame({ data: new Uint8ClampedArray(4), width: 1, height: 1 });
+      const dummyData = new Uint8ClampedArray(4);
+      const dummyImageData = new ImageData(dummyData, 1, 1);
+      processUnifiedFrame(dummyImageData);
     }
   }, [isMonitoring, lastSignal, processUnifiedFrame]);
 

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { getGlobalFeedbackState } from '../hooks/heart-beat/signal-processing/signal-quality';
-import { ArrowRightLeft, Signal, Activity, Heart } from 'lucide-react';
+import { ArrowRightLeft, Signal, Activity, Heart, AlertTriangle } from 'lucide-react';
 
 interface BidirectionalFeedbackStatusProps {
   isActive: boolean;
@@ -27,12 +27,12 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
   });
   
   useEffect(() => {
-    // Always poll for feedback data for debugging
+    // Always poll for feedback data
     const interval = setInterval(() => {
       const feedback = getGlobalFeedbackState();
       
       // Log feedback to help debug
-      console.log('Current feedback state:', {
+      console.log('Retroalimentación bidireccional actual:', {
         signalQuality: feedback.signalQuality,
         heartRate: feedback.heartRate,
         vitalSigns: feedback.vitalSigns
@@ -60,14 +60,14 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
     return () => clearInterval(interval);
   }, []);
   
-  // Make sure it's visible even when not active, for debugging purposes
+  // Asegurémonos de que siempre se muestre, incluso si isActive es false
   // if (!isActive) return null;
   
   return (
-    <div className="absolute bottom-16 left-4 right-4 z-10 bg-black/60 backdrop-blur-sm rounded-lg p-3 text-[9px] border border-blue-500/30 shadow-lg">
+    <div className="absolute bottom-16 left-4 right-4 z-10 bg-black/80 backdrop-blur-sm rounded-lg p-3 text-[9px] border border-blue-500/80 shadow-lg shadow-blue-900/20">
       <div className="flex items-center justify-center mb-2">
         <ArrowRightLeft className="h-3 w-3 text-blue-400 mr-1" />
-        <span className="text-white/90 font-semibold">Feedback Bidireccional</span>
+        <span className="text-white/90 font-semibold">Retroalimentación Bidireccional</span>
       </div>
       
       <div className="flex justify-between">
@@ -141,6 +141,14 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
                    style={{ width: `${vitalSigns.arrhythmiaConfidence * 100}%` }} />
             </div>
           </div>
+        </div>
+      </div>
+      
+      <div className="mt-1 pt-1 border-t border-gray-700 text-white/60 text-[8px] flex justify-between">
+        <div>No simulaciones activas</div>
+        <div className="flex items-center">
+          <AlertTriangle className="h-2 w-2 text-yellow-400 mr-0.5" />
+          <span>Sistema operando con datos reales</span>
         </div>
       </div>
     </div>

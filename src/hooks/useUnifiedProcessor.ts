@@ -122,7 +122,7 @@ export function useUnifiedProcessor() {
         updatedFeedback,
         {
           currentBPM: lastResult.heartRate,
-          confidence: lastResult.confidence,
+          confidence: lastResult.confidence || 0.1,
           peakStrength: 0.7, // Default peak strength
           rhythmStability: lastResult.isArrhythmia ? 0.3 : 0.8 // Lower stability if arrhythmia detected
         }
@@ -132,20 +132,21 @@ export function useUnifiedProcessor() {
       const updatedVitalFeedback = updateVitalSignsFeedback(
         updatedHeartRateFeedback,
         {
-          spo2Quality: lastResult.vitalSigns.spo2 > 0 ? 0.8 : 0,
-          pressureReliability: lastResult.vitalSigns.pressure !== "--/--" ? 0.7 : 0,
-          arrhythmiaConfidence: lastResult.isArrhythmia ? 0.9 : 0.3
+          spo2Quality: lastResult.vitalSigns.spo2 > 0 ? 0.8 : 0.1,
+          pressureReliability: lastResult.vitalSigns.pressure !== "--/--" ? 0.7 : 0.1,
+          arrhythmiaConfidence: lastResult.isArrhythmia ? 0.9 : 0.3,
+          glucoseReliability: lastResult.vitalSigns.glucose > 0 ? 0.7 : 0.1,
+          lipidsReliability: (lastResult.vitalSigns.lipids.totalCholesterol > 0 || 
+                            lastResult.vitalSigns.lipids.triglycerides > 0) ? 0.7 : 0.1
         }
       );
       
       // Update global feedback state
       updateGlobalFeedbackState(updatedVitalFeedback);
       
-      // Log feedback state occasionally for debugging
-      if (Math.random() < 0.1) { // Increased logging frequency for debugging
-        logFeedbackState(updatedVitalFeedback, "useUnifiedProcessor");
-        console.log("Current signal processing result:", lastResult);
-      }
+      // Log feedback state more frequently for debugging
+      logFeedbackState(updatedVitalFeedback, "useUnifiedProcessor");
+      console.log("Current signal processing result:", lastResult);
       
       // Calculate feedback quality indicators for UI display
       const signalOptimization = (
@@ -228,10 +229,23 @@ export function useUnifiedProcessor() {
     toast.success("Medición reiniciada");
   }, [resetCentralProcessor]);
   
+  // Versión compatible de processFrame para evitar el error de TypeScript
+  const processFrameCompat = useCallback((imageData: any) => {
+    // Creamos un objeto ImageData compatible
+    const compatImageData = new ImageData(
+      imageData.data, 
+      imageData.width, 
+      imageData.height
+    );
+    
+    // Procesamos con el ImageData compatible
+    return processFrame(compatImageData);
+  }, [processFrame]);
+  
   return {
     result,
     processSignal,
-    processFrame,
+    processFrame: processFrameCompat,
     startMonitoring,
     stopMonitoring,
     reset,
