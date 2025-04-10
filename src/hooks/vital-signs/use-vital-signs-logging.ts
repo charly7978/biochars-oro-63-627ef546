@@ -5,7 +5,7 @@
 
 import { useRef } from 'react';
 import { updateSignalLog } from '../../utils/signalLogUtils';
-import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
+import { VitalSignsResult } from '../../core/VitalSignsProcessor';
 
 /**
  * Hook for logging vital signs data

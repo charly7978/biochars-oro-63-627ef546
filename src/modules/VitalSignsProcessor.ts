@@ -3,44 +3,48 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
+// Importar directamente desde core para evitar duplicidades
+import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from '../core/VitalSignsProcessor';
 import { checkSignalQuality } from './heart-beat/signal-quality';
 
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
  * No simulation or data manipulation allowed.
  * Improved resistance to false positives
+ * 
+ * NOTA: Esta clase es un wrapper sobre la implementación principal en core/VitalSignsProcessor
+ * para mantener compatibilidad con el código existente.
  */
 export class VitalSignsProcessor {
   private processor: CoreProcessor;
   
-  // Signal measurement parameters
-  private readonly PERFUSION_INDEX_THRESHOLD = 0.045; // Increased from 0.035
-  private readonly PEAK_THRESHOLD = 0.30; // Increased from 0.25
+  // Signal measurement parameters - reduced thresholds for better sensitivity
+  private readonly PERFUSION_INDEX_THRESHOLD = 0.025; // Reduced from 0.045
+  private readonly PEAK_THRESHOLD = 0.20; // Reduced from 0.30
   
-  // Extended guard period to prevent false positives
-  private readonly FALSE_POSITIVE_GUARD_PERIOD = 1200; // Increased from 800ms
+  // Extended guard period to prevent false positives - reduced for faster response
+  private readonly FALSE_POSITIVE_GUARD_PERIOD = 800; // Reduced from 1200ms
   private lastDetectionTime: number = 0;
   
-  // Improved counter for weak signals with higher thresholds
-  private readonly LOW_SIGNAL_THRESHOLD = 0.20; // Increased from 0.15
-  private readonly MAX_WEAK_SIGNALS = 6; // Increased from 5
+  // Improved counter for weak signals with lower thresholds for better sensitivity
+  private readonly LOW_SIGNAL_THRESHOLD = 0.10; // Reduced from 0.20
+  private readonly MAX_WEAK_SIGNALS = 4; // Reduced from 6
   private weakSignalsCount: number = 0;
   
-  // Signal stability tracking to reduce false positives
+  // Signal stability tracking to reduce false positives - adjusted for better sensitivity
   private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE = 15; // Increased from 10
-  private readonly STABILITY_THRESHOLD = 0.15; // Reduced from 0.2 (more strict)
+  private readonly HISTORY_SIZE = 10; // Reduced from 15 for faster response
+  private readonly STABILITY_THRESHOLD = 0.25; // Increased from 0.15 for more tolerance
   
-  // Frame rate tracking for consistency check
+  // Frame rate tracking for consistency check - adjusted for better tolerance
   private lastFrameTime: number = 0;
   private frameRateHistory: number[] = [];
-  private readonly MIN_FRAME_RATE = 15; // Minimum frames per second
-  private readonly FRAME_CONSISTENCY_THRESHOLD = 0.5; // Maximum allowed variation in frame times
+  private readonly MIN_FRAME_RATE = 10; // Reduced from 15 for more tolerance
+  private readonly FRAME_CONSISTENCY_THRESHOLD = 0.7; // Increased from 0.5 for more tolerance
   
-  // Physiological validation
+  // Physiological validation - reduced requirements
   private validPhysiologicalSignalsCount: number = 0;
-  private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
+  private readonly MIN_PHYSIOLOGICAL_SIGNALS = 10; // Reduced from 20 to accept signals faster
   
   /**
    * Constructor that initializes the processor
@@ -166,7 +170,7 @@ export class VitalSignsProcessor {
       return false;
     }
     
-    // Calculate signal variation with more rigorous method
+    // Calculate signal variation with less strict method
     const values = this.signalHistory.slice(-10);
     
     // Check if we have a reasonable min/max range (too small = not physiological)
@@ -174,7 +178,7 @@ export class VitalSignsProcessor {
     const max = Math.max(...values);
     const range = max - min;
     
-    if (range < 0.10) { // Minimum physiological range
+    if (range < 0.05) { // Reduced from 0.10 for more tolerance
       return false;
     }
     
@@ -182,8 +186,8 @@ export class VitalSignsProcessor {
     const sum = values.reduce((a, b) => a + b, 0);
     const mean = sum / values.length;
     
-    // Skip very low signals
-    if (mean < 0.05) {
+    // Skip very low signals - reduced threshold
+    if (mean < 0.02) { // Reduced from 0.05
       return false;
     }
     
@@ -191,7 +195,8 @@ export class VitalSignsProcessor {
     const normalizedVariance = variance / (mean * mean);
     
     // Check if normalized variance is within physiological range (not too stable, not too chaotic)
-    return normalizedVariance > 0.05 && normalizedVariance < this.STABILITY_THRESHOLD;
+    // Widened acceptable range
+    return normalizedVariance > 0.02 && normalizedVariance < this.STABILITY_THRESHOLD;
   }
   
   /**

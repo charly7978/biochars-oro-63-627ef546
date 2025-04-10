@@ -31,6 +31,12 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Valores de referencia para lípidos - asegurar consistencia
+  private readonly MIN_CHOLESTEROL = 130; // Mínimo fisiológico (mg/dL)
+  private readonly MAX_CHOLESTEROL = 220; // Límite superior más conservador (mg/dL)
+  private readonly MIN_TRIGLYCERIDES = 50; // Mínimo fisiológico (mg/dL)
+  private readonly MAX_TRIGLYCERIDES = 170; // Límite superior más conservador (mg/dL)
 
   /**
    * Constructor that initializes all specialized processors
