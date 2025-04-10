@@ -1,4 +1,3 @@
-
 import { ProcessorConfig } from '../config/ProcessorConfig';
 import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
@@ -17,6 +16,7 @@ export interface OptimizedChannel {
     dominantFrequency: number;
     amplitudeNormalized: number;
     optimizationLevel: number;
+    lastUpdateTime: number;  // Tiempo de la última actualización
   };
 }
 
@@ -185,7 +185,8 @@ export class AdaptiveOptimizer {
           periodicityScore: 0,
           dominantFrequency: 0,
           amplitudeNormalized: 0,
-          optimizationLevel: 0
+          optimizationLevel: 0,
+          lastUpdateTime: 0
         }
       });
       
@@ -241,18 +242,21 @@ export class AdaptiveOptimizer {
       this.signalQuality = this.calculateSignalQuality(this.rawBuffer.slice(-60));
     }
     
-    // Optimizar cada canal específicamente
+    // Procesar valor para cada canal
     for (const [channelName, channel] of this.channels.entries()) {
       const optimizedValue = this.optimizeValueForChannel(ppgValue, channelName);
-      
-      // Añadir valor optimizado al canal
       channel.values.push(optimizedValue);
-      if (channel.values.length > this.MAX_BUFFER_SIZE) {
-        channel.values.shift();
-      }
       
       // Actualizar metadatos del canal
       this.updateChannelMetadata(channelName);
+      
+      // Actualizar tiempo de última actualización
+      channel.metadata.lastUpdateTime = Date.now();
+      
+      // Mantener tamaño del buffer
+      if (channel.values.length > this.MAX_BUFFER_SIZE) {
+        channel.values.shift();
+      }
     }
     
     // Realizar análisis espectral cada 30 muestras (aprox. 1 segundo a 30fps)
@@ -260,7 +264,7 @@ export class AdaptiveOptimizer {
       this.performSpectralAnalysis();
     }
     
-    // Feedback adaptativo entre canales
+    // Aplicar retroalimentación entre canales
     this.applyInterchanelFeedback();
     
     return this.channels;
@@ -860,6 +864,7 @@ export class AdaptiveOptimizer {
       channel.metadata.dominantFrequency = 0;
       channel.metadata.amplitudeNormalized = 0;
       channel.metadata.optimizationLevel = 0;
+      channel.metadata.lastUpdateTime = 0;
       
       // Reiniciar filtros
       const filters = this.filters.get(channelName);

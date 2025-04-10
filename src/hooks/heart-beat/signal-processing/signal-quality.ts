@@ -1,12 +1,14 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 // Corregir importación para usar FeedbackState desde types.ts
 import { FeedbackState } from './types';
-
-import { createInitialFeedbackState } from './bidirectional-feedback';
+import { 
+  createInitialFeedbackState, 
+  updateSignalQualityFeedback,
+  applyBidirectionalFeedback 
+} from './bidirectional-feedback';
 
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
@@ -32,66 +34,130 @@ export function updateGlobalFeedbackState(newState: FeedbackState): void {
 }
 
 /**
- * Verifica si una señal es débil basándose en umbrales configurables
- * Simplified version without feedback system
+ * Verifica si una señal es débil utilizando retroalimentación bidireccional
  */
 export function checkWeakSignal(
   value: number,
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number; adjustedValue: number } {
-  const lowSignalThreshold = options.lowSignalThreshold || 0.02;
-  const maxWeakSignalCount = options.maxWeakSignalCount || 5;
-  
-  // Determine if signal is too weak
-  const isWeakSignal = Math.abs(value) < lowSignalThreshold;
-  
-  // Update weak signal counter
-  const updatedWeakSignalsCount = isWeakSignal
-    ? Math.min(currentWeakSignalCount + 1, maxWeakSignalCount)
-    : Math.max(currentWeakSignalCount - 1, 0);
-  
-  return {
-    isWeakSignal: updatedWeakSignalsCount >= maxWeakSignalCount,
-    updatedWeakSignalsCount,
-    adjustedValue: value
-  };
+): { 
+  isWeakSignal: boolean; 
+  updatedWeakSignalsCount: number; 
+  adjustedValue: number;
+} {
+  try {
+    // Obtener estado actual de feedback
+    const feedbackState = getGlobalFeedbackState();
+    
+    // Aplicar retroalimentación bidireccional
+    return applyBidirectionalFeedback(
+      value,
+      currentWeakSignalCount,
+      feedbackState,
+      {
+        lowSignalThreshold: options.lowSignalThreshold,
+        maxWeakSignalCount: options.maxWeakSignalCount
+      }
+    );
+  } catch (error) {
+    console.error('Error verificando señal débil:', error);
+    return {
+      isWeakSignal: false,
+      updatedWeakSignalsCount: currentWeakSignalCount,
+      adjustedValue: value
+    };
+  }
 }
 
 /**
- * Verifica si se debe procesar una medición según la intensidad de la señal
- * Simplified version
+ * Determina si se debe procesar una medición basado en la calidad de la señal
  */
 export function shouldProcessMeasurement(
   value: number,
   weakSignalsCount: number = 0,
   options: SignalQualityOptions = {}
-): { shouldProcess: boolean; adjustedValue: number } {
-  const { isWeakSignal, adjustedValue } = checkWeakSignal(value, weakSignalsCount, options);
-  return { shouldProcess: !isWeakSignal, adjustedValue };
+): { 
+  shouldProcess: boolean; 
+  adjustedValue: number;
+} {
+  try {
+    // Verificar señal débil con feedback
+    const { isWeakSignal, adjustedValue } = checkWeakSignal(
+      value,
+      weakSignalsCount,
+      options
+    );
+
+    // Obtener estado de feedback
+    const feedbackState = getGlobalFeedbackState();
+    
+    // Determinar si procesar basado en múltiples factores
+    const shouldProcess = !isWeakSignal && 
+      feedbackState.signalQuality.signalStrength > 0.3 &&
+      feedbackState.signalQuality.fingerDetectionConfidence > 0.4;
+
+    return {
+      shouldProcess,
+      adjustedValue
+    };
+  } catch (error) {
+    console.error('Error evaluando procesamiento:', error);
+    return {
+      shouldProcess: false,
+      adjustedValue: value
+    };
+  }
 }
 
 /**
- * Crea un resultado vacío para señales débiles
+ * Crea un resultado para señal débil
  */
 export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
-  return {
-    bpm: 0,
-    confidence: 0,
-    isPeak: false,
-    arrhythmiaCount: arrhythmiaCounter,
-    rrData: {
-      intervals: [],
-      lastPeakTime: null
-    }
-  };
+  try {
+    // Obtener estado de feedback
+    const feedbackState = getGlobalFeedbackState();
+    
+    // Actualizar feedback con señal débil
+    const updatedFeedback = updateSignalQualityFeedback(
+      feedbackState,
+      {
+        signalStrength: 0.1,
+        noiseLevel: 0.9,
+        stabilityScore: 0.1,
+        fingerDetectionConfidence: 0.1
+      }
+    );
+    
+    // Actualizar estado global
+    updateGlobalFeedbackState(updatedFeedback);
+    
+    return {
+      bpm: 0,
+      confidence: 0,
+      isPeak: false,
+      arrhythmiaCount: arrhythmiaCounter
+    };
+  } catch (error) {
+    console.error('Error creando resultado de señal débil:', error);
+    return {
+      bpm: 0,
+      confidence: 0,
+      isPeak: false,
+      arrhythmiaCount: arrhythmiaCounter
+    };
+  }
 }
 
 /**
- * Restablece el estado de detección de señal
+ * Reinicia el estado de calidad de señal
  */
 export function resetSignalQualityState(): number {
-  // Reset the global feedback state
-  globalFeedbackState = createInitialFeedbackState();
-  return 0; // Reset the weak signals counter
+  try {
+    // Reiniciar estado de feedback
+    updateGlobalFeedbackState(createInitialFeedbackState());
+    return 0;
+  } catch (error) {
+    console.error('Error reiniciando estado de calidad:', error);
+    return 0;
+  }
 }

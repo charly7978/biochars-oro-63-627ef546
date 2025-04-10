@@ -1,4 +1,3 @@
-
 import { FeedbackState } from './types';
 
 /**
@@ -53,51 +52,169 @@ export interface VitalSignsFeedback {
 }
 
 /**
- * Actualiza la retroalimentación de calidad de señal
+ * Actualiza el estado de retroalimentación de calidad de señal
  */
 export function updateSignalQualityFeedback(
   currentState: FeedbackState,
   newFeedback: SignalQualityFeedback
 ): FeedbackState {
-  return {
-    ...currentState,
-    signalQuality: {
-      ...currentState.signalQuality,
-      ...newFeedback
+  try {
+    // Validar entradas
+    if (!newFeedback || typeof newFeedback.signalStrength !== 'number') {
+      console.warn('Feedback inválido para calidad de señal');
+      return currentState;
     }
-  };
+
+    // Aplicar suavizado exponencial para cambios graduales
+    const alpha = 0.3; // Factor de suavizado
+    
+    const updatedQuality = {
+      signalStrength: exponentialSmoothing(
+        currentState.signalQuality.signalStrength,
+        newFeedback.signalStrength,
+        alpha
+      ),
+      noiseLevel: exponentialSmoothing(
+        currentState.signalQuality.noiseLevel,
+        newFeedback.noiseLevel,
+        alpha
+      ),
+      stabilityScore: exponentialSmoothing(
+        currentState.signalQuality.stabilityScore,
+        newFeedback.stabilityScore,
+        alpha
+      ),
+      fingerDetectionConfidence: exponentialSmoothing(
+        currentState.signalQuality.fingerDetectionConfidence,
+        newFeedback.fingerDetectionConfidence,
+        alpha
+      )
+    };
+
+    return {
+      ...currentState,
+      signalQuality: updatedQuality
+    };
+  } catch (error) {
+    console.error('Error actualizando feedback de calidad:', error);
+    return currentState;
+  }
 }
 
 /**
- * Actualiza la retroalimentación de frecuencia cardíaca
+ * Actualiza el estado de retroalimentación de frecuencia cardíaca
  */
 export function updateHeartRateFeedback(
   currentState: FeedbackState,
   newFeedback: HeartRateFeedback
 ): FeedbackState {
-  return {
-    ...currentState,
-    heartRate: {
-      ...currentState.heartRate,
-      ...newFeedback
+  try {
+    // Validar entradas
+    if (!newFeedback || typeof newFeedback.currentBPM !== 'number') {
+      console.warn('Feedback inválido para frecuencia cardíaca');
+      return currentState;
     }
-  };
+
+    // Aplicar suavizado exponencial
+    const alpha = 0.4; // Mayor peso a valores nuevos para HR
+    
+    const updatedHeartRate = {
+      currentBPM: newFeedback.currentBPM, // No suavizar BPM
+      confidence: exponentialSmoothing(
+        currentState.heartRate.confidence,
+        newFeedback.confidence,
+        alpha
+      ),
+      peakStrength: exponentialSmoothing(
+        currentState.heartRate.peakStrength,
+        newFeedback.peakStrength,
+        alpha
+      ),
+      rhythmStability: exponentialSmoothing(
+        currentState.heartRate.rhythmStability,
+        newFeedback.rhythmStability,
+        alpha
+      ),
+      isPeak: newFeedback.isPeak || false
+    };
+
+    return {
+      ...currentState,
+      heartRate: updatedHeartRate
+    };
+  } catch (error) {
+    console.error('Error actualizando feedback de HR:', error);
+    return currentState;
+  }
 }
 
 /**
- * Actualiza la retroalimentación de signos vitales
+ * Actualiza el estado de retroalimentación de signos vitales
  */
 export function updateVitalSignsFeedback(
   currentState: FeedbackState,
   newFeedback: VitalSignsFeedback
 ): FeedbackState {
-  return {
-    ...currentState,
-    vitalSigns: {
-      ...currentState.vitalSigns,
-      ...newFeedback
+  try {
+    // Validar entradas
+    if (!newFeedback) {
+      console.warn('Feedback inválido para signos vitales');
+      return currentState;
     }
-  };
+
+    // Aplicar suavizado exponencial
+    const alpha = 0.25; // Cambios más graduales para signos vitales
+    
+    const updatedVitalSigns = {
+      spo2Quality: exponentialSmoothing(
+        currentState.vitalSigns.spo2Quality,
+        newFeedback.spo2Quality,
+        alpha
+      ),
+      pressureReliability: exponentialSmoothing(
+        currentState.vitalSigns.pressureReliability,
+        newFeedback.pressureReliability,
+        alpha
+      ),
+      arrhythmiaConfidence: exponentialSmoothing(
+        currentState.vitalSigns.arrhythmiaConfidence,
+        newFeedback.arrhythmiaConfidence,
+        alpha
+      ),
+      glucoseReliability: newFeedback.glucoseReliability !== undefined
+        ? exponentialSmoothing(
+            currentState.vitalSigns.glucoseReliability || 0,
+            newFeedback.glucoseReliability,
+            alpha
+          )
+        : currentState.vitalSigns.glucoseReliability,
+      lipidsReliability: newFeedback.lipidsReliability !== undefined
+        ? exponentialSmoothing(
+            currentState.vitalSigns.lipidsReliability || 0,
+            newFeedback.lipidsReliability,
+            alpha
+          )
+        : currentState.vitalSigns.lipidsReliability
+    };
+
+    return {
+      ...currentState,
+      vitalSigns: updatedVitalSigns
+    };
+  } catch (error) {
+    console.error('Error actualizando feedback de vitales:', error);
+    return currentState;
+  }
+}
+
+/**
+ * Aplica suavizado exponencial a un valor
+ */
+function exponentialSmoothing(currentValue: number, newValue: number, alpha: number): number {
+  if (typeof currentValue !== 'number' || typeof newValue !== 'number') {
+    return currentValue || 0;
+  }
+  return alpha * newValue + (1 - alpha) * currentValue;
 }
 
 /**
@@ -127,36 +244,59 @@ export function logFeedbackState(state: FeedbackState, source: string): void {
 }
 
 /**
- * Aplica retroalimentación bidireccional a un valor
+ * Aplica retroalimentación bidireccional al valor de señal
  */
 export function applyBidirectionalFeedback(
   value: number,
   weakSignalCount: number,
   feedbackState: FeedbackState,
-  options: { lowSignalThreshold?: number; maxWeakSignalCount?: number }
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number; adjustedValue: number } {
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
+  options: { 
+    lowSignalThreshold?: number; 
+    maxWeakSignalCount?: number;
+  } = {}
+): { 
+  isWeakSignal: boolean; 
+  updatedWeakSignalsCount: number; 
+  adjustedValue: number;
+} {
+  try {
+    const threshold = options.lowSignalThreshold || 0.15;
+    const maxCount = options.maxWeakSignalCount || 5;
 
-  // Factor de ajuste basado en la confianza de detección de dedo
-  const fingerDetectionFactor = 0.4 + (feedbackState.signalQuality.fingerDetectionConfidence * 0.6);
-  
-  // Factor de ajuste basado en la estabilidad de la señal
-  const stabilityFactor = 0.5 + (feedbackState.signalQuality.stabilityScore * 0.5);
-  
-  // Ajustar el valor basado en retroalimentación
-  const adjustedValue = value * fingerDetectionFactor * stabilityFactor;
-  
-  // Determinar si la señal es débil basado en el valor ajustado
-  const isCurrentValueWeak = Math.abs(adjustedValue) < LOW_SIGNAL_THRESHOLD;
-  
-  // Actualizar contador de señales débiles consecutivas
-  let updatedWeakSignalsCount = isCurrentValueWeak 
-    ? Math.min(weakSignalCount + 1, MAX_WEAK_SIGNALS)
-    : Math.max(0, weakSignalCount - 1);
-  
-  // La señal se considera débil si tenemos suficientes lecturas débiles consecutivas
-  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
-  
-  return { isWeakSignal, updatedWeakSignalsCount, adjustedValue };
+    // Ajustar umbral basado en calidad de señal
+    const dynamicThreshold = threshold * (1 + (1 - feedbackState.signalQuality.signalStrength));
+
+    // Detectar señal débil
+    const isCurrentValueWeak = Math.abs(value) < dynamicThreshold;
+    const updatedWeakSignalsCount = isCurrentValueWeak 
+      ? Math.min(weakSignalCount + 1, maxCount)
+      : 0;
+
+    // Determinar si la señal es débil
+    const isWeakSignal = updatedWeakSignalsCount >= maxCount;
+
+    // Ajustar valor basado en feedback
+    let adjustedValue = value;
+    if (!isWeakSignal && feedbackState.signalQuality.signalStrength > 0.3) {
+      // Aplicar ganancia adaptativa
+      const gain = 1 + (1 - feedbackState.signalQuality.noiseLevel) * 0.5;
+      adjustedValue *= gain;
+    }
+
+    return {
+      isWeakSignal,
+      updatedWeakSignalsCount,
+      adjustedValue
+    };
+  } catch (error) {
+    console.error('Error en retroalimentación bidireccional:', error);
+    return {
+      isWeakSignal: false,
+      updatedWeakSignalsCount: weakSignalCount,
+      adjustedValue: value
+    };
+  }
 }
+
+// Exportar getGlobalFeedbackState
+export { getGlobalFeedbackState };
