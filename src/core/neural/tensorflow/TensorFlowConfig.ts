@@ -33,6 +33,22 @@ export interface TensorFlowConfig {
     progressiveLoading: boolean;
     // Usar Web Workers cuando sea posible
     useWebWorkers: boolean;
+    // Timeout para carga de modelos (ms)
+    modelLoadTimeoutMs: number;
+    // Intentos máximos de carga
+    maxLoadAttempts: number;
+  };
+  
+  // Opciones de autocalibración
+  calibrationOptions: {
+    // Activar calibración automática
+    enableAutoCalibration: boolean;
+    // Duración de calibración (ms)
+    calibrationDuration: number;
+    // Muestras mínimas para calibración
+    minCalibrationSamples: number;
+    // Factor de corrección máximo
+    maxCorrectionFactor: number;
   };
 }
 
@@ -54,6 +70,14 @@ export const DEFAULT_TENSORFLOW_CONFIG: TensorFlowConfig = {
   loadOptions: {
     progressiveLoading: true,
     useWebWorkers: true,
+    modelLoadTimeoutMs: 30000,
+    maxLoadAttempts: 3
+  },
+  calibrationOptions: {
+    enableAutoCalibration: true,
+    calibrationDuration: 8000,
+    minCalibrationSamples: 50,
+    maxCorrectionFactor: 1.5
   }
 };
 
@@ -75,6 +99,14 @@ export const LOW_POWER_CONFIG: TensorFlowConfig = {
   loadOptions: {
     progressiveLoading: true,
     useWebWorkers: false,
+    modelLoadTimeoutMs: 15000,
+    maxLoadAttempts: 2
+  },
+  calibrationOptions: {
+    enableAutoCalibration: true,
+    calibrationDuration: 6000,
+    minCalibrationSamples: 40,
+    maxCorrectionFactor: 1.25
   }
 };
 
@@ -96,5 +128,13 @@ export const HIGH_ACCURACY_CONFIG: TensorFlowConfig = {
   loadOptions: {
     progressiveLoading: false,
     useWebWorkers: true,
+    modelLoadTimeoutMs: 45000,
+    maxLoadAttempts: 4
+  },
+  calibrationOptions: {
+    enableAutoCalibration: true,
+    calibrationDuration: 10000,
+    minCalibrationSamples: 75,
+    maxCorrectionFactor: 1.75
   }
 };

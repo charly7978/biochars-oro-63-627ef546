@@ -178,4 +178,27 @@ export class TensorUtils {
     
     return peaks;
   }
+  
+  /**
+   * Preprocesa datos para su uso con TensorFlow.js
+   */
+  public static preprocessForTensorFlow(signal: Tensor1D, targetLength: number = 300): tf.Tensor {
+    // Ajustar longitud
+    let adjustedSignal: number[];
+    
+    if (signal.length < targetLength) {
+      const padding = Array(targetLength - signal.length).fill(0);
+      adjustedSignal = [...signal, ...padding];
+    } else if (signal.length > targetLength) {
+      adjustedSignal = signal.slice(-targetLength);
+    } else {
+      adjustedSignal = signal;
+    }
+    
+    // Normalizar
+    const normalized = this.normalizeSignal(adjustedSignal);
+    
+    // Convertir a tensor de TF y añadir dimensiones para batch y canal
+    return this.toTFTensor(normalized);
+  }
 }

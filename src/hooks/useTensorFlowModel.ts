@@ -1,63 +1,59 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { TensorFlowWorkerClient } from '../workers/tensorflow-worker-client';
 
+// Cliente singleton para el worker
+let workerClient: TensorFlowWorkerClient | null = null;
+
 /**
- * Hook para utilizar modelos TensorFlow en componentes React
- * Gestiona carga, predicción y estado de modelos de manera declarativa
+ * Hook para utilizar modelos de TensorFlow.js en componentes React
  */
 export function useTensorFlowModel(modelType: string) {
-  // Estado del modelo
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isReady, setIsReady] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [predictionTime, setPredictionTime] = useState<number>(0);
+  const [predictionTime, setPredictionTime] = useState(0);
+  const [confidence, setConfidence] = useState(0);
   
-  // Cliente para comunicación con worker
-  const clientRef = useRef<TensorFlowWorkerClient | null>(null);
-  
-  // Inicializar worker y cargar modelo
+  // Inicializar el worker si no existe
   useEffect(() => {
-    // Crear cliente si no existe
-    if (!clientRef.current) {
-      clientRef.current = new TensorFlowWorkerClient();
+    if (!workerClient) {
+      workerClient = new TensorFlowWorkerClient();
     }
     
-    // Función para cargar modelo
+    // Cargar el modelo específico
     const loadModel = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
-        // Inicializar worker y cargar modelo
-        await clientRef.current!.initialize();
-        await clientRef.current!.loadModel(modelType);
+        await workerClient!.loadModel(modelType);
         
         setIsReady(true);
+        setConfidence(0.8); // Valor inicial de confianza
       } catch (err: any) {
+        console.error(`Error cargando modelo ${modelType}:`, err);
         setError(err.message || 'Error desconocido');
-        console.error(`Error cargando modelo TensorFlow ${modelType}:`, err);
+        setIsReady(false);
       } finally {
         setIsLoading(false);
       }
     };
     
-    // Cargar modelo
     loadModel();
     
-    // Cleanup
+    // Limpiar al desmontar
     return () => {
-      // No destruimos el cliente al desmontar para reutilizarlo
-      // Solo se liberará cuando la aplicación se cierre
+      // No destruimos el cliente, solo si la aplicación se cierra completamente
     };
   }, [modelType]);
   
   /**
-   * Predecir utilizando el modelo
+   * Realiza una predicción con el modelo cargado
    */
   const predict = useCallback(async (input: number[]): Promise<number[]> => {
-    if (!clientRef.current) {
-      throw new Error('Cliente TensorFlow no inicializado');
+    if (!workerClient) {
+      throw new Error('TensorFlow Worker no inicializado');
     }
     
     if (!isReady) {
@@ -65,137 +61,119 @@ export function useTensorFlowModel(modelType: string) {
     }
     
     try {
-      // Medir tiempo de predicción
       const startTime = performance.now();
       
-      // Ejecutar predicción
-      const result = await clientRef.current.predict(modelType, input);
+      // Realizar predicción
+      const result = await workerClient.predict(modelType, input);
       
-      // Actualizar tiempo de predicción
+      // Actualizar métricas
       const endTime = performance.now();
       setPredictionTime(endTime - startTime);
+      
+      // Ajustar confianza basada en tiempo y errores previos
+      // En producción, esto se basaría en métricas más sofisticadas
+      const timeConfidence = Math.max(0, 1 - ((endTime - startTime) / 1000));
+      setConfidence(prev => (prev * 0.7) + (timeConfidence * 0.3));
       
       return result;
     } catch (err: any) {
       setError(err.message || 'Error desconocido');
-      console.error(`Error prediciendo con modelo ${modelType}:`, err);
+      setConfidence(prev => Math.max(0, prev - 0.2)); // Reducir confianza en caso de error
       throw err;
     }
-  }, [modelType, isReady]);
-  
-  /**
-   * Liberar recursos del modelo
-   */
-  const dispose = useCallback(async (): Promise<void> => {
-    if (clientRef.current && isReady) {
-      try {
-        await clientRef.current.disposeModel(modelType);
-        setIsReady(false);
-      } catch (err: any) {
-        console.error(`Error liberando modelo ${modelType}:`, err);
-      }
-    }
-  }, [modelType, isReady]);
+  }, [isReady, modelType]);
   
   return {
     predict,
-    dispose,
     isLoading,
     isReady,
     error,
-    predictionTime
+    predictionTime,
+    confidence,
+    modelType,
   };
 }
 
 /**
- * Hook simplificado para usar múltiples modelos TensorFlow
+ * Hook para usar múltiples modelos TensorFlow simultáneamente
  */
-export function useTensorFlowModels(modelTypes: string[]) {
-  // Estado de modelos
-  const [modelsState, setModelsState] = useState<{
-    isLoading: boolean;
-    isReady: boolean;
-    error: string | null;
-  }>({
-    isLoading: true,
-    isReady: false,
-    error: null
-  });
+export function useMultipleTensorFlowModels(modelTypes: string[]) {
+  const [modelsReady, setModelsReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [modelStatus, setModelStatus] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
   
-  // Cliente para comunicación con worker
-  const clientRef = useRef<TensorFlowWorkerClient | null>(null);
-  
-  // Inicializar worker y cargar modelos
+  // Inicializar cliente
   useEffect(() => {
-    // Crear cliente si no existe
-    if (!clientRef.current) {
-      clientRef.current = new TensorFlowWorkerClient();
+    if (!workerClient) {
+      workerClient = new TensorFlowWorkerClient();
     }
     
-    // Función para cargar modelos
+    // Cargar todos los modelos
     const loadModels = async () => {
       try {
-        setModelsState({
-          isLoading: true,
-          isReady: false,
-          error: null
-        });
+        setIsLoading(true);
+        setError(null);
         
-        // Inicializar worker
-        await clientRef.current!.initialize();
+        const modelStatusMap: Record<string, boolean> = {};
         
-        // Cargar todos los modelos en paralelo
+        // Cargar modelos en paralelo
         await Promise.all(
-          modelTypes.map(modelType => clientRef.current!.loadModel(modelType))
+          modelTypes.map(async (modelType) => {
+            try {
+              await workerClient!.loadModel(modelType);
+              modelStatusMap[modelType] = true;
+            } catch (err) {
+              console.error(`Error cargando modelo ${modelType}:`, err);
+              modelStatusMap[modelType] = false;
+              throw err; // Re-lanzar para manejo global
+            }
+          })
         );
         
-        setModelsState({
-          isLoading: false,
-          isReady: true,
-          error: null
-        });
+        setModelStatus(modelStatusMap);
+        setModelsReady(Object.values(modelStatusMap).every(Boolean));
       } catch (err: any) {
-        setModelsState({
-          isLoading: false,
-          isReady: false,
-          error: err.message || 'Error desconocido'
-        });
-        console.error('Error cargando modelos TensorFlow:', err);
+        setError(err.message || 'Error cargando uno o más modelos');
+        setModelsReady(false);
+      } finally {
+        setIsLoading(false);
       }
     };
     
-    // Cargar modelos
     loadModels();
     
-    // Cleanup
+    // Limpiar al desmontar
     return () => {
-      // No destruimos el cliente al desmontar para reutilizarlo
+      // No destruir cliente, es compartido
     };
-  }, [modelTypes.join(',')]);
+  }, [modelTypes]);
   
   /**
-   * Predecir utilizando un modelo específico
+   * Predice utilizando un modelo específico
    */
   const predict = useCallback(async (modelType: string, input: number[]): Promise<number[]> => {
-    if (!clientRef.current) {
-      throw new Error('Cliente TensorFlow no inicializado');
+    if (!workerClient) {
+      throw new Error('TensorFlow Worker no inicializado');
     }
     
-    if (!modelsState.isReady) {
-      throw new Error('Los modelos no están listos');
+    if (!modelStatus[modelType]) {
+      throw new Error(`Modelo ${modelType} no está listo`);
     }
     
     try {
-      // Ejecutar predicción
-      return await clientRef.current.predict(modelType, input);
+      return await workerClient.predict(modelType, input);
     } catch (err: any) {
-      console.error(`Error prediciendo con modelo ${modelType}:`, err);
+      console.error(`Error en predicción con modelo ${modelType}:`, err);
       throw err;
     }
-  }, [modelsState.isReady]);
+  }, [modelStatus]);
   
   return {
-    ...modelsState,
-    predict
+    predict,
+    isLoading,
+    modelsReady,
+    modelStatus,
+    error
   };
 }

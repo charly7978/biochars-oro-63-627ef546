@@ -4,12 +4,20 @@ import { TensorFlowConfig, DEFAULT_TENSORFLOW_CONFIG } from './TensorFlowConfig'
 import { BaseNeuralModel } from '../NeuralNetworkBase';
 
 /**
+ * Interface extendida para modelos que soportan calibración
+ */
+export interface CalibrableModel {
+  onCalibrationStarted?: () => void;
+  setCalibrationFactor?: (factor: number) => void;
+}
+
+/**
  * Registro centralizado de modelos TensorFlow
  * Gestiona la creación, carga y acceso a modelos
  */
 export class TensorFlowModelRegistry {
   private static instance: TensorFlowModelRegistry;
-  private models: Map<string, BaseNeuralModel> = new Map();
+  private models: Map<string, BaseNeuralModel & Partial<CalibrableModel>> = new Map();
   private modelInitialized: Map<string, boolean> = new Map();
   private config: TensorFlowConfig;
   private isInitialized: boolean = false;
@@ -68,7 +76,7 @@ export class TensorFlowModelRegistry {
   /**
    * Registra un modelo en el registro
    */
-  public registerModel(id: string, model: BaseNeuralModel): void {
+  public registerModel(id: string, model: BaseNeuralModel & Partial<CalibrableModel>): void {
     this.models.set(id, model);
     this.modelInitialized.set(id, false);
     console.log(`Modelo registrado: ${id}`);
@@ -77,7 +85,7 @@ export class TensorFlowModelRegistry {
   /**
    * Obtiene un modelo por su ID
    */
-  public getModel<T extends BaseNeuralModel>(id: string): T | null {
+  public getModel<T extends BaseNeuralModel & Partial<CalibrableModel>>(id: string): T | null {
     const model = this.models.get(id) as T;
     if (!model) return null;
     
@@ -93,7 +101,7 @@ export class TensorFlowModelRegistry {
   /**
    * Obtiene todos los modelos registrados
    */
-  public getAllModels(): Map<string, BaseNeuralModel> {
+  public getAllModels(): Map<string, BaseNeuralModel & Partial<CalibrableModel>> {
     return this.models;
   }
   
@@ -183,6 +191,6 @@ export class TensorFlowModelRegistry {
 /**
  * Función de utilidad para acceso rápido a modelos
  */
-export function getTFModel<T extends BaseNeuralModel>(id: string): T | null {
+export function getTFModel<T extends BaseNeuralModel & Partial<CalibrableModel>>(id: string): T | null {
   return TensorFlowModelRegistry.getInstance().getModel<T>(id);
 }
