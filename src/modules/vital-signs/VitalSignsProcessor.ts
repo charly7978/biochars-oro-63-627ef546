@@ -71,6 +71,7 @@ export class VitalSignsProcessor {
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
+                           rrData.intervals && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
@@ -145,7 +146,7 @@ export class VitalSignsProcessor {
     return ResultFactory.createResult(
       spo2,
       pressure,
-      arrhythmiaResult.arrhythmiaStatus,
+      arrhythmiaResult.arrhythmiaStatus || "--",
       finalGlucose,
       finalLipids,
       {

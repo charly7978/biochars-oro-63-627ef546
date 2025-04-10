@@ -89,8 +89,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     let result = processVitalSignal(value, rrData, isWeakSignal);
     const currentTime = Date.now();
     
-    // If arrhythmia is detected in real data, register visualization window
-    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+    // Add safe null check for arrhythmiaStatus
+    if (result && result.arrhythmiaStatus && 
+        result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+        result.lastArrhythmiaData) {
       const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
       
       // Window based on real heart rate

@@ -7,7 +7,7 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -21,7 +21,8 @@ const Index = () => {
     lipids: {
       totalCholesterol: 0,
       triglycerides: 0
-    }
+    },
+    hemoglobin: 0
   });
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -83,9 +84,14 @@ const Index = () => {
         if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
           setHeartRate(heartBeatResult.bpm);
           
-          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-          if (vitals) {
-            setVitalSigns(vitals);
+          // Add null checks
+          try {
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+            if (vitals) {
+              setVitalSigns(vitals);
+            }
+          } catch (error) {
+            console.error("Error processing vital signs:", error);
           }
         }
         
@@ -188,7 +194,8 @@ const Index = () => {
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
-      }
+      },
+      hemoglobin: 0
     });
     setSignalQuality(0);
   };
@@ -277,7 +284,6 @@ const Index = () => {
   };
 
   return (
-    
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
       width: '100vw',
@@ -314,7 +320,7 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
@@ -338,7 +344,7 @@ const Index = () => {
               />
               <VitalSign 
                 label="PRESIÓN ARTERIAL"
-                value={vitalSigns.pressure}
+                value={vitalSigns.pressure || "--/--"}
                 unit="mmHg"
                 highlighted={showResults}
               />
