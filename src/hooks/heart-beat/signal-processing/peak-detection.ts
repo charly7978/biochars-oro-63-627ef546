@@ -40,40 +40,35 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función se ha modificado para centralizar la sincronización del beep, vibración y animación
+ * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
  * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
   result: any, 
   lastPeakTimeRef: React.MutableRefObject<number | null>,
-  requestBeepCallback: (value: number, isArrhythmia?: boolean) => boolean,
+  requestBeepCallback: (value: number) => boolean,
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
 ): void {
   const now = Date.now();
   
-  // Solo actualizar tiempo del pico para cálculos de tiempo y solicitar feedback si hay confianza
+  // Solo actualizar tiempo del pico para cálculos de tiempo
   if (result.isPeak && result.confidence > 0.05) {
-    // Actualizar tiempo del pico para cálculos de tempo
+    // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
-    // SINCRONIZACIÓN NATURAL: Solicitar feedback con un solo punto de control
-    // para sincronizar beep, vibración y animación visual
-    if (isMonitoringRef.current) {
-      requestBeepCallback(value, result.isArrhythmia || false);
-      
-      console.log("Peak-detection: Pico detectado con sincronización natural", {
-        confianza: result.confidence,
-        valor: value,
-        tiempo: new Date(now).toISOString(),
-        transicion: result.transition ? {
-          activa: result.transition.active,
-          progreso: result.transition.progress,
-          direccion: result.transition.direction
-        } : 'no hay transición',
-        isArrhythmia: result.isArrhythmia || false,
-        feedbackSolicitado: true
-      });
-    }
+    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
+    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
+      confianza: result.confidence,
+      valor: value,
+      tiempo: new Date(now).toISOString(),
+      // Log transition state if present
+      transicion: result.transition ? {
+        activa: result.transition.active,
+        progreso: result.transition.progress,
+        direccion: result.transition.direction
+      } : 'no hay transición',
+      isArrhythmia: result.isArrhythmia || false
+    });
   }
 }
