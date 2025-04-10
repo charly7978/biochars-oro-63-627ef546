@@ -108,7 +108,7 @@ export class VitalSignsProcessor {
   private updateProcessedResults(data: ProcessedSignalData) {
     this.lastValidResults = {
       spo2: data.spo2,
-      pressure: { systolic: 0, diastolic: 0 },
+      pressure: data.pressure,
       glucose: data.glucose,
       lipids: {
         totalCholesterol: 0,
@@ -308,7 +308,7 @@ export class VitalSignsProcessor {
 
     return {
       spo2,
-      pressure,
+      pressure: this.formatPressure(pressure),
       glucose: meetsThreshold(glucoseConfidence) ? glucose : 0,
       lipids: meetsThreshold(lipidsConfidence) ? lipids : {
         totalCholesterol: 0,

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -41,3 +40,34 @@ export {
   calculateStandardDeviation as getStandardDeviation,
   amplifySignal as getAmplifiedSignal
 } from '../../utils/vitalSignsUtils';
+
+import { findPeaks } from './peak-detection';
+
+export function calculateAmplitude(signal: number[], minThreshold: number, maxThreshold: number): number {
+  if (!signal || signal.length === 0) return 0;
+  
+  const min = Math.min(...signal);
+  const max = Math.max(...signal);
+  const amplitude = max - min;
+  
+  return Math.max(minThreshold, Math.min(maxThreshold, amplitude));
+}
+
+export function findPeaksAndValleys(signal: number[]): { peakIndices: number[]; valleyIndices: number[] } {
+  if (!signal || signal.length < 3) {
+    return { peakIndices: [], valleyIndices: [] };
+  }
+
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+
+  for (let i = 1; i < signal.length - 1; i++) {
+    if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1]) {
+      peakIndices.push(i);
+    } else if (signal[i] < signal[i - 1] && signal[i] < signal[i + 1]) {
+      valleyIndices.push(i);
+    }
+  }
+
+  return { peakIndices, valleyIndices };
+}

@@ -1,9 +1,6 @@
 export interface VitalSignsResult {
   spo2: number;
-  pressure: {
-    systolic: number;
-    diastolic: number;
-  };
+  pressure: string;
   glucose: number;
   lipids: LipidsResult;
   hydration: number;
@@ -21,6 +18,11 @@ export interface ArrhythmiaProcessingResult {
   arrhythmiaStatus: string;
   confidence: number;
   type?: string;
+  lastArrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+  } | null;
 }
 
 export interface RRData {

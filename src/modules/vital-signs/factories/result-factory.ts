@@ -13,7 +13,6 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
-    hemoglobin: number,
     hydration: number,
     glucoseConfidence?: number,
     lipidsConfidence?: number,
@@ -23,15 +22,15 @@ export class ResultFactory {
     return {
       spo2,
       pressure,
-      arrhythmiaStatus,
+      arrhythmia: arrhythmiaStatus === "--" ? null : {
+        arrhythmiaStatus,
+        confidence: 0.85
+      },
       glucose,
       lipids,
-      hemoglobin,
       hydration,
-      glucoseConfidence,
-      lipidsConfidence,
-      overallConfidence,
-      lastArrhythmiaData
+      confidence: overallConfidence || 0,
+      timestamp: Date.now()
     };
   }
 
@@ -41,10 +40,7 @@ export class ResultFactory {
   public static createEmptyResults(): VitalSignsResult {
     return {
       spo2: 0,
-      pressure: {
-        systolic: 0,
-        diastolic: 0
-      },
+      pressure: "--/--",
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
