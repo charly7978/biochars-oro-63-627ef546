@@ -7,26 +7,26 @@ export const HeartBeatConfig = {
   // Signal processing
   SAMPLE_RATE: 30, // frames per second
   WINDOW_SIZE: 40, // buffer size for signal processing
-  LOW_SIGNAL_THRESHOLD: 0.05, // amplitude threshold for weak signal detection
-  LOW_SIGNAL_FRAMES: 10, // consecutive weak frames to trigger reset
+  LOW_SIGNAL_THRESHOLD: 0.03, // Reducido de 0.05 a 0.03
+  LOW_SIGNAL_FRAMES: 8, // Reducido de 10 a 8
 
   // Heart rate limits (physiological)
   MIN_BPM: 40,
   MAX_BPM: 200,
 
   // Peak detection
-  SIGNAL_THRESHOLD: 0.01, // minimum signal value to consider as potential peak
-  DERIVATIVE_THRESHOLD: 0.005, // derivative threshold for peak detection
-  MIN_CONFIDENCE: 0.5, // minimum confidence for peak confirmation
+  SIGNAL_THRESHOLD: 0.008, // Reducido de 0.01 a 0.008
+  DERIVATIVE_THRESHOLD: 0.004, // Reducido de 0.005 a 0.004
+  MIN_CONFIDENCE: 0.35, // Reducido de 0.5 a 0.35
   MIN_PEAK_TIME_MS: 300, // minimum time between peaks (200 BPM)
-  WARMUP_TIME_MS: 3000, // initial warmup period for calibration
+  WARMUP_TIME_MS: 2000, // Reducido de 3000 a 2000
 
   // Filtering
   MEDIAN_FILTER_WINDOW: 7,
   MOVING_AVERAGE_WINDOW: 5,
   EMA_ALPHA: 0.3, // alpha for exponential moving average
   BASELINE_FACTOR: 0.95, // factor for baseline tracking
-  CALIBRATION_SAMPLES: 100, // samples to collect before full calibration
+  CALIBRATION_SAMPLES: 80, // Reducido de 100 a 80
 
   // Beep settings
   BEEP_PRIMARY_FREQUENCY: 667,
@@ -40,8 +40,8 @@ export const HeartBeatConfig = {
   SKIP_TIMING_VALIDATION: false, // skip timing validation for peaks
   
   // Arrhythmia detection
-  ARRHYTHMIA_DETECTION_THRESHOLD: 0.15,
-  ARRHYTHMIA_CONSECUTIVE_THRESHOLD: 3,
+  ARRHYTHMIA_DETECTION_THRESHOLD: 0.12, // Reducido de 0.15 a 0.12
+  ARRHYTHMIA_CONSECUTIVE_THRESHOLD: 2, // Reducido de 3 a 2
   
   // Visualization
   SIGNAL_LINE_COLOR: '#00c853',

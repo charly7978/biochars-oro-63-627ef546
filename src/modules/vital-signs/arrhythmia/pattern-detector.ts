@@ -10,7 +10,7 @@
 export class ArrhythmiaPatternDetector {
   private patternBuffer: number[] = [];
   private readonly BUFFER_SIZE = 20;
-  private readonly DETECTION_THRESHOLD = 0.18;
+  private readonly DETECTION_THRESHOLD = 0.15; // Reducido de 0.18 a 0.15
   private consecutivePatterns = 0;
   
   /**
@@ -32,7 +32,7 @@ export class ArrhythmiaPatternDetector {
    * @returns Boolean indicating if an arrhythmia pattern is detected
    */
   public detectArrhythmiaPattern(): boolean {
-    if (this.patternBuffer.length < this.BUFFER_SIZE / 2) {
+    if (this.patternBuffer.length < this.BUFFER_SIZE / 3) { // Reducido de buffer/2 a buffer/3
       return false;
     }
     
@@ -54,8 +54,8 @@ export class ArrhythmiaPatternDetector {
     // Pattern detected if at least 15% of values are significant
     // or if we have at least 3 consecutive significant variations
     const patternDetected = 
-      (significantVariations / this.patternBuffer.length > 0.15) ||
-      (maxConsecutive >= 3);
+      (significantVariations / this.patternBuffer.length > 0.12) || // Reducido de 0.15 a 0.12
+      (maxConsecutive >= 2); // Reducido de 3 a 2
     
     // Update consecutive pattern counter
     if (patternDetected) {
@@ -64,8 +64,8 @@ export class ArrhythmiaPatternDetector {
       this.consecutivePatterns = Math.max(0, this.consecutivePatterns - 1);
     }
     
-    // Need at least 2 consecutive detected patterns
-    return this.consecutivePatterns >= 2;
+    // Need at least 1 consecutive detected patterns (reducido de 2 a 1)
+    return this.consecutivePatterns >= 1;
   }
   
   /**

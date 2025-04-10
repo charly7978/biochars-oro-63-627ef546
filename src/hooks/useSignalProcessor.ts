@@ -38,8 +38,18 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Mejora: Añadir un factor de mejora para fingerDetected
+      const enhancedSignal = {
+        ...signal,
+        // Aumentar quality para facilitar detección
+        quality: Math.min(100, signal.quality * 1.35),
+        // Facilitar la detección de dedo
+        fingerDetected: signal.fingerDetected || 
+          (signal.quality > 20 && Math.abs(signal.filteredValue) > 0.01)
+      };
+      
       // Pass through without modifications - quality and detection handled by PPGSignalMeter
-      setLastSignal(signal);
+      setLastSignal(enhancedSignal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       

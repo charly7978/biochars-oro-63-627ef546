@@ -12,12 +12,12 @@ import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
  * Using only real data without simulation
  */
 export class ArrhythmiaProcessor {
-  // Conservative thresholds for direct measurement
-  private readonly MIN_RR_INTERVALS = 20;
+  // Adjusted thresholds for better detection
+  private readonly MIN_RR_INTERVALS = 8; // Reducido de 20 a 8
   private readonly MIN_INTERVAL_MS = 600;
   private readonly MAX_INTERVAL_MS = 1200;
-  private readonly MIN_VARIATION_PERCENT = 70;
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000;
+  private readonly MIN_VARIATION_PERCENT = 50; // Reducido de 70 a 50
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 10000; // Reducido de 20000 a 10000
   
   // State
   private rrIntervals: number[] = [];
@@ -29,7 +29,7 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 15;
+  private readonly CONSECUTIVE_THRESHOLD = 5; // Reducido de 15 a 5
   
   // Pattern detector
   private patternDetector = new ArrhythmiaPatternDetector();
@@ -54,7 +54,7 @@ export class ArrhythmiaProcessor {
 
     // Build status message
     const arrhythmiaStatusMessage = 
-      this.arrhythmiaCount > 0 
+      this.arrhythmiaDetected 
         ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
         : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
@@ -88,8 +88,8 @@ export class ArrhythmiaProcessor {
       interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
     );
     
-    // Require sufficient valid intervals
-    if (validIntervals.length < this.MIN_RR_INTERVALS * 0.8) {
+    // Require sufficient valid intervals (reducida de 0.8 a 0.6)
+    if (validIntervals.length < this.MIN_RR_INTERVALS * 0.6) {
       this.consecutiveAbnormalBeats = 0;
       return;
     }
@@ -131,7 +131,8 @@ export class ArrhythmiaProcessor {
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
     const patternDetected = this.patternDetector.detectArrhythmiaPattern();
     
-    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia && patternDetected) {
+    // Reducida la exigencia para detectar arritmias
+    if ((this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD || patternDetected) && canDetectNewArrhythmia) {
       this.arrhythmiaCount++;
       this.arrhythmiaDetected = true;
       this.lastArrhythmiaTime = currentTime;
