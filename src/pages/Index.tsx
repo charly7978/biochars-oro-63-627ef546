@@ -7,7 +7,6 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import BidirectionalFeedbackStatus from "@/components/BidirectionalFeedbackStatus";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 import { useUnifiedProcessor } from "@/hooks/useUnifiedProcessor";
 
@@ -340,8 +339,6 @@ const Index = () => {
           </div>
 
           <AppTitle />
-
-          <BidirectionalFeedbackStatus isActive={true} />
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">

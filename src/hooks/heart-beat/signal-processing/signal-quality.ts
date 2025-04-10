@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -5,10 +6,7 @@
 // Corregir importación para usar FeedbackState desde types.ts
 import { FeedbackState } from './types';
 
-import { 
-  applyBidirectionalFeedback, 
-  createInitialFeedbackState 
-} from './bidirectional-feedback';
+import { createInitialFeedbackState } from './bidirectional-feedback';
 
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
@@ -16,7 +14,7 @@ interface SignalQualityOptions {
   feedbackState?: FeedbackState;
 }
 
-// Global feedback state for cross-component communication
+// Basic feedback state for internal use
 let globalFeedbackState: FeedbackState = createInitialFeedbackState();
 
 /**
@@ -31,57 +29,38 @@ export function getGlobalFeedbackState(): FeedbackState {
  */
 export function updateGlobalFeedbackState(newState: FeedbackState): void {
   globalFeedbackState = newState;
-  
-  // Añadir logs detallados para probar que los cambios realmente ocurren
-  console.log("Sistema de retroalimentación actualizado:", {
-    timestamp: new Date().toISOString(),
-    señal: {
-      intensidad: (newState.signalQuality.signalStrength * 100).toFixed(2) + '%',
-      detecciónDedo: (newState.signalQuality.fingerDetectionConfidence * 100).toFixed(2) + '%'
-    },
-    ritmoCardíaco: {
-      bpm: newState.heartRate.currentBPM,
-      confianza: (newState.heartRate.confidence * 100).toFixed(2) + '%',
-      pico: newState.heartRate.isPeak ? 'ACTIVO' : 'inactivo'
-    },
-    análisis: {
-      oxígeno: (newState.vitalSigns.spo2Quality * 100).toFixed(2) + '%',
-      glucosa: newState.vitalSigns.glucoseReliability 
-        ? (newState.vitalSigns.glucoseReliability * 100).toFixed(2) + '%'
-        : 'no disponible',
-      lípidos: newState.vitalSigns.lipidsReliability
-        ? (newState.vitalSigns.lipidsReliability * 100).toFixed(2) + '%'
-        : 'no disponible'
-    }
-  });
 }
 
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
- * Enhanced with bidirectional feedback system
+ * Simplified version without feedback system
  */
 export function checkWeakSignal(
   value: number,
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number; adjustedValue: number } {
-  // Use bidirectional feedback if provided, otherwise use global state
-  const feedbackState = options.feedbackState || globalFeedbackState;
+  const lowSignalThreshold = options.lowSignalThreshold || 0.02;
+  const maxWeakSignalCount = options.maxWeakSignalCount || 5;
   
-  return applyBidirectionalFeedback(
-    value, 
-    currentWeakSignalCount, 
-    feedbackState, 
-    {
-      lowSignalThreshold: options.lowSignalThreshold,
-      maxWeakSignalCount: options.maxWeakSignalCount
-    }
-  );
+  // Determine if signal is too weak
+  const isWeakSignal = Math.abs(value) < lowSignalThreshold;
+  
+  // Update weak signal counter
+  const updatedWeakSignalsCount = isWeakSignal
+    ? Math.min(currentWeakSignalCount + 1, maxWeakSignalCount)
+    : Math.max(currentWeakSignalCount - 1, 0);
+  
+  return {
+    isWeakSignal: updatedWeakSignalsCount >= maxWeakSignalCount,
+    updatedWeakSignalsCount,
+    adjustedValue: value
+  };
 }
 
 /**
  * Verifica si se debe procesar una medición según la intensidad de la señal
- * Enhanced with adjusted value from feedback system
+ * Simplified version
  */
 export function shouldProcessMeasurement(
   value: number,
