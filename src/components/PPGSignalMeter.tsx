@@ -549,23 +549,24 @@ const PPGSignalMeter = memo(({
   const drawArrhythmiaRegions = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
     // Get only the active arrhythmia segments that are visible in the current time window
     const activeArrhythmiaSegments = arrhythmiaSegmentsRef.current.filter(
-      segment => !segment.endTime || now - segment.startTime < WINDOW_WIDTH_MS
+      segment => (segment.endTime === null || now - segment.endTime < WINDOW_WIDTH_MS) && 
+                 (now - segment.startTime < WINDOW_WIDTH_MS)
     );
     
-    // Draw arrhythmia background regions
+    // Draw arrhythmia background regions precisely
     for (const segment of activeArrhythmiaSegments) {
       // Calculate the visible portion of the segment
       const startX = CANVAS_WIDTH - ((now - segment.startTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
       
-      // Get end position - either segment end time or current right edge of screen
-      const endX = segment.endTime 
+      // Get end position - either segment end time or current time for active segments
+      const endX = segment.endTime
         ? CANVAS_WIDTH - ((now - segment.endTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS)
         : CANVAS_WIDTH;
       
       // Only draw if the segment is visible on screen
       if (startX < CANVAS_WIDTH && endX > 0) {
         // Draw a semi-transparent red rectangle for the arrhythmia segment ONLY
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';  // Light red
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';  // Light red, more transparent
         ctx.fillRect(
           Math.max(0, startX), 
           0, 
@@ -595,6 +596,23 @@ const PPGSignalMeter = memo(({
         }
         
         ctx.setLineDash([]);  // Reset dash pattern
+        
+        // Add "ARRITMIA DETECTADA" label if there's enough space
+        if (Math.abs(endX - startX) > 80) {
+          const labelX = (startX + endX) / 2;
+          const labelY = 50;
+          
+          // Draw label background
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+          const labelWidth = 160;
+          ctx.fillRect(labelX - labelWidth/2, labelY - 10, labelWidth, 20);
+          
+          // Draw label text
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 12px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText('ARRITMIA DETECTADA', labelX, labelY + 4);
+        }
       }
     }
   }, [CANVAS_HEIGHT, CANVAS_WIDTH, WINDOW_WIDTH_MS]);
@@ -772,6 +790,7 @@ const PPGSignalMeter = memo(({
         // Only draw if points are within canvas
         if (x1 >= 0 && x1 <= canvas.width && x2 >= 0 && x2 <= canvas.width) {
           // Set color based on whether this specific point is part of an arrhythmia
+          // This is the key change - each segment is colored independently
           renderCtx.beginPath();
           renderCtx.strokeStyle = point.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.lineWidth = 2;
