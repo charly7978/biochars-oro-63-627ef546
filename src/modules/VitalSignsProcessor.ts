@@ -135,9 +135,30 @@ export class VitalSignsProcessor {
     
     // Only process verified and stable signals or within guard period
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
-      return this.processor.processSignal(ppgValue, rrData);
+      // Procesar la señal con el procesador principal
+      const result = this.processor.processSignal(ppgValue, rrData);
+      console.log("VitalSignsProcessor: Procesando señal válida", {
+        ppgValue,
+        hasRRData: !!rrData,
+        resultValues: {
+          spo2: result.spo2,
+          pressure: result.pressure,
+          glucose: result.glucose,
+          lipids: result.lipids
+        }
+      });
+      return result;
     } else {
       // Return empty result without processing when signal is uncertain
+      console.log("VitalSignsProcessor: Señal débil o inestable, devolviendo valores por defecto", {
+        ppgValue,
+        isWeakSignal,
+        isStable,
+        frameRateConsistent,
+        validationCount: this.validPhysiologicalSignalsCount
+      });
+      
+      // Asegurar que los valores por defecto sean consistentes en toda la aplicación
       return {
         spo2: 0,
         pressure: "--/--",
@@ -146,7 +167,8 @@ export class VitalSignsProcessor {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
-        }
+        },
+        hemoglobin: 0
       };
     }
   }
