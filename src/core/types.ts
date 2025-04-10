@@ -17,3 +17,14 @@ export interface ProcessedSignal {
   quality: number;
   filteredValue: number;
 }
+
+export interface UserProfile {
+  age: number;
+  gender?: 'male' | 'female' | 'unknown';
+  height?: number; // cm
+  weight?: number; // kg
+  activityLevel?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+  medicalConditions?: string[];
+  smokingStatus?: 'non_smoker' | 'former_smoker' | 'smoker';
+  ethnicity?: string;
+}
