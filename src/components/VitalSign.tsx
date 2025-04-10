@@ -19,6 +19,11 @@ const VitalSign = ({
   highlighted = false,
   calibrationProgress 
 }: VitalSignProps) => {
+  // Ensure value is a primitive type that can be rendered
+  const renderValue = typeof value === 'object' ? 
+    JSON.stringify(value) : // Convert objects to strings for display
+    value;
+    
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
       switch(label) {
@@ -232,13 +237,17 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
+    // Make sure we're not trying to render an object
+    if (typeof value === 'object') {
+      return '--'; // Default display for objects
+    }
     return value;
   };
 
-  const riskLabel = getRiskLabel(label, value);
+  const riskLabel = getRiskLabel(label, renderValue);
   const riskColor = getRiskColor(riskLabel);
-  const detailedInfo = getDetailedInfo(label, value);
-  const formattedValue = displayValue(label, value);
+  const detailedInfo = getDetailedInfo(label, renderValue);
+  const formattedValue = displayValue(label, renderValue);
 
   return (
     <Sheet>

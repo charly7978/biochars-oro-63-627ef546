@@ -24,12 +24,10 @@ export interface VitalSignsResult {
   // Hemoglobin level
   hemoglobin: number;
   
-  // Optional confidence metrics
-  confidence?: {
-    glucose: number;
-    lipids: number;
-    overall: number;
-  };
+  // Individual confidence values (as separate properties)
+  glucoseConfidence?: number;
+  lipidsConfidence?: number;
+  overallConfidence?: number;
   
   // Information about the last detected arrhythmia event
   lastArrhythmiaData?: {

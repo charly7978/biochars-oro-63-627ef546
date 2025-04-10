@@ -32,8 +32,10 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
-    hemoglobin?: number,
-    confidence?: { glucose: number; lipids: number; overall: number },
+    hemoglobin: number,
+    glucoseConfidence?: number,
+    lipidsConfidence?: number,
+    overallConfidence?: number,
     lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
     return {
@@ -42,8 +44,12 @@ export class ResultFactory {
       arrhythmiaStatus,
       glucose,
       lipids,
-      hemoglobin: hemoglobin ?? this.calculateDefaultHemoglobin(spo2),
-      confidence,
+      hemoglobin,
+      // Store confidence values individually rather than as a nested object
+      // to prevent rendering issues
+      glucoseConfidence: glucoseConfidence,
+      lipidsConfidence: lipidsConfidence,
+      overallConfidence: overallConfidence,
       lastArrhythmiaData
     };
   }
