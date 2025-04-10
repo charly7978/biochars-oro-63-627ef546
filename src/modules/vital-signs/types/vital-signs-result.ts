@@ -21,8 +21,11 @@ export interface VitalSignsResult {
     triglycerides: number;
   };
   
-  // Hemoglobin level
+  // Hemoglobin level (g/dL)
   hemoglobin: number;
+  
+  // Hydration level (percentage)
+  hydration: number;
   
   // Individual confidence values (as separate properties)
   glucoseConfidence?: number;

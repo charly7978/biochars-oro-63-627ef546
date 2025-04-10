@@ -1,3 +1,4 @@
+
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
@@ -22,6 +23,7 @@ export interface ProcessedSignal {
     dominantFrequency: number;
   };
   value?: number;           // Compatibilidad con código existente
+  hydrationIndex?: number;  // Índice de hidratación
 }
 
 /**

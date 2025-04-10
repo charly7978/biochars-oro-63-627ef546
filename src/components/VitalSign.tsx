@@ -10,6 +10,7 @@ interface VitalSignProps {
   unit?: string;
   highlighted?: boolean;
   calibrationProgress?: number;
+  icon?: React.ReactNode;
 }
 
 const VitalSign = ({ 
@@ -17,7 +18,8 @@ const VitalSign = ({
   value, 
   unit, 
   highlighted = false,
-  calibrationProgress 
+  calibrationProgress,
+  icon
 }: VitalSignProps) => {
   // Ensure value is a primitive type that can be rendered
   const renderValue = typeof value === 'object' ? 
@@ -37,6 +39,9 @@ const VitalSign = ({
         case 'GLUCOSA':
           if (value > 126) return 'Hiperglucemia';
           if (value < 70) return 'Hipoglucemia';
+          return '';
+        case 'HIDRATACIÓN':
+          if (value < 50) return 'Deshidratación';
           return '';
         default:
           return '';
@@ -84,6 +89,7 @@ const VitalSign = ({
       case 'Hipertensión':
       case 'Hipercolesterolemia':
       case 'Hipertrigliceridemia':
+      case 'Deshidratación':
         return 'text-[#ea384c]';
       case 'Bradicardia':
       case 'Hipoglucemia':
@@ -214,7 +220,7 @@ const VitalSign = ({
         ];
         break;
       case 'HEMOGLOBINA':
-        info.normalRange = 'Hombres: 13.5-17.5 g/dL / Mujeres: 12.0-15.5 g/dL';
+        info.normalRange = 'Hombres: 13-17 g/dL / Mujeres: 12-15 g/dL';
         info.description = 'La hemoglobina es una proteína en los glóbulos rojos que transporta oxígeno de los pulmones al resto del cuerpo. Niveles bajos pueden indicar anemia.';
         info.recommendations = [
           'Consumir alimentos ricos en hierro',
@@ -227,6 +233,23 @@ const VitalSign = ({
           'Pérdida de sangre',
           'Embarazo',
           'Enfermedades crónicas'
+        ];
+        break;
+      case 'HIDRATACIÓN':
+        info.normalRange = '60-80%';
+        info.description = 'El nivel de hidratación indica el estado de balance de líquidos en el cuerpo. Es vital para el funcionamiento celular, la regulación de la temperatura, y muchos procesos metabólicos.';
+        info.recommendations = [
+          'Beber al menos 8 vasos de agua diariamente',
+          'Aumentar la ingesta durante el ejercicio o clima cálido',
+          'Consumir frutas y verduras con alto contenido de agua',
+          'Limitar el consumo de alcohol y cafeína'
+        ];
+        info.riskFactors = [
+          'Actividad física intensa',
+          'Exposición a altas temperaturas',
+          'Enfermedades febriles',
+          'Edad avanzada',
+          'Consumo insuficiente de líquidos'
         ];
         break;
       default:
@@ -253,8 +276,9 @@ const VitalSign = ({
     <Sheet>
       <SheetTrigger asChild>
         <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1">
-            {label}
+          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1 flex items-center gap-1">
+            {icon && <span>{icon}</span>}
+            <span>{label}</span>
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
@@ -292,8 +316,9 @@ const VitalSign = ({
       <SheetContent side="bottom" className="h-[70vh] rounded-t-2xl">
         <SheetHeader className="border-b pb-4">
           <SheetTitle className="text-2xl font-bold flex items-center justify-between">
-            <div className="flex items-center">
-              {label}
+            <div className="flex items-center gap-2">
+              {icon && <span className="text-2xl">{icon}</span>}
+              <span>{label}</span>
               {unit && <span className="text-sm text-gray-500 ml-2">({unit})</span>}
             </div>
             <div className="flex space-x-2">
@@ -331,7 +356,7 @@ const VitalSign = ({
                 </div>
                 <p className="text-gray-700 mt-2">
                   {riskLabel ? 
-                    `Su lectura está ${riskLabel.includes('hiper') || riskLabel.includes('taqui') ? 'por encima' : 'por debajo'} del rango normal.` : 
+                    `Su lectura está ${riskLabel.includes('hiper') || riskLabel.includes('taqui') || riskLabel === 'Deshidratación' ? 'por encima' : 'por debajo'} del rango normal.` : 
                     'Su lectura está dentro del rango normal.'}
                 </p>
               </CardContent>
