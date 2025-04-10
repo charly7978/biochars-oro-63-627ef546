@@ -9,6 +9,9 @@ export interface SignalQualityOptions {
   maxWeakSignalCount?: number;
 }
 
+/**
+ * Checks if the current signal value indicates weak signal
+ */
 export function checkSignalQuality(
   value: number,
   currentWeakSignalCount: number,
@@ -58,18 +61,16 @@ export function resetSignalQualityState(): number {
 
 /**
  * Resets all detection states related to signal quality
+ * This function is imported and used by HeartBeatProcessor.js
  */
 export function resetDetectionStates(): void {
-  // This function is needed by HeartBeatProcessor.js
-  // It will reset all internal states related to signal detection
+  // Reset internal signal quality detection states
   console.log("Signal quality: reset detection states");
+  // In a real implementation, this might reset various internal state variables
 }
 
 /**
  * Detects finger presence by analyzing rhythmic patterns in the signal
- * @param signalHistory Array of signal history points with time and value
- * @param currentPatternCount Current count of detected patterns
- * @returns Object with finger detection status and updated pattern count
  */
 export function isFingerDetectedByPattern(
   signalHistory: Array<{time: number, value: number}>,
