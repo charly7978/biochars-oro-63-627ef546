@@ -6,50 +6,69 @@
 // Remove or comment out the problematic import
 // import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
+import { 
+  applyBidirectionalFeedback, 
+  FeedbackState, 
+  createInitialFeedbackState 
+} from './bidirectional-feedback';
+
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
   maxWeakSignalCount?: number;
+  feedbackState?: FeedbackState;
+}
+
+// Global feedback state for cross-component communication
+let globalFeedbackState: FeedbackState = createInitialFeedbackState();
+
+/**
+ * Gets the current global feedback state
+ */
+export function getGlobalFeedbackState(): FeedbackState {
+  return globalFeedbackState;
+}
+
+/**
+ * Updates the global feedback state
+ */
+export function updateGlobalFeedbackState(newState: FeedbackState): void {
+  globalFeedbackState = newState;
 }
 
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
- * Solo procesamiento directo, sin simulaciones
+ * Enhanced with bidirectional feedback system
  */
 export function checkWeakSignal(
   value: number,
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number; adjustedValue: number } {
+  // Use bidirectional feedback if provided, otherwise use global state
+  const feedbackState = options.feedbackState || globalFeedbackState;
   
-  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
-  
-  // Update consecutive weak signals counter
-  let updatedWeakSignalsCount = isCurrentValueWeak 
-    ? currentWeakSignalCount + 1 
-    : 0;
-  
-  // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
-  
-  // Signal is considered weak if we have enough consecutive weak readings
-  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
-  
-  return { isWeakSignal, updatedWeakSignalsCount };
+  return applyBidirectionalFeedback(
+    value, 
+    currentWeakSignalCount, 
+    feedbackState, 
+    {
+      lowSignalThreshold: options.lowSignalThreshold,
+      maxWeakSignalCount: options.maxWeakSignalCount
+    }
+  );
 }
 
 /**
  * Verifica si se debe procesar una medición según la intensidad de la señal
+ * Enhanced with adjusted value from feedback system
  */
 export function shouldProcessMeasurement(
   value: number,
   weakSignalsCount: number = 0,
   options: SignalQualityOptions = {}
-): boolean {
-  const { isWeakSignal } = checkWeakSignal(value, weakSignalsCount, options);
-  return !isWeakSignal;
+): { shouldProcess: boolean; adjustedValue: number } {
+  const { isWeakSignal, adjustedValue } = checkWeakSignal(value, weakSignalsCount, options);
+  return { shouldProcess: !isWeakSignal, adjustedValue };
 }
 
 /**
@@ -72,5 +91,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
  * Restablece el estado de detección de señal
  */
 export function resetSignalQualityState(): number {
+  // Reset the global feedback state
+  globalFeedbackState = createInitialFeedbackState();
   return 0; // Reset the weak signals counter
 }

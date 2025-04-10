@@ -5,13 +5,31 @@
  * Functions for peak detection logic, working with real data only
  */
 
+import { getGlobalFeedbackState, updateGlobalFeedbackState } from './signal-quality';
+import { updateHeartRateFeedback } from './bidirectional-feedback';
+
 /**
  * Determines if a measurement should be processed based on signal strength
- * Only processes real measurements
+ * Enhanced with feedback system integration
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
+  // Get current feedback state
+  const feedbackState = getGlobalFeedbackState();
+  
+  // Adjust threshold based on heart rate confidence
+  let threshold = 0.008; // Base threshold
+  
+  if (feedbackState.heartRate.confidence > 0.4) {
+    // Lower threshold if we have good heart rate confidence
+    threshold *= (1 - feedbackState.heartRate.confidence * 0.3);
+  }
+  
+  // Boost threshold if finger detection confidence is low
+  if (feedbackState.signalQuality.fingerDetectionConfidence < 0.3) {
+    threshold *= 1.2;
+  }
+  
+  return Math.abs(value) >= threshold;
 }
 
 /**
@@ -40,8 +58,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
- * No simulation is used - direct measurement only
+ * Enhanced with bidirectional feedback
  */
 export function handlePeakDetection(
   result: any, 
@@ -52,23 +69,46 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Solo actualizar tiempo del pico para cálculos de tiempo
+  // Get current feedback state
+  const feedbackState = getGlobalFeedbackState();
+  
+  // Only update time of peak for timing calculations
   if (result.isPeak && result.confidence > 0.05) {
-    // Actualizar tiempo del pico para cálculos de tempo solamente
+    // Update peak time for time calculations only
     lastPeakTimeRef.current = now;
     
-    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
-    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
-      confianza: result.confidence,
-      valor: value,
-      tiempo: new Date(now).toISOString(),
+    // Update heart rate feedback in the bidirectional system
+    const updatedFeedback = updateHeartRateFeedback(
+      feedbackState,
+      {
+        isPeak: true,
+        confidence: result.confidence,
+        currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
+        peakStrength: Math.abs(value),
+        rhythmStability: result.rhythmVariability ? 1 - result.rhythmVariability : feedbackState.heartRate.rhythmStability
+      }
+    );
+    
+    // Update global feedback state
+    updateGlobalFeedbackState(updatedFeedback);
+    
+    // BEEP IS ONLY HANDLED IN PPGSignalMeter WHEN DRAWING A CIRCLE
+    console.log("Peak-detection: Peak detected WITHOUT requesting beep - exclusive control by PPGSignalMeter", {
+      confidence: result.confidence,
+      value: value,
+      time: new Date(now).toISOString(),
       // Log transition state if present
-      transicion: result.transition ? {
-        activa: result.transition.active,
-        progreso: result.transition.progress,
-        direccion: result.transition.direction
-      } : 'no hay transición',
-      isArrhythmia: result.isArrhythmia || false
+      transition: result.transition ? {
+        active: result.transition.active,
+        progress: result.transition.progress,
+        direction: result.transition.direction
+      } : 'no transition',
+      isArrhythmia: result.isArrhythmia || false,
+      feedbackState: {
+        heartRateConfidence: updatedFeedback.heartRate.confidence,
+        signalStrength: updatedFeedback.signalQuality.signalStrength,
+        fingerDetection: updatedFeedback.signalQuality.fingerDetectionConfidence
+      }
     });
   }
 }
