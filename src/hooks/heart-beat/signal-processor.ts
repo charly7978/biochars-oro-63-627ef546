@@ -1,3 +1,4 @@
+
 import { useCallback, useRef } from 'react';
 
 interface SignalProcessingResult {
@@ -36,15 +37,12 @@ export function useSignalProcessor() {
     lastPeakTime: null
   });
 
-  // Improved arrhythmia segment tracking
+  // Arrhythmia segment tracking - IMPROVED to be more precise
   const currentArrhythmiaSegmentRef = useRef<{startTime: number, endTime: number | null} | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   
-  // Track the last time we processed an arrhythmia
-  const lastArrhythmiaTimeRef = useRef<number>(0);
-  
   /**
-   * Process a real PPG signal value with improved arrhythmia segment boundaries
+   * Process a real PPG signal value - IMPROVED arrhythmia detection segments
    */
   const processSignal = useCallback((
     value: number,
@@ -68,7 +66,6 @@ export function useSignalProcessor() {
     
     // Process the signal with the processor
     const result = processor.processSignal(value);
-    const now = Date.now();
     
     if (result.confidence < 0.1) {
       consecutiveWeakSignalsRef.current++;
@@ -90,6 +87,8 @@ export function useSignalProcessor() {
     
     // Handle peaks and RR intervals with improved persistence
     if (result.isPeak && isMonitoringRef.current) {
+      const now = Date.now();
+      
       // Check if this peak is within physiological limits of the last one
       let validPeak = true;
       if (lastPeakTimeRef.current !== null) {
@@ -139,18 +138,16 @@ export function useSignalProcessor() {
       }
     }
     
-    // FIXED Arrhythmia segment management with precise boundaries
+    // IMPROVED Arrhythmia segment management
     let arrhythmiaSegment = null;
     
     // Check if this beat has arrhythmia
     if (currentBeatIsArrhythmiaRef.current) {
-      // Update the last arrhythmia time
-      lastArrhythmiaTimeRef.current = now;
+      const now = Date.now();
       
       // If this is the start of a new arrhythmia
       if (currentArrhythmiaSegmentRef.current === null) {
         // Create a new segment with precise timing
-        // We set the start time exactly at the current time to capture the exact start
         currentArrhythmiaSegmentRef.current = {
           startTime: now,
           endTime: null
@@ -164,9 +161,10 @@ export function useSignalProcessor() {
       
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
     } 
-    // If no arrhythmia on this beat but we had one active, close it immediately
+    // If no arrhythmia on this beat but we had one active, close it
     else if (currentArrhythmiaSegmentRef.current !== null) {
-      // End the segment right now - no delay
+      // End of arrhythmia segment - mark it with precise timing
+      const now = Date.now();
       currentArrhythmiaSegmentRef.current.endTime = now;
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
       
@@ -224,7 +222,6 @@ export function useSignalProcessor() {
     // Reset arrhythmia segments
     currentArrhythmiaSegmentRef.current = null;
     arrhythmiaSegmentsRef.current = [];
-    lastArrhythmiaTimeRef.current = 0;
     
     console.log("SignalProcessor: Reset completed");
   }, []);
