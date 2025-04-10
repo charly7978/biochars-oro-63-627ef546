@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
+import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
+import { beatDispatcher } from '../core/BeatDispatcher';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -60,7 +61,7 @@ const PPGSignalMeter = memo(({
   const CANVAS_HEIGHT = 900;
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 55.0;
+  const verticalScale = CANVAS_HEIGHT / 9;
   const SMOOTHING_FACTOR = 1.5;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
@@ -112,7 +113,7 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
-  const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
+  const playBeep = useCallback(async (volume = BEEP_VOLUME) => {
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
@@ -123,9 +124,7 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      const feedbackType: HeartbeatFeedbackType = isArrhythmia ? 'arrhythmia' : 'normal';
-      console.log(`PPGSignalMeter: Activando feedback tipo: ${feedbackType}`);
-      triggerHeartbeatFeedback(feedbackType);
+      triggerHeartbeatFeedback();
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -359,6 +358,8 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
+        
+        beatDispatcher.dispatchBeat(peak.time / 1000, peak.value / verticalScale);
       }
     }
     
@@ -367,7 +368,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, []);
+  }, [MIN_PEAK_DISTANCE_MS, WINDOW_WIDTH_MS, verticalScale]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -459,10 +460,10 @@ const PPGSignalMeter = memo(({
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = canvas.height / 2 - prevPoint.value;
+        const y1 = canvas.height / 2 + prevPoint.value;
         
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = canvas.height / 2 - point.value;
+        const y2 = canvas.height / 2 + point.value;
         
         if (firstPoint) {
           renderCtx.beginPath();
@@ -538,9 +539,8 @@ const PPGSignalMeter = memo(({
     
     if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep y activando vibración");
+      playBeep(1.0);
     }
     
     lastRenderTimeRef.current = currentTime;
