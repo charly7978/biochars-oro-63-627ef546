@@ -1,6 +1,10 @@
 
 /**
- * Processed signal data interface
+ * Type definitions for signal processing
+ */
+
+/**
+ * Processed signal data structure
  */
 export interface ProcessedSignal {
   timestamp: number;
@@ -15,41 +19,18 @@ export interface ProcessedSignal {
     height: number;
   } | null;
   perfusionIndex?: number;
+  spectrumData?: {
+    frequencies: number[];
+    amplitudes: number[];
+    dominantFrequency: number;
+  };
 }
 
 /**
- * Processing error interface
+ * Error during signal processing
  */
 export interface ProcessingError {
   code: string;
   message: string;
   timestamp: number;
-}
-
-/**
- * Heart beat result interface
- */
-export interface HeartBeatResult {
-  bpm: number; 
-  confidence: number;
-  isArrhythmia: boolean;
-  arrhythmiaCount: number;
-  rrData: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
-}
-
-/**
- * Interface for signal processors
- */
-export interface ISignalProcessor {
-  initialize(): Promise<void>;
-  start(): void;
-  stop(): void;
-  reset(): void;
-  applySMAFilter(value: number): number;
-  getPPGValues(): number[];
-  onSignalReady?: (signal: ProcessedSignal) => void;
-  onError?: (error: ProcessingError) => void;
 }
