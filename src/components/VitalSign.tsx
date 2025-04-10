@@ -35,7 +35,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
       className={cn(
         "rounded-lg p-2 flex flex-col items-center justify-center transition-all duration-300",
         highlighted 
-          ? "bg-white/10 border border-white/20" 
+          ? "bg-gray-900/80 border border-gray-800/50" 
           : "bg-gray-100/20",
         compact ? "h-auto" : "h-full"
       )}
@@ -49,7 +49,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
           getValueTextSize(),
           "font-bold transition-colors duration-300",
           highlighted 
-            ? "text-gray-900" 
+            ? "text-white" 
             : "text-gray-700"
         )}
         style={{ 
@@ -63,11 +63,10 @@ const VitalSign: React.FC<VitalSignProps> = ({
           {value}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
-        {unit && <span className="text-sm font-medium ml-1 text-gray-600">{unit}</span>}
+        {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
       </div>
     </div>
   );
 };
 
 export default VitalSign;
-
