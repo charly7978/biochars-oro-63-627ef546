@@ -332,7 +332,7 @@ const Index = () => {
           <AppTitle />
 
           <div className="absolute inset-x-0 top-[40%] bottom-[60px] bg-black/10 px-4 py-6">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 place-items-center h-full overflow-y-auto pb-4">
+            <div className="grid grid-cols-4 gap-x-4 gap-y-3 place-items-center h-full overflow-y-auto pb-4">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}
@@ -378,7 +378,7 @@ const Index = () => {
               />
               <VitalSign 
                 label="HEMOGLOBINA"
-                value={vitalSigns.hemoglobin || "--"}
+                value={Math.round(vitalSigns.hemoglobin) || "--"}
                 unit="g/dL"
                 highlighted={showResults}
               />

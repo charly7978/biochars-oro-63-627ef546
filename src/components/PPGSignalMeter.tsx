@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -69,7 +68,7 @@ const PPGSignalMeter = memo(({
   const CANVAS_HEIGHT = 1200;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 76.0;
+  const verticalScale = 96.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
@@ -283,8 +282,8 @@ const PPGSignalMeter = memo(({
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, CANVAS_HEIGHT / 2);
-    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
+    ctx.moveTo(0, CANVAS_HEIGHT / 2 + 15);
+    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2 + 15);
     ctx.stroke();
     ctx.setLineDash([]);
     
