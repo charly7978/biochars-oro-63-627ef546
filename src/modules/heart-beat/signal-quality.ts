@@ -112,3 +112,53 @@ export function isFingerDetectedByPattern(
     patternCount
   };
 }
+
+/**
+ * Calculate signal quality index from 0-100
+ */
+export function calculateSignalQualityIndex(
+  values: number[],
+  windowSize: number = 20
+): number {
+  if (values.length < windowSize / 2) {
+    return 0;
+  }
+  
+  // Use the most recent values
+  const recentValues = values.slice(-windowSize);
+  
+  // Calculate signal range
+  const min = Math.min(...recentValues);
+  const max = Math.max(...recentValues);
+  const range = max - min;
+  
+  // Calculate signal noise (average of absolute differences)
+  let noise = 0;
+  for (let i = 1; i < recentValues.length; i++) {
+    noise += Math.abs(recentValues[i] - recentValues[i-1]);
+  }
+  noise /= (recentValues.length - 1);
+  
+  // Calculate signal-to-noise ratio
+  const snr = range / (noise + 0.001); // Avoid division by zero
+  
+  // Convert to 0-100 scale with reasonable scaling
+  return Math.min(100, Math.max(0, snr * 15));
+}
+
+/**
+ * Get channel feedback for improving detection
+ */
+export function getChannelFeedback(channelName: string): {
+  available: boolean;
+  quality: number;
+  value: number;
+} {
+  // This would normally retrieve data from other channels
+  // For now, return a default implementation
+  return {
+    available: false,
+    quality: 0,
+    value: 0
+  };
+}

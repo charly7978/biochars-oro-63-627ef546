@@ -94,3 +94,48 @@ export function confirmPeak(
     updatedLastConfirmedPeak: isConfirmedPeak
   };
 }
+
+/**
+ * Find the exact peak in a signal window
+ * 
+ * @param values Array of signal values
+ * @param centerIndex Approximate index of the peak
+ * @param windowSize Size of the window to search
+ * @returns Exact index of the peak
+ */
+export function findExactPeakIndex(values: number[], centerIndex: number, windowSize: number = 3): number {
+  const start = Math.max(0, centerIndex - windowSize);
+  const end = Math.min(values.length - 1, centerIndex + windowSize);
+  
+  let maxValue = values[centerIndex];
+  let maxIndex = centerIndex;
+  
+  for (let i = start; i <= end; i++) {
+    if (values[i] > maxValue) {
+      maxValue = values[i];
+      maxIndex = i;
+    }
+  }
+  
+  return maxIndex;
+}
+
+/**
+ * Calculate interval between peaks
+ * 
+ * @param currentPeakTime Current peak time in ms
+ * @param lastPeakTime Last peak time in ms
+ * @returns Interval in ms or null if invalid
+ */
+export function calculatePeakInterval(currentPeakTime: number, lastPeakTime: number | null): number | null {
+  if (!lastPeakTime) return null;
+  
+  const interval = currentPeakTime - lastPeakTime;
+  
+  // Validate interval is physiologically plausible (40-200 BPM)
+  if (interval >= 300 && interval <= 1500) {
+    return interval;
+  }
+  
+  return null;
+}
