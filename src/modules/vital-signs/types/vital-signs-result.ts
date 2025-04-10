@@ -17,6 +17,3 @@ export interface VitalSignsResult {
     rrVariation: number;
   } | null;
 }
-
-// Export the type so it can be used in other files
-export type { VitalSignsResult };
