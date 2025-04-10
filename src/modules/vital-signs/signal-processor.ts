@@ -56,7 +56,50 @@ export class SignalProcessor {
     
     // Calculate average
     const sum = window.reduce((a, b) => a + b, 0);
-    return sum / this.FILTER_WINDOW_SIZE;
+    const filtered = sum / this.FILTER_WINDOW_SIZE;
+    
+    // Dispatch signal if callback is set
+    if (this.onSignalReady) {
+      this.onSignalReady({
+        timestamp: Date.now(),
+        rawValue: value,
+        filteredValue: filtered,
+        quality: this.calculateSignalQuality(),
+        fingerDetected: true,
+        roi: null
+      });
+    }
+    
+    return filtered;
+  }
+  
+  /**
+   * Calculate signal quality based on variance and range
+   */
+  private calculateSignalQuality(): number {
+    if (this.ppgValues.length < 10) return 0;
+    
+    const recentValues = this.ppgValues.slice(-30);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const range = max - min;
+    
+    // Calculate average and standard deviation
+    const sum = recentValues.reduce((a, b) => a + b, 0);
+    const avg = sum / recentValues.length;
+    
+    let varianceSum = 0;
+    for (const value of recentValues) {
+      varianceSum += Math.pow(value - avg, 2);
+    }
+    const stdDev = Math.sqrt(varianceSum / recentValues.length);
+    
+    // Calculate quality based on range and stability
+    const rangeQuality = Math.min(100, range * 20);
+    const stabilityQuality = Math.max(0, 100 - (stdDev / avg) * 200);
+    
+    // Combined quality score
+    return Math.min(100, (rangeQuality * 0.4) + (stabilityQuality * 0.6));
   }
   
   /**

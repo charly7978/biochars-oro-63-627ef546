@@ -130,23 +130,52 @@ export const useSignalProcessor = () => {
           });
         }
         
+        // Sample the center region for better signal
+        const centerX = Math.floor(imageData.width * 0.4);
+        const centerY = Math.floor(imageData.height * 0.4);
+        const sampleWidth = Math.floor(imageData.width * 0.2);
+        const sampleHeight = Math.floor(imageData.height * 0.2);
+        
+        // Average the red channel in the sample region
+        let redSum = 0;
+        let pixelCount = 0;
+        
+        for (let y = centerY; y < centerY + sampleHeight; y += 2) {
+          for (let x = centerX; x < centerX + sampleWidth; x += 2) {
+            const idx = (y * imageData.width + x) * 4;
+            redSum += imageData.data[idx]; // Red channel
+            pixelCount++;
+          }
+        }
+        
+        const redAverage = pixelCount > 0 ? redSum / pixelCount : 0;
+        
         // Process the frame with REAL data
-        processor.applySMAFilter(imageData.data[0]); // Use red channel data
-        const processedValue = processor.getPPGValues().slice(-1)[0] || 0;
+        const filteredValue = processor.applySMAFilter(redAverage);
+        
+        // Check if filter gave us a valid signal
+        if (isNaN(filteredValue)) {
+          console.error("useSignalProcessor: Valor filtrado inválido (NaN)");
+          return null;
+        }
         
         // Create processed signal with REAL data
         const signal: ProcessedSignal = {
           timestamp: Date.now(),
-          rawValue: imageData.data[0],
-          filteredValue: processedValue,
+          rawValue: redAverage,
+          filteredValue: filteredValue,
           quality: calculateSignalQuality(processor.getPPGValues()),
           fingerDetected: isFingerDetected(imageData),
           roi: null
         };
         
         // Set the processed signal
-        setLastSignal(signal);
-        setFramesProcessed(prev => prev + 1);
+        if (!lastSignal || 
+            Math.abs(signal.filteredValue - lastSignal.filteredValue) > 0.01 ||
+            framesProcessed % 5 === 0) {
+          setLastSignal(signal);
+          setFramesProcessed(prev => prev + 1);
+        }
         
         return signal;
       } catch (err) {
@@ -155,7 +184,7 @@ export const useSignalProcessor = () => {
       }
     }
     return null;
-  }, [isProcessing, processor, framesProcessed]);
+  }, [isProcessing, processor, framesProcessed, lastSignal]);
 
   // Helper function to detect finger presence based on image data
   const isFingerDetected = (imageData: ImageData): boolean => {
