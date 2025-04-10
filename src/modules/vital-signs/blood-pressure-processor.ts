@@ -1,6 +1,7 @@
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 import { IntelligentCalibrationSystem } from '../../core/calibration/IntelligentCalibrationSystem';
+import { signal } from '@tensorflow/tfjs';
 
 /**
  * Procesador de presión arterial que usa modelo neuronal y calibración inteligente
@@ -64,7 +65,7 @@ export class BloodPressureProcessor {
       measurementType: 'bloodPressure',
       accuracy: this.calculateSignalQuality(ppgSignal),
       conditions: {
-        signalStrength: calculateAmplitude(ppgSignal),
+        signalQuality: calculateAmplitude(ppgSignal),
         motionLevel: this.detectMotion(ppgSignal),
         environmentalFactors: this.assessEnvironmentalFactors()
       }
@@ -81,7 +82,7 @@ export class BloodPressureProcessor {
    * Calcula la calidad de la señal
    */
   private calculateSignalQuality(signal: number[]): number {
-    const amplitude = calculateAmplitude(signal);
+    const amplitude = calculateAmplitude(signal, 0.1, 10);
     const noiseLevel = this.calculateNoiseLevel(signal);
     return Math.max(0, Math.min(1, (amplitude / 2) * (1 - noiseLevel)));
   }
@@ -99,6 +100,12 @@ export class BloodPressureProcessor {
     }
     
     return Math.min(1, noiseSum / (signal.length - 2) / calculateAmplitude(signal));
+  }
+  calculateSignalQuality(ppgSignal: number[]): number {
+    throw new Error('Method not implemented.');
+  }
+  calculateNoiseLevel(signal: { hammingWindow: (windowLength: number) => import("@tensorflow/tfjs-core").Tensor1D; hannWindow: (windowLength: number) => import("@tensorflow/tfjs-core").Tensor1D; frame: (signal: import("@tensorflow/tfjs-core").Tensor1D, frameLength: number, frameStep: number, padEnd?: boolean, padValue?: number) => import("@tensorflow/tfjs-core").Tensor<import("@tensorflow/tfjs-core").Rank>; stft: (signal: import("@tensorflow/tfjs-core").Tensor1D, frameLength: number, frameStep: number, fftLength?: number, windowFn?: (length: number) => import("@tensorflow/tfjs-core").Tensor1D) => import("@tensorflow/tfjs-core").Tensor<import("@tensorflow/tfjs-core").Rank>; }): any {
+    throw new Error('Method not implemented.');
   }
 
   /**

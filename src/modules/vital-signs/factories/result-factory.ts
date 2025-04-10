@@ -1,5 +1,4 @@
-
-import { VitalSignsResult } from '../types/vital-signs-result';
+import { VitalSignsResult, LipidsResult, ArrhythmiaProcessingResult } from '../../../types/vital-signs';
 
 /**
  * Factory for creating standardized vital signs results
@@ -42,15 +41,33 @@ export class ResultFactory {
   public static createEmptyResults(): VitalSignsResult {
     return {
       spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
+      pressure: {
+        systolic: 0,
+        diastolic: 0
+      },
       glucose: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hemoglobin: 0,
-      hydration: 0
+      hydration: 0,
+      arrhythmia: null,
+      confidence: 0,
+      timestamp: Date.now()
+    };
+  }
+
+  public static createArrhythmiaResult(status: string, confidence: number): ArrhythmiaProcessingResult {
+    return {
+      arrhythmiaStatus: status,
+      confidence: confidence
+    };
+  }
+
+  public static createLipidsResult(totalCholesterol: number, triglycerides: number): LipidsResult {
+    return {
+      totalCholesterol,
+      triglycerides
     };
   }
 }

@@ -1,6 +1,6 @@
 export interface VitalSignsResult {
-  spO2: number;
-  bloodPressure: {
+  spo2: number;
+  pressure: {
     systolic: number;
     diastolic: number;
   };
@@ -8,6 +8,8 @@ export interface VitalSignsResult {
   lipids: LipidsResult;
   hydration: number;
   arrhythmia: ArrhythmiaProcessingResult | null;
+  confidence: number;
+  timestamp: number;
 }
 
 export interface LipidsResult {
@@ -18,6 +20,7 @@ export interface LipidsResult {
 export interface ArrhythmiaProcessingResult {
   arrhythmiaStatus: string;
   confidence: number;
+  type?: string;
 }
 
 export interface RRData {

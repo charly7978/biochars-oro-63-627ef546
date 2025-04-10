@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -25,15 +24,22 @@ export class SignalValidator {
   private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
   private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
   
+  private readonly MIN_SIGNAL_THRESHOLD: number;
+  private readonly MAX_SIGNAL_THRESHOLD: number;
+  
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
     minSignalAmplitude: number = 0.02, // Increased from 0.01
-    minPpgValues: number = 15
+    minPpgValues: number = 15,
+    minThreshold: number = 0.005,
+    maxThreshold: number = 25
   ) {
     this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
     this.MIN_PPG_VALUES = minPpgValues;
+    this.MIN_SIGNAL_THRESHOLD = minThreshold;
+    this.MAX_SIGNAL_THRESHOLD = maxThreshold;
   }
   
   /**
@@ -61,8 +67,8 @@ export class SignalValidator {
   /**
    * Validate that the signal is strong enough
    */
-  public isValidSignal(ppgValue: number): boolean {
-    return Math.abs(ppgValue) >= 0.02; // Increased from 0.005
+  public isValidSignal(value: number): boolean {
+    return value >= this.MIN_SIGNAL_THRESHOLD && value <= this.MAX_SIGNAL_THRESHOLD;
   }
   
   /**
@@ -224,5 +230,66 @@ export class SignalValidator {
         need: this.MIN_PPG_VALUES
       });
     }
+  }
+
+  public getSignalQuality(signal: Float32Array): number {
+    if (!signal || signal.length === 0) return 0;
+
+    // Calculate signal quality based on various metrics
+    const noiseLevel = this.calculateNoiseLevel(signal);
+    const signalStrength = this.calculateSignalStrength(signal);
+    const stability = this.calculateStability(signal);
+
+    // Combine metrics into overall quality score (0-100)
+    const quality = Math.min(100, Math.max(0,
+      (1 - noiseLevel) * 40 +
+      signalStrength * 30 +
+      stability * 30
+    ));
+
+    return quality;
+  }
+
+  private calculateNoiseLevel(signal: Float32Array): number {
+    // Calculate noise using standard deviation of differences
+    const differences = new Float32Array(signal.length - 1);
+    for (let i = 0; i < differences.length; i++) {
+      differences[i] = signal[i + 1] - signal[i];
+    }
+    
+    const mean = differences.reduce((a, b) => a + b, 0) / differences.length;
+    const variance = differences.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / differences.length;
+    
+    return Math.min(1, Math.sqrt(variance) / this.MAX_SIGNAL_THRESHOLD);
+  }
+
+  private calculateSignalStrength(signal: Float32Array): number {
+    const max = Math.max(...Array.from(signal));
+    const min = Math.min(...Array.from(signal));
+    const amplitude = max - min;
+    
+    return Math.min(1, amplitude / this.MAX_SIGNAL_THRESHOLD);
+  }
+
+  private calculateStability(signal: Float32Array): number {
+    const windowSize = Math.min(50, signal.length);
+    const windows = Math.floor(signal.length / windowSize);
+    
+    if (windows < 2) return 0;
+    
+    const means = new Float32Array(windows);
+    for (let i = 0; i < windows; i++) {
+      const start = i * windowSize;
+      const end = start + windowSize;
+      means[i] = signal.slice(start, end).reduce((a, b) => a + b, 0) / windowSize;
+    }
+    
+    const meanVariance = this.calculateVariance(means);
+    return Math.max(0, 1 - meanVariance / this.MAX_SIGNAL_THRESHOLD);
+  }
+
+  private calculateVariance(values: Float32Array): number {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
   }
 }

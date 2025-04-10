@@ -45,6 +45,7 @@ export class VitalSignsProcessor {
   private readonly MIN_SAMPLES_FOR_ANALYSIS = 200;
   private processingWorker: Worker | null = null;
   private lastValidResults: VitalSignsResult | null = null;
+  private arrhythmiaCounter: number = 0;
 
   constructor() {
     console.log("VitalSignsProcessor: Inicializando con configuración optimizada");
@@ -109,10 +110,52 @@ export class VitalSignsProcessor {
     };
   }
 
-  public processSignal(
+  private async processSignalSync(signal: Float32Array, rrData?: { intervals: number[]; lastPeakTime: number | null }): Promise<VitalSignsResult> {
+    // Aplicar filtrado optimizado y extraer el valor filtrado
+    const processedSignal: ProcessedSignal = {
+      value: Array.from(signal),
+      filteredValue: this.signalProcessor.applyFilters(Array.from(signal)),
+      quality: this.signalValidator.getSignalQuality(signal),
+      fingerDetected: true,
+      timestamp: Date.now()
+    };
+    
+    // Procesar señales vitales de forma paralela
+    const [spo2Data, pressureData, glucoseData, lipidsData, hydrationData, arrhythmiaData] = await Promise.all([
+      this.processSpO2(processedSignal),
+      this.processBloodPressure(processedSignal),
+      this.processGlucose(processedSignal),
+      this.processLipids(processedSignal),
+      this.processHydration(processedSignal),
+      rrData ? this.processArrhythmia(processedSignal, rrData) : Promise.resolve(null)
+    ]);
+    
+    // Calcular confianza general
+    const overallConfidence = this.confidenceCalculator.calculateOverallConfidence({
+      spo2: spo2Data,
+      pressure: pressureData,
+      glucose: glucoseData,
+      lipids: lipidsData,
+      hydration: hydrationData,
+      arrhythmia: arrhythmiaData
+    });
+
+    return {
+      spo2: spo2Data,
+      pressure: pressureData,
+      glucose: glucoseData,
+      lipids: lipidsData,
+      hydration: hydrationData,
+      arrhythmia: arrhythmiaData,
+      confidence: overallConfidence,
+      timestamp: Date.now()
+    };
+  }
+
+  public async processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): VitalSignsResult {
+  ): Promise<VitalSignsResult> {
     // Validación inicial de señal
     if (!this.signalValidator.isValidSignal(ppgValue)) {
       return ResultFactory.createEmptyResults();
@@ -140,43 +183,6 @@ export class VitalSignsProcessor {
 
     // Procesamiento síncrono si no hay worker
     return this.processSignalSync(this.signalBuffer, rrData);
-  }
-
-  private processSignalSync(signal: Float32Array, rrData?: { intervals: number[]; lastPeakTime: number | null }): VitalSignsResult {
-    // Aplicar filtrado optimizado y extraer el valor filtrado
-    const processedSignal = this.signalProcessor.applyFilters(Array.from(signal));
-    const filtered = new Float32Array(processedSignal.filteredValue);
-    
-    // Procesar señales vitales
-    const spo2Data = this.processSpO2(filtered);
-    const pressureData = this.processBloodPressure(filtered);
-    const glucoseData = this.processGlucose(filtered);
-    const lipidsData = this.processLipids(filtered);
-    const hydrationData = this.processHydration(filtered);
-    
-    // Procesar arritmias si hay datos RR válidos
-    const arrhythmiaData = rrData ? this.processArrhythmia(filtered, rrData) : null;
-    
-    // Calcular confianza general
-    const overallConfidence = this.confidenceCalculator.calculateOverallConfidence({
-      spo2: spo2Data,
-      pressure: pressureData,
-      glucose: glucoseData,
-      lipids: lipidsData,
-      hydration: hydrationData,
-      arrhythmia: arrhythmiaData
-    });
-
-    return {
-      spo2: spo2Data,
-      pressure: pressureData,
-      glucose: glucoseData,
-      lipids: lipidsData,
-      hydration: hydrationData,
-      arrhythmia: arrhythmiaData,
-      confidence: overallConfidence,
-      timestamp: Date.now()
-    };
   }
 
   private updateSignalBuffer(value: number): void {
@@ -234,6 +240,9 @@ export class VitalSignsProcessor {
   async processArrhythmia(signal: ProcessedSignal, rrData: RRData): Promise<ArrhythmiaProcessingResult> {
     const preparedSignal = this.prepareSignal(signal);
     const result = this.arrhythmiaProcessor.processRRData(rrData);
+    if (result.arrhythmiaStatus !== "--") {
+      this.arrhythmiaCounter++;
+    }
     return result.arrhythmiaStatus === "--" ? null : {
       arrhythmiaStatus: result.arrhythmiaStatus,
       confidence: result.confidence
@@ -301,6 +310,7 @@ export class VitalSignsProcessor {
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
     this.lastValidResults = null;
+    this.arrhythmiaCounter = 0;
     
     if (this.processingWorker) {
       this.processingWorker.postMessage({ type: 'reset' });
@@ -311,6 +321,10 @@ export class VitalSignsProcessor {
 
   private getLastValidResults(): VitalSignsResult {
     return this.lastValidResults || ResultFactory.createEmptyResults();
+  }
+
+  public getArrhythmiaCounter(): number {
+    return this.arrhythmiaCounter;
   }
 }
 
