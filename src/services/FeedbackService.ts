@@ -1,9 +1,11 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
  */
 
 import { toast } from "@/hooks/use-toast";
+import { SignalValidationResult } from "../core/RealSignalValidator";
 
 // Configuración de sonidos
 const successSoundUrl = '/sounds/success.mp3';
@@ -148,6 +150,25 @@ export const FeedbackService = {
         'Medición completada', 
         'Calidad de señal baja. Intente nuevamente para mayor precisión.',
         'warning'
+      );
+    }
+  },
+  
+  // Nueva función para retroalimentación basada en validación de señal
+  signalValidationFeedback: (validationResult: SignalValidationResult) => {
+    if (!validationResult.valid) {
+      // Si la señal no es válida, enviamos retroalimentación
+      let type: 'warning' | 'error' = validationResult.color === 'red' ? 'error' : 'warning';
+      
+      FeedbackService.vibrate(type === 'error' ? 400 : [100, 50, 100]);
+      FeedbackService.playSound(type === 'error' ? 'error' : 'notification');
+      
+      const warnings = validationResult.warnings.join(', ');
+      FeedbackService.showToast(
+        'Problema de señal', 
+        `Problemas detectados: ${warnings}`, 
+        type,
+        4000
       );
     }
   }

@@ -17,3 +17,14 @@ export interface ProcessedSignal {
   quality: number;
   filteredValue: number;
 }
+
+export interface SignalValidationInfo {
+  isValid: boolean;
+  validationResult: {
+    valid: boolean;
+    level: number;
+    color: string;
+    label: string;
+    warnings: string[];
+  };
+}
