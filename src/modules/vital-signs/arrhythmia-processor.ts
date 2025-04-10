@@ -69,7 +69,7 @@ export class ArrhythmiaProcessor {
     
     return {
       arrhythmiaStatus: arrhythmiaStatusMessage,
-      lastArrhythmiaData: lastArrhythmiaData
+      lastArrhythmiaData
     };
   }
 

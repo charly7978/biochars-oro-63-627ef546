@@ -1,15 +1,16 @@
+
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
  * Representa una señal PPG procesada
  */
 export interface ProcessedSignal {
-  value: number[];
-  filteredValue?: number[];
-  quality: number;
-  fingerDetected: boolean;
-  timestamp: number;
-  roi?: {
+  timestamp: number;        // Marca de tiempo de la señal
+  rawValue: number;         // Valor crudo del sensor
+  filteredValue: number;    // Valor filtrado para análisis
+  quality: number;          // Calidad de la señal (0-100)
+  fingerDetected: boolean;  // Si se detecta un dedo sobre el sensor
+  roi: {                    // Región de interés en la imagen
     x: number;
     y: number;
     width: number;
@@ -21,6 +22,7 @@ export interface ProcessedSignal {
     amplitudes: number[];
     dominantFrequency: number;
   };
+  value?: number;           // Compatibilidad con código existente
   hydrationIndex?: number;  // Índice de hidratación
 }
 
