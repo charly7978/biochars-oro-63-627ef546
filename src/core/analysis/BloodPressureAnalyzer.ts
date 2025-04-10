@@ -1,3 +1,4 @@
+
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
 export interface BloodPressureResult {
@@ -73,6 +74,11 @@ export class BloodPressureAnalyzer {
     });
 
     return this.lastEstimate;
+  }
+
+  // Calculate blood pressure directly with alias for better compatibility
+  public calculateBloodPressure(values: number[]): BloodPressureResult {
+    return this.estimate(values);
   }
 
   private extractFeatures(data: number[]) {

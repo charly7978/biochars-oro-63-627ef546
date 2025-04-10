@@ -1,11 +1,9 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
+import { ArrhythmiaData } from '../../../core/analysis/ArrhythmiaDetector';
 
 /**
- * Interface for vital signs measurement results
- * Direct measurement only, no simulation
+ * Standard interface for vital signs results
+ * Used across different components and modules
  */
 export interface VitalSignsResult {
   spo2: number;
@@ -16,14 +14,27 @@ export interface VitalSignsResult {
     totalCholesterol: number;
     triglycerides: number;
   };
-  confidence?: {
-    glucose: number;
-    lipids: number;
-    overall: number;
+  hemoglobin: number;
+  calibration?: {
+    isCalibrating: boolean;
+    progress: {
+      heartRate: number;
+      spo2: number;
+      pressure: number;
+      arrhythmia: number;
+      glucose: number;
+      lipids: number;
+      hemoglobin: number;
+    };
   };
-  lastArrhythmiaData?: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-  } | null;
+  lastArrhythmiaData?: ArrhythmiaData | null;
+}
+
+/**
+ * Interface for confidence values related to vital signs measurements
+ */
+export interface VitalSignsConfidence {
+  glucose: number;
+  lipids: number;
+  overall: number;
 }

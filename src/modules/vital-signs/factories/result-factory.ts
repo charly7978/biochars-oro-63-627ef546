@@ -1,18 +1,37 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
 import { VitalSignsResult } from '../types/vital-signs-result';
+import { ArrhythmiaData } from '../../../core/analysis/ArrhythmiaDetector';
 
 /**
- * Factory for creating consistent VitalSignsResult objects
- * All methods work with real data only, no simulation
+ * Factory for creating standardized vital signs results
+ * Ensures consistency across different result formats
  */
 export class ResultFactory {
   /**
-   * Creates an empty result when there is no valid data
-   * Always returns zeros, no simulation
+   * Create a result with all vital sign values
+   */
+  public static createResult(
+    spo2: number,
+    pressure: string,
+    arrhythmiaStatus: string,
+    glucose: number,
+    lipids: { totalCholesterol: number; triglycerides: number },
+    confidence: { glucose: number; lipids: number; overall: number },
+    lastArrhythmiaData: ArrhythmiaData | null
+  ): VitalSignsResult {
+    return {
+      spo2,
+      pressure,
+      arrhythmiaStatus,
+      glucose,
+      lipids,
+      hemoglobin: 0, // Default value
+      lastArrhythmiaData
+    };
+  }
+  
+  /**
+   * Create an empty result for invalid measurements
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
@@ -24,36 +43,30 @@ export class ResultFactory {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
-      }
+      hemoglobin: 0,
+      lastArrhythmiaData: null
     };
   }
   
   /**
-   * Creates a result with the given values
-   * Only for direct measurements
+   * Create a result from partial values
+   * Useful when updating specific metrics only
    */
-  public static createResult(
-    spo2: number,
-    pressure: string,
-    arrhythmiaStatus: string,
-    glucose: number,
-    lipids: { totalCholesterol: number; triglycerides: number },
-    confidence: { glucose: number; lipids: number; overall: number },
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
+  public static createFromPartial(
+    partial: Partial<VitalSignsResult>,
+    confidence: { glucose: number; lipids: number; overall: number }
   ): VitalSignsResult {
     return {
-      spo2,
-      pressure,
-      arrhythmiaStatus,
-      glucose,
-      lipids,
-      confidence,
-      lastArrhythmiaData
+      spo2: partial.spo2 || 0,
+      pressure: partial.pressure || "--/--",
+      arrhythmiaStatus: partial.arrhythmiaStatus || "--",
+      glucose: partial.glucose || 0,
+      lipids: {
+        totalCholesterol: partial.lipids?.totalCholesterol || 0,
+        triglycerides: partial.lipids?.triglycerides || 0
+      },
+      hemoglobin: partial.hemoglobin || 0,
+      lastArrhythmiaData: partial.lastArrhythmiaData || null
     };
   }
 }
-

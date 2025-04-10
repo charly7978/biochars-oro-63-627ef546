@@ -1,99 +1,123 @@
 
 /**
- * Functions for checking signal quality
- * Direct measurement only - NO simulation or data manipulation
+ * Interface for signal quality check options
  */
+export interface SignalQualityOptions {
+  lowSignalThreshold: number;
+  maxWeakSignalCount: number;
+}
 
 /**
- * Check if the signal quality is sufficient for processing
- * Uses only real measurements without simulation
+ * Interface for signal quality check results
+ */
+export interface SignalQualityResult {
+  isWeakSignal: boolean;
+  updatedWeakSignalsCount: number;
+}
+
+/**
+ * Centralized function to check signal quality
+ * Used across different modules for consistent finger detection
  */
 export function checkSignalQuality(
   value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number,
-    maxWeakSignalCount: number
-  }
-): {
-  isWeakSignal: boolean,
-  updatedWeakSignalsCount: number
-} {
-  // Get actual threshold from config or use default
-  const threshold = config.lowSignalThreshold || 0.05;
-  const maxCount = config.maxWeakSignalCount || 10;
+  currentWeakSignals: number,
+  options: SignalQualityOptions
+): SignalQualityResult {
+  const { lowSignalThreshold, maxWeakSignalCount } = options;
   
-  // Check real signal against threshold
-  const isCurrentlyWeak = Math.abs(value) < threshold;
+  // Check if the signal is weak (near zero)
+  const isCurrentValueWeak = Math.abs(value) < lowSignalThreshold;
   
-  // Update counter based on actual signal strength
-  let updatedCount = isCurrentlyWeak 
-    ? consecutiveWeakSignalsCount + 1 
-    : 0;
+  // Update weak signals counter
+  let updatedWeakSignalsCount = isCurrentValueWeak 
+    ? currentWeakSignals + 1 
+    : Math.max(0, currentWeakSignals - 1);
   
-  // Determine if signal is weak based on consecutive measurements
-  const isWeak = updatedCount >= maxCount;
+  // Determine if we've had too many consecutive weak signals
+  const isWeakSignal = updatedWeakSignalsCount >= maxWeakSignalCount;
   
-  return {
-    isWeakSignal: isWeak,
-    updatedWeakSignalsCount: updatedCount
-  };
+  return { isWeakSignal, updatedWeakSignalsCount };
 }
 
 /**
- * Reset detection states for fresh measurements
- */
-export function resetDetectionStates() {
-  console.log("Signal quality: Reset detection states");
-  return {
-    consecutiveWeakSignals: 0
-  };
-}
-
-/**
- * Check if finger is detected by identifying rhythmic patterns
- * Works only with real data, no simulation
+ * Check if a finger is detected using pattern recognition
  */
 export function isFingerDetectedByPattern(
-  signalHistory: Array<{time: number, value: number}>,
-  currentPatternCount: number
-): {
-  isFingerDetected: boolean,
-  patternCount: number
-} {
-  if (signalHistory.length < 10) {
-    return { 
-      isFingerDetected: false, 
-      patternCount: 0 
-    };
+  values: number[],
+  minQuality: number = 40,
+  minSamples: number = 20
+): boolean {
+  if (values.length < minSamples) {
+    return false;
   }
   
-  // Look for physiological patterns in real signal
-  let crossings = 0;
-  const recentValues = signalHistory.slice(-10);
-  const mean = recentValues.reduce((sum, point) => sum + point.value, 0) / recentValues.length;
+  // Calculate signal quality
+  const recentValues = values.slice(-minSamples);
+  const min = Math.min(...recentValues);
+  const max = Math.max(...recentValues);
+  const range = max - min;
   
-  // Count zero crossings (signal moving above/below mean)
-  for (let i = 1; i < recentValues.length; i++) {
-    if ((recentValues[i].value > mean && recentValues[i-1].value <= mean) ||
-        (recentValues[i].value <= mean && recentValues[i-1].value > mean)) {
+  if (range < 0.01) {
+    return false;
+  }
+  
+  // Check for rhythmic patterns (simplified)
+  const crossings = countZeroCrossings(normalizeSignal(recentValues));
+  const hasPulsatilePattern = crossings >= 2 && crossings <= 8;
+  
+  // Calculate signal quality
+  const quality = calculateSignalQuality(recentValues);
+  
+  return quality >= minQuality && hasPulsatilePattern;
+}
+
+/**
+ * Count zero crossings in a signal
+ */
+function countZeroCrossings(signal: number[]): number {
+  let crossings = 0;
+  for (let i = 1; i < signal.length; i++) {
+    if ((signal[i] >= 0 && signal[i-1] < 0) || (signal[i] < 0 && signal[i-1] >= 0)) {
       crossings++;
     }
   }
+  return crossings;
+}
+
+/**
+ * Normalize a signal to have zero mean
+ */
+function normalizeSignal(signal: number[]): number[] {
+  const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+  return signal.map(val => val - mean);
+}
+
+/**
+ * Calculate signal quality
+ */
+function calculateSignalQuality(values: number[]): number {
+  if (values.length < 3) {
+    return 0;
+  }
   
-  // Physiological heart rate should have 2-5 crossings in this window
-  const hasPhysiologicalPattern = crossings >= 2 && crossings <= 5;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
   
-  // Update pattern detection count
-  let newPatternCount = hasPhysiologicalPattern 
-    ? currentPatternCount + 1 
-    : Math.max(0, currentPatternCount - 1);
+  if (range < 0.01) {
+    return 0;
+  }
   
-  // Only detect finger after consistent pattern detection
-  const isDetected = newPatternCount >= 3;
+  // Calculate noise level
+  let noise = 0;
+  for (let i = 2; i < values.length; i++) {
+    const diff = Math.abs(values[i] - 2 * values[i-1] + values[i-2]);
+    noise += diff;
+  }
+  noise /= (values.length - 2);
   
-  return {
-    isFingerDetected: isDetected,
-    patternCount: newPatternCount
-  };
+  // Calculate SNR and convert to quality metric
+  const snr = range / Math.max(0.001, noise);
+  return Math.min(100, Math.max(0, snr * 50));
 }

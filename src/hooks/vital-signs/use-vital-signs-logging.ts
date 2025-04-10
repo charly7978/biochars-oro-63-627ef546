@@ -1,66 +1,65 @@
-
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
-import { useRef } from 'react';
-import { updateSignalLog } from '../../utils/signalLogUtils';
+import { useRef, useCallback } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 
 /**
  * Hook for logging vital signs data
- * Used with real data only
  */
-export const useVitalSignsLogging = () => {
-  const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
+export function useVitalSignsLogging() {
+  // Store logs in a ref to avoid re-renders
+  const logRef = useRef<{timestamp: number, value: number, result: VitalSignsResult, signalNumber: number}[]>([]);
+  const MAX_LOGS = 100;
   
   /**
-   * Update the signal log with new data
+   * Log signal data along with results
    */
-  const logSignalData = (
-    value: number, 
-    result: VitalSignsResult, 
-    processedSignalCount: number
-  ) => {
-    const currentTime = Date.now();
-    signalLog.current = updateSignalLog(
-      signalLog.current, 
-      currentTime, 
-      value, 
-      result, 
-      processedSignalCount
-    );
-    
-    // Log processed signals periodically
-    if (processedSignalCount % 100 === 0) {
-      console.log("useVitalSignsProcessor: Processing status with real data", {
-        processed: processedSignalCount,
-        pressure: result.pressure,
-        spo2: result.spo2,
-        glucose: result.glucose,
-        hasValidBP: result.pressure !== "--/--"
-      });
+  const logSignalData = useCallback((value: number, result: VitalSignsResult, signalNumber: number) => {
+    // Only log every 10th signal to save memory
+    if (signalNumber % 10 === 0) {
+      const logEntry = {
+        timestamp: Date.now(),
+        value,
+        result,
+        signalNumber
+      };
+      
+      logRef.current.push(logEntry);
+      
+      // Keep the log size limited
+      if (logRef.current.length > MAX_LOGS) {
+        logRef.current.shift();
+      }
+      
+      // Log to console periodically
+      if (signalNumber % 50 === 0) {
+        console.log('VitalSignsLog:', {
+          signalNumber,
+          value,
+          spo2: result.spo2,
+          pressure: result.pressure,
+          arrhythmiaStatus: result.arrhythmiaStatus,
+          time: new Date().toISOString()
+        });
+      }
     }
-  };
+  }, []);
   
   /**
-   * Clear the signal log
+   * Get all logs
    */
-  const clearLog = () => {
-    signalLog.current = [];
-  };
+  const getLogs = useCallback(() => {
+    return [...logRef.current];
+  }, []);
   
   /**
-   * Get the current signal log
+   * Clear all logs
    */
-  const getSignalLog = () => {
-    return signalLog.current.slice(-10);
-  };
+  const clearLog = useCallback(() => {
+    logRef.current = [];
+  }, []);
   
   return {
     logSignalData,
-    clearLog,
-    getSignalLog,
-    signalLog
+    getLogs,
+    clearLog
   };
-};
+}

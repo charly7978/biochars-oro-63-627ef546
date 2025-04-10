@@ -1,13 +1,16 @@
+
 import { RRData } from '../signal/PeakDetector';
+
+export interface ArrhythmiaData {
+  timestamp: number;
+  rmssd: number;
+  rrVariation: number;
+  category?: string;
+}
 
 export interface ArrhythmiaResult {
   arrhythmiaStatus: 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
-  lastArrhythmiaData: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-    category?: string;
-  } | null;
+  lastArrhythmiaData: ArrhythmiaData | null;
   count: number;
   debugLog?: string[];
 }
@@ -31,7 +34,7 @@ export class ArrhythmiaDetector {
   private measurementStartTime: number = Date.now();
   private lastRMSSD: number = 0;
   private lastRRVariation: number = 0;
-  private lastArrhythmiaData: ArrhythmiaResult['lastArrhythmiaData'] = null;
+  private lastArrhythmiaData: ArrhythmiaData | null = null;
   private debugLog: string[] = [];
 
   constructor(private userProfile: UserProfile = { age: 30 }) {
@@ -146,5 +149,9 @@ export class ArrhythmiaDetector {
 
   public getDebugLog(): string[] {
     return [...this.debugLog];
+  }
+  
+  public getArrhythmiaCount(): number {
+    return this.arrhythmiaCounter;
   }
 }
