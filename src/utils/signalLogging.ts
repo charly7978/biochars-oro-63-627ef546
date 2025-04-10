@@ -1,4 +1,3 @@
-
 /**
  * Signal logging utilities for debugging and monitoring
  */
@@ -148,4 +147,23 @@ export function getErrorStats(timeWindow: number = 60000) {
     sourceCounts,
     recentErrors: recentErrors.slice(-10) // Last 10 errors
   };
+}
+
+/**
+ * Log arrhythmia detection events
+ */
+export function logArrhythmiaEvent(
+  timestamp: number, 
+  isNewArrhythmia: boolean, 
+  details: any
+) {
+  return logSignalProcessing(
+    isNewArrhythmia ? LogLevel.WARN : LogLevel.INFO,
+    'ArrhythmiaDetection',
+    isNewArrhythmia ? 'New arrhythmia detected' : 'Arrhythmia status update',
+    {
+      timestamp,
+      ...details
+    }
+  );
 }

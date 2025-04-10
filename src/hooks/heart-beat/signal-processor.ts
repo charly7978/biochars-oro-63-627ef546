@@ -1,3 +1,4 @@
+
 import { useCallback, useRef } from 'react';
 
 interface SignalProcessingResult {
@@ -137,8 +138,10 @@ export function useSignalProcessor() {
       }
     }
     
-    // Arrhythmia segment management
+    // Arrhythmia segment management - improved to better isolate arrhythmias
     let arrhythmiaSegment = null;
+    
+    // If this beat has arrhythmia
     if (currentBeatIsArrhythmiaRef.current) {
       // If this is the start of a new arrhythmia
       if (currentArrhythmiaSegmentRef.current === null) {
@@ -153,7 +156,9 @@ export function useSignalProcessor() {
       }
       
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
-    } else if (currentArrhythmiaSegmentRef.current !== null) {
+    } 
+    // If no arrhythmia on this beat but we had one active, close it
+    else if (currentArrhythmiaSegmentRef.current !== null) {
       // End of arrhythmia segment
       currentArrhythmiaSegmentRef.current.endTime = Date.now();
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };

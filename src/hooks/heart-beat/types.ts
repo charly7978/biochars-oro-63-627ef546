@@ -30,5 +30,5 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
-  arrhythmiaSegments?: Array<{startTime: number, endTime: number | null}>;
+  arrhythmiaSegments: Array<{startTime: number, endTime: number | null}>;
 }

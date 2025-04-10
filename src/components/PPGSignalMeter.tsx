@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -792,9 +791,7 @@ const PPGSignalMeter = memo(({
     let shouldBeep = false;
     
     if (points.length > 1) {
-      let firstPoint = true;
-      let currentPathColor = '#0EA5E9'; // Default blue color
-      
+      // Instead of drawing the entire signal at once, draw segments with appropriate colors
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
         const point = points[i];
@@ -805,43 +802,24 @@ const PPGSignalMeter = memo(({
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = canvas.height / 2 - point.value;
         
-        if (firstPoint) {
+        // Only draw if points are within canvas
+        if (x1 >= 0 && x1 <= canvas.width && x2 >= 0 && x2 <= canvas.width) {
+          // Set color based on whether this specific point is part of an arrhythmia
           renderCtx.beginPath();
-          renderCtx.strokeStyle = prevPoint.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          renderCtx.strokeStyle = point.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.lineWidth = 2;
           renderCtx.lineJoin = 'round';
           renderCtx.lineCap = 'round';
           renderCtx.moveTo(x1, y1);
-          firstPoint = false;
-          currentPathColor = prevPoint.isArrhythmia ? '#DC2626' : '#0EA5E9';
-        }
-        
-        // If current point has different arrhythmia status than current path
-        if ((point.isArrhythmia && currentPathColor === '#0EA5E9') || 
-            (!point.isArrhythmia && currentPathColor === '#DC2626')) {
-          // Complete current path
           renderCtx.lineTo(x2, y2);
           renderCtx.stroke();
-          
-          // Start new path with different color
-          renderCtx.beginPath();
-          currentPathColor = point.isArrhythmia ? '#DC2626' : '#0EA5E9';
-          renderCtx.strokeStyle = currentPathColor;
-          renderCtx.moveTo(x2, y2);
-        } else {
-          // Continue current path
-          renderCtx.lineTo(x2, y2);
         }
-      }
-      
-      // Complete the last path if needed
-      if (!firstPoint) {
-        renderCtx.stroke();
       }
       
       // Draw arrhythmia waveform overlays for better visualization
       visualizeArrhythmiaWaveforms(renderCtx, now);
       
+      // Draw peaks with proper coloring
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - peak.value;
@@ -859,13 +837,13 @@ const PPGSignalMeter = memo(({
             renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
-            renderCtx.font = 'bold 18px Inter'; // Increased from 14px to 18px
+            renderCtx.font = 'bold 18px Inter';
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 25);
           }
           
-          renderCtx.font = 'bold 16px Inter'; // Increased from 14px to 16px
+          renderCtx.font = 'bold 16px Inter';
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
