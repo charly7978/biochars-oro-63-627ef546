@@ -1,14 +1,12 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-// Remove or comment out the problematic import
-// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
+// Corregir importación para usar FeedbackState desde types.ts
+import { FeedbackState } from './types';
 
 import { 
   applyBidirectionalFeedback, 
-  FeedbackState, 
   createInitialFeedbackState 
 } from './bidirectional-feedback';
 
@@ -33,6 +31,29 @@ export function getGlobalFeedbackState(): FeedbackState {
  */
 export function updateGlobalFeedbackState(newState: FeedbackState): void {
   globalFeedbackState = newState;
+  
+  // Añadir logs detallados para probar que los cambios realmente ocurren
+  console.log("Sistema de retroalimentación actualizado:", {
+    timestamp: new Date().toISOString(),
+    señal: {
+      intensidad: (newState.signalQuality.signalStrength * 100).toFixed(2) + '%',
+      detecciónDedo: (newState.signalQuality.fingerDetectionConfidence * 100).toFixed(2) + '%'
+    },
+    ritmoCardíaco: {
+      bpm: newState.heartRate.currentBPM,
+      confianza: (newState.heartRate.confidence * 100).toFixed(2) + '%',
+      pico: newState.heartRate.isPeak ? 'ACTIVO' : 'inactivo'
+    },
+    análisis: {
+      oxígeno: (newState.vitalSigns.spo2Quality * 100).toFixed(2) + '%',
+      glucosa: newState.vitalSigns.glucoseReliability 
+        ? (newState.vitalSigns.glucoseReliability * 100).toFixed(2) + '%'
+        : 'no disponible',
+      lípidos: newState.vitalSigns.lipidsReliability
+        ? (newState.vitalSigns.lipidsReliability * 100).toFixed(2) + '%'
+        : 'no disponible'
+    }
+  });
 }
 
 /**

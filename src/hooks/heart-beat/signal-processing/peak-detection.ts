@@ -81,11 +81,11 @@ export function handlePeakDetection(
     const updatedFeedback = updateHeartRateFeedback(
       feedbackState,
       {
-        isPeak: true,
-        confidence: result.confidence,
         currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
+        confidence: result.confidence,
         peakStrength: Math.abs(value),
-        rhythmStability: result.rhythmVariability ? 1 - result.rhythmVariability : feedbackState.heartRate.rhythmStability
+        rhythmStability: result.rhythmVariability ? 1 - result.rhythmVariability : feedbackState.heartRate.rhythmStability,
+        isPeak: true
       }
     );
     
@@ -110,5 +110,20 @@ export function handlePeakDetection(
         fingerDetection: updatedFeedback.signalQuality.fingerDetectionConfidence
       }
     });
+  } else {
+    // Actualizar el estado para indicar que no hay pico
+    const updatedFeedback = updateHeartRateFeedback(
+      feedbackState,
+      {
+        currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
+        confidence: result.confidence,
+        peakStrength: Math.abs(value),
+        rhythmStability: result.rhythmVariability ? 1 - result.rhythmVariability : feedbackState.heartRate.rhythmStability,
+        isPeak: false
+      }
+    );
+    
+    // Update global feedback state con isPeak = false
+    updateGlobalFeedbackState(updatedFeedback);
   }
 }

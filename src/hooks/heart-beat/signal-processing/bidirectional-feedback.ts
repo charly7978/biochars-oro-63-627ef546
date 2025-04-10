@@ -41,6 +41,7 @@ export interface HeartRateFeedback {
   confidence: number;
   peakStrength: number;
   rhythmStability: number;
+  isPeak?: boolean;
 }
 
 export interface VitalSignsFeedback {
