@@ -1,3 +1,4 @@
+
 import { PPGProcessor } from './signal/PPGProcessor';
 import { PeakDetector, RRData } from './signal/PeakDetector';
 import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
@@ -188,7 +189,7 @@ export class VitalSignsProcessor {
     const spo2 = this.calculateSpO2(this.ppgValues);
     
     // Calcular presión arterial
-    const bloodPressure = this.bpAnalyzer.estimate(this.ppgValues);
+    const bloodPressure = this.bpAnalyzer.calculateBloodPressure(this.ppgValues);
     
     // Calcular métricas no invasivas
     const glucose = this.glucoseEstimator.estimate(this.ppgValues);

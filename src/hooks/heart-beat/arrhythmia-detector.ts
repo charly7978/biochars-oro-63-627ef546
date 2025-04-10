@@ -4,7 +4,6 @@
  */
 
 import { useCallback, useRef } from 'react';
-import { VitalSignsConfig } from '../../core/config/VitalSignsConfig';
 import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
 
 /**
@@ -23,7 +22,7 @@ export function useArrhythmiaDetector() {
    * Using direct measurement algorithms only
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    if (rrIntervals.length < VitalSignsConfig.arrhythmia.DATA.REQUIRED_RR_INTERVALS) {
+    if (rrIntervals.length < 5) {
       return {
         rmssd: 0,
         rrVariation: 0,

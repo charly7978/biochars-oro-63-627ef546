@@ -2,18 +2,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
+import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
-
-// Define RRAnalysisResult locally since import is causing issues
-interface RRAnalysisResult {
-  rmssd: number;
-  rrVariation: number;
-  timestamp: number;
-  isArrhythmia: boolean;
-}
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
