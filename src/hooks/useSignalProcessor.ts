@@ -72,14 +72,16 @@ export const useSignalProcessor = () => {
     processor.onSignalReady = onSignalReady;
     processor.onError = onError;
 
-    // No need to call initialize as it doesn't exist
-    console.log("useSignalProcessor: Processor initialized");
+    // Initialize processor - we need to call this for compatibility
+    processor.initialize().catch(error => {
+      console.error("useSignalProcessor: Error de inicialización:", error);
+    });
 
     // Cleanup
     return () => {
       // Stop processing if needed
       if (isProcessing) {
-        processor.reset(); // Use reset instead of stop
+        processor.stop();
       }
     };
   }, [processor, isProcessing]);
@@ -100,7 +102,7 @@ export const useSignalProcessor = () => {
     });
     
     processor.reset(); // Reset processor first
-    // No need to call start, just set the state
+    processor.start(); // Call start method
   }, [processor]);
 
   /**
@@ -110,7 +112,7 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Deteniendo procesamiento de señales REALES");
     
     setIsProcessing(false);
-    processor.reset(); // Use reset instead of stop
+    processor.stop(); // Call stop method
   }, [processor]);
 
   /**

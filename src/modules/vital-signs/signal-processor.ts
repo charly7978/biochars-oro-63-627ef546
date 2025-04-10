@@ -5,10 +5,35 @@
 export class SignalProcessor {
   private ppgValues: number[] = [];
   private readonly FILTER_WINDOW_SIZE = 5;
+  private isInitialized: boolean = false;
   
   // Add custom properties for callbacks
   public onSignalReady?: (signal: any) => void;
   public onError?: (error: any) => void;
+  
+  /**
+   * Initialize the processor
+   */
+  public async initialize(): Promise<void> {
+    console.log("SignalProcessor: Initializing");
+    this.isInitialized = true;
+    return Promise.resolve();
+  }
+  
+  /**
+   * Start processing
+   */
+  public start(): void {
+    console.log("SignalProcessor: Starting processing");
+  }
+  
+  /**
+   * Stop processing
+   */
+  public stop(): void {
+    console.log("SignalProcessor: Stopping processing");
+    this.reset();
+  }
   
   /**
    * Apply Simple Moving Average filter to smooth signal
