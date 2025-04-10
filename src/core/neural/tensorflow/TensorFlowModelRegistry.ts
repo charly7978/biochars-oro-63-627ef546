@@ -1,223 +1,256 @@
 
 import * as tf from '@tensorflow/tfjs';
-import { TFHeartRateModel } from './models/TFHeartRateModel';
+import { TensorFlowConfig } from './TensorFlowConfig';
+import { DEFAULT_TENSORFLOW_CONFIG } from './TensorFlowConfig';
+import { CalibrableModel } from './models/TFBaseModel';
 
 /**
- * Registro de modelos TensorFlow para manejo centralizado
+ * Registro central de modelos TensorFlow
+ * Gestiona todos los modelos, su carga y calibración
  */
 export class TensorFlowModelRegistry {
   private static instance: TensorFlowModelRegistry;
-  private models: Map<string, any> = new Map();
-  private initialized: boolean = false;
-  private activeBackend: string = '';
+  private isInitialized: boolean = false;
+  private isInitializing: boolean = false;
+  private models: Map<string, CalibrableModel> = new Map();
+  private config: TensorFlowConfig;
   private supportedBackends: string[] = [];
+  private activeBackend: string = '';
   
-  private constructor() {
-    // Singleton
+  private constructor(config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG) {
+    this.config = config;
   }
   
   /**
-   * Obtiene la instancia singleton
+   * Obtiene la instancia singleton del registro
    */
-  public static getInstance(): TensorFlowModelRegistry {
+  public static getInstance(config?: TensorFlowConfig): TensorFlowModelRegistry {
     if (!TensorFlowModelRegistry.instance) {
-      TensorFlowModelRegistry.instance = new TensorFlowModelRegistry();
+      TensorFlowModelRegistry.instance = new TensorFlowModelRegistry(config);
+    } else if (config) {
+      TensorFlowModelRegistry.instance.setConfig(config);
     }
+    
     return TensorFlowModelRegistry.instance;
   }
   
   /**
-   * Inicializa el registro y configura TensorFlow
+   * Inicializa TensorFlow.js con la configuración especificada
    */
-  public async initialize(): Promise<void> {
-    if (this.initialized) return;
+  public async initialize(): Promise<boolean> {
+    if (this.isInitialized) return true;
+    if (this.isInitializing) {
+      return new Promise<boolean>((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (this.isInitialized) {
+            clearInterval(checkInterval);
+            resolve(true);
+          }
+        }, 100);
+      });
+    }
+    
+    this.isInitializing = true;
     
     try {
-      console.log('Initializing TensorFlow Model Registry');
+      console.log('TensorFlowModelRegistry: Inicializando TensorFlow.js');
       
-      // Configurar TensorFlow
-      await this.setupTensorFlow();
+      // Determinar backends disponibles
+      this.supportedBackends = await this.detectSupportedBackends();
       
-      // Registrar modelos
-      this.registerModels();
-      
-      this.initialized = true;
-      console.log('TensorFlow Model Registry initialized');
-    } catch (error) {
-      console.error('Error initializing TensorFlow Model Registry:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Configura TensorFlow
-   */
-  private async setupTensorFlow(): Promise<void> {
-    try {
-      // Check available backends
-      this.supportedBackends = ['cpu'];
-      
-      // Check for WebGL support
-      if (tf.backend() && typeof window !== 'undefined') {
-        const canvas = document.createElement('canvas');
-        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-        if (gl !== null) {
-          this.supportedBackends.push('webgl');
-        }
+      // Configurar backend preferido si está disponible
+      if (this.supportedBackends.includes(this.config.backend)) {
+        await tf.setBackend(this.config.backend);
+      } else if (this.supportedBackends.includes('webgl')) {
+        await tf.setBackend('webgl');
+      } else {
+        await tf.setBackend('cpu');
       }
       
-      // Check for WebGPU support
-      if (typeof (window as any).WebGPUComputeContext !== 'undefined') {
-        this.supportedBackends.push('webgpu');
-      }
-      
-      // Try to use WebGL if available
-      await tf.setBackend('webgl')
-        .catch(() => tf.setBackend('cpu'));
-      
-      // Store active backend
+      // Guardar backend activo
       this.activeBackend = tf.getBackend();
       
-      // Optimizations
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-      tf.env().set('WEBGL_PACK', true);
+      // Aplicar configuraciones de memoria
+      if (this.config.memoryOptions.useFloat16) {
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+      }
       
-      console.log(`TensorFlow initialized with ${this.activeBackend} backend`);
+      if (this.config.memoryOptions.enableTensorPacking) {
+        tf.env().set('WEBGL_PACK', true);
+      }
+      
+      if (this.config.memoryOptions.gpuMemoryLimitMB > 0) {
+        tf.env().set('WEBGL_RENDERER_PREFERENCE', 'high-performance');
+        tf.env().set('WEBGL_VERSION', 2);
+        tf.env().set('WEBGL_MAX_TEXTURE_SIZE', 16384);
+        
+        // Limitar memoria
+        const bytesPerMB = 1048576;
+        const limitBytes = this.config.memoryOptions.gpuMemoryLimitMB * bytesPerMB;
+        tf.engine().configureNextOpHandler((op) => {
+          if (tf.memory().numBytes > limitBytes) {
+            tf.engine().endScope();
+            tf.engine().startScope();
+          }
+          return op();
+        });
+      }
+      
+      // Configuraciones avanzadas para WebGL/WebGPU
+      if (this.config.advancedOptions.enablePlatformOptimizations) {
+        tf.env().set('CPU_HANDOFF_SIZE_THRESHOLD', 128);
+        tf.env().set('WEBGL_USE_SHAPES_UNIFORMS', true);
+        tf.env().set('WEBGL_PACK_BINARY_OPERATIONS', true);
+      }
+      
+      // Configurar prioridad para WebGPU si está disponible y preferido
+      if (this.config.advancedOptions.preferWebGPU && this.supportedBackends.includes('webgpu')) {
+        // WebGPU es experimental en TF.js, pero intentamos activarlo si está configurado
+        tf.env().set('WEBGPU_USE_COMPUTE', true);
+      }
+      
+      console.log(`TensorFlowModelRegistry: TensorFlow.js inicializado usando backend ${this.activeBackend}`);
+      console.log('TensorFlowModelRegistry: Backends disponibles:', this.supportedBackends);
+      
+      this.isInitialized = true;
+      this.isInitializing = false;
+      return true;
     } catch (error) {
-      console.error('Error setting up TensorFlow:', error);
+      console.error('TensorFlowModelRegistry: Error inicializando TensorFlow.js:', error);
+      this.isInitializing = false;
       throw error;
     }
   }
   
   /**
-   * Returns the active backend
+   * Detecta los backends de TensorFlow soportados en el dispositivo
+   */
+  private async detectSupportedBackends(): Promise<string[]> {
+    const supported = [];
+    
+    // Comprobar WebGL
+    try {
+      if (await tf.backend().isWebGLSupported()) {
+        supported.push('webgl');
+      }
+    } catch (e) {
+      console.log('WebGL no soportado:', e);
+    }
+    
+    // Comprobar WebGPU (experimental)
+    try {
+      if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+        supported.push('webgpu');
+      }
+    } catch (e) {
+      console.log('WebGPU no soportado:', e);
+    }
+    
+    // WASM siempre se considera disponible
+    supported.push('wasm');
+    
+    // CPU siempre disponible como fallback
+    supported.push('cpu');
+    
+    return supported;
+  }
+  
+  /**
+   * Registra un nuevo modelo en el registro
+   */
+  public registerModel(id: string, model: CalibrableModel): void {
+    this.models.set(id, model);
+    console.log(`TensorFlowModelRegistry: Modelo registrado: ${id}`);
+  }
+  
+  /**
+   * Obtiene un modelo del registro
+   */
+  public getModel<T extends CalibrableModel>(id: string): T | null {
+    return (this.models.get(id) as T) || null;
+  }
+  
+  /**
+   * Obtiene todos los modelos del registro
+   */
+  public getAllModels(): Map<string, CalibrableModel> {
+    return this.models;
+  }
+  
+  /**
+   * Notifica a todos los modelos que la calibración ha comenzado
+   */
+  public notifyCalibrationStarted(): void {
+    for (const model of this.models.values()) {
+      model.onCalibrationStarted();
+    }
+  }
+  
+  /**
+   * Establece una nueva configuración
+   */
+  public setConfig(config: TensorFlowConfig): void {
+    this.config = config;
+    
+    // Si ya está inicializado, aplicar cambios que no requieran reinicio
+    if (this.isInitialized) {
+      if (this.config.memoryOptions.useFloat16) {
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+      } else {
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', false);
+      }
+      
+      if (this.config.memoryOptions.enableTensorPacking) {
+        tf.env().set('WEBGL_PACK', true);
+      } else {
+        tf.env().set('WEBGL_PACK', false);
+      }
+    }
+  }
+  
+  /**
+   * Obtiene la configuración actual
+   */
+  public getConfig(): TensorFlowConfig {
+    return this.config;
+  }
+  
+  /**
+   * Obtiene el backend activo
    */
   public getActiveBackend(): string {
     return this.activeBackend;
   }
   
   /**
-   * Returns the supported backends
+   * Obtiene los backends soportados
    */
   public getSupportedBackends(): string[] {
-    return [...this.supportedBackends];
+    return this.supportedBackends;
   }
   
   /**
-   * Registra los modelos disponibles
+   * Libera recursos y limpia el registro
    */
-  private registerModels(): void {
-    // Modelos pre-entrenados
-    this.models.set('heartRate', new TFHeartRateModel());
-    
-    // Otros modelos se pueden añadir aquí
-  }
-  
-  /**
-   * Obtiene un modelo por su ID
-   */
-  public getModel<T>(id: string): T | null {
-    if (!this.initialized) {
-      console.warn('TensorFlow Model Registry not initialized');
-    }
-    
-    return (this.models.get(id) as T) || null;
-  }
-  
-  /**
-   * Gets all registered models
-   */
-  public getAllModels(): Map<string, any> {
-    return new Map(this.models);
-  }
-  
-  /**
-   * Notifies all models that calibration has started
-   */
-  public notifyCalibrationStarted(): void {
+  public async dispose(): Promise<void> {
     for (const model of this.models.values()) {
-      if (model && typeof model.onCalibrationStarted === 'function') {
-        model.onCalibrationStarted();
-      }
-    }
-  }
-  
-  /**
-   * Libera todos los modelos
-   */
-  public dispose(): void {
-    for (const [id, model] of this.models.entries()) {
-      if (model && typeof model.dispose === 'function') {
-        model.dispose();
+      if (typeof (model as any).dispose === 'function') {
+        await (model as any).dispose();
       }
     }
     
     this.models.clear();
-    this.initialized = false;
     
-    // Limpiar memoria de TensorFlow
-    tf.disposeVariables();
+    // Limpiar tensores no utilizados
+    tf.dispose();
     
-    // Use the methods available in tf.engine() for cleanup
-    const engine = tf.engine();
-    if (typeof engine.startScope === 'function') {
-      engine.endScope();
-    }
-    
-    console.log('TensorFlow Model Registry disposed');
-  }
-  
-  /**
-   * Reset models to their initial state
-   */
-  public resetModels(specificId?: string): void {
-    if (specificId && this.models.has(specificId)) {
-      const model = this.models.get(specificId);
-      if (model && typeof model.reset === 'function') {
-        model.reset();
-      }
-    } else {
-      // Reset all models
-      for (const model of this.models.values()) {
-        if (model && typeof model.reset === 'function') {
-          model.reset();
-        }
-      }
-    }
-  }
-  
-  /**
-   * Gets information about the model registry
-   */
-  public getModelInfo(): {
-    modelsCount: number;
-    activeBackend: string;
-    supportedBackends: string[];
-    initialized: boolean;
-  } {
-    return {
-      modelsCount: this.models.size,
-      activeBackend: this.activeBackend,
-      supportedBackends: this.supportedBackends,
-      initialized: this.initialized
-    };
-  }
-  
-  /**
-   * Verifica si WebGL está disponible
-   */
-  public isWebGLAvailable(): boolean {
-    try {
-      const canvas = document.createElement('canvas');
-      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      return gl !== null;
-    } catch (e) {
-      return false;
-    }
+    console.log('TensorFlowModelRegistry: Todos los modelos liberados');
   }
 }
 
-// Helper para acceso rápido
-export function getTFModel<T>(id: string): T | null {
-  return TensorFlowModelRegistry.getInstance().getModel<T>(id);
+// Interfaz para modelos calibrables
+export interface CalibrableModel {
+  setCalibrationFactor(factor: number): void;
+  onCalibrationStarted(): void;
+  getPredictionTime(): number;
 }

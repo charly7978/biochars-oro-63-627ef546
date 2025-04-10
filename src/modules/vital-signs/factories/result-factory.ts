@@ -2,11 +2,44 @@
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory class for creating consistent VitalSignsResult objects
+ * Factory para crear resultados consistentes
  */
 export class ResultFactory {
   /**
-   * Creates a VitalSignsResult with all values set to zero or default
+   * Crea un resultado con todos los valores vitales
+   */
+  public static createResult(
+    spo2: number,
+    pressure: string,
+    arrhythmiaStatus: string,
+    glucose: number,
+    lipids: { totalCholesterol: number, triglycerides: number },
+    confidence?: {
+      glucose: number,
+      lipids: number,
+      overall: number
+    },
+    lastArrhythmiaData?: {
+      timestamp: number,
+      rmssd: number,
+      rrVariation: number
+    } | null,
+    hemoglobin: number = 0
+  ): VitalSignsResult {
+    return {
+      spo2,
+      pressure,
+      arrhythmiaStatus,
+      glucose,
+      lipids,
+      confidence,
+      lastArrhythmiaData,
+      hemoglobin
+    };
+  }
+  
+  /**
+   * Crea un resultado con valores vacíos
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
@@ -18,58 +51,7 @@ export class ResultFactory {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hemoglobin: 0,
-      lastArrhythmiaData: null
+      hemoglobin: 0
     };
-  }
-  
-  /**
-   * Creates a VitalSignsResult with the provided values
-   */
-  public static createResult(
-    spo2: number,
-    pressure: string,
-    arrhythmiaStatus: string,
-    glucose: number,
-    lipids: { totalCholesterol: number; triglycerides: number },
-    hemoglobin: number,
-    glucoseConfidence?: number,
-    lipidsConfidence?: number,
-    overallConfidence?: number,
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
-  ): VitalSignsResult {
-    return {
-      spo2,
-      pressure,
-      arrhythmiaStatus,
-      glucose,
-      lipids,
-      hemoglobin,
-      // Store confidence values individually rather than as a nested object
-      // to prevent rendering issues
-      glucoseConfidence: glucoseConfidence,
-      lipidsConfidence: lipidsConfidence,
-      overallConfidence: overallConfidence,
-      lastArrhythmiaData
-    };
-  }
-  
-  /**
-   * Calculate a default hemoglobin value based on SpO2
-   * This is a simple approximation for demonstration purposes
-   */
-  private static calculateDefaultHemoglobin(spo2: number): number {
-    if (spo2 <= 0) return 0;
-    
-    // Very basic approximation
-    // Normally hemoglobin would be measured directly
-    // This is just to demonstrate the feature
-    const base = 14;
-    
-    if (spo2 > 95) return base + Math.random();
-    if (spo2 > 90) return base - 1 + Math.random();
-    if (spo2 > 85) return base - 2 + Math.random();
-    
-    return base - 3 + Math.random();
   }
 }

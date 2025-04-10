@@ -82,7 +82,7 @@ async function loadModel(modelType: string): Promise<tf.LayersModel> {
 
 // Crear modelo fallback básico
 function createFallbackModel(modelType: string): tf.LayersModel {
-  let inputShape: [number, number] = [300, 1];
+  let inputShape: number[] = [300, 1];
   let outputUnits: number = 1;
   
   // Ajustar según tipo de modelo
@@ -156,16 +156,7 @@ async function predict(modelType: string, inputData: number[]): Promise<number[]
       tensor = tf.tensor2d([inputData], [1, inputData.length]);
     } else {
       // Para modelos convolucionales que requieren entrada 3D
-      const reshapedInput: number[][][] = [];
-      const row: number[][] = [];
-      
-      // Crear estructura 3D adecuada: [1, inputData.length, 1]
-      for (let i = 0; i < inputData.length; i++) {
-        row.push([inputData[i]]);
-      }
-      reshapedInput.push(row);
-      
-      tensor = tf.tensor3d(reshapedInput);
+      tensor = tf.tensor3d([inputData], [1, inputData.length, 1]);
     }
     
     // Realizar predicción
