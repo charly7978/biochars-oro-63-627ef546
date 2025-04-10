@@ -2,12 +2,23 @@
 import { ModelRegistry } from '../ModelRegistry';
 
 /**
+ * TensorFlow Model Type definition
+ */
+export interface TensorFlowModel {
+  id: string;
+  name: string;
+  version: string;
+  architecture: string;
+}
+
+/**
  * TensorFlow Model Registry
  * Manages loading and initialization of TensorFlow.js models
  */
 class TensorFlowModelRegistry implements ModelRegistry {
   private models: Map<string, any> = new Map();
   private isInitialized: boolean = false;
+  private modelInitialized: Map<string, boolean> = new Map();
   
   /**
    * Initialize TensorFlow.js models
@@ -64,6 +75,60 @@ class TensorFlowModelRegistry implements ModelRegistry {
    */
   getAvailableModels(): string[] {
     return Array.from(this.models.keys());
+  }
+  
+  /**
+   * Get all models with their metadata
+   */
+  getAllModels(): TensorFlowModel[] {
+    return Array.from(this.models.entries()).map(([id, model]) => ({
+      id,
+      name: model?.name || "Unknown model",
+      version: model?.version || "1.0.0",
+      architecture: model?.architecture || "TensorFlow.js"
+    }));
+  }
+  
+  /**
+   * Reset models
+   */
+  resetModels(specificId?: string): void {
+    if (specificId) {
+      this.models.delete(specificId);
+      this.modelInitialized.set(specificId, false);
+    } else {
+      this.models.clear();
+      this.modelInitialized.clear();
+      this.isInitialized = false;
+    }
+  }
+  
+  /**
+   * Get model info
+   */
+  getModelInfo(): Array<{
+    id: string;
+    name: string;
+    version: string;
+    initialized: boolean;
+    architecture: string;
+  }> {
+    return Array.from(this.models.entries()).map(([id, model]) => ({
+      id,
+      name: model?.name || "Unknown model",
+      version: model?.version || "1.0.0",
+      initialized: this.modelInitialized.get(id) || false,
+      architecture: model?.architecture || "TensorFlow.js"
+    }));
+  }
+  
+  /**
+   * Dispose resources
+   */
+  dispose(): void {
+    this.models.clear();
+    this.modelInitialized.clear();
+    this.isInitialized = false;
   }
 }
 

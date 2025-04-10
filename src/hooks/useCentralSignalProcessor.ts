@@ -143,6 +143,7 @@ export const useCentralSignalProcessor = () => {
     const heartbeat = processHeartBeat(value);
     
     // Get RR data from heartbeat result if available
+    // Safely handle potential undefined rrData
     const rrData = heartbeat?.rrData || undefined;
     
     // Process vital signs with RR data from heartbeat

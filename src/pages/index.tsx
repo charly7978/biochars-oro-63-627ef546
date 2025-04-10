@@ -26,7 +26,7 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [tensorFlowInitialized, setTensorFlowInitialized] = useState(false);
-  const measurementTimerRef = useRef(null);
+  const measurementTimerRef = useRef<number | null>(null);
   const processingDataRef = useRef({
     lastProcessedTime: 0,
     processedFrames: 0,
@@ -76,18 +76,18 @@ const Index = () => {
     try {
       if (elem.requestFullscreen) {
         await elem.requestFullscreen({ navigationUI: "hide" });
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
-      } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen({ navigationUI: "hide" });
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen({ navigationUI: "hide" });
+      } else if ((elem as any).webkitRequestFullscreen) {
+        await (elem as any).webkitRequestFullscreen({ navigationUI: "hide" });
+      } else if ((elem as any).mozRequestFullScreen) {
+        await (elem as any).mozRequestFullScreen({ navigationUI: "hide" });
+      } else if ((elem as any).msRequestFullscreen) {
+        await (elem as any).msRequestFullscreen({ navigationUI: "hide" });
       }
       
       // Android fullscreen para máximo rendimiento
       if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.AndroidFullScreen) {
-          window.AndroidFullScreen.immersiveMode(
+        if ((window as any).AndroidFullScreen) {
+          (window as any).AndroidFullScreen.immersiveMode(
             function() { console.log('Modo inmersivo activado'); },
             function() { console.log('Error al activar modo inmersivo'); }
           );
@@ -102,7 +102,7 @@ const Index = () => {
   useEffect(() => {
     console.log("Index: Inicializando configuración de pantalla");
     
-    const preventScroll = (e) => e.preventDefault();
+    const preventScroll = (e: Event) => e.preventDefault();
     
     const lockOrientation = async () => {
       try {
@@ -116,7 +116,7 @@ const Index = () => {
     
     const setMaxResolution = () => {
       if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = 1 / window.devicePixelRatio;
+        document.body.style.zoom = `${1 / window.devicePixelRatio}`;
       }
     };
     
@@ -267,7 +267,7 @@ const Index = () => {
   };
 
   // Procesar stream de cámara
-  const handleStreamReady = (stream) => {
+  const handleStreamReady = (stream: MediaStream) => {
     console.log("Index: Flujo de cámara listo para procesamiento REAL");
     
     if (!isMonitoring) return;
@@ -288,7 +288,7 @@ const Index = () => {
         height: { ideal: maxHeight },
         torch: true
       }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities()?.torch) {
+    } else if ('torch' in videoTrack.getCapabilities()) {
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
       }).catch(err => console.error("Error activando linterna:", err));

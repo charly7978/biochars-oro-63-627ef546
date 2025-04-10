@@ -1,31 +1,24 @@
 
 /**
- * Function to check signal quality and detect weak signals
- * Used to identify when the finger is removed from the sensor
+ * Signal quality assessment utility
  */
 export const checkSignalQuality = (
-  value: number, 
-  weakSignalsCount: number,
-  options: {
+  value: number,
+  currentWeakSignalsCount: number,
+  config: {
     lowSignalThreshold: number;
     maxWeakSignalCount: number;
   }
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } => {
-  const { lowSignalThreshold, maxWeakSignalCount } = options;
-  
-  // Check if the signal is too weak (potentially finger removed)
-  const isWeakSignal = value < lowSignalThreshold;
-  let updatedWeakSignalsCount = weakSignalsCount;
-  
-  // If signal is weak, increment counter, otherwise decrement it gradually
+  // Check for weak signal
+  const isWeakSignal = value < config.lowSignalThreshold;
+  let updatedWeakSignalsCount = currentWeakSignalsCount;
+
   if (isWeakSignal) {
-    updatedWeakSignalsCount = Math.min(maxWeakSignalCount, updatedWeakSignalsCount + 1);
+    updatedWeakSignalsCount = Math.min(config.maxWeakSignalCount, updatedWeakSignalsCount + 1);
   } else {
     updatedWeakSignalsCount = Math.max(0, updatedWeakSignalsCount - 0.5);
   }
-  
-  return { 
-    isWeakSignal: updatedWeakSignalsCount >= maxWeakSignalCount, 
-    updatedWeakSignalsCount 
-  };
+
+  return { isWeakSignal, updatedWeakSignalsCount };
 };
