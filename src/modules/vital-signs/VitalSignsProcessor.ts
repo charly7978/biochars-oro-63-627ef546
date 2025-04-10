@@ -1,11 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
-import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
@@ -13,6 +11,7 @@ import { ResultFactory } from './factories/result-factory';
 import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
+import { ArrhythmiaDetectionService } from '../../services/ArrhythmiaDetectionService';
 
 /**
  * Main vital signs processor
@@ -23,7 +22,7 @@ export class VitalSignsProcessor {
   // Specialized processors
   private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaProcessor: ArrhythmiaProcessor;
+  private arrhythmiaService: ArrhythmiaDetectionService;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
@@ -42,7 +41,7 @@ export class VitalSignsProcessor {
     // Initialize specialized processors
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
-    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
+    this.arrhythmiaService = new ArrhythmiaDetectionService();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
@@ -73,8 +72,15 @@ export class VitalSignsProcessor {
     const arrhythmiaResult = rrData && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+                           this.arrhythmiaService.detectArrhythmia(rrData) :
+                           { 
+                             isArrhythmia: false, 
+                             arrhythmiaStatus: "--", 
+                             confidence: 0, 
+                             timestamp: Date.now(),
+                             rmssd: 0,     // Ensure these values are always provided
+                             rrVariation: 0 // Ensure these values are always provided
+                           };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -153,7 +159,7 @@ export class VitalSignsProcessor {
         lipids: lipidsConfidence,
         overall: overallConfidence
       },
-      arrhythmiaResult.lastArrhythmiaData
+      arrhythmiaResult
     );
   }
 
@@ -164,7 +170,7 @@ export class VitalSignsProcessor {
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
-    this.arrhythmiaProcessor.reset();
+    this.arrhythmiaService.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
@@ -176,7 +182,7 @@ export class VitalSignsProcessor {
    * Get arrhythmia counter
    */
   public getArrhythmiaCounter(): number {
-    return this.arrhythmiaProcessor.getArrhythmiaCount();
+    return this.arrhythmiaService.getArrhythmiaCount();
   }
   
   /**
