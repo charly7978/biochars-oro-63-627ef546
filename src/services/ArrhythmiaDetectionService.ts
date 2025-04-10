@@ -1,4 +1,3 @@
-
 /**
  * Consolidated Arrhythmia Detection Service
  * 
@@ -17,8 +16,8 @@ export interface ArrhythmiaDetectionResult {
   isArrhythmia: boolean;
   arrhythmiaStatus: string;
   confidence: number;
-  rmssd?: number;
-  rrVariation?: number;
+  rmssd: number; // Making this required instead of optional
+  rrVariation: number; // Making this required instead of optional
   timestamp: number;
 }
 
@@ -81,6 +80,8 @@ export class ArrhythmiaDetectionService {
         isArrhythmia: false,
         arrhythmiaStatus: "insufficient_data",
         confidence: 0,
+        rmssd: 0,
+        rrVariation: 0,
         timestamp: currentTime
       };
       

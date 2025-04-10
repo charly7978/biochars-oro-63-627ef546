@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -74,7 +73,14 @@ export class VitalSignsProcessor {
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaService.detectArrhythmia(rrData) :
-                           { isArrhythmia: false, arrhythmiaStatus: "--", confidence: 0, timestamp: Date.now() };
+                           { 
+                             isArrhythmia: false, 
+                             arrhythmiaStatus: "--", 
+                             confidence: 0, 
+                             timestamp: Date.now(),
+                             rmssd: 0,     // Ensure these values are always provided
+                             rrVariation: 0 // Ensure these values are always provided
+                           };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();

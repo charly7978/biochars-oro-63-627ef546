@@ -37,12 +37,12 @@ export function useSignalProcessor() {
     lastPeakTime: null
   });
 
-  // Arrhythmia segment tracking
+  // Arrhythmia segment tracking - IMPROVED to be more precise
   const currentArrhythmiaSegmentRef = useRef<{startTime: number, endTime: number | null} | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   
   /**
-   * Process a real PPG signal value
+   * Process a real PPG signal value - IMPROVED arrhythmia detection segments
    */
   const processSignal = useCallback((
     value: number,
@@ -138,14 +138,16 @@ export function useSignalProcessor() {
       }
     }
     
-    // Arrhythmia segment management - improved to better isolate arrhythmias
+    // IMPROVED Arrhythmia segment management
     let arrhythmiaSegment = null;
     
-    // If this beat has arrhythmia
+    // Check if this beat has arrhythmia
     if (currentBeatIsArrhythmiaRef.current) {
+      const now = Date.now();
+      
       // If this is the start of a new arrhythmia
       if (currentArrhythmiaSegmentRef.current === null) {
-        const now = Date.now();
+        // Create a new segment with precise timing
         currentArrhythmiaSegmentRef.current = {
           startTime: now,
           endTime: null
@@ -153,15 +155,23 @@ export function useSignalProcessor() {
         
         // Add to segments list
         arrhythmiaSegmentsRef.current.push(currentArrhythmiaSegmentRef.current);
+        
+        console.log("New arrhythmia segment started at:", new Date(now).toISOString());
       }
       
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
     } 
     // If no arrhythmia on this beat but we had one active, close it
     else if (currentArrhythmiaSegmentRef.current !== null) {
-      // End of arrhythmia segment
-      currentArrhythmiaSegmentRef.current.endTime = Date.now();
+      // End of arrhythmia segment - mark it with precise timing
+      const now = Date.now();
+      currentArrhythmiaSegmentRef.current.endTime = now;
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
+      
+      console.log("Arrhythmia segment ended at:", new Date(now).toISOString(), 
+                  "Duration:", now - currentArrhythmiaSegmentRef.current.startTime, "ms");
+      
+      // Reset the current segment reference
       currentArrhythmiaSegmentRef.current = null;
     }
     

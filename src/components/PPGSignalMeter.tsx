@@ -547,20 +547,25 @@ const PPGSignalMeter = memo(({
 
   // Function to draw arrhythmia regions
   const drawArrhythmiaRegions = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
+    // Get only the active arrhythmia segments that are visible in the current time window
     const activeArrhythmiaSegments = arrhythmiaSegmentsRef.current.filter(
-      segment => !segment.endTime || now - (segment.endTime || 0) < WINDOW_WIDTH_MS
+      segment => !segment.endTime || now - segment.startTime < WINDOW_WIDTH_MS
     );
     
     // Draw arrhythmia background regions
     for (const segment of activeArrhythmiaSegments) {
+      // Calculate the visible portion of the segment
       const startX = CANVAS_WIDTH - ((now - segment.startTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+      
+      // Get end position - either segment end time or current right edge of screen
       const endX = segment.endTime 
         ? CANVAS_WIDTH - ((now - segment.endTime) * CANVAS_WIDTH / WINDOW_WIDTH_MS)
         : CANVAS_WIDTH;
       
+      // Only draw if the segment is visible on screen
       if (startX < CANVAS_WIDTH && endX > 0) {
-        // Draw a semi-transparent background for arrhythmia regions
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';  // Soft red background
+        // Draw a semi-transparent red rectangle for the arrhythmia segment ONLY
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';  // Light red
         ctx.fillRect(
           Math.max(0, startX), 
           0, 
@@ -568,69 +573,31 @@ const PPGSignalMeter = memo(({
           CANVAS_HEIGHT
         );
         
-        // Add a visible boundary
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+        // Add visible boundaries to clearly mark segment start/end
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';  // Darker red
         ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        
-        // Draw left boundary if visible
+        ctx.setLineDash([5, 5]);  // Dashed line
+      
+        // Left boundary (segment start) if visible
         if (startX >= 0 && startX <= CANVAS_WIDTH) {
           ctx.beginPath();
           ctx.moveTo(startX, 0);
           ctx.lineTo(startX, CANVAS_HEIGHT);
           ctx.stroke();
-          
-          // Add "INICIO ARRITMIA" label
-          ctx.font = 'bold 12px Inter';
-          ctx.fillStyle = '#ef4444';
-          ctx.textAlign = 'left';
-          ctx.save();
-          ctx.translate(startX + 8, CANVAS_HEIGHT / 2);
-          ctx.rotate(-Math.PI/2);
-          ctx.fillText('INICIO ARRITMIA', 0, 0);
-          ctx.restore();
         }
         
-        // Draw right boundary if visible and if segment has ended
+        // Right boundary (segment end) if visible and if segment has ended
         if (segment.endTime && endX >= 0 && endX <= CANVAS_WIDTH) {
           ctx.beginPath();
           ctx.moveTo(endX, 0);
           ctx.lineTo(endX, CANVAS_HEIGHT);
           ctx.stroke();
-          
-          // Add "FIN ARRITMIA" label
-          ctx.font = 'bold 12px Inter';
-          ctx.fillStyle = '#ef4444';
-          ctx.textAlign = 'right';
-          ctx.save();
-          ctx.translate(endX - 8, CANVAS_HEIGHT / 2);
-          ctx.rotate(-Math.PI/2);
-          ctx.fillText('FIN ARRITMIA', 0, 0);
-          ctx.restore();
         }
         
-        ctx.setLineDash([]); // Reset dash pattern
-        
-        // For active arrhythmias, add a warning indicator
-        if (!segment.endTime) {
-          // Pulsating warning at the top
-          const pulseAmount = (Math.sin(now / 200) + 1) / 2; // Value between 0 and 1
-          const pulseSize = 10 + pulseAmount * 5;
-          
-          ctx.beginPath();
-          ctx.arc(CANVAS_WIDTH - 30, 30, pulseSize, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(239, 68, 68, ' + (0.5 + pulseAmount * 0.5) + ')';
-          ctx.fill();
-          
-          // Add small warning icon or text
-          ctx.fillStyle = 'white';
-          ctx.font = 'bold 14px Inter';
-          ctx.textAlign = 'center';
-          ctx.fillText('!', CANVAS_WIDTH - 30, 35);
-        }
+        ctx.setLineDash([]);  // Reset dash pattern
       }
     }
-  }, []);
+  }, [CANVAS_HEIGHT, CANVAS_WIDTH, WINDOW_WIDTH_MS]);
 
   // Function to visualize all arrhythmia waveforms
   const visualizeArrhythmiaWaveforms = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
@@ -827,20 +794,16 @@ const PPGSignalMeter = memo(({
         if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
           renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-          renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
+          renderCtx.fillStyle = peak.isArrhythmia ? '#F97316' : '#0EA5E9';  // Orange for arrhythmia peaks
           renderCtx.fill();
           
+          // Add yellow circle highlight ONLY for arrhythmia peaks
           if (peak.isArrhythmia) {
             renderCtx.beginPath();
-            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEF7CD';
-            renderCtx.lineWidth = 3;
+            renderCtx.arc(x, y, 8, 0, Math.PI * 2);
+            renderCtx.strokeStyle = '#FFEB3B';  // Yellow highlight
+            renderCtx.lineWidth = 2;
             renderCtx.stroke();
-            
-            renderCtx.font = 'bold 18px Inter';
-            renderCtx.fillStyle = '#F97316';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText('ARRITMIA', x, y - 25);
           }
           
           renderCtx.font = 'bold 16px Inter';
