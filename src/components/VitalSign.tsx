@@ -1,9 +1,6 @@
-
-import React, { useState } from 'react';
+import React from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp, X } from 'lucide-react';
 
 interface VitalSignProps {
   label: string;
@@ -209,6 +206,22 @@ const VitalSign = ({
           'Apnea del sueño'
         ];
         break;
+      case 'HEMOGLOBINA':
+        info.normalRange = 'Hombres: 13.5-17.5 g/dL / Mujeres: 12.0-15.5 g/dL';
+        info.description = 'La hemoglobina es una proteína en los glóbulos rojos que transporta oxígeno de los pulmones al resto del cuerpo. Niveles bajos pueden indicar anemia.';
+        info.recommendations = [
+          'Consumir alimentos ricos en hierro',
+          'Incluir vitamina C para mejorar la absorción de hierro',
+          'Evitar té y café durante las comidas',
+          'Consultar al médico si hay fatiga persistente'
+        ];
+        info.riskFactors = [
+          'Mala alimentación',
+          'Pérdida de sangre',
+          'Embarazo',
+          'Enfermedades crónicas'
+        ];
+        break;
       default:
         break;
     }
@@ -234,7 +247,10 @@ const VitalSign = ({
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
-            <span className="text-gradient-soft">
+            <span className={cn(
+              "text-gradient-soft",
+              highlighted && "animate-pulse"
+            )}>
               {formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
@@ -259,10 +275,6 @@ const VitalSign = ({
               </div>
             </div>
           )}
-          
-          <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-            <ChevronUp size={16} className="text-gray-400" />
-          </div>
         </div>
       </SheetTrigger>
       

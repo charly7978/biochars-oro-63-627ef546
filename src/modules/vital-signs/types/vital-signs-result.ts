@@ -1,22 +1,37 @@
 
 /**
- * Resultado del procesamiento de signos vitales
+ * Interface defining the structure of vital signs measurement results
  */
 export interface VitalSignsResult {
+  // Blood oxygen saturation percentage
   spo2: number;
+  
+  // Blood pressure in format "systolic/diastolic"
   pressure: string;
+  
+  // Arrhythmia detection status
   arrhythmiaStatus: string;
+  
+  // Blood glucose level in mg/dL
   glucose: number;
+  
+  // Blood lipid levels
   lipids: {
     totalCholesterol: number;
     triglycerides: number;
   };
+  
+  // Hemoglobin level
   hemoglobin: number;
+  
+  // Optional confidence metrics
   confidence?: {
     glucose: number;
     lipids: number;
     overall: number;
   };
+  
+  // Information about the last detected arrhythmia event
   lastArrhythmiaData?: {
     timestamp: number;
     rmssd: number;

@@ -56,10 +56,10 @@ export class VitalSignsProcessor {
    * Processes the real PPG signal and calculates all vital signs
    * Using ONLY direct measurements with no reference values or simulation
    */
-  public async processSignal(
+  public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): Promise<VitalSignsResult> {
+  ): VitalSignsResult {
     // Check for near-zero signal
     if (!this.signalValidator.isValidSignal(ppgValue)) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });

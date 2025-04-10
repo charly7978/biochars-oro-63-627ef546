@@ -70,6 +70,7 @@ export const useSignalProcessing = () => {
     }
     
     // Process signal directly - no simulation
+    // Important: We've changed this to handle sync processing only, avoiding Promise issues
     let result = processorRef.current.processSignal(value, rrData);
     
     return result;

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -364,6 +365,12 @@ const Index = () => {
                 label="TRIGLICÉRIDOS"
                 value={vitalSigns.lipids?.triglycerides || "--"}
                 unit="mg/dL"
+                highlighted={showResults}
+              />
+              <VitalSign 
+                label="HEMOGLOBINA"
+                value={vitalSigns.hemoglobin || "--"}
+                unit="g/dL"
                 highlighted={showResults}
               />
             </div>
