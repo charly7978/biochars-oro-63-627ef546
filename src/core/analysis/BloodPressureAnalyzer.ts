@@ -1,3 +1,4 @@
+
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
 export interface BloodPressureResult {
@@ -27,8 +28,9 @@ export class BloodPressureAnalyzer {
 
   constructor(config: Partial<ProcessorConfig> = {}) {
     const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    this.calibrationFactor = full.nonInvasiveSettings.bpCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.5;
+    // Use a default value of 1.0 if the property doesn't exist
+    this.calibrationFactor = full.nonInvasiveSettings?.calibrationFactor || 1.0;
+    this.confidenceThreshold = full.nonInvasiveSettings?.confidenceThreshold || 0.5;
   }
 
   public estimate(values: number[]): BloodPressureResult {
@@ -73,6 +75,13 @@ export class BloodPressureAnalyzer {
     });
 
     return this.lastEstimate;
+  }
+
+  /**
+   * Calculate blood pressure based on PPG signal characteristics
+   */
+  public calculateBloodPressure(values: number[]): BloodPressureResult {
+    return this.estimate(values);
   }
 
   private extractFeatures(data: number[]) {

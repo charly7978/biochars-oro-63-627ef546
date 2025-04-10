@@ -1,4 +1,3 @@
-
 import { VitalSignsConfig } from '../config/VitalSignsConfig';
 import { RRIntervalData } from '../types';
 
@@ -36,8 +35,8 @@ interface UserProfile {
  */
 export class ArrhythmiaDetectorUnified {
   // Configuration values from centralized config
-  private readonly RMSSD_THRESHOLD: number;
-  private readonly RR_VARIATION_THRESHOLD: number;
+  private RMSSD_THRESHOLD: number;
+  private RR_VARIATION_THRESHOLD: number;
   private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS: number;
   private readonly MAX_ARRHYTHMIAS_PER_SESSION = 10;
   private readonly REQUIRED_RR_INTERVALS: number;
