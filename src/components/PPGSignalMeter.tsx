@@ -69,7 +69,7 @@ const PPGSignalMeter = memo(({
   const GRID_SIZE_X = 25;
   const GRID_SIZE_Y = 5;
   const verticalScale = 55.0;
-  const SMOOTHING_FACTOR = 1.5;
+  const SMOOTHING_FACTOR = 2.5;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
@@ -229,7 +229,9 @@ const PPGSignalMeter = memo(({
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
-    return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
+    
+    const alpha = SMOOTHING_FACTOR * 0.1;
+    return previousValue + alpha * (currentValue - previousValue);
   }, []);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -498,9 +500,12 @@ const PPGSignalMeter = memo(({
     if (points.length > 1) {
       renderCtx.beginPath();
       renderCtx.strokeStyle = '#0EA5E9';
-      renderCtx.lineWidth = 2;
+      renderCtx.lineWidth = 2.5;
       renderCtx.lineJoin = 'round';
       renderCtx.lineCap = 'round';
+      
+      renderCtx.shadowColor = '#0EA5E9';
+      renderCtx.shadowBlur = 1;
       
       let firstPoint = true;
       let lastPointWasArrhythmia = false;
@@ -522,7 +527,15 @@ const PPGSignalMeter = memo(({
             renderCtx.stroke();
             renderCtx.beginPath();
           }
-          renderCtx.strokeStyle = pointIsArrhythmia ? '#DC2626' : '#0EA5E9';
+          
+          if (pointIsArrhythmia) {
+            renderCtx.strokeStyle = '#DC2626';
+            renderCtx.shadowColor = '#DC2626';
+          } else {
+            renderCtx.strokeStyle = '#0EA5E9';
+            renderCtx.shadowColor = '#0EA5E9';
+          }
+          
           renderCtx.moveTo(x1, y1);
           firstPoint = false;
         }
@@ -533,6 +546,7 @@ const PPGSignalMeter = memo(({
       
       if (!firstPoint) {
         renderCtx.stroke();
+        renderCtx.shadowBlur = 0;
       }
       
       peaksRef.current.forEach(peak => {
@@ -569,6 +583,23 @@ const PPGSignalMeter = memo(({
           }
         }
       });
+      
+      const qualityIndicator = getAverageQuality();
+      const qualityColor = qualityIndicator > 65 ? '#10B981' : 
+                            qualityIndicator > 40 ? '#F59E0B' : '#DC2626';
+      
+      renderCtx.fillStyle = qualityColor;
+      renderCtx.globalAlpha = 0.15;
+      renderCtx.fillRect(canvas.width - 15, 20, 10, qualityIndicator * 0.5);
+      renderCtx.globalAlpha = 1.0;
+      
+      if (arrhythmiaStatus && arrhythmiaStatus.includes("ARRITMIA")) {
+        const [status, count] = arrhythmiaStatus.split('|');
+        renderCtx.font = '12px Inter';
+        renderCtx.fillStyle = '#DC2626';
+        renderCtx.textAlign = 'right';
+        renderCtx.fillText(`Arritmias: ${count || "0"}`, canvas.width - 20, 15);
+      }
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -591,7 +622,7 @@ const PPGSignalMeter = memo(({
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
     isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, 
-    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES
+    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES, getAverageQuality
   ]);
 
   useEffect(() => {
