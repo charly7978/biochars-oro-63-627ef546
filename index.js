@@ -25,29 +25,27 @@ const Index = () => {
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat } = useHeartBeatProcessor();
-  const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
+  const { 
+    processSignal: processHeartBeat, 
+    startMonitoring: startHeartMonitoring,
+    stopMonitoring: stopHeartMonitoring
+  } = useHeartBeatProcessor();
+  const { 
+    processSignal: processVitalSigns, 
+    reset: resetVitalSigns,
+    arrhythmiaCounter
+  } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
-    const elem = document.documentElement;
     try {
-      if (elem.requestFullscreen) {
-        await elem.requestFullscreen({ navigationUI: "hide" });
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen({ navigationUI: "hide" });
-      } else if (elem.mozRequestFullScreen) {
-        await elem.mozRequestFullScreen({ navigationUI: "hide" });
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen({ navigationUI: "hide" });
-      }
-      
-      if (window.navigator.userAgent.match(/Android/i)) {
-        if (window.AndroidFullScreen) {
-          window.AndroidFullScreen.immersiveMode(
-            function() { console.log('Immersive mode enabled'); },
-            function() { console.log('Failed to enable immersive mode'); }
-          );
-        }
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      } else if (document.documentElement.webkitRequestFullscreen) {
+        await document.documentElement.webkitRequestFullscreen();
+      } else if (document.documentElement.mozRequestFullScreen) {
+        await document.documentElement.mozRequestFullScreen();
+      } else if (document.documentElement.msRequestFullscreen) {
+        await document.documentElement.msRequestFullscreen();
       }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
@@ -57,58 +55,22 @@ const Index = () => {
   useEffect(() => {
     const preventScroll = (e) => e.preventDefault();
     
-    const lockOrientation = async () => {
-      try {
-        if (screen.orientation?.lock) {
-          await screen.orientation.lock('portrait');
-        }
-      } catch (error) {
-        console.log('No se pudo bloquear la orientación:', error);
-      }
-    };
-    
-    const setMaxResolution = () => {
-      if ('devicePixelRatio' in window && window.devicePixelRatio !== 1) {
-        document.body.style.zoom = 1 / window.devicePixelRatio;
-      }
-    };
-    
-    lockOrientation();
-    setMaxResolution();
-    enterFullScreen();
-    
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
-    document.body.addEventListener('touchstart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturestart', preventScroll, { passive: false });
-    document.body.addEventListener('gesturechange', preventScroll, { passive: false });
-    document.body.addEventListener('gestureend', preventScroll, { passive: false });
     
-    window.addEventListener('orientationchange', enterFullScreen);
-    
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) {
-        setTimeout(enterFullScreen, 1000);
-      }
-    });
-
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
-      document.body.removeEventListener('touchstart', preventScroll);
-      document.body.removeEventListener('gesturestart', preventScroll);
-      document.body.removeEventListener('gesturechange', preventScroll);
-      document.body.removeEventListener('gestureend', preventScroll);
-      window.removeEventListener('orientationchange', enterFullScreen);
-      document.removeEventListener('fullscreenchange', enterFullScreen);
     };
   }, []);
 
   const startMonitoring = () => {
+    console.log("Starting monitoring");
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
     startProcessing();
+    startHeartMonitoring();
     setElapsedTime(0);
     
     if (measurementTimerRef.current) {
@@ -144,6 +106,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
+    stopHeartMonitoring();
     resetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
@@ -162,9 +125,11 @@ const Index = () => {
   };
 
   const stopMonitoring = () => {
+    console.log("Stopping monitoring");
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
+    stopHeartMonitoring();
     resetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
@@ -188,20 +153,15 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    const capabilities = videoTrack.getCapabilities();
-    if (capabilities.width && capabilities.height) {
-      const maxWidth = capabilities.width.max;
-      const maxHeight = capabilities.height.max;
-      
-      videoTrack.applyConstraints({
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
-        torch: true
-      }).catch(err => console.error("Error aplicando configuración de alta resolución:", err));
-    } else if (videoTrack.getCapabilities()?.torch) {
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
+    // Try to turn on the flashlight
+    try {
+      if (videoTrack.getCapabilities().torch) {
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.log("Flash error:", err));
+      }
+    } catch (e) {
+      console.log("Can't enable torch:", e);
     }
     
     const tempCanvas = document.createElement('canvas');
@@ -237,19 +197,36 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
+    if (lastSignal && isMonitoring) {
+      console.log(`Processing signal: ${lastSignal.filteredValue.toFixed(2)}, Finger detected: ${lastSignal.fingerDetected}, Quality: ${lastSignal.quality}`);
       
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+      if (lastSignal.fingerDetected && lastSignal.quality > 30) {
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        console.log(`Heart beat result: BPM=${heartBeatResult.bpm}, Confidence=${heartBeatResult.confidence.toFixed(2)}`);
+        
+        if (heartBeatResult.bpm > 0 && heartBeatResult.confidence > 0.4) {
+          setHeartRate(heartBeatResult.bpm);
+          
+          // Now process vital signs
+          const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          if (vitals) {
+            console.log("Vital signs result:", vitals);
+            setVitalSigns(vitals);
+            
+            // Extract arrhythmia count if available
+            if (vitals.arrhythmiaStatus.includes('|')) {
+              const parts = vitals.arrhythmiaStatus.split('|');
+              setArrhythmiaCount(parts[1] || "--");
+            } else {
+              setArrhythmiaCount(arrhythmiaCounter.toString());
+            }
+          }
+        }
       }
       
       setSignalQuality(lastSignal.quality);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, arrhythmiaCounter]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -258,10 +235,6 @@ const Index = () => {
         width: '100%',
         maxWidth: '100vw',
         maxHeight: '100vh',
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
         touchAction: 'none',
         userSelect: 'none',
       }}>
@@ -308,7 +281,7 @@ const Index = () => {
                 />
                 <VitalSign 
                   label="ARRITMIAS"
-                  value={vitalSigns.arrhythmiaStatus}
+                  value={arrhythmiaCount}
                 />
               </div>
             </div>

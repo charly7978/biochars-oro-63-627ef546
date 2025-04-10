@@ -1,120 +1,265 @@
-import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
-export interface LipidProfile {
+import { ProcessorConfig } from '../config/ProcessorConfig';
+import { VitalSignsConfig } from '../config/VitalSignsConfig';
+
+export interface LipidResult {
   totalCholesterol: number;
   triglycerides: number;
-  confidence: number;
 }
 
+/**
+ * Estimador de lípidos basado en características del pulso
+ */
 export class LipidEstimator {
-  private readonly DEFAULTS = {
-    cholesterol: 170,
-    triglycerides: 100,
-    minCholesterol: 130,
-    maxCholesterol: 240,
-    minTriglycerides: 50,
-    maxTriglycerides: 300
-  };
-
-  private readonly HISTORY_SIZE = 5;
-  private readonly STABILITY_FACTOR = 0.6;
-
-  private history: LipidProfile[] = [];
-  private lastEstimate: LipidProfile = {
-    totalCholesterol: 170,
-    triglycerides: 100,
-    confidence: 0
-  };
-
-  private cholesterolCalibrationFactor: number;
-  private triglycerideCalibrationFactor: number;
-  private confidenceThreshold: number;
-
-  constructor(config: Partial<ProcessorConfig> = {}) {
-    const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    this.cholesterolCalibrationFactor = full.nonInvasiveSettings.cholesterolCalibrationFactor || 1.0;
-    this.triglycerideCalibrationFactor = full.nonInvasiveSettings.triglycerideCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.7;
-    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
+  private confidence: number = 0;
+  private lipidCalibrationFactor: number = 1.0;
+  
+  constructor(private config: ProcessorConfig = {
+    glucoseCalibrationFactor: 1.0,
+    lipidCalibrationFactor: 1.0,
+    hemoglobinCalibrationFactor: 1.0,
+    confidenceThreshold: 0.6,
+    cholesterolCalibrationFactor: 1.0,
+    triglycerideCalibrationFactor: 1.0
+  }) {
+    this.lipidCalibrationFactor = config.lipidCalibrationFactor || 1.0;
   }
-
-  public estimate(values: number[]): LipidProfile {
-    if (values.length < 120) return this.lastEstimate;
-
-    const segment = values.slice(-120);
-    const { absorptionRatio, peakComplexity, waveformWidth } = this.extractSpectralFeatures(segment);
-
-    let cholesterol = this.DEFAULTS.cholesterol + absorptionRatio * 50 - waveformWidth * 10;
-    let triglycerides = this.DEFAULTS.triglycerides + peakComplexity * 40;
-
-    cholesterol *= this.cholesterolCalibrationFactor;
-    triglycerides *= this.triglycerideCalibrationFactor;
-
-    cholesterol = this.bound(cholesterol, this.DEFAULTS.minCholesterol, this.DEFAULTS.maxCholesterol);
-    triglycerides = this.bound(triglycerides, this.DEFAULTS.minTriglycerides, this.DEFAULTS.maxTriglycerides);
-
-    const confidence = this.calculateConfidence(absorptionRatio, peakComplexity, waveformWidth);
-    const smoothed = this.getSmoothedEstimate({ totalCholesterol: cholesterol, triglycerides, confidence });
-    this.lastEstimate = smoothed;
-    return smoothed;
-  }
-
-  private extractSpectralFeatures(data: number[]) {
-    const peak = Math.max(...data);
-    const valley = Math.min(...data);
-    const absorptionRatio = (peak - valley) / (peak + valley + 1e-5);
-    const zeroCrossings = data.reduce((count, val, i, arr) => {
-      if (i === 0) return count;
-      return count + (Math.sign(val) !== Math.sign(arr[i - 1]) ? 1 : 0);
-    }, 0);
-    const peakComplexity = zeroCrossings / data.length;
-    const waveformWidth = data.filter(v => v > valley + (peak - valley) * 0.5).length;
-
-    return { absorptionRatio, peakComplexity, waveformWidth };
-  }
-
-  private calculateConfidence(a: number, p: number, w: number): number {
-    const score = (a > 0.2 ? 1 : 0.6) * (p > 0.05 ? 1 : 0.7) * (w > 10 ? 1 : 0.8);
-    return Math.min(1, score);
-  }
-
-  private getSmoothedEstimate(current: LipidProfile): LipidProfile {
-    this.history.push(current);
-    if (this.history.length > this.HISTORY_SIZE) this.history.shift();
-
-    const avg = this.history.reduce((acc, val) => {
-      acc.totalCholesterol += val.totalCholesterol;
-      acc.triglycerides += val.triglycerides;
-      acc.confidence += val.confidence;
-      return acc;
-    }, { totalCholesterol: 0, triglycerides: 0, confidence: 0 });
-
-    const n = this.history.length;
+  
+  /**
+   * Estima niveles de lípidos basados en características del pulso
+   */
+  public estimate(ppgValues: number[]): LipidResult {
+    if (ppgValues.length < 80) {
+      return {
+        totalCholesterol: 0,
+        triglycerides: 0
+      };
+    }
+    
+    // Calcular índices de señal
+    const filteredValues = this.applyFilter(ppgValues);
+    const peaks = this.detectPeaks(filteredValues);
+    const peakToPeakIntervals = this.calculatePeakIntervals(peaks);
+    
+    // Características clave para predicción
+    const amplitude = this.calculateAmplitude(filteredValues);
+    const pulseWidth = this.calculatePulseWidth(filteredValues, peaks);
+    const decay = this.calculateDecayRate(filteredValues, peaks);
+    
+    // Algoritmo simplificado para estimación a partir de características
+    // En un sistema real, esto utilizaría modelos de aprendizaje profundo
+    
+    // Niveles base saludables
+    const baseCholesterol = 180; // mg/dL
+    const baseTriglycerides = 150; // mg/dL
+    
+    // Ajustar en función de características de la señal
+    const cholesterolFactor = 1 + (amplitude * 0.1) + (pulseWidth * 0.05) - (decay * 0.1);
+    const triglycerideFactor = 1 + (amplitude * 0.08) + (pulseWidth * 0.1) - (decay * 0.05);
+    
+    // Aplicar factores de calibración del dispositivo
+    const cholesterolCalibrationFactor = this.config.cholesterolCalibrationFactor || 1.0;
+    const triglycerideCalibrationFactor = this.config.triglycerideCalibrationFactor || 1.0;
+    
+    const cholesterol = Math.round(baseCholesterol * cholesterolFactor * cholesterolCalibrationFactor);
+    const triglycerides = Math.round(baseTriglycerides * triglycerideFactor * triglycerideCalibrationFactor);
+    
+    // Limitar a rangos fisiológicos
+    const finalCholesterol = this.constrainValue(cholesterol, 120, 300);
+    const finalTriglycerides = this.constrainValue(triglycerides, 50, 500);
+    
+    // Calcular confianza basada en calidad de señal
+    this.confidence = this.calculateConfidence(filteredValues, peaks);
+    
     return {
-      totalCholesterol: (avg.totalCholesterol / n) * this.STABILITY_FACTOR + current.totalCholesterol * (1 - this.STABILITY_FACTOR),
-      triglycerides: (avg.triglycerides / n) * this.STABILITY_FACTOR + current.triglycerides * (1 - this.STABILITY_FACTOR),
-      confidence: avg.confidence / n
+      totalCholesterol: finalCholesterol,
+      triglycerides: finalTriglycerides
     };
   }
-
-  private bound(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-  }
-
+  
+  /**
+   * Retorna nivel de confianza de la última estimación
+   */
   public getConfidence(): number {
-    return this.lastEstimate.confidence;
+    return this.confidence;
   }
-
-  public isReliable(): boolean {
-    return this.lastEstimate.confidence >= this.confidenceThreshold;
-  }
-
+  
+  /**
+   * Reinicia el estado del estimador
+   */
   public reset(): void {
-    this.lastEstimate = {
-      totalCholesterol: this.DEFAULTS.cholesterol,
-      triglycerides: this.DEFAULTS.triglycerides,
-      confidence: 0
-    };
-    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
+    this.confidence = 0;
+  }
+  
+  /**
+   * Calcula amplitud de la señal
+   */
+  private calculateAmplitude(values: number[]): number {
+    const recentValues = values.slice(-30);
+    return Math.max(...recentValues) - Math.min(...recentValues);
+  }
+  
+  /**
+   * Calcula ancho de pulso promedio
+   */
+  private calculatePulseWidth(values: number[], peaks: number[]): number {
+    if (peaks.length < 2) return 0.2; // Valor por defecto
+    
+    let totalWidth = 0;
+    let widthCount = 0;
+    
+    for (let i = 0; i < peaks.length; i++) {
+      const peakIndex = peaks[i];
+      let leftEdge = peakIndex;
+      let rightEdge = peakIndex;
+      
+      const peakValue = values[peakIndex];
+      const halfHeight = peakValue / 2;
+      
+      // Encontrar borde izquierdo
+      while (leftEdge > 0 && values[leftEdge] > halfHeight) {
+        leftEdge--;
+      }
+      
+      // Encontrar borde derecho
+      while (rightEdge < values.length - 1 && values[rightEdge] > halfHeight) {
+        rightEdge++;
+      }
+      
+      const width = rightEdge - leftEdge;
+      if (width > 0) {
+        totalWidth += width;
+        widthCount++;
+      }
+    }
+    
+    const averageWidth = widthCount > 0 ? totalWidth / widthCount : 0.2;
+    
+    // Normalizar a un valor entre 0-1
+    return Math.min(1, averageWidth / 30);
+  }
+  
+  /**
+   * Calcula tasa de decaimiento después de picos
+   */
+  private calculateDecayRate(values: number[], peaks: number[]): number {
+    if (peaks.length < 2) return 0.5; // Valor por defecto
+    
+    let totalDecay = 0;
+    let decayCount = 0;
+    
+    for (let i = 0; i < peaks.length - 1; i++) {
+      const peakIndex = peaks[i];
+      const nextPeakIndex = peaks[i+1];
+      
+      if (nextPeakIndex - peakIndex < 5) continue; // Demasiado cerca
+      
+      const peakValue = values[peakIndex];
+      const midPoint = Math.floor((peakIndex + nextPeakIndex) / 2);
+      
+      if (midPoint > peakIndex) {
+        const midValue = values[midPoint];
+        const decay = (peakValue - midValue) / peakValue;
+        
+        totalDecay += decay;
+        decayCount++;
+      }
+    }
+    
+    return decayCount > 0 ? totalDecay / decayCount : 0.5;
+  }
+  
+  /**
+   * Detecta picos en la señal
+   */
+  private detectPeaks(values: number[]): number[] {
+    const peaks: number[] = [];
+    
+    for (let i = 2; i < values.length - 2; i++) {
+      if (values[i] > values[i-1] && 
+          values[i] > values[i-2] &&
+          values[i] > values[i+1] && 
+          values[i] > values[i+2]) {
+        peaks.push(i);
+      }
+    }
+    
+    return peaks;
+  }
+  
+  /**
+   * Calcula intervalos entre picos
+   */
+  private calculatePeakIntervals(peaks: number[]): number[] {
+    const intervals: number[] = [];
+    
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    
+    return intervals;
+  }
+  
+  /**
+   * Aplica filtro simple para reducir ruido
+   */
+  private applyFilter(values: number[]): number[] {
+    const filtered: number[] = [];
+    const windowSize = 3;
+    
+    for (let i = 0; i < values.length; i++) {
+      let sum = 0;
+      let count = 0;
+      
+      for (let j = Math.max(0, i - windowSize); j <= Math.min(values.length - 1, i + windowSize); j++) {
+        sum += values[j];
+        count++;
+      }
+      
+      filtered.push(sum / count);
+    }
+    
+    return filtered;
+  }
+  
+  /**
+   * Calcula confianza basada en calidad de señal
+   */
+  private calculateConfidence(values: number[], peaks: number[]): number {
+    if (values.length < 60 || peaks.length < 2) {
+      return 0.1;
+    }
+    
+    // Calcular regularidad de picos
+    const intervals = this.calculatePeakIntervals(peaks);
+    
+    if (intervals.length < 2) {
+      return 0.2;
+    }
+    
+    // Calcular variabilidad de intervalos (menor CV = mayor confianza)
+    const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const variance = intervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / intervals.length;
+    const stdDev = Math.sqrt(variance);
+    const cv = mean > 0 ? stdDev / mean : 1;
+    
+    // Confianza basada en regularidad
+    let confidenceFromRegularity = 1 - Math.min(1, cv);
+    
+    // Confianza basada en amplitud
+    const amplitude = this.calculateAmplitude(values);
+    const confidenceFromAmplitude = Math.min(1, amplitude / 0.5);
+    
+    // Confianza ponderada
+    const confidence = (confidenceFromRegularity * 0.7) + (confidenceFromAmplitude * 0.3);
+    
+    return Math.max(0.1, Math.min(0.9, confidence));
+  }
+  
+  /**
+   * Limita valor a rango específico
+   */
+  private constrainValue(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
   }
 }

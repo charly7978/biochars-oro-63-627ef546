@@ -7,6 +7,7 @@ import { SignalFilter } from './processors/signal-filter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
+import { VitalSignsConfig } from '../../core/config/VitalSignsConfig';
 
 /**
  * Signal processor for real PPG signals
@@ -60,6 +61,13 @@ export class SignalProcessor extends BaseProcessor {
   }
   
   /**
+   * Get stored PPG values
+   */
+  public getPPGValues(): number[] {
+    return this.ppgValues;
+  }
+  
+  /**
    * Check if finger is detected based on rhythmic patterns
    * Uses physiological characteristics (heartbeat rhythm)
    */
@@ -70,7 +78,7 @@ export class SignalProcessor extends BaseProcessor {
     }
     
     // Otherwise, use the validator's pattern detection
-    return this.signalValidator.isFingerDetected();
+    return this.signalValidator.isFingerDetectedByPattern();
   }
   
   /**
@@ -104,7 +112,7 @@ export class SignalProcessor extends BaseProcessor {
     }
     
     // Check finger detection using pattern recognition with a higher quality threshold
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
+    const fingerDetected = this.signalValidator.isFingerDetectedByPattern() && 
                            (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
     
     // Calculate signal amplitude

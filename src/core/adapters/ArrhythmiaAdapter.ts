@@ -1,12 +1,10 @@
 
+import { ArrhythmiaDetectorUnified, ArrhythmiaProcessingResult } from '../analysis/ArrhythmiaDetectorUnified';
+
 /**
- * Adapter for arrhythmia detection that ensures compatibility with existing code
- * while transitioning to the unified ArrhythmiaDetector.
+ * Adapter for unifying arrhythmia detection
+ * Provides backward compatibility with existing systems
  */
-
-import { ArrhythmiaDetectorUnified } from '../analysis/ArrhythmiaDetectorUnified';
-import { RRIntervalData } from '../types';
-
 export class ArrhythmiaAdapter {
   private detector: ArrhythmiaDetectorUnified;
   
@@ -15,31 +13,36 @@ export class ArrhythmiaAdapter {
   }
   
   /**
-   * Process RR interval data and detect arrhythmias
-   * Compatible with the existing arrhythmia-processor API
+   * Process RR data with the unified detector
    */
-  public processRRData(rrData?: RRIntervalData) {
+  public processRRData(rrData: { intervals: number[], lastPeakTime: number | null }): ArrhythmiaProcessingResult {
     return this.detector.processRRData(rrData);
+  }
+  
+  /**
+   * Get the count of detected arrhythmias
+   */
+  public getArrhythmiaCount(): number {
+    return this.detector.getArrhythmiaCount();
   }
   
   /**
    * Reset the detector
    */
-  public reset() {
+  public reset(): void {
     this.detector.reset();
   }
   
   /**
-   * Get current arrhythmia count
+   * Configure the detector with custom thresholds
    */
-  public getArrhythmiaCount() {
-    return this.detector.getArrhythmiaCount();
-  }
-  
-  /**
-   * Get debug information
-   */
-  public getDebugLog() {
-    return this.detector.getDebugLog();
+  public configure(options: {
+    rmssdThreshold?: number;
+    rrVariationThreshold?: number;
+    minTimeBetweenArrhythmias?: number;
+    consecutiveThreshold?: number;
+    requiredRRIntervals?: number;
+  }): void {
+    this.detector.setThresholds(options);
   }
 }
