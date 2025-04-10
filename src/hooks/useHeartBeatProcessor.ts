@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -6,7 +7,6 @@ import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
-import { useHeartbeatFeedback } from './useHeartbeatFeedback';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -19,8 +19,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
-  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
-  
+  // Hooks para procesamiento y detección, sin funcionalidad de beep
   const { 
     requestImmediateBeep, 
     processBeepQueue, 
@@ -69,7 +68,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       
       if (processorRef.current) {
         processorRef.current.setMonitoring(true);
-        console.log('HeartBeatProcessor: Monitoring state set to true, audio centralizado y sincronizado');
+        console.log('HeartBeatProcessor: Monitoring state set to true, audio centralizado en PPGSignalMeter');
         isMonitoringRef.current = true;
       }
     } catch (error) {
@@ -94,21 +93,17 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  const requestSynchronizedFeedback = useCallback((value: number, isArrhythmia: boolean = false): boolean => {
-    console.log('useHeartBeatProcessor: Solicitud de retroalimentación sincronizada', {
+  // Esta función ahora no hace nada, el beep está centralizado en PPGSignalMeter
+  const requestBeep = useCallback((value: number): boolean => {
+    console.log('useHeartBeatProcessor: Beep ELIMINADO - Todo el sonido SOLO en PPGSignalMeter', {
       value,
       isMonitoring: isMonitoringRef.current,
-      isArrhythmia,
+      processorExists: !!processorRef.current,
       timestamp: new Date().toISOString()
     });
     
-    if (!isMonitoringRef.current) return false;
-    
-    const feedbackType = isArrhythmia ? 'arrhythmia' : 'normal';
-    const intensity = Math.min(1, Math.max(0.3, Math.abs(value) * 5));
-    
-    return triggerHeartbeatFeedback(feedbackType, intensity);
-  }, [triggerHeartbeatFeedback]);
+    return false;
+  }, []);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
@@ -129,7 +124,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBPM, 
       confidence, 
       processorRef.current, 
-      requestSynchronizedFeedback, 
+      requestBeep, 
       isMonitoringRef, 
       lastRRIntervalsRef, 
       currentBeatIsArrhythmiaRef
@@ -152,7 +147,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     currentBPM, 
     confidence, 
     processSignalInternal, 
-    requestSynchronizedFeedback, 
+    requestBeep, 
     detectArrhythmia
   ]);
 
@@ -167,6 +162,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       isMonitoringRef.current = false;
       
       processorRef.current.reset();
+      // No iniciamos audio aquí, está centralizado en PPGSignalMeter
     }
     
     setCurrentBPM(0);
@@ -193,6 +189,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       lastProcessedPeakTimeRef.current = 0;
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
+      
+      // No iniciamos audio ni test beep aquí, está centralizado en PPGSignalMeter
       
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
@@ -221,7 +219,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     processSignal,
     reset,
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
-    requestBeep: requestSynchronizedFeedback,
+    requestBeep,
     startMonitoring,
     stopMonitoring
   };
