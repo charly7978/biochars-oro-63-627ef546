@@ -5,7 +5,6 @@
 
 import { VitalSignsProcessor as CoreProcessor, VitalSignsResult } from './vital-signs/VitalSignsProcessor';
 import { checkSignalQuality } from './heart-beat/signal-quality';
-import { useTensorFlowModel } from '../hooks/useTensorFlowModel';
 
 /**
  * Wrapper using the PPGSignalMeter's finger detection and quality
@@ -54,10 +53,10 @@ export class VitalSignsProcessor {
   /**
    * Process a PPG signal with improved false positive detection
    */
-  public async processSignal(
+  public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): Promise<VitalSignsResult> {
+  ): VitalSignsResult {
     // Apply enhanced verification
     const now = Date.now();
     const timeSinceLastDetection = now - this.lastDetectionTime;
@@ -132,7 +131,7 @@ export class VitalSignsProcessor {
     
     // Only process verified and stable signals or within guard period
     if ((signalVerified && hasPhysiologicalValidation) || timeSinceLastDetection < this.FALSE_POSITIVE_GUARD_PERIOD) {
-      return await this.processor.processSignal(ppgValue, rrData);
+      return this.processor.processSignal(ppgValue, rrData);
     } else {
       // Return empty result without processing when signal is uncertain
       return {
@@ -143,8 +142,7 @@ export class VitalSignsProcessor {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
-        },
-        hemoglobin: 0
+        }
       };
     }
   }

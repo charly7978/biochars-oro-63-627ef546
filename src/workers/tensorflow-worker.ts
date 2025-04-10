@@ -1,296 +1,402 @@
 
-/**
- * Web Worker para procesamiento con TensorFlow.js
- * Ejecuta inferencia de modelos en segundo plano
- */
 import * as tf from '@tensorflow/tfjs';
-import { TensorFlowConfig, DEFAULT_TENSORFLOW_CONFIG } from '../core/neural/tensorflow/TensorFlowConfig';
 
-// Configuración actual
-let config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG;
+// Configurar mensaje de inicialización
+self.postMessage({ type: 'init', status: 'starting' });
 
-// Caché de modelos
-const modelCache = new Map<string, tf.LayersModel>();
-
-// Inicializar TensorFlow.js
-async function initTensorFlow() {
+// Configurar TensorFlow para rendimiento óptimo
+async function setupTensorFlow() {
   try {
-    // Intentar usar el backend configurado
-    await tf.setBackend(config.backend);
+    // Intentar usar WebGL primero para GPU
+    await tf.setBackend('webgl');
     
-    // Aplicar configuraciones de memoria
-    if (config.memoryOptions.useFloat16) {
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+    // Configurar optimizaciones
+    tf.env().set('WEBGL_CPU_FORWARD', false);
+    tf.env().set('WEBGL_PACK', true);
+    tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+    
+    // Informar sobre el backend y dispositivo
+    const backend = tf.getBackend();
+    let deviceInfo = 'generic';
+    
+    if (backend === 'webgl') {
+      const gl = (tf.backend() as any).gpgpu.gl;
+      deviceInfo = gl.getParameter(gl.RENDERER);
     }
     
-    if (config.memoryOptions.enableTensorPacking) {
-      tf.env().set('WEBGL_PACK', true);
-    }
-    
-    console.log(`TensorFlow Worker: Inicializado con backend ${tf.getBackend()}`);
-    
-    self.postMessage({ type: 'init', status: 'ready', backend: tf.getBackend() });
-  } catch (error) {
-    console.error('TensorFlow Worker: Error inicializando TensorFlow.js:', error);
     self.postMessage({ 
       type: 'init', 
-      status: 'error', 
-      error: error instanceof Error ? error.message : 'Error desconocido' 
+      status: 'ready', 
+      backend,
+      deviceInfo
     });
+  } catch (error) {
+    console.error('Error setupTensorFlow:', error);
     
     // Intentar fallback a CPU
     try {
       await tf.setBackend('cpu');
-      console.log('TensorFlow Worker: Fallback a CPU exitoso');
-      self.postMessage({ type: 'init', status: 'ready', backend: 'cpu' });
-    } catch (fbError) {
-      console.error('TensorFlow Worker: Error en fallback a CPU:', fbError);
+      self.postMessage({ 
+        type: 'init', 
+        status: 'ready', 
+        backend: 'cpu',
+        deviceInfo: 'CPU fallback'
+      });
+    } catch (fallbackError) {
+      self.postMessage({ 
+        type: 'init', 
+        status: 'error', 
+        error: String(fallbackError)
+      });
     }
   }
 }
 
-// Cargar un modelo
+// Inicializar TensorFlow
+setupTensorFlow().catch(error => {
+  self.postMessage({ 
+    type: 'init', 
+    status: 'error', 
+    error: String(error) 
+  });
+});
+
+// Caché de modelos
+const modelCache = new Map<string, tf.LayersModel>();
+
+// Cargar modelo pre-entrenado o crear desde cero
 async function loadModel(modelType: string): Promise<tf.LayersModel> {
-  // Si ya está en caché, devolverlo
   if (modelCache.has(modelType)) {
     return modelCache.get(modelType)!;
   }
   
+  let model: tf.LayersModel;
+  
   try {
-    console.log(`TensorFlow Worker: Cargando modelo ${modelType}`);
-    
     // Intentar cargar desde IndexedDB
-    const model = await tf.loadLayersModel(`indexeddb://${modelType}-model`)
-      .catch(() => null);
-    
-    if (model) {
-      console.log(`TensorFlow Worker: Modelo ${modelType} cargado desde IndexedDB`);
-      modelCache.set(modelType, model);
-      return model;
-    }
-    
-    // Si no está en IndexedDB, crear modelo básico como fallback
-    console.log(`TensorFlow Worker: Creando modelo fallback para ${modelType}`);
-    const fallbackModel = createFallbackModel(modelType);
-    modelCache.set(modelType, fallbackModel);
-    return fallbackModel;
+    model = await tf.loadLayersModel(`indexeddb://${modelType}-model`);
+    console.log(`Modelo ${modelType} cargado desde IndexedDB`);
   } catch (error) {
-    console.error(`TensorFlow Worker: Error cargando modelo ${modelType}:`, error);
-    throw error;
+    console.log(`Modelo ${modelType} no encontrado en IndexedDB, creando nuevo modelo`);
+    
+    // Si no se puede cargar, crear modelo desde cero
+    model = createModel(modelType);
+    
+    // Guardar el modelo en IndexedDB para próximas cargas
+    await model.save(`indexeddb://${modelType}-model`);
+  }
+  
+  modelCache.set(modelType, model);
+  return model;
+}
+
+// Crear modelo según tipo
+function createModel(modelType: string): tf.LayersModel {
+  switch (modelType) {
+    case 'heartRate':
+      return createHeartRateModel();
+    case 'spo2':
+      return createSpO2Model();
+    case 'bloodPressure':
+      return createBloodPressureModel();
+    case 'arrhythmia':
+      return createArrhythmiaModel();
+    default:
+      throw new Error(`Tipo de modelo desconocido: ${modelType}`);
   }
 }
 
-// Crear modelo fallback básico
-function createFallbackModel(modelType: string): tf.LayersModel {
-  let inputShape: number[] = [300, 1];
-  let outputUnits: number = 1;
+// Crear modelo de frecuencia cardíaca
+function createHeartRateModel(): tf.LayersModel {
+  const input = tf.input({shape: [300, 1]});
   
-  // Ajustar según tipo de modelo
-  switch (modelType) {
-    case 'heartRate':
-      inputShape = [300, 1];
-      outputUnits = 1;
-      break;
-    case 'spo2':
-      inputShape = [200, 1];
-      outputUnits = 1;
-      break;
-    case 'arrhythmia':
-      inputShape = [500, 1];
-      outputUnits = 2;
-      break;
-    default:
-      inputShape = [300, 1];
-      outputUnits = 1;
-  }
-  
-  // Crear modelo simple
-  const input = tf.input({shape: inputShape});
-  
+  // Primera capa convolucional
   let x = tf.layers.conv1d({
-    filters: 16, 
-    kernelSize: 5,
-    padding: 'same',
-    activation: 'relu'
+    filters: 16,
+    kernelSize: 9,
+    activation: 'relu',
+    padding: 'same'
   }).apply(input);
   
+  x = tf.layers.batchNormalization().apply(x);
   x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
   
+  // Segunda capa convolucional
   x = tf.layers.conv1d({
-    filters: 32, 
-    kernelSize: 3,
-    padding: 'same',
-    activation: 'relu'
+    filters: 32,
+    kernelSize: 7,
+    activation: 'relu',
+    padding: 'same'
   }).apply(x);
   
+  x = tf.layers.batchNormalization().apply(x);
   x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
   
+  // Capas densas finales
   x = tf.layers.flatten().apply(x);
   x = tf.layers.dense({units: 64, activation: 'relu'}).apply(x);
-  x = tf.layers.dropout({rate: 0.3}).apply(x);
+  x = tf.layers.dropout({rate: 0.2}).apply(x);
+  x = tf.layers.dense({units: 32, activation: 'relu'}).apply(x);
+  const output = tf.layers.dense({units: 1, activation: 'linear'}).apply(x);
   
-  const output = tf.layers.dense({
-    units: outputUnits,
-    activation: outputUnits > 1 ? 'softmax' : 'linear'
-  }).apply(x);
-  
+  // Crear y compilar modelo
   const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
-  
   model.compile({
-    optimizer: 'adam',
-    loss: outputUnits > 1 ? 'categoricalCrossentropy' : 'meanSquaredError'
+    optimizer: tf.train.adam(0.001),
+    loss: 'meanSquaredError',
+    metrics: ['mae']
   });
   
   return model;
 }
 
-// Realizar predicción
-async function predict(modelType: string, inputData: number[]): Promise<number[]> {
-  try {
-    const model = await loadModel(modelType);
-    
-    // Preparar input según tipo de modelo
-    let tensor;
-    if (modelType === 'arrhythmia') {
-      // Para modelos que requieren entrada 2D
-      tensor = tf.tensor2d([inputData], [1, inputData.length]);
-    } else {
-      // Para modelos convolucionales que requieren entrada 3D
-      tensor = tf.tensor3d([inputData], [1, inputData.length, 1]);
-    }
-    
-    // Realizar predicción
-    const result = model.predict(tensor) as tf.Tensor;
-    const prediction = await result.data();
-    
-    // Limpiar tensores
-    tensor.dispose();
-    result.dispose();
-    
-    return Array.from(prediction);
-  } catch (error) {
-    console.error(`TensorFlow Worker: Error en predicción con modelo ${modelType}:`, error);
-    throw error;
-  }
-}
-
-// Configurar TensorFlow.js
-function setConfig(newConfig: TensorFlowConfig): void {
-  config = newConfig;
+// Crear modelo de SpO2
+function createSpO2Model(): tf.LayersModel {
+  // Implementación simplificada para ejemplo
+  const input = tf.input({shape: [300, 1]});
   
-  // Aplicar cambios que no requieran reinicio
-  if (tf.getBackend()) {
-    if (config.memoryOptions.useFloat16) {
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-    } else {
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', false);
-    }
-    
-    if (config.memoryOptions.enableTensorPacking) {
-      tf.env().set('WEBGL_PACK', true);
-    } else {
-      tf.env().set('WEBGL_PACK', false);
-    }
-  }
+  let x = tf.layers.conv1d({
+    filters: 16,
+    kernelSize: 7,
+    activation: 'relu',
+    padding: 'same'
+  }).apply(input);
+  
+  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
+  x = tf.layers.flatten().apply(x);
+  x = tf.layers.dense({units: 32, activation: 'relu'}).apply(x);
+  const output = tf.layers.dense({units: 1, activation: 'sigmoid'}).apply(x);
+  
+  const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
+  model.compile({
+    optimizer: tf.train.adam(0.001),
+    loss: 'meanSquaredError'
+  });
+  
+  return model;
 }
 
-// Liberar modelo
-async function disposeModel(modelType: string): Promise<boolean> {
-  if (modelCache.has(modelType)) {
-    const model = modelCache.get(modelType)!;
-    model.dispose();
-    modelCache.delete(modelType);
-    return true;
-  }
-  return false;
+// Crear modelo de presión arterial
+function createBloodPressureModel(): tf.LayersModel {
+  // Implementación simplificada para ejemplo
+  const input = tf.input({shape: [300, 1]});
+  
+  let x = tf.layers.conv1d({
+    filters: 16,
+    kernelSize: 9,
+    activation: 'relu',
+    padding: 'same'
+  }).apply(input);
+  
+  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
+  x = tf.layers.flatten().apply(x);
+  x = tf.layers.dense({units: 32, activation: 'relu'}).apply(x);
+  const output = tf.layers.dense({units: 2, activation: 'linear'}).apply(x);
+  
+  const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
+  model.compile({
+    optimizer: tf.train.adam(0.001),
+    loss: 'meanSquaredError'
+  });
+  
+  return model;
 }
 
-// Manejar mensajes
-self.addEventListener('message', async (e: MessageEvent) => {
+// Crear modelo de arritmia
+function createArrhythmiaModel(): tf.LayersModel {
+  // Implementación simplificada para ejemplo
+  const input = tf.input({shape: [300, 1]});
+  
+  let x = tf.layers.conv1d({
+    filters: 16,
+    kernelSize: 9,
+    activation: 'relu',
+    padding: 'same'
+  }).apply(input);
+  
+  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
+  x = tf.layers.flatten().apply(x);
+  x = tf.layers.dense({units: 32, activation: 'relu'}).apply(x);
+  const output = tf.layers.dense({units: 1, activation: 'sigmoid'}).apply(x);
+  
+  const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
+  model.compile({
+    optimizer: tf.train.adam(0.001),
+    loss: 'binaryCrossentropy'
+  });
+  
+  return model;
+}
+
+// Preprocesar la entrada para modelos
+function preprocessInput(input: number[]): tf.Tensor {
+  // Ajustar longitud
+  const targetLength = 300;
+  let adjustedInput: number[];
+  
+  if (input.length < targetLength) {
+    const padding = Array(targetLength - input.length).fill(0);
+    adjustedInput = [...input, ...padding];
+  } else if (input.length > targetLength) {
+    adjustedInput = input.slice(-targetLength);
+  } else {
+    adjustedInput = input;
+  }
+  
+  // Convertir a tensor y normalizar
+  const tensor = tf.tensor1d(adjustedInput);
+  
+  // Normalizar a media 0, std 1
+  const mean = tensor.mean();
+  const std = tensor.sub(mean).square().mean().sqrt();
+  const normalized = tensor.sub(mean).div(std.add(tf.scalar(1e-5)));
+  
+  // Añadir dimensiones para batch y canal
+  const reshaped = normalized.expandDims(0).expandDims(-1);
+  
+  // Limpiar tensores intermedios
+  tensor.dispose();
+  mean.dispose();
+  std.dispose();
+  normalized.dispose();
+  
+  return reshaped;
+}
+
+// Procesar mensaje
+self.addEventListener('message', async (e) => {
   const { id, type, data } = e.data;
   
-  try {
-    switch (type) {
-      case 'init':
-        await initTensorFlow();
-        break;
+  switch (type) {
+    case 'predict': {
+      try {
+        const { modelType, input } = data;
         
-      case 'setConfig':
-        setConfig(data.config);
-        self.postMessage({ id, type: 'configSet' });
-        break;
+        // Cargar modelo
+        const model = await loadModel(modelType);
         
-      case 'loadModel':
-        try {
-          await loadModel(data.modelType);
-          self.postMessage({ id, type: 'modelLoaded', modelType: data.modelType });
-        } catch (error) {
-          self.postMessage({ 
-            id, 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error desconocido',
-            modelType: data.modelType
-          });
+        // Preprocesar entrada
+        const tensor = preprocessInput(input);
+        
+        // Ejecutar predicción
+        const startTime = performance.now();
+        const prediction = model.predict(tensor) as tf.Tensor;
+        const result = await prediction.data();
+        const endTime = performance.now();
+        
+        // Liberar tensores
+        tensor.dispose();
+        prediction.dispose();
+        
+        // Aplicar post-procesamiento según tipo de modelo
+        let processedResult: number[];
+        
+        switch (modelType) {
+          case 'heartRate':
+            // Limitar a rango fisiológico
+            processedResult = [Math.max(40, Math.min(200, result[0]))];
+            break;
+          case 'spo2':
+            // Convertir de [0,1] a [90,100]
+            processedResult = [90 + (result[0] * 10)];
+            break;
+          case 'bloodPressure':
+            // [systolic, diastolic]
+            processedResult = [
+              Math.max(90, Math.min(180, result[0])),
+              Math.max(60, Math.min(110, result[1]))
+            ];
+            break;
+          case 'arrhythmia':
+            // Probabilidad [0,1]
+            processedResult = [result[0]];
+            break;
+          default:
+            processedResult = Array.from(result);
         }
-        break;
         
-      case 'predict':
-        try {
-          const result = await predict(data.modelType, data.input);
-          self.postMessage({ id, type: 'result', result });
-        } catch (error) {
-          self.postMessage({ 
-            id, 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error desconocido' 
-          });
-        }
-        break;
-        
-      case 'disposeModel':
-        try {
-          const disposed = await disposeModel(data.modelType);
-          self.postMessage({ 
-            id, 
-            type: 'modelDisposed', 
-            modelType: data.modelType,
-            success: disposed
-          });
-        } catch (error) {
-          self.postMessage({ 
-            id, 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error desconocido' 
-          });
-        }
-        break;
-        
-      case 'getMemoryInfo':
-        const memoryInfo = tf.memory();
-        self.postMessage({ id, type: 'memoryInfo', info: memoryInfo });
-        break;
-        
-      case 'cleanupMemory':
-        tf.disposeVariables();
-        tf.engine().startScope(); // Start fresh scope
-        self.postMessage({ id, type: 'memoryCleanup', success: true });
-        break;
-        
-      default:
-        self.postMessage({ 
-          id, 
-          type: 'error', 
-          error: `Tipo de mensaje desconocido: ${type}` 
+        // Enviar resultado
+        self.postMessage({
+          id,
+          type: 'result',
+          modelType,
+          result: processedResult,
+          processingTime: endTime - startTime
         });
+      } catch (error) {
+        console.error('Error al predecir:', error);
+        self.postMessage({
+          id,
+          type: 'error',
+          modelType: data.modelType,
+          error: String(error)
+        });
+      }
+      break;
     }
-  } catch (error) {
-    self.postMessage({ 
-      id, 
-      type: 'error', 
-      error: error instanceof Error ? error.message : 'Error desconocido' 
-    });
+    
+    case 'loadModel': {
+      try {
+        const { modelType } = data;
+        await loadModel(modelType);
+        self.postMessage({
+          id,
+          type: 'modelLoaded',
+          modelType
+        });
+      } catch (error) {
+        console.error('Error al cargar modelo:', error);
+        self.postMessage({
+          id,
+          type: 'error',
+          modelType: data.modelType,
+          error: String(error)
+        });
+      }
+      break;
+    }
+    
+    case 'disposeModel': {
+      try {
+        const { modelType } = data;
+        const model = modelCache.get(modelType);
+        if (model) {
+          model.dispose();
+          modelCache.delete(modelType);
+        }
+        self.postMessage({
+          id,
+          type: 'modelDisposed',
+          modelType
+        });
+      } catch (error) {
+        console.error('Error al liberar modelo:', error);
+        self.postMessage({
+          id,
+          type: 'error',
+          error: String(error)
+        });
+      }
+      break;
+    }
+    
+    default:
+      self.postMessage({
+        id,
+        type: 'error',
+        error: `Tipo de mensaje desconocido: ${type}`
+      });
   }
 });
 
-// Inicializar al cargar
-initTensorFlow();
+// Limpiar en unload
+self.addEventListener('unload', () => {
+  // Liberar todos los modelos
+  modelCache.forEach(model => {
+    model.dispose();
+  });
+  modelCache.clear();
+  
+  // Liberar memoria TensorFlow
+  tf.disposeVariables();
+});

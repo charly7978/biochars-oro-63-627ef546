@@ -8,8 +8,6 @@ import { useSignalCore } from './useSignalCore';
 import { createSignalProcessor } from '../core/signal-processing';
 import { VitalSignsProcessor } from '../core/VitalSignsProcessor';
 import { HeartBeatResult } from './heart-beat/types';
-import { useTensorFlowModel } from './useTensorFlowModel';
-import { TensorFlowModelRegistry } from '../core/neural/tensorflow/TensorFlowModelRegistry';
 
 export interface SignalProcessingResult {
   // PPG Signal metrics
@@ -61,10 +59,6 @@ export function useCentralSignalProcessor() {
     reset: resetSignalCore
   } = useSignalCore();
   
-  // TensorFlow model for heart rate
-  const { isReady: tfModelReady, predict: predictHeartRate } = 
-    useTensorFlowModel('heartRate', false);
-  
   // Vital signs processor
   const vitalSignsProcessorRef = useRef<VitalSignsProcessor | null>(null);
   
@@ -85,18 +79,6 @@ export function useCentralSignalProcessor() {
       vitalSignsProcessorRef.current = new VitalSignsProcessor();
       console.log("Central Signal Processor: Initialized vital signs processor");
     }
-    
-    // Initialize TensorFlow
-    const initTensorFlow = async () => {
-      try {
-        const registry = TensorFlowModelRegistry.getInstance();
-        await registry.initialize();
-      } catch (error) {
-        console.error("Error initializing TensorFlow:", error);
-      }
-    };
-    
-    initTensorFlow();
     
     return () => {
       if (timerRef.current) {
@@ -167,78 +149,45 @@ export function useCentralSignalProcessor() {
     // Calculate confidence
     const confidence = signalQuality / 100;
     
-    // Process vital signs and await the result
-    const processingPromise = async () => {
-      try {
-        const vitalSignsResult = await vitalSignsProcessorRef.current!.processSignal(lastValue, rrData);
-        
-        // Detect arrhythmia
-        const isArrhythmia = vitalSignsResult.arrhythmiaStatus.includes("ARRITMIA");
-        
-        // Update arrhythmia count (for logging)
-        const arrhythmiaCount = vitalSignsProcessorRef.current!.getArrhythmiaCounter();
-        if (arrhythmiaCount > lastArrhythmiaCountRef.current) {
-          console.log(`Central Signal Processor: Arrhythmia detected (${arrhythmiaCount} total)`);
-          lastArrhythmiaCountRef.current = arrhythmiaCount;
-        }
-        
-        // Create combined result
-        const result: SignalProcessingResult = {
-          value,
-          filteredValue: lastValue,
-          quality: signalQuality,
-          fingerDetected,
-          heartRate,
-          confidence,
-          isArrhythmia,
-          vitalSigns: {
-            spo2: vitalSignsResult.spo2,
-            pressure: vitalSignsResult.pressure,
-            arrhythmiaStatus: vitalSignsResult.arrhythmiaStatus,
-            glucose: vitalSignsResult.glucose,
-            lipids: vitalSignsResult.lipids,
-            hemoglobin: vitalSignsResult.hemoglobin || 0
-          },
-          arrhythmiaData: vitalSignsResult.lastArrhythmiaData,
-          rrData
-        };
-        
-        // Update last result
-        setLastResult(result);
-        
-        return result;
-      } catch (error) {
-        console.error("Error processing vital signs:", error);
-        return null;
-      }
-    };
+    // Process vital signs
+    const vitalSignsResult = vitalSignsProcessorRef.current.processSignal(lastValue, rrData);
     
-    // Start the async processing
-    processingPromise();
+    // Detect arrhythmia
+    const isArrhythmia = vitalSignsResult.arrhythmiaStatus.includes("ARRITMIA");
     
-    // Return the last known result while processing is happening
-    return lastResult || {
+    // Update arrhythmia count (for logging)
+    const arrhythmiaCount = vitalSignsProcessorRef.current.getArrhythmiaCounter();
+    if (arrhythmiaCount > lastArrhythmiaCountRef.current) {
+      console.log(`Central Signal Processor: Arrhythmia detected (${arrhythmiaCount} total)`);
+      lastArrhythmiaCountRef.current = arrhythmiaCount;
+    }
+    
+    // Create combined result
+    const result: SignalProcessingResult = {
       value,
       filteredValue: lastValue,
       quality: signalQuality,
       fingerDetected,
       heartRate,
       confidence,
-      isArrhythmia: false,
+      isArrhythmia,
       vitalSigns: {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0
+        spo2: vitalSignsResult.spo2,
+        pressure: vitalSignsResult.pressure,
+        arrhythmiaStatus: vitalSignsResult.arrhythmiaStatus,
+        glucose: vitalSignsResult.glucose,
+        lipids: vitalSignsResult.lipids,
+        hemoglobin: vitalSignsResult.hemoglobin
       },
+      arrhythmiaData: vitalSignsResult.lastArrhythmiaData,
       rrData
     };
-  }, [isProcessing, processSignalValue, lastResult]);
+    
+    // Update last result
+    setLastResult(result);
+    
+    return result;
+  }, [isProcessing, processSignalValue]);
   
   // Process camera frame through the pipeline
   const processFrame = useCallback((imageData: ImageData): SignalProcessingResult | null => {
