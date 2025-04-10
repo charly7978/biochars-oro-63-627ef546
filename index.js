@@ -3,13 +3,14 @@ import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
+import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
 import { toast } from "sonner";
 
 const Index = () => {
+  // Estado principal
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -23,11 +24,35 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const measurementTimerRef = useRef(null);
+  const processingDataRef = useRef({
+    lastProcessedTime: 0,
+    processedFrames: 0,
+    lastRedValue: 0,
+    maxRedValue: 0,
+    minRedValue: Infinity
+  });
   
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { processSignal: processHeartBeat } = useHeartBeatProcessor();
-  const { processSignal: processVitalSigns, reset: resetVitalSigns } = useVitalSignsProcessor();
+  // Hooks para procesamiento de señales en tiempo real
+  const { 
+    startProcessing, 
+    stopProcessing, 
+    lastSignal, 
+    processFrame,
+    framesProcessed 
+  } = useSignalProcessor();
+  
+  const { 
+    processSignal: processHeartBeat,
+    heartBeatResult
+  } = useHeartBeatProcessor();
+  
+  const { 
+    processSignal: processVitalSigns, 
+    reset: resetVitalSigns,
+    lastValidResults
+  } = useVitalSignsProcessor();
 
+  // Entrar en pantalla completa para rendimiento óptimo
   const enterFullScreen = async () => {
     const elem = document.documentElement;
     try {
@@ -41,11 +66,12 @@ const Index = () => {
         await elem.msRequestFullscreen({ navigationUI: "hide" });
       }
       
+      // Android fullscreen para máximo rendimiento
       if (window.navigator.userAgent.match(/Android/i)) {
         if (window.AndroidFullScreen) {
           window.AndroidFullScreen.immersiveMode(
-            function() { console.log('Immersive mode enabled'); },
-            function() { console.log('Failed to enable immersive mode'); }
+            function() { console.log('Modo inmersivo activado'); },
+            function() { console.log('Error al activar modo inmersivo'); }
           );
         }
       }
@@ -54,7 +80,10 @@ const Index = () => {
     }
   };
 
+  // Efectos de inicialización y configuración
   useEffect(() => {
+    console.log("Index: Inicializando configuración de pantalla");
+    
     const preventScroll = (e) => e.preventDefault();
     
     const lockOrientation = async () => {
@@ -77,6 +106,7 @@ const Index = () => {
     setMaxResolution();
     enterFullScreen();
     
+    // Evitar comportamientos táctiles que interfieran con medición
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
     document.body.addEventListener('touchstart', preventScroll, { passive: false });
@@ -93,6 +123,7 @@ const Index = () => {
     });
 
     return () => {
+      // Limpiar eventos al desmontar
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
       document.body.removeEventListener('touchstart', preventScroll);
@@ -104,13 +135,29 @@ const Index = () => {
     };
   }, []);
 
+  // Iniciar monitorización de señales vitales reales
   const startMonitoring = () => {
+    console.log("Index: Iniciando monitorización en TIEMPO REAL");
+    
+    // Reiniciar estado
+    processingDataRef.current = {
+      lastProcessedTime: Date.now(),
+      processedFrames: 0,
+      lastRedValue: 0,
+      maxRedValue: 0,
+      minRedValue: Infinity
+    };
+    
+    // Activar pantalla completa y cámara
     enterFullScreen();
     setIsMonitoring(true);
     setIsCameraOn(true);
+    
+    // Iniciar procesadores de señal
     startProcessing();
     setElapsedTime(0);
     
+    // Configurar contador de tiempo
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
     }
@@ -124,23 +171,32 @@ const Index = () => {
         return prev + 1;
       });
     }, 1000);
+    
+    // Notificar al usuario
+    toast.success("Medición iniciada - Coloque su dedo sobre la cámara");
   };
 
+  // Mostrar diálogo de confirmación para medición
   const showMeasurementConfirmation = () => {
     setShowConfirmDialog(true);
   };
 
+  // Confirmar medición
   const confirmMeasurement = () => {
     setShowConfirmDialog(false);
     completeMonitoring();
   };
 
+  // Cancelar medición
   const cancelMeasurement = () => {
     setShowConfirmDialog(false);
     stopMonitoring();
   };
 
+  // Completar monitorización
   const completeMonitoring = () => {
+    console.log("Index: Completando monitorización con DATOS REALES");
+    
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -159,9 +215,19 @@ const Index = () => {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
+    
+    // Registro final
+    console.log("Index: Resumen de procesamiento", {
+      framesProcessados: processingDataRef.current.processedFrames,
+      tiempoTotal: (Date.now() - processingDataRef.current.lastProcessedTime) / 1000,
+      rangoSeñal: processingDataRef.current.maxRedValue - processingDataRef.current.minRedValue
+    });
   };
 
+  // Detener monitorización
   const stopMonitoring = () => {
+    console.log("Index: Deteniendo monitorización");
+    
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
@@ -182,13 +248,19 @@ const Index = () => {
     }
   };
 
+  // Procesar stream de cámara
   const handleStreamReady = (stream) => {
+    console.log("Index: Flujo de cámara listo para procesamiento REAL");
+    
     if (!isMonitoring) return;
     
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
+    // Optimizar cámara para capturar señal PPG
     const capabilities = videoTrack.getCapabilities();
+    console.log("Capacidades de cámara:", capabilities);
+    
     if (capabilities.width && capabilities.height) {
       const maxWidth = capabilities.width.max;
       const maxHeight = capabilities.height.max;
@@ -204,6 +276,7 @@ const Index = () => {
       }).catch(err => console.error("Error activando linterna:", err));
     }
     
+    // Crear canvas para procesar frames
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) {
@@ -211,45 +284,98 @@ const Index = () => {
       return;
     }
     
+    // Función recursiva para procesar frames en tiempo real
     const processImage = async () => {
       if (!isMonitoring) return;
       
       try {
+        // Capturar frame en tiempo real
         const frame = await imageCapture.grabFrame();
         tempCanvas.width = frame.width;
         tempCanvas.height = frame.height;
         tempCtx.drawImage(frame, 0, 0);
-        const imageData = tempCtx.getImageData(0, 0, frame.width, frame.height);
-        processFrame(imageData);
         
+        // Obtener datos de imagen para ROI (centro)
+        const centerX = Math.floor(frame.width / 2);
+        const centerY = Math.floor(frame.height / 2);
+        const roiSize = Math.min(100, Math.min(frame.width, frame.height) / 3);
+        const roiX = centerX - roiSize / 2;
+        const roiY = centerY - roiSize / 2;
+        
+        // Obtener datos de imagen real de la región de interés
+        const imageData = tempCtx.getImageData(roiX, roiY, roiSize, roiSize);
+        
+        // Procesar frame real con el pipeline de procesamiento
+        const signalResult = processFrame(imageData);
+        
+        // Actualizar estadísticas
+        processingDataRef.current.processedFrames++;
+        if (signalResult) {
+          processingDataRef.current.lastRedValue = signalResult.rawValue;
+          processingDataRef.current.maxRedValue = Math.max(
+            processingDataRef.current.maxRedValue, 
+            signalResult.rawValue
+          );
+          processingDataRef.current.minRedValue = Math.min(
+            processingDataRef.current.minRedValue, 
+            signalResult.rawValue
+          );
+        }
+        
+        // Continuar procesando si estamos monitorizando
         if (isMonitoring) {
           requestAnimationFrame(processImage);
         }
       } catch (error) {
-        console.error("Error capturando frame:", error);
+        console.error("Error capturando frame real:", error);
         if (isMonitoring) {
-          requestAnimationFrame(processImage);
+          // Reintentar en caso de error
+          setTimeout(() => {
+            requestAnimationFrame(processImage);
+          }, 100);
         }
       }
     };
 
+    // Iniciar procesamiento
     processImage();
   };
 
+  // Procesar señal cuando lastSignal cambia
   useEffect(() => {
     if (lastSignal && lastSignal.fingerDetected && isMonitoring) {
-      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-      setHeartRate(heartBeatResult.bpm);
+      console.log("Index: Procesando señal real detectada", {
+        valor: lastSignal.filteredValue.toFixed(3),
+        calidad: lastSignal.quality.toFixed(1),
+        dedoDetectado: lastSignal.fingerDetected
+      });
       
-      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-      if (vitals) {
-        setVitalSigns(vitals);
-        setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+      // Procesar señal real para detección de latidos
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      if (heartBeatResult && heartBeatResult.bpm > 0) {
+        setHeartRate(heartBeatResult.bpm);
       }
       
+      // Procesar señal real para signos vitales
+      const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult?.rrData);
+      if (vitals) {
+        setVitalSigns(vitals);
+        
+        // Extraer y mostrar contador de arritmias
+        if (vitals.arrhythmiaStatus?.includes("|")) {
+          setArrhythmiaCount(vitals.arrhythmiaStatus.split('|')[1] || "--");
+        }
+      }
+      
+      // Actualizar calidad de señal para UI
       setSignalQuality(lastSignal.quality);
+    } else if (!lastSignal?.fingerDetected && isMonitoring) {
+      // Dedo no detectado, avisar en consola ocasionalmente
+      if (framesProcessed % 30 === 0) {
+        console.log("Index: Dedo no detectado, esperando...");
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, framesProcessed]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -284,7 +410,7 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              rawArrhythmiaData={lastValidResults?.lastArrhythmiaData}
             />
           </div>
 
@@ -308,7 +434,7 @@ const Index = () => {
                 />
                 <VitalSign 
                   label="ARRITMIAS"
-                  value={vitalSigns.arrhythmiaStatus}
+                  value={arrhythmiaCount}
                 />
               </div>
             </div>

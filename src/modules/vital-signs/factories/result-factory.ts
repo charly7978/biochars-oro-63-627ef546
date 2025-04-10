@@ -1,18 +1,12 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating consistent VitalSignsResult objects
- * All methods work with real data only, no simulation
+ * Factory class for creating consistent VitalSignsResult objects
  */
 export class ResultFactory {
   /**
-   * Creates an empty result when there is no valid data
-   * Always returns zeros, no simulation
+   * Creates a VitalSignsResult with all values set to zero or default
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
@@ -24,17 +18,13 @@ export class ResultFactory {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      confidence: {
-        glucose: 0,
-        lipids: 0,
-        overall: 0
-      }
+      hemoglobin: 0,
+      lastArrhythmiaData: null
     };
   }
   
   /**
-   * Creates a result with the given values
-   * Only for direct measurements
+   * Creates a VitalSignsResult with the provided values
    */
   public static createResult(
     spo2: number,
@@ -42,7 +32,10 @@ export class ResultFactory {
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
-    confidence: { glucose: number; lipids: number; overall: number },
+    hemoglobin: number,
+    glucoseConfidence?: number,
+    lipidsConfidence?: number,
+    overallConfidence?: number,
     lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
     return {
@@ -51,9 +44,13 @@ export class ResultFactory {
       arrhythmiaStatus,
       glucose,
       lipids,
-      confidence,
+      hemoglobin,
+      // Store confidence values individually rather than as a nested object
+      // to prevent rendering issues
+      glucoseConfidence,
+      lipidsConfidence,
+      overallConfidence,
       lastArrhythmiaData
     };
   }
 }
-
