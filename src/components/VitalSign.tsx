@@ -277,11 +277,11 @@ const VitalSign = ({
     <Sheet>
       <SheetTrigger asChild>
         <div className={cn(
-          "relative flex flex-col justify-center items-center p-1 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full",
-          compact ? "min-h-[60px]" : "min-h-[80px]"
+          "relative flex flex-col justify-center items-center p-1 bg-black/30 text-center cursor-pointer hover:bg-black/40 rounded-lg transition-colors duration-200 h-full w-full",
+          compact ? "min-h-[60px]" : "min-h-[90px]"
         )}>
           <div className={cn(
-            "font-medium uppercase tracking-wider text-black/70 mb-0.5 flex items-center gap-1",
+            "font-medium uppercase tracking-wider text-white/80 mb-0.5 flex items-center gap-1",
             compact ? "text-[9px]" : "text-[11px]"
           )}>
             {icon && <span>{icon}</span>}
@@ -290,7 +290,7 @@ const VitalSign = ({
           
           <div className={cn(
             "font-bold transition-all duration-300",
-            compact ? "text-lg" : "text-xl sm:text-2xl"
+            compact ? "text-lg" : "text-2xl sm:text-3xl"
           )}>
             <span className={cn(
               "text-gradient-soft",

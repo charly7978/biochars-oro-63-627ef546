@@ -331,69 +331,73 @@ const Index = () => {
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-2 py-2">
-            <div className="grid grid-cols-4 gap-x-1 gap-y-1 h-full overflow-y-auto">
-              <VitalSign 
-                label="FRECUENCIA CARDÍACA"
-                value={heartRate || "--"}
-                unit="BPM"
-                highlighted={showResults}
-                compact={true}
-              />
-              <VitalSign 
-                label="SPO2"
-                value={vitalSigns.spo2 || "--"}
-                unit="%"
-                highlighted={showResults}
-                compact={true}
-              />
-              <VitalSign 
-                label="PRESIÓN"
-                value={vitalSigns.pressure || "--/--"}
-                unit="mmHg"
-                highlighted={showResults}
-                compact={true}
-              />
-              <VitalSign 
-                label="HIDRATACIÓN"
-                value={vitalSigns.hydration || "--"}
-                unit="%"
-                highlighted={showResults}
-                icon={<Droplet className={`h-3 w-3 ${getHydrationColor(vitalSigns.hydration)}`} />}
-                compact={true}
-              />
+          <div className="absolute inset-x-0 top-[45%] bottom-[55px] bg-black/10 px-2 py-2">
+            <div className="grid grid-cols-2 h-full gap-1">
+              <div className="col-span-2 grid grid-cols-2 gap-1 mb-1">
+                <VitalSign 
+                  label="FRECUENCIA CARDÍACA"
+                  value={heartRate || "--"}
+                  unit="BPM"
+                  highlighted={showResults}
+                  compact={false}
+                />
+                <VitalSign 
+                  label="SPO2"
+                  value={vitalSigns.spo2 || "--"}
+                  unit="%"
+                  highlighted={showResults}
+                  compact={false}
+                />
+              </div>
+              <div className="col-span-2 grid grid-cols-2 gap-1">
+                <VitalSign 
+                  label="PRESIÓN"
+                  value={vitalSigns.pressure || "--/--"}
+                  unit="mmHg"
+                  highlighted={showResults}
+                  compact={false}
+                />
+                <VitalSign 
+                  label="HIDRATACIÓN"
+                  value={vitalSigns.hydration || "--"}
+                  unit="%"
+                  highlighted={showResults}
+                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
+                  compact={false}
+                />
+              </div>
               <VitalSign 
                 label="GLUCOSA"
                 value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
-                compact={true}
+                compact={false}
               />
               <VitalSign 
                 label="COLESTEROL"
                 value={vitalSigns.lipids?.totalCholesterol || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
-                compact={true}
+                compact={false}
               />
               <VitalSign 
                 label="TRIGLICÉRIDOS"
                 value={vitalSigns.lipids?.triglycerides || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
-                compact={true}
+                compact={false}
               />
               <VitalSign 
                 label="HEMOGLOBINA"
                 value={Math.round(vitalSigns.hemoglobin) || "--"}
                 unit="g/dL"
                 highlighted={showResults}
-                compact={true}
+                compact={false}
               />
             </div>
           </div>
 
-          <div className="absolute inset-x-0 bottom-4 flex gap-4 px-4">
+          <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
             <div className="w-1/2">
               <MonitorButton 
                 isMonitoring={isMonitoring} 
