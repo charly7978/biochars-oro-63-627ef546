@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -157,7 +156,6 @@ const PPGSignalMeter = memo(({
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
     
-    // Si preserveResults es true y no hay un dedo detectado, mantenemos los datos para visualizar
     if (preserveResults && !isFingerDetected) {
       setResultsVisible(true);
     } else if (!preserveResults && !isFingerDetected) {
@@ -245,11 +243,14 @@ const PPGSignalMeter = memo(({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#ffff00');
-    gradient.addColorStop(0.2, '#ff6666');
-    gradient.addColorStop(0.4, '#FDE1D3');
-    gradient.addColorStop(0.6, '#F2FCE2');
-    gradient.addColorStop(0.7, '#f4a62b');
+    
+    gradient.addColorStop(0, '#FFE8E8');
+    gradient.addColorStop(0.14, '#FFECDA');
+    gradient.addColorStop(0.28, '#FEF7CD');
+    gradient.addColorStop(0.42, '#E2FFDA');
+    gradient.addColorStop(0.56, '#D6F3FF');
+    gradient.addColorStop(0.70, '#E4DAFF');
+    gradient.addColorStop(0.84, '#F2D6FF');
     gradient.addColorStop(1, '#3255a4');
     
     ctx.fillStyle = gradient;
