@@ -308,10 +308,10 @@ const Index = () => {
 
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-white text-lg">
+            <div className="text-white text-sm">
               Calidad: {signalQuality}
             </div>
-            <div className="text-white text-lg">
+            <div className="text-white text-sm">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
@@ -331,56 +331,64 @@ const Index = () => {
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 top-[40%] bottom-[60px] bg-black/10 px-4 py-6">
-            <div className="grid grid-cols-4 gap-x-4 gap-y-3 place-items-center h-full overflow-y-auto pb-4">
+          <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-2 py-2">
+            <div className="grid grid-cols-4 gap-x-1 gap-y-1 h-full overflow-y-auto">
               <VitalSign 
                 label="FRECUENCIA CARDÍACA"
                 value={heartRate || "--"}
                 unit="BPM"
                 highlighted={showResults}
+                compact={true}
               />
               <VitalSign 
                 label="SPO2"
                 value={vitalSigns.spo2 || "--"}
                 unit="%"
                 highlighted={showResults}
+                compact={true}
               />
               <VitalSign 
-                label="PRESIÓN ARTERIAL"
+                label="PRESIÓN"
                 value={vitalSigns.pressure || "--/--"}
                 unit="mmHg"
                 highlighted={showResults}
+                compact={true}
               />
               <VitalSign 
                 label="HIDRATACIÓN"
                 value={vitalSigns.hydration || "--"}
                 unit="%"
                 highlighted={showResults}
-                icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
+                icon={<Droplet className={`h-3 w-3 ${getHydrationColor(vitalSigns.hydration)}`} />}
+                compact={true}
               />
               <VitalSign 
                 label="GLUCOSA"
                 value={vitalSigns.glucose || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
+                compact={true}
               />
               <VitalSign 
                 label="COLESTEROL"
                 value={vitalSigns.lipids?.totalCholesterol || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
+                compact={true}
               />
               <VitalSign 
                 label="TRIGLICÉRIDOS"
                 value={vitalSigns.lipids?.triglycerides || "--"}
                 unit="mg/dL"
                 highlighted={showResults}
+                compact={true}
               />
               <VitalSign 
                 label="HEMOGLOBINA"
                 value={Math.round(vitalSigns.hemoglobin) || "--"}
                 unit="g/dL"
                 highlighted={showResults}
+                compact={true}
               />
             </div>
           </div>

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -11,6 +10,7 @@ interface VitalSignProps {
   highlighted?: boolean;
   calibrationProgress?: number;
   icon?: React.ReactNode;
+  compact?: boolean;
 }
 
 const VitalSign = ({ 
@@ -19,7 +19,8 @@ const VitalSign = ({
   unit, 
   highlighted = false,
   calibrationProgress,
-  icon
+  icon,
+  compact = false
 }: VitalSignProps) => {
   // Ensure value is a primitive type that can be rendered
   const renderValue = typeof value === 'object' ? 
@@ -275,24 +276,41 @@ const VitalSign = ({
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className="relative flex flex-col justify-center items-center p-2 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-black/70 mb-1 flex items-center gap-1">
+        <div className={cn(
+          "relative flex flex-col justify-center items-center p-1 bg-transparent text-center cursor-pointer hover:bg-black/5 rounded-lg transition-colors duration-200 h-full w-full",
+          compact ? "min-h-[60px]" : "min-h-[80px]"
+        )}>
+          <div className={cn(
+            "font-medium uppercase tracking-wider text-black/70 mb-0.5 flex items-center gap-1",
+            compact ? "text-[9px]" : "text-[11px]"
+          )}>
             {icon && <span>{icon}</span>}
             <span>{label}</span>
           </div>
           
-          <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
+          <div className={cn(
+            "font-bold transition-all duration-300",
+            compact ? "text-lg" : "text-xl sm:text-2xl"
+          )}>
             <span className={cn(
               "text-gradient-soft",
               highlighted && "animate-pulse"
             )}>
               {formattedValue}
             </span>
-            {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
+            {unit && <span className={cn(
+              "text-white/70 ml-1",
+              compact ? "text-[9px]" : "text-xs"
+            )}>
+              {unit}
+            </span>}
           </div>
 
           {riskLabel && (
-            <div className={`text-sm font-medium mt-1 ${riskColor}`}>
+            <div className={cn(
+              `font-medium mt-0.5 ${riskColor}`,
+              compact ? "text-[9px]" : "text-sm"
+            )}>
               {riskLabel}
             </div>
           )}

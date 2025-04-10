@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -72,7 +71,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly
    * No simulation or reference values
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
@@ -119,7 +118,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error
+      // Return safe fallback values on error that include hydration
       return {
         spo2: 0,
         pressure: "--/--",
@@ -129,7 +128,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           totalCholesterol: 0,
           triglycerides: 0
         },
-        hemoglobin: 0
+        hemoglobin: 0,
+        hydration: 0
       };
     }
   };
