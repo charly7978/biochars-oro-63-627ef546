@@ -1,22 +1,7 @@
 
+import { UserProfile } from '../types';
+import { BloodPressureResult } from '../types/vital-signs-results';
 import { ProcessorConfig } from '../config/ProcessorConfig';
-
-// Define the missing interfaces
-export interface UserProfile {
-  age?: number;
-  gender?: 'male' | 'female' | 'other';
-  weight?: number;
-  height?: number;
-  condition?: string;
-}
-
-export interface BloodPressureResult {
-  systolic: number;
-  diastolic: number;
-  map: number;
-  confidence: number;
-  formatted: string;
-}
 
 export class BloodPressureAnalyzer {
   private readonly MIN_DATA_POINTS = 60;
@@ -63,8 +48,8 @@ export class BloodPressureAnalyzer {
       const variance = this.calculateVariance(this.dataPoints);
       const amplitude = this.calculateAmplitude(this.dataPoints);
       
-      // Using a fixed calibration factor since config.lipidCalibrationFactor doesn't exist
-      const calibrationFactor = this.CALIBRATION_FACTOR;
+      // Aplicar calibración basada en la variabilidad y amplitud
+      const calibrationFactor = this.config.lipidCalibrationFactor * this.CALIBRATION_FACTOR;
       
       // Estimar presión sistólica basada en señal PPG y frecuencia cardíaca
       const systolicBase = this.DEFAULT_SYSTOLIC + (this.lastHeartRate - 70) * 0.7;

@@ -1,36 +1,19 @@
+
 import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
+import { SPO2Analyzer } from './analysis/SPO2Analyzer';
 import { BloodPressureAnalyzer } from './analysis/BloodPressureAnalyzer';
 import { GlucoseEstimator } from './analysis/GlucoseEstimator';
 import { LipidEstimator } from './analysis/LipidEstimator';
 import { RRData } from './signal/PeakDetector';
+import { UserProfile, VitalSignsResult } from './types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from './config/ProcessorConfig';
-
-// Define necessary types that were missing
-export interface UserProfile {
-  age?: number;
-  gender?: 'male' | 'female' | 'other';
-  weight?: number;
-  height?: number;
-  condition?: string;
-}
-
-export interface VitalSignsResult {
-  spo2: number;
-  pressure: string;
-  arrhythmiaStatus: string;
-  lastArrhythmiaData: any | null;
-  glucose: number;
-  lipids: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-}
 
 /**
  * Procesador principal de señales vitales
  * Coordina todos los analizadores específicos
  */
 export class VitalSignsProcessor {
+  private spo2Analyzer: SPO2Analyzer;
   private bloodPressureAnalyzer: BloodPressureAnalyzer;
   private arrhythmiaDetector: ArrhythmiaDetector;
   private glucoseEstimator: GlucoseEstimator;
@@ -60,10 +43,11 @@ export class VitalSignsProcessor {
     private userProfile?: UserProfile
   ) {
     console.log("VitalSignsProcessor: Creating analyzers");
-    this.bloodPressureAnalyzer = new BloodPressureAnalyzer(config);
-    this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.glucoseEstimator = new GlucoseEstimator();
-    this.lipidEstimator = new LipidEstimator();
+    this.spo2Analyzer = new SPO2Analyzer(config, userProfile);
+    this.bloodPressureAnalyzer = new BloodPressureAnalyzer(config, userProfile);
+    this.arrhythmiaDetector = new ArrhythmiaDetector(userProfile);
+    this.glucoseEstimator = new GlucoseEstimator(config, userProfile);
+    this.lipidEstimator = new LipidEstimator(config, userProfile);
     
     this.reset();
   }
@@ -140,27 +124,47 @@ export class VitalSignsProcessor {
   private updateAnalyzers(value: number, heartRate: number): void {
     if (value === 0) return;
     
+    // Actualizar analizador de SpO2
+    this.spo2Analyzer.addDataPoint(value);
+    
     // Actualizar analizador de presión arterial
     this.bloodPressureAnalyzer.addDataPoint(value, heartRate);
     
-    // No need for these calls since we fixed the interfaces
-    // this.glucoseEstimator.addDataPoint(value);
-    // this.lipidEstimator.addDataPoint(value);
+    // Actualizar estimadores de glucosa y lípidos
+    this.glucoseEstimator.addDataPoint(value);
+    this.lipidEstimator.addDataPoint(value);
   }
   
   /**
    * Actualizar todos los resultados de análisis
    */
   private updateResults(): void {
+    // Actualizar SpO2
+    const spo2Result = this.spo2Analyzer.estimateSPO2();
+    if (spo2Result.confidence > this.config.confidenceThreshold) {
+      this.results.spo2 = spo2Result.value;
+    }
+    
     // Actualizar presión arterial
     const bpResult = this.bloodPressureAnalyzer.estimateBloodPressure();
-    if (bpResult.confidence > 0.5) {  // Using a fixed threshold since config.confidenceThreshold doesn't exist
+    if (bpResult.confidence > this.config.confidenceThreshold) {
       this.results.pressure = bpResult.formatted;
     }
     
-    // No need for these calls since we fixed the interfaces
-    // const glucoseResult = this.glucoseEstimator.estimateGlucose();
-    // const lipidResult = this.lipidEstimator.estimateLipids();
+    // Actualizar glucosa
+    const glucoseResult = this.glucoseEstimator.estimateGlucose();
+    if (glucoseResult.confidence > this.config.confidenceThreshold) {
+      this.results.glucose = glucoseResult.value;
+    }
+    
+    // Actualizar lípidos
+    const lipidResult = this.lipidEstimator.estimateLipids();
+    if (lipidResult.confidence > this.config.confidenceThreshold) {
+      this.results.lipids = {
+        totalCholesterol: lipidResult.totalCholesterol,
+        triglycerides: lipidResult.triglycerides
+      };
+    }
   }
   
   /**
@@ -172,10 +176,10 @@ export class VitalSignsProcessor {
     this.signalBuffer = [];
     this.lastGoodBPM = 0;
     
-    // this.spo2Analyzer.reset();
+    this.spo2Analyzer.reset();
     this.bloodPressureAnalyzer.reset();
-    // this.glucoseEstimator.reset();
-    // this.lipidEstimator.reset();
+    this.glucoseEstimator.reset();
+    this.lipidEstimator.reset();
     
     // No resetear contador de arritmias
     
@@ -203,11 +207,11 @@ export class VitalSignsProcessor {
     this.lastBPMUpdateTime = 0;
     this.arrhythmiaCounter = 0;
     
-    // this.spo2Analyzer.reset();
+    this.spo2Analyzer.reset();
     this.bloodPressureAnalyzer.reset();
     this.arrhythmiaDetector.reset();
-    // this.glucoseEstimator.reset();
-    // this.lipidEstimator.reset();
+    this.glucoseEstimator.reset();
+    this.lipidEstimator.reset();
     
     this.results = {
       spo2: 0,
