@@ -38,40 +38,52 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled || !audioCtxRef.current) return;
 
-    // Patrones de vibración
+    // Patrones de vibración - ASEGURARSE QUE SE EJECUTE INMEDIATAMENTE
     if ('vibrate' in navigator) {
-      if (type === 'normal') {
-        // Vibración simple para latido normal
-        navigator.vibrate(50);
-      } else if (type === 'arrhythmia') {
-        // Patrón de vibración distintivo para arritmia (pulso doble)
-        navigator.vibrate([50, 100, 100]);
+      try {
+        if (type === 'normal') {
+          // Vibración simple para latido normal - más intensa
+          navigator.vibrate(80);
+          console.log('🔆 Vibración normal activada');
+        } else if (type === 'arrhythmia') {
+          // Patrón de vibración distintivo para arritmia (pulso doble)
+          navigator.vibrate([80, 100, 120]);
+          console.log('⚠️ Vibración de arritmia activada');
+        }
+      } catch (error) {
+        console.error('Error al activar vibración:', error);
       }
+    } else {
+      console.warn('API de vibración no disponible en este dispositivo');
     }
 
     // Generar un bip con características según el tipo
-    const ctx = audioCtxRef.current;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    try {
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
 
-    if (type === 'normal') {
-      // Tono normal para latido regular
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-    } else if (type === 'arrhythmia') {
-      // Tono más grave y duradero para arritmia
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      if (type === 'normal') {
+        // Tono normal para latido regular
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      } else if (type === 'arrhythmia') {
+        // Tono más grave y duradero para arritmia
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      }
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      // Mayor duración para arritmias
+      osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+    } catch (error) {
+      console.error('Error al reproducir audio:', error);
     }
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    // Mayor duración para arritmias
-    osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
   };
 
   return trigger;

@@ -1,14 +1,13 @@
 
-import { createSignalProcessor } from './signal-processing';
-import { PeakDetector, type RRData } from './signal/PeakDetector';
+import { PPGProcessor } from './signal/PPGProcessor';
+import { PeakDetector, RRData } from './signal/PeakDetector';
 import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
 import { BloodPressureAnalyzer } from './analysis/BloodPressureAnalyzer';
 import { DEFAULT_PROCESSOR_CONFIG, ProcessorConfig } from './config/ProcessorConfig';
 import { GlucoseEstimator } from './analysis/GlucoseEstimator';
 import { LipidEstimator } from './analysis/LipidEstimator';
 import { HemoglobinEstimator } from './analysis/HemoglobinEstimator';
-import type { ProcessedSignal } from './types';
-import { UserProfile } from './types';
+import type { ProcessedSignal } from '../types/signal';
 
 export interface VitalSignsResult {
   spo2: number;
@@ -47,7 +46,7 @@ export interface VitalSignsResult {
  */
 export class VitalSignsProcessor {
   // Componentes de procesamiento
-  private signalProcessor = createSignalProcessor();
+  private ppgProcessor: PPGProcessor;
   private peakDetector: PeakDetector;
   private arrhythmiaDetector: ArrhythmiaDetector;
   private bpAnalyzer: BloodPressureAnalyzer;
@@ -62,7 +61,6 @@ export class VitalSignsProcessor {
   private calibrationSamples: number = 0;
   private readonly CALIBRATION_REQUIRED_SAMPLES: number = 50;
   private readonly CALIBRATION_DURATION_MS: number = 8000;
-  private arrhythmiaCounter: number = 0;
   
   // Progreso de calibración
   private calibrationProgress = {
@@ -88,26 +86,16 @@ export class VitalSignsProcessor {
   constructor(config: Partial<ProcessorConfig> = {}) {
     const fullConfig = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
     
-    const defaultUserProfile: UserProfile = {
-      age: 30,
-      gender: 'unknown',
-      height: 170,
-      weight: 70,
-      activityLevel: 'moderate'
-    };
+    this.ppgProcessor = new PPGProcessor(
+      this.handleProcessedSignal.bind(this)
+    );
     
     this.peakDetector = new PeakDetector();
     this.arrhythmiaDetector = new ArrhythmiaDetector();
-    this.bpAnalyzer = new BloodPressureAnalyzer(defaultUserProfile);
+    this.bpAnalyzer = new BloodPressureAnalyzer();
     this.glucoseEstimator = new GlucoseEstimator(fullConfig);
     this.lipidEstimator = new LipidEstimator(fullConfig);
     this.hemoglobinEstimator = new HemoglobinEstimator(fullConfig);
-    
-    // Create specialized channels in the signal processor
-    this.signalProcessor.createChannel('heartbeat');
-    this.signalProcessor.createChannel('spo2');
-    this.signalProcessor.createChannel('arrhythmia');
-    this.signalProcessor.createChannel('bloodPressure');
     
     console.log('Procesador de signos vitales unificado inicializado');
   }
@@ -191,32 +179,22 @@ export class VitalSignsProcessor {
       this.ppgValues.shift();
     }
     
-    // Process through the central signal processor
-    const channels = this.signalProcessor.processSignal(ppgValue);
-    
-    // Get processed values from channels
-    const heartbeatChannel = channels.get('heartbeat');
-    const quality = heartbeatChannel?.getLastMetadata()?.quality || 0;
-    
     // Detectar picos en la señal
     const peakInfo = this.peakDetector.detectPeaks(this.ppgValues);
     
     // Procesar arritmias
     const arrhythmiaResult = this.arrhythmiaDetector.processRRData(rrData);
-    if (arrhythmiaResult.arrhythmiaStatus.includes("ARRITMIA")) {
-      this.arrhythmiaCounter++;
-    }
     
     // Calcular SpO2
     const spo2 = this.calculateSpO2(this.ppgValues);
     
     // Calcular presión arterial
-    const bloodPressure = this.bpAnalyzer.analyze(this.ppgValues);
+    const bloodPressure = this.bpAnalyzer.calculateBloodPressure(this.ppgValues);
     
     // Calcular métricas no invasivas
-    const glucose = this.glucoseEstimator.analyze(this.ppgValues);
-    const lipids = this.lipidEstimator.analyze(this.ppgValues);
-    const hemoglobin = this.hemoglobinEstimator.analyze(this.ppgValues);
+    const glucose = this.glucoseEstimator.estimate(this.ppgValues);
+    const lipids = this.lipidEstimator.estimate(this.ppgValues);
+    const hemoglobin = this.hemoglobinEstimator.estimate(this.ppgValues);
     
     // Actualizar conteo de muestras de calibración
     if (this.isCalibrating) {
@@ -314,13 +292,6 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Get the arrhythmia counter
-   */
-  public getArrhythmiaCounter(): number {
-    return this.arrhythmiaCounter;
-  }
-  
-  /**
    * Fuerza la finalización de la calibración
    */
   public forceCalibrationCompletion(): void {
@@ -345,10 +316,6 @@ export class VitalSignsProcessor {
     
     this.isCalibrating = false;
     this.forceCompleteCalibration = false;
-    this.arrhythmiaCounter = 0;
-    
-    // Reset the signal processor
-    this.signalProcessor.reset();
     
     return this.lastValidResults;
   }

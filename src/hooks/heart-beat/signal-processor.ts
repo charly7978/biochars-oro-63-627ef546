@@ -40,7 +40,7 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
-      // Check for weak signal - fixed property access
+      // Check for weak signal
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
         value, 
         consecutiveWeakSignalsRef.current, 

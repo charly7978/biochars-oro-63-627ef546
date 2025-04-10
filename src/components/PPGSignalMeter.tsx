@@ -80,7 +80,7 @@ const PPGSignalMeter = memo(({
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 350;
 
-  const triggerHeartbeatFeedback = useHeartbeatFeedback();
+  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -123,7 +123,9 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      const feedbackType: HeartbeatFeedbackType = isArrhythmia ? 'arrhythmia' : 'normal';
+      console.log(`PPGSignalMeter: Activando feedback tipo: ${feedbackType}`);
+      triggerHeartbeatFeedback(feedbackType);
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
