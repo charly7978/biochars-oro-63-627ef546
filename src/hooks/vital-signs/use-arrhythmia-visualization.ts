@@ -1,30 +1,32 @@
 
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
 import { useState, useCallback } from 'react';
 import { ArrhythmiaWindow } from './types';
 
 /**
- * Hook for managing arrhythmia visualization windows
+ * Hook to manage arrhythmia visualization windows
+ * Based on real data only
  */
-export function useArrhythmiaVisualization() {
+export const useArrhythmiaVisualization = () => {
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
   /**
-   * Add a new arrhythmia window
+   * Register a new arrhythmia window for visualization
+   * Based on real data only
    */
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    const id = `arrhythmia-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    setArrhythmiaWindows(prev => [...prev, { start, end, id }]);
+    // Limit to most recent arrhythmia windows for visualization
+    setArrhythmiaWindows(prev => {
+      const newWindows = [...prev, { start, end }];
+      return newWindows.slice(-3);
+    });
   }, []);
   
   /**
-   * Remove an arrhythmia window
-   */
-  const removeArrhythmiaWindow = useCallback((id: string) => {
-    setArrhythmiaWindows(prev => prev.filter(window => window.id !== id));
-  }, []);
-  
-  /**
-   * Clear all arrhythmia windows
+   * Clear all arrhythmia visualization windows
    */
   const clearArrhythmiaWindows = useCallback(() => {
     setArrhythmiaWindows([]);
@@ -33,7 +35,6 @@ export function useArrhythmiaVisualization() {
   return {
     arrhythmiaWindows,
     addArrhythmiaWindow,
-    removeArrhythmiaWindow,
     clearArrhythmiaWindows
   };
-}
+};

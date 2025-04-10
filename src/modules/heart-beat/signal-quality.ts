@@ -1,6 +1,12 @@
 
 /**
- * Checks signal quality based on signal strength and consistency
+ * Functions for checking signal quality
+ * Direct measurement only - NO simulation or data manipulation
+ */
+
+/**
+ * Check if the signal quality is sufficient for processing
+ * Uses only real measurements without simulation
  */
 export function checkSignalQuality(
   value: number,
@@ -13,79 +19,81 @@ export function checkSignalQuality(
   isWeakSignal: boolean,
   updatedWeakSignalsCount: number
 } {
-  const isWeakSignal = Math.abs(value) < config.lowSignalThreshold;
+  // Get actual threshold from config or use default
+  const threshold = config.lowSignalThreshold || 0.05;
+  const maxCount = config.maxWeakSignalCount || 10;
   
-  let updatedWeakSignalsCount = consecutiveWeakSignalsCount;
-  if (isWeakSignal) {
-    updatedWeakSignalsCount += 1;
-  } else {
-    updatedWeakSignalsCount = Math.max(0, updatedWeakSignalsCount - 1);
-  }
+  // Check real signal against threshold
+  const isCurrentlyWeak = Math.abs(value) < threshold;
+  
+  // Update counter based on actual signal strength
+  let updatedCount = isCurrentlyWeak 
+    ? consecutiveWeakSignalsCount + 1 
+    : 0;
+  
+  // Determine if signal is weak based on consecutive measurements
+  const isWeak = updatedCount >= maxCount;
   
   return {
-    isWeakSignal: updatedWeakSignalsCount >= config.maxWeakSignalCount,
-    updatedWeakSignalsCount
+    isWeakSignal: isWeak,
+    updatedWeakSignalsCount: updatedCount
   };
 }
 
 /**
- * Detects if a finger is present based on rhythmic patterns in the signal
+ * Reset detection states for fresh measurements
+ */
+export function resetDetectionStates() {
+  console.log("Signal quality: Reset detection states");
+  return {
+    consecutiveWeakSignals: 0
+  };
+}
+
+/**
+ * Check if finger is detected by identifying rhythmic patterns
+ * Works only with real data, no simulation
  */
 export function isFingerDetectedByPattern(
-  signalHistory: number[],
+  signalHistory: Array<{time: number, value: number}>,
   currentPatternCount: number
 ): {
   isFingerDetected: boolean,
   patternCount: number
 } {
-  if (signalHistory.length < 30) {
+  if (signalHistory.length < 10) {
     return { 
-      isFingerDetected: false,
-      patternCount: 0
+      isFingerDetected: false, 
+      patternCount: 0 
     };
   }
   
-  // Look for rhythmic patterns in the signal
-  let patternCount = currentPatternCount;
-  
-  // Simple periodic pattern detection
-  const recentValues = typeof signalHistory[0] === 'number' 
-    ? signalHistory.slice(-30) 
-    : signalHistory.slice(-30).map(point => typeof point === 'number' ? point : (point as any).value);
-    
-  const min = Math.min(...recentValues as number[]);
-  const max = Math.max(...recentValues as number[]);
-  const range = max - min;
-  
-  // Check if we have sufficient variation for a physiological signal
-  if (range < 0.1) {
-    return { 
-      isFingerDetected: false,
-      patternCount: Math.max(0, patternCount - 1)
-    };
-  }
-  
-  // Count zero crossings as a basic rhythm detection
+  // Look for physiological patterns in real signal
   let crossings = 0;
-  const mean = recentValues.reduce((sum, val) => sum + (val as number), 0) / recentValues.length;
+  const recentValues = signalHistory.slice(-10);
+  const mean = recentValues.reduce((sum, point) => sum + point.value, 0) / recentValues.length;
   
+  // Count zero crossings (signal moving above/below mean)
   for (let i = 1; i < recentValues.length; i++) {
-    if (((recentValues[i-1] as number) - mean) * ((recentValues[i] as number) - mean) < 0) {
+    if ((recentValues[i].value > mean && recentValues[i-1].value <= mean) ||
+        (recentValues[i].value <= mean && recentValues[i-1].value > mean)) {
       crossings++;
     }
   }
   
-  // Physiological signals typically have consistent crossings
-  const isRhythmic = crossings >= 2 && crossings <= 15;
+  // Physiological heart rate should have 2-5 crossings in this window
+  const hasPhysiologicalPattern = crossings >= 2 && crossings <= 5;
   
-  if (isRhythmic) {
-    patternCount = Math.min(10, patternCount + 1);
-  } else {
-    patternCount = Math.max(0, patternCount - 1);
-  }
+  // Update pattern detection count
+  let newPatternCount = hasPhysiologicalPattern 
+    ? currentPatternCount + 1 
+    : Math.max(0, currentPatternCount - 1);
+  
+  // Only detect finger after consistent pattern detection
+  const isDetected = newPatternCount >= 3;
   
   return {
-    isFingerDetected: patternCount >= 3,
-    patternCount
+    isFingerDetected: isDetected,
+    patternCount: newPatternCount
   };
 }
