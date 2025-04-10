@@ -1,4 +1,3 @@
-
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
@@ -22,6 +21,7 @@ export interface ProcessedSignal {
     amplitudes: number[];
     dominantFrequency: number;
   };
+  value?: number;           // Compatibilidad con código existente
 }
 
 /**
