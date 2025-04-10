@@ -1,4 +1,24 @@
 
+import * as tf from '@tensorflow/tfjs';
+import { logSignalProcessing, LogLevel } from './signalLogging';
+
+/**
+ * Memory management utility to dispose tensors and clean up memory
+ */
+export function disposeTensors() {
+  try {
+    const numTensorsBefore = tf.memory().numTensors;
+    tf.disposeVariables();
+    const numTensorsAfter = tf.memory().numTensors;
+    
+    if (numTensorsBefore - numTensorsAfter > 0) {
+      console.log(`✅ Successfully disposed ${numTensorsBefore - numTensorsAfter} tensors`);
+    }
+  } catch (error) {
+    console.error('Error disposing tensors:', error);
+  }
+}
+
 // Remove the converters usage on line 119 since it doesn't exist
 // Replace with a simple check and log
 if (model && 'then' in model) {
