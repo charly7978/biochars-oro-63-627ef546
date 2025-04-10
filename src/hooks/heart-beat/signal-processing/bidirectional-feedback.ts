@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -42,27 +41,30 @@ export interface FeedbackState {
  * Creates a new feedback state with default values
  */
 export function createInitialFeedbackState(): FeedbackState {
-  return {
+  const initialState = {
     signalQuality: {
-      signalStrength: 0,
-      noiseLevel: 0,
-      stabilityScore: 0,
-      fingerDetectionConfidence: 0
+      signalStrength: 0.1, // Small initial value for visualization
+      noiseLevel: 0.1,     // Small initial value for visualization
+      stabilityScore: 0.1, // Small initial value for visualization
+      fingerDetectionConfidence: 0.1
     },
     heartRate: {
       currentBPM: 0,
-      confidence: 0,
-      peakStrength: 0,
-      rhythmStability: 0,
+      confidence: 0.1,     // Small initial value for visualization
+      peakStrength: 0.1,   // Small initial value for visualization
+      rhythmStability: 0.1, // Small initial value for visualization
       isPeak: false
     },
     vitalSigns: {
-      spo2Quality: 0,
-      pressureReliability: 0,
-      arrhythmiaConfidence: 0
+      spo2Quality: 0.1,    // Small initial value for visualization
+      pressureReliability: 0.1, // Small initial value for visualization
+      arrhythmiaConfidence: 0.1 // Small initial value for visualization
     },
     lastUpdateTime: Date.now()
   };
+  
+  console.log("Initial feedback state created:", initialState);
+  return initialState;
 }
 
 /**
@@ -203,7 +205,7 @@ export function updateVitalSignsFeedback(
     ? newData.arrhythmiaConfidence * arrhythmiaConfidenceAdjustment
     : currentState.vitalSigns.arrhythmiaConfidence;
   
-  return {
+  const updatedState = {
     ...currentState,
     vitalSigns: {
       ...currentState.vitalSigns,
@@ -213,6 +215,15 @@ export function updateVitalSignsFeedback(
     },
     lastUpdateTime: now
   };
+  
+  // Add more debug logging
+  console.log("Updated vital signs feedback:", {
+    oldValues: currentState.vitalSigns,
+    newValues: updatedState.vitalSigns,
+    updateTime: new Date(now).toISOString()
+  });
+  
+  return updatedState;
 }
 
 /**

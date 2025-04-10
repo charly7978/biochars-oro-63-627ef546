@@ -1,3 +1,4 @@
+
 /**
  * Unified Processor Hook
  * Provides a single integration point for signal processing, vital signs, and heart rate
@@ -14,6 +15,7 @@ import {
 import { 
   updateSignalQualityFeedback,
   updateVitalSignsFeedback,
+  updateHeartRateFeedback,
   logFeedbackState,
   createInitialFeedbackState
 } from './heart-beat/signal-processing/bidirectional-feedback';
@@ -104,6 +106,7 @@ export function useUnifiedProcessor() {
     if (lastResult) {
       const feedbackState = getGlobalFeedbackState();
       
+      // First, update signal quality feedback
       const updatedFeedback = updateSignalQualityFeedback(
         feedbackState,
         {
@@ -114,8 +117,20 @@ export function useUnifiedProcessor() {
         }
       );
       
-      const updatedVitalFeedback = updateVitalSignsFeedback(
+      // Then, update heart rate feedback
+      const updatedHeartRateFeedback = updateHeartRateFeedback(
         updatedFeedback,
+        {
+          currentBPM: lastResult.heartRate,
+          confidence: lastResult.confidence,
+          peakStrength: 0.7, // Default peak strength
+          rhythmStability: lastResult.isArrhythmia ? 0.3 : 0.8 // Lower stability if arrhythmia detected
+        }
+      );
+      
+      // Finally, update vital signs feedback
+      const updatedVitalFeedback = updateVitalSignsFeedback(
+        updatedHeartRateFeedback,
         {
           spo2Quality: lastResult.vitalSigns.spo2 > 0 ? 0.8 : 0,
           pressureReliability: lastResult.vitalSigns.pressure !== "--/--" ? 0.7 : 0,
@@ -123,12 +138,16 @@ export function useUnifiedProcessor() {
         }
       );
       
+      // Update global feedback state
       updateGlobalFeedbackState(updatedVitalFeedback);
       
-      if (Math.random() < 0.05) {
+      // Log feedback state occasionally for debugging
+      if (Math.random() < 0.1) { // Increased logging frequency for debugging
         logFeedbackState(updatedVitalFeedback, "useUnifiedProcessor");
+        console.log("Current signal processing result:", lastResult);
       }
       
+      // Calculate feedback quality indicators for UI display
       const signalOptimization = (
         updatedVitalFeedback.signalQuality.stabilityScore * 0.4 +
         (1 - updatedVitalFeedback.signalQuality.noiseLevel) * 0.6
@@ -140,6 +159,7 @@ export function useUnifiedProcessor() {
         updatedVitalFeedback.vitalSigns.pressureReliability * 0.3
       ) * 100;
       
+      // Update the result state with all the data
       setResult({
         lastSignal: {
           value: lastResult.value,

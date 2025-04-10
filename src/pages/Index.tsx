@@ -9,6 +9,7 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import BidirectionalFeedbackStatus from "@/components/BidirectionalFeedbackStatus";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
+import { useUnifiedProcessor } from "@/hooks/useUnifiedProcessor";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -44,6 +45,14 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+
+  const {
+    result: unifiedResult,
+    startMonitoring: startUnifiedMonitoring,
+    stopMonitoring: stopUnifiedMonitoring,
+    reset: resetUnifiedProcessor,
+    processFrame: processUnifiedFrame
+  } = useUnifiedProcessor();
 
   const enterFullScreen = async () => {
     try {
@@ -99,6 +108,20 @@ const Index = () => {
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+
+  useEffect(() => {
+    if (isMonitoring && lastSignal) {
+      processUnifiedFrame({ data: new Uint8ClampedArray(4), width: 1, height: 1 });
+    }
+  }, [isMonitoring, lastSignal, processUnifiedFrame]);
+
+  useEffect(() => {
+    if (isMonitoring) {
+      startUnifiedMonitoring();
+    } else {
+      stopUnifiedMonitoring();
+    }
+  }, [isMonitoring, startUnifiedMonitoring, stopUnifiedMonitoring]);
 
   const startMonitoring = () => {
     if (isMonitoring) {

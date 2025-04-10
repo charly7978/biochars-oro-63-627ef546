@@ -27,10 +27,16 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
   });
   
   useEffect(() => {
-    if (!isActive) return;
-    
+    // Always poll for feedback data for debugging
     const interval = setInterval(() => {
       const feedback = getGlobalFeedbackState();
+      
+      // Log feedback to help debug
+      console.log('Current feedback state:', {
+        signalQuality: feedback.signalQuality,
+        heartRate: feedback.heartRate,
+        vitalSigns: feedback.vitalSigns
+      });
       
       setSignalQuality({
         signalStrength: feedback.signalQuality.signalStrength,
@@ -52,7 +58,7 @@ const BidirectionalFeedbackStatus: React.FC<BidirectionalFeedbackStatusProps> = 
     }, 500);
     
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, []);
   
   // Make sure it's visible even when not active, for debugging purposes
   // if (!isActive) return null;
