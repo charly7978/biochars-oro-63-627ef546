@@ -248,8 +248,8 @@ const PPGSignalMeter = memo(({
     gradient.addColorStop(0, '#E5DEFF');
     gradient.addColorStop(0.3, '#FDE1D3');
     gradient.addColorStop(0.5, '#F2FCE2');
-    gradient.addColorStop(0.5, '#7e90c1');
-    gradient.addColorStop(1, '	#3255a4');
+    gradient.addColorStop(0.5, '#f4a62b');
+    gradient.addColorStop(1, '#3255a4');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
