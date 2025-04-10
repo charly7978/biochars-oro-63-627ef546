@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { SignalValidationResult } from '../core/RealSignalValidator';
 import { validateFullSignal } from '../core/RealSignalValidator';
 import FeedbackService from '../services/FeedbackService';
