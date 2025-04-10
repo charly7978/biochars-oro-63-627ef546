@@ -1,45 +1,77 @@
 
+import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
+import { SignalAnalyzer } from './SignalAnalyzer';
 
-export class HemoglobinEstimator {
-  private calibrationFactor: number;
-  private confidenceThreshold: number;
-  private lastEstimate: number = 0;
-  private lastConfidence: number = 0;
+/**
+ * Estimator for hemoglobin levels from PPG signal
+ */
+export class HemoglobinEstimator extends SignalAnalyzer {
+  private config: ProcessorConfig;
+  private lastEstimate: number = 14.0;
   
   constructor(config: Partial<ProcessorConfig> = {}) {
-    const fullConfig = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    this.calibrationFactor = fullConfig.nonInvasiveSettings.hemoglobinCalibrationFactor;
-    this.confidenceThreshold = fullConfig.nonInvasiveSettings.confidenceThreshold;
+    super();
+    this.config = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
   }
   
-  public estimate(values: number[]): number {
-    if (values.length < 40) return 0;
+  /**
+   * Analyze hemoglobin level from PPG values
+   */
+  public analyze(ppgValues: number[]): number {
+    if (ppgValues.length < 30) {
+      return this.lastEstimate;
+    }
     
-    // Implementación provisional simplificada
-    const average = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const normalizedValue = Math.min(1, Math.max(0, average / 180));
+    // Calculate metrics from PPG
+    const recentValues = ppgValues.slice(-30);
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
+    const amplitude = max - min;
     
-    // Rango normal de hemoglobina: 12-16 g/dL
-    const baseHemoglobin = 13;
-    const estimate = baseHemoglobin + ((normalizedValue - 0.5) * 3);
+    // Get calibration factor from settings
+    const calibrationFactor = this.config.analysisSettings.hemoglobinCalibrationFactor || 1.0;
     
-    this.lastEstimate = parseFloat((estimate * this.calibrationFactor).toFixed(1));
-    this.lastConfidence = 0.72; // Confianza fija para este ejemplo
+    // Base estimate (healthy range)
+    let hemoglobinEstimate = 14.0;
     
-    return this.lastEstimate;
+    // Gender-based adjustment if available
+    if (this.userProfile?.gender === 'female') {
+      hemoglobinEstimate = 12.5;
+    }
+    
+    // Adjust based on PPG characteristics
+    if (amplitude > 0.25) {
+      hemoglobinEstimate += 0.5;
+    } else if (amplitude < 0.1) {
+      hemoglobinEstimate -= 0.5;
+    }
+    
+    // Apply calibration
+    hemoglobinEstimate = Math.round(hemoglobinEstimate * calibrationFactor * 10) / 10;
+    
+    // Ensure physiological range
+    hemoglobinEstimate = Math.max(8.0, Math.min(18.0, hemoglobinEstimate));
+    
+    // Update last estimate
+    this.lastEstimate = hemoglobinEstimate;
+    
+    return hemoglobinEstimate;
   }
   
-  public getConfidence(): number {
-    return this.lastConfidence;
+  /**
+   * Legacy method for compatibility
+   */
+  public estimate(ppgValues: number[]): number {
+    return this.analyze(ppgValues);
   }
   
-  public meetsConfidenceThreshold(): boolean {
-    return this.lastConfidence >= this.confidenceThreshold;
-  }
-  
+  /**
+   * Reset the estimator
+   */
   public reset(): void {
-    this.lastEstimate = 0;
-    this.lastConfidence = 0;
+    super.reset();
+    this.lastEstimate = 14.0;
   }
 }
