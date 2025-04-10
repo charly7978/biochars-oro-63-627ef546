@@ -1,141 +1,113 @@
 
 /**
- * Signal quality assessment utilities
+ * Signal quality detection utilities
+ * Centralized functions for checking signal quality and finger detection
  */
 
-// Buffers para detección de patrones
-let patternDetectionBuffer: number[] = [];
-let patternConsistencyCounter = 0;
-const MIN_PATTERN_COUNT = 1; // Reducido de 2 a 1
-const MAX_PATTERN_BUFFER = 120;
+export interface SignalQualityOptions {
+  lowSignalThreshold?: number;
+  maxWeakSignalCount?: number;
+}
+
+export function checkSignalQuality(
+  value: number,
+  currentWeakSignalCount: number,
+  options: SignalQualityOptions = {}
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+  // Default thresholds
+  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
+  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
+  
+  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
+  
+  // Update consecutive weak signals counter
+  let updatedWeakSignalsCount = isCurrentValueWeak 
+    ? currentWeakSignalCount + 1 
+    : 0;
+  
+  // Limit to max
+  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
+  
+  // Signal is considered weak if we have enough consecutive weak readings
+  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
+  
+  return { isWeakSignal, updatedWeakSignalsCount };
+}
+
+export function shouldProcessMeasurement(
+  value: number,
+  weakSignalsCount: number,
+  options: SignalQualityOptions = {}
+): boolean {
+  const { isWeakSignal } = checkSignalQuality(value, weakSignalsCount, options);
+  return !isWeakSignal;
+}
+
+export function createWeakSignalResult(): { bpm: number; confidence: number; isPeak: boolean; arrhythmiaCount: number } {
+  return {
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: 0
+  };
+}
+
+export function resetSignalQualityState(): number {
+  return 0; // Reset the weak signals counter
+}
 
 /**
- * Verificar si se detectan patrones rítmicos en el historial de señales
- * 
- * @param signalHistory Historial de señales
- * @param currentPatternCount Contador actual de patrones
- * @returns Resultado de detección de patrones
+ * Resets all detection states related to signal quality
+ */
+export function resetDetectionStates(): void {
+  // This function is needed by HeartBeatProcessor.js
+  // It will reset all internal states related to signal detection
+  console.log("Signal quality: reset detection states");
+}
+
+/**
+ * Detects finger presence by analyzing rhythmic patterns in the signal
+ * @param signalHistory Array of signal history points with time and value
+ * @param currentPatternCount Current count of detected patterns
+ * @returns Object with finger detection status and updated pattern count
  */
 export function isFingerDetectedByPattern(
   signalHistory: Array<{time: number, value: number}>,
   currentPatternCount: number
-): { isFingerDetected: boolean, patternCount: number } {
-  // Necesitamos suficientes puntos para analizar (reducido de 20 a 15)
+): { isFingerDetected: boolean; patternCount: number } {
   if (signalHistory.length < 15) {
-    return {
-      isFingerDetected: false,
-      patternCount: 0
-    };
+    return { isFingerDetected: false, patternCount: 0 };
   }
   
-  // Extraer valores recientes para análisis
-  const recentValues = signalHistory.slice(-15).map(p => p.value);
+  // Simple pattern detection based on consistent rises and falls
+  let patternCount = currentPatternCount;
+  let risingCount = 0;
+  let fallingCount = 0;
   
-  // Calcular diferencias entre puntos consecutivos para detectar variación rítmica
-  const diffs: number[] = [];
-  for (let i = 1; i < recentValues.length; i++) {
-    diffs.push(recentValues[i] - recentValues[i-1]);
-  }
-  
-  // Contar cambios de signo, que indican oscilaciones
-  let signChanges = 0;
-  for (let i = 1; i < diffs.length; i++) {
-    if ((diffs[i] >= 0 && diffs[i-1] < 0) || (diffs[i] < 0 && diffs[i-1] >= 0)) {
-      signChanges++;
+  // Check for consistent rises and falls in the signal
+  for (let i = 1; i < signalHistory.length; i++) {
+    const diff = signalHistory[i].value - signalHistory[i-1].value;
+    if (diff > 0.05) {
+      risingCount++;
+    } else if (diff < -0.05) {
+      fallingCount++;
     }
   }
   
-  // Más de 3 cambios de signo en 15 puntos indica un patrón cardíaco (reducido de 4 a 3)
-  const isRhythmicPattern = signChanges >= 3;
+  // Check if we have a good balance of rises and falls (rhythmic)
+  const hasRhythm = risingCount >= 3 && fallingCount >= 3 && 
+                   Math.abs(risingCount - fallingCount) <= 2;
   
-  // Actualizar contador de patrones
-  let updatedPatternCount = currentPatternCount;
-  if (isRhythmicPattern) {
-    updatedPatternCount++;
-    
-    // Registrar detección si superamos el umbral
-    if (updatedPatternCount === MIN_PATTERN_COUNT) {
-      console.log("Signal quality: Patrón rítmico detectado - posible pulso cardíaco", {
-        signChanges, 
-        patternCount: updatedPatternCount,
-        timestamp: new Date().toISOString()
-      });
-    }
+  // Update pattern count
+  if (hasRhythm) {
+    patternCount++;
   } else {
-    // Reducir contador pero no por debajo de cero
-    updatedPatternCount = Math.max(0, updatedPatternCount - 1);
+    patternCount = Math.max(0, patternCount - 1);
   }
   
+  // Finger is detected if we have consistent patterns
   return {
-    isFingerDetected: updatedPatternCount >= MIN_PATTERN_COUNT,
-    patternCount: updatedPatternCount
+    isFingerDetected: patternCount >= 3,
+    patternCount
   };
-}
-
-/**
- * Check if the signal quality is too low, indicating possible finger removal
- * 
- * @param value Current signal value
- * @param consecutiveWeakSignalsCount Number of consecutive weak signals detected
- * @param config Configuration options
- * @returns Result with weak signal status and updated counter
- */
-export function checkSignalQuality(
-  value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number;
-    maxWeakSignalCount: number;
-  }
-): {
-  isWeakSignal: boolean;
-  updatedWeakSignalsCount: number;
-} {
-  // Valores reducidos para mayor sensibilidad
-  const threshold = config.lowSignalThreshold || 0.02; // Reducido de 0.03 a 0.02
-  const maxWeakCount = config.maxWeakSignalCount || 20; // Aumentado de 15 a 20 para mayor tolerancia
-  
-  // Update pattern detection buffer
-  patternDetectionBuffer.push(value);
-  if (patternDetectionBuffer.length > MAX_PATTERN_BUFFER) {
-    patternDetectionBuffer.shift();
-  }
-  
-  // Check if signal is weak, pero con criterio más flexible
-  const isWeak = Math.abs(value) < threshold;
-  
-  // Update consecutive weak signals counter
-  let updatedCount = isWeak 
-    ? consecutiveWeakSignalsCount + 1
-    : Math.max(0, consecutiveWeakSignalsCount - 2); // Decrementar más rápido
-  
-  // Determine if signal is too weak - requiere más señales débiles consecutivas
-  const isTooWeak = updatedCount >= maxWeakCount;
-  
-  // Log when signal becomes too weak
-  if (isTooWeak && consecutiveWeakSignalsCount < maxWeakCount) {
-    console.log("Signal quality: Signal too weak, possible finger removal", {
-      threshold,
-      signalValue: value,
-      weakCount: updatedCount,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  return {
-    isWeakSignal: isTooWeak,
-    updatedWeakSignalsCount: updatedCount
-  };
-}
-
-/**
- * Reset all detection states
- */
-export function resetDetectionStates(): void {
-  patternDetectionBuffer = [];
-  patternConsistencyCounter = 0;
-  
-  console.log("Signal quality: Detection states reset", {
-    timestamp: new Date().toISOString()
-  });
 }

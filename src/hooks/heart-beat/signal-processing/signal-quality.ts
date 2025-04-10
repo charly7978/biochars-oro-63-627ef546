@@ -1,13 +1,10 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
  * Functions for checking signal quality and weak signals
  * Improved to reduce false positives and add rhythmic pattern detection
  */
-import { checkSignalQuality as originalCheckSignalQuality, isFingerDetectedByPattern, resetDetectionStates } from '../../../modules/heart-beat/signal-quality';
-
-export { resetDetectionStates };
+import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
 // Signal history for pattern detection
 let signalHistory: Array<{time: number, value: number}> = [];
@@ -23,21 +20,6 @@ const REQUIRED_STABLE_FRAMES = 15; // Must have physiologically stable signal fo
 // Track time-based consistency
 let lastProcessTime = 0;
 const MAX_ALLOWED_GAP_MS = 150; // Maximum time gap allowed between processing
-
-// Add bidirectional feedback channels
-const feedbackChannels: {
-  [channelName: string]: {
-    value: number;
-    quality: number;
-    feedbackApplied: boolean;
-    lastUpdate: number;
-  }
-} = {
-  heartRate: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 },
-  spo2: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 },
-  arrhythmia: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 },
-  bloodPressure: { value: 0, quality: 0, feedbackApplied: false, lastUpdate: 0 }
-};
 
 /**
  * Checks if the signal is too weak, indicating possible finger removal
@@ -83,7 +65,7 @@ export function checkWeakSignal(
     signalVariance = values.reduce((sum, val) => sum + Math.pow(val - signalMean, 2), 0) / values.length;
     
     // Check if variance is within physiological range
-    const isPhysiological = signalVariance > 0.001 && signalVariance < 0.5;
+    const isPhysiological = signalVariance > 0.01 && signalVariance < 0.5;
     
     if (isPhysiological) {
       consecutiveStableFrames++;
@@ -114,9 +96,6 @@ export function checkWeakSignal(
         stableFrames: consecutiveStableFrames
       });
       
-      // Apply bidirectional feedback to improve detection quality
-      applyBidirectionalFeedback('heartRate', 0.8, value);
-      
       return {
         isWeakSignal: false,
         updatedWeakSignalsCount: 0
@@ -126,8 +105,8 @@ export function checkWeakSignal(
   
   // Use higher thresholds if not specified
   const finalConfig = {
-    lowSignalThreshold: config.lowSignalThreshold || 0.05, // Changed to the original value 
-    maxWeakSignalCount: config.maxWeakSignalCount || 10    // Changed to the original value
+    lowSignalThreshold: config.lowSignalThreshold || 0.30, // Increased from 0.25
+    maxWeakSignalCount: config.maxWeakSignalCount || 6    // Increased from 5
   };
   
   // If finger detection was previously confirmed but we have many consecutive weak signals,
@@ -139,62 +118,18 @@ export function checkWeakSignal(
     console.log("Finger detection lost due to consecutive weak signals:", consecutiveWeakSignalsCount);
   }
   
-  const result = originalCheckSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
+  const result = checkSignalQuality(value, consecutiveWeakSignalsCount, finalConfig);
   
   // If finger is confirmed but signal is weak, give benefit of doubt for longer
   if (fingDetectionConfirmed && result.isWeakSignal) {
     // Higher tolerance for confirmed finger detection
     return {
-      isWeakSignal: result.updatedWeakSignalsCount >= finalConfig.maxWeakSignalCount * 1.5,
+      isWeakSignal: result.updatedWeakSignalsCount >= finalConfig.maxWeakSignalCount * 1.8, // Increased multiplier
       updatedWeakSignalsCount: result.updatedWeakSignalsCount
     };
   }
   
   return result;
-}
-
-/**
- * Apply bidirectional feedback between channels to improve signal quality
- */
-function applyBidirectionalFeedback(channelName: string, quality: number, value: number): void {
-  if (feedbackChannels[channelName]) {
-    const now = Date.now();
-    const channel = feedbackChannels[channelName];
-    
-    // Only apply feedback if it's been a while since last update
-    if (now - channel.lastUpdate > 500) {
-      channel.value = value;
-      channel.quality = quality;
-      channel.feedbackApplied = true;
-      channel.lastUpdate = now;
-      
-      console.log(`Applied bidirectional feedback to ${channelName} channel`, {
-        quality,
-        value,
-        time: new Date(now).toISOString()
-      });
-    }
-  }
-}
-
-/**
- * Get feedback from a specific channel
- */
-export function getChannelFeedback(channelName: string): {
-  value: number;
-  quality: number;
-  available: boolean;
-} {
-  const channel = feedbackChannels[channelName];
-  if (!channel) {
-    return { value: 0, quality: 0, available: false };
-  }
-  
-  return {
-    value: channel.value,
-    quality: channel.quality,
-    available: channel.feedbackApplied && (Date.now() - channel.lastUpdate < 5000)
-  };
 }
 
 /**
@@ -209,18 +144,7 @@ export function resetSignalQualityState() {
   signalVariance = 0;
   consecutiveStableFrames = 0;
   lastProcessTime = 0;
-  
-  // Reset feedback channels
-  Object.keys(feedbackChannels).forEach(channel => {
-    feedbackChannels[channel] = { 
-      value: 0, 
-      quality: 0, 
-      feedbackApplied: false, 
-      lastUpdate: 0 
-    };
-  });
-  
-  console.log("Signal quality state reset, including pattern detection and feedback channels");
+  console.log("Signal quality state reset, including pattern detection");
   
   return {
     consecutiveWeakSignals: 0
@@ -237,15 +161,16 @@ export function isFingerDetected(): boolean {
 /**
  * Determines if a measurement should be processed based on signal strength
  * Uses rhythmic pattern detection alongside amplitude thresholds
+ * Uses higher threshold to prevent false positives
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // If finger detection is confirmed by pattern, allow processing even if signal is slightly weak
   if (fingDetectionConfirmed && consecutiveStableFrames >= REQUIRED_STABLE_FRAMES) {
-    return Math.abs(value) >= 0.008; // Lower threshold for confirmed finger
+    return Math.abs(value) >= 0.18; // Lower threshold for confirmed finger
   }
   
   // Higher threshold to avoid processing weak signals (likely noise)
-  return Math.abs(value) >= 0.01;
+  return Math.abs(value) >= 0.30; // Increased from 0.25
 }
 
 /**

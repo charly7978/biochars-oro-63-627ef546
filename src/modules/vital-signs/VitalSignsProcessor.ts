@@ -47,9 +47,9 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     
-    // Initialize validators and calculators (umbral reducido de 0.01 a 0.005)
-    this.signalValidator = new SignalValidator(0.005, 15);
-    this.confidenceCalculator = new ConfidenceCalculator(0.1); // Reducido de 0.15 a 0.1
+    // Initialize validators and calculators
+    this.signalValidator = new SignalValidator(0.01, 15);
+    this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
   /**
@@ -60,8 +60,8 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal (umbral reducido por 10x para mayor sensibilidad)
-    if (Math.abs(ppgValue) < 0.001) {
+    // Check for near-zero signal
+    if (!this.signalValidator.isValidSignal(ppgValue)) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
@@ -69,9 +69,9 @@ export class VitalSignsProcessor {
     // Apply filtering to the real PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // Process arrhythmia data if available and valid (criterios menos estrictos)
+    // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
-                           rrData.intervals.length >= 2 && 
+                           rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
@@ -85,8 +85,8 @@ export class VitalSignsProcessor {
       ppgValues.splice(0, ppgValues.length - 300);
     }
     
-    // Check if we have enough data points (reducido de valor por defecto a solo 8)
-    if (ppgValues.length < 8) {
+    // Check if we have enough data points
+    if (!this.signalValidator.hasEnoughData(ppgValues)) {
       return ResultFactory.createEmptyResults();
     }
     
@@ -95,14 +95,16 @@ export class VitalSignsProcessor {
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
     
-    // Eliminamos la validación estricta de amplitud para permitir el procesamiento
-    // aunque la señal sea débil
+    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
+      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
+      return ResultFactory.createEmptyResults();
+    }
     
     // Calculate SpO2 using real data only
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-30)); // Reducido de 45 a 30
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-45)); // Reducido de 90 a 45
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${bp.systolic}/${bp.diastolic}` 
       : "--/--";
@@ -121,9 +123,9 @@ export class VitalSignsProcessor {
       lipidsConfidence
     );
 
-    // Solo ocultamos valores si la confianza es realmente muy baja
-    const finalGlucose = glucoseConfidence > 0.05 ? glucose : 0;
-    const finalLipids = lipidsConfidence > 0.05 ? lipids : {
+    // Only show values if confidence exceeds threshold
+    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
+    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? lipids : {
       totalCholesterol: 0,
       triglycerides: 0
     };

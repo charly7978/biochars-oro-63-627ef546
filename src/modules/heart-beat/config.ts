@@ -1,50 +1,40 @@
 
 /**
- * Configuration settings for heart rate monitoring
+ * Configuration settings for HeartBeatProcessor
  */
-
 export const HeartBeatConfig = {
-  // Signal processing
-  SAMPLE_RATE: 30, // frames per second
-  WINDOW_SIZE: 40, // buffer size for signal processing
-  LOW_SIGNAL_THRESHOLD: 0.02, // Significantly reduced from 0.03 to detect weaker signals
-  LOW_SIGNAL_FRAMES: 6, // Reduced from 8 to 6 to be less strict
-
-  // Heart rate limits (physiological)
+  // Signal processing settings
+  SAMPLE_RATE: 30,
+  WINDOW_SIZE: 60,
   MIN_BPM: 40,
   MAX_BPM: 200,
+  SIGNAL_THRESHOLD: 0.60,
+  MIN_CONFIDENCE: 0.50,
+  DERIVATIVE_THRESHOLD: -0.03,
+  MIN_PEAK_TIME_MS: 300,
+  WARMUP_TIME_MS: 2000,
 
-  // Peak detection
-  SIGNAL_THRESHOLD: 0.005, // Reduced from 0.008 to 0.005
-  DERIVATIVE_THRESHOLD: 0.002, // Reduced from 0.004 to 0.002
-  MIN_CONFIDENCE: 0.15, // Reduced from 0.35 to 0.15
-  MIN_PEAK_TIME_MS: 300, // minimum time between peaks (200 BPM)
-  WARMUP_TIME_MS: 1500, // Reduced from 2000 to 1500
-
-  // Filtering
-  MEDIAN_FILTER_WINDOW: 7,
+  // Filter settings - adjusted for direct measurements only
+  MEDIAN_FILTER_WINDOW: 3,
   MOVING_AVERAGE_WINDOW: 5,
-  EMA_ALPHA: 0.3, // alpha for exponential moving average
-  BASELINE_FACTOR: 0.95, // factor for baseline tracking
-  CALIBRATION_SAMPLES: 60, // Reduced from 80 to 60
+  EMA_ALPHA: 0.3,
+  BASELINE_FACTOR: 0.995,
 
-  // Beep settings
-  BEEP_PRIMARY_FREQUENCY: 667,
-  BEEP_SECONDARY_FREQUENCY: 400,
-  BEEP_DURATION: 60, // ms
-  BEEP_VOLUME: 0.4, // 0-1 scale
-  MIN_BEEP_INTERVAL_MS: 250, // minimum time between beeps
+  // Audio settings
+  BEEP_PRIMARY_FREQUENCY: 880,
+  BEEP_SECONDARY_FREQUENCY: 440,
+  BEEP_DURATION: 80,
+  BEEP_VOLUME: 0.8,
+  MIN_BEEP_INTERVAL_MS: 250,
 
-  // Special flags - these control different modes
-  FORCE_IMMEDIATE_BEEP: true, // Changed from false to true to force beep on peak detection
-  SKIP_TIMING_VALIDATION: true, // Changed from false to true to skip timing validation for peaks
+  // Signal quality settings - adjusted for direct measurements
+  LOW_SIGNAL_THRESHOLD: 0.05,
+  LOW_SIGNAL_FRAMES: 10,
   
-  // Arrhythmia detection
-  ARRHYTHMIA_DETECTION_THRESHOLD: 0.08, // Greatly reduced from 0.12 to 0.08
-  ARRHYTHMIA_CONSECUTIVE_THRESHOLD: 1, // Reduced from 2 to 1
-  
-  // Visualization
-  SIGNAL_LINE_COLOR: '#00c853',
-  PEAK_MARKER_COLOR: '#ff1744',
-  ARRHYTHMIA_MARKER_COLOR: '#ff9100'
+  // Arrhythmia visualization settings - preserved for real data visualization
+  ARRHYTHMIA_INDICATOR_SIZE: 10,
+  ARRHYTHMIA_PULSE_COLOR: '#FEF7CD', // Yellow highlight for arrhythmia circles
+  ARRHYTHMIA_PULSE_COLOR_END: '#F97316', // Orange text for arrhythmia labels
+  ARRHYTHMIA_ANIMATION_DURATION_MS: 800,
+  ARRHYTHMIA_TRANSITION_DURATION_MS: 180 // Duration for smooth color transition
 };

@@ -1,141 +1,104 @@
 
 /**
- * Peak detection functionality for heart beat processing
+ * Functions for detecting peaks in PPG signals
  */
 
-interface PeakDetectionOptions {
-  minPeakTimeMs: number;
-  derivativeThreshold: number;
-  signalThreshold: number;
-}
-
 /**
- * Detect a peak in the heart rate signal
- * 
- * @param normalizedValue The normalized signal value
- * @param smoothDerivative The smoothed derivative of the signal
- * @param baseline The signal baseline
- * @param lastValue The previous signal value
- * @param lastPeakTime Time of the last detected peak
- * @param currentTime Current time
- * @param options Detection configuration options
- * @returns Result indicating if a peak was detected and with what confidence
+ * Detects if the current sample represents a peak in the signal
  */
 export function detectPeak(
   normalizedValue: number,
-  smoothDerivative: number,
+  derivative: number,
   baseline: number,
   lastValue: number,
   lastPeakTime: number | null,
   currentTime: number,
-  options: PeakDetectionOptions
-): { isPeak: boolean; confidence: number } {
-  const { minPeakTimeMs, derivativeThreshold, signalThreshold } = options;
-  
-  // Check if enough time has passed since the last peak
-  if (lastPeakTime && currentTime - lastPeakTime < minPeakTimeMs) {
-    return { isPeak: false, confidence: 0 };
+  config: {
+    minPeakTimeMs: number,
+    derivativeThreshold: number,
+    signalThreshold: number,
   }
-  
-  // Check if the signal value is strong enough
-  if (Math.abs(normalizedValue) < signalThreshold) {
-    return { isPeak: false, confidence: 0 };
+): {
+  isPeak: boolean;
+  confidence: number;
+} {
+  // Check minimum time between peaks
+  if (lastPeakTime !== null) {
+    const timeSinceLastPeak = currentTime - lastPeakTime;
+    if (timeSinceLastPeak < config.minPeakTimeMs) {
+      return { isPeak: false, confidence: 0 };
+    }
   }
+
+  // Peak detection logic
+  const isPeak =
+    derivative < config.derivativeThreshold &&
+    normalizedValue > config.signalThreshold &&
+    lastValue > baseline * 0.98;
+
+  // Calculate confidence based on signal characteristics
+  const amplitudeConfidence = Math.min(
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
+    1
+  );
   
-  // Detect peak by derivative sign change (from positive to negative)
-  const isPeak = smoothDerivative < -derivativeThreshold && lastValue > baseline;
-  
-  // Calculate confidence based on signal strength and derivative magnitude
-  const confidence = isPeak 
-    ? Math.min(1, (Math.abs(normalizedValue) / signalThreshold) * 0.5 + 
-               (Math.abs(smoothDerivative) / derivativeThreshold) * 0.5)
-    : 0;
-  
+  const derivativeConfidence = Math.min(
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
+    1
+  );
+
+  // Combined confidence score
+  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
+
   return { isPeak, confidence };
 }
 
 /**
- * Confirm a peak to reduce false positives
- * 
- * @param isPeak Whether a peak was detected
- * @param value Current signal value
- * @param lastConfirmedPeak Whether the last processed value was a confirmed peak
- * @param buffer Buffer for peak confirmation
- * @param minConfidence Minimum confidence threshold for confirmation
- * @param confidence Confidence of the current peak detection
- * @returns Updated confirmation state
+ * Confirms a peak by examining neighboring samples
  */
 export function confirmPeak(
   isPeak: boolean,
-  value: number,
+  normalizedValue: number,
   lastConfirmedPeak: boolean,
-  buffer: number[],
+  peakConfirmationBuffer: number[],
   minConfidence: number,
   confidence: number
-): { isConfirmedPeak: boolean; updatedBuffer: number[]; updatedLastConfirmedPeak: boolean } {
-  // If we already confirmed a peak, we need to wait for non-peak values
-  if (lastConfirmedPeak) {
-    return {
-      isConfirmedPeak: false,
-      updatedBuffer: buffer,
-      updatedLastConfirmedPeak: isPeak // Keep true until no more peak
-    };
+): {
+  isConfirmedPeak: boolean;
+  updatedBuffer: number[];
+  updatedLastConfirmedPeak: boolean;
+} {
+  // Add value to confirmation buffer
+  const updatedBuffer = [...peakConfirmationBuffer, normalizedValue];
+  if (updatedBuffer.length > 5) {
+    updatedBuffer.shift();
   }
-  
-  // Update confirmation buffer
-  const updatedBuffer = [...buffer, value].slice(-5);
-  
-  // Confirm the peak if the detection has sufficient confidence
-  const isConfirmedPeak = isPeak && confidence >= minConfidence;
-  
+
+  let isConfirmedPeak = false;
+  let updatedLastConfirmedPeak = lastConfirmedPeak;
+
+  // Only proceed with peak confirmation if needed
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
+    // Need enough samples in buffer for confirmation
+    if (updatedBuffer.length >= 3) {
+      const len = updatedBuffer.length;
+      
+      // Confirm peak if followed by decreasing values
+      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
+
+      if (goingDown1 || goingDown2) {
+        isConfirmedPeak = true;
+        updatedLastConfirmedPeak = true;
+      }
+    }
+  } else if (!isPeak) {
+    updatedLastConfirmedPeak = false;
+  }
+
   return {
     isConfirmedPeak,
     updatedBuffer,
-    updatedLastConfirmedPeak: isConfirmedPeak
+    updatedLastConfirmedPeak
   };
-}
-
-/**
- * Find the exact peak in a signal window
- * 
- * @param values Array of signal values
- * @param centerIndex Approximate index of the peak
- * @param windowSize Size of the window to search
- * @returns Exact index of the peak
- */
-export function findExactPeakIndex(values: number[], centerIndex: number, windowSize: number = 3): number {
-  const start = Math.max(0, centerIndex - windowSize);
-  const end = Math.min(values.length - 1, centerIndex + windowSize);
-  
-  let maxValue = values[centerIndex];
-  let maxIndex = centerIndex;
-  
-  for (let i = start; i <= end; i++) {
-    if (values[i] > maxValue) {
-      maxValue = values[i];
-      maxIndex = i;
-    }
-  }
-  
-  return maxIndex;
-}
-
-/**
- * Calculate interval between peaks
- * 
- * @param currentPeakTime Current peak time in ms
- * @param lastPeakTime Last peak time in ms
- * @returns Interval in ms or null if invalid
- */
-export function calculatePeakInterval(currentPeakTime: number, lastPeakTime: number | null): number | null {
-  if (!lastPeakTime) return null;
-  
-  const interval = currentPeakTime - lastPeakTime;
-  
-  // Validate interval is physiologically plausible (40-200 BPM)
-  if (interval >= 300 && interval <= 1500) {
-    return interval;
-  }
-  
-  return null;
 }

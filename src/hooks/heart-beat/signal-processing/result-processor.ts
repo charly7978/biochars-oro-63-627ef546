@@ -1,82 +1,61 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- * 
- * Utility functions for processing heart rate measurement results
- * Working with real data only
+ * Functions for processing signal results
  */
+import React from 'react';
 
 /**
- * Process low confidence results for better stability
+ * Process signal results with low confidence
  */
 export function processLowConfidenceResult(
   result: any, 
   currentBPM: number,
-  arrhythmiaCounter: number
+  arrhythmiaCounter: number = 0
 ): any {
-  // If confidence is too low, use currentBPM for stability
-  if (result.confidence < 0.2 && currentBPM > 40) {
+  // If confidence is very low, don't update values
+  if (result.confidence < 0.25) {
     return {
-      ...result,
       bpm: currentBPM,
-      arrhythmiaCount: arrhythmiaCounter
+      confidence: result.confidence,
+      isPeak: false,
+      arrhythmiaCount: arrhythmiaCounter || 0,
+      rrData: {
+        intervals: [],
+        lastPeakTime: null
+      }
     };
   }
-
-  // Always include arrhythmia counter
-  return {
-    ...result,
-    arrhythmiaCount: arrhythmiaCounter
-  };
+  
+  return result;
 }
 
 /**
- * Update the last valid BPM reference if the current result is reasonable
+ * Updates the reference to last valid BPM when condition is met
  */
-export function updateLastValidBpm(
-  result: any,
-  lastValidBpmRef: React.MutableRefObject<number>
+export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRefObject<number>): void {
+  if (result.bpm >= 40 && result.bpm <= 200) {
+    lastValidBpmRef.current = result.bpm;
+  }
+}
+
+/**
+ * Handle peak detection
+ */
+export function handlePeakDetection(
+  result: any, 
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  requestBeepCallback: (value: number) => boolean,
+  isMonitoringRef: React.MutableRefObject<boolean>,
+  value: number
 ): void {
-  // Only update if we have a reasonable BPM with decent confidence
-  if (result.bpm >= 40 && 
-      result.bpm <= 200 && 
-      result.confidence > 0.5) {
+  const now = Date.now();
+  
+  // Only process peaks with minimum confidence
+  if (result.isPeak && result.confidence > 0.4) {
+    lastPeakTimeRef.current = now;
     
-    // If we never had a valid BPM, use this one
-    if (lastValidBpmRef.current === 0) {
-      lastValidBpmRef.current = result.bpm;
-    } else {
-      // Smooth transition to new value
-      lastValidBpmRef.current = 
-        lastValidBpmRef.current * 0.7 + result.bpm * 0.3;
+    if (isMonitoringRef.current && result.confidence > 0.5) {
+      requestBeepCallback(value);
     }
   }
-}
-
-/**
- * Validates if a BPM value is physiologically reasonable
- */
-export function isValidBPM(bpm: number): boolean {
-  return bpm >= 40 && bpm <= 200;
-}
-
-/**
- * Calculates the stability of heart rate over time
- * Higher stability means more consistent measurements
- */
-export function calculateHRStability(recentBPMs: number[]): number {
-  if (recentBPMs.length < 3) {
-    return 0;
-  }
-  
-  // Calculate standard deviation of recent BPMs
-  const mean = recentBPMs.reduce((sum, val) => sum + val, 0) / recentBPMs.length;
-  const squaredDiffs = recentBPMs.map(bpm => Math.pow(bpm - mean, 2));
-  const avgSquaredDiff = squaredDiffs.reduce((sum, val) => sum + val, 0) / squaredDiffs.length;
-  const stdDev = Math.sqrt(avgSquaredDiff);
-  
-  // Convert stdDev to a 0-1 stability metric (lower stdDev = higher stability)
-  const stability = Math.max(0, Math.min(1, 1 - (stdDev / 15)));
-  
-  return stability;
 }

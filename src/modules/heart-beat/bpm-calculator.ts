@@ -1,32 +1,35 @@
+
 /**
- * Utilities for BPM (beats per minute) calculation
+ * Functions for calculating and managing heart rate (BPM)
  */
 
 /**
- * Update the BPM history with a new interval
- * 
- * @param bpmHistory Array of recent BPM values
- * @param interval New RR interval in milliseconds
- * @param minBpm Minimum physiologically valid BPM
- * @param maxBpm Maximum physiologically valid BPM
- * @returns Updated BPM history array
+ * Updates BPM history based on new peak detection
  */
 export function updateBPMHistory(
+  lastPeakTime: number,
+  previousPeakTime: number | null,
   bpmHistory: number[],
-  interval: number,
-  minBpm: number = 40,
-  maxBpm: number = 200
+  config: {
+    minBPM: number,
+    maxBPM: number,
+    maxHistoryLength: number
+  }
 ): number[] {
-  // Convert interval to BPM
+  if (!previousPeakTime) return bpmHistory;
+  
+  const interval = lastPeakTime - previousPeakTime;
+  if (interval <= 0) return bpmHistory;
+
   const instantBPM = 60000 / interval;
   
-  // Only add valid BPM values
-  if (instantBPM >= minBpm && instantBPM <= maxBpm) {
+  // Validate physiological range
+  if (instantBPM >= config.minBPM && instantBPM <= config.maxBPM) {
     const updatedHistory = [...bpmHistory, instantBPM];
     
-    // Keep a reasonable history size
-    if (updatedHistory.length > 12) {
-      return updatedHistory.slice(-12);
+    // Maintain history size limit
+    if (updatedHistory.length > config.maxHistoryLength) {
+      return updatedHistory.slice(-config.maxHistoryLength);
     }
     
     return updatedHistory;
@@ -36,67 +39,55 @@ export function updateBPMHistory(
 }
 
 /**
- * Calculate current BPM from history
- * 
- * @param bpmHistory Array of recent BPM values
- * @returns Current BPM or 0 if insufficient data
+ * Calculates current BPM with outlier rejection
  */
 export function calculateCurrentBPM(bpmHistory: number[]): number {
   if (bpmHistory.length < 2) {
     return 0;
   }
   
-  // Sort the history and trim outliers
-  const sorted = [...bpmHistory].sort((a, b) => a - b);
-  const trimmed = sorted.slice(1, -1);
-  
-  if (trimmed.length === 0) {
-    return bpmHistory[bpmHistory.length - 1];
+  // Handle basic case with just two values
+  if (bpmHistory.length === 2) {
+    return (bpmHistory[0] + bpmHistory[1]) / 2;
   }
   
-  // Calculate average of trimmed values
-  const sum = trimmed.reduce((a, b) => a + b, 0);
-  return sum / trimmed.length;
+  // Sort to find median for outlier detection
+  const sorted = [...bpmHistory].sort((a, b) => a - b);
+  
+  // Trimming extreme values for robustness
+  const trimmed = sorted.slice(1, -1);
+  if (!trimmed.length) return 0;
+  
+  // Average of remaining values
+  const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+  return avg;
 }
 
 /**
- * Apply smoothing to BPM
- * 
- * @param currentBPM Current calculated BPM
- * @param smoothedBPM Previous smoothed BPM
- * @param alpha Weight factor for smoothing (0-1)
- * @returns Smoothed BPM
+ * Applies smoothing to BPM value using exponential moving average
  */
-export function smoothBPM(currentBPM: number, smoothedBPM: number, alpha: number = 0.2): number {
-  if (smoothedBPM === 0) {
+export function smoothBPM(currentBPM: number, previousSmoothedBPM: number, alpha: number): number {
+  if (previousSmoothedBPM === 0) {
     return currentBPM;
   }
   
-  return alpha * currentBPM + (1 - alpha) * smoothedBPM;
+  return alpha * currentBPM + (1 - alpha) * previousSmoothedBPM;
 }
 
 /**
- * Calculate final BPM with additional filtering
- * 
- * @param bpmHistory Complete BPM history
- * @returns Final filtered BPM or 0 if insufficient data
+ * Calculates final BPM with statistical trimming
  */
 export function calculateFinalBPM(bpmHistory: number[]): number {
   if (bpmHistory.length < 5) {
     return 0;
   }
   
-  // Sort and trim outliers using percentile method
   const sorted = [...bpmHistory].sort((a, b) => a - b);
-  const cutPercentage = 0.1; // Trim 10% from each end
-  const cut = Math.round(sorted.length * cutPercentage);
+  const cut = Math.round(sorted.length * 0.1);
   const finalSet = sorted.slice(cut, sorted.length - cut);
   
-  if (finalSet.length === 0) {
-    return 0;
-  }
+  if (!finalSet.length) return 0;
   
-  // Calculate average
   const sum = finalSet.reduce((acc, val) => acc + val, 0);
   return Math.round(sum / finalSet.length);
 }

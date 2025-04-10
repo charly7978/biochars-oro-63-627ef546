@@ -74,13 +74,13 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 15; // Reducido de 40 a 15
+      const minQualityThreshold = 40; // Increased threshold for better quality detection
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.25) { // Reducido de 0.4 a 0.25
+        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
           setHeartRate(heartBeatResult.bpm);
           
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
@@ -91,19 +91,6 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
-        // Procesar aún con señales más débiles si se detecta el dedo
-        if (lastSignal.fingerDetected) {
-          const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-          if (heartBeatResult.confidence > 0.2) { // Umbral aún más bajo
-            setHeartRate(heartBeatResult.bpm);
-            
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              setVitalSigns(vitals);
-            }
-          }
-        }
-        
         // When no quality signal, update signal quality but not values
         setSignalQuality(lastSignal.quality);
         
