@@ -6,22 +6,38 @@ export function useBeepProcessor() {
   const beepProcessorTimeoutRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  // Simplified method that doesn't do any actual processing
-  const processBeepQueue = useCallback(() => {
-    // Sound handling is now managed exclusively by PPGSignalMeter
-    console.log("BeepProcessor: Sound managed exclusively by PPGSignalMeter");
-    pendingBeepsQueue.current = []; // Clear queue
+  const MIN_BEEP_INTERVAL_MS = 500;
+  
+  const processBeepQueue = useCallback((
+    isMonitoringRef: React.MutableRefObject<boolean>,
+    lastSignalQualityRef: React.MutableRefObject<number>,
+    consecutiveWeakSignalsRef: React.MutableRefObject<number>,
+    MAX_CONSECUTIVE_WEAK_SIGNALS: number,
+    missedBeepsCounter: React.MutableRefObject<number>,
+    playBeep: (volume: number) => boolean | Promise<boolean>
+  ) => {
+    // Todo el procesamiento de beeps ha sido eliminado
+    // El sonido es manejado exclusivamente por PPGSignalMeter
+    console.log("BeepProcessor: Completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
+    pendingBeepsQueue.current = []; // Vaciar cola
     return;
   }, []);
 
-  // Simplified method that doesn't trigger any beeps
-  const requestImmediateBeep = useCallback((): boolean => {
-    // Sound handling is now managed exclusively by PPGSignalMeter
-    console.log("BeepProcessor: Beep completely eliminated - sound managed exclusively by PPGSignalMeter");
+  const requestImmediateBeep = useCallback((
+    value: number,
+    isMonitoringRef: React.MutableRefObject<boolean>,
+    lastSignalQualityRef: React.MutableRefObject<number>,
+    consecutiveWeakSignalsRef: React.MutableRefObject<number>,
+    MAX_CONSECUTIVE_WEAK_SIGNALS: number,
+    missedBeepsCounter: React.MutableRefObject<number>,
+    playBeep: (volume: number) => boolean | Promise<boolean>
+  ): boolean => {
+    // Todo el código de beep ha sido eliminado
+    // El sonido es manejado exclusivamente por PPGSignalMeter
+    console.log("BeepProcessor: Beep completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
     return false;
   }, []);
 
-  // Cleanup function
   const cleanup = useCallback(() => {
     pendingBeepsQueue.current = [];
     
