@@ -7,9 +7,14 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
-import BidirectionalFeedbackStatus from "@/components/BidirectionalFeedbackStatus";
 import { VitalSignsResult } from "@/modules/vital-signs/VitalSignsProcessor";
 import { useUnifiedProcessor } from "@/hooks/useUnifiedProcessor";
+import { useArrhythmiaVisualization } from "@/hooks/vital-signs/use-arrhythmia-visualization";
+import ArrhythmiaIndicator from "@/components/ArrhythmiaIndicator";
+import ArrhythmiaInfo from "@/components/ArrhythmiaInfo";
+import HeartRhythmVisualizer from "@/components/HeartRhythmVisualizer";
+import { toast } from "@/components/ui/use-toast";
+import { Info } from "lucide-react";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -28,6 +33,8 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [signalBuffer, setSignalBuffer] = useState<number[]>([]);
+  const [showArrhythmiaInfo, setShowArrhythmiaInfo] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -53,6 +60,8 @@ const Index = () => {
     reset: resetUnifiedProcessor,
     processFrame: processUnifiedFrame
   } = useUnifiedProcessor();
+
+  const { arrhythmiaWindows, addArrhythmiaWindow } = useArrhythmiaVisualization();
 
   const enterFullScreen = async () => {
     try {
@@ -84,6 +93,14 @@ const Index = () => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
+      setSignalBuffer(prev => {
+        const newBuffer = [...prev, lastSignal.filteredValue];
+        if (newBuffer.length > 200) {
+          return newBuffer.slice(-200);
+        }
+        return newBuffer;
+      });
+      
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
@@ -93,6 +110,22 @@ const Index = () => {
           const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
           if (vitals) {
             setVitalSigns(vitals);
+            
+            if (vitals.lastArrhythmiaData) {
+              const bufferLength = signalBuffer.length;
+              addArrhythmiaWindow(bufferLength - 50, bufferLength);
+              
+              if (!showArrhythmiaInfo) {
+                setShowArrhythmiaInfo(true);
+                setTimeout(() => setShowArrhythmiaInfo(false), 10000);
+                
+                toast({
+                  title: "Arritmia detectada",
+                  description: "Se ha detectado una posible irregularidad en el ritmo cardíaco",
+                  variant: "destructive"
+                });
+              }
+            }
           }
         }
         
@@ -107,7 +140,7 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, addArrhythmiaWindow, signalBuffer.length]);
 
   useEffect(() => {
     if (isMonitoring && lastSignal) {
@@ -324,6 +357,13 @@ const Index = () => {
             <div className="text-white text-lg">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
+            <button 
+              onClick={() => setShowArrhythmiaInfo(prev => !prev)}
+              className="flex items-center text-gray-300 hover:text-white"
+            >
+              <Info className="h-4 w-4 mr-1" />
+              <span className="text-sm">Info</span>
+            </button>
           </div>
 
           <div className="flex-1">
@@ -339,9 +379,34 @@ const Index = () => {
             />
           </div>
 
-          <AppTitle />
+          {isMonitoring && signalBuffer.length > 0 && (
+            <div className="absolute left-4 top-16 right-4">
+              <div className="bg-black/50 backdrop-blur-sm p-2 rounded-lg">
+                <div className="text-xs text-gray-300 mb-1">Ritmo cardíaco</div>
+                <HeartRhythmVisualizer 
+                  data={signalBuffer} 
+                  width={window.innerWidth - 32} 
+                  height={50}
+                  arrhythmiaWindows={arrhythmiaWindows}
+                />
+              </div>
+            </div>
+          )}
 
-          <BidirectionalFeedbackStatus isActive={true} />
+          <div className="absolute top-32 left-1/2 transform -translate-x-1/2">
+            <ArrhythmiaIndicator 
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus} 
+              count={vitalSigns.arrhythmiaStatus.split('|')[1] || "--"}
+            />
+          </div>
+
+          {showArrhythmiaInfo && (
+            <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
+              <ArrhythmiaInfo />
+            </div>
+          )}
+
+          <AppTitle />
 
           <div className="absolute inset-x-0 top-[45%] bottom-[60px] bg-black/10 px-4 py-6">
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 place-items-center h-full overflow-y-auto pb-4">
