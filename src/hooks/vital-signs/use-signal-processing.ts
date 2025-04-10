@@ -56,7 +56,8 @@ export const useSignalProcessing = () => {
       let result = processorRef.current.processSignal(value, rrData);
       
       // Add null checks for arrhythmia status
-      if (result && result.arrhythmiaStatus && 
+      if (result && 
+          result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {

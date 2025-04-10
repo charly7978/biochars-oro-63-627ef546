@@ -91,7 +91,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       const currentTime = Date.now();
       
       // Add safe null check for arrhythmiaStatus
-      if (result && result.arrhythmiaStatus && 
+      if (result && 
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
