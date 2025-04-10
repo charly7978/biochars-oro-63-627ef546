@@ -1,86 +1,72 @@
 
+import { ModelRegistry } from '../ModelRegistry';
+
 /**
  * TensorFlow Model Registry
- * Manages TensorFlow.js models for various vital signs processing
+ * Manages loading and initialization of TensorFlow.js models
  */
-export interface TensorFlowModel {
-  id: string;
-  name: string;
-  version: string;
-  architecture: string;
-  loaded: boolean;
-}
-
-class TensorFlowModelRegistry {
-  private models: Map<string, TensorFlowModel> = new Map();
+class TensorFlowModelRegistry implements ModelRegistry {
+  private models: Map<string, any> = new Map();
   private isInitialized: boolean = false;
   
-  constructor() {
-    // Initialize with default models
-    this.registerModel({
-      id: 'ppg-processor',
-      name: 'PPG Signal Processor',
-      version: '1.0',
-      architecture: 'CNN',
-      loaded: false
-    });
-    
-    this.registerModel({
-      id: 'arrhythmia-detector',
-      name: 'Arrhythmia Detector',
-      version: '1.0',
-      architecture: 'LSTM',
-      loaded: false
-    });
-  }
-  
   /**
-   * Register a new model in the registry
+   * Initialize TensorFlow.js models
    */
-  registerModel(model: TensorFlowModel): void {
-    this.models.set(model.id, model);
+  async initialize(): Promise<boolean> {
+    if (this.isInitialized) {
+      console.log("TensorFlowModelRegistry: Already initialized");
+      return true;
+    }
+    
+    try {
+      console.log("TensorFlowModelRegistry: Initializing models");
+      
+      // Simulate model loading for now
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      this.isInitialized = true;
+      console.log("TensorFlowModelRegistry: Models initialized successfully");
+      return true;
+    } catch (error) {
+      console.error("TensorFlowModelRegistry: Error initializing models", error);
+      return false;
+    }
   }
   
   /**
    * Get a model by ID
    */
-  getModel(id: string): TensorFlowModel | undefined {
-    return this.models.get(id);
-  }
-  
-  /**
-   * Get all registered models
-   */
-  getAllModels(): TensorFlowModel[] {
-    return Array.from(this.models.values());
-  }
-  
-  /**
-   * Initialize all models
-   */
-  async initialize(): Promise<boolean> {
-    if (this.isInitialized) return true;
-    
-    console.log("TensorFlowModelRegistry: Initializing models");
-    
-    // Mark all models as loaded for now (actual loading would happen here)
-    for (const model of this.models.values()) {
-      model.loaded = true;
+  getModel<T>(id: string): T | null {
+    if (!this.isInitialized) {
+      console.warn("TensorFlowModelRegistry: Models not initialized");
+      return null;
     }
     
-    this.isInitialized = true;
-    return true;
+    return this.models.get(id) as T || null;
   }
   
   /**
-   * Check if all models are loaded
+   * Register a model
+   */
+  registerModel(id: string, model: any): void {
+    this.models.set(id, model);
+  }
+  
+  /**
+   * Check if the registry is initialized
    */
   isReady(): boolean {
-    return this.isInitialized && 
-      Array.from(this.models.values()).every(model => model.loaded);
+    return this.isInitialized;
+  }
+  
+  /**
+   * Get all available models
+   */
+  getAvailableModels(): string[] {
+    return Array.from(this.models.keys());
   }
 }
 
-// Singleton instance
-export const tensorFlowModelRegistry = new TensorFlowModelRegistry();
+// Create singleton instance
+const tensorFlowModelRegistry = new TensorFlowModelRegistry();
 export default tensorFlowModelRegistry;

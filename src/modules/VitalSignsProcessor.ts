@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -52,6 +51,23 @@ export class VitalSignsProcessor {
   constructor() {
     console.log("VitalSignsProcessor: Initializing with direct measurement mode only");
     this.processor = new CoreProcessor();
+  }
+  
+  /**
+   * Check signal quality and detect weak signals
+   */
+  private checkSignalQuality(ppgValue: number): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+    // Check for weak signal to detect finger removal
+    const isWeakSignal = ppgValue < this.LOW_SIGNAL_THRESHOLD;
+    let updatedWeakSignalsCount = this.weakSignalsCount;
+
+    if (isWeakSignal) {
+      updatedWeakSignalsCount = Math.min(this.MAX_WEAK_SIGNALS, updatedWeakSignalsCount + 1);
+    } else {
+      updatedWeakSignalsCount = Math.max(0, updatedWeakSignalsCount - 0.5);
+    }
+
+    return { isWeakSignal, updatedWeakSignalsCount };
   }
   
   /**
@@ -146,7 +162,8 @@ export class VitalSignsProcessor {
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
-        }
+        },
+        hemoglobin: 0
       };
     }
   }

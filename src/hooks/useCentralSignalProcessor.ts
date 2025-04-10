@@ -142,8 +142,11 @@ export const useCentralSignalProcessor = () => {
     // Process heartbeat
     const heartbeat = processHeartBeat(value);
     
+    // Get RR data from heartbeat result if available
+    const rrData = heartbeat?.rrData || undefined;
+    
     // Process vital signs with RR data from heartbeat
-    const vitals = processVitalSigns(value, heartbeat?.rrData);
+    const vitals = processVitalSigns(value, rrData);
     
     // Check for arrhythmia counter changes
     if (arrhythmiaCounter !== arrhythmiaCount) {
