@@ -1,4 +1,3 @@
-
 export const keyframes = {
   "heart-beat": {
     "0%, 100%": { transform: "scale(1)" },
