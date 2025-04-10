@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -141,7 +140,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         lastPeakTime: result.rrData.lastPeakTime
       });
       
-      // CRITICAL FIX: Set arrhythmia status correctly
       currentBeatIsArrhythmiaRef.current = arrhythmiaResult.isArrhythmia;
       result.isArrhythmia = arrhythmiaResult.isArrhythmia;
       result.arrhythmiaCount = arrhythmiaServiceRef.current.getArrhythmiaCount();

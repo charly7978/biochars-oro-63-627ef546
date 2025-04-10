@@ -1,4 +1,3 @@
-
 import { useCallback, useRef } from 'react';
 
 interface SignalProcessingResult {
@@ -37,8 +36,7 @@ export function useSignalProcessor() {
     lastPeakTime: null
   });
 
-  // Critical fix: Improve arrhythmia segment tracking - completely revised
-  // Clear separation between normal and arrhythmia segments
+  // Improved arrhythmia segment tracking
   const currentArrhythmiaSegmentRef = useRef<{startTime: number, endTime: number | null} | null>(null);
   const arrhythmiaSegmentsRef = useRef<Array<{startTime: number, endTime: number | null}>>([]);
   
@@ -141,41 +139,41 @@ export function useSignalProcessor() {
       }
     }
     
+    // FIXED Arrhythmia segment management with precise boundaries
     let arrhythmiaSegment = null;
     
-    // CRITICALLY FIXED: Arrhythmia segment precise boundary detection
+    // Check if this beat has arrhythmia
     if (currentBeatIsArrhythmiaRef.current) {
-      // This is a point with arrhythmia
+      // Update the last arrhythmia time
       lastArrhythmiaTimeRef.current = now;
       
-      // If we don't have an active arrhythmia segment, create one
+      // If this is the start of a new arrhythmia
       if (currentArrhythmiaSegmentRef.current === null) {
-        // Start a new segment exactly at this moment - the beginning of the red waveform
+        // Create a new segment with precise timing
+        // We set the start time exactly at the current time to capture the exact start
         currentArrhythmiaSegmentRef.current = {
           startTime: now,
           endTime: null
         };
         
-        // Add to tracking list
+        // Add to segments list
         arrhythmiaSegmentsRef.current.push(currentArrhythmiaSegmentRef.current);
-        console.log("NEW ARRHYTHMIA SEGMENT STARTED at:", new Date(now).toISOString());
+        
+        console.log("New arrhythmia segment started at:", new Date(now).toISOString());
       }
       
-      // Return the current segment for visualization
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
     } 
-    // CRITICALLY FIXED: If this beat does NOT have arrhythmia but we had an active segment
+    // If no arrhythmia on this beat but we had one active, close it immediately
     else if (currentArrhythmiaSegmentRef.current !== null) {
-      // End the segment immediately - this is the exact end of the red waveform
+      // End the segment right now - no delay
       currentArrhythmiaSegmentRef.current.endTime = now;
-      
-      // Return the segment with its end time for visualization
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
       
-      console.log("ARRHYTHMIA SEGMENT ENDED at:", new Date(now).toISOString(), 
+      console.log("Arrhythmia segment ended at:", new Date(now).toISOString(), 
                   "Duration:", now - currentArrhythmiaSegmentRef.current.startTime, "ms");
       
-      // Reset current segment to null since it's complete
+      // Reset the current segment reference
       currentArrhythmiaSegmentRef.current = null;
     }
     

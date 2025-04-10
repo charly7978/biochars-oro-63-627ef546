@@ -26,9 +26,3 @@ export interface UseHeartBeatReturn {
   stopMonitoring: () => void;
   arrhythmiaSegments: Array<{startTime: number, endTime: number | null}>;
 }
-
-// Add this interface for any files that may need it
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
-}
