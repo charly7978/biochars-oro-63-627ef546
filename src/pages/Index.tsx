@@ -65,6 +65,7 @@ const Index = () => {
     };
   }, []);
 
+  // Cuando hay resultados válidos disponibles
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       setVitalSigns(lastValidResults);
@@ -72,43 +73,42 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
-  // Process signal only if we have good quality and finger detection
+  // Procesar señales y actualizar UI
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      // Only process if the quality is sufficient and the finger is detected
-      const minQualityThreshold = 40; // Increased threshold for better quality detection
+    if (!lastSignal || !isMonitoring) return;
+    
+    // Solo procesar si la calidad es suficiente y el dedo está detectado
+    if (lastSignal.fingerDetected && lastSignal.quality >= 40) {
+      // Procesar para ritmo cardíaco
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      // Solo actualizar ritmo cardíaco si la confianza es suficiente
+      if (heartBeatResult.confidence > 0.4) { 
+        setHeartRate(heartBeatResult.bpm);
         
-        // Only update heart rate if confidence is sufficient
-        if (heartBeatResult.confidence > 0.4) { // Increased confidence threshold
-          setHeartRate(heartBeatResult.bpm);
-          
-          // Add null checks
-          try {
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              setVitalSigns(vitals);
-            }
-          } catch (error) {
-            console.error("Error processing vital signs:", error);
+        // Procesar signos vitales con datos RR si están disponibles
+        try {
+          const vitalsResult = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+          // IMPORTANTE: solo actualizar si tenemos resultados válidos
+          if (vitalsResult) {
+            console.log("Actualizando signos vitales:", vitalsResult);
+            setVitalSigns(vitalsResult);
           }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      } else {
-        // When no quality signal, update signal quality but not values
-        setSignalQuality(lastSignal.quality);
-        
-        // If finger not detected for a while, reset heart rate to zero
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
+        } catch (error) {
+          console.error("Error processing vital signs:", error);
         }
       }
-    } else if (!isMonitoring) {
-      // If not monitoring, maintain zero values
-      setSignalQuality(0);
+      
+      // Siempre actualizar calidad de señal
+      setSignalQuality(lastSignal.quality);
+    } else {
+      // Actualizar solo calidad cuando no hay buena señal
+      setSignalQuality(lastSignal.quality);
+      
+      // Si el dedo no se detecta por un tiempo, resetear ritmo
+      if (!lastSignal.fingerDetected && heartRate > 0) {
+        setHeartRate(0);
+      }
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
