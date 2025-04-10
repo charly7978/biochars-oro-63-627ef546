@@ -12,10 +12,10 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   const valleyIndices: number[] = [];
 
   // Algoritmo para detección de picos y valles en datos reales
-  // Busca picos correctamente orientados (hacia arriba)
+  // Modificado para considerar los valores positivos como picos
   for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
-    // Detección de picos (orientados hacia arriba)
+    // Detección de picos (ahora los picos están orientados hacia arriba)
     if (
       v >= values[i - 1] * 0.95 &&
       v >= values[i + 1] * 0.95
@@ -25,7 +25,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
         peakIndices.push(i);
       }
     }
-    // Detección de valles (orientados hacia abajo)
+    // Detección de valles (ahora los valles están orientados hacia abajo)
     if (
       v <= values[i - 1] * 1.05 &&
       v <= values[i + 1] * 1.05
