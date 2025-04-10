@@ -51,5 +51,19 @@ export const keyframes = {
   "subtle-pulse": {
     "0%, 100%": { opacity: "0.95" },
     "50%": { opacity: "1" }
+  },
+  // Nueva animación para los resultados de las mediciones
+  "result-number-animation": {
+    "0%": { transform: "scale(1)", opacity: "0.8" },
+    "20%": { transform: "scale(1.05)", opacity: "1" },
+    "40%": { transform: "scale(1)", opacity: "0.95" },
+    "60%": { transform: "scale(1.02)", opacity: "1" },
+    "100%": { transform: "scale(1)", opacity: "1" }
+  },
+  "number-highlight": {
+    "0%": { textShadow: "0 0 0px rgba(255,255,255,0)" },
+    "30%": { textShadow: "0 0 8px rgba(59,130,246,0.7)" },
+    "70%": { textShadow: "0 0 4px rgba(59,130,246,0.4)" },
+    "100%": { textShadow: "0 0 0px rgba(255,255,255,0)" }
   }
 };

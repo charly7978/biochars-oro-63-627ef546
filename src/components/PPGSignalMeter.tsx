@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -62,6 +63,7 @@ const PPGSignalMeter = memo(({
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
+  const [resultsVisible, setResultsVisible] = useState(true);
 
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1200;
@@ -154,13 +156,18 @@ const PPGSignalMeter = memo(({
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
+    
+    // Si preserveResults es true y no hay un dedo detectado, mantenemos los datos para visualizar
     if (preserveResults && !isFingerDetected) {
+      setResultsVisible(true);
+    } else if (!preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
       }
       peaksRef.current = [];
       baselineRef.current = null;
       lastValueRef.current = null;
+      setResultsVisible(false);
     }
   }, [preserveResults, isFingerDetected]);
 
@@ -172,10 +179,14 @@ const PPGSignalMeter = memo(({
     
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
+      setResultsVisible(true);
     } else {
       consecutiveFingerFramesRef.current = 0;
+      if (!preserveResults) {
+        setResultsVisible(false);
+      }
     }
-  }, [quality, isFingerDetected]);
+  }, [quality, isFingerDetected, preserveResults]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -212,20 +223,20 @@ const PPGSignalMeter = memo(({
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'from-gray-400 to-gray-500';
     if (avgQuality > 65) return 'from-green-500 to-emerald-500';
     if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality]);
+  }, [getAverageQuality, preserveResults]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'Sin detección';
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality]);
+  }, [getAverageQuality, preserveResults]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -615,7 +626,7 @@ const PPGSignalMeter = memo(({
   }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -639,7 +650,7 @@ const PPGSignalMeter = memo(({
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
+                style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
               />
             </div>
             <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
