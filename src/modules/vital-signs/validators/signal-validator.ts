@@ -9,7 +9,7 @@
  * Enhanced with rhythmic pattern detection for finger detection
  */
 export class SignalValidator {
-  // Thresholds for physiological detection
+  // Thresholds for physiological detection - reduced for better sensitivity
   private readonly MIN_SIGNAL_AMPLITUDE: number;
   private readonly MIN_PPG_VALUES: number;
   
@@ -19,18 +19,18 @@ export class SignalValidator {
   private detectedPatternCount: number = 0;
   private fingerDetectionConfirmed: boolean = false;
   
-  // Constants for pattern detection - made more strict
+  // Constants for pattern detection - adjusted to be less strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
-  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
-  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
+  private readonly MIN_PEAKS_FOR_PATTERN = 3; // Reduced from 4 to detect patterns more easily
+  private readonly REQUIRED_PATTERNS = 2; // Reduced from 4 to confirm detection faster
+  private readonly MIN_SIGNAL_VARIANCE = 0.02; // Reduced from 0.04 to accept more signals
   
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
-    minSignalAmplitude: number = 0.02, // Increased from 0.01
-    minPpgValues: number = 15
+    minSignalAmplitude: number = 0.01, // Reduced from 0.02 to accept more signals
+    minPpgValues: number = 10 // Reduced from 15 to require fewer samples
   ) {
     this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
     this.MIN_PPG_VALUES = minPpgValues;
@@ -62,7 +62,7 @@ export class SignalValidator {
    * Validate that the signal is strong enough
    */
   public isValidSignal(ppgValue: number): boolean {
-    return Math.abs(ppgValue) >= 0.02; // Increased from 0.005
+    return Math.abs(ppgValue) >= 0.005; // Reducido de 0.02 para aceptar señales más débiles
   }
   
   /**
@@ -128,9 +128,9 @@ export class SignalValidator {
       return;
     }
     
-    // Look for peaks in the signal
+    // Look for peaks in the signal - reduced thresholds for better detection
     const peaks: number[] = [];
-    const peakThreshold = 0.25; // Increased from 0.2
+    const peakThreshold = 0.15; // Reduced from 0.25 to detect more peaks
     
     for (let i = 2; i < recentSignals.length - 2; i++) {
       const current = recentSignals[i];
@@ -140,11 +140,11 @@ export class SignalValidator {
       const next2 = recentSignals[i + 2];
       
       // Check if this point is a peak (higher than surrounding points)
-      // Also require the peak to be significantly higher (20% higher)
-      if (current.value > prev1.value * 1.2 && 
-          current.value > prev2.value * 1.2 &&
-          current.value > next1.value * 1.2 && 
-          current.value > next2.value * 1.2 &&
+      // Reduced threshold to 10% higher for better sensitivity
+      if (current.value > prev1.value * 1.1 && 
+          current.value > prev2.value * 1.1 &&
+          current.value > next1.value * 1.1 && 
+          current.value > next2.value * 1.1 &&
           Math.abs(current.value) > peakThreshold) {
         peaks.push(current.time);
       }
@@ -169,9 +169,9 @@ export class SignalValidator {
         return;
       }
       
-      // Check for consistency in intervals (rhythm)
+      // Check for consistency in intervals (rhythm) - increased tolerance
       let consistentIntervals = 0;
-      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
+      const maxDeviation = 200; // Increased from 150ms for more tolerance to natural variability
       
       for (let i = 1; i < validIntervals.length; i++) {
         if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {

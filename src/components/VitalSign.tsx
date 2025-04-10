@@ -1,9 +1,8 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Card, CardContent } from '@/components/ui/card';
-import { ChevronUp, X } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 
 interface VitalSignProps {
   label: string;
@@ -20,6 +19,11 @@ const VitalSign = ({
   highlighted = false,
   calibrationProgress 
 }: VitalSignProps) => {
+  // Ensure value is a primitive type that can be rendered
+  const renderValue = typeof value === 'object' ? 
+    JSON.stringify(value) : // Convert objects to strings for display
+    value;
+    
   const getRiskLabel = (label: string, value: string | number) => {
     if (typeof value === 'number') {
       switch(label) {
@@ -209,6 +213,22 @@ const VitalSign = ({
           'Apnea del sueño'
         ];
         break;
+      case 'HEMOGLOBINA':
+        info.normalRange = 'Hombres: 13.5-17.5 g/dL / Mujeres: 12.0-15.5 g/dL';
+        info.description = 'La hemoglobina es una proteína en los glóbulos rojos que transporta oxígeno de los pulmones al resto del cuerpo. Niveles bajos pueden indicar anemia.';
+        info.recommendations = [
+          'Consumir alimentos ricos en hierro',
+          'Incluir vitamina C para mejorar la absorción de hierro',
+          'Evitar té y café durante las comidas',
+          'Consultar al médico si hay fatiga persistente'
+        ];
+        info.riskFactors = [
+          'Mala alimentación',
+          'Pérdida de sangre',
+          'Embarazo',
+          'Enfermedades crónicas'
+        ];
+        break;
       default:
         break;
     }
@@ -217,13 +237,17 @@ const VitalSign = ({
   };
 
   const displayValue = (label: string, value: string | number) => {
+    // Make sure we're not trying to render an object
+    if (typeof value === 'object') {
+      return '--'; // Default display for objects
+    }
     return value;
   };
 
-  const riskLabel = getRiskLabel(label, value);
+  const riskLabel = getRiskLabel(label, renderValue);
   const riskColor = getRiskColor(riskLabel);
-  const detailedInfo = getDetailedInfo(label, value);
-  const formattedValue = displayValue(label, value);
+  const detailedInfo = getDetailedInfo(label, renderValue);
+  const formattedValue = displayValue(label, renderValue);
 
   return (
     <Sheet>
@@ -234,7 +258,10 @@ const VitalSign = ({
           </div>
           
           <div className="font-bold text-xl sm:text-2xl transition-all duration-300">
-            <span className="text-gradient-soft">
+            <span className={cn(
+              "text-gradient-soft",
+              highlighted && "animate-pulse"
+            )}>
               {formattedValue}
             </span>
             {unit && <span className="text-xs text-white/70 ml-1">{unit}</span>}
@@ -259,10 +286,6 @@ const VitalSign = ({
               </div>
             </div>
           )}
-          
-          <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-            <ChevronUp size={16} className="text-gray-400" />
-          </div>
         </div>
       </SheetTrigger>
       

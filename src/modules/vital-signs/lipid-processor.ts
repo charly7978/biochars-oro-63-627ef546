@@ -14,9 +14,9 @@ export class LipidProcessor {
   private readonly MIN_TRIGLYCERIDES = 50; // Mínimo fisiológico (mg/dL)
   private readonly MAX_TRIGLYCERIDES = 170; // Límite superior más conservador (mg/dL)
   
-  // Parámetros de validación y confianza
-  private readonly CONFIDENCE_THRESHOLD = 0.65; // Umbral mínimo de confianza más exigente
-  private readonly MIN_SAMPLE_SIZE = 200; // Mínimo de muestras para medición válida
+  // Parámetros de validación y confianza - ajustados para mejor sensibilidad
+  private readonly CONFIDENCE_THRESHOLD = 0.45; // Reducido de 0.65 para aceptar más mediciones
+  private readonly MIN_SAMPLE_SIZE = 150; // Reducido de 200 para procesar más rápido
   
   // Parámetros para promedio ponderado y mediana
   private readonly MEDIAN_WEIGHT = 0.65; // Mayor peso a la mediana para estabilidad

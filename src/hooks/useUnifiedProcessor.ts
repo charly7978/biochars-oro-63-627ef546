@@ -80,14 +80,9 @@ export function useUnifiedProcessor() {
     isProcessing: false
   });
   
+  // Update result when lastResult changes
   useEffect(() => {
     if (lastResult) {
-      const now = Date.now();
-      
-      // Registrar timestamp del procesamiento
-      console.log(`Procesando señal en: ${new Date(now).toISOString()}`);
-      
-      // Update the result state with all the data
       setResult({
         lastSignal: {
           value: lastResult.value,
@@ -108,16 +103,19 @@ export function useUnifiedProcessor() {
     }
   }, [lastResult, elapsedTime, isProcessing, arrhythmiaCount]);
   
+  // Start processing
   const startMonitoring = useCallback(() => {
     startProcessing();
     toast.success("Medición iniciada");
   }, [startProcessing]);
   
+  // Stop processing
   const stopMonitoring = useCallback(() => {
     stopCentralProcessing();
     toast.info("Medición detenida");
   }, [stopCentralProcessing]);
   
+  // Reset everything
   const reset = useCallback(() => {
     resetCentralProcessor();
     
@@ -144,26 +142,20 @@ export function useUnifiedProcessor() {
     toast.success("Medición reiniciada");
   }, [resetCentralProcessor]);
   
-  // Versión compatible de processFrame para evitar el error de TypeScript
-  const processFrameCompat = useCallback((imageData: any) => {
-    // Creamos un objeto ImageData compatible
-    const compatImageData = new ImageData(
-      imageData.data, 
-      imageData.width, 
-      imageData.height
-    );
-    
-    // Procesamos con el ImageData compatible
-    return processFrame(compatImageData);
-  }, [processFrame]);
-  
   return {
+    // Results
     result,
+    
+    // Methods for signal processing
     processSignal,
-    processFrame: processFrameCompat,
+    processFrame,
+    
+    // Control functions
     startMonitoring,
     stopMonitoring,
     reset,
+    
+    // Status
     isProcessing,
     elapsedTime
   };

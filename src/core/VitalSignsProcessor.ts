@@ -5,8 +5,8 @@ import { ArrhythmiaDetector } from './analysis/ArrhythmiaDetector';
 import { BloodPressureAnalyzer } from './analysis/BloodPressureAnalyzer';
 import { DEFAULT_PROCESSOR_CONFIG, ProcessorConfig } from './config/ProcessorConfig';
 import { GlucoseEstimator } from './analysis/GlucoseEstimator';
-import { LipidEstimator } from './analysis/LipidEstimator';
 import { HemoglobinEstimator } from './analysis/HemoglobinEstimator';
+import { LipidProcessor } from '../modules/vital-signs/lipid-processor';
 import type { ProcessedSignal } from './types';
 import { UserProfile } from './types';
 
@@ -52,7 +52,7 @@ export class VitalSignsProcessor {
   private arrhythmiaDetector: ArrhythmiaDetector;
   private bpAnalyzer: BloodPressureAnalyzer;
   private glucoseEstimator: GlucoseEstimator;
-  private lipidEstimator: LipidEstimator;
+  private lipidProcessor: LipidProcessor;
   private hemoglobinEstimator: HemoglobinEstimator;
   
   // Estado del procesador
@@ -100,7 +100,7 @@ export class VitalSignsProcessor {
     this.arrhythmiaDetector = new ArrhythmiaDetector();
     this.bpAnalyzer = new BloodPressureAnalyzer(defaultUserProfile);
     this.glucoseEstimator = new GlucoseEstimator(fullConfig);
-    this.lipidEstimator = new LipidEstimator(fullConfig);
+    this.lipidProcessor = new LipidProcessor();
     this.hemoglobinEstimator = new HemoglobinEstimator(fullConfig);
     
     // Create specialized channels in the signal processor
@@ -215,7 +215,7 @@ export class VitalSignsProcessor {
     
     // Calcular métricas no invasivas
     const glucose = this.glucoseEstimator.analyze(this.ppgValues);
-    const lipids = this.lipidEstimator.analyze(this.ppgValues);
+    const lipids = this.lipidProcessor.calculateLipids(this.ppgValues);
     const hemoglobin = this.hemoglobinEstimator.analyze(this.ppgValues);
     
     // Actualizar conteo de muestras de calibración
@@ -371,7 +371,8 @@ export class VitalSignsProcessor {
   }
 }
 
-// Exportar estimadores
+// Exportar estimadores - Centralizado para evitar duplicidades
 export { GlucoseEstimator } from './analysis/GlucoseEstimator';
-export { LipidEstimator } from './analysis/LipidEstimator';
 export { HemoglobinEstimator } from './analysis/HemoglobinEstimator';
+// Importamos LipidProcessor desde módulos para mantener compatibilidad
+export { LipidProcessor } from '../modules/vital-signs/lipid-processor';

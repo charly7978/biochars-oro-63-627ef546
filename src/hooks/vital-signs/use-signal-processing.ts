@@ -4,8 +4,8 @@
  */
 
 import { useRef, useCallback } from 'react';
-import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
-import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
+import { VitalSignsResult } from '../../core/VitalSignsProcessor';
+import { VitalSignsProcessor } from '../../modules/VitalSignsProcessor';
 
 /**
  * Hook for processing signal using the VitalSignsProcessor

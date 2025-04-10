@@ -7,12 +7,13 @@ import { useEffect, useRef } from 'react';
 export type HeartbeatFeedbackType = 'normal' | 'arrhythmia';
 
 /**
- * Hook simplificado para retroalimentación de los latidos cardíacos
+ * Hook que proporciona retroalimentación táctil y auditiva para los latidos cardíacos
  * @param enabled Activa o desactiva la retroalimentación
  * @returns Función para activar la retroalimentación con tipo específico
  */
 export function useHeartbeatFeedback(enabled: boolean = true) {
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const oscillatorRef = useRef<OscillatorNode | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -31,11 +32,22 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   }, [enabled]);
 
   /**
-   * Activa la retroalimentación sonora básica
+   * Activa la retroalimentación táctil y auditiva
    * @param type Tipo de retroalimentación: normal o arritmia
    */
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled || !audioCtxRef.current) return;
+
+    // Patrones de vibración
+    if ('vibrate' in navigator) {
+      if (type === 'normal') {
+        // Vibración simple para latido normal
+        navigator.vibrate(50);
+      } else if (type === 'arrhythmia') {
+        // Patrón de vibración distintivo para arritmia (pulso doble)
+        navigator.vibrate([50, 100, 100]);
+      }
+    }
 
     // Generar un bip con características según el tipo
     const ctx = audioCtxRef.current;

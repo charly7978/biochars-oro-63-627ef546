@@ -9,17 +9,17 @@ export class BloodPressureProcessor {
   // Measurement history
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
-  // Define wider physiological values
-  private readonly MIN_SYSTOLIC = 80;
-  private readonly MAX_SYSTOLIC = 190;
-  private readonly MIN_DIASTOLIC = 50;
-  private readonly MAX_DIASTOLIC = 120;
-  private readonly MIN_PULSE_PRESSURE = 25;
-  private readonly MAX_PULSE_PRESSURE = 70;
-  // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
-  private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
-  private readonly MIN_FPS = 20;
+  // Define wider physiological values - expanded ranges for better tolerance
+  private readonly MIN_SYSTOLIC = 70; // Reduced from 80
+  private readonly MAX_SYSTOLIC = 200; // Increased from 190
+  private readonly MIN_DIASTOLIC = 40; // Reduced from 50
+  private readonly MAX_DIASTOLIC = 130; // Increased from 120
+  private readonly MIN_PULSE_PRESSURE = 20; // Reduced from 25
+  private readonly MAX_PULSE_PRESSURE = 80; // Increased from 70
+  // Lower thresholds to accept a measurement - significantly reduced
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.0005; // Reduced from 0.001
+  private readonly MIN_PEAK_COUNT = 1; // Maintained at minimum
+  private readonly MIN_FPS = 15; // Reduced from 20
   
   // Keep track of last calculation time to prevent sticking
   private lastCalculationTime: number = 0;
