@@ -8,6 +8,8 @@ import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
 import { toast } from "sonner";
+import { NeuralNetworkStatus } from "@/components/monitoring/NeuralNetworkStatus";
+import tensorFlowModelRegistry from "@/core/neural/tensorflow/TensorFlowModelRegistry";
 
 const Index = () => {
   // Estado principal
@@ -23,6 +25,7 @@ const Index = () => {
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [tensorFlowInitialized, setTensorFlowInitialized] = useState(false);
   const measurementTimerRef = useRef(null);
   const processingDataRef = useRef({
     lastProcessedTime: 0,
@@ -51,6 +54,21 @@ const Index = () => {
     reset: resetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+
+  // Initialize TensorFlow
+  useEffect(() => {
+    const initTensorFlow = async () => {
+      try {
+        await tensorFlowModelRegistry.initialize();
+        setTensorFlowInitialized(true);
+        console.log("TensorFlow models initialized successfully");
+      } catch (err) {
+        console.error("Error initializing TensorFlow:", err);
+      }
+    };
+    
+    initTensorFlow();
+  }, []);
 
   // Entrar en pantalla completa para rendimiento óptimo
   const enterFullScreen = async () => {
@@ -367,6 +385,12 @@ const Index = () => {
         }
       }
       
+      // Update based on lastValidResults if available
+      if (lastValidResults) {
+        console.log("Last valid results available:", lastValidResults);
+        setVitalSigns(lastValidResults);
+      }
+      
       // Actualizar calidad de señal para UI
       setSignalQuality(lastSignal.quality);
     } else if (!lastSignal?.fingerDetected && isMonitoring) {
@@ -375,7 +399,7 @@ const Index = () => {
         console.log("Index: Dedo no detectado, esperando...");
       }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, framesProcessed]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, framesProcessed, lastValidResults]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -411,6 +435,16 @@ const Index = () => {
               onReset={stopMonitoring}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus}
               rawArrhythmiaData={lastValidResults?.lastArrhythmiaData}
+            />
+          </div>
+
+          <div className="absolute bottom-[250px] left-0 right-0 px-4">
+            <NeuralNetworkStatus 
+              enabled={true}
+              ready={tensorFlowInitialized}
+              lastProcessingTime={Date.now() - processingDataRef.current.lastProcessedTime}
+              confidence={signalQuality / 100}
+              modelsUsed={isMonitoring ? ['ppg-processor', 'arrhythmia-detector'] : []}
             />
           </div>
 

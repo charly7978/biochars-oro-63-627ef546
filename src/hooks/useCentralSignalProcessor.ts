@@ -1,344 +1,201 @@
 
 /**
- * Central Signal Processing Hook
- * Unifies signal processing, heart beat detection, and vital signs monitoring
+ * Central Signal Processor
+ * Coordinates all signal processing and vital signs calculation
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useSignalCore } from './useSignalCore';
-import { createSignalProcessor } from '../core/signal-processing';
-import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
-import { HeartBeatResult } from './heart-beat/types';
-import { useTensorFlowModel } from './useTensorFlowModel';
-import { TensorFlowModelRegistry } from '../core/neural/tensorflow/TensorFlowModelRegistry';
+import { useSignalProcessor } from './useSignalProcessor';
+import { useHeartBeatProcessor } from './heart-beat/useHeartBeatProcessor';
+import { useVitalSignsProcessor } from './useVitalSignsProcessor';
+import { VitalSignsResult } from '../core/VitalSignsProcessor';
+import tensorFlowModelRegistry from '../core/neural/tensorflow/TensorFlowModelRegistry';
 
 export interface SignalProcessingResult {
-  // PPG Signal metrics
   value: number;
   filteredValue: number;
   quality: number;
   fingerDetected: boolean;
-  
-  // Heart rate metrics
   heartRate: number;
-  confidence: number;
   isArrhythmia: boolean;
-  
-  // Vital signs
-  vitalSigns: {
-    spo2: number;
-    pressure: string;
-    arrhythmiaStatus: string;
-    glucose: number;
-    lipids: {
-      totalCholesterol: number;
-      triglycerides: number;
-    };
-    hemoglobin: number;
-  };
-  
-  // Arrhythmia data
+  vitalSigns: VitalSignsResult;
   arrhythmiaData?: {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
   } | null;
-  
-  // RR intervals
-  rrData?: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
 }
 
-export function useCentralSignalProcessor() {
-  // Core signal processing
-  const { 
-    signalState,
-    startProcessing: startSignalProcessing,
-    stopProcessing: stopSignalProcessing,
-    processValue: processSignalValue,
-    processFrame: processSignalFrame,
-    reset: resetSignalCore
-  } = useSignalCore();
-  
-  // TensorFlow model for heart rate
-  const { isReady: tfModelReady, predict: predictHeartRate } = 
-    useTensorFlowModel('heartRate', false);
-  
-  // Vital signs processor
-  const vitalSignsProcessorRef = useRef<VitalSignsProcessor | null>(null);
-  
-  // Signal processing state
-  const [lastResult, setLastResult] = useState<SignalProcessingResult | null>(null);
+/**
+ * Hook for unified signal processing
+ */
+export const useCentralSignalProcessor = () => {
+  // States
   const [isProcessing, setIsProcessing] = useState(false);
+  const [lastResult, setLastResult] = useState<SignalProcessingResult | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const timerRef = useRef<any>(null);
+  const [arrhythmiaCount, setArrhythmiaCount] = useState(0);
   
-  // Processing statistics
-  const processedFramesRef = useRef(0);
-  const lastHeartRateRef = useRef(0);
-  const lastArrhythmiaCountRef = useRef(0);
+  // Refs
+  const timerRef = useRef<number | null>(null);
   
-  // Initialize processors
+  // TensorFlow
+  const [modelsInitialized, setModelsInitialized] = useState(false);
+  
+  // Initialize TensorFlow models
   useEffect(() => {
-    if (!vitalSignsProcessorRef.current) {
-      vitalSignsProcessorRef.current = new VitalSignsProcessor();
-      console.log("Central Signal Processor: Initialized vital signs processor");
-    }
-    
-    // Initialize TensorFlow
-    const initTensorFlow = async () => {
+    const initializeModels = async () => {
       try {
-        const registry = TensorFlowModelRegistry.getInstance();
-        await registry.initialize();
+        await tensorFlowModelRegistry.initialize();
+        setModelsInitialized(true);
+        console.log("Central Signal Processor: TensorFlow models initialized");
       } catch (error) {
-        console.error("Error initializing TensorFlow:", error);
+        console.error("Central Signal Processor: Error initializing TensorFlow models", error);
       }
     };
     
-    initTensorFlow();
-    
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
+    initializeModels();
   }, []);
   
-  // Process PPG signal through all processors
-  const processSignal = useCallback((value: number): SignalProcessingResult | null => {
-    if (!isProcessing || !vitalSignsProcessorRef.current) return null;
-    
-    processedFramesRef.current++;
-    
-    // Process through core signal system
-    const signalResult = processSignalValue(value);
-    if (!signalResult) return null;
-    
-    // Extract quality and other metadata
-    const signalQuality = signalResult.quality || 0;
-    const heartbeatChannel = signalResult.channels.get('heartbeat');
-    const lastValue = heartbeatChannel?.getLastValue() || 0;
-    
-    // Detect finger presence
-    const fingerDetected = signalQuality > 30;
-    
-    // Skip processing if finger not detected
-    if (!fingerDetected) {
-      return {
-        value,
-        filteredValue: lastValue,
-        quality: signalQuality,
-        fingerDetected: false,
-        heartRate: 0,
-        confidence: 0,
-        isArrhythmia: false,
-        vitalSigns: {
-          spo2: 0,
-          pressure: "--/--",
-          arrhythmiaStatus: "--",
-          glucose: 0,
-          lipids: {
-            totalCholesterol: 0,
-            triglycerides: 0
-          },
-          hemoglobin: 0
-        }
-      };
-    }
-    
-    // Calculate heart rate - using RR data if available
-    const rrIntervals = heartbeatChannel?.getMetadata('rrIntervals') as number[] || [];
-    const lastPeakTime = heartbeatChannel?.getMetadata('lastPeakTime') as number | null;
-    
-    const rrData = {
-      intervals: rrIntervals,
-      lastPeakTime
-    };
-    
-    // Determine heart rate
-    let heartRate = heartbeatChannel?.getMetadata('heartRate') as number || 0;
-    if (heartRate === 0 && lastHeartRateRef.current > 0) {
-      heartRate = lastHeartRateRef.current;
-    } else if (heartRate > 0) {
-      lastHeartRateRef.current = heartRate;
-    }
-    
-    // Calculate confidence
-    const confidence = signalQuality / 100;
-    
-    // Process vital signs and await the result
-    const processingPromise = async () => {
-      try {
-        const vitalSignsResult = await vitalSignsProcessorRef.current!.processSignal(lastValue, rrData);
-        
-        // Detect arrhythmia
-        const isArrhythmia = vitalSignsResult.arrhythmiaStatus.includes("ARRITMIA");
-        
-        // Update arrhythmia count (for logging)
-        const arrhythmiaCount = vitalSignsProcessorRef.current!.getArrhythmiaCounter();
-        if (arrhythmiaCount > lastArrhythmiaCountRef.current) {
-          console.log(`Central Signal Processor: Arrhythmia detected (${arrhythmiaCount} total)`);
-          lastArrhythmiaCountRef.current = arrhythmiaCount;
-        }
-        
-        // Create combined result
-        const result: SignalProcessingResult = {
-          value,
-          filteredValue: lastValue,
-          quality: signalQuality,
-          fingerDetected,
-          heartRate,
-          confidence,
-          isArrhythmia,
-          vitalSigns: {
-            spo2: vitalSignsResult.spo2,
-            pressure: vitalSignsResult.pressure,
-            arrhythmiaStatus: vitalSignsResult.arrhythmiaStatus,
-            glucose: vitalSignsResult.glucose,
-            lipids: vitalSignsResult.lipids,
-            hemoglobin: vitalSignsResult.hemoglobin || 0
-          },
-          arrhythmiaData: vitalSignsResult.lastArrhythmiaData,
-          rrData
-        };
-        
-        // Update last result
-        setLastResult(result);
-        
-        return result;
-      } catch (error) {
-        console.error("Error processing vital signs:", error);
-        return null;
-      }
-    };
-    
-    // Start the async processing
-    processingPromise();
-    
-    // Return the last known result while processing is happening
-    return lastResult || {
-      value,
-      filteredValue: lastValue,
-      quality: signalQuality,
-      fingerDetected,
-      heartRate,
-      confidence,
-      isArrhythmia: false,
-      vitalSigns: {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0
-      },
-      rrData
-    };
-  }, [isProcessing, processSignalValue, lastResult]);
+  // Hooks
+  const { 
+    startProcessing: startSignalProcessor, 
+    stopProcessing: stopSignalProcessor, 
+    processFrame,
+    lastSignal
+  } = useSignalProcessor();
   
-  // Process camera frame through the pipeline
-  const processFrame = useCallback((imageData: ImageData): SignalProcessingResult | null => {
-    if (!isProcessing) return null;
-    
-    const frameResult = processSignalFrame(imageData);
-    if (!frameResult) return null;
-    
-    return processSignal(frameResult.lastValue || 0);
-  }, [isProcessing, processSignal, processSignalFrame]);
+  const { 
+    processSignal: processHeartBeat,
+    heartBeatResult
+  } = useHeartBeatProcessor();
   
-  // Start signal processing
+  const { 
+    processSignal: processVitalSigns, 
+    reset: resetVitalSigns,
+    fullReset: fullResetVitalSigns,
+    arrhythmiaCounter,
+    lastValidResults
+  } = useVitalSignsProcessor();
+  
+  // Start processing
   const startProcessing = useCallback(() => {
-    if (isProcessing) return;
-    
-    console.log("Central Signal Processor: Starting processing");
-    
-    // Reset all processors
-    resetSignalCore();
-    if (vitalSignsProcessorRef.current) {
-      vitalSignsProcessorRef.current.reset();
-    }
-    
-    // Start core signal processing
-    startSignalProcessing();
     setIsProcessing(true);
-    processedFramesRef.current = 0;
-    lastHeartRateRef.current = 0;
-    lastArrhythmiaCountRef.current = 0;
+    startSignalProcessor();
     
-    // Start elapsed time tracking
+    // Reset timers
     setElapsedTime(0);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
+    
+    // Start timer
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
     }
     
-    timerRef.current = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
+    timerRef.current = window.setInterval(() => {
+      setElapsedTime(prev => {
+        const next = prev + 1;
+        if (next >= 60) {
+          window.clearInterval(timerRef.current as number);
+          // Don't stop processing automatically
+          return 60;
+        }
+        return next;
+      });
     }, 1000);
     
-  }, [isProcessing, resetSignalCore, startSignalProcessing]);
+    console.log("Central Signal Processor: Started");
+  }, [startSignalProcessor]);
   
-  // Stop signal processing
+  // Stop processing
   const stopProcessing = useCallback(() => {
-    if (!isProcessing) return;
-    
-    console.log("Central Signal Processor: Stopping processing");
-    
-    // Stop core signal processing
-    stopSignalProcessing();
     setIsProcessing(false);
+    stopSignalProcessor();
     
-    // Stop timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
     
-    // Log processing statistics
-    console.log("Central Signal Processor: Processing statistics", {
-      processedFrames: processedFramesRef.current,
-      totalElapsedTime: elapsedTime,
-      finalHeartRate: lastHeartRateRef.current,
-      totalArrhythmias: lastArrhythmiaCountRef.current
-    });
-    
-  }, [isProcessing, stopSignalProcessing, elapsedTime]);
+    console.log("Central Signal Processor: Stopped");
+  }, [stopSignalProcessor]);
   
-  // Reset all processors
+  // Reset everything
   const reset = useCallback(() => {
-    // Stop processing
-    stopProcessing();
+    setIsProcessing(false);
+    stopSignalProcessor();
+    resetVitalSigns();
+    setElapsedTime(0);
+    setLastResult(null);
+    setArrhythmiaCount(0);
     
-    // Reset signal core
-    resetSignalCore();
-    
-    // Reset vital signs processor
-    if (vitalSignsProcessorRef.current) {
-      vitalSignsProcessorRef.current.fullReset();
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
     }
     
-    // Reset state
-    setLastResult(null);
-    setElapsedTime(0);
-    processedFramesRef.current = 0;
-    lastHeartRateRef.current = 0;
-    lastArrhythmiaCountRef.current = 0;
-    
-    console.log("Central Signal Processor: Full reset complete");
-  }, [resetSignalCore, stopProcessing]);
+    console.log("Central Signal Processor: Reset");
+  }, [stopSignalProcessor, resetVitalSigns]);
   
+  // Process signal
+  const processSignal = useCallback((value: number) => {
+    if (!isProcessing) return null;
+    
+    // Process heartbeat
+    const heartbeat = processHeartBeat(value);
+    
+    // Process vital signs with RR data from heartbeat
+    const vitals = processVitalSigns(value, heartbeat?.rrData);
+    
+    // Check for arrhythmia counter changes
+    if (arrhythmiaCounter !== arrhythmiaCount) {
+      setArrhythmiaCount(arrhythmiaCounter);
+    }
+    
+    // Create result
+    const result: SignalProcessingResult = {
+      value,
+      filteredValue: value, // Using raw value as filtered for now
+      quality: lastSignal?.quality || 0,
+      fingerDetected: lastSignal?.fingerDetected || false,
+      heartRate: heartbeat?.bpm || 0,
+      isArrhythmia: vitals.arrhythmiaStatus.includes("ARRHYTHMIA"),
+      vitalSigns: vitals,
+      arrhythmiaData: vitals.lastArrhythmiaData
+    };
+    
+    setLastResult(result);
+    return result;
+  }, [
+    isProcessing, 
+    processHeartBeat, 
+    processVitalSigns, 
+    lastSignal, 
+    arrhythmiaCounter, 
+    arrhythmiaCount
+  ]);
+  
+  // Process frame (from camera)
+  useEffect(() => {
+    if (lastSignal && isProcessing) {
+      processSignal(lastSignal.filteredValue);
+    }
+  }, [lastSignal, isProcessing, processSignal]);
+
   return {
-    processSignal,
-    processFrame,
+    // Methods
     startProcessing,
     stopProcessing,
     reset,
-    lastResult,
+    processSignal,
+    processFrame,
+    
+    // State
     isProcessing,
     elapsedTime,
-    arrhythmiaCount: lastArrhythmiaCountRef.current
+    lastResult,
+    lastSignal,
+    heartBeatResult,
+    vitalSigns: lastValidResults,
+    arrhythmiaCount,
+    modelsInitialized
   };
-}
+};

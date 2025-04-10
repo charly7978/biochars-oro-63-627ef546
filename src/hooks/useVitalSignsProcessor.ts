@@ -109,6 +109,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Log processed signals
     logSignalData(value, result, processedSignals.current);
     
+    // Update the last valid results if valid
+    if (result && (result.spo2 > 0 || result.pressure !== "--/--")) {
+      setLastValidResults(result);
+    }
+    
     // Always return real result
     return result;
   };
@@ -143,7 +148,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults, // Now returning the actual lastValidResults instead of null
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

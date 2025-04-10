@@ -1,57 +1,31 @@
 
 /**
- * Signal quality detection utilities
- * Centralized functions for checking signal quality and finger detection
+ * Function to check signal quality and detect weak signals
+ * Used to identify when the finger is removed from the sensor
  */
-
-export interface SignalQualityOptions {
-  lowSignalThreshold?: number;
-  maxWeakSignalCount?: number;
-}
-
-export function checkSignalQuality(
-  value: number,
-  currentWeakSignalCount: number,
-  options: SignalQualityOptions = {}
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
-  
-  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
-  
-  // Update consecutive weak signals counter
-  let updatedWeakSignalsCount = isCurrentValueWeak 
-    ? currentWeakSignalCount + 1 
-    : 0;
-  
-  // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
-  
-  // Signal is considered weak if we have enough consecutive weak readings
-  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
-  
-  return { isWeakSignal, updatedWeakSignalsCount };
-}
-
-export function shouldProcessMeasurement(
-  value: number,
+export const checkSignalQuality = (
+  value: number, 
   weakSignalsCount: number,
-  options: SignalQualityOptions = {}
-): boolean {
-  const { isWeakSignal } = checkSignalQuality(value, weakSignalsCount, options);
-  return !isWeakSignal;
-}
-
-export function createWeakSignalResult(): { bpm: number; confidence: number; isPeak: boolean; arrhythmiaCount: number } {
-  return {
-    bpm: 0,
-    confidence: 0,
-    isPeak: false,
-    arrhythmiaCount: 0
+  options: {
+    lowSignalThreshold: number;
+    maxWeakSignalCount: number;
+  }
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } => {
+  const { lowSignalThreshold, maxWeakSignalCount } = options;
+  
+  // Check if the signal is too weak (potentially finger removed)
+  const isWeakSignal = value < lowSignalThreshold;
+  let updatedWeakSignalsCount = weakSignalsCount;
+  
+  // If signal is weak, increment counter, otherwise decrement it gradually
+  if (isWeakSignal) {
+    updatedWeakSignalsCount = Math.min(maxWeakSignalCount, updatedWeakSignalsCount + 1);
+  } else {
+    updatedWeakSignalsCount = Math.max(0, updatedWeakSignalsCount - 0.5);
+  }
+  
+  return { 
+    isWeakSignal: updatedWeakSignalsCount >= maxWeakSignalCount, 
+    updatedWeakSignalsCount 
   };
-}
-
-export function resetSignalQualityState(): number {
-  return 0; // Reset the weak signals counter
-}
+};
