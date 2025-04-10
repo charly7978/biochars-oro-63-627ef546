@@ -1,120 +1,84 @@
+
+import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
+import { SignalAnalyzer } from './SignalAnalyzer';
 
-export interface LipidProfile {
-  totalCholesterol: number;
-  triglycerides: number;
-  confidence: number;
-}
-
-export class LipidEstimator {
-  private readonly DEFAULTS = {
-    cholesterol: 170,
-    triglycerides: 100,
-    minCholesterol: 130,
-    maxCholesterol: 240,
-    minTriglycerides: 50,
-    maxTriglycerides: 300
-  };
-
-  private readonly HISTORY_SIZE = 5;
-  private readonly STABILITY_FACTOR = 0.6;
-
-  private history: LipidProfile[] = [];
-  private lastEstimate: LipidProfile = {
-    totalCholesterol: 170,
-    triglycerides: 100,
-    confidence: 0
-  };
-
-  private cholesterolCalibrationFactor: number;
-  private triglycerideCalibrationFactor: number;
-  private confidenceThreshold: number;
-
+/**
+ * Estimator for blood lipids from PPG signal characteristics
+ */
+export class LipidEstimator extends SignalAnalyzer {
+  private config: ProcessorConfig;
+  private lastTotal: number = 180;
+  private lastTriglycerides: number = 150;
+  
   constructor(config: Partial<ProcessorConfig> = {}) {
-    const full = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
-    this.cholesterolCalibrationFactor = full.nonInvasiveSettings.cholesterolCalibrationFactor || 1.0;
-    this.triglycerideCalibrationFactor = full.nonInvasiveSettings.triglycerideCalibrationFactor || 1.0;
-    this.confidenceThreshold = full.nonInvasiveSettings.confidenceThreshold || 0.7;
-    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
+    super();
+    this.config = { ...DEFAULT_PROCESSOR_CONFIG, ...config };
   }
-
-  public estimate(values: number[]): LipidProfile {
-    if (values.length < 120) return this.lastEstimate;
-
-    const segment = values.slice(-120);
-    const { absorptionRatio, peakComplexity, waveformWidth } = this.extractSpectralFeatures(segment);
-
-    let cholesterol = this.DEFAULTS.cholesterol + absorptionRatio * 50 - waveformWidth * 10;
-    let triglycerides = this.DEFAULTS.triglycerides + peakComplexity * 40;
-
-    cholesterol *= this.cholesterolCalibrationFactor;
-    triglycerides *= this.triglycerideCalibrationFactor;
-
-    cholesterol = this.bound(cholesterol, this.DEFAULTS.minCholesterol, this.DEFAULTS.maxCholesterol);
-    triglycerides = this.bound(triglycerides, this.DEFAULTS.minTriglycerides, this.DEFAULTS.maxTriglycerides);
-
-    const confidence = this.calculateConfidence(absorptionRatio, peakComplexity, waveformWidth);
-    const smoothed = this.getSmoothedEstimate({ totalCholesterol: cholesterol, triglycerides, confidence });
-    this.lastEstimate = smoothed;
-    return smoothed;
+  
+  /**
+   * Analyze lipid levels from PPG signal
+   */
+  public analyze(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } {
+    if (ppgValues.length < 30) {
+      return { 
+        totalCholesterol: this.lastTotal,
+        triglycerides: this.lastTriglycerides
+      };
+    }
+    
+    // Calculate metrics from PPG
+    const recentValues = ppgValues.slice(-30);
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
+    const amplitude = max - min;
+    
+    // Get calibration factors
+    const cholesterolCalibrationFactor = this.config.analysisSettings.cholesterolCalibrationFactor || 1.0;
+    const triglycerideCalibrationFactor = this.config.analysisSettings.triglycerideCalibrationFactor || 1.0;
+    
+    // Base estimates (healthy ranges)
+    let totalCholesterol = 180;
+    let triglycerides = 150;
+    
+    // Adjust based on PPG characteristics
+    if (amplitude < 0.1) {
+      totalCholesterol += 10;
+      triglycerides += 15;
+    } else if (amplitude > 0.25) {
+      totalCholesterol -= 5;
+      triglycerides -= 10;
+    }
+    
+    // Apply calibration factors
+    totalCholesterol = Math.round(totalCholesterol * cholesterolCalibrationFactor);
+    triglycerides = Math.round(triglycerides * triglycerideCalibrationFactor);
+    
+    // Ensure physiological ranges
+    totalCholesterol = Math.max(120, Math.min(300, totalCholesterol));
+    triglycerides = Math.max(50, Math.min(500, triglycerides));
+    
+    // Update last estimates
+    this.lastTotal = totalCholesterol;
+    this.lastTriglycerides = triglycerides;
+    
+    return { totalCholesterol, triglycerides };
   }
-
-  private extractSpectralFeatures(data: number[]) {
-    const peak = Math.max(...data);
-    const valley = Math.min(...data);
-    const absorptionRatio = (peak - valley) / (peak + valley + 1e-5);
-    const zeroCrossings = data.reduce((count, val, i, arr) => {
-      if (i === 0) return count;
-      return count + (Math.sign(val) !== Math.sign(arr[i - 1]) ? 1 : 0);
-    }, 0);
-    const peakComplexity = zeroCrossings / data.length;
-    const waveformWidth = data.filter(v => v > valley + (peak - valley) * 0.5).length;
-
-    return { absorptionRatio, peakComplexity, waveformWidth };
+  
+  /**
+   * Legacy method for compatibility
+   */
+  public estimate(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } {
+    return this.analyze(ppgValues);
   }
-
-  private calculateConfidence(a: number, p: number, w: number): number {
-    const score = (a > 0.2 ? 1 : 0.6) * (p > 0.05 ? 1 : 0.7) * (w > 10 ? 1 : 0.8);
-    return Math.min(1, score);
-  }
-
-  private getSmoothedEstimate(current: LipidProfile): LipidProfile {
-    this.history.push(current);
-    if (this.history.length > this.HISTORY_SIZE) this.history.shift();
-
-    const avg = this.history.reduce((acc, val) => {
-      acc.totalCholesterol += val.totalCholesterol;
-      acc.triglycerides += val.triglycerides;
-      acc.confidence += val.confidence;
-      return acc;
-    }, { totalCholesterol: 0, triglycerides: 0, confidence: 0 });
-
-    const n = this.history.length;
-    return {
-      totalCholesterol: (avg.totalCholesterol / n) * this.STABILITY_FACTOR + current.totalCholesterol * (1 - this.STABILITY_FACTOR),
-      triglycerides: (avg.triglycerides / n) * this.STABILITY_FACTOR + current.triglycerides * (1 - this.STABILITY_FACTOR),
-      confidence: avg.confidence / n
-    };
-  }
-
-  private bound(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  public getConfidence(): number {
-    return this.lastEstimate.confidence;
-  }
-
-  public isReliable(): boolean {
-    return this.lastEstimate.confidence >= this.confidenceThreshold;
-  }
-
+  
+  /**
+   * Reset the estimator
+   */
   public reset(): void {
-    this.lastEstimate = {
-      totalCholesterol: this.DEFAULTS.cholesterol,
-      triglycerides: this.DEFAULTS.triglycerides,
-      confidence: 0
-    };
-    this.history = Array(this.HISTORY_SIZE).fill(this.lastEstimate);
+    super.reset();
+    this.lastTotal = 180;
+    this.lastTriglycerides = 150;
   }
 }

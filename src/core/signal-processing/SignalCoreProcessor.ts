@@ -1,4 +1,3 @@
-
 /**
  * Central Signal Processing Module
  * Handles core signal processing functionality with separate channels for different vital signs
@@ -93,7 +92,79 @@ export class SignalCoreProcessor {
       });
     });
     
+    // Specialized processing for the heartbeat channel
+    const heartbeatChannel = this.channels.get('heartbeat');
+    if (heartbeatChannel) {
+      // Perform peak detection on the heartbeat channel
+      this.processHeartbeatChannel(heartbeatChannel, filtered, currentTime);
+    }
+    
     return this.channels;
+  }
+  
+  /**
+   * Process heartbeat channel - detect peaks and calculate heart rate
+   */
+  private processHeartbeatChannel(channel: SignalChannel, value: number, currentTime: number): void {
+    const values = channel.getValues();
+    if (values.length < 10) return;
+    
+    // Simple peak detection
+    const MIN_PEAK_DISTANCE_MS = 300; // Minimum 300ms between peaks (200 BPM max)
+    const lastPeakTime = channel.getMetadata('lastPeakTime') as number | null;
+    
+    // Store last 8 values for peak detection
+    const recent = values.slice(-8);
+    const current = recent[recent.length - 1];
+    const prev1 = recent[recent.length - 2] || 0;
+    const prev2 = recent[recent.length - 3] || 0;
+    
+    // Check if this is a peak
+    const isPeak = current > prev1 && 
+                   current > prev2 && 
+                   current > 0.1; // Minimum peak amplitude
+    
+    // Check if enough time passed since last peak
+    const timeSinceLastPeak = lastPeakTime ? currentTime - lastPeakTime : 0;
+    const isValidPeak = isPeak && (!lastPeakTime || timeSinceLastPeak > MIN_PEAK_DISTANCE_MS);
+    
+    if (isValidPeak) {
+      console.log("SignalCoreProcessor: Peak detected");
+      
+      // Store peak time
+      channel.setMetadata('lastPeakTime', currentTime);
+      
+      // Calculate RR interval
+      if (lastPeakTime) {
+        const rrInterval = currentTime - lastPeakTime;
+        
+        // Store RR intervals (last 8)
+        const rrIntervals = channel.getMetadata('rrIntervals') as number[] || [];
+        rrIntervals.push(rrInterval);
+        
+        // Keep only the last 8 intervals
+        if (rrIntervals.length > 8) {
+          rrIntervals.shift();
+        }
+        
+        channel.setMetadata('rrIntervals', rrIntervals);
+        
+        // Calculate heart rate from RR intervals
+        if (rrIntervals.length >= 3) {
+          // Use the median of the last 3 intervals for stability
+          const recentRR = [...rrIntervals].slice(-3).sort((a, b) => a - b);
+          const medianRR = recentRR[Math.floor(recentRR.length / 2)];
+          
+          // Convert to BPM
+          const heartRate = Math.round(60000 / medianRR);
+          
+          // Store heart rate
+          if (heartRate >= 40 && heartRate <= 200) {
+            channel.setMetadata('heartRate', heartRate);
+          }
+        }
+      }
+    }
   }
   
   /**
