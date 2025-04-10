@@ -57,7 +57,8 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 }
 
 /**
- * Maneja la detección de picos con retroalimentación bidireccional mejorada
+ * Handle peak detection with improved natural synchronization
+ * Enhanced with bidirectional feedback
  */
 export function handlePeakDetection(
   result: any, 
@@ -66,65 +67,63 @@ export function handlePeakDetection(
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
 ): void {
-  try {
-    const now = Date.now();
+  const now = Date.now();
+  
+  // Get current feedback state
+  const feedbackState = getGlobalFeedbackState();
+  
+  // Only update time of peak for timing calculations
+  if (result.isPeak && result.confidence > 0.05) {
+    // Update peak time for time calculations only
+    lastPeakTimeRef.current = now;
     
-    // Obtener estado actual de feedback
-    const feedbackState = getGlobalFeedbackState();
-    
-    // Solo procesar picos con confianza mínima ajustada por calidad de señal
-    const minConfidence = 0.4 * (1 + feedbackState.signalQuality.signalStrength);
-    
-    if (result.isPeak && result.confidence > minConfidence) {
-      // Actualizar tiempo del último pico
-      lastPeakTimeRef.current = now;
-      
-      // Actualizar feedback de ritmo cardíaco
-      const updatedFeedback = updateHeartRateFeedback(
-        feedbackState,
-        {
-          currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
-          confidence: result.confidence,
-          peakStrength: Math.abs(value),
-          rhythmStability: result.rhythmVariability 
-            ? 1 - result.rhythmVariability 
-            : feedbackState.heartRate.rhythmStability,
-          isPeak: true
-        }
-      );
-      
-      // Actualizar estado global de feedback
-      updateGlobalFeedbackState(updatedFeedback);
-      
-      // Solicitar beep solo si la calidad de señal es buena
-      if (
-        isMonitoringRef.current && 
-        result.confidence > 0.5 &&
-        feedbackState.signalQuality.signalStrength > 0.4
-      ) {
-        // Ajustar volumen basado en la calidad de la señal
-        const volume = Math.min(1, 0.7 + feedbackState.signalQuality.signalStrength * 0.3);
-        requestBeepCallback(volume);
+    // Update heart rate feedback in the bidirectional system
+    const updatedFeedback = updateHeartRateFeedback(
+      feedbackState,
+      {
+        currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
+        confidence: result.confidence,
+        peakStrength: Math.abs(value),
+        rhythmStability: result.rhythmVariability ? 1 - result.rhythmVariability : feedbackState.heartRate.rhythmStability,
+        isPeak: true
       }
-    } else {
-      // Actualizar feedback sin pico
-      const updatedFeedback = updateHeartRateFeedback(
-        feedbackState,
-        {
-          currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
-          confidence: result.confidence,
-          peakStrength: Math.abs(value),
-          rhythmStability: result.rhythmVariability 
-            ? 1 - result.rhythmVariability 
-            : feedbackState.heartRate.rhythmStability,
-          isPeak: false
-        }
-      );
-      
-      updateGlobalFeedbackState(updatedFeedback);
-    }
-  } catch (error) {
-    console.error('Error en detección de picos:', error);
-    // No propagar el error para evitar interrumpir el procesamiento
+    );
+    
+    // Update global feedback state
+    updateGlobalFeedbackState(updatedFeedback);
+    
+    // BEEP IS ONLY HANDLED IN PPGSignalMeter WHEN DRAWING A CIRCLE
+    console.log("Peak-detection: Peak detected WITHOUT requesting beep - exclusive control by PPGSignalMeter", {
+      confidence: result.confidence,
+      value: value,
+      time: new Date(now).toISOString(),
+      // Log transition state if present
+      transition: result.transition ? {
+        active: result.transition.active,
+        progress: result.transition.progress,
+        direction: result.transition.direction
+      } : 'no transition',
+      isArrhythmia: result.isArrhythmia || false,
+      feedbackState: {
+        heartRateConfidence: updatedFeedback.heartRate.confidence,
+        signalStrength: updatedFeedback.signalQuality.signalStrength,
+        fingerDetection: updatedFeedback.signalQuality.fingerDetectionConfidence
+      }
+    });
+  } else {
+    // Actualizar el estado para indicar que no hay pico
+    const updatedFeedback = updateHeartRateFeedback(
+      feedbackState,
+      {
+        currentBPM: result.bpm || feedbackState.heartRate.currentBPM,
+        confidence: result.confidence,
+        peakStrength: Math.abs(value),
+        rhythmStability: result.rhythmVariability ? 1 - result.rhythmVariability : feedbackState.heartRate.rhythmStability,
+        isPeak: false
+      }
+    );
+    
+    // Update global feedback state con isPeak = false
+    updateGlobalFeedbackState(updatedFeedback);
   }
 }

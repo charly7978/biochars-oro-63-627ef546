@@ -1,3 +1,4 @@
+
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
@@ -5,18 +6,18 @@ import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
  */
 export interface ProcessedSignal {
   timestamp: number;        // Marca de tiempo de la señal
-  value: number;           // Valor crudo del sensor
-  filteredValue: number;   // Valor filtrado para análisis
-  quality: number;         // Calidad de la señal (0-100)
-  fingerDetected: boolean; // Si se detecta un dedo sobre el sensor
-  roi?: {                  // Región de interés en la imagen (opcional)
+  rawValue: number;         // Valor crudo del sensor
+  filteredValue: number;    // Valor filtrado para análisis
+  quality: number;          // Calidad de la señal (0-100)
+  fingerDetected: boolean;  // Si se detecta un dedo sobre el sensor
+  roi: {                    // Región de interés en la imagen
     x: number;
     y: number;
     width: number;
     height: number;
   };
-  perfusionIndex?: number; // Índice de perfusión opcional
-  spectrumData?: {         // Datos del espectro de frecuencia (opcional)
+  perfusionIndex?: number;  // Índice de perfusión opcional
+  spectrumData?: {          // Datos del espectro de frecuencia
     frequencies: number[];
     amplitudes: number[];
     dominantFrequency: number;
