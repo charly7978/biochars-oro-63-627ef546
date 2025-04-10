@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  *
@@ -8,7 +7,7 @@
 import { checkSignalQuality, isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
 // Signal history for pattern detection
-let signalHistory: Array<{time: number, value: number}> = [];
+let signalHistory: Array<number> = [];
 let patternDetectionCount = 0;
 let fingDetectionConfirmed = false;
 
@@ -54,14 +53,16 @@ export function checkWeakSignal(
   }
   lastProcessTime = now;
   
-  signalHistory.push({ time: now, value });
+  signalHistory.push(value);
   
   // Keep only recent signals (last 6 seconds)
-  signalHistory = signalHistory.filter(point => now - point.time < 6000);
+  if (signalHistory.length > 180) {
+    signalHistory = signalHistory.slice(-180);
+  }
   
   // Calculate signal statistics for physiological validation
   if (signalHistory.length > 10) {
-    const values = signalHistory.slice(-10).map(p => p.value);
+    const values = signalHistory.slice(-10);
     signalMean = values.reduce((sum, val) => sum + val, 0) / values.length;
     signalVariance = values.reduce((sum, val) => sum + Math.pow(val - signalMean, 2), 0) / values.length;
     
