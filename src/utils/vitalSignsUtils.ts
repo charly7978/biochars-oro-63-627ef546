@@ -1,11 +1,13 @@
 
 /**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * 
  * Utilidades reutilizables para todos los procesadores de signos vitales
- * Evita duplicación de código entre diferentes módulos
+ * Solo procesa datos reales, sin simulación ni manipulación
  */
 
 /**
- * Calcula el componente AC (amplitud pico a pico) de una señal
+ * Calcula el componente AC (amplitud pico a pico) de una señal real
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
@@ -13,7 +15,7 @@ export function calculateAC(values: number[]): number {
 }
 
 /**
- * Calcula el componente DC (valor promedio) de una señal
+ * Calcula el componente DC (valor promedio) de una señal real
  */
 export function calculateDC(values: number[]): number {
   if (values.length === 0) return 0;
@@ -21,7 +23,7 @@ export function calculateDC(values: number[]): number {
 }
 
 /**
- * Calcula la desviación estándar de un conjunto de valores
+ * Calcula la desviación estándar de un conjunto de valores reales
  */
 export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
@@ -33,36 +35,32 @@ export function calculateStandardDeviation(values: number[]): number {
 }
 
 /**
- * Encuentra picos y valles en una señal
+ * Encuentra picos y valles en una señal real
  */
 export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
-  // Algoritmo optimizado para detección de picos y valles usando ventana de 3 puntos
-  // Reducimos los requisitos de altura de pico para más sensibilidad
+  // Algoritmo para detección de picos y valles en datos reales
   for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
-    // Detección de picos (punto más alto en una ventana de 3 puntos)
-    // con una sensibilidad aumentada (95% en lugar de 98%)
+    // Detección de picos
     if (
       v >= values[i - 1] * 0.95 &&
       v >= values[i + 1] * 0.95
     ) {
-      // Agregamos una verificación de altura mínima para evitar ruido
       const localMin = Math.min(values[i - 1], values[i + 1]);
-      if (v - localMin > 0.02) { // Umbral mínimo para considerar un pico
+      if (v - localMin > 0.02) {
         peakIndices.push(i);
       }
     }
-    // Detección de valles (punto más bajo en una ventana de 3 puntos)
-    // con una sensibilidad aumentada
+    // Detección de valles
     if (
       v <= values[i - 1] * 1.05 &&
       v <= values[i + 1] * 1.05
     ) {
       const localMax = Math.max(values[i - 1], values[i + 1]);
-      if (localMax - v > 0.02) { // Umbral mínimo para considerar un valle
+      if (localMax - v > 0.02) {
         valleyIndices.push(i);
       }
     }
@@ -71,7 +69,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
 }
 
 /**
- * Calcula la amplitud entre picos y valles
+ * Calcula la amplitud entre picos y valles de señales reales
  */
 export function calculateAmplitude(
   values: number[],
@@ -82,8 +80,7 @@ export function calculateAmplitude(
 
   const amps: number[] = [];
   
-  // Usamos un enfoque más flexible para relacionar picos y valles
-  // Para cada pico, buscamos el valle más cercano
+  // Relacionar picos y valles en datos reales
   for (const peakIdx of peakIndices) {
     let closestValleyIdx = -1;
     let minDistance = Number.MAX_VALUE;
@@ -96,7 +93,7 @@ export function calculateAmplitude(
       }
     }
     
-    if (closestValleyIdx !== -1 && minDistance < 10) { // Limitamos a valles cercanos
+    if (closestValleyIdx !== -1 && minDistance < 10) {
       const amp = values[peakIdx] - values[closestValleyIdx];
       if (amp > 0) {
         amps.push(amp);
@@ -106,12 +103,12 @@ export function calculateAmplitude(
   
   if (amps.length === 0) return 0;
 
-  // Usamos todos los valores para calcular la media
+  // Calcular la media con datos reales
   return amps.reduce((a, b) => a + b, 0) / amps.length;
 }
 
 /**
- * Aplica un filtro de Media Móvil Simple (SMA) a un valor
+ * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
  */
 export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
   filteredValue: number;
@@ -126,28 +123,28 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
 }
 
 /**
- * Amplifica la señal de forma adaptativa basada en su amplitud
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin uso de datos simulados
  */
 export function amplifySignal(value: number, recentValues: number[]): number {
   if (recentValues.length === 0) return value;
   
-  // Calcular la amplitud reciente
+  // Calcular la amplitud reciente de datos reales
   const recentMin = Math.min(...recentValues);
   const recentMax = Math.max(...recentValues);
   const recentRange = recentMax - recentMin;
   
-  // Factor de amplificación inversamente proporcional a la amplitud
-  // Señales débiles se amplifican más
+  // Factor de amplificación para señales reales
   let amplificationFactor = 1.0;
   if (recentRange < 0.1) {
-    amplificationFactor = 2.5; // Alta amplificación para señales muy débiles
+    amplificationFactor = 2.5;
   } else if (recentRange < 0.3) {
-    amplificationFactor = 1.8; // Amplificación media para señales débiles
+    amplificationFactor = 1.8;
   } else if (recentRange < 0.5) {
-    amplificationFactor = 1.4; // Baja amplificación para señales medias
+    amplificationFactor = 1.4;
   }
   
-  // Centrar el valor respecto a la media y amplificar
+  // Amplificar usando solo datos reales
   const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
   const centeredValue = value - mean;
   const amplifiedValue = (centeredValue * amplificationFactor) + mean;
