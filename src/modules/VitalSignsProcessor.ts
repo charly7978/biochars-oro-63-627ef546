@@ -61,6 +61,9 @@ export class VitalSignsProcessor {
   private validPhysiologicalSignalsCount: number = 0;
   private readonly MIN_PHYSIOLOGICAL_SIGNALS = 20; // Require this many valid signals before accepting
   
+  // Arrhythmia counter
+  private arrhythmiaCounter: number = 0;
+  
   /**
    * Constructor that initializes all specialized processors
    * Using only direct measurement
@@ -171,6 +174,11 @@ export class VitalSignsProcessor {
                              rrData.intervals.every(i => i > 300 && i < 2000) ?
                              this.arrhythmiaProcessor.processRRData(rrData) :
                              { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+      
+      // If arrhythmia detected, increment counter
+      if (arrhythmiaResult.arrhythmiaStatus && arrhythmiaResult.arrhythmiaStatus.includes("ARRITMIA")) {
+        this.arrhythmiaCounter++;
+      }
       
       // Get PPG values for processing
       const ppgValues = this.signalProcessor.getPPGValues();
@@ -368,6 +376,7 @@ export class VitalSignsProcessor {
     this.frameRateHistory = [];
     this.lastFrameTime = 0;
     this.validPhysiologicalSignalsCount = 0;
+    this.arrhythmiaCounter = 0;
     this.processor.fullReset();
   }
   
@@ -375,7 +384,7 @@ export class VitalSignsProcessor {
    * Get arrhythmia counter
    */
   public getArrhythmiaCounter(): number {
-    return this.processor.getArrhythmiaCounter();
+    return this.arrhythmiaCounter;
   }
 
   /**
@@ -392,14 +401,6 @@ export class VitalSignsProcessor {
     if (spo2 > 85) return base - 2 + Math.random();
     
     return base - 3 + Math.random();
-  }
-
-  /**
-   * Get the last valid results - always returns null
-   * Forces fresh measurements without reference values
-   */
-  public getLastValidResults(): VitalSignsResult | null {
-    return null; // Always return null to ensure measurements start from zero
   }
 }
 

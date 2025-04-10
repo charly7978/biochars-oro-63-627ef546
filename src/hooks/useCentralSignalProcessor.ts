@@ -6,7 +6,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSignalCore } from './useSignalCore';
 import { createSignalProcessor } from '../core/signal-processing';
-import { VitalSignsProcessor } from '../core/VitalSignsProcessor';
+import { VitalSignsProcessor } from '../modules/VitalSignsProcessor';
 import { HeartBeatResult } from './heart-beat/types';
 import { useTensorFlowModel } from './useTensorFlowModel';
 import { TensorFlowModelRegistry } from '../core/neural/tensorflow/TensorFlowModelRegistry';
