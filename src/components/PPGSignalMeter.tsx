@@ -578,7 +578,7 @@ const PPGSignalMeter = memo(({
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';  // Darker red
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);  // Dashed line
-      
+    
         // Left boundary (segment start) if visible
         if (startX >= 0 && startX <= CANVAS_WIDTH) {
           ctx.beginPath();
@@ -776,6 +776,9 @@ const PPGSignalMeter = memo(({
     let shouldBeep = false;
     
     if (points.length > 1) {
+      // Draw arrhythmia regions first so they appear behind the signal
+      drawArrhythmiaRegions(renderCtx, now);
+      
       // Instead of drawing the entire signal at once, draw segments with appropriate colors
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
@@ -790,7 +793,6 @@ const PPGSignalMeter = memo(({
         // Only draw if points are within canvas
         if (x1 >= 0 && x1 <= canvas.width && x2 >= 0 && x2 <= canvas.width) {
           // Set color based on whether this specific point is part of an arrhythmia
-          // This is the key change - each segment is colored independently
           renderCtx.beginPath();
           renderCtx.strokeStyle = point.isArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.lineWidth = 2;

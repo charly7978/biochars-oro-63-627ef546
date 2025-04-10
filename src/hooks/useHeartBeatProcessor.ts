@@ -1,8 +1,6 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
-import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
@@ -46,7 +44,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     lastValidBpmRef,
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS
+    MAX_CONSECUTIVE_WEAK_SIGNALS,
+    arrhythmiaSegmentsRef
   } = useSignalProcessor();
 
   useEffect(() => {
@@ -93,7 +92,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Esta función ahora no hace nada, el beep está centralizado en PPGSignalMeter
   const requestBeep = useCallback((value: number): boolean => {
     console.log('useHeartBeatProcessor: Beep ELIMINADO - Todo el sonido SOLO en PPGSignalMeter', {
       value,
@@ -231,6 +229,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     isArrhythmia: currentBeatIsArrhythmiaRef.current,
     requestBeep,
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    arrhythmiaSegments: arrhythmiaSegmentsRef.current
   };
 };

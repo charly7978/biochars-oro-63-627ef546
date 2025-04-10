@@ -139,7 +139,7 @@ export function useSignalProcessor() {
       }
     }
     
-    // IMPROVED Arrhythmia segment management
+    // FIXED Arrhythmia segment management with precise boundaries
     let arrhythmiaSegment = null;
     
     // Check if this beat has arrhythmia
@@ -150,9 +150,9 @@ export function useSignalProcessor() {
       // If this is the start of a new arrhythmia
       if (currentArrhythmiaSegmentRef.current === null) {
         // Create a new segment with precise timing
-        // We set the start time 300ms before the current time to capture the lead-in
+        // We set the start time exactly at the current time to capture the exact start
         currentArrhythmiaSegmentRef.current = {
-          startTime: Math.max(0, now - 300), // Capture lead-in of the wave
+          startTime: now,
           endTime: null
         };
         
@@ -164,22 +164,17 @@ export function useSignalProcessor() {
       
       arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
     } 
-    // If no arrhythmia on this beat but we had one active, check if we should close it
+    // If no arrhythmia on this beat but we had one active, close it immediately
     else if (currentArrhythmiaSegmentRef.current !== null) {
-      // Only close the segment if it's been at least 800ms since the last arrhythmia
-      // This ensures we capture the full wave and trailing portion
-      if (now - lastArrhythmiaTimeRef.current > 800) {
-        // End of arrhythmia segment - mark it with precise timing
-        // We set the end time to 500ms after the last arrhythmia time to capture the lead-out
-        currentArrhythmiaSegmentRef.current.endTime = lastArrhythmiaTimeRef.current + 500;
-        arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
-        
-        console.log("Arrhythmia segment ended at:", new Date(currentArrhythmiaSegmentRef.current.endTime).toISOString(), 
-                    "Duration:", currentArrhythmiaSegmentRef.current.endTime - currentArrhythmiaSegmentRef.current.startTime, "ms");
-        
-        // Reset the current segment reference
-        currentArrhythmiaSegmentRef.current = null;
-      }
+      // End the segment right now - no delay
+      currentArrhythmiaSegmentRef.current.endTime = now;
+      arrhythmiaSegment = { ...currentArrhythmiaSegmentRef.current };
+      
+      console.log("Arrhythmia segment ended at:", new Date(now).toISOString(), 
+                  "Duration:", now - currentArrhythmiaSegmentRef.current.startTime, "ms");
+      
+      // Reset the current segment reference
+      currentArrhythmiaSegmentRef.current = null;
     }
     
     // Keep only recent arrhythmia segments (last 5)
