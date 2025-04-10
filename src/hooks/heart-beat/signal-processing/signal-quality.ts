@@ -3,94 +3,53 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-// Corregir importación para usar FeedbackState desde types.ts
-import { FeedbackState } from './types';
-
-import { 
-  applyBidirectionalFeedback, 
-  createInitialFeedbackState 
-} from './bidirectional-feedback';
+// Remove or comment out the problematic import
+// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
   maxWeakSignalCount?: number;
-  feedbackState?: FeedbackState;
-}
-
-// Global feedback state for cross-component communication
-let globalFeedbackState: FeedbackState = createInitialFeedbackState();
-
-/**
- * Gets the current global feedback state
- */
-export function getGlobalFeedbackState(): FeedbackState {
-  return globalFeedbackState;
-}
-
-/**
- * Updates the global feedback state
- */
-export function updateGlobalFeedbackState(newState: FeedbackState): void {
-  globalFeedbackState = newState;
-  
-  // Log detailed updates to verify real-time changes
-  console.log("Sistema de retroalimentación actualizado:", {
-    timestamp: new Date().toISOString(),
-    señal: {
-      intensidad: (newState.signalQuality.signalStrength * 100).toFixed(2) + '%',
-      detecciónDedo: (newState.signalQuality.fingerDetectionConfidence * 100).toFixed(2) + '%'
-    },
-    ritmoCardíaco: {
-      bpm: newState.heartRate.currentBPM,
-      confianza: (newState.heartRate.confidence * 100).toFixed(2) + '%',
-      pico: newState.heartRate.isPeak ? 'ACTIVO' : 'inactivo'
-    },
-    análisis: {
-      oxígeno: (newState.vitalSigns.spo2Quality * 100).toFixed(2) + '%',
-      glucosa: newState.vitalSigns.glucoseReliability 
-        ? (newState.vitalSigns.glucoseReliability * 100).toFixed(2) + '%'
-        : 'no disponible',
-      lípidos: newState.vitalSigns.lipidsReliability
-        ? (newState.vitalSigns.lipidsReliability * 100).toFixed(2) + '%'
-        : 'no disponible'
-    }
-  });
 }
 
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
- * Enhanced with bidirectional feedback system
+ * Solo procesamiento directo, sin simulaciones
  */
 export function checkWeakSignal(
   value: number,
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number; adjustedValue: number } {
-  // Use bidirectional feedback if provided, otherwise use global state
-  const feedbackState = options.feedbackState || globalFeedbackState;
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+  // Default thresholds
+  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
+  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
   
-  return applyBidirectionalFeedback(
-    value, 
-    currentWeakSignalCount, 
-    feedbackState, 
-    {
-      lowSignalThreshold: options.lowSignalThreshold,
-      maxWeakSignalCount: options.maxWeakSignalCount
-    }
-  );
+  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
+  
+  // Update consecutive weak signals counter
+  let updatedWeakSignalsCount = isCurrentValueWeak 
+    ? currentWeakSignalCount + 1 
+    : 0;
+  
+  // Limit to max
+  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
+  
+  // Signal is considered weak if we have enough consecutive weak readings
+  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
+  
+  return { isWeakSignal, updatedWeakSignalsCount };
 }
 
 /**
  * Verifica si se debe procesar una medición según la intensidad de la señal
- * Enhanced with adjusted value from feedback system
  */
 export function shouldProcessMeasurement(
   value: number,
   weakSignalsCount: number = 0,
   options: SignalQualityOptions = {}
-): { shouldProcess: boolean; adjustedValue: number } {
-  const { isWeakSignal, adjustedValue } = checkWeakSignal(value, weakSignalsCount, options);
-  return { shouldProcess: !isWeakSignal, adjustedValue };
+): boolean {
+  const { isWeakSignal } = checkWeakSignal(value, weakSignalsCount, options);
+  return !isWeakSignal;
 }
 
 /**
@@ -113,7 +72,5 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
  * Restablece el estado de detección de señal
  */
 export function resetSignalQualityState(): number {
-  // Reset the global feedback state
-  globalFeedbackState = createInitialFeedbackState();
   return 0; // Reset the weak signals counter
 }

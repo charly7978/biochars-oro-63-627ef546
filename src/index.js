@@ -6,8 +6,10 @@ import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
-import BidirectionalFeedbackStatus from "@/components/BidirectionalFeedbackStatus";
-import { toast } from "sonner";
+import VitalsHistoryDialog from "@/components/VitalsHistoryDialog";
+import { toast } from "@/hooks/use-toast";
+import FeedbackService from "@/services/FeedbackService";
+import { History, BarChart2 } from "lucide-react";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -16,12 +18,19 @@ const Index = () => {
   const [vitalSigns, setVitalSigns] = useState({ 
     spo2: 0, 
     pressure: "--/--",
-    arrhythmiaStatus: "--" 
+    arrhythmiaStatus: "--",
+    glucose: 0,
+    lipids: {
+      totalCholesterol: 0,
+      triglycerides: 0
+    }
   });
   const [heartRate, setHeartRate] = useState(0);
   const [arrhythmiaCount, setArrhythmiaCount] = useState("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+  const [measurementHistory, setMeasurementHistory] = useState([]);
   const measurementTimerRef = useRef(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
@@ -111,6 +120,14 @@ const Index = () => {
     startProcessing();
     setElapsedTime(0);
     
+    FeedbackService.vibrate(100);
+    FeedbackService.playSound('notification');
+    toast({
+      title: "Medición iniciada",
+      description: "Coloque su dedo en la cámara para comenzar",
+      duration: 3000,
+    });
+    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
     }
@@ -132,11 +149,30 @@ const Index = () => {
 
   const confirmMeasurement = () => {
     setShowConfirmDialog(false);
+    
+    const newMeasurement = {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
+      heartRate: heartRate,
+      spo2: vitalSigns.spo2,
+      systolic: parseInt(vitalSigns.pressure.split('/')[0]) || 0,
+      diastolic: parseInt(vitalSigns.pressure.split('/')[1]) || 0,
+      arrhythmiaStatus: vitalSigns.arrhythmiaStatus
+    };
+    
+    setMeasurementHistory(prev => [...prev, newMeasurement]);
+    
+    FeedbackService.signalSuccess("Medición guardada con éxito");
+    
     completeMonitoring();
   };
 
   const cancelMeasurement = () => {
     setShowConfirmDialog(false);
+    
+    FeedbackService.vibrate([100, 30, 30, 30]);
+    FeedbackService.playSound('notification');
+    
     stopMonitoring();
   };
 
@@ -150,7 +186,12 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -171,7 +212,12 @@ const Index = () => {
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
-      arrhythmiaStatus: "--" 
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      }
     });
     setArrhythmiaCount("--");
     setSignalQuality(0);
@@ -248,8 +294,19 @@ const Index = () => {
       }
       
       setSignalQuality(lastSignal.quality);
+      
+      if (signalQuality < 60 && lastSignal.quality >= 60) {
+        FeedbackService.vibrate(50);
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, signalQuality]);
+
+  useEffect(() => {
+    if (elapsedTime === 30) {
+      FeedbackService.signalMeasurementComplete(signalQuality >= 70);
+      showMeasurementConfirmation();
+    }
+  }, [elapsedTime, signalQuality]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black" 
@@ -276,6 +333,33 @@ const Index = () => {
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
+          <div className="absolute top-4 right-4 z-20 flex space-x-2">
+            <button 
+              onClick={() => setShowHistoryDialog(true)}
+              className="bg-gray-800/80 hover:bg-gray-700/80 text-white p-2 rounded-full"
+              title="Ver historial"
+            >
+              <History className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => {
+                if (measurementHistory.length > 0) {
+                  setShowHistoryDialog(true);
+                } else {
+                  FeedbackService.showToast(
+                    "Sin historial", 
+                    "Aún no hay mediciones guardadas", 
+                    "warning"
+                  );
+                }
+              }}
+              className="bg-gray-800/80 hover:bg-gray-700/80 text-white p-2 rounded-full"
+              title="Ver gráficos"
+            >
+              <BarChart2 className="h-5 w-5" />
+            </button>
+          </div>
+
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
@@ -288,9 +372,6 @@ const Index = () => {
             />
           </div>
 
-          {/* Always show feedback component for debugging */}
-          <BidirectionalFeedbackStatus isActive={true} />
-
           <div className="absolute bottom-[200px] left-0 right-0 px-4">
             <div className="bg-gray-900/30 backdrop-blur-sm rounded-xl p-4">
               <div className="grid grid-cols-4 gap-2">
@@ -298,20 +379,24 @@ const Index = () => {
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
                   unit="BPM"
+                  calibrationProgress={vitalSigns.calibration?.progress.heartRate}
                 />
                 <VitalSign 
                   label="SPO2"
                   value={vitalSigns.spo2 || "--"}
                   unit="%"
+                  calibrationProgress={vitalSigns.calibration?.progress.spo2}
                 />
                 <VitalSign 
                   label="PRESIÓN ARTERIAL"
                   value={vitalSigns.pressure}
                   unit="mmHg"
+                  calibrationProgress={vitalSigns.calibration?.progress.pressure}
                 />
                 <VitalSign 
                   label="ARRITMIAS"
                   value={vitalSigns.arrhythmiaStatus}
+                  calibrationProgress={vitalSigns.calibration?.progress.arrhythmia}
                 />
               </div>
             </div>
@@ -349,6 +434,12 @@ const Index = () => {
         heartRate={heartRate}
         spo2={vitalSigns.spo2}
         pressure={vitalSigns.pressure}
+      />
+
+      <VitalsHistoryDialog
+        open={showHistoryDialog}
+        onOpenChange={setShowHistoryDialog}
+        measurements={measurementHistory}
       />
     </div>
   );
