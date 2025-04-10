@@ -1,4 +1,3 @@
-
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -55,28 +54,39 @@ export interface SignalProcessor {
   processFrame(imageData: ImageData): void;
 }
 
+/**
+ * Interfaz para datos procesados de PPG
+ */
+export interface ProcessedPPGData {
+  timestamp: number;
+  rawValue: number;
+  filteredValue?: number;
+  fingerDetected: boolean;
+  quality?: number;
+}
+
+/**
+ * Interfaz para resultados de signos vitales
+ */
 export interface VitalSignsResult {
   timestamp: number;
   heartRate: number;
   spo2: number;
   pressure: string;
-  bloodPressure?: {
-    systolic: number;
-    diastolic: number;
-    display: string;
+  arrhythmiaStatus: string;
+  arrhythmiaData?: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+    windows: number[][];
+    detected: boolean;
   };
   glucose?: number;
   lipids?: {
     totalCholesterol: number;
     triglycerides: number;
-  };
-  arrhythmiaStatus: string;
-  arrhythmiaData?: {
-    rmssd: number;
-    rrVariation: number;
-    detected: boolean;
-    timestamp: number;
-    windows?: any[][];
+    hdl?: number;
+    ldl?: number;
   };
   reliability: number;
 }

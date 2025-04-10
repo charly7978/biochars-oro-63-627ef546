@@ -31,6 +31,16 @@ export class MeasurementManager {
     quality: number;
   } | null = null;
   
+  // Store for vital signs results
+  private currentVitalSigns: VitalSignsResult = {
+    timestamp: Date.now(),
+    heartRate: 0,
+    spo2: 0,
+    pressure: "--/--",
+    arrhythmiaStatus: "--",
+    reliability: 0
+  };
+  
   constructor() {
     // Subscribe to vital signs events
     eventBus.subscribe(EventType.VITAL_SIGNS_UPDATED, this.handleVitalSignsUpdate.bind(this));
@@ -136,6 +146,16 @@ export class MeasurementManager {
     this.showResults = false;
     this.lastSignal = null;
     
+    // Reset vital signs
+    this.currentVitalSigns = {
+      timestamp: Date.now(),
+      heartRate: 0,
+      spo2: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      reliability: 0
+    };
+    
     // Publish reset event
     eventBus.publish(EventType.MONITORING_RESET, {
       timestamp: Date.now()
@@ -154,7 +174,13 @@ export class MeasurementManager {
   /**
    * Handle vital signs update
    */
-  private handleVitalSignsUpdate(vitalSigns: VitalSignsResult): void {
+  private handleVitalSignsUpdate(data: any): void {
+    // Update the vitalSigns state with the new data
+    this.currentVitalSigns = {
+      ...data,
+      pressure: data.pressure || (data.bloodPressure ? data.bloodPressure.display : "--/--")
+    };
+    
     // Nothing to do here - these are already being published on the event bus
   }
   
@@ -213,19 +239,8 @@ export class MeasurementManager {
    * Get the last vital signs results
    */
   getVitalSigns(): VitalSignsResult {
-    // Get from processor or return default empty result
-    const defaultResult: VitalSignsResult = {
-      timestamp: Date.now(),
-      heartRate: 0,
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      reliability: 0
-    };
-    
-    // Use vitalSignsProcessor to get results, or fallback to default
-    const result = vitalSignsProcessor.reset() || defaultResult;
-    return result;
+    // Return the current vital signs state
+    return this.currentVitalSigns;
   }
 }
 
