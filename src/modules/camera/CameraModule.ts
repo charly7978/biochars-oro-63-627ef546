@@ -1,3 +1,4 @@
+
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
  * EL IMPLEMENTO O INCORPORACION FORZOSA, DESHONESTA E ILEGAL, TENDRA CONSCUENCIAS JUDICIALES PREVISTAS EN EL CODIGO PENAL ARGENTINO.
@@ -9,24 +10,20 @@
 
 /**
  * Módulo de Cámara
- * Proporciona funcionalidades para acceder y controlar la cámara del dispositivo
+ * Gestiona acceso, configuración y captura de la cámara
  */
 
 import { EventType, eventBus } from '../events/EventBus';
+import { CameraConfig, RawSignalFrame } from '../types/signal';
 
-export interface CameraConfig {
-  width: number;
-  height: number;
-  fps: number;
-  facingMode: 'user' | 'environment';
-}
-
-class CameraModule {
-  private videoStream: MediaStream | null = null;
+export class CameraModule {
+  private stream: MediaStream | null = null;
   private videoElement: HTMLVideoElement | null = null;
-  private canvasElement: HTMLCanvasElement | null = null;
-  private animationFrameId: number | null = null;
-  private currentConfig: CameraConfig = {
+  private canvas: HTMLCanvasElement | null = null;
+  private ctx: CanvasRenderingContext2D | null = null;
+  private frameInterval: number | null = null;
+  private isProcessing: boolean = false;
+  private config: CameraConfig = {
     width: 640,
     height: 480,
     fps: 30,
@@ -34,66 +31,64 @@ class CameraModule {
   };
   
   /**
-   * Iniciar la cámara con la configuración dada
+   * Iniciar la cámara
    */
-  async startCamera(config: Partial<CameraConfig> = {}): Promise<boolean> {
+  async start(): Promise<boolean> {
+    if (this.stream) {
+      return true; // Ya está iniciada
+    }
+    
     try {
-      // Combinar configuración por defecto con la configuración proporcionada
-      this.currentConfig = { ...this.currentConfig, ...config };
-      
       // Solicitar acceso a la cámara
-      this.videoStream = await navigator.mediaDevices.getUserMedia({
+      this.stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: this.currentConfig.width,
-          height: this.currentConfig.height,
-          frameRate: this.currentConfig.fps,
-          facingMode: this.currentConfig.facingMode
-        },
-        audio: false
+          width: { ideal: this.config.width },
+          height: { ideal: this.config.height },
+          facingMode: this.config.facingMode,
+          frameRate: { ideal: this.config.fps }
+        }
       });
       
-      // Crear elementos de video y canvas si no existen
-      if (!this.videoElement) {
-        this.videoElement = document.createElement('video');
-        this.videoElement.width = this.currentConfig.width;
-        this.videoElement.height = this.currentConfig.height;
-        this.videoElement.autoplay = true;
-        this.videoElement.style.display = 'none'; // Ocultar el elemento de video
-        document.body.appendChild(this.videoElement);
-      }
+      // Crear elementos necesarios
+      this.videoElement = document.createElement('video');
+      this.videoElement.srcObject = this.stream;
+      this.videoElement.autoplay = true;
+      this.videoElement.muted = true;
+      this.videoElement.playsInline = true;
       
-      if (!this.canvasElement) {
-        this.canvasElement = document.createElement('canvas');
-        this.canvasElement.width = this.currentConfig.width;
-        this.canvasElement.height = this.currentConfig.height;
-        this.canvasElement.style.display = 'none'; // Ocultar el canvas
-        document.body.appendChild(this.canvasElement);
-      }
+      this.canvas = document.createElement('canvas');
+      this.canvas.width = this.config.width;
+      this.canvas.height = this.config.height;
+      this.ctx = this.canvas.getContext('2d');
       
-      // Asignar el stream de video al elemento de video
-      this.videoElement.srcObject = this.videoStream;
+      // Esperar a que el video esté listo
+      await new Promise<void>((resolve) => {
+        if (this.videoElement) {
+          this.videoElement.onloadedmetadata = () => resolve();
+          this.videoElement.play().catch(console.error);
+        }
+      });
       
-      // Esperar a que el video empiece a reproducirse
-      await this.videoElement.play();
-      
-      // Publicar evento de cámara iniciada
+      // Publicar evento de cámara lista
       eventBus.publish(EventType.CAMERA_STARTED, {
-        width: this.currentConfig.width,
-        height: this.currentConfig.height,
-        fps: this.currentConfig.fps,
-        facingMode: this.currentConfig.facingMode
+        timestamp: Date.now(),
+        resolution: {
+          width: this.config.width,
+          height: this.config.height
+        }
       });
+      
+      console.log('Cámara iniciada correctamente con resolución', 
+        this.config.width, 'x', this.config.height);
       
       return true;
-    } catch (error: any) {
-      // Manejar errores de inicialización de la cámara
+    } catch (error) {
+      console.error('Error al iniciar la cámara:', error);
       eventBus.publish(EventType.CAMERA_ERROR, {
-        code: 'camera_init_error',
-        message: `Error inicializando cámara: ${error.message}`,
+        message: error instanceof Error ? error.message : 'Error accediendo a la cámara',
         timestamp: Date.now()
       });
       
-      console.error('Error al iniciar la cámara:', error);
       return false;
     }
   }
@@ -101,105 +96,167 @@ class CameraModule {
   /**
    * Detener la cámara
    */
-  stopCamera(): void {
-    if (this.videoStream) {
-      // Detener cada pista de video
-      this.videoStream.getTracks().forEach(track => {
-        track.stop();
-      });
-      
-      this.videoStream = null;
+  stop(): void {
+    this.stopProcessing();
+    
+    // Detener todos los tracks de la cámara
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
     }
     
-    if (this.videoElement) {
-      this.videoElement.pause();
-      this.videoElement.srcObject = null;
-    }
+    // Eliminar elementos
+    this.videoElement = null;
+    this.canvas = null;
+    this.ctx = null;
     
-    // Publicar evento de cámara detenida
-    eventBus.publish(EventType.CAMERA_STOPPED, {});
+    eventBus.publish(EventType.CAMERA_STOPPED, {
+      timestamp: Date.now()
+    });
+    
+    console.log('Cámara detenida');
   }
   
   /**
-   * Leer un frame de la cámara y publicarlo
+   * Iniciar procesamiento de frames
    */
-  readFrame(): void {
-    if (!this.videoElement || !this.canvasElement) return;
+  startProcessing(): void {
+    if (this.isProcessing || !this.stream || !this.videoElement || !this.ctx) {
+      return;
+    }
     
-    const context = this.canvasElement.getContext('2d');
-    if (!context) return;
+    this.isProcessing = true;
+    
+    // Intervalo para captura de frames
+    const frameInterval = 1000 / this.config.fps;
+    this.frameInterval = window.setInterval(() => {
+      this.captureFrame();
+    }, frameInterval);
+    
+    console.log('Procesamiento de frames iniciado a', this.config.fps, 'FPS');
+  }
+  
+  /**
+   * Detener procesamiento de frames
+   */
+  stopProcessing(): void {
+    this.isProcessing = false;
+    
+    if (this.frameInterval !== null) {
+      clearInterval(this.frameInterval);
+      this.frameInterval = null;
+    }
+    
+    console.log('Procesamiento de frames detenido');
+  }
+  
+  /**
+   * Capturar un frame de la cámara
+   */
+  private captureFrame(): void {
+    if (!this.isProcessing || !this.videoElement || !this.ctx || !this.canvas) {
+      return;
+    }
     
     try {
-      // Dibujar el frame actual del video en el canvas
-      context.drawImage(this.videoElement, 0, 0, this.currentConfig.width, this.currentConfig.height);
+      // Dibujar frame actual en el canvas
+      this.ctx.drawImage(
+        this.videoElement, 
+        0, 0, 
+        this.canvas.width, 
+        this.canvas.height
+      );
       
-      // Obtener los datos de la imagen del canvas
-      const imageData = context.getImageData(0, 0, this.currentConfig.width, this.currentConfig.height);
+      // Obtener datos de la imagen
+      const imageData = this.ctx.getImageData(
+        0, 0, 
+        this.canvas.width, 
+        this.canvas.height
+      );
       
-      // Publicar el evento con los datos del frame
-      eventBus.publish(EventType.CAMERA_FRAME_READY, {
+      // Calcular canal rojo promedio (para simplificar extracción PPG)
+      const redChannel = this.calculateRedChannel(imageData);
+      
+      // Crear objeto de frame
+      const frame: RawSignalFrame = {
         timestamp: Date.now(),
-        imageData: imageData,
-        width: this.currentConfig.width,
-        height: this.currentConfig.height
-      });
-    } catch (error: any) {
-      // Manejar errores al extraer el frame
-      eventBus.publish(EventType.CAMERA_ERROR, {
-        code: 'frame_extraction_error',
-        message: error.message || 'Error extrayendo frame de cámara',
-        timestamp: Date.now()
-      });
+        imageData,
+        width: this.canvas.width,
+        height: this.canvas.height,
+        redChannel
+      };
       
-      console.error('Error al leer el frame de la cámara:', error);
+      // Publicar frame
+      eventBus.publish(EventType.CAMERA_FRAME, frame);
+      eventBus.publish(EventType.CAMERA_FRAME_READY, frame);
+    } catch (error) {
+      console.error('Error capturando frame:', error);
     }
   }
   
   /**
-   * Iniciar la lectura continua de frames
+   * Calcular valor promedio del canal rojo
    */
-  startFrameReading(): void {
-    if (this.animationFrameId) return;
+  private calculateRedChannel(imageData: ImageData): number {
+    let redSum = 0;
+    let pixelCount = 0;
     
-    const readAndRepeat = () => {
-      this.readFrame();
-      this.animationFrameId = requestAnimationFrame(readAndRepeat);
+    // Muestrear píxeles (uno cada 16 para rendimiento)
+    for (let i = 0; i < imageData.data.length; i += 16) {
+      redSum += imageData.data[i];
+      pixelCount++;
+    }
+    
+    return redSum / pixelCount;
+  }
+  
+  /**
+   * Configurar la cámara
+   */
+  configure(config: Partial<CameraConfig>): void {
+    const needsRestart = 
+      this.stream !== null && 
+      (config.width !== this.config.width || 
+       config.height !== this.config.height ||
+       config.facingMode !== this.config.facingMode);
+    
+    // Actualizar configuración
+    this.config = {
+      ...this.config,
+      ...config
     };
     
-    readAndRepeat();
-  }
-  
-  /**
-   * Detener la lectura de frames
-   */
-  stopFrameReading(): void {
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
+    // Reiniciar si es necesario
+    if (needsRestart) {
+      this.stop();
+      this.start().then(success => {
+        if (success && this.isProcessing) {
+          this.startProcessing();
+        }
+      });
     }
-  }
-  
-  /**
-   * Cambiar la configuración de la cámara
-   */
-  async changeCameraConfig(newConfig: Partial<CameraConfig>): Promise<boolean> {
-    // Detener la cámara antes de cambiar la configuración
-    this.stopCamera();
     
-    // Iniciar la cámara con la nueva configuración
-    return this.startCamera(newConfig);
+    console.log('Configuración de cámara actualizada:', this.config);
   }
   
   /**
-   * Obtener el estado actual de la cámara
+   * Obtener el estado actual
    */
-  getCameraStatus(): { isRunning: boolean; config: CameraConfig } {
+  getStatus(): {
+    isActive: boolean;
+    isProcessing: boolean;
+    config: CameraConfig;
+  } {
     return {
-      isRunning: !!this.videoStream,
-      config: this.currentConfig
+      isActive: this.stream !== null,
+      isProcessing: this.isProcessing,
+      config: { ...this.config }
     };
   }
 }
+
+// Exportar instancia singleton
+export const cameraModule = new CameraModule();
 
 /**
  * ESTA TERMINANTEMENTE PROHIBIDA LA SIMULACION Y/O MANIPULACION DE DATOS, MEDICIONES, RESULTADOS, ETC EN ESTE CODIGO, 
@@ -209,6 +266,3 @@ class CameraModule {
  * TENGO PROHIBIDO TOMAR ACCIONES POR MI PARTE, SEA CUAL FUESE EL INDOLE DE GRAVEDAD O IMPORTANCIA, 
  * SIN ANTES DARLE CONOCIMIENTO Y AVISO FEHACIENTE AL USUARIO DUEÑO ABSOLUTO DE ESTE PROYECTO, ESTOY NOTIFICADA.
  */
-
-// Exportar instancia singleton
-export const cameraFrameReader = new CameraModule();

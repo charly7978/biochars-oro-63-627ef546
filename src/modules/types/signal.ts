@@ -95,20 +95,28 @@ export interface RawSignalFrame {
   width: number;
   height: number;
   roi?: ROIData;
+  redChannel?: number; // Added for compatibility with PPGSignalExtractor
 }
 
 // Interfaces para extracción de señal
 export interface PPGSignal {
   timestamp: number;
-  value: number;
+  value?: number;
+  rawValue?: number;
+  filteredValue: number;
   quality: number;
+  fingerDetected: boolean;
+  amplified?: boolean;
+  perfusionIndex: number;
 }
 
 export interface PPGSignalData {
   timestamp: number;
   rawValues: number[];
   filteredValue: number;
+  combinedValue: number;
   quality: number;
+  channelData?: ChannelData;
 }
 
 export interface HeartBeatResult {
@@ -116,6 +124,20 @@ export interface HeartBeatResult {
   bpm: number; 
   peaks: number[];
   quality: number;
+  isPeak?: boolean;
+  filteredValue?: number;
+  confidence?: number;
+  intervals?: number[];
+  lastPeakTime?: number | null;
+}
+
+// Used in multiple extractors
+export interface HeartBeatData {
+  timestamp: number;
+  bpm: number;
+  rawValue: number;
+  quality: number;
+  intervals?: number[];
 }
 
 /**
