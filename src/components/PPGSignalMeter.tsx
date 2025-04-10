@@ -65,12 +65,12 @@ const PPGSignalMeter = memo(({
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
 
-  const WINDOW_WIDTH_MS = 5500;
-  const CANVAS_WIDTH = 1200;
+  const WINDOW_WIDTH_MS = 4500;
+  const CANVAS_WIDTH = 1100;
   const CANVAS_HEIGHT = 1200;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 96.0;
+  const verticalScale = 76.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
@@ -248,7 +248,7 @@ const PPGSignalMeter = memo(({
     gradient.addColorStop(0, '#E5DEFF');
     gradient.addColorStop(0.3, '#FDE1D3');
     gradient.addColorStop(0.7, '#F2FCE2');
-    gradient.addColorStop(1, '#D3E4FD');
+    gradient.addColorStop(1, '	#3255a4');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
