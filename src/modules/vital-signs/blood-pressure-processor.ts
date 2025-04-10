@@ -65,7 +65,7 @@ export class BloodPressureProcessor {
       measurementType: 'bloodPressure',
       accuracy: this.calculateSignalQuality(ppgSignal),
       conditions: {
-        signalQuality: calculateAmplitude(ppgSignal),
+        signalStrength: calculateAmplitude(ppgSignal, 0.1, 10),
         motionLevel: this.detectMotion(ppgSignal),
         environmentalFactors: this.assessEnvironmentalFactors()
       }

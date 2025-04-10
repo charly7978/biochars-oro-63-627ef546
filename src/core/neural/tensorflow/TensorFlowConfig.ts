@@ -123,7 +123,18 @@ export const DEFAULT_TENSORFLOW_CONFIG: TensorFlowConfig = {
     enablePlatformOptimizations: true,
     parallelismLevel: 0,
     enableDebugMode: false,
-    preferWebGPU: false
+    preferWebGPU: false,
+    enableQuantization: false,
+    useCustomOps: false,
+    batchSize: 0,
+    enablePipelinedExecution: false,
+    tensorAllocationThreshold: 0,
+    optimizerConfig: {
+      learningRate: 0,
+      beta1: 0,
+      beta2: 0,
+      epsilon: 0
+    }
   }
 };
 
@@ -162,7 +173,18 @@ export const LOW_POWER_CONFIG: TensorFlowConfig = {
     enablePlatformOptimizations: true,
     parallelismLevel: 1,
     enableDebugMode: false,
-    preferWebGPU: false
+    preferWebGPU: false,
+    enableQuantization: false,
+    useCustomOps: false,
+    batchSize: 0,
+    enablePipelinedExecution: false,
+    tensorAllocationThreshold: 0,
+    optimizerConfig: {
+      learningRate: 0,
+      beta1: 0,
+      beta2: 0,
+      epsilon: 0
+    }
   }
 };
 
@@ -201,7 +223,18 @@ export const HIGH_ACCURACY_CONFIG: TensorFlowConfig = {
     enablePlatformOptimizations: true,
     parallelismLevel: 0,
     enableDebugMode: false,
-    preferWebGPU: true
+    preferWebGPU: true,
+    enableQuantization: false,
+    useCustomOps: false,
+    batchSize: 0,
+    enablePipelinedExecution: false,
+    tensorAllocationThreshold: 0,
+    optimizerConfig: {
+      learningRate: 0,
+      beta1: 0,
+      beta2: 0,
+      epsilon: 0
+    }
   }
 };
 
