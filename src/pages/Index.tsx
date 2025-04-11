@@ -9,8 +9,6 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
-import { Camera } from "lucide-react";
-import { finalResultProcessor } from '@/core/measurement/FinalResultProcessor';
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 
 const Index = () => {
@@ -336,7 +334,7 @@ const Index = () => {
               </div>
               <div className="col-span-2 grid grid-cols-2 gap-2">
                 <VitalSign label="PRESIÓN" value={vitalSigns.pressure || "--/--"} unit="mmHg" highlighted={showResults} compact={false} />
-                <VitalSign label="HIDRATACIÓN" value={vitalSigns.hydration || "--"} unit="%" highlighted={showResults} icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`}} compact={false} />
+                <VitalSign label="HIDRATACIÓN" value={vitalSigns.hydration || "--"} unit="%" highlighted={showResults} icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />} compact={false} />
               </div>
               <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
               <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
