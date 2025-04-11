@@ -4,7 +4,7 @@
  */
 
 import { useRef, useCallback } from 'react';
-import { VitalSignsResult } from '../../types/vital-signs';
+import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
 
@@ -45,7 +45,7 @@ export const useSignalProcessing = () => {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCount(), // Changed from getArrhythmiaCounter to getArrhythmiaCount
+        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
         signalNumber: processedSignals.current
       });
     }
@@ -143,7 +143,7 @@ export const useSignalProcessing = () => {
    * Get the arrhythmia counter
    */
   const getArrhythmiaCounter = useCallback(() => {
-    return processorRef.current?.getArrhythmiaCount() || 0; // Changed from getArrhythmiaCounter to getArrhythmiaCount
+    return processorRef.current?.getArrhythmiaCounter() || 0;
   }, []);
 
   /**

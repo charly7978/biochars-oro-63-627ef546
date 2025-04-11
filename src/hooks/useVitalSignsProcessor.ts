@@ -1,10 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { VitalSignsResult } from '../types/vital-signs';
+import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
 import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
@@ -121,18 +120,16 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Return safe fallback values on error that include hydration
       return {
-        spO2: 0,
-        bloodPressure: {
-          systolic: 0,
-          diastolic: 0
-        },
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
         glucose: 0,
         lipids: {
           totalCholesterol: 0,
           triglycerides: 0
         },
-        hydration: 0,
-        arrhythmia: null
+        hemoglobin: 0,
+        hydration: 0
       };
     }
   };
