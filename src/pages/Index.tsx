@@ -9,7 +9,9 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
-import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
+import { Camera } from "lucide-react";
+import { finalResultProcessor } from '@/core/measurement/FinalResultProcessor';
+import { ResultFactory } from '@/modules/vital-signs/factories/ResultFactory';
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -278,18 +280,15 @@ const Index = () => {
     }
   };
 
-  const getHydrationColor = (hydration) => {
-    if (hydration >= 80)
-      return 'text-blue-500';
-    if (hydration >= 65)
-      return 'text-green-500';
-    if (hydration >= 50)
-      return 'text-yellow-500';
+  const getHydrationColor = (hydration: number) => {
+    if (hydration >= 80) return 'text-blue-500';
+    if (hydration >= 65) return 'text-green-500';
+    if (hydration >= 50) return 'text-yellow-500';
     return 'text-red-500';
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col" style={{
+    <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
       width: '100vw',
       maxWidth: '100vw',
@@ -302,59 +301,117 @@ const Index = () => {
       <div className="flex-1 relative">
         <div className="absolute inset-0">
           <CameraView 
-            onStreamReady={handleStreamReady} 
-            isMonitoring={isCameraOn} 
-            isFingerDetected={lastSignal?.fingerDetected} 
-            signalQuality={signalQuality} 
+            onStreamReady={handleStreamReady}
+            isMonitoring={isCameraOn}
+            isFingerDetected={lastSignal?.fingerDetected}
+            signalQuality={signalQuality}
           />
         </div>
+
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-white text-sm">Calidad: {signalQuality}</div>
-            <div className="text-white text-sm">{lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}</div>
+            <div className="text-white text-sm">
+              Calidad: {signalQuality}
+            </div>
+            <div className="text-white text-sm">
+              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+            </div>
           </div>
+
           <div className="flex-1">
             <PPGSignalMeter 
-              value={lastSignal?.filteredValue || 0} 
-              quality={lastSignal?.quality || 0} 
-              isFingerDetected={lastSignal?.fingerDetected || false} 
-              onStartMeasurement={startMonitoring} 
-              onReset={handleReset} 
-              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"} 
-              preserveResults={showResults} 
+              value={lastSignal?.filteredValue || 0}
+              quality={lastSignal?.quality || 0}
+              isFingerDetected={lastSignal?.fingerDetected || false}
+              onStartMeasurement={startMonitoring}
+              onReset={handleReset}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
+              preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
           </div>
+
           <AppTitle />
+
           <div className="absolute inset-x-0 bottom-[40px] h-[40%] px-2 py-2">
             <div className="grid grid-cols-2 h-full gap-2">
               <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
-                <VitalSign label="FRECUENCIA CARDÍACA" value={heartRate || "--"} unit="BPM" highlighted={showResults} compact={false} />
-                <VitalSign label="SPO2" value={vitalSigns.spo2 || "--"} unit="%" highlighted={showResults} compact={false} />
+                <VitalSign 
+                  label="FRECUENCIA CARDÍACA"
+                  value={heartRate || "--"}
+                  unit="BPM"
+                  highlighted={showResults}
+                  compact={false}
+                />
+                <VitalSign 
+                  label="SPO2"
+                  value={vitalSigns.spo2 || "--"}
+                  unit="%"
+                  highlighted={showResults}
+                  compact={false}
+                />
               </div>
               <div className="col-span-2 grid grid-cols-2 gap-2">
-                <VitalSign label="PRESIÓN" value={vitalSigns.pressure || "--/--"} unit="mmHg" highlighted={showResults} compact={false} />
-                <VitalSign label="HIDRATACIÓN" value={vitalSigns.hydration || "--"} unit="%" highlighted={showResults} icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />} compact={false} />
+                <VitalSign 
+                  label="PRESIÓN"
+                  value={vitalSigns.pressure || "--/--"}
+                  unit="mmHg"
+                  highlighted={showResults}
+                  compact={false}
+                />
+                <VitalSign 
+                  label="HIDRATACIÓN"
+                  value={vitalSigns.hydration || "--"}
+                  unit="%"
+                  highlighted={showResults}
+                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
+                  compact={false}
+                />
               </div>
-              <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="TRIGLICÉRIDOS" value={vitalSigns.lipids?.triglycerides || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="HEMOGLOBINA" value={Math.round(vitalSigns.hemoglobin) || "--"} unit="g/dL" highlighted={showResults} compact={false} />
+              <VitalSign 
+                label="GLUCOSA"
+                value={vitalSigns.glucose || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+                compact={false}
+              />
+              <VitalSign 
+                label="COLESTEROL"
+                value={vitalSigns.lipids?.totalCholesterol || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+                compact={false}
+              />
+              <VitalSign 
+                label="TRIGLICÉRIDOS"
+                value={vitalSigns.lipids?.triglycerides || "--"}
+                unit="mg/dL"
+                highlighted={showResults}
+                compact={false}
+              />
+              <VitalSign 
+                label="HEMOGLOBINA"
+                value={Math.round(vitalSigns.hemoglobin) || "--"}
+                unit="g/dL"
+                highlighted={showResults}
+                compact={false}
+              />
             </div>
           </div>
+
           <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
             <div className="w-1/2">
               <MonitorButton 
                 isMonitoring={isMonitoring} 
                 onToggle={handleToggleMonitoring} 
-                variant="monitor" 
+                variant="monitor"
               />
             </div>
             <div className="w-1/2">
               <MonitorButton 
                 isMonitoring={isMonitoring} 
                 onToggle={handleReset} 
-                variant="reset" 
+                variant="reset"
               />
             </div>
           </div>

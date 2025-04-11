@@ -56,45 +56,48 @@ export class VitalSignsProcessor {
    * Processes the real PPG signal and calculates all vital signs
    */
   public processSignal(
-    ppgValue: number, // This raw value might not be needed if we rely on the processed buffer
+    ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
       
-    // 1. Process the new value (filter & update central buffer in SignalProcessor)
-    // This also updates SignalProcessor's internal finger detection state
-    this.signalProcessor.processNewValue(ppgValue); 
+    // 1. Process the new value (filter & update central buffer)
+    this.signalProcessor.processNewValue(ppgValue);
     
-    // 2. Check finger presence using the central SignalProcessor state
-    const isFingerDetected = this.signalProcessor.isFingerDetected();
-    
-    // 3. Get the updated filtered buffer from SignalProcessor
+    // 2. Get the updated filtered buffer
     const ppgValues = this.signalProcessor.getFilteredPPGValues();
+
+    // 3. Check finger presence (using a robust method)
+    const isFingerCurrentlyDetected = this.signalProcessor.isFingerDetected();
+    // --- DEBUG LOG --- 
+    // console.log(`Finger Detected: ${isFingerCurrentlyDetected}, Buffer Length: ${ppgValues.length}`);
+    // --------------- 
     
     // --- Handle Finger Loss/Return --- 
-    if (!isFingerDetected) {
+    if (!isFingerCurrentlyDetected) {
         if (this.lastValidResult !== ResultFactory.createEmptyResults()) {
-            console.log("VitalSignsProcessor: Finger lost/signal unstable (from SignalProcessor). Pausing BP, resetting others."); // Updated log
-            this.bpProcessor.pauseMeasurement(); 
+            console.log("VitalSignsProcessor: Finger lost/signal unstable. Pausing BP, resetting others.");
+            this.bpProcessor.pauseMeasurement(); // Pause BP measurement
+            // Reset instant processors (optional, but cleans state)
             this.spo2Processor.reset();
             this.glucoseProcessor.reset();
             this.lipidProcessor.reset();
             this.hydrationEstimator.reset();
             this.arrhythmiaProcessor.reset();
-            this.lastCalculationTime = 0; 
-            this.lastValidResult = ResultFactory.createEmptyResults(); 
+            // Keep SignalProcessor buffer, but reset its detection confirmation state?
+            // For now, SignalProcessor reset is handled internally if pattern is lost.
+            this.lastCalculationTime = 0; // Reset throttle timer
+            this.lastValidResult = ResultFactory.createEmptyResults(); // Clear last results
         }
         return ResultFactory.createEmptyResults(); 
     } else {
+        // Finger is present (or detected again), ensure BP measurement is resumed
         this.bpProcessor.resumeMeasurement();
     }
     // --- End Finger Handling --- 
 
     // 4. Check if we have enough data points in the central buffer
-    // Use a slightly higher threshold here to ensure some stability after finger is detected
-    const MIN_SAMPLES_FOR_CALCS = 30; // Changed from 15 to 30 (1 second)
-    if (ppgValues.length < MIN_SAMPLES_FOR_CALCS) { 
-         // console.log(`VitalSignsProcessor: Buffer too short (${ppgValues.length}/${MIN_SAMPLES_FOR_CALCS})`);
-         return this.lastValidResult; // Return last valid result while buffer fills
+    if (ppgValues.length < 15) { 
+        return this.lastValidResult; // Return last known result while buffer fills
     }
 
     // --- Throttling --- 
@@ -116,8 +119,8 @@ export class VitalSignsProcessor {
     const ANALYSIS_WINDOW_SIZE = 150;
     const SPO2_WINDOW_SIZE = 45;
     const BP_WINDOW_SIZE = 90;
-    const MIN_SAMPLES_SHORT = 15;     // For SpO2
-    const MIN_SAMPLES_MEDIUM = 30;    // For others
+    const MIN_SAMPLES_SHORT = 15;
+    const MIN_SAMPLES_MEDIUM = 30;
 
     // Create slices 
     const bufferLength = ppgValues.length;
@@ -126,6 +129,7 @@ export class VitalSignsProcessor {
     const bpWindow = bufferLength >= MIN_SAMPLES_MEDIUM ? ppgValues.slice(-BP_WINDOW_SIZE) : [];
 
     // --- Processor Calls --- 
+
     const spo2 = spo2Window.length >= MIN_SAMPLES_SHORT ?
                  Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
     console.log(`>>> SpO2 Raw Calc: ${spo2}`); // DEBUG
