@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
+  return Math.abs(value) >= 0.005; // Reducido aún más para mayor sensibilidad
 }
 
 /**
@@ -54,14 +54,14 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Actualizar tiempo del pico y solicitar beep inmediatamente si se detectó un pico
-  if (result.isPeak && result.confidence > 0.05) {
+  if (result.isPeak && result.confidence > 0.02) {
     // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
     // Solicitar reproducción de beep INMEDIATAMENTE para sincronización perfecta
     if (isMonitoringRef.current) {
       // FORZAR reproducción de beep con alta prioridad y volumen amplificado
-      const beepVolume = Math.max(0.7, value * 15); // Amplificar más el volumen
+      const beepVolume = Math.max(0.85, value * 20); // Amplificar más el volumen
       const beepResult = requestBeepCallback(beepVolume);
       
       console.log("Peak-detection: Pico detectado con beep solicitado", {

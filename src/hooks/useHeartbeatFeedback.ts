@@ -16,6 +16,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioLoadedRef = useRef<boolean>(false);
+  const audioInitializedRef = useRef<boolean>(false);
   
   useEffect(() => {
     if (!enabled) return;
@@ -40,67 +41,80 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       }
     }
     
-    // Precargar MÚLTIPLES VERSIONES del sonido de latido para minimizar latencia
+    // Precargar audio para minimizar latencia
     const preloadAudio = () => {
+      console.log("Intentando precargar audio...");
       if (!audioElementRef.current) {
         const audioElement = new Audio();
-        audioElement.src = '/sounds/heartbeat.mp3'; // Asegurar ruta correcta
+        audioElement.src = '/sounds/heartbeat.mp3';
         audioElement.preload = 'auto';
         
         // Agregar controlador de error para detectar problemas con el archivo
         audioElement.onerror = (e) => {
           console.error("Error cargando archivo de audio:", e);
-          
-          // Intentar cargar un sonido alternativo o usar Web Audio directamente
-          useWebAudioFallback();
+          audioInitializedRef.current = true; // Marcar como inicializado aunque sea con error
+          // Usaremos Web Audio como fallback
+        };
+        
+        audioElement.oncanplaythrough = () => {
+          console.log("Audio de latido precargado y listo para reproducción");
+          audioLoadedRef.current = true;
         };
         
         audioElement.load();
         audioElementRef.current = audioElement;
         
         // FORZAR precarga del audio usando reproducción de volumen cero
-        audioElement.volume = 0.01;
+        audioElement.volume = 0;
         audioElement.play().then(() => {
           audioElement.pause();
           audioElement.currentTime = 0;
           audioElement.volume = 0.8;
           audioLoadedRef.current = true;
+          audioInitializedRef.current = true;
           console.log("Audio de latido precargado correctamente");
         }).catch(err => {
           console.log("Precarga de audio iniciada, interacción de usuario necesaria para completar");
-          // Intentar reproducir con Web Audio si falla la precarga
-          useWebAudioFallback();
+          audioInitializedRef.current = true; // Marcar como inicializado aunque sea con error
         });
       }
     };
     
-    // Función de fallback para usar Web Audio API directamente
-    const useWebAudioFallback = () => {
+    // Crear un beep directo con Web Audio para asegurar que haya sonido
+    const createDirectBeep = () => {
       if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
-        console.log("Usando Web Audio API fallback para beeps");
+        console.log("Creando beep directo como inicialización");
         
-        // Crear un beep de prueba para precarga
-        const testOsc = audioCtxRef.current.createOscillator();
-        const testGain = audioCtxRef.current.createGain();
+        // Crear un beep para preparar el audio
+        const osc = audioCtxRef.current.createOscillator();
+        const gainNode = audioCtxRef.current.createGain();
         
-        testOsc.frequency.value = 880;
-        testGain.gain.value = 0.01; // Volumen muy bajo para test
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gainNode.gain.value = 0.01; // Volumen muy bajo para no molestar
         
-        testOsc.connect(testGain);
-        testGain.connect(audioCtxRef.current.destination);
+        osc.connect(gainNode);
+        gainNode.connect(audioCtxRef.current.destination);
         
-        testOsc.start();
-        testOsc.stop(audioCtxRef.current.currentTime + 0.05);
+        osc.start();
+        osc.stop(audioCtxRef.current.currentTime + 0.1);
+        
+        // Marcar como inicializado
+        audioInitializedRef.current = true;
       }
     };
     
-    // Iniciar precarga
+    // Comenzar precarga e inicialización
     preloadAudio();
+    createDirectBeep();
     
     // Intentar interactuar con contexto de audio en respuesta a interacciones de usuario
     const handleUserInteraction = () => {
       if (audioCtxRef.current && audioCtxRef.current.state !== 'running') {
-        audioCtxRef.current.resume().catch(console.error);
+        audioCtxRef.current.resume().then(() => {
+          console.log("Contexto de audio reanudado tras interacción de usuario");
+          createDirectBeep();
+        }).catch(console.error);
       }
       
       if (audioElementRef.current && !audioLoadedRef.current) {
@@ -111,6 +125,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
           audio.currentTime = 0;
           audio.volume = 0.8;
           audioLoadedRef.current = true;
+          console.log("Audio cargado tras interacción de usuario");
         }).catch(console.error);
       }
     };
@@ -142,7 +157,15 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
    * @param type Tipo de retroalimentación: normal o arritmia
    */
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
-    if (!enabled) return;
+    if (!enabled) return false;
+
+    // VERIFICACIÓN: Si el audio no está inicializado, forzar inicialización
+    if (!audioInitializedRef.current) {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'running') {
+        audioCtxRef.current.resume().catch(console.error);
+      }
+      audioInitializedRef.current = true;
+    }
 
     // Patrones de vibración - ejecución inmediata
     try {
@@ -159,10 +182,10 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       console.log("Error activando vibración:", err);
     }
 
-    // REPRODUCIR BEEP - SISTEMA DUAL PARA MÁXIMA COMPATIBILIDAD
+    // SISTEMA MÚLTIPLE DE REPRODUCCIÓN DE SONIDO CON FALLBACKS
     try {
       // 1. MÉTODO PRIMARIO: ELEMENT AUDIO (más compatible)
-      if (audioElementRef.current) {
+      if (audioElementRef.current && audioLoadedRef.current) {
         // Optimizar reproducción para minimizar latencia
         const audioEl = audioElementRef.current;
         
@@ -170,41 +193,57 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
         audioEl.currentTime = 0;
         audioEl.volume = type === 'normal' ? 0.9 : 1.0; // Volumen más alto
         
-        // Reproducción inmediata con eventos para diagnóstico
-        const startTime = performance.now();
-        audioEl.onplay = () => {
-          console.log(`Beep audio iniciado después de ${performance.now() - startTime}ms`);
-        };
-        
         // Reproducción inmediata de sonido pregrabado
+        const startTime = performance.now();
         const playPromise = audioEl.play();
         
-        // Manejar errores de reproducción con fallback robusto
         if (playPromise !== undefined) {
-          playPromise.catch(error => {
+          playPromise.then(() => {
+            console.log(`Beep audio elemento iniciado después de ${performance.now() - startTime}ms`);
+            return true;
+          }).catch(error => {
             console.error('Error reproduciendo sonido de latido:', error);
             
             // 2. MÉTODO SECUNDARIO: WEB AUDIO API (fallback inmediato)
-            playWithWebAudio(type);
+            return playWithWebAudio(type);
           });
         }
         
-        return;
+        return true;
       }
       
       // Si no hay elemento de audio disponible, usar Web Audio directamente
-      playWithWebAudio(type);
+      return playWithWebAudio(type);
       
     } catch (err) {
       console.error("Error reproduciendo feedback de audio:", err);
       // Último intento con Web Audio simple
-      playEmergencyBeep(type);
+      return playEmergencyBeep(type);
     }
   };
 
   // Función auxiliar para reproducir con Web Audio API
-  const playWithWebAudio = (type: HeartbeatFeedbackType) => {
-    if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+  const playWithWebAudio = (type: HeartbeatFeedbackType): boolean => {
+    console.log("Utilizando Web Audio API para reproducir beep");
+    
+    if (!audioCtxRef.current) {
+      try {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+          latencyHint: 'interactive'
+        });
+      } catch (err) {
+        console.error("Error creando Audio Context en playWithWebAudio:", err);
+        return false;
+      }
+    }
+    
+    if (audioCtxRef.current.state !== 'running') {
+      audioCtxRef.current.resume().catch(err => {
+        console.error("Error resumiendo contexto de audio:", err);
+      });
+    }
+    
+    try {
       const ctx = audioCtxRef.current;
       
       // Crear osciladores para sonido más rico
@@ -218,19 +257,19 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       if (type === 'normal') {
         mainOsc.type = 'sine';
         mainOsc.frequency.setValueAtTime(880, ctx.currentTime);
-        mainGain.gain.setValueAtTime(0.3, ctx.currentTime);
+        mainGain.gain.setValueAtTime(0.4, ctx.currentTime);
         
         subOsc.type = 'triangle';
         subOsc.frequency.setValueAtTime(440, ctx.currentTime);
-        subGain.gain.setValueAtTime(0.15, ctx.currentTime);
+        subGain.gain.setValueAtTime(0.2, ctx.currentTime);
       } else {
         mainOsc.type = 'triangle';
         mainOsc.frequency.setValueAtTime(660, ctx.currentTime);
-        mainGain.gain.setValueAtTime(0.35, ctx.currentTime);
+        mainGain.gain.setValueAtTime(0.45, ctx.currentTime);
         
         subOsc.type = 'sine';
         subOsc.frequency.setValueAtTime(330, ctx.currentTime);
-        subGain.gain.setValueAtTime(0.2, ctx.currentTime);
+        subGain.gain.setValueAtTime(0.25, ctx.currentTime);
       }
       
       // Conectar y reproducir
@@ -243,47 +282,47 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       // Envolvente de amplitud para sonido más natural
       mainGain.gain.setValueAtTime(0, ctx.currentTime);
       mainGain.gain.linearRampToValueAtTime(
-        type === 'normal' ? 0.3 : 0.35,
-        ctx.currentTime + 0.005
+        type === 'normal' ? 0.4 : 0.45,
+        ctx.currentTime + 0.01
       );
       mainGain.gain.exponentialRampToValueAtTime(
         0.01,
-        ctx.currentTime + 0.1
+        ctx.currentTime + 0.15
       );
       
       subGain.gain.setValueAtTime(0, ctx.currentTime);
       subGain.gain.linearRampToValueAtTime(
-        type === 'normal' ? 0.15 : 0.2,
+        type === 'normal' ? 0.2 : 0.25,
         ctx.currentTime + 0.01
       );
       subGain.gain.exponentialRampToValueAtTime(
         0.01,
-        ctx.currentTime + 0.12
+        ctx.currentTime + 0.17
       );
       
       // Reproducir beeps con timing preciso
       mainOsc.start(ctx.currentTime);
       subOsc.start(ctx.currentTime + 0.005);
       
-      mainOsc.stop(ctx.currentTime + 0.12);
-      subOsc.stop(ctx.currentTime + 0.15);
+      mainOsc.stop(ctx.currentTime + 0.17);
+      subOsc.stop(ctx.currentTime + 0.20);
       
       console.log("Web Audio beep producido correctamente:", {
         tipo: type,
         tiempo: new Date().toISOString()
       });
-    } else if (audioCtxRef.current) {
-      // Reactivar contexto si está suspendido
-      audioCtxRef.current.resume().then(() => {
-        playEmergencyBeep(type);
-      }).catch(err => {
-        console.error("Error resumiendo contexto:", err);
-      });
+      
+      return true;
+    } catch (err) {
+      console.error("Error en Web Audio API:", err);
+      return playEmergencyBeep(type);
     }
   };
   
   // Beep de emergencia ultra simple (último recurso)
-  const playEmergencyBeep = (type: HeartbeatFeedbackType) => {
+  const playEmergencyBeep = (type: HeartbeatFeedbackType): boolean => {
+    console.log("Utilizando beep de emergencia como último recurso");
+    
     try {
       // Crear nuevo contexto temporal si es necesario
       const tempCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -291,25 +330,28 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       const gain = tempCtx.createGain();
       
       osc.frequency.value = type === 'normal' ? 880 : 660;
-      gain.gain.value = 0.3;
+      gain.gain.value = 0.5; // Volumen más alto para emergencia
       
       osc.connect(gain);
       gain.connect(tempCtx.destination);
       
       osc.start();
-      osc.stop(tempCtx.currentTime + 0.1);
+      osc.stop(tempCtx.currentTime + 0.15);
       
       // Cerrar el contexto temporal después de usarlo
       setTimeout(() => {
         tempCtx.close().catch(console.error);
-      }, 200);
+      }, 300);
       
       console.log("Beep de emergencia producido", {
         tipo: type,
         tiempo: new Date().toISOString()
       });
+      
+      return true;
     } catch (e) {
       console.error("Error fatal en reproducción de audio:", e);
+      return false;
     }
   };
 
