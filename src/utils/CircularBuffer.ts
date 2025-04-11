@@ -4,39 +4,58 @@ export interface PPGDataPoint {
   value: number;
 }
 
-export class CircularBuffer<T extends PPGDataPoint> {
+export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
   private buffer: T[];
-  private maxSize: number;
+  private capacity: number;
+  private index: number;
+  private isFull: boolean;
 
-  constructor(maxSize: number) {
-    this.buffer = [];
-    this.maxSize = maxSize;
+  constructor(capacity: number) {
+    this.buffer = new Array<T>(capacity);
+    this.capacity = capacity;
+    this.index = 0;
+    this.isFull = false;
   }
 
-  push(item: T): void {
-    this.buffer.push(item);
-    if (this.buffer.length > this.maxSize) {
-      this.buffer.shift();
+  public push(item: T): void {
+    this.buffer[this.index] = item;
+    this.index = (this.index + 1) % this.capacity;
+    if (this.index === 0) {
+      this.isFull = true;
     }
   }
 
-  clear(): void {
-    this.buffer = [];
+  public get(index: number): T | undefined {
+    if (!this.isFull && index >= this.index) {
+      return undefined;
+    }
+    
+    const adjustedIndex = (this.index + index) % this.capacity;
+    return this.buffer[adjustedIndex];
   }
 
-  getPoints(): T[] {
-    return [...this.buffer];
+  public getPoints(): T[] {
+    if (this.isFull) {
+      return [
+        ...this.buffer.slice(this.index),
+        ...this.buffer.slice(0, this.index)
+      ].filter(p => p !== undefined);
+    }
+    
+    return this.buffer.slice(0, this.index).filter(p => p !== undefined);
   }
 
-  get(index: number): T | undefined {
-    return this.buffer[index];
+  public clear(): void {
+    this.buffer = new Array<T>(this.capacity);
+    this.index = 0;
+    this.isFull = false;
   }
 
-  getLast(): T | undefined {
-    return this.buffer.length > 0 ? this.buffer[this.buffer.length - 1] : undefined;
+  public size(): number {
+    return this.isFull ? this.capacity : this.index;
   }
 
-  size(): number {
-    return this.buffer.length;
+  public isEmpty(): boolean {
+    return this.index === 0 && !this.isFull;
   }
 }
