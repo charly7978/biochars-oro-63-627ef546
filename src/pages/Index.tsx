@@ -269,62 +269,101 @@ const Index = () => {
     } else {
       console.error("Cannot start processing loop, video track is not live.");
       finalizeMeasurement();
-        }
-    };
-    const handleToggleMonitoring = () => {
-        if (isMonitoring) {
-            finalizeMeasurement();
-        } else {
-            startMonitoring();
-        }
-    };
-    const getHydrationColor = (hydration) => {
-        if (hydration >= 80)
-            return 'text-blue-500';
-        if (hydration >= 65)
-            return 'text-green-500';
-        if (hydration >= 50)
-            return 'text-yellow-500';
-        return 'text-red-500';
-    };
-    return (React.createElement("div", { className: "fixed inset-0 flex flex-col", style: {
-            height: '100vh',
-            width: '100vw',
-            maxWidth: '100vw',
-            maxHeight: '100vh',
-            overflow: 'hidden',
-            paddingTop: 'env(safe-area-inset-top)',
-            paddingBottom: 'env(safe-area-inset-bottom)',
-            background: 'linear-gradient(to bottom, #9b87f5 0%, #D6BCFA 15%, #8B5CF6 30%, #D946EF 45%, #F97316 60%, #0EA5E9 75%, #1A1F2C 85%, #221F26 92%, #222222 100%)'
-        } },
-        React.createElement("div", { className: "flex-1 relative" },
-            React.createElement("div", { className: "absolute inset-0" },
-                React.createElement(CameraView, { onStreamReady: handleStreamReady, isMonitoring: isCameraOn, isFingerDetected: lastSignal?.fingerDetected, signalQuality: signalQuality })),
-            React.createElement("div", { className: "relative z-10 h-full flex flex-col" },
-                React.createElement("div", { className: "px-4 py-2 flex justify-around items-center bg-black/20" },
-                    React.createElement("div", { className: "text-white text-sm" },
-                        "Calidad: ",
-                        signalQuality),
-                    React.createElement("div", { className: "text-white text-sm" }, lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada")),
-                React.createElement("div", { className: "flex-1" },
-                    React.createElement(PPGSignalMeter, { value: lastSignal?.filteredValue || 0, quality: lastSignal?.quality || 0, isFingerDetected: lastSignal?.fingerDetected || false, onStartMeasurement: startMonitoring, onReset: handleReset, arrhythmiaStatus: vitalSigns.arrhythmiaStatus || "--", preserveResults: showResults, isArrhythmia: isArrhythmia })),
-                React.createElement(AppTitle, null),
-                React.createElement("div", { className: "absolute inset-x-0 bottom-[40px] h-[40%] px-2 py-2" },
-                    React.createElement("div", { className: "grid grid-cols-2 h-full gap-2" },
-                        React.createElement("div", { className: "col-span-2 grid grid-cols-2 gap-2 mb-2" },
-                            React.createElement(VitalSign, { label: "FRECUENCIA CARDÍACA", value: heartRate || "--", unit: "BPM", highlighted: showResults, compact: false }),
-                            React.createElement(VitalSign, { label: "SPO2", value: vitalSigns.spo2 || "--", unit: "%", highlighted: showResults, compact: false })),
-                        React.createElement("div", { className: "col-span-2 grid grid-cols-2 gap-2" },
-                            React.createElement(VitalSign, { label: "PRESIÓN", value: vitalSigns.pressure || "--/--", unit: "mmHg", highlighted: showResults, compact: false }),
-                            React.createElement(VitalSign, { label: "HIDRATACIÓN", value: vitalSigns.hydration || "--", unit: "%", highlighted: showResults, icon: React.createElement(Droplet, { className: `h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}` }), compact: false })),
-                        React.createElement(VitalSign, { label: "GLUCOSA", value: vitalSigns.glucose || "--", unit: "mg/dL", highlighted: showResults, compact: false }),
-                        React.createElement(VitalSign, { label: "COLESTEROL", value: vitalSigns.lipids?.totalCholesterol || "--", unit: "mg/dL", highlighted: showResults, compact: false }),
-                        React.createElement(VitalSign, { label: "TRIGLICÉRIDOS", value: vitalSigns.lipids?.triglycerides || "--", unit: "mg/dL", highlighted: showResults, compact: false }),
-                        React.createElement(VitalSign, { label: "HEMOGLOBINA", value: Math.round(vitalSigns.hemoglobin) || "--", unit: "g/dL", highlighted: showResults, compact: false }))),
-                React.createElement("div", { className: "absolute inset-x-0 bottom-1 flex gap-1 px-1" },
-                    React.createElement("div", { className: "w-1/2" },
-                        React.createElement(MonitorButton, { isMonitoring: isMonitoring, onToggle: handleToggleMonitoring, variant: "monitor" })),
-                    React.createElement("div", { className: "w-1/2" },
-                        React.createElement(MonitorButton, { isMonitoring: isMonitoring, onToggle: handleReset, variant: "reset" }))))));
+    }
+  };
+
+  const handleToggleMonitoring = () => {
+    if (isMonitoring) {
+      finalizeMeasurement();
+    } else {
+      startMonitoring();
+    }
+  };
+
+  const getHydrationColor = (hydration) => {
+    if (hydration >= 80)
+      return 'text-blue-500';
+    if (hydration >= 65)
+      return 'text-green-500';
+    if (hydration >= 50)
+      return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  return (
+    <div className="fixed inset-0 flex flex-col" style={{
+      height: '100vh',
+      width: '100vw',
+      maxWidth: '100vw',
+      maxHeight: '100vh',
+      overflow: 'hidden',
+      paddingTop: 'env(safe-area-inset-top)',
+      paddingBottom: 'env(safe-area-inset-bottom)',
+      background: 'linear-gradient(to bottom, #9b87f5 0%, #D6BCFA 15%, #8B5CF6 30%, #D946EF 45%, #F97316 60%, #0EA5E9 75%, #1A1F2C 85%, #221F26 92%, #222222 100%)'
+    }}>
+      <div className="flex-1 relative">
+        <div className="absolute inset-0">
+          <CameraView 
+            onStreamReady={handleStreamReady} 
+            isMonitoring={isCameraOn} 
+            isFingerDetected={lastSignal?.fingerDetected} 
+            signalQuality={signalQuality} 
+          />
+        </div>
+        <div className="relative z-10 h-full flex flex-col">
+          <div className="px-4 py-2 flex justify-around items-center bg-black/20">
+            <div className="text-white text-sm">Calidad: {signalQuality}</div>
+            <div className="text-white text-sm">{lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}</div>
+          </div>
+          <div className="flex-1">
+            <PPGSignalMeter 
+              value={lastSignal?.filteredValue || 0} 
+              quality={lastSignal?.quality || 0} 
+              isFingerDetected={lastSignal?.fingerDetected || false} 
+              onStartMeasurement={startMonitoring} 
+              onReset={handleReset} 
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"} 
+              preserveResults={showResults} 
+              isArrhythmia={isArrhythmia}
+            />
+          </div>
+          <AppTitle />
+          <div className="absolute inset-x-0 bottom-[40px] h-[40%] px-2 py-2">
+            <div className="grid grid-cols-2 h-full gap-2">
+              <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
+                <VitalSign label="FRECUENCIA CARDÍACA" value={heartRate || "--"} unit="BPM" highlighted={showResults} compact={false} />
+                <VitalSign label="SPO2" value={vitalSigns.spo2 || "--"} unit="%" highlighted={showResults} compact={false} />
+              </div>
+              <div className="col-span-2 grid grid-cols-2 gap-2">
+                <VitalSign label="PRESIÓN" value={vitalSigns.pressure || "--/--"} unit="mmHg" highlighted={showResults} compact={false} />
+                <VitalSign label="HIDRATACIÓN" value={vitalSigns.hydration || "--"} unit="%" highlighted={showResults} icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`}} compact={false} />
+              </div>
+              <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="TRIGLICÉRIDOS" value={vitalSigns.lipids?.triglycerides || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="HEMOGLOBINA" value={Math.round(vitalSigns.hemoglobin) || "--"} unit="g/dL" highlighted={showResults} compact={false} />
+            </div>
+          </div>
+          <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleToggleMonitoring} 
+                variant="monitor" 
+              />
+            </div>
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleReset} 
+                variant="reset" 
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
+
 export default Index;
