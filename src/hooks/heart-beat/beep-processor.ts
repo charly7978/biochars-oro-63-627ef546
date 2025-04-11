@@ -6,7 +6,8 @@ export function useBeepProcessor() {
   const beepProcessorTimeoutRef = useRef<number | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   
-  const MIN_BEEP_INTERVAL_MS = 500;
+  // Reduced minimum beep interval for lower latency
+  const MIN_BEEP_INTERVAL_MS = 300; // Reduced from 500ms to 300ms
   
   const processBeepQueue = useCallback((
     isMonitoringRef: React.MutableRefObject<boolean>,
@@ -16,8 +17,7 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ) => {
-    // Todo el procesamiento de beeps ha sido eliminado
-    // El sonido es manejado exclusivamente por PPGSignalMeter
+    // Completamente eliminado - sonido manejado por PPGSignalMeter
     console.log("BeepProcessor: Completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
     pendingBeepsQueue.current = []; // Vaciar cola
     return;
@@ -32,8 +32,7 @@ export function useBeepProcessor() {
     missedBeepsCounter: React.MutableRefObject<number>,
     playBeep: (volume: number) => boolean | Promise<boolean>
   ): boolean => {
-    // Todo el código de beep ha sido eliminado
-    // El sonido es manejado exclusivamente por PPGSignalMeter
+    // Eliminado - sonido manejado exclusivamente por PPGSignalMeter
     console.log("BeepProcessor: Beep completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
     return false;
   }, []);
