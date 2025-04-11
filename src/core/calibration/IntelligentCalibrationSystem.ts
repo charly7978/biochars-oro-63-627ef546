@@ -134,13 +134,6 @@ export interface UserCalibrationProfile {
   config: CalibrationConfig;
 }
 
-interface CalibrationParameters {
-  gain: number;
-  offset: number;
-  threshold: number;
-  sensitivity: number;
-}
-
 /**
  * Sistema de Autocalibración Inteligente
  * 
@@ -984,29 +977,6 @@ export class IntelligentCalibrationSystem {
       this.referenceValues = this.userProfile.referenceValues;
       this.config = this.userProfile.config;
     }
-  }
-
-  private calculateCalibrationFactor(signal: number[], threshold: number): number {
-    const signalMean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
-    const signalVariance = signal.reduce((sum, val) => sum + Math.pow(val - signalMean, 2), 0) / signal.length;
-    
-    // Factor de calibración basado en la varianza de la señal y el umbral
-    const calibrationFactor = Math.max(0.1, Math.min(2.0, 
-      (signalVariance > threshold * threshold) ? Math.sqrt(signalVariance) / threshold : 1.0
-    ));
-    
-    return calibrationFactor;
-  }
-
-  public adjustCalibrationParameters(signal: number[], currentParams: CalibrationParameters): CalibrationParameters {
-    const calibrationFactor = this.calculateCalibrationFactor(signal, currentParams.threshold);
-    
-    return {
-      gain: currentParams.gain * calibrationFactor,
-      offset: currentParams.offset,
-      threshold: currentParams.threshold * Math.sqrt(calibrationFactor),
-      sensitivity: currentParams.sensitivity / calibrationFactor
-    };
   }
 }
 

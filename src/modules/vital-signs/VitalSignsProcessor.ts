@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -176,22 +177,11 @@ export class VitalSignsProcessor {
     // Very basic approximation
     const base = 14;
     
-    if (spo2 > 95) return base + this.calculatePerfusionAdjustment(spo2);
-    if (spo2 > 90) return base - 1 + this.calculatePerfusionAdjustment(spo2);
-    if (spo2 > 85) return base - 2 + this.calculatePerfusionAdjustment(spo2);
+    if (spo2 > 95) return base + Math.random();
+    if (spo2 > 90) return base - 1 + Math.random();
+    if (spo2 > 85) return base - 2 + Math.random();
     
-    return base - 3 + this.calculatePerfusionAdjustment(spo2);
-  }
-
-  /**
-   * Calculate perfusion adjustment based on SpO2
-   */
-  private calculatePerfusionAdjustment(spo2: number): number {
-    // Calcula el ajuste basado en la desviación del SpO2 del valor óptimo (98%)
-    const optimalSpo2 = 98;
-    const deviation = Math.abs(spo2 - optimalSpo2);
-    const perfusionFactor = 0.1; // Factor de ajuste basado en estudios clínicos
-    return deviation * perfusionFactor;
+    return base - 3 + Math.random();
   }
 
   /**
