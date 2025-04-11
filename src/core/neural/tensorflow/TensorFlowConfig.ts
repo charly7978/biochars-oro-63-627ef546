@@ -1,3 +1,4 @@
+
 /**
  * Configuración y opciones para TensorFlow.js
  * Proporciona ajustes de rendimiento y optimización
@@ -68,23 +69,6 @@ export interface TensorFlowConfig {
     enableDebugMode: boolean;
     // Activar WebGPU cuando disponible (experimental)
     preferWebGPU: boolean;
-    // Activar cuantización para reducir la precisión
-    enableQuantization: boolean;
-    // Usar operaciones personalizadas
-    useCustomOps: boolean;
-    // Tamaño de lote optimizado
-    batchSize: number;
-    // Ejecución en pipeline
-    enablePipelinedExecution: boolean;
-    // Umbral de asignación de memoria GPU
-    tensorAllocationThreshold: number;
-    // Configuración del optimizador
-    optimizerConfig: {
-      learningRate: number;
-      beta1: number;
-      beta2: number;
-      epsilon: number;
-    };
   };
 }
 
@@ -202,56 +186,6 @@ export const HIGH_ACCURACY_CONFIG: TensorFlowConfig = {
     parallelismLevel: 0,
     enableDebugMode: false,
     preferWebGPU: true
-  }
-};
-
-/**
- * Configuración optimizada para máxima precisión y rendimiento
- */
-export const OPTIMIZED_TENSORFLOW_CONFIG: TensorFlowConfig = {
-  backend: 'webgl',
-  memoryOptions: {
-    useFloat16: false, // Usar float32 para mayor precisión
-    enableTensorPacking: true,
-    gpuMemoryLimitMB: 0, // Sin límite para máximo rendimiento
-    enableAutoGarbageCollection: true
-  },
-  cacheOptions: {
-    enableModelCaching: true,
-    modelCachePrefix: 'vital-signs-model-optimized-',
-    cacheExpirationDays: 7, // Actualización más frecuente
-    cacheVersion: '2.0.0'
-  },
-  loadOptions: {
-    progressiveLoading: false, // Cargar todo de una vez
-    useWebWorkers: true,
-    modelLoadTimeoutMs: 60000, // Mayor tiempo para carga completa
-    maxLoadAttempts: 5,
-    modelPriority: 10 // Máxima prioridad
-  },
-  calibrationOptions: {
-    enableAutoCalibration: true,
-    calibrationDuration: 12000, // Más tiempo para mejor calibración
-    minCalibrationSamples: 100, // Más muestras para mejor precisión
-    maxCorrectionFactor: 2.0, // Mayor rango de corrección
-    autoRecalibrationIntervalMs: 300000 // Recalibrar cada 5 minutos
-  },
-  advancedOptions: {
-    enablePlatformOptimizations: true,
-    parallelismLevel: 4, // Usar más hilos
-    enableDebugMode: false,
-    preferWebGPU: true, // Usar WebGPU cuando esté disponible
-    enableQuantization: false, // Desactivar cuantización para mayor precisión
-    useCustomOps: true, // Usar operaciones optimizadas
-    batchSize: 64, // Tamaño de lote optimizado
-    enablePipelinedExecution: true, // Ejecución en pipeline
-    tensorAllocationThreshold: 0.9, // Usar más memoria GPU
-    optimizerConfig: {
-      learningRate: 0.001,
-      beta1: 0.9,
-      beta2: 0.999,
-      epsilon: 1e-7
-    }
   }
 };
 
