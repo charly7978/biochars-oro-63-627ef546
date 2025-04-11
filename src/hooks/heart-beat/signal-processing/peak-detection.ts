@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.006; // Reducido para mayor sensibilidad y mejores resultados
+  return Math.abs(value) >= 0.01; // Aumentado para evitar falsos positivos cuando no hay dedo
 }
 
 /**
@@ -52,12 +52,28 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep inmediatamente
-  if (result.isPeak && result.confidence > 0.05) {
+  // Verificar que la señal es lo suficientemente fuerte antes de procesar picos
+  if (Math.abs(value) < 0.01) {
+    return; // No procesar señales débiles para evitar falsos positivos
+  }
+  
+  // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep con verificaciones adicionales
+  if (result.isPeak && result.confidence > 0.25) { // Aumentado umbral de confianza
+    // Verificar que ha pasado suficiente tiempo desde el último pico (evitar beeps repetidos)
+    const minTimeBetweenPeaks = 500; // Mínimo 500ms entre picos para evitar falsos positivos
+    if (lastPeakTimeRef.current && (now - lastPeakTimeRef.current) < minTimeBetweenPeaks) {
+      console.log("Peak-detection: Ignorando pico demasiado cercano al anterior", {
+        tiempoDesdeÚltimoPico: now - (lastPeakTimeRef.current || 0),
+        umbralTiempo: minTimeBetweenPeaks
+      });
+      return;
+    }
+    
     lastPeakTimeRef.current = now;
     
-    // Solicitar beep inmediatamente para perfecta sincronización
-    if (isMonitoringRef.current) {
+    // Solicitar beep inmediatamente para perfecta sincronización solo si estamos monitoreando
+    // y la calidad de la señal es buena
+    if (isMonitoringRef.current && result.confidence > 0.25 && Math.abs(value) >= 0.02) {
       const beepSuccess = requestBeepCallback(value);
       
       console.log("Peak-detection: Pico detectado con solicitud de beep inmediata", {
@@ -70,3 +86,4 @@ export function handlePeakDetection(
     }
   }
 }
+
