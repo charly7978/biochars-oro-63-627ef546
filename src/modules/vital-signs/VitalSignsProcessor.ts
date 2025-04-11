@@ -33,11 +33,6 @@ export class VitalSignsProcessor {
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
-  // Throttling state
-  private lastCalculationTime: number = 0;
-  private readonly CALCULATION_INTERVAL_MS = 200; // Calculate ~5 times per second
-  private lastValidResult: VitalSignsResult = ResultFactory.createEmptyResults();
-
   /**
    * Constructor that initializes all specialized processors
    */
@@ -69,38 +64,28 @@ export class VitalSignsProcessor {
     // 2. Get the updated filtered buffer
     const ppgValues = this.signalProcessor.getFilteredPPGValues();
     
-    // 3. --- TEMP: Relaxed Finger Check for Debugging ---
-    const MIN_RAW_AMPLITUDE_THRESHOLD = 0.01; 
-    if (Math.abs(ppgValue) < MIN_RAW_AMPLITUDE_THRESHOLD) { 
-        // If signal is lost, reset calculation time and return empty results immediately
-        if (!this.lastValidResult.spo2 && !this.lastValidResult.heartRate) {
-            // Avoid console spam if already empty
-        } else {
-             console.log("VitalSignsProcessor: Raw signal near zero, resetting.");
-        }
-        this.signalProcessor.reset(); 
-        this.lastCalculationTime = 0; // Ensure next valid signal triggers calculation
-        this.lastValidResult = ResultFactory.createEmptyResults();
-        return this.lastValidResult;
+    // --- TEMP: Relaxed Finger Check for Debugging ---
+    // Original Check: if (!this.signalProcessor.isFingerDetected()) { ... }
+    // Use a simple amplitude check on raw value for now
+    const MIN_RAW_AMPLITUDE_THRESHOLD = 0.01; // Use a low threshold for raw signal presence
+    if (Math.abs(ppgValue) < MIN_RAW_AMPLITUDE_THRESHOLD) { // Check if raw value is near zero
+        console.log("VitalSignsProcessor: Raw signal near zero, assuming no finger.");
+        // Potentially reset processors or just return empty
+         this.signalProcessor.reset(); // Reset buffer if signal lost
+         return ResultFactory.createEmptyResults();
     }
     // --- End TEMP Check ---
 
     // 4. Check if we have enough data points in the central buffer
-    if (ppgValues.length < 15) { 
-        return this.lastValidResult; // Return last known result while buffer fills
+    if (ppgValues.length < 15) { // Use a minimal threshold consistent with validators/processors
+        // console.log(`VitalSignsProcessor: Not enough data yet (${ppgValues.length})`);
+        return ResultFactory.createEmptyResults();
     }
 
-    // --- Throttling --- 
-    const now = Date.now();
-    if (now - this.lastCalculationTime < this.CALCULATION_INTERVAL_MS) {
-        // Not enough time passed, return the last calculated result
-        return this.lastValidResult;
-    }
-    
-    // --- Enough time passed, proceed with calculations --- 
-    this.lastCalculationTime = now; 
+    // --- Perform Calculations using slices of the main buffer --- 
 
-    // Process arrhythmia data 
+    // Process arrhythmia data if available and valid
+    // (Keep this logic as it uses external rrData)
     const arrhythmiaResult = rrData && 
                            rrData.intervals && 
                            rrData.intervals.length >= 3 && 
@@ -108,24 +93,26 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
 
-    // Define analysis window sizes & min samples
-    const ANALYSIS_WINDOW_SIZE = 150;
-    const SPO2_WINDOW_SIZE = 45;
-    const BP_WINDOW_SIZE = 90;
-    const MIN_SAMPLES_SHORT = 15;
-    const MIN_SAMPLES_MEDIUM = 30;
+    // Define analysis window sizes
+    const ANALYSIS_WINDOW_SIZE = 150; // ~5 seconds
+    const SPO2_WINDOW_SIZE = 45;      // ~1.5 seconds
+    const BP_WINDOW_SIZE = 90;        // ~3 seconds
+    const MIN_SAMPLES_SHORT = 15;     // ~0.5 seconds
+    const MIN_SAMPLES_MEDIUM = 30;    // ~1 second
 
-    // Create slices 
+    // Create slices (avoid recalculating length repeatedly)
     const bufferLength = ppgValues.length;
     const recentPpgValues = bufferLength >= MIN_SAMPLES_MEDIUM ? ppgValues.slice(-ANALYSIS_WINDOW_SIZE) : [];
     const spo2Window = bufferLength >= MIN_SAMPLES_SHORT ? ppgValues.slice(-SPO2_WINDOW_SIZE) : [];
     const bpWindow = bufferLength >= MIN_SAMPLES_MEDIUM ? ppgValues.slice(-BP_WINDOW_SIZE) : [];
 
-    // --- Processor Calls --- 
+    // --- Restore Processor Calls (using appropriate windows) --- 
 
+    // Calculate SpO2 
     const spo2 = spo2Window.length >= MIN_SAMPLES_SHORT ?
                  Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
     
+    // Calculate blood pressure 
     const bpResult = bpWindow.length >= MIN_SAMPLES_MEDIUM ?
                      this.bpProcessor.calculateBloodPressure(bpWindow) :
                      null;
@@ -134,39 +121,53 @@ export class VitalSignsProcessor {
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
     
+    // Calculate glucose 
     const glucose = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                     Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
     const glucoseConfidence = this.glucoseProcessor.getConfidence(); 
     
+    // Calculate lipids 
     const lipidsResult = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                        this.lipidProcessor.calculateLipids(recentPpgValues) :
                        { totalCholesterol: 0, triglycerides: 0 };
     const lipids = lipidsResult;
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
+    // Calculate hydration 
     const hydration = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                       Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
     
-    const heartRate = bufferLength >= MIN_SAMPLES_MEDIUM ? 
+    // --- Calculate BPM --- 
+    const heartRate = bufferLength >= MIN_SAMPLES_MEDIUM ? // Need enough data for reliable HR
                        Math.round(this.signalProcessor.calculateHeartRate()) : 0;
 
-    // Confidence & Final Values 
+    // Calculate overall confidence (using restored confidence values)
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
       glucoseConfidence,
       lipidsConfidence
     );
+
+    // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
     const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
       totalCholesterol: Math.round(lipids.totalCholesterol),
       triglycerides: Math.round(lipids.triglycerides)
-    } : { totalCholesterol: 0, triglycerides: 0 };
+    } : {
+      totalCholesterol: 0,
+      triglycerides: 0
+    };
+    
+    // Calculate Hemoglobin deterministically
     const hemoglobin = Math.round(this.calculateHemoglobin(spo2));
 
-    // --- Update lastValidResult --- 
-    this.lastValidResult = {
+    // --- Logging (optional) --- 
+    // console.log("VitalSignsProcessor: Results", { ... });
+
+    // --- Prepare final result object --- 
+    const result: VitalSignsResult = {
        spo2,
        pressure,
-       heartRate, 
+       heartRate, // Include calculated heart rate
        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus || "--",
        glucose: finalGlucose,
        lipids: finalLipids,
@@ -178,7 +179,7 @@ export class VitalSignsProcessor {
        lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
     }
 
-    return this.lastValidResult;
+    return result;
   }
 
   /**
@@ -187,13 +188,15 @@ export class VitalSignsProcessor {
   private calculateHemoglobin(spo2: number): number {
     if (spo2 <= 0 || spo2 > 100) return 0; // Invalid SpO2
     
-    const base = 15.0; 
-    const maxReduction = 5.0;
-    const lowSpo2Threshold = 85.0;
+    // Simple linear mapping (example, adjust ranges as needed)
+    const base = 15.0; // Optimal Hb for ~98-100% SpO2
+    const maxReduction = 5.0; // Max reduction for very low SpO2
+    const lowSpo2Threshold = 85.0; // SpO2 level where reduction starts significantly
 
     if (spo2 >= 98) return base;
     if (spo2 < lowSpo2Threshold) return base - maxReduction;
     
+    // Linear reduction between 98 and lowSpo2Threshold
     const reductionFactor = (98.0 - spo2) / (98.0 - lowSpo2Threshold);
     return base - (maxReduction * reductionFactor);
   }
@@ -202,15 +205,14 @@ export class VitalSignsProcessor {
    * Reset the processor to ensure a clean state
    */
   public reset(): VitalSignsResult | null {
-    this.signalProcessor.reset(); 
+    this.signalProcessor.reset(); // Resets buffer and its state
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
-    this.lastCalculationTime = 0; // Reset throttle timer
-    this.lastValidResult = ResultFactory.createEmptyResults(); // Reset last result
+    // No need to reset signalValidator separately if using signalProcessor's state
     console.log("VitalSignsProcessor: Reset complete.");
     return null; 
   }
