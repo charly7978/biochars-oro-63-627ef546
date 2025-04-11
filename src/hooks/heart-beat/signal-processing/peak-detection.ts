@@ -40,13 +40,12 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función ha sido optimizada para evitar falsos positivos y beeps aleatorios
+ * Esta función ha sido optimizada para evitar falsos positivos
  * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
   result: any, 
   lastPeakTimeRef: React.MutableRefObject<number | null>,
-  requestBeepCallback: (value: number) => boolean,
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
 ): void {
@@ -57,9 +56,9 @@ export function handlePeakDetection(
     return; // No procesar señales débiles para evitar completamente falsos positivos
   }
   
-  // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep con verificaciones estrictas
+  // Actualizar tiempo del pico para cálculos de tiempo
   if (result.isPeak && result.confidence > 0.75) { // Umbral de confianza extremadamente alto
-    // Verificar que ha pasado suficiente tiempo desde el último pico (evitar beeps repetidos)
+    // Verificar que ha pasado suficiente tiempo desde el último pico
     const minTimeBetweenPeaks = 1000; // Aumentado a 1s para eliminar falsos positivos
     if (lastPeakTimeRef.current && (now - lastPeakTimeRef.current) < minTimeBetweenPeaks) {
       console.log("Peak-detection: Ignorando pico demasiado cercano al anterior", {
@@ -80,17 +79,11 @@ export function handlePeakDetection(
     
     lastPeakTimeRef.current = now;
     
-    // Solicitar beep solo si estamos monitoreando, valor es alto y la confianza es muy alta
-    if (isMonitoringRef.current && result.confidence > 0.8 && Math.abs(value) >= 0.3) {
-      const beepSuccess = requestBeepCallback(value);
-      
-      console.log("Peak-detection: Pico real detectado con señal fuerte", {
-        confianza: result.confidence,
-        valor: value,
-        tiempo: new Date(now).toISOString(),
-        isArrhythmia: result.isArrhythmia || false,
-        beepSuccess: beepSuccess
-      });
-    }
+    console.log("Peak-detection: Pico real detectado con señal fuerte", {
+      confianza: result.confidence,
+      valor: value,
+      tiempo: new Date(now).toISOString(),
+      isArrhythmia: result.isArrhythmia || false
+    });
   }
 }

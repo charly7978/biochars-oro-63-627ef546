@@ -1,27 +1,10 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
- * Incluye retroalimentación háptica, sonora y visual
+ * Incluye retroalimentación háptica y visual
  */
 
 import { toast } from "@/hooks/use-toast";
-
-// Configuración de sonidos
-const successSoundUrl = '/sounds/success.mp3';
-const errorSoundUrl = '/sounds/error.mp3';
-const notificationSoundUrl = '/sounds/notification.mp3';
-const heartbeatSoundUrl = '/sounds/heartbeat.mp3';
-
-// Caché de sonidos para mejor rendimiento
-const soundCache: Record<string, HTMLAudioElement> = {};
-
-const loadSound = (url: string): HTMLAudioElement => {
-  if (!soundCache[url]) {
-    const audio = new Audio(url);
-    audio.load();
-    soundCache[url] = audio;
-  }
-  return soundCache[url];
-};
 
 export const FeedbackService = {
   // Retroalimentación háptica
@@ -47,40 +30,6 @@ export const FeedbackService = {
     }
   },
 
-  // Retroalimentación sonora
-  playSound: (type: 'success' | 'error' | 'notification' | 'heartbeat' = 'notification') => {
-    let soundUrl;
-    
-    switch (type) {
-      case 'success':
-        soundUrl = successSoundUrl;
-        break;
-      case 'error':
-        soundUrl = errorSoundUrl;
-        break;
-      case 'heartbeat':
-        soundUrl = heartbeatSoundUrl;
-        break;
-      default:
-        soundUrl = notificationSoundUrl;
-    }
-    
-    try {
-      const audio = loadSound(soundUrl);
-      // Reiniciar el audio si ya está reproduciéndose
-      audio.currentTime = 0;
-      
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.error('Error al reproducir audio:', error);
-        });
-      }
-    } catch (error) {
-      console.error('Error al reproducir sonido:', error);
-    }
-  },
-
   // Retroalimentación visual mediante notificaciones toast
   showToast: (
     title: string, 
@@ -99,21 +48,18 @@ export const FeedbackService = {
   // Retroalimentación combinada para acciones exitosas
   signalSuccess: (message: string) => {
     FeedbackService.vibrate([100, 50, 100]);
-    FeedbackService.playSound('success');
     FeedbackService.showToast('¡Éxito!', message, 'success');
   },
 
   // Retroalimentación combinada para errores
   signalError: (message: string) => {
     FeedbackService.vibrate(500);
-    FeedbackService.playSound('error');
     FeedbackService.showToast('Error', message, 'error');
   },
 
   // Retroalimentación para arritmia detectada
   signalArrhythmia: (count: number) => {
     FeedbackService.vibrateArrhythmia();
-    FeedbackService.playSound('heartbeat');
     if (count === 1) {
       FeedbackService.showToast(
         '¡Atención!', 
@@ -135,7 +81,6 @@ export const FeedbackService = {
   signalMeasurementComplete: (hasGoodQuality: boolean) => {
     if (hasGoodQuality) {
       FeedbackService.vibrate([100, 30, 100, 30, 100]);
-      FeedbackService.playSound('success');
       FeedbackService.showToast(
         'Medición completada', 
         'Medición finalizada con éxito', 
@@ -143,7 +88,6 @@ export const FeedbackService = {
       );
     } else {
       FeedbackService.vibrate([100, 50, 100]);
-      FeedbackService.playSound('notification');
       FeedbackService.showToast(
         'Medición completada', 
         'Calidad de señal baja. Intente nuevamente para mayor precisión.',

@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,7 +7,6 @@ import { HeartBeatConfig } from './heart-beat/config';
 import { applyFilterPipeline } from './heart-beat/signal-filters';
 import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
 import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
-import { HeartbeatAudioManager } from './heart-beat/audio-manager';
 import { checkSignalQuality, resetSignalQualityState } from './heart-beat/signal-quality';
 
 export class HeartBeatProcessor {
@@ -26,12 +26,6 @@ export class HeartBeatProcessor {
   EMA_ALPHA = HeartBeatConfig.EMA_ALPHA;
   BASELINE_FACTOR = HeartBeatConfig.BASELINE_FACTOR;
 
-  BEEP_PRIMARY_FREQUENCY = HeartBeatConfig.BEEP_PRIMARY_FREQUENCY;
-  BEEP_SECONDARY_FREQUENCY = HeartBeatConfig.BEEP_SECONDARY_FREQUENCY;
-  BEEP_DURATION = HeartBeatConfig.BEEP_DURATION;
-  BEEP_VOLUME = HeartBeatConfig.BEEP_VOLUME;
-  MIN_BEEP_INTERVAL_MS = HeartBeatConfig.MIN_BEEP_INTERVAL_MS;
-
   LOW_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD;
   LOW_SIGNAL_FRAMES = HeartBeatConfig.LOW_SIGNAL_FRAMES;
   
@@ -40,7 +34,6 @@ export class HeartBeatProcessor {
   medianBuffer = [];
   movingAverageBuffer = [];
   smoothedValue = 0;
-  lastBeepTime = 0;
   lastPeakTime = null;
   previousPeakTime = null;
   bpmHistory = [];
@@ -58,46 +51,11 @@ export class HeartBeatProcessor {
   arrhythmiaCounter = 0;
   lowSignalCount = 0;
 
-  // Audio manager
-  audioManager = null;
-
   constructor() {
-    this.audioManager = new HeartbeatAudioManager({
-      primaryFrequency: this.BEEP_PRIMARY_FREQUENCY,
-      secondaryFrequency: this.BEEP_SECONDARY_FREQUENCY,
-      beepDuration: this.BEEP_DURATION,
-      beepVolume: this.BEEP_VOLUME,
-      minBeepInterval: this.MIN_BEEP_INTERVAL_MS
-    });
-    
-    this.initAudio();
     this.startTime = Date.now();
     console.log("HeartBeatProcessor: New instance created - direct measurement mode only");
   }
 
-  async initAudio() {
-    try {
-      await this.audioManager.initAudio();
-    } catch (err) {
-      console.error("HeartBeatProcessor: Error initializing audio", err);
-    }
-  }
-
-  async playBeep(volume = 0.7) {
-    // Don't play beeps if not monitoring
-    if (!this.isMonitoring) {
-      console.log("HeartBeatProcessor: Beep requested but monitoring is off");
-      return false;
-    }
-    
-    try {
-      return await this.audioManager.playBeep(volume);
-    } catch (error) {
-      console.error("HeartBeatProcessor: Error playing beep", error);
-      return false;
-    }
-  }
-  
   setMonitoring(isActive) {
     this.isMonitoring = isActive;
     console.log("HeartBeatProcessor: Monitoring state set to", isActive);
@@ -214,11 +172,6 @@ export class HeartBeatProcessor {
           maxHistoryLength: 12
         }
       );
-      
-      // Play beep if monitoring and not in warmup period
-      if (this.isMonitoring && !this.isInWarmup()) {
-        this.playBeep();
-      }
     }
     
     // Calculate current BPM
@@ -267,7 +220,6 @@ export class HeartBeatProcessor {
     this.medianBuffer = [];
     this.movingAverageBuffer = [];
     this.smoothedValue = 0;
-    this.lastBeepTime = 0;
     this.lastPeakTime = null;
     this.previousPeakTime = null;
     this.bpmHistory = [];
@@ -281,9 +233,6 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
-    
-    // Try to ensure audio context is active
-    this.initAudio();
     
     console.log("HeartBeatProcessor: Reset complete - all values at zero");
   }
