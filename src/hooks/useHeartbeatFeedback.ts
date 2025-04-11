@@ -55,19 +55,15 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     const gain = ctx.createGain();
 
     if (type === 'normal') {
-      // Tono normal para latido regular - Invertido para sonar en pico
+      // Tono normal para latido regular
       osc.type = 'square';
       osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime); // Aumentado volumen para mejor audibilidad
-      // Invertir la fase para que suene en el pico
-      osc.detune.setValueAtTime(180, ctx.currentTime); // Invertir la fase 180 grados
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
     } else if (type === 'arrhythmia') {
-      // Tono más grave y duradero para arritmia - Invertido para sonar en pico
+      // Tono más grave y duradero para arritmia
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime); // Aumentado volumen para mejor audibilidad
-      // Invertir la fase para que suene en el pico
-      osc.detune.setValueAtTime(180, ctx.currentTime); // Invertir la fase 180 grados
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
     }
 
     osc.connect(gain);

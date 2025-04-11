@@ -4,7 +4,7 @@
  */
 
 import { useRef, useCallback } from 'react';
-import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
+import { VitalSignsResult } from '../../types/vital-signs';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
 
@@ -45,7 +45,7 @@ export const useSignalProcessing = () => {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCount(),
+        arrhythmiaCount: processorRef.current.getArrhythmiaCount(), // Changed from getArrhythmiaCounter to getArrhythmiaCount
         signalNumber: processedSignals.current
       });
     }
@@ -57,11 +57,12 @@ export const useSignalProcessing = () => {
       
       // Add null checks for arrhythmia status
       if (result && 
-          result.arrhythmiaStatus && 
-          typeof result.arrhythmiaStatus === 'string' && 
-          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-          result.lastArrhythmiaData) {
-        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+          result.arrhythmia && 
+          result.arrhythmia.arrhythmiaStatus && 
+          typeof result.arrhythmia.arrhythmiaStatus === 'string' && 
+          result.arrhythmia.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.arrhythmia.lastArrhythmiaData) {
+        const arrhythmiaTime = result.arrhythmia.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
         let windowWidth = 400;
@@ -143,7 +144,7 @@ export const useSignalProcessing = () => {
    * Get the arrhythmia counter
    */
   const getArrhythmiaCounter = useCallback(() => {
-    return processorRef.current?.getArrhythmiaCount() || 0;
+    return processorRef.current?.getArrhythmiaCount() || 0; // Changed from getArrhythmiaCounter to getArrhythmiaCount
   }, []);
 
   /**

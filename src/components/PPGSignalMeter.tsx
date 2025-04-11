@@ -70,13 +70,13 @@ const PPGSignalMeter = memo(({
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
   const verticalScale = 76.0;
-  const SMOOTHING_FACTOR = 1.2;
+  const SMOOTHING_FACTOR = 1.8;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 250;
+  const MIN_PEAK_DISTANCE_MS = 350;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
@@ -87,7 +87,7 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 250;
+  const MIN_BEEP_INTERVAL_MS = 350;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
@@ -141,73 +141,10 @@ const PPGSignalMeter = memo(({
       
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
-      const lastPoint = dataBufferRef.current?.getLast();
-      const prevPoint = dataBufferRef.current?.get(dataBufferRef.current.size() - 2);
+      lastBeepTimeRef.current = now;
+      pendingBeepPeakIdRef.current = null;
       
-      if (lastPoint && prevPoint) {
-        const isPeak = lastPoint.value > prevPoint.value;
-        if (isPeak) {
-          try {
-            if (audioContextRef.current && audioContextRef.current.state === 'running') {
-              const primaryOscillator = audioContextRef.current.createOscillator();
-              const primaryGain = audioContextRef.current.createGain();
-              
-              const secondaryOscillator = audioContextRef.current.createOscillator();
-              const secondaryGain = audioContextRef.current.createGain();
-              
-              primaryOscillator.type = "sine";
-              primaryOscillator.frequency.setValueAtTime(
-                BEEP_PRIMARY_FREQUENCY,
-                audioContextRef.current.currentTime
-              );
-              
-              secondaryOscillator.type = "sine";
-              secondaryOscillator.frequency.setValueAtTime(
-                BEEP_SECONDARY_FREQUENCY,
-                audioContextRef.current.currentTime
-              );
-              
-              primaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-              primaryGain.gain.linearRampToValueAtTime(
-                volume,
-                audioContextRef.current.currentTime + 0.01
-              );
-              primaryGain.gain.exponentialRampToValueAtTime(
-                0.01,
-                audioContextRef.current.currentTime + BEEP_DURATION / 1000
-              );
-              
-              secondaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-              secondaryGain.gain.linearRampToValueAtTime(
-                volume * 0.4,
-                audioContextRef.current.currentTime + 0.01
-              );
-              secondaryGain.gain.exponentialRampToValueAtTime(
-                0.01,
-                audioContextRef.current.currentTime + BEEP_DURATION / 1000
-              );
-              
-              primaryOscillator.connect(primaryGain);
-              secondaryOscillator.connect(secondaryGain);
-              primaryGain.connect(audioContextRef.current.destination);
-              secondaryGain.connect(audioContextRef.current.destination);
-              
-              primaryOscillator.start(audioContextRef.current.currentTime);
-              secondaryOscillator.start(audioContextRef.current.currentTime);
-              primaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
-              secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
-            }
-          } catch (err) {
-            console.error("PPGSignalMeter: Error en implementación local de beep:", err);
-          }
-          
-          lastBeepTimeRef.current = now;
-          pendingBeepPeakIdRef.current = null;
-          return true;
-        }
-      }
-      
-      return false;
+      return true;
     } catch (err) {
       console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
