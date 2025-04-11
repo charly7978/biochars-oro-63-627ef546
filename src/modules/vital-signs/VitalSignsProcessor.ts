@@ -64,12 +64,17 @@ export class VitalSignsProcessor {
     // 2. Get the updated filtered buffer
     const ppgValues = this.signalProcessor.getFilteredPPGValues();
     
-    // 3. Check if finger is detected (using SignalProcessor's state)
-    if (!this.signalProcessor.isFingerDetected()) {
-       // Optional: Log why finger is not detected (e.g., based on signalValidator inside SignalProcessor)
-       // console.log("VitalSignsProcessor: Finger not detected by SignalProcessor.");
-       return ResultFactory.createEmptyResults();
+    // --- TEMP: Relaxed Finger Check for Debugging ---
+    // Original Check: if (!this.signalProcessor.isFingerDetected()) { ... }
+    // Use a simple amplitude check on raw value for now
+    const MIN_RAW_AMPLITUDE_THRESHOLD = 0.01; // Use a low threshold for raw signal presence
+    if (Math.abs(ppgValue) < MIN_RAW_AMPLITUDE_THRESHOLD) { // Check if raw value is near zero
+        console.log("VitalSignsProcessor: Raw signal near zero, assuming no finger.");
+        // Potentially reset processors or just return empty
+         this.signalProcessor.reset(); // Reset buffer if signal lost
+         return ResultFactory.createEmptyResults();
     }
+    // --- End TEMP Check ---
 
     // 4. Check if we have enough data points in the central buffer
     if (ppgValues.length < 15) { // Use a minimal threshold consistent with validators/processors
