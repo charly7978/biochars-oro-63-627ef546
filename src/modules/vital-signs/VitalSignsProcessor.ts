@@ -117,53 +117,60 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
+    // --- TEMP: Disable complex processors to test performance ---
+
     // Calculate SpO2 using its specific window
     const spo2 = spo2Window.length >= 15 ? // Check min samples for SpO2 (approx 0.5s)
                  Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
     
-    // Calculate blood pressure using its specific window
-    const bpResult = bpWindow.length >= 30 ? // Check min samples for BP (1s)
-                     this.bpProcessor.calculateBloodPressure(bpWindow) :
-                     null;
-    const bp = bpResult || { systolic: 0, diastolic: 0 }; // Use result or zeros
-    const pressure = bp.systolic > 0 && bp.diastolic > 0 
-      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
-      : "--/--";
+    // // Calculate blood pressure using its specific window (TEMP DISABLED)
+    // const bpResult = bpWindow.length >= 30 ? // Check min samples for BP (1s)
+    //                  this.bpProcessor.calculateBloodPressure(bpWindow) :
+    //                  null;
+    // const bp = bpResult || { systolic: 0, diastolic: 0 }; // Use result or zeros
+    const bp = { systolic: 0, diastolic: 0 }; // TEMP: Return zeros
+    const pressure = "--/--"; // TEMP: Return default string
     
-    // --- Use recentPpgValues (last 150) for remaining analyses --- 
-    const minSamplesForAnalysis = 30; // Require at least 1 second for these analyses
+    // // --- Use recentPpgValues (last 150) for remaining analyses --- (TEMP DISABLED)
+    // const minSamplesForAnalysis = 30; // Require at least 1 second for these analyses
     
-    // Calculate glucose with recent data only
-    const glucose = recentPpgValues.length >= minSamplesForAnalysis ?
-                    Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
-    const glucoseConfidence = this.glucoseProcessor.getConfidence(); // Confidence might be calculated internally based on data used
+    // // Calculate glucose with recent data only (TEMP DISABLED)
+    // const glucose = recentPpgValues.length >= minSamplesForAnalysis ?
+    //                 Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
+    const glucose = 0; // TEMP
+    const glucoseConfidence = 0; // TEMP
     
-    // Calculate lipids with recent data only
-    const lipidsResult = recentPpgValues.length >= minSamplesForAnalysis ?
-                       this.lipidProcessor.calculateLipids(recentPpgValues) :
-                       { totalCholesterol: 0, triglycerides: 0 };
-    const lipids = lipidsResult;
-    const lipidsConfidence = this.lipidProcessor.getConfidence();
+    // // Calculate lipids with recent data only (TEMP DISABLED)
+    // const lipidsResult = recentPpgValues.length >= minSamplesForAnalysis ?
+    //                    this.lipidProcessor.calculateLipids(recentPpgValues) :
+    //                    { totalCholesterol: 0, triglycerides: 0 };
+    // const lipids = lipidsResult;
+    const lipids = { totalCholesterol: 0, triglycerides: 0 }; // TEMP
+    const lipidsConfidence = 0; // TEMP
     
-    // Calculate hydration with recent PPG data
-    const hydration = recentPpgValues.length >= minSamplesForAnalysis ?
-                      Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
+    // // Calculate hydration with recent PPG data (TEMP DISABLED)
+    // const hydration = recentPpgValues.length >= minSamplesForAnalysis ?
+    //                   Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
+    const hydration = 0; // TEMP
     
-    // Calculate overall confidence
-    const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
-      glucoseConfidence,
-      lipidsConfidence
-    );
+    // Calculate overall confidence (TEMP: simplified)
+    const overallConfidence = 0;
+    // const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
+    //   glucoseConfidence,
+    //   lipidsConfidence
+    // );
 
-    // Only show values if confidence exceeds threshold
-    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
-    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
-      totalCholesterol: Math.round(lipids.totalCholesterol),
-      triglycerides: Math.round(lipids.triglycerides)
-    } : {
-      totalCholesterol: 0,
-      triglycerides: 0
-    };
+    // Only show values if confidence exceeds threshold (TEMP: using temp zeros)
+    const finalGlucose = 0;
+    const finalLipids = { totalCholesterol: 0, triglycerides: 0 };
+    // const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
+    // const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
+    //   totalCholesterol: Math.round(lipids.totalCholesterol),
+    //   triglycerides: Math.round(lipids.triglycerides)
+    // } : {
+    //   totalCholesterol: 0,
+    //   triglycerides: 0
+    // };
 
     // --- Missing BPM Calculation --- 
     // TODO: Implement BPM calculation from ppgValues or recentPpgValues
