@@ -70,8 +70,10 @@ export class VitalSignsProcessor {
     const ppgValues = this.signalProcessor.getFilteredPPGValues();
 
     // 3. Check finger presence (using a robust method)
-    // Restore original finger detection logic from SignalProcessor
     const isFingerCurrentlyDetected = this.signalProcessor.isFingerDetected();
+    // --- DEBUG LOG --- 
+    // console.log(`Finger Detected: ${isFingerCurrentlyDetected}, Buffer Length: ${ppgValues.length}`);
+    // --------------- 
     
     // --- Handle Finger Loss/Return --- 
     if (!isFingerCurrentlyDetected) {
@@ -133,30 +135,37 @@ export class VitalSignsProcessor {
 
     const spo2 = spo2Window.length >= MIN_SAMPLES_SHORT ?
                  Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
+    console.log(`>>> SpO2 Raw Calc: ${spo2}`); // DEBUG
     
     const bpResult = bpWindow.length >= MIN_SAMPLES_MEDIUM ?
                      this.bpProcessor.calculateBloodPressure(bpWindow) :
                      null;
+    console.log(`>>> BP Raw Result: ${JSON.stringify(bpResult)}`); // DEBUG
     const bp = bpResult || { systolic: 0, diastolic: 0 }; 
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
+    console.log(`>>> BP Formatted: ${pressure}`); // DEBUG
     
     const glucose = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                     Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
     const glucoseConfidence = this.glucoseProcessor.getConfidence(); 
+    console.log(`>>> Glucose Raw Calc: ${glucose}, Confidence: ${glucoseConfidence}`); // DEBUG
     
     const lipidsResult = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                        this.lipidProcessor.calculateLipids(recentPpgValues) :
                        { totalCholesterol: 0, triglycerides: 0 };
     const lipids = lipidsResult;
     const lipidsConfidence = this.lipidProcessor.getConfidence();
+    console.log(`>>> Lipids Raw Calc: ${JSON.stringify(lipids)}, Confidence: ${lipidsConfidence}`); // DEBUG
     
     const hydration = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                       Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
+    console.log(`>>> Hydration Raw Calc: ${hydration}`); // DEBUG
     
     const heartRate = bufferLength >= MIN_SAMPLES_MEDIUM ? 
                        Math.round(this.signalProcessor.calculateHeartRate()) : 0;
+    console.log(`>>> Heart Rate Raw Calc: ${heartRate}`); // DEBUG
 
     // Confidence & Final Values 
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -168,6 +177,8 @@ export class VitalSignsProcessor {
       totalCholesterol: Math.round(lipids.totalCholesterol),
       triglycerides: Math.round(lipids.triglycerides)
     } : { totalCholesterol: 0, triglycerides: 0 };
+    console.log(`>>> Glucose Final: ${finalGlucose}, Lipids Final: ${JSON.stringify(finalLipids)}`); // DEBUG
+    
     const hemoglobin = Math.round(this.calculateHemoglobin(spo2));
 
     // --- Update lastValidResult --- 
