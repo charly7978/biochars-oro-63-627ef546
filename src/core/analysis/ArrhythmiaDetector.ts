@@ -19,12 +19,12 @@ interface UserProfile {
 }
 
 export class ArrhythmiaDetector {
-  private RMSSD_THRESHOLD = 35;
-  private RR_VARIATION_THRESHOLD = 0.15; // Reducido para detectar más fácilmente
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 2000; // Reducido para detectar más frecuentemente
+  private RMSSD_THRESHOLD = 25; // Reducido para detectar más arritmias
+  private RR_VARIATION_THRESHOLD = 0.10; // Reducido para detectar más arritmias
+  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 1500; // Reducido para detectar más arritmias
   private readonly MAX_ARRHYTHMIAS_PER_SESSION = 10;
-  private readonly REQUIRED_RR_INTERVALS = 4; // Reducido para detectar con menos datos
-  private readonly LEARNING_PERIOD = 3000; // Reducido para empezar a detectar antes
+  private readonly REQUIRED_RR_INTERVALS = 3; // Reducido para detectar con menos datos
+  private readonly LEARNING_PERIOD = 2000; // Reducido para empezar a detectar antes
 
   private lastArrhythmiaTime: number = 0;
   private arrhythmiaCounter: number = 0;
@@ -72,7 +72,8 @@ export class ArrhythmiaDetector {
       console.log("ArrhythmiaDetector: Fase de aprendizaje completada");
     }
 
-    if (!rrData || !rrData.intervals || rrData.intervals.length < this.REQUIRED_RR_INTERVALS) {
+    // MODIFICADO: Permitir detección incluso con pocos intervalos
+    if (!rrData || !rrData.intervals || rrData.intervals.length < 2) {
       return this.buildResult('normal');
     }
 
@@ -94,9 +95,10 @@ export class ArrhythmiaDetector {
     let hasArrhythmia = false;
     let category: ArrhythmiaResult['arrhythmiaStatus'] = 'normal';
 
-    if (!this.isLearningPhase &&
-        rmssd > this.RMSSD_THRESHOLD &&
-        rrVariation > this.RR_VARIATION_THRESHOLD) {
+    // MODIFICADO: Saltear fase de aprendizaje si hay variación significativa
+    if ((rrVariation > this.RR_VARIATION_THRESHOLD * 1.5 || !this.isLearningPhase) &&
+        rmssd > this.RMSSD_THRESHOLD * 0.7 &&  // Reducido para mayor sensibilidad
+        rrVariation > this.RR_VARIATION_THRESHOLD * 0.7) {  // Reducido para mayor sensibilidad
 
       const timeSinceLast = currentTime - this.lastArrhythmiaTime;
       if (timeSinceLast > this.MIN_TIME_BETWEEN_ARRHYTHMIAS &&
@@ -136,7 +138,8 @@ export class ArrhythmiaDetector {
     // Verificar variación significativa (posible arritmia)
     if (intervals.length >= 2) {
       const variation = Math.abs(intervals[intervals.length - 1] - intervals[intervals.length - 2]);
-      if (variation > avgRR * 0.2) return 'bigeminy';
+      // Reducido para detectar más bigeminia
+      if (variation > avgRR * 0.15) return 'bigeminy';
     }
 
     return 'possible-arrhythmia';

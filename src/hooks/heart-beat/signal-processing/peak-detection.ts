@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.005; // Reducido aún más para mayor sensibilidad
+  return Math.abs(value) >= 0.003; // Reducido aún más para mayor sensibilidad
 }
 
 /**
@@ -53,15 +53,24 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
+  // NUEVO: Registrar TODOS los intentos de beep para diagnóstico
+  console.log("Peak-detection: Evaluando pico con confianza:", {
+    esPico: result.isPeak,
+    confianza: result.confidence,
+    valor: value,
+    umbralConfirmación: 0.01 // Reducido para mayor sensibilidad
+  });
+  
   // Actualizar tiempo del pico y solicitar beep inmediatamente si se detectó un pico
-  if (result.isPeak && result.confidence > 0.02) {
+  // MODIFICADO: Umbral de confianza reducido para permitir más beeps
+  if (result.isPeak && result.confidence > 0.01) {
     // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
     // Solicitar reproducción de beep INMEDIATAMENTE para sincronización perfecta
     if (isMonitoringRef.current) {
       // FORZAR reproducción de beep con alta prioridad y volumen amplificado
-      const beepVolume = Math.max(0.85, value * 20); // Amplificar más el volumen
+      const beepVolume = Math.max(0.95, Math.min(1.0, value * 30)); // Amplificar más el volumen
       const beepResult = requestBeepCallback(beepVolume);
       
       console.log("Peak-detection: Pico detectado con beep solicitado", {
@@ -78,6 +87,13 @@ export function handlePeakDetection(
         } : 'no hay transición',
         isArrhythmia: result.isArrhythmia || false
       });
+      
+      // NUEVO: Intentar reproducir el beep una segunda vez para asegurar
+      setTimeout(() => {
+        if (isMonitoringRef.current) {
+          requestBeepCallback(beepVolume);
+        }
+      }, 10);
     }
   }
 }
