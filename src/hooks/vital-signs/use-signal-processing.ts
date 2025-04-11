@@ -45,7 +45,7 @@ export const useSignalProcessing = () => {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
+        arrhythmiaCount: processorRef.current.getArrhythmiaCount(),
         signalNumber: processedSignals.current
       });
     }
@@ -143,7 +143,7 @@ export const useSignalProcessing = () => {
    * Get the arrhythmia counter
    */
   const getArrhythmiaCounter = useCallback(() => {
-    return processorRef.current?.getArrhythmiaCounter() || 0;
+    return processorRef.current?.getArrhythmiaCount() || 0;
   }, []);
 
   /**
