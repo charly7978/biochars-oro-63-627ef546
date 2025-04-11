@@ -22,34 +22,34 @@ export function detectPeak(
   isPeak: boolean;
   confidence: number;
 } {
-  // Check minimum time between peaks - increased to avoid false detections
+  // Check minimum time between peaks - drastically increased to prevent false detections
   if (lastPeakTime !== null) {
     const timeSinceLastPeak = currentTime - lastPeakTime;
-    if (timeSinceLastPeak < config.minPeakTimeMs * 1.2) { // Aumento del 20% en el tiempo mínimo
+    if (timeSinceLastPeak < config.minPeakTimeMs * 2.0) { // Aumento del 100% en el tiempo mínimo
       return { isPeak: false, confidence: 0 };
     }
   }
 
-  // Peak detection logic with stricter thresholds
+  // Peak detection logic with extremely strict thresholds
   const isPeak =
-    derivative < config.derivativeThreshold * 0.8 && // Más restrictivo en la derivada
-    normalizedValue > config.signalThreshold * 1.3 && // Mayor umbral para la señal
-    lastValue > baseline * 1.05; // Verificación más estricta contra la línea base
+    derivative < config.derivativeThreshold * 0.5 && // Mucho más restrictivo en la derivada
+    normalizedValue > config.signalThreshold * 2.5 && // Umbral mucho más alto para la señal
+    lastValue > baseline * 1.2; // Verificación más estricta contra la línea base
 
-  // Calculate confidence based on signal characteristics with higher requirements
+  // Calculate confidence based on signal characteristics with much higher requirements
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 2.2), 0), // Mayor divisor para reducir confianza
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 3.5), 0), // Divisor mucho más alto para reducir confianza
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.7), 0), // Más exigente
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.5), 0), // Mucho más exigente
     1
   );
 
-  // Combined confidence score with higher minimum threshold
+  // Combined confidence score with much higher minimum threshold
   const rawConfidence = (amplitudeConfidence + derivativeConfidence) / 2;
-  const confidence = rawConfidence < 0.3 ? 0 : rawConfidence; // Umbral mínimo de confianza
+  const confidence = rawConfidence < 0.65 ? 0 : rawConfidence; // Umbral mínimo de confianza muy alto
 
   return { isPeak, confidence };
 }
@@ -78,17 +78,17 @@ export function confirmPeak(
   let isConfirmedPeak = false;
   let updatedLastConfirmedPeak = lastConfirmedPeak;
 
-  // Only proceed with peak confirmation if needed, with higher confidence requirement
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 1.5) { // Aumentado 50% el umbral mínimo
+  // Only proceed with peak confirmation if needed, with much higher confidence requirement
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 2.5) { // Aumentado 150% el umbral mínimo
     // Need enough samples in buffer for confirmation
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values - stricter verification
-      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2] * 0.9; // Debe bajar al menos un 10%
-      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3] * 0.9; // Debe bajar al menos un 10%
+      // Confirm peak if followed by sharply decreasing values - much stricter verification
+      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2] * 0.75; // Debe bajar al menos un 25%
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3] * 0.75; // Debe bajar al menos un 25%
 
-      if (goingDown1 && goingDown2) { // Cambiado a AND para mayor restricción
+      if (goingDown1 && goingDown2) { // Ambas condiciones deben cumplirse
         isConfirmedPeak = true;
         updatedLastConfirmedPeak = true;
       }

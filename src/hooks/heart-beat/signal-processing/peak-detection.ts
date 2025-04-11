@@ -10,8 +10,8 @@
  * Only processes real measurements
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Umbral mucho más estricto para evitar falsos positivos
-  return Math.abs(value) >= 0.05; // Aumentado significativamente para evitar señales débiles
+  // Umbral extremadamente estricto para evitar falsos positivos
+  return Math.abs(value) >= 0.25; // Aumentado significativamente para exigir señales muy fuertes
 }
 
 /**
@@ -52,15 +52,15 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Verificar que la señal es lo suficientemente fuerte antes de procesar picos
-  if (Math.abs(value) < 0.05) {
-    return; // No procesar señales débiles para evitar falsos positivos (umbral aumentado)
+  // Verificar que la señal es extremadamente fuerte antes de procesar picos
+  if (Math.abs(value) < 0.25) {
+    return; // No procesar señales débiles para evitar completamente falsos positivos
   }
   
-  // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep con verificaciones adicionales
-  if (result.isPeak && result.confidence > 0.45) { // Umbral de confianza significativamente aumentado
+  // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep con verificaciones estrictas
+  if (result.isPeak && result.confidence > 0.75) { // Umbral de confianza extremadamente alto
     // Verificar que ha pasado suficiente tiempo desde el último pico (evitar beeps repetidos)
-    const minTimeBetweenPeaks = 750; // Aumentado a 750ms para evitar falsos positivos
+    const minTimeBetweenPeaks = 1000; // Aumentado a 1s para eliminar falsos positivos
     if (lastPeakTimeRef.current && (now - lastPeakTimeRef.current) < minTimeBetweenPeaks) {
       console.log("Peak-detection: Ignorando pico demasiado cercano al anterior", {
         tiempoDesdeÚltimoPico: now - (lastPeakTimeRef.current || 0),
@@ -69,14 +69,22 @@ export function handlePeakDetection(
       return;
     }
     
+    // Verificación extra del valor para asegurar que es un pico real
+    if (Math.abs(value) < 0.3) {
+      console.log("Peak-detection: Valor de señal insuficiente para considerar pico real", {
+        valor: value,
+        umbralRequerido: 0.3
+      });
+      return;
+    }
+    
     lastPeakTimeRef.current = now;
     
-    // Solicitar beep inmediatamente para perfecta sincronización solo si estamos monitoreando
-    // y la calidad de la señal es buena
-    if (isMonitoringRef.current && result.confidence > 0.45 && Math.abs(value) >= 0.08) {
+    // Solicitar beep solo si estamos monitoreando, valor es alto y la confianza es muy alta
+    if (isMonitoringRef.current && result.confidence > 0.8 && Math.abs(value) >= 0.3) {
       const beepSuccess = requestBeepCallback(value);
       
-      console.log("Peak-detection: Pico detectado con solicitud de beep inmediata", {
+      console.log("Peak-detection: Pico real detectado con señal fuerte", {
         confianza: result.confidence,
         valor: value,
         tiempo: new Date(now).toISOString(),
