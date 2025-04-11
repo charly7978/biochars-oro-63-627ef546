@@ -40,8 +40,9 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * This function now activates the beep to ensure audio feedback
+ * This function activates the beep to ensure audio feedback
  * No simulation is used - direct measurement only
+ * OPTIMIZADO: Asegura reproducción inmediata de beep en el momento exacto del pico
  */
 export function handlePeakDetection(
   result: any, 
@@ -52,19 +53,21 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Actualizar tiempo del pico y solicitar beep si se detectó un pico
+  // Actualizar tiempo del pico y solicitar beep inmediatamente si se detectó un pico
   if (result.isPeak && result.confidence > 0.05) {
     // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
-    // Solicitar reproducción de beep - REACTIVADO
+    // Solicitar reproducción de beep INMEDIATAMENTE para sincronización perfecta
     if (isMonitoringRef.current) {
-      requestBeepCallback(value);
+      // Reproducir beep con alta prioridad
+      const beepResult = requestBeepCallback(value);
       
       console.log("Peak-detection: Pico detectado con beep solicitado", {
         confianza: result.confidence,
         valor: value,
         tiempo: new Date(now).toISOString(),
+        beepReproducido: beepResult,
         // Log transition state if present
         transicion: result.transition ? {
           activa: result.transition.active,
