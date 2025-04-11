@@ -139,13 +139,68 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
+      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      
       const lastPoint = dataBufferRef.current?.getLast();
       const prevPoint = dataBufferRef.current?.get(dataBufferRef.current.size() - 2);
       
       if (lastPoint && prevPoint) {
         const isPeak = lastPoint.value > prevPoint.value;
         if (isPeak) {
-          triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+          try {
+            if (audioContextRef.current && audioContextRef.current.state === 'running') {
+              const primaryOscillator = audioContextRef.current.createOscillator();
+              const primaryGain = audioContextRef.current.createGain();
+              
+              const secondaryOscillator = audioContextRef.current.createOscillator();
+              const secondaryGain = audioContextRef.current.createGain();
+              
+              primaryOscillator.type = "sine";
+              primaryOscillator.frequency.setValueAtTime(
+                BEEP_PRIMARY_FREQUENCY,
+                audioContextRef.current.currentTime
+              );
+              
+              secondaryOscillator.type = "sine";
+              secondaryOscillator.frequency.setValueAtTime(
+                BEEP_SECONDARY_FREQUENCY,
+                audioContextRef.current.currentTime
+              );
+              
+              primaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+              primaryGain.gain.linearRampToValueAtTime(
+                volume,
+                audioContextRef.current.currentTime + 0.01
+              );
+              primaryGain.gain.exponentialRampToValueAtTime(
+                0.01,
+                audioContextRef.current.currentTime + BEEP_DURATION / 1000
+              );
+              
+              secondaryGain.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+              secondaryGain.gain.linearRampToValueAtTime(
+                volume * 0.4,
+                audioContextRef.current.currentTime + 0.01
+              );
+              secondaryGain.gain.exponentialRampToValueAtTime(
+                0.01,
+                audioContextRef.current.currentTime + BEEP_DURATION / 1000
+              );
+              
+              primaryOscillator.connect(primaryGain);
+              secondaryOscillator.connect(secondaryGain);
+              primaryGain.connect(audioContextRef.current.destination);
+              secondaryGain.connect(audioContextRef.current.destination);
+              
+              primaryOscillator.start(audioContextRef.current.currentTime);
+              secondaryOscillator.start(audioContextRef.current.currentTime);
+              primaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
+              secondaryOscillator.stop(audioContextRef.current.currentTime + BEEP_DURATION / 1000 + 0.02);
+            }
+          } catch (err) {
+            console.error("PPGSignalMeter: Error en implementación local de beep:", err);
+          }
+          
           lastBeepTimeRef.current = now;
           pendingBeepPeakIdRef.current = null;
           return true;

@@ -1,3 +1,4 @@
+
 import { useEffect, useRef } from 'react';
 
 /**
@@ -57,14 +58,14 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       // Tono normal para latido regular - Invertido para sonar en pico
       osc.type = 'square';
       osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime); // Aumentado volumen para mejor audibilidad
       // Invertir la fase para que suene en el pico
       osc.detune.setValueAtTime(180, ctx.currentTime); // Invertir la fase 180 grados
     } else if (type === 'arrhythmia') {
       // Tono más grave y duradero para arritmia - Invertido para sonar en pico
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime); // Aumentado volumen para mejor audibilidad
       // Invertir la fase para que suene en el pico
       osc.detune.setValueAtTime(180, ctx.currentTime); // Invertir la fase 180 grados
     }
