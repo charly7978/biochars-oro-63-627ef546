@@ -68,22 +68,33 @@ export class VitalSignsProcessor {
     
     // 2. Get the updated filtered buffer
     const ppgValues = this.signalProcessor.getFilteredPPGValues();
+
+    // 3. Check finger presence (using a robust method)
+    // Restore original finger detection logic from SignalProcessor
+    const isFingerCurrentlyDetected = this.signalProcessor.isFingerDetected();
     
-    // 3. --- TEMP: Relaxed Finger Check for Debugging ---
-    const MIN_RAW_AMPLITUDE_THRESHOLD = 0.01; 
-    if (Math.abs(ppgValue) < MIN_RAW_AMPLITUDE_THRESHOLD) { 
-        // If signal is lost, reset calculation time and return empty results immediately
-        if (!this.lastValidResult.spo2 && !this.lastValidResult.heartRate) {
-            // Avoid console spam if already empty
-        } else {
-             console.log("VitalSignsProcessor: Raw signal near zero, resetting.");
+    // --- Handle Finger Loss/Return --- 
+    if (!isFingerCurrentlyDetected) {
+        if (this.lastValidResult !== ResultFactory.createEmptyResults()) {
+            console.log("VitalSignsProcessor: Finger lost/signal unstable. Pausing BP, resetting others.");
+            this.bpProcessor.pauseMeasurement(); // Pause BP measurement
+            // Reset instant processors (optional, but cleans state)
+            this.spo2Processor.reset();
+            this.glucoseProcessor.reset();
+            this.lipidProcessor.reset();
+            this.hydrationEstimator.reset();
+            this.arrhythmiaProcessor.reset();
+            // Keep SignalProcessor buffer, but reset its detection confirmation state?
+            // For now, SignalProcessor reset is handled internally if pattern is lost.
+            this.lastCalculationTime = 0; // Reset throttle timer
+            this.lastValidResult = ResultFactory.createEmptyResults(); // Clear last results
         }
-        this.signalProcessor.reset(); 
-        this.lastCalculationTime = 0; // Ensure next valid signal triggers calculation
-        this.lastValidResult = ResultFactory.createEmptyResults();
-        return this.lastValidResult;
+        return ResultFactory.createEmptyResults(); 
+    } else {
+        // Finger is present (or detected again), ensure BP measurement is resumed
+        this.bpProcessor.resumeMeasurement();
     }
-    // --- End TEMP Check ---
+    // --- End Finger Handling --- 
 
     // 4. Check if we have enough data points in the central buffer
     if (ppgValues.length < 15) { 
@@ -93,12 +104,9 @@ export class VitalSignsProcessor {
     // --- Throttling --- 
     const now = Date.now();
     if (now - this.lastCalculationTime < this.CALCULATION_INTERVAL_MS) {
-        // Not enough time passed, return the last calculated result
         return this.lastValidResult;
     }
-    
-    // --- Enough time passed, proceed with calculations --- 
-    this.lastCalculationTime = now; 
+    this.lastCalculationTime = now;
 
     // Process arrhythmia data 
     const arrhythmiaResult = rrData && 
@@ -198,19 +206,24 @@ export class VitalSignsProcessor {
     return base - (maxReduction * reductionFactor);
   }
 
-  /**
-   * Reset the processor to ensure a clean state
-   */
-  public reset(): VitalSignsResult | null {
-    this.signalProcessor.reset(); 
+  // Renamed original reset to avoid conflict, called by reset() and signal loss
+  private resetProcessorsAndState(): void {
+    this.signalProcessor.reset(); // Resets buffer & finger detection state
     this.spo2Processor.reset();
-    this.bpProcessor.reset();
+    this.bpProcessor.reset(); // BP full reset here
     this.arrhythmiaProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
-    this.lastCalculationTime = 0; // Reset throttle timer
-    this.lastValidResult = ResultFactory.createEmptyResults(); // Reset last result
+    this.lastCalculationTime = 0; 
+    this.lastValidResult = ResultFactory.createEmptyResults();
+  }
+
+  /**
+   * Reset the processor to ensure a clean state
+   */
+  public reset(): VitalSignsResult | null {
+    this.resetProcessorsAndState();
     console.log("VitalSignsProcessor: Reset complete.");
     return null; 
   }
