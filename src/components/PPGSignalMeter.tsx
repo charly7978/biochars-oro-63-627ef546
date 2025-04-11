@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Progress } from "@/components/ui/progress"
 import { FeedbackService } from '@/services/FeedbackService';
@@ -13,8 +14,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { BeatLoader } from 'react-spinners';
-import { RawArrhythmiaData } from '@/types/vitals';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -23,7 +22,7 @@ interface PPGSignalMeterProps {
   onStartMeasurement: () => void;
   onReset: () => void;
   arrhythmiaStatus: string;
-  rawArrhythmiaData: RawArrhythmiaData | null;
+  rawArrhythmiaData?: any | null;
 }
 
 const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({ 
@@ -49,7 +48,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   const transitionStartRef = useRef<number>(0);
   const arrhythmiaStatusRef = useRef<string>(arrhythmiaStatus);
-  const rawArrhythmiaDataRef = useRef<RawArrhythmiaData | null>(rawArrhythmiaData);
+  const rawArrhythmiaDataRef = useRef<any | null>(rawArrhythmiaData);
   
   const MAX_ARRHYTHMIAS = 3;
   
@@ -157,7 +156,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         />
         <div className="absolute inset-0 flex items-center justify-center">
           {isCalibrating ? (
-            <BeatLoader color="#fff" size={24} />
+            <div className="animate-pulse text-4xl font-bold text-white">...</div>
           ) : (
             <div className="text-4xl font-bold text-white">
               {isFingerDetected ? `${quality}%` : '--'}

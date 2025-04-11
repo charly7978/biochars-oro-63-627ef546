@@ -124,7 +124,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBPM, 
       confidence, 
       processorRef.current, 
-      requestBeep, 
       isMonitoringRef, 
       lastRRIntervalsRef, 
       currentBeatIsArrhythmiaRef
@@ -147,7 +146,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     currentBPM, 
     confidence, 
     processSignalInternal, 
-    requestBeep, 
     detectArrhythmia
   ]);
 
