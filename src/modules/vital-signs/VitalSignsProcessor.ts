@@ -9,7 +9,6 @@ import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
-import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
@@ -30,7 +29,6 @@ export class VitalSignsProcessor {
   private hydrationEstimator: HydrationEstimator;
   
   // Validators and calculators
-  private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
   /**
@@ -50,7 +48,6 @@ export class VitalSignsProcessor {
     this.hydrationEstimator = new HydrationEstimator();
     
     // Initialize validators and calculators
-    this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
@@ -63,7 +60,7 @@ export class VitalSignsProcessor {
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     // Check for near-zero signal
-    if (!this.signalValidator.isValidSignal(ppgValue)) {
+    if (!this.signalProcessor.isValidSignal(ppgValue)) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
@@ -89,7 +86,7 @@ export class VitalSignsProcessor {
     }
     
     // Check if we have enough data points
-    if (!this.signalValidator.hasEnoughData(ppgValues)) {
+    if (!this.signalProcessor.hasEnoughData(ppgValues)) {
       // Return last known valid result if available, otherwise empty
       // This prevents flickering zeros if signal temporarily drops below min data points
       // Note: Decided against returning last valid to enforce real-time feel
@@ -111,9 +108,9 @@ export class VitalSignsProcessor {
     const signalMax = Math.max(...amplitudeCheckWindow);
     const amplitude = signalMax - signalMin;
     
-    if (!this.signalValidator.hasValidAmplitude(amplitudeCheckWindow)) {
+    if (!this.signalProcessor.hasValidAmplitude(amplitudeCheckWindow)) {
       // Pass the checked window to logs
-      this.signalValidator.logValidationResults(false, amplitude, amplitudeCheckWindow); 
+      this.signalProcessor.logValidationResults(false, amplitude, amplitudeCheckWindow); 
       return ResultFactory.createEmptyResults();
     }
     
