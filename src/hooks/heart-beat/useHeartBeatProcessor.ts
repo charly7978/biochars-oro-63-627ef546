@@ -76,9 +76,7 @@ export const useHeartBeatProcessor = () => {
       const result = processorRef.current.processSignal(value);
 
       // Actualizar el estado con los resultados del procesamiento
-      if (result) {
-        setHeartBeatResult(result);
-      }
+      setHeartBeatResult(result);
 
       // Actualizar datos adicionales de análisis
       updateAnalysisData(value, result);

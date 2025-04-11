@@ -1,10 +1,8 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle, Heart } from 'lucide-react';
+import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { LineChart, Line, ResponsiveContainer, Tooltip, YAxis, XAxis } from 'recharts';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -30,12 +28,6 @@ interface PPGSignalMeterProps {
 
 interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
-}
-
-interface ChartData {
-  time: number;
-  value: number;
-  isArrhythmia: boolean;
 }
 
 const PPGSignalMeter = memo(({ 
@@ -71,25 +63,20 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  
-  const [chartData, setChartData] = useState<ChartData[]>([]);
-  const chartUpdateIntervalRef = useRef<number | null>(null);
-  const chartBufferRef = useRef<ChartData[]>([]);
-  const lastChartUpdateRef = useRef<number>(0);
 
-  const WINDOW_WIDTH_MS = 4000;
-  const CANVAS_WIDTH = 900;
-  const CANVAS_HEIGHT = 1100;
-  const GRID_SIZE_X = 15;
-  const GRID_SIZE_Y = 10;
-  const verticalScale = 96.0;
+  const WINDOW_WIDTH_MS = 4500;
+  const CANVAS_WIDTH = 1100;
+  const CANVAS_HEIGHT = 1200;
+  const GRID_SIZE_X = 5;
+  const GRID_SIZE_Y = 5;
+  const verticalScale = 76.0;
   const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 300;
+  const MIN_PEAK_DISTANCE_MS = 350;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
@@ -98,12 +85,9 @@ const PPGSignalMeter = memo(({
 
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
-  const BEEP_DURATION = 40;
+  const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 250;
-
-  const CHART_UPDATE_INTERVAL_MS = 16;
-  const MAX_CHART_POINTS = 70;
+  const MIN_BEEP_INTERVAL_MS = 350;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
@@ -118,7 +102,7 @@ const PPGSignalMeter = memo(({
     const initAudio = async () => {
       try {
         if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
-          console.log("PPGSignalMeter: Inicializando Audio Context con baja latencia");
+          console.log("PPGSignalMeter: Inicializando Audio Context");
           audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
           
           if (audioContextRef.current.state !== 'running') {
@@ -148,6 +132,10 @@ const PPGSignalMeter = memo(({
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+        console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
+          timeSinceLastBeep: now - lastBeepTimeRef.current,
+          minInterval: MIN_BEEP_INTERVAL_MS
+        });
         return false;
       }
       
@@ -178,42 +166,8 @@ const PPGSignalMeter = memo(({
       baselineRef.current = null;
       lastValueRef.current = null;
       setResultsVisible(false);
-      setChartData([]);
-      chartBufferRef.current = [];
     }
   }, [preserveResults, isFingerDetected]);
-
-  useEffect(() => {
-    if (chartUpdateIntervalRef.current) {
-      clearInterval(chartUpdateIntervalRef.current);
-    }
-
-    chartUpdateIntervalRef.current = window.setInterval(() => {
-      const now = Date.now();
-      lastChartUpdateRef.current = now;
-      
-      if (chartBufferRef.current.length > 0) {
-        setChartData(prev => {
-          const newData = [...prev, ...chartBufferRef.current];
-          
-          const filtered = newData
-            .filter(p => now - p.time < WINDOW_WIDTH_MS)
-            .slice(-MAX_CHART_POINTS);
-            
-          return filtered;
-        });
-        
-        chartBufferRef.current = [];
-      }
-    }, CHART_UPDATE_INTERVAL_MS);
-
-    return () => {
-      if (chartUpdateIntervalRef.current) {
-        clearInterval(chartUpdateIntervalRef.current);
-        chartUpdateIntervalRef.current = null;
-      }
-    };
-  }, [WINDOW_WIDTH_MS]);
 
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
@@ -434,13 +388,6 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
-        
-        const chartPoint = {
-          time: peak.time,
-          value: peak.value,
-          isArrhythmia: peak.isArrhythmia
-        };
-        chartBufferRef.current.push(chartPoint);
       }
     }
     
@@ -488,33 +435,32 @@ const PPGSignalMeter = memo(({
     const currentTime = performance.now();
     const timeSinceLastRender = currentTime - lastRenderTimeRef.current;
     
+    if (!IMMEDIATE_RENDERING && timeSinceLastRender < FRAME_TIME) {
+      animationFrameRef.current = requestAnimationFrame(renderSignal);
+      return;
+    }
+    
+    const canvas = canvasRef.current;
+    const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
+      offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
+      canvas.getContext('2d', { alpha: false });
+    
+    if (!renderCtx) {
+      animationFrameRef.current = requestAnimationFrame(renderSignal);
+      return;
+    }
+    
+    const now = Date.now();
+    
     if (gridCanvasRef.current) {
-      const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
-        offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
-        canvasRef.current.getContext('2d', { alpha: false });
-      
-      if (!renderCtx) {
-        animationFrameRef.current = requestAnimationFrame(renderSignal);
-        return;
-      }
-      
       renderCtx.drawImage(gridCanvasRef.current, 0, 0);
     } else {
-      const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
-        offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
-        canvasRef.current.getContext('2d', { alpha: false });
-      
-      if (!renderCtx) {
-        animationFrameRef.current = requestAnimationFrame(renderSignal);
-        return;
-      }
-      
       drawGrid(renderCtx);
     }
     
     if (preserveResults && !isFingerDetected) {
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-        const visibleCtx = canvasRef.current.getContext('2d', { alpha: false });
+        const visibleCtx = canvas.getContext('2d', { alpha: false });
         if (visibleCtx) {
           visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
         }
@@ -538,7 +484,6 @@ const PPGSignalMeter = memo(({
     const scaledValue = normalizedValue * verticalScale;
     
     let currentIsArrhythmia = false;
-    const now = Date.now();
     if (rawArrhythmiaData && 
         arrhythmiaStatus?.includes("ARRITMIA") && 
         now - rawArrhythmiaData.timestamp < 1000) {
@@ -559,27 +504,12 @@ const PPGSignalMeter = memo(({
     
     dataBufferRef.current.push(dataPoint);
     
-    chartBufferRef.current.push({
-      time: now,
-      value: scaledValue,
-      isArrhythmia: dataPoint.isArrhythmia || false
-    });
-    
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
     let shouldBeep = false;
     
     if (points.length > 1) {
-      const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
-        offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
-        canvasRef.current.getContext('2d', { alpha: false });
-      
-      if (!renderCtx) {
-        animationFrameRef.current = requestAnimationFrame(renderSignal);
-        return;
-      }
-      
       renderCtx.beginPath();
       renderCtx.strokeStyle = '#0EA5E9';
       renderCtx.lineWidth = 2;
@@ -593,11 +523,11 @@ const PPGSignalMeter = memo(({
         const prevPoint = points[i - 1];
         const point = points[i];
         
-        const x1 = canvasRef.current.width - ((now - prevPoint.time) * canvasRef.current.width / WINDOW_WIDTH_MS);
-        const y1 = (canvasRef.current.height / 2 - 50) - prevPoint.value;
+        const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y1 = (canvas.height / 2 - 50) - prevPoint.value;
         
-        const x2 = canvasRef.current.width - ((now - point.time) * canvasRef.current.width / WINDOW_WIDTH_MS);
-        const y2 = (canvasRef.current.height / 2 - 50) - point.value;
+        const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y2 = (canvas.height / 2 - 50) - point.value;
         
         const pointIsArrhythmia = isPointInArrhythmiaSegment(point.time) || point.isArrhythmia;
         
@@ -620,10 +550,10 @@ const PPGSignalMeter = memo(({
       }
       
       peaksRef.current.forEach(peak => {
-        const x = canvasRef.current.width - ((now - peak.time) * canvasRef.current.width / WINDOW_WIDTH_MS);
-        const y = canvasRef.current.height / 2 - 50 - peak.value;
+        const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = canvas.height / 2 - 50 - peak.value;
         
-        if (x >= 0 && x <= canvasRef.current.width) {
+        if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
           renderCtx.arc(x, y, 5, 0, Math.PI * 2);
           renderCtx.fillStyle = isPointInArrhythmiaSegment(peak.time) || peak.isArrhythmia ? '#DC2626' : '#0EA5E9';
@@ -656,7 +586,7 @@ const PPGSignalMeter = memo(({
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-      const visibleCtx = canvasRef.current.getContext('2d', { alpha: false });
+      const visibleCtx = canvas.getContext('2d', { alpha: false });
       if (visibleCtx) {
         visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
       }
@@ -670,13 +600,7 @@ const PPGSignalMeter = memo(({
     }
     
     lastRenderTimeRef.current = currentTime;
-    if (typeof window.requestIdleCallback !== 'undefined') {
-      requestIdleCallback(() => {
-        animationFrameRef.current = requestAnimationFrame(renderSignal);
-      });
-    } else {
-      animationFrameRef.current = requestAnimationFrame(renderSignal);
-    }
+    animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
@@ -701,29 +625,8 @@ const PPGSignalMeter = memo(({
     currentArrhythmiaSegmentRef.current = null;
     lastArrhythmiaStateRef.current = false;
     pendingBeepPeakIdRef.current = null;
-    setChartData([]);
-    chartBufferRef.current = [];
     onReset();
   }, [onReset]);
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-gray-800/90 border border-gray-700 px-3 py-2 rounded-lg shadow-lg">
-          <p className="text-xs font-medium text-gray-200">
-            <span className="font-bold">Valor:</span> {payload[0].value.toFixed(2)}
-          </p>
-          {data.isArrhythmia && (
-            <p className="text-xs font-medium text-red-400 mt-1">
-              ¡Arritmia detectada!
-            </p>
-          )}
-        </div>
-      );
-    }
-    return null;
-  };
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
@@ -760,65 +663,40 @@ const PPGSignalMeter = memo(({
           </div>
         </div>
 
-        <div className="mr-2 flex items-center gap-2">
-          <Heart 
-            className={`h-6 w-6 ${displayFingerDetected ? 'text-red-500' : 'text-gray-400'}`} 
-            style={{
-              animation: displayFingerDetected ? 'heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite' : 'none',
-              transformOrigin: 'center'
-            }}
+        <div className="flex flex-col items-center">
+          <Fingerprint
+            className={`h-8 w-8 transition-colors duration-300 ${
+              !displayFingerDetected ? 'text-gray-400' :
+              displayQuality > 65 ? 'text-green-500' :
+              displayQuality > 40 ? 'text-yellow-500' :
+              'text-red-500'
+            }`}
+            strokeWidth={1.5}
           />
+          <span className="text-[8px] text-center font-medium text-black/80">
+            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+          </span>
         </div>
       </div>
-      
-      <div className="absolute bottom-0 left-0 right-0 h-[30%] bg-gray-900/40 backdrop-blur-sm z-10">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
-            <YAxis 
-              domain={[-20, 20]} 
-              hide={true}
-            />
-            <XAxis 
-              dataKey="time" 
-              hide={true} 
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Line 
-              type="monotone" 
-              dataKey="value" 
-              stroke="#0EA5E9" 
-              strokeWidth={2.5}
-              dot={(props) => {
-                const { cx, cy, payload } = props;
-                if (payload.isArrhythmia) {
-                  return (
-                    <circle 
-                      cx={cx} 
-                      cy={cy} 
-                      r={5} 
-                      fill="#DC2626" 
-                      stroke="#FEF7CD"
-                      strokeWidth={2}
-                    />
-                  );
-                }
-                return (
-                  <circle 
-                    cx={cx} 
-                    cy={cy} 
-                    r={3} 
-                    fill="#0EA5E9" 
-                  />
-                );
-              }}
-              activeDot={{ r: 6, fill: "#0284C7" }}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+
+      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
+        <button 
+          onClick={onStartMeasurement}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          INICIAR
+        </button>
+        <button 
+          onClick={handleReset}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          RESET
+        </button>
       </div>
     </div>
   );
 });
+
+PPGSignalMeter.displayName = 'PPGSignalMeter';
 
 export default PPGSignalMeter;
