@@ -41,6 +41,27 @@ const PPGSignalMeter = memo(({
   preserveResults = false,
   isArrhythmia = false
 }: PPGSignalMeterProps) => {
+  // Move playBeep declaration before its use
+  const playBeep = useCallback(async (volume = 0.8, isArrhythmia = false) => {
+    try {
+      const now = Date.now();
+      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+        return false;
+      }
+      
+      console.log("PPGSignalMeter: Playing heartbeat sound", { isArrhythmia });
+      const beepResult = triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      
+      lastBeepTimeRef.current = now;
+      pendingBeepPeakIdRef.current = null;
+      
+      return beepResult;
+    } catch (err) {
+      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
+      return false;
+    }
+  }, [triggerHeartbeatFeedback]);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
   const baselineRef = useRef<number | null>(null);
@@ -60,8 +81,7 @@ const PPGSignalMeter = memo(({
   const lastArrhythmiaStateRef = useRef<boolean>(false);
   
   const audioContextRef = useRef<AudioContext | null>(null);
-  const lastBeepTimeRef = useRef<number>(0);
-  const pendingBeepPeakIdRef = useRef<number | null>(null);
+  
   const [resultsVisible, setResultsVisible] = useState(true);
 
   const WINDOW_WIDTH_MS = 5500;
@@ -91,26 +111,6 @@ const PPGSignalMeter = memo(({
   const MIN_BEEP_INTERVAL_MS = 250;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
-
-  const playBeep = useCallback(async (volume = 0.8, isArrhythmia = false) => {
-    try {
-      const now = Date.now();
-      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
-        return false;
-      }
-      
-      console.log("PPGSignalMeter: Playing heartbeat sound", { isArrhythmia });
-      const beepResult = triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
-      
-      lastBeepTimeRef.current = now;
-      pendingBeepPeakIdRef.current = null;
-      
-      return beepResult;
-    } catch (err) {
-      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
-      return false;
-    }
-  }, [triggerHeartbeatFeedback]);
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
     return arrhythmiaSegmentsRef.current.some(segment => {
