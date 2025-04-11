@@ -6,7 +6,7 @@ import { UserProfile } from '../../core/types';
 import { AnalysisSettings } from '../../core/config/AnalysisSettings';
 import * as tf from '@tensorflow/tfjs';
 
-export class BloodPressureProcessor extends BloodPressureAnalyzer {
+export class BloodPressureProcessor {
   private readonly BP_BUFFER_SIZE = 150; // 5 segundos a 30Hz
   private readonly MEASUREMENT_DURATION = 30000; // 30 segundos en ms
   private readonly SAMPLE_RATE = 30; // 30Hz
@@ -20,16 +20,16 @@ export class BloodPressureProcessor extends BloodPressureAnalyzer {
   
   private neuralModel: BloodPressureNeuralModel;
   private signalProcessor: SignalCoreProcessor;
+  private analyzer: BloodPressureAnalyzer;
 
   constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
-    super(userProfile, settings);
-    
     this.neuralModel = new BloodPressureNeuralModel();
     this.signalProcessor = new SignalCoreProcessor({
       bufferSize: this.BP_BUFFER_SIZE,
       sampleRate: this.SAMPLE_RATE,
       channels: ['bloodPressure']
     });
+    this.analyzer = new BloodPressureAnalyzer(userProfile, settings);
   }
 
   public calculateBloodPressure(values: number[]): { systolic: number; diastolic: number } | null {
@@ -88,7 +88,7 @@ export class BloodPressureProcessor extends BloodPressureAnalyzer {
     ];
 
     const prediction = this.neuralModel.predict(featureArray);
-    const result = super.analyze(processedValues);
+    const result = this.analyzer.analyze(processedValues);
 
     // Calcular presión instantánea
     const instantResult = {
@@ -163,6 +163,7 @@ export class BloodPressureProcessor extends BloodPressureAnalyzer {
     this.resetMeasurement();
     this.lastValidMeasurement = null;
     this.signalProcessor.reset();
+    this.analyzer.reset();
   }
 
   private calculateSignalQuality(signal: number[]): number {
