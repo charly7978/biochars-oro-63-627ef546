@@ -130,19 +130,12 @@ const Index = () => {
       console.log("30 second measurement timer elapsed.");
       finalizeMeasurement();
     }, 30000);
-    enterFullScreen().catch(err => console.error("Error entering fullscreen:", err));
   };
 
   const finalizeMeasurement = () => {
     if (!isMonitoring) return;
-    console.log("Finalizing measurement...");
-    setShowResults(true);
+    console.log("Finalizing measurement...", { finalResults: vitalSigns });
     stopMonitoring();
-    if (document.exitFullscreen) { 
-      document.exitFullscreen().catch(err => console.error("Error exiting fullscreen:", err));
-    } else { 
-      console.warn("exitFullscreen not available on document");
-    }
   };
 
   const stopMonitoring = () => {

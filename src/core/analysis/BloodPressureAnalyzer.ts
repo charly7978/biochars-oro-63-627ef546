@@ -226,6 +226,17 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
   }
   
   /**
+   * Calculate mean of an array
+   */
+  private calculateMean(values: number[]): number {
+    if (values.length === 0) {
+      return 0;
+    }
+    const sum = values.reduce((acc, val) => acc + val, 0);
+    return sum / values.length;
+  }
+  
+  /**
    * Reset the analyzer
    */
   public reset(): void {
@@ -295,10 +306,5 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
       noise += Math.abs(values[i] - values[i-1]);
     }
     return noise / values.length;
-  }
-  
-  private calculateMean(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
   }
 }
