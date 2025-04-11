@@ -81,23 +81,28 @@ export class BloodPressureProcessor {
     // --- Run analysis only once per second ---
     if (now - this.lastAnalysisTime >= this.ANALYSIS_INTERVAL) {
       // Analizar forma de onda PPG con el Analyzer
-      const analysisResult = this.analyzer.analyze(processedValues);
-      this.lastAnalysisTime = now;
-
-      if (analysisResult && analysisResult.systolic > 0 && analysisResult.diastolic > 0) {
-        // Store the valid result from the analyzer
-        currentAnalysisResult = analysisResult;
-
-        // Use only analyzer result for now
-        this.lastInstantResult = {
-          systolic: Math.round(analysisResult.systolic),
-          diastolic: Math.round(analysisResult.diastolic)
-        };
-
-        // Update buffers only when a new analysis is done
-        this.updateBuffers(this.lastInstantResult.systolic, this.lastInstantResult.diastolic);
+      // Pass only the last 150 samples (5 seconds) to the analyzer
+      const analyzerInput = processedValues.length > 150 ? processedValues.slice(-150) : processedValues;
+      
+      if (analyzerInput.length >= this.MIN_SAMPLES) { // Ensure we still have enough samples after slicing
+          const analysisResult = this.analyzer.analyze(analyzerInput);
+          this.lastAnalysisTime = now;
+    
+          if (analysisResult && analysisResult.systolic > 0 && analysisResult.diastolic > 0) {
+            // Store the valid result from the analyzer
+            currentAnalysisResult = analysisResult;
+    
+            // Use only analyzer result for now
+            this.lastInstantResult = {
+              systolic: Math.round(analysisResult.systolic),
+              diastolic: Math.round(analysisResult.diastolic)
+            };
+    
+            // Update buffers only when a new analysis is done
+            this.updateBuffers(this.lastInstantResult.systolic, this.lastInstantResult.diastolic);
+          }
+          // If analysisResult is null or invalid, lastInstantResult remains unchanged
       }
-      // If analysisResult is null or invalid, lastInstantResult remains unchanged
     }
     // --- End of periodic analysis ---
 
