@@ -1,206 +1,188 @@
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
+import { SignalCoreProcessor } from '../../core/signal-processing/SignalCoreProcessor';
+import { BloodPressureAnalyzer } from '../../core/analysis/BloodPressureAnalyzer';
+import { UserProfile } from '../../core/types';
+import { AnalysisSettings } from '../../core/config/AnalysisSettings';
+import * as tf from '@tensorflow/tfjs';
 
-export class BloodPressureProcessor {
-  private readonly BP_BUFFER_SIZE = 150; // 5 segundos a 30Hz - reducido para mayor sensibilidad
-  private readonly MIN_SAMPLES = 30; // 1 segundo de datos mínimo
-  
-  // Buffers para análisis en tiempo real
+export class BloodPressureProcessor extends BloodPressureAnalyzer {
+  private readonly BP_BUFFER_SIZE = 150;
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
   private lastValidMeasurement: { systolic: number; diastolic: number } | null = null;
   
-  // Rangos fisiológicos
-  private readonly MIN_SYSTOLIC = 80;
-  private readonly MAX_SYSTOLIC = 190;
-  private readonly MIN_DIASTOLIC = 50;
-  private readonly MAX_DIASTOLIC = 120;
-  private readonly MIN_PULSE_PRESSURE = 25;
-  private readonly MAX_PULSE_PRESSURE = 70;
+  private neuralModel: BloodPressureNeuralModel;
+  private signalProcessor: SignalCoreProcessor;
 
-  public calculateBloodPressure(values: number[]): {
-    systolic: number;
-    diastolic: number;
-  } {
-    if (!values || values.length < this.MIN_SAMPLES) {
+  constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
+    super(userProfile, settings);
+    
+    this.neuralModel = new BloodPressureNeuralModel();
+    this.signalProcessor = new SignalCoreProcessor({
+      bufferSize: this.BP_BUFFER_SIZE,
+      sampleRate: 30,
+      channels: ['bloodPressure']
+    });
+  }
+
+  public calculateBloodPressure(values: number[]): { systolic: number; diastolic: number } {
+    if (!values || values.length < 30) {
       return this.lastValidMeasurement || { systolic: 0, diastolic: 0 };
     }
 
-    // 1. Análisis de la forma de onda PPG
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+    // 1. Procesar señal a través del SignalCoreProcessor
+    values.forEach(value => this.signalProcessor.processSignal(value));
+    const bpChannel = this.signalProcessor.getChannel('bloodPressure');
+    if (!bpChannel) {
+      return this.lastValidMeasurement || { systolic: 0, diastolic: 0 };
+    }
+
+    // 2. Obtener señal filtrada
+    const processedValues = bpChannel.getValues();
+    
+    // 3. Analizar forma de onda PPG
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(processedValues);
     if (peakIndices.length < 2 || valleyIndices.length < 2) {
       return this.lastValidMeasurement || { systolic: 0, diastolic: 0 };
     }
 
-    // 2. Calcular características directas de la señal
-    const waveformFeatures = this.analyzeWaveform(values, peakIndices, valleyIndices);
-    
-    // 3. Calcular presión basada en características de la onda
-    const pressures = this.calculatePressureFromWaveform(waveformFeatures);
-    
-    // 4. Actualizar buffers con nuevas mediciones
-    this.updateBuffers(pressures.systolic, pressures.diastolic);
-    this.lastValidMeasurement = pressures;
+    // 4. Extraer características
+    const ppgFeatures = this.extractPPGFeatures(processedValues, peakIndices, valleyIndices);
 
-    return pressures;
+    // 5. Convertir características a tensor para el modelo neural
+    const featureArray = [
+      ppgFeatures.amplitude,
+      ppgFeatures.peakSlope,
+      ppgFeatures.valleySlope,
+      ppgFeatures.peakInterval / 1000, // convertir a segundos
+      ppgFeatures.areaUnderCurve,
+      ppgFeatures.dicroticIndex
+    ];
+
+    // 6. Obtener predicción del modelo neural
+    const prediction = this.neuralModel.predict(featureArray);
+
+    // 7. Analizar con BloodPressureAnalyzer (clase padre)
+    const result = super.analyze(processedValues);
+
+    // 8. Combinar predicción neural con análisis tradicional
+    const finalResult = {
+      systolic: Math.round((prediction[0] + result.systolic) / 2),
+      diastolic: Math.round((prediction[1] + result.diastolic) / 2)
+    };
+
+    // 9. Actualizar buffers
+    this.updateBuffers(finalResult.systolic, finalResult.diastolic);
+    this.lastValidMeasurement = finalResult;
+
+    return finalResult;
   }
 
-  private analyzeWaveform(values: number[], peakIndices: number[], valleyIndices: number[]): {
-    amplitude: number;
-    peakToPeakTime: number;
-    augmentationIndex: number;
-    reflectionIndex: number;
-    velocityRatio: number;
-  } {
-    // Amplitud pico a pico
-    const amplitude = Math.max(...values) - Math.min(...values);
+  private calculateSignalQuality(signal: number[]): number {
+    const amplitude = Math.max(...signal) - Math.min(...signal);
+    const noise = this.calculateSignalNoise(signal);
+    const snr = amplitude / noise;
+    return Math.min(100, Math.max(0, snr * 50));
+  }
 
-    // Tiempo entre picos (ms)
-    const peakToPeakTimes = [];
-    for (let i = 1; i < peakIndices.length; i++) {
-      peakToPeakTimes.push((peakIndices[i] - peakIndices[i-1]) * (1000/30)); // 30Hz sampling
+  private calculateSignalNoise(signal: number[]): number {
+    let noise = 0;
+    for (let i = 1; i < signal.length; i++) {
+      noise += Math.abs(signal[i] - signal[i-1]);
     }
-    const peakToPeakTime = peakToPeakTimes.reduce((a,b) => a + b, 0) / peakToPeakTimes.length;
+    return noise / signal.length;
+  }
 
-    // Índice de aumentación (relación entre onda reflejada y directa)
-    const augmentationIndex = this.calculateAugmentationIndex(values, peakIndices);
+  private extractPPGFeatures(values: number[], peakIndices: number[], valleyIndices: number[]): {
+    amplitude: number;          // Amplitud pico-valle
+    peakSlope: number;         // Pendiente sistólica
+    valleySlope: number;       // Pendiente diastólica
+    peakInterval: number;      // Intervalo entre picos (ms)
+    areaUnderCurve: number;    // Área bajo la curva
+    dicroticIndex: number;     // Índice dicrótico
+  } {
+    // Amplitud pico-valle (correlaciona con presión de pulso)
+    const peaks = peakIndices.map(i => values[i]);
+    const valleys = valleyIndices.map(i => values[i]);
+    const amplitude = Math.max(...peaks) - Math.min(...valleys);
 
-    // Índice de reflexión (tiempo hasta la onda reflejada)
-    const reflectionIndex = this.calculateReflectionIndex(values, peakIndices);
+    // Pendiente sistólica (correlaciona con presión sistólica)
+    const peakSlopes = [];
+    for (let i = 0; i < peakIndices.length; i++) {
+      const peakIdx = peakIndices[i];
+      const prevValleyIdx = valleyIndices.filter(v => v < peakIdx).pop();
+      if (prevValleyIdx !== undefined) {
+        const slope = (values[peakIdx] - values[prevValleyIdx]) / (peakIdx - prevValleyIdx);
+        peakSlopes.push(slope);
+      }
+    }
+    const peakSlope = peakSlopes.reduce((a,b) => a + b, 0) / peakSlopes.length;
 
-    // Ratio de velocidad (pendiente ascendente/descendente)
-    const velocityRatio = this.calculateVelocityRatio(values, peakIndices, valleyIndices);
+    // Pendiente diastólica (correlaciona con presión diastólica)
+    const valleySlopes = [];
+    for (let i = 0; i < peakIndices.length; i++) {
+      const peakIdx = peakIndices[i];
+      const nextValleyIdx = valleyIndices.find(v => v > peakIdx);
+      if (nextValleyIdx !== undefined) {
+        const slope = (values[nextValleyIdx] - values[peakIdx]) / (nextValleyIdx - peakIdx);
+        valleySlopes.push(slope);
+      }
+    }
+    const valleySlope = valleySlopes.reduce((a,b) => a + b, 0) / valleySlopes.length;
+
+    // Intervalo entre picos (correlaciona inversamente con presión)
+    const peakIntervals = [];
+    for (let i = 1; i < peakIndices.length; i++) {
+      peakIntervals.push(peakIndices[i] - peakIndices[i-1]);
+    }
+    const peakInterval = (peakIntervals.reduce((a,b) => a + b, 0) / peakIntervals.length) * (1000/30); // ms
+
+    // Área bajo la curva (correlaciona con volumen sistólico)
+    const areaUnderCurve = this.calculateAreaUnderCurve(values);
+
+    // Índice dicrótico (correlaciona con resistencia vascular)
+    const dicroticIndex = this.calculateDicroticIndex(values, peakIndices);
 
     return {
       amplitude,
-      peakToPeakTime,
-      augmentationIndex,
-      reflectionIndex,
-      velocityRatio
+      peakSlope,
+      valleySlope,
+      peakInterval,
+      areaUnderCurve,
+      dicroticIndex
     };
   }
 
-  private calculatePressureFromWaveform(features: {
-    amplitude: number;
-    peakToPeakTime: number;
-    augmentationIndex: number;
-    reflectionIndex: number;
-    velocityRatio: number;
-  }): { systolic: number; diastolic: number } {
-    // 1. Estimación de presión sistólica
-    let systolic = 120; // Valor base
-    
-    // Ajuste por tiempo entre picos (correlación inversa)
-    systolic -= (features.peakToPeakTime - 800) * 0.1; // 800ms es referencia
-    
-    // Ajuste por amplitud (correlación directa)
-    systolic += features.amplitude * 50;
-    
-    // Ajuste por índice de aumentación (correlación directa)
-    systolic += features.augmentationIndex * 20;
-
-    // 2. Estimación de presión diastólica
-    let diastolic = 80; // Valor base
-    
-    // Ajuste por índice de reflexión (correlación inversa)
-    diastolic -= features.reflectionIndex * 15;
-    
-    // Ajuste por ratio de velocidad (correlación directa)
-    diastolic += features.velocityRatio * 10;
-
-    // 3. Aplicar límites fisiológicos
-    systolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, systolic));
-    diastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, diastolic));
-
-    // 4. Asegurar diferencial de presión válido
-    const differential = systolic - diastolic;
-    if (differential < this.MIN_PULSE_PRESSURE) {
-      diastolic = systolic - this.MIN_PULSE_PRESSURE;
-    } else if (differential > this.MAX_PULSE_PRESSURE) {
-      diastolic = systolic - this.MAX_PULSE_PRESSURE;
-    }
-
-    return {
-      systolic: Math.round(systolic),
-      diastolic: Math.round(diastolic)
-    };
+  private calculateAreaUnderCurve(values: number[]): number {
+    const baseline = Math.min(...values);
+    const area = values.reduce((sum, val) => sum + (val - baseline), 0);
+    return area / (values.length * (Math.max(...values) - baseline));
   }
 
-  private calculateAugmentationIndex(values: number[], peakIndices: number[]): number {
-    let augmentationIndex = 0;
-    
-    for (let i = 0; i < peakIndices.length; i++) {
-      const peakIdx = peakIndices[i];
-      const segment = values.slice(peakIdx, peakIndices[i + 1] || values.length);
-      
-      if (segment.length > 10) {
-        const firstPeak = values[peakIdx];
-        const reflectedWave = Math.max(...segment.slice(Math.floor(segment.length * 0.2)));
-        augmentationIndex += (reflectedWave - firstPeak) / firstPeak;
-      }
-    }
-    
-    return augmentationIndex / peakIndices.length;
-  }
-
-  private calculateReflectionIndex(values: number[], peakIndices: number[]): number {
-    let reflectionIndex = 0;
+  private calculateDicroticIndex(values: number[], peakIndices: number[]): number {
+    let totalIndex = 0;
     let count = 0;
-    
-    for (let i = 0; i < peakIndices.length; i++) {
-      const peakIdx = peakIndices[i];
-      const segment = values.slice(peakIdx, peakIndices[i + 1] || values.length);
-      
-      if (segment.length > 10) {
-        const reflectionPoint = this.findReflectionPoint(segment);
-        if (reflectionPoint > 0) {
-          reflectionIndex += reflectionPoint / segment.length;
-          count++;
-        }
-      }
-    }
-    
-    return count > 0 ? reflectionIndex / count : 0.5;
-  }
 
-  private findReflectionPoint(segment: number[]): number {
-    let maxDerivative = -Infinity;
-    let reflectionPoint = -1;
-    
-    for (let i = Math.floor(segment.length * 0.2); i < Math.floor(segment.length * 0.8); i++) {
-      const derivative = segment[i + 1] - segment[i];
-      if (derivative > maxDerivative) {
-        maxDerivative = derivative;
-        reflectionPoint = i;
-      }
-    }
-    
-    return reflectionPoint;
-  }
+    for (let i = 0; i < peakIndices.length - 1; i++) {
+      const start = peakIndices[i];
+      const end = peakIndices[i + 1];
+      const segment = values.slice(start, end);
 
-  private calculateVelocityRatio(values: number[], peakIndices: number[], valleyIndices: number[]): number {
-    const upstrokeVelocities = [];
-    const downstrokeVelocities = [];
-    
-    for (let i = 0; i < peakIndices.length; i++) {
-      const peakIdx = peakIndices[i];
-      const prevValley = valleyIndices.filter(v => v < peakIdx).pop();
-      const nextValley = valleyIndices.find(v => v > peakIdx);
-      
-      if (prevValley !== undefined && nextValley !== undefined) {
-        // Velocidad de subida
-        const upstroke = (values[peakIdx] - values[prevValley]) / (peakIdx - prevValley);
-        upstrokeVelocities.push(Math.abs(upstroke));
-        
-        // Velocidad de bajada
-        const downstroke = (values[nextValley] - values[peakIdx]) / (nextValley - peakIdx);
-        downstrokeVelocities.push(Math.abs(downstroke));
+      if (segment.length < 10) continue;
+
+      const peakValue = values[start];
+      const minAfterPeak = Math.min(...segment.slice(Math.floor(segment.length * 0.3)));
+      const dicroticNotch = Math.max(...segment.slice(Math.floor(segment.length * 0.3)));
+
+      const index = (dicroticNotch - minAfterPeak) / (peakValue - minAfterPeak);
+      if (!isNaN(index)) {
+        totalIndex += index;
+        count++;
       }
     }
-    
-    const avgUpstroke = upstrokeVelocities.reduce((a,b) => a + b, 0) / upstrokeVelocities.length;
-    const avgDownstroke = downstrokeVelocities.reduce((a,b) => a + b, 0) / downstrokeVelocities.length;
-    
-    return avgUpstroke / (avgDownstroke || 1);
+
+    return count > 0 ? totalIndex / count : 0.5;
   }
 
   private updateBuffers(systolic: number, diastolic: number): void {
