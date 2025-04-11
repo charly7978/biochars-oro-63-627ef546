@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle, Heart } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -537,6 +538,7 @@ const PPGSignalMeter = memo(({
     const scaledValue = normalizedValue * verticalScale;
     
     let currentIsArrhythmia = false;
+    const now = Date.now();
     if (rawArrhythmiaData && 
         arrhythmiaStatus?.includes("ARRITMIA") && 
         now - rawArrhythmiaData.timestamp < 1000) {
@@ -725,72 +727,6 @@ const PPGSignalMeter = memo(({
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
-
-  const addDataPoint = useCallback((value: number, isPeak: boolean, quality: number) => {
-    const currentTime = Date.now();
-    
-    const newPoint = {
-      time: currentTime,
-      value: value * 100,
-      isPeak,
-      quality
-    };
-    
-    setChartData(prev => {
-      if (prev.length > MAX_POINTS) {
-        return [...prev.slice(prev.length - MAX_POINTS + 1), newPoint];
-      }
-      return [...prev, newPoint];
-    });
-    
-    if (isPeak) {
-      const currentTime = Date.now();
-      setPeakData(prev => {
-        const newPeaks = prev.filter(p => currentTime - p.time < PEAK_RETENTION_TIME);
-        return [...newPeaks, { time: currentTime, value: value * 100 }];
-      });
-    }
-  }, []);
-
-  const lastPeakTimeRef = useRef<number>(0);
-  const MAX_POINTS = 100;
-  const PEAK_RETENTION_TIME = 1000;
-  const MIN_PEAK_ANIMATION_INTERVAL = 1000;
-  const setPulsing = useCallback((pulsing: boolean) => {
-    // Implementation of pulsing effect
-  }, []);
-
-  useEffect(() => {
-    if (isPeak && lastPeakTimeRef.current === 0 || Date.now() - lastPeakTimeRef.current > MIN_PEAK_ANIMATION_INTERVAL) {
-      lastPeakTimeRef.current = Date.now();
-      setPulsing(true);
-      
-      const timer = setTimeout(() => {
-        setPulsing(false);
-      }, 600);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isPeak]);
-
-  useEffect(() => {
-    if (!isFingerDetected) {
-      if (chartData.length > 0 && Date.now() - chartData[chartData.length - 1].time > 1000) {
-        setChartData([]);
-        setPeakData([]);
-      }
-      return;
-    }
-    
-    addDataPoint(value, isPeak, quality);
-    
-    if (isPeak) {
-      requestAnimationFrame(() => {
-        setLinkColor(getQualityColor(quality));
-        setTimeout(() => setLinkColor('#555'), 200);
-      });
-    }
-  }, [value, isPeak, quality, isFingerDetected, addDataPoint]);
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
