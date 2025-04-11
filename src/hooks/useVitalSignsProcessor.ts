@@ -92,12 +92,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Add safe null check for arrhythmiaStatus
       if (result && 
-          result.arrhythmia && 
-          result.arrhythmia.arrhythmiaStatus && 
-          typeof result.arrhythmia.arrhythmiaStatus === 'string' && 
-          result.arrhythmia.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-          result.arrhythmia.lastArrhythmiaData) {
-        const arrhythmiaTime = result.arrhythmia.lastArrhythmiaData.timestamp;
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
         let windowWidth = 400;

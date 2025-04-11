@@ -81,7 +81,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       // Use direct method to get BPM with no adjustments
       const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
       const bpm = Math.round(rawBPM);
-      const arrhythmias = processor.getArrhythmiaCount ? processor.getArrhythmiaCount() : 0;
+      const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
       
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
