@@ -41,7 +41,14 @@ const PPGSignalMeter = memo(({
   preserveResults = false,
   isArrhythmia = false
 }: PPGSignalMeterProps) => {
-  // Move playBeep declaration before its use
+  // Declare triggerHeartbeatFeedback FIRST
+  const triggerHeartbeatFeedback = useHeartbeatFeedback();
+
+  // Refs for beep management
+  const lastBeepTimeRef = useRef<number>(0);
+  const pendingBeepPeakIdRef = useRef<number | null>(null);
+
+  // Move playBeep declaration after triggerHeartbeatFeedback
   const playBeep = useCallback(async (volume = 0.8, isArrhythmia = false) => {
     try {
       const now = Date.now();
@@ -109,8 +116,6 @@ const PPGSignalMeter = memo(({
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 250;
-
-  const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
     return arrhythmiaSegmentsRef.current.some(segment => {
