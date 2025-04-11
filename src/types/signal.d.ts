@@ -46,14 +46,6 @@ export interface SignalProcessor {
 }
 
 /**
- * RR Interval data interface for consistency
- */
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
-}
-
-/**
  * Extensión global para acceso al procesador de latidos
  */
 declare global {
