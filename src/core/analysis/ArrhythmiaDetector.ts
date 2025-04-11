@@ -1,4 +1,3 @@
-
 import { RRData } from '../signal/PeakDetector';
 
 export interface ArrhythmiaResult {
@@ -19,12 +18,12 @@ interface UserProfile {
 }
 
 export class ArrhythmiaDetector {
-  private RMSSD_THRESHOLD = 25; // Reducido para detectar más arritmias
-  private RR_VARIATION_THRESHOLD = 0.10; // Reducido para detectar más arritmias
-  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 1500; // Reducido para detectar más arritmias
+  private RMSSD_THRESHOLD = 35;
+  private RR_VARIATION_THRESHOLD = 0.17;
+  private readonly MIN_TIME_BETWEEN_ARRHYTHMIAS = 3000; // ms
   private readonly MAX_ARRHYTHMIAS_PER_SESSION = 10;
-  private readonly REQUIRED_RR_INTERVALS = 3; // Reducido para detectar con menos datos
-  private readonly LEARNING_PERIOD = 2000; // Reducido para empezar a detectar antes
+  private readonly REQUIRED_RR_INTERVALS = 5;
+  private readonly LEARNING_PERIOD = 4000; // ms
 
   private lastArrhythmiaTime: number = 0;
   private arrhythmiaCounter: number = 0;
@@ -57,23 +56,11 @@ export class ArrhythmiaDetector {
 
   public processRRData(rrData?: RRData): ArrhythmiaResult {
     const currentTime = Date.now();
-    
-    // Log para depuración
-    console.log("ArrhythmiaDetector: procesando datos RR", {
-      tieneRRData: !!rrData, 
-      intervalos: rrData?.intervals?.length || 0,
-      aprendizaje: this.isLearningPhase,
-      umbralRMSSD: this.RMSSD_THRESHOLD,
-      umbralRRVariation: this.RR_VARIATION_THRESHOLD
-    });
-    
     if (this.isLearningPhase && currentTime - this.measurementStartTime > this.LEARNING_PERIOD) {
       this.isLearningPhase = false;
-      console.log("ArrhythmiaDetector: Fase de aprendizaje completada");
     }
 
-    // MODIFICADO: Permitir detección incluso con pocos intervalos
-    if (!rrData || !rrData.intervals || rrData.intervals.length < 2) {
+    if (!rrData || !rrData.intervals || rrData.intervals.length < this.REQUIRED_RR_INTERVALS) {
       return this.buildResult('normal');
     }
 
@@ -83,22 +70,13 @@ export class ArrhythmiaDetector {
 
     this.lastRMSSD = rmssd;
     this.lastRRVariation = rrVariation;
-    
-    console.log("ArrhythmiaDetector: Métricas calculadas", {
-      rmssd, 
-      avgRR, 
-      rrVariation, 
-      umbralRMSSD: this.RMSSD_THRESHOLD,
-      umbralRRVariation: this.RR_VARIATION_THRESHOLD
-    });
 
     let hasArrhythmia = false;
     let category: ArrhythmiaResult['arrhythmiaStatus'] = 'normal';
 
-    // MODIFICADO: Saltear fase de aprendizaje si hay variación significativa
-    if ((rrVariation > this.RR_VARIATION_THRESHOLD * 1.5 || !this.isLearningPhase) &&
-        rmssd > this.RMSSD_THRESHOLD * 0.7 &&  // Reducido para mayor sensibilidad
-        rrVariation > this.RR_VARIATION_THRESHOLD * 0.7) {  // Reducido para mayor sensibilidad
+    if (!this.isLearningPhase &&
+        rmssd > this.RMSSD_THRESHOLD &&
+        rrVariation > this.RR_VARIATION_THRESHOLD) {
 
       const timeSinceLast = currentTime - this.lastArrhythmiaTime;
       if (timeSinceLast > this.MIN_TIME_BETWEEN_ARRHYTHMIAS &&
@@ -116,12 +94,6 @@ export class ArrhythmiaDetector {
           category
         };
         this.debugLog.push(`Arrhythmia detected at ${currentTime} - ${category}`);
-        
-        console.log("ArrhythmiaDetector: ¡ARRITMIA DETECTADA!", {
-          tipo: category,
-          tiempo: new Date(currentTime).toISOString(),
-          contadorArritmias: this.arrhythmiaCounter
-        });
       }
     }
 
@@ -129,18 +101,12 @@ export class ArrhythmiaDetector {
   }
 
   private categorizeArrhythmia(intervals: number[], avgRR: number): ArrhythmiaResult['arrhythmiaStatus'] {
-    const lastInterval = intervals[intervals.length - 1];
-    
-    // Clasificar basado en el último intervalo
-    if (lastInterval < 500) return 'tachycardia';
-    if (lastInterval > 1200) return 'bradycardia';
+    const last = intervals[intervals.length - 1];
+    if (last < 500) return 'tachycardia';
+    if (last > 1200) return 'bradycardia';
 
-    // Verificar variación significativa (posible arritmia)
-    if (intervals.length >= 2) {
-      const variation = Math.abs(intervals[intervals.length - 1] - intervals[intervals.length - 2]);
-      // Reducido para detectar más bigeminia
-      if (variation > avgRR * 0.15) return 'bigeminy';
-    }
+    const variation = Math.abs(intervals[intervals.length - 1] - intervals[intervals.length - 2]);
+    if (variation > avgRR * 0.2) return 'bigeminy';
 
     return 'possible-arrhythmia';
   }
@@ -155,18 +121,8 @@ export class ArrhythmiaDetector {
   }
 
   private calculateRMSSD(intervals: number[]): number {
-    if (intervals.length < 2) return 0;
-    
-    // Calcular diferencias entre intervalos consecutivos
-    const diffs = [];
-    for (let i = 1; i < intervals.length; i++) {
-      diffs.push(intervals[i] - intervals[i-1]);
-    }
-    
-    // Calcular cuadrados de diferencias
+    const diffs = intervals.slice(1).map((val, i) => val - intervals[i]);
     const squared = diffs.map(d => d * d);
-    
-    // Calcular media y raíz cuadrada
     const mean = squared.reduce((sum, val) => sum + val, 0) / squared.length;
     return Math.sqrt(mean);
   }
@@ -175,10 +131,6 @@ export class ArrhythmiaDetector {
     const deviations = intervals.map(i => Math.abs(i - avg));
     const meanDev = deviations.reduce((sum, val) => sum + val, 0) / deviations.length;
     return meanDev / avg;
-  }
-
-  public getArrhythmiaCounter(): number {
-    return this.arrhythmiaCounter;
   }
 
   public reset(): void {
@@ -190,8 +142,6 @@ export class ArrhythmiaDetector {
     this.lastRRVariation = 0;
     this.lastArrhythmiaData = null;
     this.debugLog = [];
-    
-    console.log("ArrhythmiaDetector: Reset completo");
   }
 
   public getDebugLog(): string[] {
