@@ -68,30 +68,25 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
+      let currentVitals: VitalSignsResult | null = null;
+
+      setSignalQuality(lastSignal.quality || 0);
+      lastSignalRef.current = lastSignal;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = calculateAllVitalSigns(lastSignal.filteredValue, lastSignal.rrData);
-        
-        if (heartBeatResult.confidence > 0.4) {
-          try {
-            const vitals = calculateAllVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              setVitalSigns(vitals);
-            }
-          } catch (error) {
+        try {
+            currentVitals = calculateAllVitalSigns(lastSignal.filteredValue, undefined);
+        } catch (error) {
             console.error("Error processing vital signs:", error);
-          }
-        } 
-        setSignalQuality(lastSignal.quality);
-      } else {
-        setSignalQuality(lastSignal.quality);
+            currentVitals = null;
+        }
       }
 
-      if (vitals) {
+      if (currentVitals) {
         const previousHeartRate = vitalSigns.heartRate;
-        const newHeartRate = vitals.heartRate;
+        const newHeartRate = currentVitals.heartRate;
 
-        setVitalSigns(vitals);
+        setVitalSigns(currentVitals);
 
         if (newHeartRate && newHeartRate > 0 && newHeartRate !== lastVibratedBpmRef.current) {
           if (navigator.vibrate) {
@@ -102,14 +97,18 @@ const Index = () => {
           lastVibratedBpmRef.current = 0;
         }
 
-        if (vitals.arrhythmiaStatus?.includes('ARRHYTHMIA')) {
+        if (currentVitals.arrhythmiaStatus?.includes('ARRHYTHMIA')) {
           if (!isArrhythmia) {
             setIsArrhythmia(true);
             if (arrhythmiaTimer.current) clearTimeout(arrhythmiaTimer.current);
             arrhythmiaTimer.current = setTimeout(() => setIsArrhythmia(false), 5000);
           }
         }
+      } 
+      else if (lastSignal && !lastSignal.fingerDetected) {
+         lastVibratedBpmRef.current = 0;
       }
+
     } else if (!isMonitoring) {
       setSignalQuality(0);
       lastVibratedBpmRef.current = 0;
@@ -139,7 +138,11 @@ const Index = () => {
     console.log("Finalizing measurement...");
     setShowResults(true);
     stopMonitoring();
-    exitFullScreen().catch(err => console.error("Error exiting fullscreen:", err));
+    if (document.exitFullscreen) { 
+      document.exitFullscreen().catch(err => console.error("Error exiting fullscreen:", err));
+    } else { 
+      console.warn("exitFullscreen not available on document");
+    }
   };
 
   const stopMonitoring = () => {
