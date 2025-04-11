@@ -33,21 +33,17 @@ export class VitalSignsProcessor {
 
   /**
    * Constructor that initializes all specialized processors
-   * Using only direct measurement
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
+    console.log("VitalSignsProcessor: Initializing new instance...");
     
-    // Initialize specialized processors
+    this.signalProcessor = new SignalProcessor(); // Handles buffer & filtering & finger detection
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
-    this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     this.hydrationEstimator = new HydrationEstimator();
-    
-    // Initialize validators and calculators
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
@@ -117,15 +113,18 @@ export class VitalSignsProcessor {
     // Calculate SpO2 using its specific window
     const spo2 = spo2Window.length >= 15 ? // Check min samples for SpO2 (approx 0.5s)
                  Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
+    console.log(`>>> SpO2 Raw Calc: ${spo2}`); // DEBUG
     
     // Calculate blood pressure using its specific window
     const bpResult = bpWindow.length >= 30 ? // Check min samples for BP (1s)
                      this.bpProcessor.calculateBloodPressure(bpWindow) :
                      null;
+    console.log(`>>> BP Raw Result: ${JSON.stringify(bpResult)}`); // DEBUG
     const bp = bpResult || { systolic: 0, diastolic: 0 }; // Use result or zeros
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
+    console.log(`>>> BP Formatted: ${pressure}`); // DEBUG
     
     // --- Use recentPpgValues (last 150) for remaining analyses --- 
     const minSamplesForAnalysis = 30; // Require at least 1 second for these analyses
@@ -134,6 +133,7 @@ export class VitalSignsProcessor {
     const glucose = recentPpgValues.length >= minSamplesForAnalysis ?
                     Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
     const glucoseConfidence = this.glucoseProcessor.getConfidence(); // Confidence might be calculated internally based on data used
+    console.log(`>>> Glucose Raw Calc: ${glucose}, Confidence: ${glucoseConfidence}`); // DEBUG
     
     // Calculate lipids with recent data only
     const lipidsResult = recentPpgValues.length >= minSamplesForAnalysis ?
@@ -141,10 +141,12 @@ export class VitalSignsProcessor {
                        { totalCholesterol: 0, triglycerides: 0 };
     const lipids = lipidsResult;
     const lipidsConfidence = this.lipidProcessor.getConfidence();
+    console.log(`>>> Lipids Raw Calc: ${JSON.stringify(lipids)}, Confidence: ${lipidsConfidence}`); // DEBUG
     
     // Calculate hydration with recent PPG data
     const hydration = recentPpgValues.length >= minSamplesForAnalysis ?
                       Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
+    console.log(`>>> Hydration Raw Calc: ${hydration}`); // DEBUG
     
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -161,10 +163,12 @@ export class VitalSignsProcessor {
       totalCholesterol: 0,
       triglycerides: 0
     };
-
+    console.log(`>>> Glucose Final: ${finalGlucose}, Lipids Final: ${JSON.stringify(finalLipids)}`); // DEBUG
+    
     // --- Missing BPM Calculation --- 
     // TODO: Implement BPM calculation from ppgValues or recentPpgValues
     const heartRate = 0; // Placeholder
+    console.log(`>>> Heart Rate Raw Calc: ${heartRate}`); // DEBUG
 
     console.log("VitalSignsProcessor: Results", {
       spo2,
