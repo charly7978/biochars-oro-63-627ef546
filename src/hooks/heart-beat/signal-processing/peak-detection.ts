@@ -58,13 +58,14 @@ export function handlePeakDetection(
     
     // Solicitar beep inmediatamente para perfecta sincronización
     if (isMonitoringRef.current) {
-      requestBeepCallback(value);
+      const beepSuccess = requestBeepCallback(value);
       
       console.log("Peak-detection: Pico detectado con solicitud de beep inmediata", {
         confianza: result.confidence,
         valor: value,
         tiempo: new Date(now).toISOString(),
-        isArrhythmia: result.isArrhythmia || false
+        isArrhythmia: result.isArrhythmia || false,
+        beepSuccess: beepSuccess
       });
     }
   }
