@@ -44,7 +44,6 @@ export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRe
 export function handlePeakDetection(
   result: any, 
   lastPeakTimeRef: React.MutableRefObject<number | null>,
-  requestBeepCallback: (value: number) => boolean,
   isMonitoringRef: React.MutableRefObject<boolean>,
   value: number
 ): void {
@@ -53,9 +52,5 @@ export function handlePeakDetection(
   // Only process peaks with minimum confidence
   if (result.isPeak && result.confidence > 0.4) {
     lastPeakTimeRef.current = now;
-    
-    if (isMonitoringRef.current && result.confidence > 0.5) {
-      requestBeepCallback(value);
-    }
   }
 }

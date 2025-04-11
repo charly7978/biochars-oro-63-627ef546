@@ -26,15 +26,12 @@ export function useSignalProcessor() {
   // Nuevas variables para filtrar falsos positivos
   const signalHistoryRef = useRef<number[]>([]);
   const MAX_HISTORY_SIZE = 15;
-  const lastBeepTimeRef = useRef<number>(0);
-  const MIN_BEEP_INTERVAL_MS = 500; // Intervalo mínimo entre beeps
 
   const processSignal = useCallback((
     value: number,
     currentBPM: number,
     confidence: number,
     processor: any,
-    requestImmediateBeep: (value: number) => boolean,
     isMonitoringRef: React.MutableRefObject<boolean>,
     lastRRIntervalsRef: React.MutableRefObject<number[]>,
     currentBeatIsArrhythmiaRef: React.MutableRefObject<boolean>
@@ -95,29 +92,14 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Verificar tiempo mínimo entre beeps
-      const now = Date.now();
-      const timeElapsedSinceLastBeep = now - lastBeepTimeRef.current;
-      
-      const shouldTriggerBeep = 
-        result.isPeak && 
-        result.confidence > 0.45 && // Umbral de confianza más alto
-        timeElapsedSinceLastBeep >= MIN_BEEP_INTERVAL_MS;
-      
-      // Handle peak detection con control de tiempo
-      if (shouldTriggerBeep) {
+      // Handle peak detection
+      if (result.isPeak && result.confidence > 0.45) {
         handlePeakDetection(
           result, 
           lastPeakTimeRef, 
-          requestImmediateBeep, 
           isMonitoringRef,
           value
         );
-        
-        // Actualizar tiempo del último beep si se procesó correctamente
-        if (result.isPeak) {
-          lastBeepTimeRef.current = now;
-        }
       }
       
       // Update last valid BPM if it's reasonable
@@ -154,7 +136,6 @@ export function useSignalProcessor() {
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
     signalHistoryRef.current = [];
-    lastBeepTimeRef.current = 0;
   }, []);
 
   return {
