@@ -10,8 +10,8 @@
  * Only processes real measurements
  */
 export function shouldProcessMeasurement(value: number): boolean {
-  // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.01; // Aumentado para evitar falsos positivos cuando no hay dedo
+  // Umbral mucho más estricto para evitar falsos positivos
+  return Math.abs(value) >= 0.05; // Aumentado significativamente para evitar señales débiles
 }
 
 /**
@@ -40,7 +40,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función ha sido optimizada para mejorar la sincronización perfecta entre beep y visualización
+ * Esta función ha sido optimizada para evitar falsos positivos y beeps aleatorios
  * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
@@ -53,14 +53,14 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Verificar que la señal es lo suficientemente fuerte antes de procesar picos
-  if (Math.abs(value) < 0.01) {
-    return; // No procesar señales débiles para evitar falsos positivos
+  if (Math.abs(value) < 0.05) {
+    return; // No procesar señales débiles para evitar falsos positivos (umbral aumentado)
   }
   
   // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep con verificaciones adicionales
-  if (result.isPeak && result.confidence > 0.25) { // Aumentado umbral de confianza
+  if (result.isPeak && result.confidence > 0.45) { // Umbral de confianza significativamente aumentado
     // Verificar que ha pasado suficiente tiempo desde el último pico (evitar beeps repetidos)
-    const minTimeBetweenPeaks = 500; // Mínimo 500ms entre picos para evitar falsos positivos
+    const minTimeBetweenPeaks = 750; // Aumentado a 750ms para evitar falsos positivos
     if (lastPeakTimeRef.current && (now - lastPeakTimeRef.current) < minTimeBetweenPeaks) {
       console.log("Peak-detection: Ignorando pico demasiado cercano al anterior", {
         tiempoDesdeÚltimoPico: now - (lastPeakTimeRef.current || 0),
@@ -73,7 +73,7 @@ export function handlePeakDetection(
     
     // Solicitar beep inmediatamente para perfecta sincronización solo si estamos monitoreando
     // y la calidad de la señal es buena
-    if (isMonitoringRef.current && result.confidence > 0.25 && Math.abs(value) >= 0.02) {
+    if (isMonitoringRef.current && result.confidence > 0.45 && Math.abs(value) >= 0.08) {
       const beepSuccess = requestBeepCallback(value);
       
       console.log("Peak-detection: Pico detectado con solicitud de beep inmediata", {
@@ -86,4 +86,3 @@ export function handlePeakDetection(
     }
   }
 }
-

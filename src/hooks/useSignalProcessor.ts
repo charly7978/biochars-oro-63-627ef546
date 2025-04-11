@@ -33,12 +33,58 @@ export const useSignalProcessor = () => {
     avgValue: 0,
     totalValues: 0
   });
+  
+  // Nuevo: Control de estabilidad de la señal
+  const signalBufferRef = useRef<number[]>([]);
+  const MAX_BUFFER_SIZE = 15;
+  const consecutiveWeakSignalsRef = useRef<number>(0);
+  const WEAK_SIGNAL_THRESHOLD = 0.08; // Umbral más alto para señal débil
+  const MAX_CONSECUTIVE_WEAK = 5;
 
   // Set up processor callbacks and cleanup
   useEffect(() => {
-    // Signal callback
+    // Signal callback con verificación adicional
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      // Verificar estabilidad de la señal
+      signalBufferRef.current.push(signal.filteredValue);
+      if (signalBufferRef.current.length > MAX_BUFFER_SIZE) {
+        signalBufferRef.current.shift();
+      }
+      
+      // Detectar señales débiles
+      if (Math.abs(signal.filteredValue) < WEAK_SIGNAL_THRESHOLD) {
+        consecutiveWeakSignalsRef.current++;
+      } else {
+        consecutiveWeakSignalsRef.current = 0;
+      }
+      
+      // Si hay demasiadas señales débiles consecutivas, ajustar la detección de dedo
+      if (consecutiveWeakSignalsRef.current > MAX_CONSECUTIVE_WEAK) {
+        // Forzar a false la detección de dedo en señales muy débiles
+        signal.fingerDetected = false;
+      }
+      
+      // Añadir verificación de variabilidad para evitar falsos positivos
+      if (signalBufferRef.current.length >= 5) {
+        const recentValues = signalBufferRef.current.slice(-5);
+        const max = Math.max(...recentValues);
+        const min = Math.min(...recentValues);
+        const range = max - min;
+        
+        // Si la señal es demasiado estable (sin variación), probablemente no hay dedo
+        if (range < 0.02 && signal.fingerDetected) {
+          console.log("useSignalProcessor: Señal demasiado estable, ajustando fingerDetected");
+          signal.fingerDetected = false;
+        }
+        
+        // Si la señal es demasiado errática, reducir la calidad
+        if (range > 0.5) {
+          console.log("useSignalProcessor: Señal errática, reduciendo calidad");
+          signal.quality = Math.max(0, signal.quality - 20);
+        }
+      }
+      
+      // Pass through with modifications for better quality control
       setLastSignal(signal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
@@ -86,6 +132,10 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
+    // Reset stability control
+    signalBufferRef.current = [];
+    consecutiveWeakSignalsRef.current = 0;
+    
     processor.start();
   }, [processor]);
 
@@ -100,7 +150,7 @@ export const useSignalProcessor = () => {
   }, [processor]);
 
   /**
-   * Process a frame from camera
+   * Process a frame from camera with additional validations
    */
   const processFrame = useCallback((imageData: ImageData) => {
     if (isProcessing) {

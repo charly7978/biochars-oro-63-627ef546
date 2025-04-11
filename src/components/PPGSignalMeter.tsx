@@ -41,36 +41,51 @@ const PPGSignalMeter = memo(({
   preserveResults = false,
   isArrhythmia = false
 }: PPGSignalMeterProps) => {
-  // Declare triggerHeartbeatFeedback FIRST
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
-  // Refs for beep management
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
+  const beepCountRef = useRef<number>(0);
+  const qualityThresholdRef = useRef<number>(35);
 
-  // Move playBeep declaration after triggerHeartbeatFeedback
   const playBeep = useCallback(async (volume = 0.8, isArrhythmia = false) => {
     try {
       const now = Date.now();
       
-      // Verificar si ha pasado suficiente tiempo desde el último beep
-      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS * 1.5) {
+        console.log("PPGSignalMeter: Beep bloqueado - demasiado reciente");
         return false;
       }
       
-      // No reproducir beep si no se detecta el dedo (a menos que estemos preservando resultados)
+      if (beepCountRef.current > 100) {
+        console.log("PPGSignalMeter: Límite de beeps por sesión alcanzado");
+        return false;
+      }
+      
       if (!isFingerDetected && !preserveResults) {
         console.log("PPGSignalMeter: Beep suprimido - no se detecta dedo");
         return false;
       }
       
-      // No reproducir beep si la calidad de la señal es demasiado baja
-      if (quality < 20 && !preserveResults) {
-        console.log("PPGSignalMeter: Beep suprimido - calidad de señal baja", { quality });
+      const currentQualityThreshold = qualityThresholdRef.current;
+      if (quality < currentQualityThreshold && !preserveResults) {
+        console.log("PPGSignalMeter: Beep suprimido - calidad de señal insuficiente", { 
+          quality, 
+          umbral: currentQualityThreshold 
+        });
         return false;
       }
       
-      console.log("PPGSignalMeter: Playing heartbeat sound", { isArrhythmia });
+      beepCountRef.current++;
+      
+      qualityThresholdRef.current = Math.max(25, currentQualityThreshold - 1);
+      
+      console.log("PPGSignalMeter: Playing heartbeat sound", { 
+        isArrhythmia,
+        quality,
+        beepCount: beepCountRef.current
+      });
+      
       const beepResult = triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
       lastBeepTimeRef.current = now;
@@ -116,12 +131,12 @@ const PPGSignalMeter = memo(({
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 250;
+  const PEAK_THRESHOLD = 4.5;
+  const MIN_PEAK_DISTANCE_MS = 500;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
-  const REQUIRED_FINGER_FRAMES = 3;
+  const REQUIRED_FINGER_FRAMES = 5;
   const USE_OFFSCREEN_CANVAS = true;
   const BEEP_DELAY_MS = 0;
 
@@ -129,7 +144,7 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 250;
+  const MIN_BEEP_INTERVAL_MS = 350;
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
     return arrhythmiaSegmentsRef.current.some(segment => {
@@ -147,7 +162,6 @@ const PPGSignalMeter = memo(({
     window.addEventListener('click', initAudio);
     window.addEventListener('touchstart', initAudio);
     
-    // Call once on mount
     initAudio();
     
     return () => {
@@ -338,7 +352,7 @@ const PPGSignalMeter = memo(({
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
-    if (points.length < PEAK_DETECTION_WINDOW) return;
+    if (points.length < PEAK_DETECTION_WINDOW || !isFingerDetected) return;
     
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
     
@@ -346,7 +360,7 @@ const PPGSignalMeter = memo(({
       const currentPoint = points[i];
       
       const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
+        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS * 1.2
       );
       
       if (recentlyProcessed) continue;
@@ -354,7 +368,7 @@ const PPGSignalMeter = memo(({
       let isPeak = true;
       
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value) {
+        if (points[j].value >= currentPoint.value * 0.95) {
           isPeak = false;
           break;
         }
@@ -362,7 +376,7 @@ const PPGSignalMeter = memo(({
       
       if (isPeak) {
         for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value) {
+          if (j < points.length && points[j].value > currentPoint.value * 0.95) {
             isPeak = false;
             break;
           }
@@ -371,9 +385,7 @@ const PPGSignalMeter = memo(({
       
       const isInArrhythmiaSegment = isPointInArrhythmiaSegment(currentPoint.time);
       
-      // Verificar que la señal sea lo suficientemente fuerte para considerarse un pico real
-      // Aumentar el umbral para evitar falsos positivos
-      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD * 1.5) {
+      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD * 1.8) {
         potentialPeaks.push({
           index: i,
           value: currentPoint.value,
@@ -383,22 +395,35 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    const maxNewPeaks = 1;
+    let newPeaksAdded = 0;
+    
     for (const peak of potentialPeaks) {
+      if (newPeaksAdded >= maxNewPeaks) break;
+      
       const tooClose = peaksRef.current.some(
-        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
+        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS * 1.5
       );
       
       if (!tooClose) {
-        // Solo reproducir beep si se detecta el dedo y la calidad es buena
-        if (isFingerDetected && !preserveResults && quality > 20) {
-          playBeep(0.8, peak.isArrhythmia);
+        const canPlayBeep = isFingerDetected && 
+                           !preserveResults && 
+                           quality > 35 && 
+                           (now - lastBeepTimeRef.current) > MIN_PEAK_DISTANCE_MS * 2;
+                           
+        if (canPlayBeep) {
+          const avgQuality = getAverageQuality();
+          if (avgQuality > 40) {
+            playBeep(0.8, peak.isArrhythmia);
+            newPeaksAdded++;
+          }
         }
         
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
           isArrhythmia: peak.isArrhythmia,
-          beepPlayed: isFingerDetected && quality > 20 // Marcar si se reprodujo el beep
+          beepPlayed: canPlayBeep && getAverageQuality() > 40
         });
       }
     }
@@ -408,7 +433,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [isPointInArrhythmiaSegment, MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, isFingerDetected, preserveResults, playBeep, quality]);
+  }, [isPointInArrhythmiaSegment, MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, isFingerDetected, preserveResults, playBeep, quality, getAverageQuality]);
 
   const updateArrhythmiaSegments = useCallback((isCurrentArrhythmia: boolean, now: number) => {
     if (isCurrentArrhythmia !== lastArrhythmiaStateRef.current) {
@@ -623,6 +648,8 @@ const PPGSignalMeter = memo(({
     currentArrhythmiaSegmentRef.current = null;
     lastArrhythmiaStateRef.current = false;
     pendingBeepPeakIdRef.current = null;
+    beepCountRef.current = 0;
+    qualityThresholdRef.current = 35;
     onReset();
   }, [onReset]);
 

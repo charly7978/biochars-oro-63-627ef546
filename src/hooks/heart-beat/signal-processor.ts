@@ -20,8 +20,14 @@ export function useSignalProcessor() {
   
   // Simple reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
+  const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD * 2; // Duplicado para ser más estricto
   const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
+  
+  // Nuevas variables para filtrar falsos positivos
+  const signalHistoryRef = useRef<number[]>([]);
+  const MAX_HISTORY_SIZE = 15;
+  const lastBeepTimeRef = useRef<number>(0);
+  const MIN_BEEP_INTERVAL_MS = 500; // Intervalo mínimo entre beeps
 
   const processSignal = useCallback((
     value: number,
@@ -40,6 +46,12 @@ export function useSignalProcessor() {
     try {
       calibrationCounterRef.current++;
       
+      // Registrar valor en el historial para análisis de variabilidad
+      signalHistoryRef.current.push(value);
+      if (signalHistoryRef.current.length > MAX_HISTORY_SIZE) {
+        signalHistoryRef.current.shift();
+      }
+      
       // Check for weak signal - fixed property access
       const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
         value, 
@@ -56,6 +68,20 @@ export function useSignalProcessor() {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
       }
       
+      // Verificar variabilidad de la señal para detectar posibles interferencias
+      if (signalHistoryRef.current.length >= 5) {
+        const recentValues = signalHistoryRef.current.slice(-5);
+        const max = Math.max(...recentValues);
+        const min = Math.min(...recentValues);
+        const range = max - min;
+        
+        // Si la señal es demasiado estable (sin variación cardiaca), probablemente sea ruido
+        if (range < 0.01) {
+          console.log("useSignalProcessor: Señal sin variación cardiaca, ignorando");
+          return createWeakSignalResult(processor.getArrhythmiaCounter());
+        }
+      }
+      
       // Only process signals with sufficient amplitude
       if (!shouldProcessMeasurement(value)) {
         return createWeakSignalResult(processor.getArrhythmiaCounter());
@@ -69,14 +95,30 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection
-      handlePeakDetection(
-        result, 
-        lastPeakTimeRef, 
-        requestImmediateBeep, 
-        isMonitoringRef,
-        value
-      );
+      // Verificar tiempo mínimo entre beeps
+      const now = Date.now();
+      const timeElapsedSinceLastBeep = now - lastBeepTimeRef.current;
+      
+      const shouldTriggerBeep = 
+        result.isPeak && 
+        result.confidence > 0.45 && // Umbral de confianza más alto
+        timeElapsedSinceLastBeep >= MIN_BEEP_INTERVAL_MS;
+      
+      // Handle peak detection con control de tiempo
+      if (shouldTriggerBeep) {
+        handlePeakDetection(
+          result, 
+          lastPeakTimeRef, 
+          requestImmediateBeep, 
+          isMonitoringRef,
+          value
+        );
+        
+        // Actualizar tiempo del último beep si se procesó correctamente
+        if (result.isPeak) {
+          lastBeepTimeRef.current = now;
+        }
+      }
       
       // Update last valid BPM if it's reasonable
       updateLastValidBpm(result, lastValidBpmRef);
@@ -111,6 +153,8 @@ export function useSignalProcessor() {
     calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
+    signalHistoryRef.current = [];
+    lastBeepTimeRef.current = 0;
   }, []);
 
   return {
