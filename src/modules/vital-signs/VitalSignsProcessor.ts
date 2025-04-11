@@ -9,7 +9,6 @@ import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
-import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
@@ -30,7 +29,6 @@ export class VitalSignsProcessor {
   private hydrationEstimator: HydrationEstimator;
   
   // Validators and calculators
-  private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
   // Throttling state
@@ -51,7 +49,6 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     this.hydrationEstimator = new HydrationEstimator();
-    this.signalValidator = new SignalValidator(0.02, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   

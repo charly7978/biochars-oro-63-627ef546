@@ -31,8 +31,8 @@ export class SignalProcessor extends BaseProcessor {
   
   // Signal quality variables - thresholds can be tuned
   private readonly MIN_QUALITY_FOR_FINGER = 45;
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25;
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 1500;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
   
   constructor() {
     super(); // Initializes this.ppgValues = []
