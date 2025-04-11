@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
+  return Math.abs(value) >= 0.006; // Reducido para mayor sensibilidad y mejores resultados
 }
 
 /**
@@ -40,7 +40,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
+ * Esta función ha sido optimizada para mejorar la sincronización perfecta entre beep y visualización
  * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
@@ -52,23 +52,20 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Solo actualizar tiempo del pico para cálculos de tiempo
+  // Actualizar tiempo del pico para cálculos de tiempo y solicitar beep inmediatamente
   if (result.isPeak && result.confidence > 0.05) {
-    // Actualizar tiempo del pico para cálculos de tempo solamente
     lastPeakTimeRef.current = now;
     
-    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
-    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
-      confianza: result.confidence,
-      valor: value,
-      tiempo: new Date(now).toISOString(),
-      // Log transition state if present
-      transicion: result.transition ? {
-        activa: result.transition.active,
-        progreso: result.transition.progress,
-        direccion: result.transition.direction
-      } : 'no hay transición',
-      isArrhythmia: result.isArrhythmia || false
-    });
+    // Solicitar beep inmediatamente para perfecta sincronización
+    if (isMonitoringRef.current) {
+      requestBeepCallback(value);
+      
+      console.log("Peak-detection: Pico detectado con solicitud de beep inmediata", {
+        confianza: result.confidence,
+        valor: value,
+        tiempo: new Date(now).toISOString(),
+        isArrhythmia: result.isArrhythmia || false
+      });
+    }
   }
 }
