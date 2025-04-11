@@ -14,9 +14,5 @@ export const animations = {
   "efficient-pulse": "subtle-pulse 3s ease-in-out infinite",
   "efficient-fade": "fade-in-up 0.4s cubic-bezier(0.2, 0, 0, 1) forwards",
   "efficient-beat": "heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite",
-  "efficient-update": "vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards",
-  
-  /* Animations for result numbers */
-  "result-animate": "display-darken 0.8s cubic-bezier(0.2, 0, 0.4, 1) forwards",
-  "number-highlight": "number-glow 2s ease-in-out infinite"
+  "efficient-update": "vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards"
 };

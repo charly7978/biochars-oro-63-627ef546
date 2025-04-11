@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -71,7 +72,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly
    * No simulation or reference values
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => {
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
@@ -85,53 +86,31 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     weakSignalsCountRef.current = updatedWeakSignalsCount;
     
     // Process signal directly - no simulation
-    try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
-      const currentTime = Date.now();
+    let result = processVitalSignal(value, rrData, isWeakSignal);
+    const currentTime = Date.now();
+    
+    // If arrhythmia is detected in real data, register visualization window
+    if (result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && result.lastArrhythmiaData) {
+      const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
       
-      // Add safe null check for arrhythmiaStatus
-      if (result && 
-          result.arrhythmiaStatus && 
-          typeof result.arrhythmiaStatus === 'string' && 
-          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-          result.lastArrhythmiaData) {
-        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-        
-        // Window based on real heart rate
-        let windowWidth = 400;
-        
-        // Adjust based on real RR intervals
-        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-        }
-        
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+      // Window based on real heart rate
+      let windowWidth = 400;
+      
+      // Adjust based on real RR intervals
+      if (rrData && rrData.intervals.length > 0) {
+        const lastIntervals = rrData.intervals.slice(-4);
+        const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+        windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
       }
       
-      // Log processed signals
-      logSignalData(value, result, processedSignals.current);
-      
-      // Always return real result
-      return result;
-    } catch (error) {
-      console.error("Error processing vital signs:", error);
-      
-      // Return safe fallback values on error that include hydration
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0,
-        hydration: 0
-      };
+      addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
     }
+    
+    // Log processed signals
+    logSignalData(value, result, processedSignals.current);
+    
+    // Always return real result
+    return result;
   };
 
   /**
