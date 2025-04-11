@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -63,30 +62,31 @@ const PPGSignalMeter = memo(({
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
+  const [resultsVisible, setResultsVisible] = useState(true);
 
   const WINDOW_WIDTH_MS = 5500;
-  const CANVAS_WIDTH = 1200;
-  const CANVAS_HEIGHT = 900;
-  const GRID_SIZE_X = 25;
-  const GRID_SIZE_Y = 5;
-  const verticalScale = 55.0;
-  const SMOOTHING_FACTOR = 1.5;
+  const CANVAS_WIDTH = 1100;
+  const CANVAS_HEIGHT = 1200;
+  const GRID_SIZE_X = 15;
+  const GRID_SIZE_Y = 10;
+  const verticalScale = 76.0;
+  const SMOOTHING_FACTOR = 1.4;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 8;
-  const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 250;
+  const PEAK_DETECTION_WINDOW = 12;
+  const PEAK_THRESHOLD = 1;
+  const MIN_PEAK_DISTANCE_MS = 350;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
-  const QUALITY_HISTORY_SIZE = 9;
-  const REQUIRED_FINGER_FRAMES = 3;
+  const QUALITY_HISTORY_SIZE = 3;
+  const REQUIRED_FINGER_FRAMES = 4;
   const USE_OFFSCREEN_CANVAS = true;
 
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
-  const BEEP_DURATION = 80;
-  const BEEP_VOLUME = 0.9;
+  const BEEP_DURATION = 60;
+  const BEEP_VOLUME = 0.9; 
   const MIN_BEEP_INTERVAL_MS = 350;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
@@ -141,10 +141,81 @@ const PPGSignalMeter = memo(({
       
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
-      lastBeepTimeRef.current = now;
-      pendingBeepPeakIdRef.current = null;
+      const lastPoint = dataBufferRef.current?.getPoints().slice(-1)[0];
+      const prevPoint = dataBufferRef.current?.getPoints().slice(-2)[0];
       
-      return true;
+      if (lastPoint && prevPoint) {
+        const isPeak = lastPoint.value > prevPoint.value;
+        if (isPeak) {
+          try {
+            if (audioContextRef.current && audioContextRef.current.state === 'running') {
+              const currentTime = audioContextRef.current.currentTime;
+              
+              const primaryOscillator = audioContextRef.current.createOscillator();
+              const primaryGain = audioContextRef.current.createGain();
+              
+              const secondaryOscillator = audioContextRef.current.createOscillator();
+              const secondaryGain = audioContextRef.current.createGain();
+              
+              primaryOscillator.type = "sine";
+              primaryOscillator.frequency.setValueAtTime(
+                BEEP_PRIMARY_FREQUENCY,
+                currentTime
+              );
+              
+              secondaryOscillator.type = "sine";
+              secondaryOscillator.frequency.setValueAtTime(
+                BEEP_SECONDARY_FREQUENCY,
+                currentTime
+              );
+              
+              primaryGain.gain.setValueAtTime(0, currentTime);
+              primaryGain.gain.linearRampToValueAtTime(
+                volume,
+                currentTime + 0.005
+              );
+              primaryGain.gain.exponentialRampToValueAtTime(
+                0.01,
+                currentTime + BEEP_DURATION / 1000
+              );
+              
+              secondaryGain.gain.setValueAtTime(0, currentTime);
+              secondaryGain.gain.linearRampToValueAtTime(
+                volume * 0.4,
+                currentTime + 0.005
+              );
+              secondaryGain.gain.exponentialRampToValueAtTime(
+                0.01,
+                currentTime + BEEP_DURATION / 1000
+              );
+              
+              primaryOscillator.connect(primaryGain);
+              secondaryOscillator.connect(secondaryGain);
+              primaryGain.connect(audioContextRef.current.destination);
+              secondaryGain.connect(audioContextRef.current.destination);
+              
+              primaryOscillator.start(currentTime);
+              secondaryOscillator.start(currentTime);
+              primaryOscillator.stop(currentTime + BEEP_DURATION / 1000 + 0.02);
+              secondaryOscillator.stop(currentTime + BEEP_DURATION / 1000 + 0.02);
+              
+              console.log("PPGSignalMeter: Beep sincronizado reproducido", {
+                tiempo: new Date().toISOString(),
+                latencia: audioContextRef.current.baseLatency,
+                esArritmia: isArrhythmia
+              });
+            }
+          } catch (err) {
+            console.error("PPGSignalMeter: Error en implementación local de beep:", err);
+          }
+          
+          lastBeepTimeRef.current = now;
+          pendingBeepPeakIdRef.current = null;
+          return true;
+        }
+      }
+      
+      return false;
     } catch (err) {
       console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
@@ -155,13 +226,17 @@ const PPGSignalMeter = memo(({
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
+    
     if (preserveResults && !isFingerDetected) {
+      setResultsVisible(true);
+    } else if (!preserveResults && !isFingerDetected) {
       if (dataBufferRef.current) {
         dataBufferRef.current.clear();
       }
       peaksRef.current = [];
       baselineRef.current = null;
       lastValueRef.current = null;
+      setResultsVisible(false);
     }
   }, [preserveResults, isFingerDetected]);
 
@@ -173,10 +248,14 @@ const PPGSignalMeter = memo(({
     
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
+      setResultsVisible(true);
     } else {
       consecutiveFingerFramesRef.current = 0;
+      if (!preserveResults) {
+        setResultsVisible(false);
+      }
     }
-  }, [quality, isFingerDetected]);
+  }, [quality, isFingerDetected, preserveResults]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -213,20 +292,20 @@ const PPGSignalMeter = memo(({
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'from-gray-400 to-gray-500';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'from-gray-400 to-gray-500';
     if (avgQuality > 65) return 'from-green-500 to-emerald-500';
     if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality]);
+  }, [getAverageQuality, preserveResults]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
     
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES)) return 'Sin detección';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'Sin detección';
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality]);
+  }, [getAverageQuality, preserveResults]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -235,10 +314,15 @@ const PPGSignalMeter = memo(({
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    gradient.addColorStop(0, '#E5DEFF');
-    gradient.addColorStop(0.3, '#FDE1D3');
-    gradient.addColorStop(0.7, '#F2FCE2');
-    gradient.addColorStop(1, '#D3E4FD');
+    
+    gradient.addColorStop(0, '#FFE8E8');
+    gradient.addColorStop(0.14, '#FFECDA');
+    gradient.addColorStop(0.28, '#FEF7CD');
+    gradient.addColorStop(0.42, '#E2FFDA');
+    gradient.addColorStop(0.56, '#D6F3FF');
+    gradient.addColorStop(0.70, '#E4DAFF');
+    gradient.addColorStop(0.84, '#F2D6FF');
+    gradient.addColorStop(1, '#3255a4');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -283,8 +367,8 @@ const PPGSignalMeter = memo(({
     ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
-    ctx.moveTo(0, CANVAS_HEIGHT / 2);
-    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2);
+    ctx.moveTo(0, CANVAS_HEIGHT / 2 - 50);
+    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT / 2 - 50);
     ctx.stroke();
     ctx.setLineDash([]);
     
@@ -324,8 +408,9 @@ const PPGSignalMeter = memo(({
     
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
     
-    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
+    for (let i = PEAK_DETECTION_WINDOW; i < points.length - 1; i++) {
       const currentPoint = points[i];
+      const nextPoint = points[i+1];
       
       const recentlyProcessed = peaksRef.current.some(
         peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
@@ -333,21 +418,12 @@ const PPGSignalMeter = memo(({
       
       if (recentlyProcessed) continue;
       
-      let isPeak = true;
+      let isPeak = currentPoint.value > nextPoint.value;
       
       for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
         if (points[j].value >= currentPoint.value) {
           isPeak = false;
           break;
-        }
-      }
-      
-      if (isPeak) {
-        for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value) {
-            isPeak = false;
-            break;
-          }
         }
       }
       
@@ -373,7 +449,7 @@ const PPGSignalMeter = memo(({
           time: peak.time,
           value: peak.value,
           isArrhythmia: peak.isArrhythmia,
-          beepPlayed: false
+          beepPlayed: true
         });
       }
     }
@@ -494,8 +570,6 @@ const PPGSignalMeter = memo(({
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
     
-    let shouldBeep = false;
-    
     if (points.length > 1) {
       renderCtx.beginPath();
       renderCtx.strokeStyle = '#0EA5E9';
@@ -511,10 +585,10 @@ const PPGSignalMeter = memo(({
         const point = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = canvas.height / 2 - prevPoint.value;
+        const y1 = (canvas.height / 2 - 50) - prevPoint.value;
         
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = canvas.height / 2 - point.value;
+        const y2 = (canvas.height / 2 - 50) - point.value;
         
         const pointIsArrhythmia = isPointInArrhythmiaSegment(point.time) || point.isArrhythmia;
         
@@ -538,7 +612,7 @@ const PPGSignalMeter = memo(({
       
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2 - peak.value;
+        const y = canvas.height / 2 - 50 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
@@ -563,11 +637,6 @@ const PPGSignalMeter = memo(({
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-          
-          if (!peak.beepPlayed) {
-            shouldBeep = true;
-            peak.beepPlayed = true;
-          }
         }
       });
     }
@@ -579,21 +648,9 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    if (shouldBeep && isFingerDetected && 
-        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
-    }
-    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-  }, [
-    value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
-    detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
-    isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, 
-    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES
-  ]);
+  }, [value, quality, isFingerDetected, arrhythmiaStatus, rawArrhythmiaData, isArrhythmia, preserveResults, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, drawGrid, smoothValue, updateArrhythmiaSegments, isPointInArrhythmiaSegment, detectPeaks, verticalScale]);
 
   useEffect(() => {
     renderSignal();
@@ -616,7 +673,7 @@ const PPGSignalMeter = memo(({
   }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES;
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
@@ -640,7 +697,7 @@ const PPGSignalMeter = memo(({
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${displayFingerDetected ? displayQuality : 0}%` }}
+                style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
               />
             </div>
             <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 

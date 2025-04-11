@@ -1,2 +1,4 @@
 
-<!-- Archivo binario (placeholder) -->
+// This is a placeholder for the heartbeat.mp3 file
+// Please ensure there's a real MP3 file with a heart beat sound in this location
+// If the file is missing, the system will fall back to using Web Audio API generated sounds

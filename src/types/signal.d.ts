@@ -22,6 +22,8 @@ export interface ProcessedSignal {
     amplitudes: number[];
     dominantFrequency: number;
   };
+  value?: number;           // Compatibilidad con código existente
+  hydrationIndex?: number;  // Índice de hidratación
 }
 
 /**

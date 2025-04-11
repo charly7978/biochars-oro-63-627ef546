@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.008; // Reducido aún más para mayor sensibilidad
+  return Math.abs(value) >= 0.005; // Reducido aún más para mayor sensibilidad
 }
 
 /**
@@ -40,8 +40,9 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
+ * This function activates the beep to ensure audio feedback
  * No simulation is used - direct measurement only
+ * OPTIMIZADO: Asegura reproducción inmediata de beep en el momento exacto del pico
  */
 export function handlePeakDetection(
   result: any, 
@@ -52,23 +53,31 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Solo actualizar tiempo del pico para cálculos de tiempo
-  if (result.isPeak && result.confidence > 0.05) {
-    // Actualizar tiempo del pico para cálculos de tempo solamente
+  // Actualizar tiempo del pico y solicitar beep inmediatamente si se detectó un pico
+  if (result.isPeak && result.confidence > 0.02) {
+    // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
-    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
-    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
-      confianza: result.confidence,
-      valor: value,
-      tiempo: new Date(now).toISOString(),
-      // Log transition state if present
-      transicion: result.transition ? {
-        activa: result.transition.active,
-        progreso: result.transition.progress,
-        direccion: result.transition.direction
-      } : 'no hay transición',
-      isArrhythmia: result.isArrhythmia || false
-    });
+    // Solicitar reproducción de beep INMEDIATAMENTE para sincronización perfecta
+    if (isMonitoringRef.current) {
+      // FORZAR reproducción de beep con alta prioridad y volumen amplificado
+      const beepVolume = Math.max(0.85, value * 20); // Amplificar más el volumen
+      const beepResult = requestBeepCallback(beepVolume);
+      
+      console.log("Peak-detection: Pico detectado con beep solicitado", {
+        confianza: result.confidence,
+        valor: value,
+        valorAmplificado: beepVolume,
+        tiempo: new Date(now).toISOString(),
+        beepReproducido: beepResult,
+        // Log transition state if present
+        transicion: result.transition ? {
+          activa: result.transition.active,
+          progreso: result.transition.progress,
+          direccion: result.transition.direction
+        } : 'no hay transición',
+        isArrhythmia: result.isArrhythmia || false
+      });
+    }
   }
 }

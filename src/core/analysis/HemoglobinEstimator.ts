@@ -8,7 +8,7 @@ import { SignalAnalyzer } from './SignalAnalyzer';
  */
 export class HemoglobinEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
-  private lastEstimate: number = 14.0;
+  private lastEstimate: number = 14;
   
   constructor(config: Partial<ProcessorConfig> = {}) {
     super();
@@ -48,11 +48,11 @@ export class HemoglobinEstimator extends SignalAnalyzer {
       hemoglobinEstimate -= 0.5;
     }
     
-    // Apply calibration
-    hemoglobinEstimate = Math.round(hemoglobinEstimate * calibrationFactor * 10) / 10;
+    // Apply calibration and convert to integer
+    hemoglobinEstimate = Math.round(hemoglobinEstimate * calibrationFactor);
     
     // Ensure physiological range
-    hemoglobinEstimate = Math.max(8.0, Math.min(18.0, hemoglobinEstimate));
+    hemoglobinEstimate = Math.max(8, Math.min(18, hemoglobinEstimate));
     
     // Update last estimate
     this.lastEstimate = hemoglobinEstimate;
@@ -72,6 +72,6 @@ export class HemoglobinEstimator extends SignalAnalyzer {
    */
   public reset(): void {
     super.reset();
-    this.lastEstimate = 14.0;
+    this.lastEstimate = 14;
   }
 }

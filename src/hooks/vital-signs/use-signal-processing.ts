@@ -6,6 +6,7 @@
 import { useRef, useCallback } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
+import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
 
 /**
  * Hook for processing signal using the VitalSignsProcessor
@@ -28,32 +29,14 @@ export const useSignalProcessing = () => {
   ): VitalSignsResult => {
     if (!processorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
+      return ResultFactory.createEmptyResults();
     }
     
     processedSignals.current++;
     
     // If too many weak signals, return zeros
     if (isWeakSignal) {
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        }
-      };
+      return ResultFactory.createEmptyResults();
     }
     
     // Logging for diagnostics
@@ -62,15 +45,54 @@ export const useSignalProcessing = () => {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
+        arrhythmiaCount: processorRef.current.getArrhythmiaCount(),
         signalNumber: processedSignals.current
       });
     }
     
-    // Process signal directly - no simulation
-    let result = processorRef.current.processSignal(value, rrData);
-    
-    return result;
+    try {
+      // Process signal directly - no simulation
+      // Important: We've changed this to handle sync processing only, avoiding Promise issues
+      let result = processorRef.current.processSignal(value, rrData);
+      
+      // Add null checks for arrhythmia status
+      if (result && 
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+        
+        // Window based on real heart rate
+        let windowWidth = 400;
+        
+        // Adjust based on real RR intervals
+        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-4);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+        }
+      }
+      
+      // Log processed signals
+      signalLog.current.push({
+        timestamp: Date.now(),
+        value,
+        result
+      });
+      
+      if (signalLog.current.length > 100) {
+        signalLog.current = signalLog.current.slice(-100);
+      }
+      
+      // Always return real result
+      return result;
+    } catch (error) {
+      console.error("Error processing vital signs:", error);
+      
+      // Return safe fallback values on error
+      return ResultFactory.createEmptyResults();
+    }
   }, []);
 
   /**
@@ -121,7 +143,7 @@ export const useSignalProcessing = () => {
    * Get the arrhythmia counter
    */
   const getArrhythmiaCounter = useCallback(() => {
-    return processorRef.current?.getArrhythmiaCounter() || 0;
+    return processorRef.current?.getArrhythmiaCount() || 0;
   }, []);
 
   /**

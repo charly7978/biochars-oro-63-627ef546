@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 
 /**
@@ -44,7 +43,7 @@ export class TensorUtils {
     }
     
     // Convertir a tensor 3D [1, inputSize, 1] para Conv1D
-    return tf.tensor3d([paddedInput], [1, inputSize, 1]);
+    return tf.tensor3d([paddedInput.map(v => [v])], [1, inputSize, 1]);
   }
   
   /**

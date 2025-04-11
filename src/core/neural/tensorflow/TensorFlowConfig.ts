@@ -195,7 +195,10 @@ export const HIGH_ACCURACY_CONFIG: TensorFlowConfig = {
 export const detectOptimalConfig = (): TensorFlowConfig => {
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   const isLowEndDevice = navigator.hardwareConcurrency ? navigator.hardwareConcurrency <= 4 : true;
-  const hasGoodMemory = navigator.deviceMemory ? navigator.deviceMemory >= 4 : false;
+  
+  // Use safer memory detection
+  const hasGoodMemory = typeof (navigator as any).deviceMemory !== 'undefined' ? 
+    (navigator as any).deviceMemory >= 4 : false;
   
   if (isMobile && isLowEndDevice) {
     return LOW_POWER_CONFIG;

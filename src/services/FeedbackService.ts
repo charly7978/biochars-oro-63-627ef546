@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
