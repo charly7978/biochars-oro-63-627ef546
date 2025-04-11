@@ -103,22 +103,31 @@ export class HeartBeatProcessor {
 
   async playBeep(volume = this.BEEP_VOLUME) {
     // Si no está en modo de monitoreo, no reproducir beeps
-    if (!this.isMonitoring) return false;
+    if (!this.isMonitoring) {
+      console.log("HeartBeatProcessor: Beep skipped - monitoring is inactive");
+      return false;
+    }
     
     // Si estamos en el período de calentamiento, no reproducir beeps
-    if (this.isInWarmup()) return false;
+    if (this.isInWarmup()) {
+      console.log("HeartBeatProcessor: Beep skipped - in warmup period");
+      return false;
+    }
     
     // Verificación básica de intervalo para evitar beeps demasiado frecuentes
     const now = Date.now();
     if (!this.SKIP_TIMING_VALIDATION && now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
+      console.log("HeartBeatProcessor: Beep skipped - too soon after last beep");
       return false;
     }
 
     try {
       // Asegúrate de que el contexto de audio esté disponible y activo
       if (!this.audioContext || this.audioContext.state !== 'running') {
+        console.log("HeartBeatProcessor: Initializing or resuming audio context");
         await this.initAudio();
         if (!this.audioContext || this.audioContext.state !== 'running') {
+          console.error("HeartBeatProcessor: Unable to initialize audio context");
           return false;
         }
       }
@@ -184,7 +193,9 @@ export class HeartBeatProcessor {
       // Log para depuración
       console.log("HeartBeatProcessor: Beep played successfully", {
         time: new Date(now).toISOString(),
-        volume: volume
+        volume: volume,
+        context: this.audioContext.state,
+        isMonitoring: this.isMonitoring
       });
       
       return true;
@@ -244,6 +255,7 @@ export class HeartBeatProcessor {
     if (this.startTime === 0) {
       this.startTime = Date.now();
       this.initAudio(); // Inicializar audio
+      console.log("HeartBeatProcessor: First signal processing, initializing time and audio");
     }
     
     // Aplicar filtros para reducir ruido
@@ -296,15 +308,19 @@ export class HeartBeatProcessor {
     
     // CORRECCIÓN: Reproducir beep inmediatamente en el pico, no en la confirmación posterior
     if (isPeak && confidence > 0.4 && Date.now() - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
-      this.playBeep(Math.max(0.5, confidence * this.BEEP_VOLUME));
+      // Usar volumen amplificado basado en la confianza, mínimo garantizado
+      const beepVolume = Math.max(0.7, confidence * this.BEEP_VOLUME);
+      this.playBeep(beepVolume);
       this.lastBeepTime = Date.now();
       
-      console.log("HeartBeatProcessor: Peak detected", {
+      console.log("HeartBeatProcessor: Peak detected with BEEP TRIGGER", {
         confidence,
         normalizedValue,
         smoothDerivative,
+        beepVolume,
         beepPlayed: true,
-        time: new Date().toISOString()
+        time: new Date().toISOString(),
+        monitoring: this.isMonitoring
       });
     }
     
