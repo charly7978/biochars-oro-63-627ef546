@@ -180,6 +180,13 @@ export class HeartBeatProcessor {
 
       // Actualiza el tiempo del último beep
       this.lastBeepTime = now;
+      
+      // Log para depuración
+      console.log("HeartBeatProcessor: Beep played successfully", {
+        time: new Date(now).toISOString(),
+        volume: volume
+      });
+      
       return true;
     } catch (err) {
       console.error("HeartBeatProcessor: Error playing beep", err);
@@ -288,9 +295,17 @@ export class HeartBeatProcessor {
     this.lastValue = normalizedValue;
     
     // CORRECCIÓN: Reproducir beep inmediatamente en el pico, no en la confirmación posterior
-    if (isPeak && Date.now() - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
-      this.playBeep(confidence * this.BEEP_VOLUME);
+    if (isPeak && confidence > 0.4 && Date.now() - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
+      this.playBeep(Math.max(0.5, confidence * this.BEEP_VOLUME));
       this.lastBeepTime = Date.now();
+      
+      console.log("HeartBeatProcessor: Peak detected", {
+        confidence,
+        normalizedValue,
+        smoothDerivative,
+        beepPlayed: true,
+        time: new Date().toISOString()
+      });
     }
     
     // Confirmar si realmente es un pico (reduce falsos positivos)

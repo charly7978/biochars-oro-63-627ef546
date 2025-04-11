@@ -28,15 +28,19 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     
     // Precargar el sonido de latido para minimizar latencia
     if (!audioElementRef.current) {
-      const audioElement = new Audio('/sounds/heartbeat.mp3');
+      const audioElement = new Audio();
+      audioElement.src = '/sounds/heartbeat.mp3'; // Asegurar ruta correcta
       audioElement.preload = 'auto';
       audioElement.load();
       audioElementRef.current = audioElement;
       
-      // Forzar precarga del audio
+      // Forzar precarga del audio usando volumen bajo para evitar problemas de autoplay
+      audioElement.volume = 0.01;
       audioElement.play().then(() => {
         audioElement.pause();
         audioElement.currentTime = 0;
+        audioElement.volume = 0.8;
+        console.log("Audio de latido precargado correctamente");
       }).catch(err => {
         console.log("Precarga de audio iniciada, interacción de usuario necesaria para completar");
       });
@@ -78,6 +82,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     // Reproducir audio pregrabado para máxima sincronización
     try {
       if (audioElementRef.current) {
+        // Optimizar reproducción para minimizar latencia
         // Resetear para reproducción inmediata
         audioElementRef.current.currentTime = 0;
         audioElementRef.current.volume = type === 'normal' ? 0.8 : 1.0;
@@ -89,6 +94,24 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
         if (playPromise !== undefined) {
           playPromise.catch(error => {
             console.error('Error reproduciendo sonido de latido:', error);
+            
+            // Fallback a Web Audio API si falla la reproducción del elemento de audio
+            if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+              // Usar oscilador como fallback
+              const ctx = audioCtxRef.current;
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              
+              osc.type = "sine";
+              osc.frequency.value = type === 'normal' ? 880 : 660;
+              gain.gain.value = 0.5;
+              
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              
+              osc.start();
+              osc.stop(ctx.currentTime + 0.1);
+            }
           });
         }
         

@@ -60,12 +60,13 @@ export function handlePeakDetection(
     
     // Solicitar reproducción de beep INMEDIATAMENTE para sincronización perfecta
     if (isMonitoringRef.current) {
-      // Reproducir beep con alta prioridad
-      const beepResult = requestBeepCallback(value);
+      // FORZAR reproducción de beep con alta prioridad
+      const beepResult = requestBeepCallback(Math.max(0.5, value * 10));
       
       console.log("Peak-detection: Pico detectado con beep solicitado", {
         confianza: result.confidence,
         valor: value,
+        valorAmplificado: Math.max(0.5, value * 10),
         tiempo: new Date(now).toISOString(),
         beepReproducido: beepResult,
         // Log transition state if present
