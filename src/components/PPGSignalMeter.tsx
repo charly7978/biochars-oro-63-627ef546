@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { Heart } from 'lucide-react';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -42,6 +44,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const [transitionProgress, setTransitionProgress] = useState(0);
   const [transitionDirection, setTransitionDirection] = useState<'in' | 'out'>('in');
   const [showRawData, setShowRawData] = useState(false);
+  const [signalData, setSignalData] = useState<Array<{value: number, time: number}>>([]);
   
   const triggerHeartbeat = useHeartbeatFeedback(true);
   
@@ -49,8 +52,10 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
   const transitionStartRef = useRef<number>(0);
   const arrhythmiaStatusRef = useRef<string>(arrhythmiaStatus);
   const rawArrhythmiaDataRef = useRef<any | null>(rawArrhythmiaData);
+  const graphDataRef = useRef<Array<{value: number, time: number}>>([]);
   
   const MAX_ARRHYTHMIAS = 3;
+  const MAX_DATA_POINTS = 100;
   
   const qualityClass = quality > 60 ? "good" : quality > 30 ? "medium" : "poor";
 
@@ -64,6 +69,7 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     setProgress(0);
   };
 
+  // Update progress based on quality
   useEffect(() => {
     if (isFingerDetected && quality > 10) {
       setProgress(quality);
@@ -72,6 +78,27 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
     }
   }, [isFingerDetected, quality]);
 
+  // Update signal data for the graph
+  useEffect(() => {
+    if (isFingerDetected) {
+      const now = Date.now();
+      const newDataPoint = {
+        value: value,
+        time: now
+      };
+      
+      graphDataRef.current = [...graphDataRef.current, newDataPoint];
+      
+      // Limit the number of data points to prevent memory issues
+      if (graphDataRef.current.length > MAX_DATA_POINTS) {
+        graphDataRef.current = graphDataRef.current.slice(-MAX_DATA_POINTS);
+      }
+      
+      setSignalData([...graphDataRef.current]);
+    }
+  }, [value, isFingerDetected]);
+
+  // Handle arrhythmia detection
   useEffect(() => {
     if (arrhythmiaStatus !== arrhythmiaStatusRef.current) {
       arrhythmiaStatusRef.current = arrhythmiaStatus;
@@ -135,10 +162,27 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [arrhythmiaStatus, triggerHeartbeat]);
+  }, [arrhythmiaStatus, triggerHeartbeat, arrhythmiaCount]);
   
   const toggleRawData = () => {
     setShowRawData(!showRawData);
+  };
+
+  // Transform data for chart display
+  const getChartData = () => {
+    return signalData.map((dp, index) => ({
+      name: index,
+      value: dp.value,
+      time: dp.time
+    }));
+  };
+
+  // Get visual parameters for the graph
+  const getLineColor = () => {
+    if (isArrhythmiaDetected) return "#ef4444"; // Red for arrhythmia
+    if (quality > 60) return "#22c55e"; // Green for good quality
+    if (quality > 30) return "#eab308"; // Yellow for medium quality
+    return "#9ca3af"; // Gray for poor quality
   };
 
   return (
@@ -172,6 +216,40 @@ const PPGSignalMeter: React.FC<PPGSignalMeterProps> = ({
         <div className={`text-sm text-gray-500 transition duration-300 ${isFingerDetected ? 'opacity-100' : 'opacity-0'}`}>
           CALIDAD: <span className={`font-semibold ${qualityClass}`}>{qualityClass.toUpperCase()}</span>
         </div>
+      </div>
+      
+      {/* PPG Graph Section */}
+      <div className="w-full h-32 mt-4 px-2">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={getChartData()} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#444" opacity={0.3} />
+            <XAxis dataKey="name" tick={false} stroke="#666" />
+            <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={false} stroke="#666" />
+            <Tooltip 
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  return (
+                    <div className="bg-gray-800 p-2 rounded border border-gray-700 text-xs">
+                      <p className="text-white">
+                        <Heart className="inline-block mr-1 h-3 w-3" />
+                        Value: {Number(payload[0].value).toFixed(2)}
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="value" 
+              stroke={getLineColor()} 
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
       
       {isArrhythmiaDetected && (
