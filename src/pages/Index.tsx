@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -98,7 +99,8 @@ const Index = () => {
       } else {
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        // Convert heartRate to number for comparison 
+        if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
           setHeartRate(0);
         }
       }
