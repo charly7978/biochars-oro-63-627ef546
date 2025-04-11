@@ -100,24 +100,26 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          // Wait a bit before applying torch
+          // Wait a bit before applying torch (or other constraints)
           await new Promise(resolve => setTimeout(resolve, 500)); 
           
-          // --- Apply ONLY Torch constraint --- 
+          // --- Apply ONLY Torch constraint (TEMP: Disabled for testing) --- 
+          /* // Temporarily commented out torch logic
           if (capabilities.torch) {
-              console.log("Intentando activar linterna...");
-              try {
-                   await videoTrack.applyConstraints({
-                       advanced: [{ torch: true }]
-                   });
-                   setTorchEnabled(true);
-                   console.log("Linterna activada.");
-              } catch (torchErr) {
-                   console.error("Error al activar linterna:", torchErr);
-              }
+              console.log("Intentando activar linterna... (TEMP DISABLED)");
+              // try {
+              //      await videoTrack.applyConstraints({
+              //          advanced: [{ torch: true }]
+              //      });
+              //      setTorchEnabled(true);
+              //      console.log("Linterna activada.");
+              // } catch (torchErr) {
+              //      console.error("Error al activar linterna:", torchErr);
+              // }
           } else {
               console.log("La linterna no está disponible en este dispositivo.");
           }
+          */ // --- End TEMP Torch Disabled ---
           // --- End Torch only --- 
           
           // Style optimizations (can keep these)

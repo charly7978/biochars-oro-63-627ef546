@@ -198,47 +198,52 @@ const Index = () => {
     if (!tempCtx) { console.error("No context 2D"); finalizeMeasurement(); return; }
     
     let lastProcessTime = 0;
-    const targetFrameInterval = 1000 / 30;
+    const FRAME_PROCESSING_INTERVAL_MS = 200; // Process frame ~5 times per second
 
     const processImage = async () => {
-      if (!isMonitoring || videoTrack.readyState !== 'live') {
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
+      } else {
+        return; // Stop loop if not monitoring
+      }
+
+      if (!videoTrack || videoTrack.readyState !== 'live') {
         if (isMonitoring) {
-          console.error("Track not live/Monitoring stopped in processImage loop.");
+          console.error("Track not live in processImage loop. Stopping.");
           finalizeMeasurement(); 
         }
         return; 
       }
 
       const now = Date.now();
-      if (now - lastProcessTime >= targetFrameInterval) {
-        lastProcessTime = now;
-        try {
-          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended', 'InvalidStateError');
-          const frame = await imageCapture.grabFrame();
-          
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          if (!tempCtx) throw new Error("Canvas context lost");
-          tempCtx.drawImage(frame, 0, 0, frame.width, frame.height, 0, 0, targetWidth, targetHeight);
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          
-          processFrame(imageData); 
-
-        } catch (error) {
-            if (error instanceof DOMException && error.name === 'InvalidStateError') {
-                console.error("ERROR CRÍTICO: Track inválido capturado.", error);
-            } else {
-                console.error("Error capturando/procesando frame:", error);
-            }
-            finalizeMeasurement(); 
-            return; 
-        }
+      if (now - lastProcessTime < FRAME_PROCESSING_INTERVAL_MS) {
+        return; // Not enough time passed, skip processing this frame
       }
+      lastProcessTime = now; // Update time only when we are actually processing
 
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
+      try {
+        if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
+        
+        const frame = await imageCapture.grabFrame();
+        
+        if (!tempCtx) throw new Error("Canvas context lost");
+        const targetWidth = Math.min(320, frame.width);
+        const targetHeight = Math.min(240, frame.height);
+        tempCanvas.width = targetWidth;
+        tempCanvas.height = targetHeight;
+        tempCtx.drawImage(frame, 0, 0, frame.width, frame.height, 0, 0, targetWidth, targetHeight);
+        const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+        
+        processFrame(imageData); 
+
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'InvalidStateError') {
+          console.error("ERROR CRÍTICO: Track inválido capturado.", error);
+        } else {
+          console.error("Error capturando/procesando frame:", error);
+        }
+        finalizeMeasurement(); // Stop on any error during processing
+        return; // Stop loop
       }
     };
 
