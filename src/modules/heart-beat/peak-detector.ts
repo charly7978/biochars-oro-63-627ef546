@@ -27,7 +27,7 @@ export function detectPeak(
   // Reducido para permitir detección más frecuente en ritmos cardíacos rápidos
   if (lastPeakTime !== null) {
     const timeSinceLastPeak = currentTime - lastPeakTime;
-    if (timeSinceLastPeak < config.minPeakTimeMs * 0.8) { // Reducido a 80% del tiempo configurado
+    if (timeSinceLastPeak < config.minPeakTimeMs * 0.75) { // Reducido a 75% del tiempo configurado
       return { isPeak: false, confidence: 0 };
     }
   }
@@ -38,24 +38,24 @@ export function detectPeak(
   // 2. El valor está por encima del umbral de señal
   // 3. El valor anterior también estaba por encima de la línea base
   const isPeak =
-    derivative < config.derivativeThreshold * 0.8 && // Umbral más sensible para la derivada
-    normalizedValue > config.signalThreshold * 0.9 && // Umbral más sensible para la amplitud
-    lastValue > baseline * 0.95; // Comparación con línea base más sensible
+    derivative < config.derivativeThreshold * 0.7 && // Umbral más sensible para la derivada
+    normalizedValue > config.signalThreshold * 0.8 && // Umbral más sensible para la amplitud
+    lastValue > baseline * 0.9; // Comparación con línea base más sensible
 
   // Cálculo mejorado de confianza basado en características de la señal
   // La confianza combina la amplitud de la señal y la fuerza de la derivada
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.5), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.3), 0),
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.7), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.6), 0),
     1
   );
 
   // Ponderación ajustada: amplitud tiene más peso que derivada
-  const confidence = (amplitudeConfidence * 0.7 + derivativeConfidence * 0.3);
+  const confidence = (amplitudeConfidence * 0.8 + derivativeConfidence * 0.2);
 
   return { isPeak, confidence };
 }
@@ -86,17 +86,17 @@ export function confirmPeak(
   let updatedLastConfirmedPeak = lastConfirmedPeak;
 
   // Solo proceder con confirmación de pico si es necesario
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 0.9) { // Umbral de confianza reducido
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence * 0.85) { // Umbral de confianza reducido
     // Necesita suficientes muestras en buffer para confirmación
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
       // Confirmar pico si va seguido de valores decrecientes (pendiente negativa)
       // O si el valor actual es significativamente mayor que los anteriores
-      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2] * 0.98;
-      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3] * 0.98;
-      const isPeakShaped = updatedBuffer[len - 2] > updatedBuffer[len - 3] * 1.05 && 
-                         updatedBuffer[len - 2] > updatedBuffer[len - 1] * 1.05;
+      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2] * 0.97;
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3] * 0.97;
+      const isPeakShaped = updatedBuffer[len - 2] > updatedBuffer[len - 3] * 1.03 && 
+                         updatedBuffer[len - 2] > updatedBuffer[len - 1] * 1.03;
 
       if (goingDown1 || goingDown2 || isPeakShaped) {
         isConfirmedPeak = true;

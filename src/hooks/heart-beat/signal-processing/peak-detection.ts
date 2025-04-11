@@ -11,7 +11,7 @@
  */
 export function shouldProcessMeasurement(value: number): boolean {
   // Umbral más sensible para capturar señales reales mientras filtra ruido
-  return Math.abs(value) >= 0.005; // Umbral reducido para capturar más picos reales
+  return Math.abs(value) >= 0.0025; // Umbral reducido para capturar más picos reales
 }
 
 /**
@@ -54,17 +54,17 @@ export function handlePeakDetection(
   
   // Verificar si ha pasado suficiente tiempo desde el último pico para evitar dobles detecciones
   const timeSinceLastPeak = lastPeakTimeRef.current ? now - lastPeakTimeRef.current : Infinity;
-  const MIN_PEAK_INTERVAL = 250; // Mínimo tiempo entre picos (ms) - evita detecciones múltiples
+  const MIN_PEAK_INTERVAL = 200; // Reducido - mínimo tiempo entre picos (ms) para detectar más latidos
   
   // Actualizar tiempo del pico y solicitar beep si se detectó un pico
   // Reducido el umbral de confianza para detectar más picos
-  if (result.isPeak && result.confidence > 0.03 && timeSinceLastPeak > MIN_PEAK_INTERVAL) {
+  if (result.isPeak && result.confidence > 0.02 && timeSinceLastPeak > MIN_PEAK_INTERVAL) {
     // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
     // Solicitar reproducción de beep con volumen proporcional a la confianza
     if (isMonitoringRef.current) {
-      const beepVolume = Math.min(1.0, result.confidence * 1.5); // Aumenta el volumen para mayor audibilidad
+      const beepVolume = Math.min(1.0, result.confidence * 1.8); // Aumentado para mayor audibilidad
       const beepSuccess = requestBeepCallback(beepVolume);
       
       console.log("Peak-detection: Pico detectado con beep solicitado", {
@@ -95,7 +95,7 @@ export function updateLastValidBpm(
   lastValidBpmRef: React.MutableRefObject<number>
 ): void {
   // Solo actualizar si es un valor razonable de BPM
-  if (result.bpm >= 40 && result.bpm <= 200 && result.confidence >= 0.05) {
+  if (result.bpm >= 40 && result.bpm <= 200 && result.confidence >= 0.03) {
     lastValidBpmRef.current = result.bpm;
   }
 }
