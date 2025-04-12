@@ -1,305 +1,251 @@
-
 /**
  * Web Worker para procesamiento con TensorFlow.js
  * Ejecuta inferencia de modelos en segundo plano
  */
 import * as tf from '@tensorflow/tfjs';
 import { TensorFlowConfig, DEFAULT_TENSORFLOW_CONFIG } from '../core/neural/tensorflow/TensorFlowConfig';
+import { TensorUtils as TensorAdapter } from '../core/neural/tensorflow/TensorAdapter'; // Renombrado para claridad
 
-// Configuración actual
-let config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG;
+// Mapa para almacenar los modelos cargados
+const loadedModels = new Map<string, tf.LayersModel>();
+let currentConfig: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG;
 
-// Caché de modelos
-const modelCache = new Map<string, tf.LayersModel>();
+console.log('TensorFlow Worker: Initializing...');
 
-// Inicializar TensorFlow.js
+// --- Inicialización de TensorFlow ---
 async function initTensorFlow() {
-  try {
-    // Intentar usar el backend configurado
-    await tf.setBackend(config.backend);
-    
-    // Aplicar configuraciones de memoria
-    if (config.memoryOptions.useFloat16) {
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-    }
-    
-    if (config.memoryOptions.enableTensorPacking) {
-      tf.env().set('WEBGL_PACK', true);
-    }
-    
-    console.log(`TensorFlow Worker: Inicializado con backend ${tf.getBackend()}`);
-    
-    self.postMessage({ type: 'init', status: 'ready', backend: tf.getBackend() });
-  } catch (error) {
-    console.error('TensorFlow Worker: Error inicializando TensorFlow.js:', error);
-    self.postMessage({ 
-      type: 'init', 
-      status: 'error', 
-      error: error instanceof Error ? error.message : 'Error desconocido' 
-    });
-    
-    // Intentar fallback a CPU
+    console.log('TensorFlow Worker: Setting backend:', currentConfig.backend);
     try {
-      await tf.setBackend('cpu');
-      console.log('TensorFlow Worker: Fallback a CPU exitoso');
-      self.postMessage({ type: 'init', status: 'ready', backend: 'cpu' });
-    } catch (fbError) {
-      console.error('TensorFlow Worker: Error en fallback a CPU:', fbError);
-    }
-  }
-}
+        await tf.setBackend(currentConfig.backend);
+        await tf.ready();
+        console.log(`TensorFlow Worker: Backend set to ${tf.getBackend()}. Ready.`);
 
-// Cargar un modelo
-async function loadModel(modelType: string): Promise<tf.LayersModel> {
-  // Si ya está en caché, devolverlo
-  if (modelCache.has(modelType)) {
-    return modelCache.get(modelType)!;
-  }
-  
-  try {
-    console.log(`TensorFlow Worker: Cargando modelo ${modelType}`);
-    
-    // Intentar cargar desde IndexedDB
-    const model = await tf.loadLayersModel(`indexeddb://${modelType}-model`)
-      .catch(() => null);
-    
-    if (model) {
-      console.log(`TensorFlow Worker: Modelo ${modelType} cargado desde IndexedDB`);
-      modelCache.set(modelType, model);
-      return model;
-    }
-    
-    // Si no está en IndexedDB, crear modelo básico como fallback
-    console.log(`TensorFlow Worker: Creando modelo fallback para ${modelType}`);
-    const fallbackModel = createFallbackModel(modelType);
-    modelCache.set(modelType, fallbackModel);
-    return fallbackModel;
-  } catch (error) {
-    console.error(`TensorFlow Worker: Error cargando modelo ${modelType}:`, error);
-    throw error;
-  }
-}
-
-// Crear modelo fallback básico
-function createFallbackModel(modelType: string): tf.LayersModel {
-  let inputShape: [number, number] = [300, 1];
-  let outputUnits: number = 1;
-  
-  // Ajustar según tipo de modelo
-  switch (modelType) {
-    case 'heartRate':
-      inputShape = [300, 1];
-      outputUnits = 1;
-      break;
-    case 'spo2':
-      inputShape = [200, 1];
-      outputUnits = 1;
-      break;
-    case 'arrhythmia':
-      inputShape = [500, 1];
-      outputUnits = 2;
-      break;
-    default:
-      inputShape = [300, 1];
-      outputUnits = 1;
-  }
-  
-  // Crear modelo simple
-  const input = tf.input({shape: inputShape});
-  
-  let x = tf.layers.conv1d({
-    filters: 16, 
-    kernelSize: 5,
-    padding: 'same',
-    activation: 'relu'
-  }).apply(input);
-  
-  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
-  
-  x = tf.layers.conv1d({
-    filters: 32, 
-    kernelSize: 3,
-    padding: 'same',
-    activation: 'relu'
-  }).apply(x);
-  
-  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
-  
-  x = tf.layers.flatten().apply(x);
-  x = tf.layers.dense({units: 64, activation: 'relu'}).apply(x);
-  x = tf.layers.dropout({rate: 0.3}).apply(x);
-  
-  const output = tf.layers.dense({
-    units: outputUnits,
-    activation: outputUnits > 1 ? 'softmax' : 'linear'
-  }).apply(x);
-  
-  const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
-  
-  model.compile({
-    optimizer: 'adam',
-    loss: outputUnits > 1 ? 'categoricalCrossentropy' : 'meanSquaredError'
-  });
-  
-  return model;
-}
-
-// Realizar predicción
-async function predict(modelType: string, inputData: number[]): Promise<number[]> {
-  try {
-    const model = await loadModel(modelType);
-    
-    // Preparar input según tipo de modelo
-    let tensor;
-    if (modelType === 'arrhythmia') {
-      // Para modelos que requieren entrada 2D
-      tensor = tf.tensor2d([inputData], [1, inputData.length]);
-    } else {
-      // Para modelos convolucionales que requieren entrada 3D
-      const reshapedInput: number[][][] = [];
-      const row: number[][] = [];
-      
-      // Crear estructura 3D adecuada: [1, inputData.length, 1]
-      for (let i = 0; i < inputData.length; i++) {
-        row.push([inputData[i]]);
-      }
-      reshapedInput.push(row);
-      
-      tensor = tf.tensor3d(reshapedInput);
-    }
-    
-    // Realizar predicción
-    const result = model.predict(tensor) as tf.Tensor;
-    const prediction = await result.data();
-    
-    // Limpiar tensores
-    tensor.dispose();
-    result.dispose();
-    
-    return Array.from(prediction);
-  } catch (error) {
-    console.error(`TensorFlow Worker: Error en predicción con modelo ${modelType}:`, error);
-    throw error;
-  }
-}
-
-// Configurar TensorFlow.js
-function setConfig(newConfig: TensorFlowConfig): void {
-  config = newConfig;
-  
-  // Aplicar cambios que no requieran reinicio
-  if (tf.getBackend()) {
-    if (config.memoryOptions.useFloat16) {
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-    } else {
-      tf.env().set('WEBGL_FORCE_F16_TEXTURES', false);
-    }
-    
-    if (config.memoryOptions.enableTensorPacking) {
-      tf.env().set('WEBGL_PACK', true);
-    } else {
-      tf.env().set('WEBGL_PACK', false);
-    }
-  }
-}
-
-// Liberar modelo
-async function disposeModel(modelType: string): Promise<boolean> {
-  if (modelCache.has(modelType)) {
-    const model = modelCache.get(modelType)!;
-    model.dispose();
-    modelCache.delete(modelType);
-    return true;
-  }
-  return false;
-}
-
-// Manejar mensajes
-self.addEventListener('message', async (e: MessageEvent) => {
-  const { id, type, data } = e.data;
-  
-  try {
-    switch (type) {
-      case 'init':
-        await initTensorFlow();
-        break;
-        
-      case 'setConfig':
-        setConfig(data.config);
-        self.postMessage({ id, type: 'configSet' });
-        break;
-        
-      case 'loadModel':
-        try {
-          await loadModel(data.modelType);
-          self.postMessage({ id, type: 'modelLoaded', modelType: data.modelType });
-        } catch (error) {
-          self.postMessage({ 
-            id, 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error desconocido',
-            modelType: data.modelType
-          });
+        // Aplicar configuraciones de memoria y avanzadas
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', currentConfig.memoryOptions.useFloat16);
+        tf.env().set('WEBGL_PACK', currentConfig.memoryOptions.enableTensorPacking);
+        if (currentConfig.memoryOptions.gpuMemoryLimitMB > 0 && (currentConfig.backend === 'webgl' || currentConfig.backend === 'webgpu')) {
+            // Nota: La limitación directa de memoria no es una API estándar de TFJS.
+            // Se pueden necesitar workarounds o simplemente monitorear el uso.
+             console.warn(`TensorFlow Worker: GPU Memory Limit (${currentConfig.memoryOptions.gpuMemoryLimitMB}MB) is indicative, direct limiting not standard.`);
         }
-        break;
-        
-      case 'predict':
-        try {
-          const result = await predict(data.modelType, data.input);
-          self.postMessage({ id, type: 'result', result });
-        } catch (error) {
-          self.postMessage({ 
-            id, 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error desconocido' 
-          });
+         if (currentConfig.advancedOptions.parallelismLevel > 0) {
+             // Nota: El paralelismo a nivel de TFJS suele ser gestionado por el backend.
+             console.warn(`TensorFlow Worker: Parallelism level (${currentConfig.advancedOptions.parallelismLevel}) suggestion noted, backend handles actual parallelism.`);
+         }
+         if (currentConfig.advancedOptions.enableDebugMode) {
+            tf.enableDebugMode();
+            console.log("TensorFlow Worker: Debug mode enabled.");
+         }
+
+        postMessage({ type: 'initComplete', success: true });
+    } catch (error) {
+        console.error('TensorFlow Worker: Backend initialization failed:', error);
+        postMessage({ type: 'initComplete', success: false, error: error.message });
+        // Intentar con CPU como último recurso si falla el backend preferido
+        if (currentConfig.backend !== 'cpu') {
+            console.log('TensorFlow Worker: Trying CPU backend as fallback...');
+            currentConfig.backend = 'cpu';
+            await initTensorFlow(); // Reintentar con CPU
         }
-        break;
-        
-      case 'disposeModel':
-        try {
-          const disposed = await disposeModel(data.modelType);
-          self.postMessage({ 
-            id, 
-            type: 'modelDisposed', 
-            modelType: data.modelType,
-            success: disposed
-          });
-        } catch (error) {
-          self.postMessage({ 
-            id, 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error desconocido' 
-          });
-        }
-        break;
-        
-      case 'getMemoryInfo':
-        const memoryInfo = tf.memory();
-        self.postMessage({ id, type: 'memoryInfo', info: memoryInfo });
-        break;
-        
-      case 'cleanupMemory':
-        tf.disposeVariables();
-        tf.engine().startScope(); // Start fresh scope
-        self.postMessage({ id, type: 'memoryCleanup', success: true });
-        break;
-        
-      default:
-        self.postMessage({ 
-          id, 
-          type: 'error', 
-          error: `Tipo de mensaje desconocido: ${type}` 
+    }
+}
+
+// --- Carga de Modelos ---
+async function loadModel(modelType: string): Promise<tf.LayersModel | null> {
+    if (loadedModels.has(modelType)) {
+        console.log(`TensorFlow Worker: Model ${modelType} already loaded.`);
+        return loadedModels.get(modelType)!;
+    }
+
+    // TODO: Implementar lógica real de carga de modelos
+    // Esto debería cargar modelos pre-entrenados desde una URL o almacenamiento local.
+    // La URL podría depender del modelType.
+    const modelUrl = `/models/${modelType}/model.json`; // Ejemplo de ruta
+    console.log(`TensorFlow Worker: Loading model ${modelType} from ${modelUrl}...`);
+
+    try {
+        // tf.loadGraphModel es generalmente para modelos convertidos desde TF/Keras SavedModel
+        // tf.loadLayersModel es para modelos guardados en formato Keras JSON
+        const model = await tf.loadLayersModel(modelUrl, {
+             strict: true, // Asegura que los pesos coincidan con la arquitectura
+             // Considerar requestInit para caché si el servidor lo soporta
+             // requestInit: { cache: 'force-cache' } // Si se usa caché del navegador
         });
+        console.log(`TensorFlow Worker: Model ${modelType} loaded successfully.`);
+        loadedModels.set(modelType, model);
+        return model;
+    } catch (error) {
+        console.error(`TensorFlow Worker: Failed to load real model ${modelType} from ${modelUrl}:`, error);
+        // Propagar el error al cliente, no crear fallback
+        throw new Error(`Failed to load model ${modelType}: ${error.message}`);
     }
-  } catch (error) {
-    self.postMessage({ 
-      id, 
-      type: 'error', 
-      error: error instanceof Error ? error.message : 'Error desconocido' 
-    });
-  }
-});
+}
 
-// Inicializar al cargar
-initTensorFlow();
+// --- Predicción ---
+async function predict(modelType: string, inputData: number[]): Promise<number[]> {
+    let model = loadedModels.get(modelType);
+
+    if (!model) {
+        console.log(`TensorFlow Worker: Model ${modelType} not loaded. Attempting to load...`);
+        model = await loadModel(modelType);
+        if (!model) {
+             // Si loadModel ahora lanza error, esto podría no alcanzarse, pero es seguro mantenerlo
+             console.error(`TensorFlow Worker: Prediction failed, model ${modelType} could not be loaded.`);
+             throw new Error(`Prediction failed: Model ${modelType} could not be loaded.`);
+        }
+    }
+
+    console.log(`TensorFlow Worker: Predicting with model ${modelType}...`);
+    const startTime = performance.now();
+
+    try {
+        // Preprocesamiento: Adaptar según las necesidades del modelo REAL
+        // El tamaño de entrada debe coincidir con lo esperado por el modelo cargado.
+        // Obtener inputShape del modelo cargado si es necesario para el preprocesamiento.
+        const inputShape = model.inputs[0].shape; // ej: [null, 100, 1] -> necesitamos 100
+        const requiredInputLength = inputShape.length > 1 ? inputShape[1] : 100; // Asume que la longitud está en la segunda dimensión
+
+        let inputTensor: tf.Tensor;
+        // Adaptar preprocesamiento según el tipo de modelo o su arquitectura
+        if (model.layers.some(layer => layer.getClassName().includes('Conv1D'))) {
+             inputTensor = TensorAdapter.preprocessForConv1D(inputData, requiredInputLength || 128); // Usar longitud requerida
+        } else {
+            inputTensor = TensorAdapter.preprocessForTensorFlow(inputData, requiredInputLength || 100); // Usar longitud requerida
+        }
+
+        // Realizar predicción
+        const prediction = model.predict(inputTensor) as tf.Tensor;
+        const outputData = await prediction.data();
+
+        // Limpieza de tensores
+        inputTensor.dispose();
+        prediction.dispose();
+
+        const endTime = performance.now();
+        console.log(`TensorFlow Worker: Prediction for ${modelType} took ${(endTime - startTime).toFixed(2)} ms.`);
+
+        // Asegurarse de devolver un Array<number>
+        return Array.from(outputData);
+    } catch (error) {
+        console.error(`TensorFlow Worker: Prediction failed for model ${modelType}:`, error);
+        // Ya no intenta usar fallback, simplemente lanza el error
+        throw new Error(`Prediction failed for model ${modelType}: ${error.message}`);
+    }
+}
+
+// --- Gestión de Configuración ---
+function setConfig(newConfig: TensorFlowConfig): void {
+    console.log('TensorFlow Worker: Updating configuration...');
+    // Fusionar la nueva configuración con la existente o por defecto
+     currentConfig = {
+        ...DEFAULT_TENSORFLOW_CONFIG, // Empezar con los defaults
+        ...currentConfig, // Sobrescribir con la actual
+        ...newConfig, // Sobrescribir con la nueva parcial
+        // Asegurar que los objetos anidados se fusionen correctamente
+        memoryOptions: {
+            ...DEFAULT_TENSORFLOW_CONFIG.memoryOptions,
+            ...currentConfig.memoryOptions,
+            ...newConfig.memoryOptions,
+        },
+        cacheOptions: {
+             ...DEFAULT_TENSORFLOW_CONFIG.cacheOptions,
+             ...currentConfig.cacheOptions,
+             ...newConfig.cacheOptions,
+        },
+        loadOptions: {
+            ...DEFAULT_TENSORFLOW_CONFIG.loadOptions,
+            ...currentConfig.loadOptions,
+            ...newConfig.loadOptions,
+        },
+        calibrationOptions: {
+             ...DEFAULT_TENSORFLOW_CONFIG.calibrationOptions,
+             ...currentConfig.calibrationOptions,
+             ...newConfig.calibrationOptions,
+        },
+         advancedOptions: {
+            ...DEFAULT_TENSORFLOW_CONFIG.advancedOptions,
+            ...currentConfig.advancedOptions,
+            ...newConfig.advancedOptions,
+         }
+    };
+    console.log('TensorFlow Worker: Configuration updated:', currentConfig);
+    // Re-inicializar TF si el backend cambió? Podría ser disruptivo.
+    // Por ahora, solo actualiza la config. El backend se aplica en initTensorFlow.
+}
+
+// --- Limpieza ---
+async function disposeModel(modelType: string): Promise<boolean> {
+    const model = loadedModels.get(modelType);
+    if (model) {
+        console.log(`TensorFlow Worker: Disposing model ${modelType}...`);
+        model.dispose();
+        loadedModels.delete(modelType);
+        console.log(`TensorFlow Worker: Model ${modelType} disposed.`);
+        return true;
+    } else {
+        console.log(`TensorFlow Worker: Model ${modelType} not found for disposal.`);
+        return false;
+    }
+}
+
+async function cleanupMemory() {
+     console.log('TensorFlow Worker: Cleaning up memory (disposing all models)...');
+     loadedModels.forEach((model, key) => {
+         model.dispose();
+         console.log(`TensorFlow Worker: Disposed model ${key}`);
+     });
+     loadedModels.clear();
+     tf.disposeVariables(); // Eliminar variables globales si las hubiera
+     console.log('TensorFlow Worker: All models disposed.');
+}
+
+// --- Manejador de Mensajes ---
+self.onmessage = async (e: MessageEvent) => {
+    const { type, id, data } = e.data;
+    console.log('TensorFlow Worker: Received message:', type, 'ID:', id);
+
+    try {
+        switch (type) {
+            case 'init':
+                setConfig(data.config || DEFAULT_TENSORFLOW_CONFIG); // Establecer config antes de inicializar
+                await initTensorFlow();
+                // La respuesta se envía dentro de initTensorFlow
+                break;
+            case 'setConfig':
+                 setConfig(data.config);
+                 postMessage({ type: 'setConfigComplete', id, success: true });
+                 break;
+            case 'loadModel':
+                await loadModel(data.modelType);
+                postMessage({ type: 'loadComplete', id, success: true, modelType: data.modelType });
+                break;
+            case 'predict':
+                const result = await predict(data.modelType, data.input);
+                postMessage({ type: 'predictComplete', id, result });
+                break;
+            case 'disposeModel':
+                await disposeModel(data.modelType);
+                postMessage({ type: 'disposeComplete', id, success: true, modelType: data.modelType });
+                break;
+             case 'cleanupMemory':
+                 await cleanupMemory();
+                 postMessage({ type: 'cleanupComplete', id, success: true });
+                 break;
+             case 'getMemoryInfo':
+                  const memoryInfo = tf.memory();
+                  postMessage({ type: 'memoryInfo', id, memoryInfo });
+                  break;
+
+            default:
+                console.warn('TensorFlow Worker: Unknown message type:', type);
+                 postMessage({ type: 'error', id, error: `Unknown message type: ${type}` });
+        }
+    } catch (error) {
+        console.error('TensorFlow Worker: Error processing message:', type, 'ID:', id, error);
+        postMessage({ type: 'error', id, error: error.message || 'Unknown worker error', modelType: data?.modelType });
+    }
+};
+
+// Indicar que el worker está listo para recibir mensajes (opcional)
+console.log('TensorFlow Worker: Ready for messages.');
+postMessage({ type: 'workerReady' });

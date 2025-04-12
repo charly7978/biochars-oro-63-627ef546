@@ -4,6 +4,9 @@ import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
 export class PPGProcessor {
+  reset() {
+    throw new Error("Method not implemented.");
+  }
   // Configuración unificada con valores optimizados
   private readonly CONFIG = {
     BUFFER_SIZE: 15,
