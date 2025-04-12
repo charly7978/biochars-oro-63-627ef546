@@ -129,8 +129,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           triglycerides: 0
         },
         hemoglobin: 0,
-        hydration: 0,
-        heartRate: 0
+        hydration: 0
       };
     }
   };
@@ -158,21 +157,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
     clearLog();
-  };
-
-  // Safe fallback values including required heartRate property
-  const safeResult: VitalSignsResult = {
-    spo2: 0,
-    pressure: "--/--",
-    arrhythmiaStatus: "--",
-    glucose: 0,
-    lipids: {
-      totalCholesterol: 0,
-      triglycerides: 0
-    },
-    hemoglobin: 0,
-    hydration: 0,
-    heartRate: 0
   };
 
   return {
