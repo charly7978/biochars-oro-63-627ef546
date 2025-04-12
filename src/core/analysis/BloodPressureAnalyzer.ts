@@ -28,7 +28,7 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
   
   constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
     super(userProfile, settings);
-    this.startMeasurement();
+    this.reset();
   }
   
   /**
@@ -229,7 +229,7 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
    * Reset the analyzer
    */
   public reset(): void {
-    this.calibrationFactor = 1.0;
+    super.reset();
     this.startMeasurement();
     this.lastValidMeasurement = null;
   }
