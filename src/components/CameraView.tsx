@@ -71,18 +71,45 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
+      const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
-      // --- Simplified Base Constraints for Stability Testing ---
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 640 },   // Lower resolution
-        height: { ideal: 480 },  // Lower resolution
-        frameRate: { ideal: 30 } // Consistent frame rate
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       };
-      console.log("Using simplified camera constraints for testing: 640x480 @ 30fps");
-      // --- End Simplified Constraints ---
+
+      if (isAndroid) {
+        console.log("Configurando para Android");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30, max: 60 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        });
+      } else if (isIOS) {
+        console.log("Configurando para iOS");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
+      } else if (isWindows) {
+        console.log("Configurando para Windows con resolución reducida (720p)");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 30, max: 60 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        });
+      } else {
+        console.log("Configurando para escritorio con máxima resolución");
+        Object.assign(baseVideoConstraints, {
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        });
+      }
 
       const constraints: MediaStreamConstraints = {
         video: baseVideoConstraints,
@@ -100,36 +127,78 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          // Wait a bit before applying torch (or other constraints)
-          await new Promise(resolve => setTimeout(resolve, 500)); 
+          await new Promise(resolve => setTimeout(resolve, 500));
           
-          // --- Apply ONLY Torch constraint (TEMP: Disabled for testing) --- 
-          /* // Temporarily commented out torch logic
-          if (capabilities.torch) {
-              console.log("Intentando activar linterna... (TEMP DISABLED)");
-              // try {
-              //      await videoTrack.applyConstraints({
-              //          advanced: [{ torch: true }]
-              //      });
-              //      setTorchEnabled(true);
-              //      console.log("Linterna activada.");
-              // } catch (torchErr) {
-              //      console.error("Error al activar linterna:", torchErr);
-              // }
+          const advancedConstraints: MediaTrackConstraintSet[] = [];
+          
+          if (isAndroid) {
+            try {
+              if (capabilities.torch) {
+                console.log("Activando linterna en Android");
+                await videoTrack.applyConstraints({
+                  advanced: [{ torch: true }]
+                });
+                setTorchEnabled(true);
+              }
+            } catch (err) {
+              console.error("Error al activar linterna en Android:", err);
+            }
           } else {
-              console.log("La linterna no está disponible en este dispositivo.");
+            if (capabilities.exposureMode) {
+              const exposureConstraint: MediaTrackConstraintSet = { 
+                exposureMode: 'continuous' 
+              };
+              
+              if (capabilities.exposureCompensation?.max) {
+                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+              }
+              
+              advancedConstraints.push(exposureConstraint);
+            }
+            
+            if (capabilities.focusMode) {
+              advancedConstraints.push({ focusMode: 'continuous' });
+            }
+            
+            if (capabilities.whiteBalanceMode) {
+              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+            }
+            
+            if (capabilities.brightness && capabilities.brightness.max) {
+              const maxBrightness = capabilities.brightness.max;
+              advancedConstraints.push({ brightness: maxBrightness * 0.2 });
+            }
+            
+            if (capabilities.contrast && capabilities.contrast.max) {
+              const maxContrast = capabilities.contrast.max;
+              advancedConstraints.push({ contrast: maxContrast * 0.6 });
+            }
+
+            if (advancedConstraints.length > 0) {
+              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+              await videoTrack.applyConstraints({
+                advanced: advancedConstraints
+              });
+            }
+
+            if (capabilities.torch) {
+              console.log("Activando linterna para mejorar la señal PPG");
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              setTorchEnabled(true);
+            } else {
+              console.log("La linterna no está disponible en este dispositivo");
+            }
           }
-          */ // --- End TEMP Torch Disabled ---
-          // --- End Torch only --- 
           
-          // Style optimizations (can keep these)
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
           
         } catch (err) {
-          console.log("Error aplicando constraints iniciales (posiblemente linterna):", err);
+          console.log("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
@@ -204,27 +273,24 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    // --- TEMP: Disable Torch/Focus logic triggered by finger detection ---
-    /* // Commented out the entire effect for stability testing
     if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo (TEMP DISABLED)");
-        // videoTrack.applyConstraints({
-        //   advanced: [{ torch: true }]
-        // }).then(() => {
-        //   setTorchEnabled(true);
-        // }).catch(err => {
-        //   console.error("Error activando linterna:", err);
-        // });
+        console.log("Activando linterna después de detectar dedo");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => {
+          setTorchEnabled(true);
+        }).catch(err => {
+          console.error("Error activando linterna:", err);
+        });
       }
     }
     
     if (isFingerDetected && !isAndroid) {
-      // const focusInterval = setInterval(refreshAutoFocus, 5000); // Disable auto-focus refresh
-      // return () => clearInterval(focusInterval);
+      const focusInterval = setInterval(refreshAutoFocus, 5000);
+      return () => clearInterval(focusInterval);
     }
-    */ // --- End TEMP Disable --- 
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
   const targetFrameInterval = isAndroid ? 1000/10 : 
