@@ -71,91 +71,18 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      // Check if permissions API is available and permissions can be queried
-      if (navigator.permissions && navigator.permissions.query) {
-        try {
-          // Try to query camera permission state
-          const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
-          
-          if (permissionStatus.state === 'denied') {
-            throw new Error('Camera permission denied. Please allow camera access in your browser settings.');
-          }
-        } catch (permError) {
-          // Some browsers might not support permissions API for camera
-          console.warn("Could not check camera permissions:", permError);
-        }
-      }
-
-      // Some browsers (particularly Chrome) may fail specifically with "Permissions check failed"
-      // This happens with sites served over HTTP instead of HTTPS, or with iframes
-      // Let's add a specific message for these cases
-      try {
-        await new Promise<void>((resolve, reject) => {
-          // Timeout to handle browsers that hang on permissions
-          const timeoutId = setTimeout(() => {
-            reject(new Error("Permission request timed out. This might be due to cross-origin restrictions."));
-          }, 3000);
-          
-          // Try a simple permission request
-          navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-            .then(testStream => {
-              // Stop all tracks from test stream immediately
-              testStream.getTracks().forEach(track => track.stop());
-              clearTimeout(timeoutId);
-              resolve();
-            })
-            .catch(err => {
-              clearTimeout(timeoutId);
-              reject(err);
-            });
-        });
-      } catch (permissionError) {
-        // If there's a specific "Permissions check failed" error, we handle it
-        if (permissionError.message && permissionError.message.includes("Permissions check failed")) {
-          console.error("Permissions check failed error detected:", permissionError);
-          throw new Error("El navegador ha detectado un problema de permisos. Si está usando una conexión HTTP, intente con HTTPS, o si está en un iframe, intente acceder directamente a la aplicación.");
-        }
-      }
-
-      const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
 
+      // --- Simplified Base Constraints for Stability Testing ---
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: 640 },   // Lower resolution
+        height: { ideal: 480 },  // Lower resolution
+        frameRate: { ideal: 30 } // Consistent frame rate
       };
-
-      if (isAndroid) {
-        console.log("Configurando para Android");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else if (isIOS) {
-        console.log("Configurando para iOS");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      } else if (isWindows) {
-        console.log("Configurando para Windows con resolución reducida (720p)");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else {
-        console.log("Configurando para escritorio con máxima resolución");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      }
+      console.log("Using simplified camera constraints for testing: 640x480 @ 30fps");
+      // --- End Simplified Constraints ---
 
       const constraints: MediaStreamConstraints = {
         video: baseVideoConstraints,
@@ -163,21 +90,8 @@ const CameraView = ({
       };
 
       console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
-      
-      // First try with preferred constraints
-      let newStream: MediaStream;
-      try {
-        newStream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log("Cámara inicializada correctamente con configuración óptima");
-      } catch (constraintError) {
-        console.warn("Failed to get camera with optimal constraints, trying with minimal settings:", constraintError);
-        // Fallback to basic constraints if detailed ones fail
-        newStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment' }, 
-          audio: false 
-        });
-        console.log("Cámara inicializada con configuración mínima");
-      }
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Cámara inicializada correctamente");
       
       const videoTrack = newStream.getVideoTracks()[0];
 
@@ -186,78 +100,34 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Wait a bit before applying torch
+          await new Promise(resolve => setTimeout(resolve, 500)); 
           
-          const advancedConstraints: MediaTrackConstraintSet[] = [];
-          
-          if (isAndroid) {
-            try {
-              if (capabilities.torch) {
-                console.log("Activando linterna en Android");
-                await videoTrack.applyConstraints({
-                  advanced: [{ torch: true }]
-                });
-                setTorchEnabled(true);
+          // --- Apply ONLY Torch constraint --- 
+          if (capabilities.torch) {
+              console.log("Intentando activar linterna...");
+              try {
+                   await videoTrack.applyConstraints({
+                       advanced: [{ torch: true }]
+                   });
+                   setTorchEnabled(true);
+                   console.log("Linterna activada.");
+              } catch (torchErr) {
+                   console.error("Error al activar linterna:", torchErr);
               }
-            } catch (err) {
-              console.error("Error al activar linterna en Android:", err);
-            }
           } else {
-            if (capabilities.exposureMode) {
-              const exposureConstraint: MediaTrackConstraintSet = { 
-                exposureMode: 'continuous' 
-              };
-              
-              if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
-              }
-              
-              advancedConstraints.push(exposureConstraint);
-            }
-            
-            if (capabilities.focusMode) {
-              advancedConstraints.push({ focusMode: 'continuous' });
-            }
-            
-            if (capabilities.whiteBalanceMode) {
-              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-            }
-            
-            if (capabilities.brightness && capabilities.brightness.max) {
-              const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.2 });
-            }
-            
-            if (capabilities.contrast && capabilities.contrast.max) {
-              const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
-            }
-
-            if (advancedConstraints.length > 0) {
-              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              await videoTrack.applyConstraints({
-                advanced: advancedConstraints
-              });
-            }
-
-            if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
-              await videoTrack.applyConstraints({
-                advanced: [{ torch: true }]
-              });
-              setTorchEnabled(true);
-            } else {
-              console.log("La linterna no está disponible en este dispositivo");
-            }
+              console.log("La linterna no está disponible en este dispositivo.");
           }
+          // --- End Torch only --- 
           
+          // Style optimizations (can keep these)
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
           
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.log("Error aplicando constraints iniciales (posiblemente linterna):", err);
         }
       }
 
@@ -280,20 +150,8 @@ const CameraView = ({
       
       retryAttemptsRef.current = 0;
       
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error al iniciar la cámara:", err);
-      
-      // Display more specific error messages
-      const errorMessage = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || 
-                          (err.message && err.message.includes('Permission'))
-                          ? 'Permiso de cámara denegado. Por favor, permita el acceso a la cámara en la configuración del navegador.'
-                          : `Error de cámara: ${err.message || 'Error desconocido'}`;
-      
-      // Dispatch a custom event that can be caught by the parent component
-      const permissionErrorEvent = new CustomEvent('cameraPermissionError', { 
-        detail: { error: err, message: errorMessage } 
-      });
-      window.dispatchEvent(permissionErrorEvent);
       
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
@@ -301,12 +159,6 @@ const CameraView = ({
         setTimeout(startCamera, 1000);
       } else {
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
-        
-        // Dispatch max retries event
-        const maxRetriesEvent = new CustomEvent('cameraMaxRetriesReached', { 
-          detail: { error: err, message: errorMessage } 
-        });
-        window.dispatchEvent(maxRetriesEvent);
       }
     }
   };
