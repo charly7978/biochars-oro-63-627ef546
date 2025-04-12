@@ -42,11 +42,14 @@ const Index = () => {
   } = useSignalProcessor();
 
   const { 
-    processSignal: processHeartBeat, 
+    processSignal: processHeartBeat,
+    reset: resetHeartBeatProcessor,
+    currentBPM,
+    confidence,
     isArrhythmia: heartBeatIsArrhythmia,
+    requestBeep,
     startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
+    stopMonitoring: stopHeartBeatMonitoring
   } = useHeartBeatProcessor();
   
   const { 
@@ -175,6 +178,7 @@ const Index = () => {
     setIsCameraOn(true);
     setIsMonitoring(true);
     startSignalProcessing();
+    startHeartBeatMonitoring();
     
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
@@ -194,6 +198,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopSignalProcessing();
+    stopHeartBeatMonitoring();
     processorActive.current = false;
     
     if (stream) {
@@ -216,6 +221,7 @@ const Index = () => {
     console.log("Resetting application state...");
     stopMonitoring();
     fullResetVitalSigns();
+    resetHeartBeatProcessor();
     setVitalSigns(ResultFactory.createEmptyResults());
     setHeartRate("--");
     setSignalQuality(0);
@@ -343,16 +349,6 @@ const Index = () => {
     } else {
       startMonitoring();
     }
-  };
-
-  const getHydrationColor = (hydration) => {
-    if (hydration >= 80)
-      return 'text-blue-500';
-    if (hydration >= 65)
-      return 'text-green-500';
-    if (hydration >= 50)
-      return 'text-yellow-500';
-    return 'text-red-500';
   };
 
   return (
