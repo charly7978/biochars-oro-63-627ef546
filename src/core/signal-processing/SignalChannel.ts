@@ -1,3 +1,4 @@
+
 /**
  * Signal Channel - Represents a specialized processing channel for a specific vital sign
  */
@@ -106,7 +107,8 @@ export class SignalChannel {
    */
   public getLastMetadata(): any {
     if (this.values.length === 0) return null;
-    return this.metadata.get(this.values.length - 1);
+    const lastTimestamp = this.values.length - 1;
+    return this.metadata.get(lastTimestamp.toString());
   }
   
   /**
@@ -252,11 +254,11 @@ export class SignalChannel {
     this.values = this.values.slice(excess);
     
     // Actualizar metadata
-    const newMetadata = new Map();
+    const newMetadata = new Map<string, ChannelMetadata>();
     this.metadata.forEach((value, key) => {
-      if (typeof key === 'number' && key >= excess) {
-        newMetadata.set(key - excess, value);
-      } else if (typeof key === 'string') {
+      if (!isNaN(parseInt(key)) && parseInt(key) >= excess) {
+        newMetadata.set((parseInt(key) - excess).toString(), value);
+      } else {
         newMetadata.set(key, value);
       }
     });

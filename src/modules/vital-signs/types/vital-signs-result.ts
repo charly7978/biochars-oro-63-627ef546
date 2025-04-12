@@ -1,4 +1,3 @@
-
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -8,6 +7,9 @@ export interface VitalSignsResult {
   
   // Blood pressure in format "systolic/diastolic"
   pressure: string;
+  
+  // Heart rate in beats per minute
+  heartRate: number;
   
   // Arrhythmia detection status
   arrhythmiaStatus: string;
