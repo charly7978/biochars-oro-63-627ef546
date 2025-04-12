@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -28,9 +27,14 @@ const Index = () => {
     hydration: 0
   });
   const [heartRate, setHeartRate] = useState(0);
+  const [heartRateDisplay, setHeartRateDisplay] = useState<number | string>("--");
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
+  const arrhythmiaTimer = useRef<NodeJS.Timeout | null>(null);
+  const bpmCache = useRef<number[]>([]);
+  const lastSignalRef = useRef<any>(null);
+  const lastVibratedBpmRef = useRef<number>(0);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -106,6 +110,26 @@ const Index = () => {
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+
+  useEffect(() => {
+    const newHeartRate = heartRate;
+
+    if (newHeartRate && newHeartRate > 0) {
+      setHeartRate(newHeartRate);
+
+      if (newHeartRate !== lastVibratedBpmRef.current) {
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        lastVibratedBpmRef.current = newHeartRate;
+      }
+    } else if (!isMonitoring && showResults) {
+      setHeartRateDisplay("--");
+    } else {
+      setHeartRate(0);
+      lastVibratedBpmRef.current = 0;
+    }
+  }, [heartRate, isMonitoring, showResults]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -338,7 +362,7 @@ const Index = () => {
               <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
-                  value={heartRate || "--"}
+                  value={heartRateDisplay || "--"}
                   unit="BPM"
                   highlighted={showResults}
                   compact={false}
