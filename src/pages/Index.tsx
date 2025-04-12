@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -9,35 +10,32 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
-import { Camera } from "lucide-react";
-import { finalResultProcessor } from '@/core/measurement/FinalResultProcessor';
-import { ResultFactory } from '@/modules/vital-signs/factories/ResultFactory';
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>(() => ResultFactory.createEmptyResults());
-  const [heartRate, setHeartRate] = useState<number | string>("--");
   const [signalQuality, setSignalQuality] = useState(0);
-  const [isArrhythmia, setIsArrhythmia] = useState(false);
+  const [vitalSigns, setVitalSigns] = useState<VitalSignsResult>({
+    spo2: 0,
+    pressure: "--/--",
+    arrhythmiaStatus: "--",
+    glucose: 0,
+    lipids: {
+      totalCholesterol: 0,
+      triglycerides: 0
+    },
+    hemoglobin: 0,
+    hydration: 0
+  });
+  const [heartRate, setHeartRate] = useState(0);
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const measurementTimer = useRef<NodeJS.Timeout | null>(null);
-  const arrhythmiaTimer = useRef<NodeJS.Timeout | null>(null);
-  const bpmCache = useRef<number[]>([]);
-  const lastSignalRef = useRef<any>(null);
-
-  const {
-    startProcessing: startSignalProcessing,
-    stopProcessing: stopSignalProcessing,
-    processFrame,
-    lastSignal,
-    error: processingError
-  } = useSignalProcessor();
-
+  const measurementTimerRef = useRef<number | null>(null);
+  
+  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
-    isArrhythmia: heartBeatIsArrhythmia,
+    isArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
@@ -109,70 +107,94 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
-  useEffect(() => {
-    if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
-      setHeartRate(vitalSigns.heartRate);
-    } else if (!isMonitoring) {
-      if (!showResults) {
-        setHeartRate("--");
-      }
-    } else {
-      setHeartRate("--");
-    }
-  }, [vitalSigns.heartRate, isMonitoring, showResults]);
-
   const startMonitoring = () => {
-    console.log("Starting monitoring...");
-    setVitalSigns(ResultFactory.createEmptyResults());
-    setShowResults(false);
-    setIsArrhythmia(false);
-    bpmCache.current = [];
-    setIsCameraOn(true);
-    setIsMonitoring(true);
-    startSignalProcessing();
-    if (measurementTimer.current) clearTimeout(measurementTimer.current);
-    measurementTimer.current = setTimeout(() => {
-      console.log("30 second measurement timer elapsed.");
+    if (isMonitoring) {
       finalizeMeasurement();
-    }, 30000);
+    } else {
+      enterFullScreen();
+      setIsMonitoring(true);
+      setIsCameraOn(true);
+      setShowResults(false);
+      setHeartRate(0);
+      
+      startProcessing();
+      startHeartBeatMonitoring();
+      
+      setElapsedTime(0);
+      
+      if (measurementTimerRef.current) {
+        clearInterval(measurementTimerRef.current);
+      }
+      
+      measurementTimerRef.current = window.setInterval(() => {
+        setElapsedTime(prev => {
+          const newTime = prev + 1;
+          console.log(`Tiempo transcurrido: ${newTime}s`);
+          
+          if (newTime >= 30) {
+            finalizeMeasurement();
+            return 30;
+          }
+          return newTime;
+        });
+      }, 1000);
+    }
   };
 
   const finalizeMeasurement = () => {
-    if (!isMonitoring) return;
-    console.log("Finalizing measurement...");
-    setShowResults(true);
-    stopMonitoring();
-  };
-
-  const stopMonitoring = () => {
+    console.log("Finalizando medición");
+    
     setIsMonitoring(false);
     setIsCameraOn(false);
-    stopSignalProcessing();
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
+    stopProcessing();
+    stopHeartBeatMonitoring();
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
     }
-    if (measurementTimer.current) {
-      clearTimeout(measurementTimer.current);
-      measurementTimer.current = null;
+    
+    const savedResults = resetVitalSigns();
+    if (savedResults) {
+      setVitalSigns(savedResults);
+      setShowResults(true);
     }
-    if (arrhythmiaTimer.current) {
-      clearTimeout(arrhythmiaTimer.current);
-      arrhythmiaTimer.current = null;
-    }
+    
+    setElapsedTime(0);
+    setSignalQuality(0);
+    setHeartRate(0);
   };
 
   const handleReset = () => {
-    console.log("Resetting application state...");
-    stopMonitoring();
-    fullResetVitalSigns();
-    setVitalSigns(ResultFactory.createEmptyResults());
-    setHeartRate("--");
-    setSignalQuality(0);
-    setIsArrhythmia(false);
+    console.log("Reseteando completamente la aplicación");
+    setIsMonitoring(false);
+    setIsCameraOn(false);
     setShowResults(false);
-    if (measurementTimer.current) clearTimeout(measurementTimer.current);
-    if (arrhythmiaTimer.current) clearTimeout(arrhythmiaTimer.current);
+    stopProcessing();
+    stopHeartBeatMonitoring();
+    resetHeartBeatProcessor();
+    
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
+      measurementTimerRef.current = null;
+    }
+    
+    fullResetVitalSigns();
+    setElapsedTime(0);
+    setHeartRate(0);
+    setVitalSigns({ 
+      spo2: 0, 
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
+      lipids: {
+        totalCholesterol: 0,
+        triglycerides: 0
+      },
+      hemoglobin: 0,
+      hydration: 0
+    });
+    setSignalQuality(0);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -204,21 +226,13 @@ const Index = () => {
     let processingFps = 0;
     
     const processImage = async () => {
-      if (!isMonitoring || !stream || !videoTrack || videoTrack.readyState !== 'live') {
-        if (isMonitoring) {
-          console.error("Camera track is not live or stream lost. Stopping monitoring.");
-          finalizeMeasurement();
-        }
-        return;
-      }
+      if (!isMonitoring) return;
       
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
       
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
-          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
-          
           const frame = await imageCapture.grabFrame();
           
           const targetWidth = Math.min(320, frame.width);
@@ -226,8 +240,6 @@ const Index = () => {
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
-          
-          if (!tempCtx) throw new Error("Canvas context lost");
           
           tempCtx.drawImage(
             frame, 
@@ -245,17 +257,10 @@ const Index = () => {
             processingFps = frameCount;
             frameCount = 0;
             lastFpsUpdateTime = now;
+            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
           }
         } catch (error) {
-          if (error instanceof DOMException && error.name === 'InvalidStateError') {
-            console.error("Error capturando frame: Track state is invalid. Stopping monitoring.", error);
-            finalizeMeasurement();
-            return;
-          } else {
-            console.error("Error capturando frame (other):", error);
-            finalizeMeasurement();
-            return;
-          }
+          console.error("Error capturando frame:", error);
         }
       }
       
@@ -264,12 +269,7 @@ const Index = () => {
       }
     };
 
-    if (videoTrack && videoTrack.readyState === 'live') {
-      processImage();
-    } else {
-      console.error("Cannot start processing loop, video track is not live.");
-      finalizeMeasurement();
-    }
+    processImage();
   };
 
   const handleToggleMonitoring = () => {
