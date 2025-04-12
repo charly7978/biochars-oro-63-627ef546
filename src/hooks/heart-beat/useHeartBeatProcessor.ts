@@ -5,13 +5,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
-import { HeartBeatResult } from '../../core/types';
+import { HeartBeatResult, RRIntervalData, UseHeartBeatReturn } from './types';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
  * Versión simplificada que usa el HeartBeatProcessor existente
  */
-export const useHeartBeatProcessor = () => {
+export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   // Estado para los resultados del latido cardíaco
   const [heartBeatResult, setHeartBeatResult] = useState<HeartBeatResult | null>(null);
   // Estado para indicar si el procesamiento está en curso
@@ -37,6 +37,12 @@ export const useHeartBeatProcessor = () => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
+  
+  // Estados específicos para la interfaz de UseHeartBeatReturn
+  const [currentBPM, setCurrentBPM] = useState(0);
+  const [confidence, setConfidence] = useState(0);
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
+  const [arrhythmiaCount, setArrhythmiaCount] = useState(0);
 
   // Inicialización del procesador de latidos cardíacos
   useEffect(() => {
@@ -57,26 +63,65 @@ export const useHeartBeatProcessor = () => {
 
   // Función para procesar la señal
   const processSignal = useCallback(
-    (value: number) => {
+    (value: number): HeartBeatResult => {
       if (!processorRef.current) {
         console.warn("HeartBeatProcessor no está inicializado.");
-        return null;
+        return {
+          bpm: 0,
+          confidence: 0,
+          isPeak: false,
+          filteredValue: 0,
+          arrhythmiaCount: 0,
+          isArrhythmia: false,
+          rrData: {
+            intervals: [],
+            lastPeakTime: null
+          }
+        };
       }
 
       // Verificar si el valor de la señal es un número
       if (typeof value !== 'number') {
         console.error("Valor de señal inválido:", value);
-        return null;
+        return {
+          bpm: 0,
+          confidence: 0,
+          isPeak: false,
+          filteredValue: 0,
+          arrhythmiaCount: 0,
+          isArrhythmia: false,
+          rrData: {
+            intervals: [],
+            lastPeakTime: null
+          }
+        };
       }
 
       // Actualizar la última señal válida
       lastValidSignalRef.current = value;
 
       // Simular el procesamiento de la señal y obtener los resultados
-      const result = processorRef.current.processSignal(value);
+      const processorResult = processorRef.current.processSignal(value);
+      
+      // Crear un objeto HeartBeatResult con los datos necesarios
+      const result: HeartBeatResult = {
+        bpm: processorResult.bpm,
+        confidence: processorResult.confidence,
+        isPeak: processorResult.isPeak,
+        filteredValue: processorResult.filteredValue,
+        arrhythmiaCount: processorResult.arrhythmiaCount || 0,
+        isArrhythmia: processorResult.isArrhythmia || false,
+        rrData: processorRef.current.getRRIntervals()
+      };
 
       // Actualizar el estado con los resultados del procesamiento
       setHeartBeatResult(result);
+      
+      // Actualizar los estados específicos para la interfaz UseHeartBeatReturn
+      setCurrentBPM(result.bpm);
+      setConfidence(result.confidence);
+      setIsArrhythmia(result.isArrhythmia || false);
+      setArrhythmiaCount(result.arrhythmiaCount);
 
       // Actualizar datos adicionales de análisis
       updateAnalysisData(value, result);
@@ -88,7 +133,7 @@ export const useHeartBeatProcessor = () => {
   );
 
   // Función para actualizar datos de análisis
-  const updateAnalysisData = useCallback((value: number, result: any) => {
+  const updateAnalysisData = useCallback((value: number, result: HeartBeatResult) => {
     // Actualizar calidad de señal (simplificado)
     setSignalQuality(result.confidence * 100);
     
@@ -142,8 +187,15 @@ export const useHeartBeatProcessor = () => {
     }
   }, [rrIntervals]);
 
+  // Función simulada para el beep
+  const requestBeep = useCallback((value: number): boolean => {
+    // Simulación simple de beep
+    console.log("Beep simulado con valor:", value);
+    return true;
+  }, []);
+
   // Función para iniciar el procesamiento
-  const startProcessing = useCallback(() => {
+  const startMonitoring = useCallback(() => {
     setIsProcessing(true);
     isProcessingRef.current = true;
     
@@ -158,7 +210,7 @@ export const useHeartBeatProcessor = () => {
   }, []);
 
   // Función para detener el procesamiento
-  const stopProcessing = useCallback(() => {
+  const stopMonitoring = useCallback(() => {
     setIsProcessing(false);
     isProcessingRef.current = false;
     
@@ -184,6 +236,10 @@ export const useHeartBeatProcessor = () => {
     }
     
     setHeartBeatResult(null);
+    setCurrentBPM(0);
+    setConfidence(0);
+    setIsArrhythmia(false);
+    setArrhythmiaCount(0);
     artifactCounterRef.current = 0;
     setIsCalibrating(false);
     setCalibrationProgress(0);
@@ -195,71 +251,16 @@ export const useHeartBeatProcessor = () => {
     setStressLevel(0);
   }, []);
 
-  // Funciones de calibración simuladas
-  const startCalibration = useCallback(() => {
-    setIsCalibrating(true);
-    setCalibrationProgress(0);
-    
-    const calibrationInterval = setInterval(() => {
-      setCalibrationProgress(prev => {
-        const newProgress = prev + 10;
-        if (newProgress >= 100) {
-          clearInterval(calibrationInterval);
-          setIsCalibrating(false);
-          return 100;
-        }
-        return newProgress;
-      });
-    }, 500);
-    
-    return () => {
-      clearInterval(calibrationInterval);
-    };
-  }, []);
-
-  const endCalibration = useCallback(() => {
-    setIsCalibrating(false);
-    setCalibrationProgress(100);
-  }, []);
-
-  const calibrateProcessors = useCallback(() => {
-    console.log("Calibración de procesadores completada");
-    return true;
-  }, []);
-
-  const resetCalibration = useCallback(() => {
-    setIsCalibrating(false);
-    setCalibrationProgress(0);
-  }, []);
-
-  // Función simulada para registro de datos
-  const logData = useCallback((value: number, result: any) => {
-    // Simulación de registro, no hace nada real
-    return true;
-  }, []);
-
-  const clearLog = useCallback(() => {
-    // Simulación de limpieza de registro, no hace nada real
-    return true;
-  }, []);
-
+  // Retornar la interfaz definida en UseHeartBeatReturn
   return {
-    heartBeatResult,
-    isProcessing,
-    startProcessing,
-    stopProcessing,
+    currentBPM,
+    confidence,
     processSignal,
-    signalQuality,
-    artifactDetected,
-    stressLevel,
-    isCalibrating,
-    startCalibration,
-    endCalibration,
-    calibrationProgress,
-    calibrateProcessors,
     reset,
-    arrhythmiaStatus,
-    hrvData,
-    ppgData
+    isArrhythmia,
+    requestBeep,
+    startMonitoring,
+    stopMonitoring,
+    arrhythmiaCount
   };
 };
