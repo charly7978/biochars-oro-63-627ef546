@@ -88,42 +88,58 @@ const Index = () => {
     if (heartBeat.lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
-      if (heartBeat.lastSignal.fingerDetected && heartBeat.lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = heartBeat.processSignal(heartBeat.lastSignal.filteredValue);
+      const lastSignal = heartBeat.lastSignal;
+      if (typeof lastSignal === 'object' && 
+          lastSignal &&
+          'fingerDetected' in lastSignal &&
+          'quality' in lastSignal &&
+          'filteredValue' in lastSignal) {
+      
+        const signal = lastSignal as ProcessedSignal;
         
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
+        if (signal.fingerDetected && signal.quality >= minQualityThreshold) {
+          const heartBeatResult = heartBeat.processSignal(signal.filteredValue);
           
-          try {
-            const vitals = vitalSigns.processSignal(heartBeat.lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              setMeasurements(prev => ({
-                ...prev,
-                heartRate: heartBeatResult.bpm,
-                confidence: heartBeatResult.confidence,
-                spo2: vitals.spo2,
-                pressure: vitals.pressure,
-                glucose: vitals.glucose,
-                lipids: vitals.lipids,
-                hemoglobin: vitals.hemoglobin,
-                hydration: vitals.hydration,
-                arrhythmiaStatus: vitals.arrhythmiaStatus,
-                arrhythmiaCount: vitalSigns.arrhythmiaCounter,
-              }));
-              setLastVitalSigns(vitals);
+          if (heartBeatResult.confidence > 0.4) {
+            setHeartRate(heartBeatResult.bpm);
+            
+            try {
+              const vitals = vitalSigns.processSignal(signal.filteredValue, heartBeatResult.rrData);
+              if (vitals) {
+                setMeasurements(prev => ({
+                  ...prev,
+                  heartRate: heartBeatResult.bpm,
+                  confidence: heartBeatResult.confidence,
+                  spo2: vitals.spo2,
+                  pressure: vitals.pressure,
+                  glucose: vitals.glucose,
+                  lipids: vitals.lipids,
+                  hemoglobin: vitals.hemoglobin,
+                  hydration: vitals.hydration,
+                  arrhythmiaStatus: vitals.arrhythmiaStatus,
+                  arrhythmiaCount: vitalSigns.arrhythmiaCounter,
+                }));
+                setLastVitalSigns(vitals);
+              }
+            } catch (error) {
+              console.error("Error processing vital signs:", error);
             }
-          } catch (error) {
-            console.error("Error processing vital signs:", error);
+          }
+          
+          setSignalQuality(signal.quality);
+        } else {
+          setSignalQuality(signal.quality);
+          
+          if (!signal.fingerDetected && heartRate > 0) {
+            setHeartRate(0);
           }
         }
-        
-        setSignalQuality(heartBeat.lastSignal.quality);
       } else {
-        setSignalQuality(heartBeat.lastSignal.quality);
-        
-        if (!heartBeat.lastSignal.fingerDetected && heartRate > 0) {
+        console.warn("Invalid signal format or finger not detected", lastSignal);
+        if (heartRate > 0) {
           setHeartRate(0);
         }
+        setSignalQuality(0);
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
