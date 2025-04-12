@@ -8,7 +8,7 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { ProcessedSignal, ProcessingError, HeartBeatResult, RRIntervalData } from "@/core/types";
 import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
-import { Droplet } from "lucide-react";
+import { Droplet, Settings as SettingsIcon } from "lucide-react";
 import HeartRateDisplay from "@/components/HeartRateDisplay";
 import MeasurementConfirmationDialog from "@/components/MeasurementConfirmationDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,7 @@ import VitalsHistoryDialog from "@/components/VitalsHistoryDialog";
 import { supabase } from "@/integrations/supabase/client";
 import type { TablesInsert } from "@/integrations/supabase/types";
 import { PPGProcessor } from '@/core/signal/PPGProcessor';
+import { Link } from "react-router-dom";
 
 const MEASUREMENT_DURATION = 30000;
 
@@ -740,6 +741,17 @@ const Index = () => {
                 variant="reset"
               />
             </div>
+          </div>
+
+          <div className="absolute top-2 right-2 z-10">
+            <Link to="/settings">
+              <button
+                className="bg-black/30 hover:bg-black/50 text-white p-2 rounded-full"
+                aria-label="Settings"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
+            </Link>
           </div>
         </div>
       </div>
