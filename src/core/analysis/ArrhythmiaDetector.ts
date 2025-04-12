@@ -1,4 +1,3 @@
-
 import { RRData } from '../signal/PeakDetector';
 
 export interface ArrhythmiaResult {
@@ -147,10 +146,5 @@ export class ArrhythmiaDetector {
 
   public getDebugLog(): string[] {
     return [...this.debugLog];
-  }
-  
-  // Add this method to match the one expected by VitalSignsProcessor
-  public getArrhythmiaCount(): number {
-    return this.arrhythmiaCounter;
   }
 }

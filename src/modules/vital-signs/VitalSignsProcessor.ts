@@ -1,5 +1,3 @@
-
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -92,38 +90,64 @@ export class VitalSignsProcessor {
     
     // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
+      // Return last known valid result if available, otherwise empty
+      // This prevents flickering zeros if signal temporarily drops below min data points
+      // Note: Decided against returning last valid to enforce real-time feel
       return ResultFactory.createEmptyResults();
     }
     
-    // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
+    // --- Define analysis window --- 
+    const ANALYSIS_WINDOW_SIZE = 150; // Use ~5 seconds of data for most analyses
+    const recentPpgValues = ppgValues.length > ANALYSIS_WINDOW_SIZE 
+                              ? ppgValues.slice(-ANALYSIS_WINDOW_SIZE) 
+                              : ppgValues;
+    // Use shorter specific windows where appropriate
+    const spo2Window = ppgValues.slice(-45);
+    const bpWindow = ppgValues.slice(-90);
+
+    // Verify real signal amplitude is sufficient using a recent window
+    const amplitudeCheckWindow = ppgValues.slice(-30); // Check amplitude on last second
+    const signalMin = Math.min(...amplitudeCheckWindow);
+    const signalMax = Math.max(...amplitudeCheckWindow);
     const amplitude = signalMax - signalMin;
     
-    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
+    if (!this.signalValidator.hasValidAmplitude(amplitudeCheckWindow)) {
+      // Pass the checked window to logs
+      this.signalValidator.logValidationResults(false, amplitude, amplitudeCheckWindow); 
       return ResultFactory.createEmptyResults();
     }
     
-    // Calculate SpO2 using real data only
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
+    // Calculate SpO2 using its specific window
+    const spo2 = spo2Window.length >= 15 ? // Check min samples for SpO2 (approx 0.5s)
+                 Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
     
-    // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    // Calculate blood pressure using its specific window
+    const bpResult = bpWindow.length >= 30 ? // Check min samples for BP (1s)
+                     this.bpProcessor.calculateBloodPressure(bpWindow) :
+                     null;
+    const bp = bpResult || { systolic: 0, diastolic: 0 }; // Use result or zeros
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
     
-    // Calculate glucose with real data only
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
-    const glucoseConfidence = this.glucoseProcessor.getConfidence();
+    // --- Use recentPpgValues (last 150) for remaining analyses --- 
+    const minSamplesForAnalysis = 30; // Require at least 1 second for these analyses
     
-    // Calculate lipids with real data only
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    // Calculate glucose with recent data only
+    const glucose = recentPpgValues.length >= minSamplesForAnalysis ?
+                    Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
+    const glucoseConfidence = this.glucoseProcessor.getConfidence(); // Confidence might be calculated internally based on data used
+    
+    // Calculate lipids with recent data only
+    const lipidsResult = recentPpgValues.length >= minSamplesForAnalysis ?
+                       this.lipidProcessor.calculateLipids(recentPpgValues) :
+                       { totalCholesterol: 0, triglycerides: 0 };
+    const lipids = lipidsResult;
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate hydration with real PPG data
-    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
+    // Calculate hydration with recent PPG data
+    const hydration = recentPpgValues.length >= minSamplesForAnalysis ?
+                      Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
     
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -141,26 +165,32 @@ export class VitalSignsProcessor {
       triglycerides: 0
     };
 
-    console.log("VitalSignsProcessor: Results with confidence", {
+    // --- Missing BPM Calculation --- 
+    // TODO: Implement BPM calculation from ppgValues or recentPpgValues
+    const heartRate = 0; // Placeholder
+
+    console.log("VitalSignsProcessor: Results", {
       spo2,
       pressure,
+      heartRate, // Added placeholder
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
-      glucoseConfidence,
-      lipidsConfidence,
+      // glucoseConfidence,
+      // lipidsConfidence,
       hydration,
       signalAmplitude: amplitude,
-      confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
+      // confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
     });
 
     // Prepare result with all metrics including hydration
     return ResultFactory.createResult(
       spo2,
       pressure,
+      // heartRate, // Omit for now until properly integrated
       arrhythmiaResult.arrhythmiaStatus || "--",
       finalGlucose,
       finalLipids,
-      Math.round(this.calculateDefaultHemoglobin(spo2)),
+      Math.round(this.calculateHemoglobin(spo2)),
       hydration,
       glucoseConfidence,
       lipidsConfidence,
@@ -170,19 +200,22 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Calculate a default hemoglobin value based on SpO2
+   * Calculate Hemoglobin based on SpO2 (deterministic)
    */
-  private calculateDefaultHemoglobin(spo2: number): number {
-    if (spo2 <= 0) return 0;
+  private calculateHemoglobin(spo2: number): number {
+    if (spo2 <= 0 || spo2 > 100) return 0; // Invalid SpO2
     
-    // Very basic approximation
-    const base = 14;
+    // Simple linear mapping (example, adjust ranges as needed)
+    const base = 15.0; // Optimal Hb for ~98-100% SpO2
+    const maxReduction = 5.0; // Max reduction for very low SpO2
+    const lowSpo2Threshold = 85.0; // SpO2 level where reduction starts significantly
+
+    if (spo2 >= 98) return base;
+    if (spo2 < lowSpo2Threshold) return base - maxReduction;
     
-    if (spo2 > 95) return base + Math.random();
-    if (spo2 > 90) return base - 1 + Math.random();
-    if (spo2 > 85) return base - 2 + Math.random();
-    
-    return base - 3 + Math.random();
+    // Linear reduction between 98 and lowSpo2Threshold
+    const reductionFactor = (98.0 - spo2) / (98.0 - lowSpo2Threshold);
+    return base - (maxReduction * reductionFactor);
   }
 
   /**
@@ -204,7 +237,7 @@ export class VitalSignsProcessor {
   /**
    * Get arrhythmia counter
    */
-  public getArrhythmiaCount(): number {
+  public getArrhythmiaCounter(): number {
     return this.arrhythmiaProcessor.getArrhythmiaCount();
   }
   

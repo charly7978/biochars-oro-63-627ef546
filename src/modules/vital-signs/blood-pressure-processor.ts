@@ -1,328 +1,315 @@
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
+import { SignalCoreProcessor } from '../../core/signal-processing/SignalCoreProcessor';
+import { BloodPressureAnalyzer } from '../../core/analysis/BloodPressureAnalyzer';
+import { UserProfile } from '../../core/types';
+import { AnalysisSettings } from '../../core/config/AnalysisSettings';
+import * as tf from '@tensorflow/tfjs';
 
 export class BloodPressureProcessor {
-  // Expanded buffer size for greater stability
-  private readonly BP_BUFFER_SIZE = 15;
-  // Median and weighted average parameters
-  private readonly MEDIAN_WEIGHT = 0.6;
-  private readonly MEAN_WEIGHT = 0.4;
-  // Measurement history
+  private readonly BP_BUFFER_SIZE = 150; // 5 segundos a 30Hz
+  private readonly MEASUREMENT_DURATION = 30000; // 30 segundos en ms
+  private readonly SAMPLE_RATE = 30; // 30Hz
+  private readonly MIN_SAMPLES = 30; // 1 segundo de datos
+  private readonly ANALYSIS_INTERVAL = 1000; // Analizar cada 1000 ms (1 segundo)
+
+  private measurementStartTime: number | null = null;
+  private lastAnalysisTime: number = 0; // Track last analysis time
+  private isFingerPresent: boolean = false;
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
-  // Define wider physiological values
-  private readonly MIN_SYSTOLIC = 80;
-  private readonly MAX_SYSTOLIC = 190;
-  private readonly MIN_DIASTOLIC = 50;
-  private readonly MAX_DIASTOLIC = 120;
-  private readonly MIN_PULSE_PRESSURE = 25;
-  private readonly MAX_PULSE_PRESSURE = 70;
-  // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
-  private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
-  private readonly MIN_FPS = 20;
-  
-  // Keep track of last calculation time to prevent sticking
-  private lastCalculationTime: number = 0;
-  private forceRecalculationInterval: number = 2000; // Force recalculation every 2 seconds
+  private lastValidMeasurement: { systolic: number; diastolic: number } | null = null;
+  private lastInstantResult: { systolic: number; diastolic: number } | null = null; // Store last intermediate result
 
-  /**
-   * Calculates blood pressure using PPG signal features directly
-   * No simulation or reference values - direct measurement only
-   */
-  public calculateBloodPressure(values: number[]): {
-    systolic: number;
-    diastolic: number;
-  } {
-    const currentTime = Date.now();
-    const shouldForceRecalculation = currentTime - this.lastCalculationTime > this.forceRecalculationInterval;
+  // private neuralModel: BloodPressureNeuralModel; // Temporarily commented out
+  private signalProcessor: SignalCoreProcessor;
+  private analyzer: BloodPressureAnalyzer;
+
+  constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
+    // this.neuralModel = new BloodPressureNeuralModel(); // Temporarily commented out
+    this.signalProcessor = new SignalCoreProcessor({
+      bufferSize: this.BP_BUFFER_SIZE,
+      sampleRate: this.SAMPLE_RATE,
+      channels: ['bloodPressure']
+    });
+    this.analyzer = new BloodPressureAnalyzer(userProfile, settings);
+  }
+
+  public calculateBloodPressure(values: number[]): { systolic: number; diastolic: number } | null {
+    if (!values || values.length < this.MIN_SAMPLES) {
+      return this.lastInstantResult; // Return last known result if not enough data
+    }
+
+    // Verificar si hay un dedo presente basado en la amplitud de la señal
+    const currentAmplitude = Math.max(...values) - Math.min(...values);
+    this.isFingerPresent = currentAmplitude > 0.1;
+
+    if (!this.isFingerPresent) {
+      this.resetMeasurement();
+      return null; // Return null if finger is not present
+    }
+
+    // Iniciar medición si no está en curso
+    if (this.measurementStartTime === null) {
+      this.measurementStartTime = Date.now();
+      this.lastAnalysisTime = 0; // Reset last analysis time
+      this.resetBuffers();
+      this.lastInstantResult = null; // Reset last instant result
+      this.analyzer.startMeasurement(); // Start analyzer measurement period
+    }
+
+    // Procesar señal a través del SignalCoreProcessor
+    // This could be optimized if SignalCoreProcessor accepts arrays
+    values.forEach(value => {
+      this.signalProcessor.processSignal(value);
+    });
+
+    const bpChannel = this.signalProcessor.getChannel('bloodPressure');
+    if (!bpChannel) {
+      return this.lastInstantResult;
+    }
+
+    // Obtener señal procesada
+    const processedValues = bpChannel.getValues();
+    if (processedValues.length < this.MIN_SAMPLES) {
+      return this.lastInstantResult;
+    }
+
+    const now = Date.now();
+    let currentAnalysisResult: { systolic: number; diastolic: number; quality: number } | null = null;
+
+    // --- Run analysis only once per second ---
+    if (now - this.lastAnalysisTime >= this.ANALYSIS_INTERVAL) {
+      // Analizar forma de onda PPG con el Analyzer
+      // Pass only the last 150 samples (5 seconds) to the analyzer
+      const analyzerInput = processedValues.length > 150 ? processedValues.slice(-150) : processedValues;
+      
+      if (analyzerInput.length >= this.MIN_SAMPLES) { // Ensure we still have enough samples after slicing
+          const analysisResult = this.analyzer.analyze(analyzerInput);
+          this.lastAnalysisTime = now;
     
-    // Basic check to ensure we have some data
-    if (!values || values.length === 0) {
-      console.log("BloodPressureProcessor: Empty signal received");
-      return this.getLastValidOrDefault();
-    }
-
-    // Signal quality validation with further reduced thresholds
-    const signalAmplitude = Math.max(...values) - Math.min(...values);
-    if (values.length < 15 || signalAmplitude < this.MIN_SIGNAL_AMPLITUDE) {
-      console.log("BloodPressureProcessor: Insufficient signal quality", {
-        length: values.length,
-        amplitude: signalAmplitude,
-        threshold: this.MIN_SIGNAL_AMPLITUDE,
-        forceRecalculation: shouldForceRecalculation
-      });
-      
-      // Force recalculation if it's been too long since the last valid calculation
-      if (shouldForceRecalculation && this.systolicBuffer.length > 0) {
-        console.log("BloodPressureProcessor: Forcing recalculation due to time interval");
-        // Generate slightly different values to prevent sticking
-        const lastSys = this.systolicBuffer[this.systolicBuffer.length - 1];
-        const lastDia = this.diastolicBuffer[this.diastolicBuffer.length - 1];
-        const variation = Math.random() * 2 - 1; // -1 to +1
-        return {
-          systolic: Math.round(lastSys + variation),
-          diastolic: Math.round(lastDia + variation)
-        };
-      }
-      
-      // Return default values if buffer has data, otherwise zeros
-      return this.getLastValidOrDefault();
-    }
-
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
-    if (peakIndices.length < this.MIN_PEAK_COUNT) {
-      console.log("BloodPressureProcessor: Not enough peaks detected", {
-        peaksFound: peakIndices.length,
-        required: this.MIN_PEAK_COUNT,
-        forceRecalculation: shouldForceRecalculation
-      });
-      
-      // Force recalculation if it's been too long since the last valid calculation
-      if (shouldForceRecalculation && this.systolicBuffer.length > 0) {
-        console.log("BloodPressureProcessor: Forcing recalculation due to time interval");
-        // Generate slightly different values to prevent sticking
-        const lastSys = this.systolicBuffer[this.systolicBuffer.length - 1];
-        const lastDia = this.diastolicBuffer[this.diastolicBuffer.length - 1];
-        const variation = Math.random() * 2 - 1; // -1 to +1
-        return {
-          systolic: Math.round(lastSys + variation),
-          diastolic: Math.round(lastDia + variation)
-        };
-      }
-      
-      // Return default values if buffer has data, otherwise standard values
-      return this.getLastValidOrDefault();
-    }
-
-    // Update the last calculation time
-    this.lastCalculationTime = currentTime;
-
-    // Direct sampling parameters - more conservative
-    const fps = this.MIN_FPS; // Conservative sampling rate assumption
-    const msPerSample = 1000 / fps;
-
-    // Calculate PTT (Pulse Transit Time) values directly from signal
-    const pttValues: number[] = [];
-    for (let i = 1; i < peakIndices.length; i++) {
-      const dt = (peakIndices[i] - peakIndices[i - 1]) * msPerSample;
-      // Wider physiologically valid range
-      if (dt > 200 && dt < 2000) { // Further widened range
-        pttValues.push(dt);
+          if (analysisResult && analysisResult.systolic > 0 && analysisResult.diastolic > 0) {
+            // Store the valid result from the analyzer
+            currentAnalysisResult = analysisResult;
+    
+            // Use only analyzer result for now
+            this.lastInstantResult = {
+              systolic: Math.round(analysisResult.systolic),
+              diastolic: Math.round(analysisResult.diastolic)
+            };
+    
+            // Update buffers only when a new analysis is done
+            this.updateBuffers(this.lastInstantResult.systolic, this.lastInstantResult.diastolic);
+          }
+          // If analysisResult is null or invalid, lastInstantResult remains unchanged
       }
     }
-    
-    // If we don't have enough PTT values, use defaults based on buffer or start with standards
-    if (pttValues.length < 1) { // Reduced from 2
-      console.log("BloodPressureProcessor: Not enough valid intervals", {
-        validIntervals: pttValues.length
-      });
-      // Return last valid values or standards
-      return this.getLastValidOrDefault();
-    }
-    
-    // Filter outliers using statistical technique
-    const sortedPTT = [...pttValues].sort((a, b) => a - b);
-    const medianPTT = this.calculateMedian(sortedPTT);
-    
-    // Filter values outside 2.5 IQR (even wider interquartile range)
-    const filteredPTT = this.filterOutliers(pttValues, sortedPTT, 2.5);
-    
-    // Calculate PTT using filtered values with weight to recent values
-    const calculatedPTT = this.calculateWeightedPTT(filteredPTT, medianPTT);
-    
-    console.log("BloodPressureProcessor: PTT calculation", {
-      original: pttValues,
-      filtered: filteredPTT,
-      median: medianPTT,
-      weighted: calculatedPTT
-    });
-    
-    // Normalize PTT to a wider physiologically relevant range
-    const normalizedPTT = Math.max(200, Math.min(2000, calculatedPTT));
-    
-    // Calculate improved PPG signal amplitude directly from the signal
-    const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
-    // Reduced amplification factor for direct measurement
-    const normalizedAmplitude = Math.min(100, Math.max(5, amplitude * 10.0)); // Higher multiplier
+    // --- End of periodic analysis ---
 
-    console.log("BloodPressureProcessor: Signal parameters", {
-      ptt: normalizedPTT,
-      amplitude,
-      normalizedAmplitude
-    });
-
-    // More direct coefficients for measurement
-    // PTT is inversely related to BP: lower PTT = higher BP
-    const pttFactor = (850 - normalizedPTT) * 0.12; 
-    const ampFactor = normalizedAmplitude * 0.28;   
-    
-    // Add small randomization to prevent sticking at the same values
-    const randomVariation = Math.random() * 2 - 1; // -1 to +1
-    
-    // Direct estimation model without simulation
-    let instantSystolic = 110 + pttFactor + ampFactor + randomVariation;
-    let instantDiastolic = 70 + (pttFactor * 0.45) + (ampFactor * 0.22) + (randomVariation * 0.5);
-
-    // Apply wider physiological limits
-    instantSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, instantSystolic));
-    instantDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, instantDiastolic));
-    
-    // Maintain wider physiologically valid pressure differential
-    const differential = instantSystolic - instantDiastolic;
-    if (differential < this.MIN_PULSE_PRESSURE) {
-      instantDiastolic = instantSystolic - this.MIN_PULSE_PRESSURE;
-    } else if (differential > this.MAX_PULSE_PRESSURE) {
-      instantDiastolic = instantSystolic - this.MAX_PULSE_PRESSURE;
-    }
-    
-    // Check physiological limits again after differential adjustment
-    instantDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, instantDiastolic));
-
-    // Log the instant values
-    console.log("BloodPressureProcessor: Instant BP values", {
-      systolic: Math.round(instantSystolic),
-      diastolic: Math.round(instantDiastolic),
-      differential: Math.round(instantSystolic - instantDiastolic)
-    });
-
-    // Update pressure buffers with new values
-    this.systolicBuffer.push(instantSystolic);
-    this.diastolicBuffer.push(instantDiastolic);
-    
-    // Maintain limited buffer size
-    if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
-      this.systolicBuffer.shift();
-      this.diastolicBuffer.shift();
+    // Verificar si la medición está completa
+    const elapsedTime = now - (this.measurementStartTime || now);
+    if (elapsedTime >= this.MEASUREMENT_DURATION) {
+      // Calcular resultado final
+      const finalResult = this.calculateFinalResult();
+      this.resetMeasurement(); // Reset after final calculation
+      return finalResult; // Return final result
     }
 
-    // Calculate final blood pressure values using median and mean
-    const { finalSystolic, finalDiastolic } = this.calculateFinalValues();
+    // Retornar el último resultado instantáneo válido durante la medición
+    return this.lastInstantResult;
+  }
 
-    // Make sure we don't return zeros or invalid values
-    const resultSystolic = Math.round(finalSystolic) || 110;
-    const resultDiastolic = Math.round(finalDiastolic) || 70;
+  private calculateFinalResult(): { systolic: number; diastolic: number } | null {
+    // Filtrar valores válidos
+    const validSystolic = this.systolicBuffer.filter(v => v > 0);
+    const validDiastolic = this.diastolicBuffer.filter(v => v > 0);
 
-    console.log("BloodPressureProcessor: Final BP values", {
-      systolic: resultSystolic,
-      diastolic: resultDiastolic,
-      differential: resultSystolic - resultDiastolic,
-      bufferSize: this.systolicBuffer.length
-    });
+    // Require at least a few seconds of valid data for final result
+    const minRequiredReadings = (this.MEASUREMENT_DURATION / this.ANALYSIS_INTERVAL) * 0.3; // e.g., 30% of expected readings
 
-    return {
-      systolic: resultSystolic,
-      diastolic: resultDiastolic
-    };
-  }
-  
-  /**
-   * Returns the last valid BP values from buffer or default values
-   */
-  private getLastValidOrDefault(): { systolic: number, diastolic: number } {
-    if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
-      return {
-        systolic: Math.round(this.systolicBuffer[this.systolicBuffer.length - 1]),
-        diastolic: Math.round(this.diastolicBuffer[this.diastolicBuffer.length - 1])
-      };
+    if (validSystolic.length < minRequiredReadings || validDiastolic.length < minRequiredReadings) {
+       console.warn(`BP Final Result: Not enough valid readings (${validSystolic.length} systolic, ${validDiastolic.length} diastolic). Returning last valid or zero.`);
+       return this.lastValidMeasurement || { systolic: 0, diastolic: 0 }; // Return last overall valid or zero if none
     }
-    return { systolic: 110, diastolic: 70 }; // Default starting point
+
+    // Calcular medianas
+    const systolic = this.calculateMedian(validSystolic);
+    const diastolic = this.calculateMedian(validDiastolic);
+
+    this.lastValidMeasurement = { systolic, diastolic }; // Store this as the last overall valid measurement
+    console.log(`BP Final Result: S:${systolic}, D:${diastolic} from ${validSystolic.length} readings.`);
+    return this.lastValidMeasurement;
   }
-  
-  /**
-   * Calculate median of an array
-   */
-  private calculateMedian(sortedArray: number[]): number {
-    if (sortedArray.length === 0) return 0;
-    
-    const medianIndex = Math.floor(sortedArray.length / 2);
-    return sortedArray.length % 2 === 0
-      ? (sortedArray[medianIndex - 1] + sortedArray[medianIndex]) / 2
-      : sortedArray[medianIndex];
-  }
-  
-  /**
-   * Filter outliers using IQR method with configurable threshold
-   */
-  private filterOutliers(values: number[], sortedValues: number[], iqrThreshold: number = 1.5): number[] {
-    if (sortedValues.length < 4) return values;
-    
-    const q1Index = Math.floor(sortedValues.length / 4);
-    const q3Index = Math.floor(3 * sortedValues.length / 4);
-    const q1 = sortedValues[q1Index];
-    const q3 = sortedValues[q3Index];
-    const iqr = q3 - q1;
-    const lowerBound = q1 - iqrThreshold * iqr;
-    const upperBound = q3 + iqrThreshold * iqr;
-    
-    return values.filter(val => val >= lowerBound && val <= upperBound);
-  }
-  
-  /**
-   * Calculate weighted PTT value with more recent values having higher weight
-   */
-  private calculateWeightedPTT(filteredPTT: number[], medianPTT: number): number {
-    if (filteredPTT.length < 1) return medianPTT;
-    
-    // Calculate weighted PTT with greater weight for more recent values
-    let weightSum = 0;
-    let weightedSum = 0;
-    
-    filteredPTT.forEach((val, idx) => {
-      // Exponential weighting giving more weight to more recent samples
-      const weight = Math.pow(1.5, idx) / filteredPTT.length;
-      weightedSum += val * weight;
-      weightSum += weight;
-    });
-    
-    return weightSum > 0 ? weightedSum / weightSum : medianPTT;
-  }
-  
-  /**
-   * Calculate final blood pressure values using median and weighted average
-   * for greater stability and noise rejection
-   */
-  private calculateFinalValues(): { finalSystolic: number, finalDiastolic: number } {
-    if (this.systolicBuffer.length === 0) {
-      return { finalSystolic: 110, finalDiastolic: 70 }; // Default values if empty
+
+  private calculateMedian(values: number[]): number {
+    if (values.length === 0) return 0; // Avoid errors on empty array
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+
+    if (sorted.length % 2 === 0) {
+      return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
     }
-    
-    // 1. Calculate medians
-    const sortedSystolic = [...this.systolicBuffer].sort((a, b) => a - b);
-    const sortedDiastolic = [...this.diastolicBuffer].sort((a, b) => a - b);
-    
-    const systolicMedian = this.calculateMedian(sortedSystolic);
-    const diastolicMedian = this.calculateMedian(sortedDiastolic);
-    
-    // 2. Calculate averages
-    const systolicMean = this.systolicBuffer.reduce((sum, val) => sum + val, 0) / this.systolicBuffer.length;
-    const diastolicMean = this.diastolicBuffer.reduce((sum, val) => sum + val, 0) / this.diastolicBuffer.length;
-    
-    // 3. Apply weighting between median and average
-    let finalSystolic = (systolicMedian * this.MEDIAN_WEIGHT) + (systolicMean * this.MEAN_WEIGHT);
-    let finalDiastolic = (diastolicMedian * this.MEDIAN_WEIGHT) + (diastolicMean * this.MEAN_WEIGHT);
-    
-    // 4. Verify pressure differential in final result
-    const finalDifferential = finalSystolic - finalDiastolic;
-    if (finalDifferential < this.MIN_PULSE_PRESSURE) {
-      finalDiastolic = finalSystolic - this.MIN_PULSE_PRESSURE;
-    } else if (finalDifferential > this.MAX_PULSE_PRESSURE) {
-      finalDiastolic = finalSystolic - this.MAX_PULSE_PRESSURE;
-    }
-    
-    // 5. Apply physiological limits one last time
-    finalSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, finalSystolic));
-    finalDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, finalDiastolic));
-    
-    return { finalSystolic, finalDiastolic };
+    return Math.round(sorted[middle]);
   }
-  
-  /**
-   * Reset the blood pressure processor state
-   */
-  public reset(): void {
+
+  private resetMeasurement(): void {
+    this.measurementStartTime = null;
+    this.lastAnalysisTime = 0;
+    this.lastInstantResult = null; // Clear intermediate result on reset
+    // Don't reset lastValidMeasurement here, keep it until next successful measurement
+    this.resetBuffers();
+    // No need to reset analyzer here, it resets internally or via VitalSignsProcessor
+  }
+
+  private resetBuffers(): void {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
-    this.lastCalculationTime = 0;
-    console.log("BloodPressureProcessor: Reset completed");
+  }
+
+  // Update buffers only when a new analysis is performed
+  private updateBuffers(systolic: number, diastolic: number): void {
+     if (systolic > 0 && diastolic > 0) { // Only buffer valid readings
+       this.systolicBuffer.push(systolic);
+       this.diastolicBuffer.push(diastolic);
+
+       // Optional: Limit buffer size if needed, though median calculation handles outliers
+       // if (this.systolicBuffer.length > SOME_MAX_BUFFER_LIMIT) {
+       //   this.systolicBuffer.shift();
+       //   this.diastolicBuffer.shift();
+       // }
+     }
+  }
+
+  public reset(): void {
+    this.resetMeasurement();
+    this.lastValidMeasurement = null; // Full reset clears everything
+    this.signalProcessor.reset();
+    this.analyzer.reset();
+    // if (this.neuralModel) this.neuralModel.reset(); // If re-enabled
+  }
+
+  // Feature extraction and quality calculation might be redundant if analyzer does it
+  // Consider removing these if BloodPressureAnalyzer handles them internally
+
+  private calculateSignalQuality(signal: number[]): number {
+    if (signal.length < 2) return 0;
+    const amplitude = Math.max(...signal) - Math.min(...signal);
+    const noise = this.calculateSignalNoise(signal);
+    if (noise === 0) return amplitude > 0 ? 100 : 0; // Avoid division by zero
+    const snr = amplitude / noise;
+    return Math.min(100, Math.max(0, snr * 50)); // Scale SNR to 0-100 quality
+  }
+
+  private calculateSignalNoise(signal: number[]): number {
+    if (signal.length < 2) return 0;
+    let noise = 0;
+    for (let i = 1; i < signal.length; i++) {
+      noise += Math.abs(signal[i] - signal[i-1]);
+    }
+    // Average absolute difference as noise estimate
+    return noise / (signal.length -1) ;
+  }
+
+  // --- Feature Extraction (Potentially redundant if analyzer handles it) ---
+  // Keeping these for now, but consider moving logic entirely into BloodPressureAnalyzer
+
+  private extractPPGFeatures(values: number[], peakIndices: number[], valleyIndices: number[]): {
+    amplitude: number;
+    peakSlope: number;
+    valleySlope: number;
+    peakInterval: number;
+    areaUnderCurve: number;
+    dicroticIndex: number;
+  } {
+    // Ensure indices are valid
+     if (!peakIndices || peakIndices.length < 2 || !valleyIndices || valleyIndices.length < 1) {
+       console.warn("extractPPGFeatures: Invalid peak/valley indices provided.");
+       return { amplitude: 0, peakSlope: 0, valleySlope: 0, peakInterval: 0, areaUnderCurve: 0, dicroticIndex: 0 };
+     }
+
+    const peaks = peakIndices.map(i => values[i]).filter(v => !isNaN(v));
+    const valleys = valleyIndices.map(i => values[i]).filter(v => !isNaN(v));
+
+     if (peaks.length < 2 || valleys.length < 1) {
+        console.warn("extractPPGFeatures: Not enough valid peak/valley values.");
+        return { amplitude: 0, peakSlope: 0, valleySlope: 0, peakInterval: 0, areaUnderCurve: 0, dicroticIndex: 0 };
+     }
+
+    const amplitude = Math.max(...peaks) - Math.min(...valleys);
+
+    const peakSlopes: number[] = [];
+    for (let i = 0; i < peakIndices.length; i++) {
+      const peakIdx = peakIndices[i];
+      const prevValleyIdx = valleyIndices.filter(v => v < peakIdx).pop();
+      if (prevValleyIdx !== undefined && values[peakIdx] !== undefined && values[prevValleyIdx] !== undefined) {
+        const timeDiff = (peakIdx - prevValleyIdx) / this.SAMPLE_RATE;
+        if (timeDiff > 0) {
+           peakSlopes.push((values[peakIdx] - values[prevValleyIdx]) / timeDiff);
+        }
+      }
+    }
+    const peakSlope = peakSlopes.length > 0 ? peakSlopes.reduce((a,b) => a + b, 0) / peakSlopes.length : 0;
+
+    const valleySlopes: number[] = [];
+     for (let i = 0; i < peakIndices.length; i++) {
+        const peakIdx = peakIndices[i];
+        const nextValleyIdx = valleyIndices.find(v => v > peakIdx);
+        if (nextValleyIdx !== undefined && values[nextValleyIdx] !== undefined && values[peakIdx] !== undefined) {
+           const timeDiff = (nextValleyIdx - peakIdx) / this.SAMPLE_RATE;
+           if (timeDiff > 0) {
+              valleySlopes.push((values[nextValleyIdx] - values[peakIdx]) / timeDiff);
+           }
+        }
+     }
+    const valleySlope = valleySlopes.length > 0 ? valleySlopes.reduce((a,b) => a + b, 0) / valleySlopes.length : 0;
+
+
+    const peakIntervals: number[] = [];
+    for (let i = 1; i < peakIndices.length; i++) {
+       if (peakIndices[i] !== undefined && peakIndices[i-1] !== undefined) {
+          peakIntervals.push(peakIndices[i] - peakIndices[i-1]);
+       }
+    }
+    const avgIntervalSamples = peakIntervals.length > 0 ? peakIntervals.reduce((a, b) => a + b, 0) / peakIntervals.length : 0;
+    const peakInterval = avgIntervalSamples * (1000 / this.SAMPLE_RATE); // ms
+
+    const areaUnderCurve = this.calculateAreaUnderCurve(values);
+    const dicroticIndex = this.calculateDicroticIndex(values, peakIndices);
+
+    return { amplitude, peakSlope, valleySlope, peakInterval, areaUnderCurve, dicroticIndex };
+  }
+
+  private calculateAreaUnderCurve(values: number[]): number {
+     if (values.length === 0) return 0;
+     const minVal = Math.min(...values);
+     // Normalize values to be non-negative relative to the minimum
+     const normalizedValues = values.map(v => v - minVal);
+     // Simple trapezoidal rule approximation
+     let area = 0;
+     for (let i = 1; i < normalizedValues.length; i++) {
+        area += (normalizedValues[i] + normalizedValues[i-1]) / 2;
+     }
+     // Normalize by duration and max amplitude (relative to min)
+     const maxVal = Math.max(...values);
+     const maxAmplitude = maxVal - minVal;
+     if (maxAmplitude === 0) return 0; // Avoid division by zero
+     return area / (normalizedValues.length * maxAmplitude);
+  }
+
+
+  private calculateDicroticIndex(values: number[], peakIndices: number[]): number {
+    // Placeholder: Needs a proper algorithm to find dicrotic notch
+    // This is a complex feature and might require more sophisticated signal processing
+    // For now, return a default value or estimate based on simpler features
+    if (peakIndices.length < 1) return 0;
+    const lastPeakIndex = peakIndices[peakIndices.length - 1];
+    // Very basic placeholder: position of minimum after last peak
+    const segmentAfterPeak = values.slice(lastPeakIndex);
+    if (segmentAfterPeak.length < 2) return 0;
+    const minValueAfterPeak = Math.min(...segmentAfterPeak);
+    const maxValue = values[lastPeakIndex];
+    if (maxValue === minValueAfterPeak) return 0;
+    // Simple ratio, not a real dicrotic index
+    return minValueAfterPeak / maxValue;
   }
 }
