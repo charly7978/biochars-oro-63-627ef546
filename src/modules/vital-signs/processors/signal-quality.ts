@@ -1,8 +1,9 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateStandardDeviation, calculateDC, calculateAC } from '@/utils/signalAnalysisUtils';
+import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 /**
  * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
@@ -13,16 +14,17 @@ export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
   private readonly MIN_STRONG_SIGNALS_REQUIRED = 3;
-  private stabilityScore: number = 0; // Añadir puntuación de estabilidad
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
    */
   public updateNoiseLevel(rawValue: number, filteredValue: number): void {
-    // Simple diferencia como estimación de ruido
-    const noise = Math.abs(rawValue - filteredValue);
-    // EMA para suavizar la estimación de ruido
-    this.noiseLevel = calculateEMA(this.noiseLevel, noise, 0.1); // Usar EMA consolidada
+    // Noise is estimated as the difference between raw and filtered
+    const instantNoise = Math.abs(rawValue - filteredValue);
+    
+    // Update noise level with exponential smoothing
+    // Slower adaptation to reduce impact of transient noise
+    this.noiseLevel = 0.08 * instantNoise + 0.92 * this.noiseLevel;
   }
   
   /**
@@ -37,48 +39,31 @@ export class SignalQuality {
    * Adds validation to reduce false positives
    */
   public calculateSignalQuality(ppgValues: number[]): number {
-    if (ppgValues.length < 10) return 0; // Necesita un mínimo de datos
-
-    const mean = calculateDC(ppgValues);
-    if (mean === 0) return 0; // Evitar división por cero
-
-    const stdDev = calculateStandardDeviation(ppgValues);
-    const acComponent = calculateAC(ppgValues);
-
-    // 1. Relación Señal-Ruido (SNR) estimada - Inversa del Coeficiente de Variación
-    const cv = stdDev / mean;
-    const snrQuality = Math.max(0, 1 - cv * 2); // Penaliza alta variabilidad relativa
-
-    // 2. Amplitud de la Señal (AC)
-    // Normalizar AC respecto a un rango esperado (ej. 0.01 a 1.0)
-    const expectedMinAC = 0.02;
-    const expectedMaxAC = 1.0;
-    const amplitudeQuality = Math.max(0, Math.min(1, (acComponent - expectedMinAC) / (expectedMaxAC - expectedMinAC)));
-
-    // 3. Estabilidad de la línea base (DC)
-    this.updateStabilityScore(ppgValues); // Actualizar puntuación de estabilidad
-    const stabilityQuality = this.stabilityScore;
-
-    // 4. Periodicidad (podría requerir FFT o Autocorrelación - simplificado aquí)
-    // const periodicityQuality = this.calculatePeriodicity(ppgValues);
-    const periodicityQuality = 0.5; // Placeholder
-
-    // Combinar métricas de calidad (ejemplo ponderado)
-    let combinedQuality = (snrQuality * 0.3) + (amplitudeQuality * 0.4) + (stabilityQuality * 0.2) + (periodicityQuality * 0.1);
-
-    // Incrementar contador de señales fuertes si la calidad es buena
-    if (combinedQuality > 0.7) {
-      this.consecutiveStrongSignals++;
+    if (ppgValues.length < 5) return 0;
+    
+    // Calculate amplitude and standard deviation
+    const min = Math.min(...ppgValues.slice(-10));
+    const max = Math.max(...ppgValues.slice(-10));
+    const amplitude = max - min;
+    
+    // Only consider valid signals with sufficient amplitude
+    if (amplitude < 0.02) {
+      this.consecutiveStrongSignals = 0;
+      return 0;
     } else {
-      this.consecutiveStrongSignals = 0; // Resetear si la calidad baja
+      this.consecutiveStrongSignals = Math.min(
+        this.MIN_STRONG_SIGNALS_REQUIRED + 2, 
+        this.consecutiveStrongSignals + 1
+      );
     }
-
-    // Bonus si hay señales fuertes consecutivas
-    if (this.consecutiveStrongSignals >= this.MIN_STRONG_SIGNALS_REQUIRED) {
-      combinedQuality = Math.min(1, combinedQuality + 0.1); // Pequeño bonus
+    
+    // Only return positive quality after we've seen enough strong signals
+    if (this.consecutiveStrongSignals < this.MIN_STRONG_SIGNALS_REQUIRED) {
+      return 0;
     }
-
-    return Math.max(0, Math.min(1, combinedQuality)) * 100; // Escalar a 0-100
+    
+    // Calculate quality based on real signal properties
+    return this.calculateWeightedQuality(ppgValues);
   }
   
   /**
@@ -147,29 +132,5 @@ export class SignalQuality {
   public reset(): void {
     this.noiseLevel = 0;
     this.consecutiveStrongSignals = 0;
-    this.stabilityScore = 0;
-    console.log("SignalQuality reset.");
-  }
-
-  // Método auxiliar para actualizar la estabilidad (ej. desviación estándar de DC en ventanas)
-  private updateStabilityScore(values: number[]): void {
-    const windowSize = 10; // Tamaño de la ventana para evaluar estabilidad DC
-    if (values.length < windowSize * 2) {
-      this.stabilityScore = 0.5; // Valor neutral si no hay suficientes datos
-      return;
-    }
-    const recentWindow = values.slice(-windowSize);
-    const previousWindow = values.slice(-windowSize * 2, -windowSize);
-    const dcRecent = calculateDC(recentWindow);
-    const dcPrevious = calculateDC(previousWindow);
-    const dcChange = Math.abs(dcRecent - dcPrevious);
-    // La puntuación es mayor cuanto menor es el cambio
-    this.stabilityScore = Math.max(0, 1 - dcChange * 10); // Ajustar multiplicador según escala esperada
-  }
-
-  // Placeholder para calidad basada en periodicidad
-  private calculatePeriodicity(values: number[]): number {
-    // Implementar FFT o Autocorrelación para una medida real
-    return 0.5; // Devolver valor placeholder
   }
 }
