@@ -395,24 +395,76 @@ const Index = () => {
   const handleStreamReady = useCallback((stream: MediaStream) => {
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(err => console.error("Video play error:", err));
+      videoRef.current.play().catch(err => {
+        console.error("Video play error:", err);
+        toast({ 
+          title: "Error de Reproducción", 
+          description: "No se pudo iniciar la reproducción de video de la cámara.",
+          variant: "destructive"
+        });
+      });
+      
       streamRef.current = stream;
+      
       try {
         const track = stream.getVideoTracks()[0];
         if (track) {
-          imageCaptureRef.current = new ImageCapture(track);
-          console.log("ImageCapture initialized.");
-          applyCameraSettings(track);
+          try {
+            imageCaptureRef.current = new ImageCapture(track);
+            console.log("ImageCapture initialized.");
+            applyCameraSettings(track).catch(err => {
+              console.warn("Could not apply optimal camera settings, continuing with defaults:", err);
+            });
+          } catch (e) {
+            console.error("Error initializing ImageCapture:", e);
+            toast({ 
+              title: "Advertencia", 
+              description: "Funcionalidad limitada: No se pudo inicializar la captura de imagen avanzada.",
+              variant: "destructive"
+            });
+            
+            // Try to continue with fallback if possible
+            console.log("ImageCapture not available, attempting to continue with limited functionality");
+          }
         } else {
-          console.error("No video track found in the stream.");
-          toast({ title: "Error de Cámara", description: "No se encontró pista de video.", variant: "destructive" });
+          const errorMsg = "No video track found in the stream.";
+          console.error(errorMsg);
+          toast({ 
+            title: "Error de Cámara", 
+            description: "No se encontró pista de video. Por favor, intente de nuevo.",
+            variant: "destructive"
+          });
+          throw new Error(errorMsg);
         }
       } catch (e) {
-        console.error("Error initializing ImageCapture:", e);
-        toast({ title: "Error de Cámara", description: "No se pudo inicializar la captura de imagen.", variant: "destructive" });
+        console.error("Error in stream handling:", e);
+        toast({ 
+          title: "Error de Cámara", 
+          description: "Ocurrió un error al configurar la cámara. Intentando continuar con funcionalidad limitada.",
+          variant: "destructive"
+        });
+        
+        // Reset and attempt fallback if possible
+        if (handleReset) {
+          setTimeout(() => {
+            handleReset();
+            toast({ 
+              title: "Reiniciando", 
+              description: "Intentando reiniciar el sistema de captura...",
+              variant: "default"
+            });
+          }, 3000);
+        }
       }
+    } else {
+      console.error("Video element reference is null");
+      toast({ 
+        title: "Error de Inicialización", 
+        description: "Elemento de video no disponible. Intente recargar la página.",
+        variant: "destructive"
+      });
     }
-  }, [toast]);
+  }, [toast, handleReset]);
 
   const applyCameraSettings = async (track: MediaStreamTrack) => {
     try {
@@ -519,6 +571,43 @@ const Index = () => {
       toast({ title: "Error", description: "No se pudo cargar el historial.", variant: "destructive" });
     }
   };
+
+  // Add event listener for camera permission errors
+  useEffect(() => {
+    const handleCameraPermissionError = (event: CustomEvent) => {
+      console.error("Camera permission error:", event.detail);
+      toast({ 
+        title: "Error de Cámara", 
+        description: event.detail.message || "No se pudo acceder a la cámara. Por favor, permita el acceso en la configuración del navegador.",
+        variant: "destructive"
+      });
+
+      // Reset measurements since they can't be taken without camera
+      handleReset();
+    };
+
+    const handleMaxRetriesReached = (event: CustomEvent) => {
+      console.error("Camera max retries reached:", event.detail);
+      toast({ 
+        title: "Cámara No Disponible", 
+        description: "No se pudo inicializar la cámara después de varios intentos. Por favor, intente de nuevo o use otro dispositivo.",
+        variant: "destructive"
+      });
+
+      // Reset measurements since they can't be taken without camera
+      handleReset();
+    };
+
+    // Add event listeners
+    window.addEventListener('cameraPermissionError', handleCameraPermissionError as EventListener);
+    window.addEventListener('cameraMaxRetriesReached', handleMaxRetriesReached as EventListener);
+
+    // Clean up event listeners on component unmount
+    return () => {
+      window.removeEventListener('cameraPermissionError', handleCameraPermissionError as EventListener);
+      window.removeEventListener('cameraMaxRetriesReached', handleMaxRetriesReached as EventListener);
+    };
+  }, [toast]);
 
   if (!isClient) {
     return null;
