@@ -100,26 +100,24 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          // Wait a bit before applying torch (or other constraints)
+          // Wait a bit before applying torch
           await new Promise(resolve => setTimeout(resolve, 500)); 
           
-          // --- Apply ONLY Torch constraint (TEMP: Disabled for testing) --- 
-          /* // Temporarily commented out torch logic
+          // --- Apply ONLY Torch constraint --- 
           if (capabilities.torch) {
-              console.log("Intentando activar linterna... (TEMP DISABLED)");
-              // try {
-              //      await videoTrack.applyConstraints({
-              //          advanced: [{ torch: true }]
-              //      });
-              //      setTorchEnabled(true);
-              //      console.log("Linterna activada.");
-              // } catch (torchErr) {
-              //      console.error("Error al activar linterna:", torchErr);
-              // }
+              console.log("Intentando activar linterna...");
+              try {
+                   await videoTrack.applyConstraints({
+                       advanced: [{ torch: true }]
+                   });
+                   setTorchEnabled(true);
+                   console.log("Linterna activada.");
+              } catch (torchErr) {
+                   console.error("Error al activar linterna:", torchErr);
+              }
           } else {
               console.log("La linterna no está disponible en este dispositivo.");
           }
-          */ // --- End TEMP Torch Disabled ---
           // --- End Torch only --- 
           
           // Style optimizations (can keep these)
@@ -204,27 +202,24 @@ const CameraView = ({
   }, [isMonitoring]);
 
   useEffect(() => {
-    // --- TEMP: Disable Torch/Focus logic triggered by finger detection ---
-    /* // Commented out the entire effect for stability testing
     if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo (TEMP DISABLED)");
-        // videoTrack.applyConstraints({
-        //   advanced: [{ torch: true }]
-        // }).then(() => {
-        //   setTorchEnabled(true);
-        // }).catch(err => {
-        //   console.error("Error activando linterna:", err);
-        // });
+        console.log("Activando linterna después de detectar dedo");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).then(() => {
+          setTorchEnabled(true);
+        }).catch(err => {
+          console.error("Error activando linterna:", err);
+        });
       }
     }
     
     if (isFingerDetected && !isAndroid) {
-      // const focusInterval = setInterval(refreshAutoFocus, 5000); // Disable auto-focus refresh
-      // return () => clearInterval(focusInterval);
+      const focusInterval = setInterval(refreshAutoFocus, 5000);
+      return () => clearInterval(focusInterval);
     }
-    */ // --- End TEMP Disable --- 
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
   const targetFrameInterval = isAndroid ? 1000/10 : 
