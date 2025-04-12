@@ -1,9 +1,9 @@
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
+import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
@@ -13,6 +13,7 @@ import { Droplet } from "lucide-react";
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 
 const Index = () => {
+  // Estado principal
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -21,17 +22,23 @@ const Index = () => {
   const [signalQuality, setSignalQuality] = useState(0);
   const [isArrhythmia, setIsArrhythmia] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  
+  // Referencias para mejorar rendimiento
   const measurementTimer = useRef<NodeJS.Timeout | null>(null);
   const arrhythmiaTimer = useRef<NodeJS.Timeout | null>(null);
   const bpmCache = useRef<number[]>([]);
   const lastSignalRef = useRef<any>(null);
+  const lastProcessTime = useRef<number>(0);
+  const frameSkipCount = useRef<number>(0);
+  const processorActive = useRef<boolean>(false);
 
   const {
     startProcessing: startSignalProcessing,
     stopProcessing: stopSignalProcessing,
     processFrame,
     lastSignal,
-    error: processingError
+    error: processingError,
+    optimizationLevel
   } = useSignalProcessor();
 
   const { 
@@ -49,6 +56,14 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
+  // Memorizar funciones costosas para evitar recálculos
+  const getHydrationColor = useMemo(() => (hydration: number) => {
+    if (hydration >= 80) return 'text-blue-500';
+    if (hydration >= 65) return 'text-green-500';
+    if (hydration >= 50) return 'text-yellow-500';
+    return 'text-red-500';
+  }, []);
+
   const enterFullScreen = async () => {
     try {
       await document.documentElement.requestFullscreen();
@@ -57,6 +72,7 @@ const Index = () => {
     }
   };
 
+  // Prevenir scroll para mejor rendimiento
   useEffect(() => {
     const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
@@ -68,6 +84,7 @@ const Index = () => {
     };
   }, []);
 
+  // Actualizar resultados cuando estén disponibles
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       setVitalSigns(lastValidResults);
@@ -75,40 +92,65 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Procesar señal con optimización
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+    if (!lastSignal || !isMonitoring) {
+      if (!isMonitoring) {
+        setSignalQuality(0);
+      }
+      return;
+    }
+    
+    // Controlar frecuencia de procesamiento basado en tiempo
+    const now = Date.now();
+    const timeSinceLastProcess = now - lastProcessTime.current;
+    const processingInterval = optimizationLevel === 'high' ? 100 : 
+                               optimizationLevel === 'medium' ? 50 : 30;
+    
+    // Omitir algunos cuadros para mejorar rendimiento
+    if (timeSinceLastProcess < processingInterval) {
+      frameSkipCount.current++;
+      return;
+    }
+    
+    // Procesar señal con umbral de calidad
+    const minQualityThreshold = 40;
+    
+    if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      if (heartBeatResult && heartBeatResult.confidence > 0.4) {
+        setHeartRate(heartBeatResult.bpm);
         
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
-          
-          try {
+        try {
+          // Solo procesar signos vitales cuando la confianza es alta
+          if (heartBeatResult.confidence > 0.6) {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
-              setVitalSigns(vitals);
+              setVitalSigns(prev => ({...prev, ...vitals}));
             }
-          } catch (error) {
-            console.error("Error processing vital signs:", error);
           }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      } else {
-        setSignalQuality(lastSignal.quality);
-        
-        // Convert heartRate to number for comparison 
-        if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
-          setHeartRate(0);
+        } catch (error) {
+          console.error("Error processing vital signs:", error);
         }
       }
-    } else if (!isMonitoring) {
-      setSignalQuality(0);
+      
+      setSignalQuality(lastSignal.quality);
+    } else {
+      setSignalQuality(lastSignal.quality);
+      
+      // Convertir heartRate a número para comparación
+      if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
+        setHeartRate(0);
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+    
+    // Actualizar tiempo de último procesamiento
+    lastProcessTime.current = now;
+    
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, optimizationLevel]);
 
+  // Actualizar frecuencia cardíaca
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
       setHeartRate(vitalSigns.heartRate);
@@ -127,9 +169,13 @@ const Index = () => {
     setShowResults(false);
     setIsArrhythmia(false);
     bpmCache.current = [];
+    lastProcessTime.current = Date.now();
+    frameSkipCount.current = 0;
+    processorActive.current = true;
     setIsCameraOn(true);
     setIsMonitoring(true);
     startSignalProcessing();
+    
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
       console.log("30 second measurement timer elapsed.");
@@ -148,14 +194,18 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopSignalProcessing();
+    processorActive.current = false;
+    
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
+    
     if (measurementTimer.current) {
       clearTimeout(measurementTimer.current);
       measurementTimer.current = null;
     }
+    
     if (arrhythmiaTimer.current) {
       clearTimeout(arrhythmiaTimer.current);
       arrhythmiaTimer.current = null;
@@ -171,6 +221,9 @@ const Index = () => {
     setSignalQuality(0);
     setIsArrhythmia(false);
     setShowResults(false);
+    frameSkipCount.current = 0;
+    lastProcessTime.current = 0;
+    
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     if (arrhythmiaTimer.current) clearTimeout(arrhythmiaTimer.current);
   };
@@ -198,7 +251,7 @@ const Index = () => {
     }
     
     let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
+    const targetFrameInterval = 1000/20; // Reducido de 30fps a 20fps para mejor rendimiento
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
     let processingFps = 0;
@@ -215,14 +268,16 @@ const Index = () => {
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
       
+      // Controlar la frecuencia de muestreo para mejorar rendimiento
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
           if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
           
           const frame = await imageCapture.grabFrame();
           
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
+          // Reducir resolución para mejor rendimiento
+          const targetWidth = Math.min(256, frame.width);
+          const targetHeight = Math.min(192, frame.height);
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
@@ -236,7 +291,11 @@ const Index = () => {
           );
           
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
+          
+          // Procesar frame con optimización
+          if (processorActive.current) {
+            processFrame(imageData);
+          }
           
           frameCount++;
           lastProcessTime = now;
@@ -245,6 +304,11 @@ const Index = () => {
             processingFps = frameCount;
             frameCount = 0;
             lastFpsUpdateTime = now;
+            
+            // Log de rendimiento en intervalos
+            if (processingFps < 15) {
+              console.log(`Rendimiento bajo: ${processingFps} FPS - Nivel optimización: ${optimizationLevel}`);
+            }
           }
         } catch (error) {
           if (error instanceof DOMException && error.name === 'InvalidStateError') {
@@ -260,6 +324,7 @@ const Index = () => {
       }
       
       if (isMonitoring) {
+        // Usar requestAnimationFrame para sincronizar con el refresco de pantalla
         requestAnimationFrame(processImage);
       }
     };
@@ -314,6 +379,9 @@ const Index = () => {
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-sm">Calidad: {signalQuality}</div>
             <div className="text-white text-sm">{lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}</div>
+            {optimizationLevel !== 'low' && (
+              <div className="text-white text-xs">Optimización: {optimizationLevel}</div>
+            )}
           </div>
           <div className="flex-1">
             <PPGSignalMeter 
