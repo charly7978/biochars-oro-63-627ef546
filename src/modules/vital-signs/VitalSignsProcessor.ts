@@ -72,9 +72,19 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values for processing
-    const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
+    // 2. Get the updated filtered buffer
+    const ppgValues = this.signalProcessor.getFilteredPPGValues();
+
+    // 3. Check finger presence (using a robust method)
+    const isFingerCurrentlyDetected = this.signalProcessor.isFingerDetected();
+    // --- DEBUG LOG --- 
+    // console.log(`Finger Detected: ${isFingerCurrentlyDetected}, Buffer Length: ${ppgValues.length}`);
+    // --------------- 
+    
+    // --- Handle Finger Loss/Return --- 
+    if (!isFingerCurrentlyDetected) {
+        // ... (rest of the finger loss handling) ...
+    }
     
     // Limit the real data buffer
     if (ppgValues.length > 300) {
