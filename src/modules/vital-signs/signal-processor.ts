@@ -90,6 +90,10 @@ export class SignalProcessor extends BaseProcessor {
            this.fingerDetectionStartTime = Date.now();
        }
        // Bypassing quality and pattern check for now
+       // const qualityValue = this.quality.calculateSignalQuality(recentFiltered);
+       // const fingerDetectedByPattern = this.signalValidator.isFingerDetected();
+       // const currentDetectionStatus = (fingerDetectedByPattern && hasValidAmplitude) || this.fingerDetectionConfirmed;
+       // ... (complex confirmation logic removed) ...
   }
 
   /**
