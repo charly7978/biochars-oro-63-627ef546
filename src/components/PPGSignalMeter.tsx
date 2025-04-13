@@ -63,7 +63,7 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-
+  
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
   const CANVAS_HEIGHT = 1200;
@@ -85,21 +85,20 @@ const PPGSignalMeter = memo(({
 
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
-  const BEEP_DURATION = 80;
-  const BEEP_VOLUME = 0.9;
+  const BEEP_DURATION = 100;
+  const BEEP_VOLUME = 1.0;
   const MIN_BEEP_INTERVAL_MS = 350;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
-    const arrhythmiaWindowWidth = 200;
-    
-    if (rawArrhythmiaData && Math.abs(pointTime - rawArrhythmiaData.timestamp) < arrhythmiaWindowWidth/2) {
+    if (rawArrhythmiaData && 
+        Math.abs(pointTime - rawArrhythmiaData.timestamp) < 100) {
       return true;
     }
     
     return arrhythmiaSegmentsRef.current.some(segment => {
-      return Math.abs(pointTime - segment.startTime) < arrhythmiaWindowWidth/2;
+      return Math.abs(pointTime - segment.startTime) < 100;
     });
   }, [rawArrhythmiaData]);
 
@@ -479,11 +478,11 @@ const PPGSignalMeter = memo(({
     
     if (rawArrhythmiaData && 
         arrhythmiaStatus?.includes("ARRHYTHMIA DETECTED") && 
-        now - rawArrhythmiaData.timestamp < 300) {
+        now - rawArrhythmiaData.timestamp < 200) {
       currentIsArrhythmia = true;
       lastArrhythmiaTime.current = now;
     }
-    else if (isArrhythmia && now - lastArrhythmiaTime.current < 300) {
+    else if (isArrhythmia && now - lastArrhythmiaTime.current < 200) {
       currentIsArrhythmia = true;
     }
     

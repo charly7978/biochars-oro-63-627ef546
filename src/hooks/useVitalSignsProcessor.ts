@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -29,7 +30,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Arrhythmia tracking
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
+  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 5000; // Reducido de 10s a 5s para detectar más arritmias
   
   const { 
     arrhythmiaWindows, 
@@ -91,10 +92,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - no simulation
     try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
+      const result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Identificar arritmias de manera puntual, sin persistencia
+      // Identificar cada latido arrítmico individualmente
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
@@ -103,7 +104,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Solo marcar un punto específico de arritmia, no persistir
+        // Solo marcar un punto específico de arritmia, sin persistencia
         let windowWidth = 400;
         
         // Ajustar ventana basada en intervalos RR reales
@@ -113,8 +114,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
         
-        // Ventana de tiempo muy corta para visualizar solo el latido específico
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/4, arrhythmiaTime + windowWidth/4);
+        // Ventana de tiempo muy estrecha para cada latido arrítmico individual
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/6, arrhythmiaTime + windowWidth/6);
         
         console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
           time: new Date(arrhythmiaTime).toISOString(),

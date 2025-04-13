@@ -52,13 +52,13 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     if ('vibrate' in navigator) {
       try {
         if (type === 'normal') {
-          // Vibración simple para latido normal
-          navigator.vibrate(50);
-          console.log('Vibración normal activada');
+          // Vibración más fuerte para latido normal
+          navigator.vibrate(100);
+          console.log('Vibración normal activada con intensidad aumentada');
         } else if (type === 'arrhythmia') {
           // Patrón de vibración distintivo para arritmia (pulso doble más fuerte)
-          navigator.vibrate([80, 70, 120]);
-          console.log('Vibración de arritmia activada');
+          navigator.vibrate([120, 50, 180]);
+          console.log('Vibración de arritmia activada con intensidad aumentada');
         }
       } catch (error) {
         console.error('Error al activar vibración:', error);
@@ -67,29 +67,31 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       console.log('API de vibración no disponible en este dispositivo');
     }
 
-    // Generar un bip con características según el tipo
+    // Generar un bip con características según el tipo y volumen aumentado
     if (audioCtxRef.current) {
       try {
         const ctx = audioCtxRef.current;
         
         // Forzar reanudar el contexto de audio (importante para navegadores móviles)
         if (ctx.state !== 'running') {
-          ctx.resume();
+          ctx.resume().catch(err => {
+            console.error('Error resumiendo el contexto de audio:', err);
+          });
         }
         
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
         if (type === 'normal') {
-          // Tono normal para latido regular
+          // Tono normal para latido regular con volumen aumentado
           osc.type = 'sine';
           osc.frequency.setValueAtTime(880, ctx.currentTime);
-          gain.gain.setValueAtTime(0.05, ctx.currentTime);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime); // Aumentado de 0.05 a 0.2
         } else if (type === 'arrhythmia') {
-          // Tono más grave y duradero para arritmia
+          // Tono más grave y duradero para arritmia con volumen aumentado
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(440, ctx.currentTime);
-          gain.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime); // Aumentado de 0.1 a 0.3
         }
 
         osc.connect(gain);
@@ -97,7 +99,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
 
         osc.start();
         // Mayor duración para arritmias
-        osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.25 : 0.1));
+        osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.3 : 0.15));
       } catch (error) {
         console.error('Error generando audio:', error);
       }
