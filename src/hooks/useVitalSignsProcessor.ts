@@ -105,17 +105,17 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
-        let windowWidth = 400;
+        let windowWidth = 800; // Ventana más amplia para visualización clara
         
         // Adjust based on real RR intervals
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+          windowWidth = Math.max(600, Math.min(1200, avgInterval * 2)); // Ventana más grande y visible
         }
         
-        // Add visualization window - solo para el latido exacto
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/4, arrhythmiaTime + windowWidth/4);
+        // Add visualization window con margen extra para mejor visualización
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
         
         console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
           time: new Date(arrhythmiaTime).toISOString(),
