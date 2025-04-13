@@ -93,6 +93,57 @@ const PPGSignalMeter = memo(({
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
+  const playBeep = useCallback(async (volume: number = BEEP_VOLUME, isArrhythmic: boolean = false) => {
+    try {
+      if (!audioContextRef.current) {
+        console.log("PPGSignalMeter: Creating new AudioContext for beep");
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      if (audioContextRef.current.state !== 'running') {
+        await audioContextRef.current.resume();
+      }
+
+      const now = Date.now();
+      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+        return false;
+      }
+
+      const oscillator = audioContextRef.current.createOscillator();
+      const gainNode = audioContextRef.current.createGain();
+
+      oscillator.type = isArrhythmic ? 'triangle' : 'sine';
+      oscillator.frequency.setValueAtTime(
+        isArrhythmic ? BEEP_SECONDARY_FREQUENCY : BEEP_PRIMARY_FREQUENCY,
+        audioContextRef.current.currentTime
+      );
+
+      gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+      gainNode.gain.linearRampToValueAtTime(
+        volume, 
+        audioContextRef.current.currentTime + 0.01
+      );
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.01, 
+        audioContextRef.current.currentTime + (BEEP_DURATION / 1000)
+      );
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+
+      oscillator.start();
+      oscillator.stop(audioContextRef.current.currentTime + (BEEP_DURATION / 1000) + 0.02);
+
+      triggerHeartbeatFeedback(isArrhythmic ? 'arrhythmia' : 'normal');
+
+      lastBeepTimeRef.current = now;
+      return true;
+    } catch (error) {
+      console.error("Error playing beep:", error);
+      return false;
+    }
+  }, [triggerHeartbeatFeedback, BEEP_DURATION, BEEP_PRIMARY_FREQUENCY, BEEP_SECONDARY_FREQUENCY, BEEP_VOLUME, MIN_BEEP_INTERVAL_MS]);
+
   useEffect(() => {
     const initAudio = async () => {
       try {
