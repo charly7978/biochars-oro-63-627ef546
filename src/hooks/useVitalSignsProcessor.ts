@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -89,7 +90,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Add safe null check for arrhythmiaStatus
+      // Check for arrhythmia and visualize it
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
@@ -107,13 +108,14 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
         
+        // Add visualization window
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Always return real result
+      // Return processed result
       return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
