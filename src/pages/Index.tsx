@@ -88,6 +88,19 @@ const Index = () => {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
+              
+              if (vitals.arrhythmiaStatus && 
+                  typeof vitals.arrhythmiaStatus === 'string' && 
+                  vitals.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
+                setIsArrhythmia(true);
+                
+                if (arrhythmiaTimer.current) {
+                  clearTimeout(arrhythmiaTimer.current);
+                }
+                arrhythmiaTimer.current = setTimeout(() => {
+                  setIsArrhythmia(false);
+                }, 5000);
+              }
             }
           } catch (error) {
             console.error("Error processing vital signs:", error);
@@ -98,7 +111,7 @@ const Index = () => {
       } else {
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
           setHeartRate(0);
         }
       }
@@ -318,6 +331,7 @@ const Index = () => {
               onStartMeasurement={startMonitoring} 
               onReset={handleReset} 
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"} 
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
             />

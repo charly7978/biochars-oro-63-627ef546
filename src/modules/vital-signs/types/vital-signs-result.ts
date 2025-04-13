@@ -7,7 +7,7 @@ export interface VitalSignsResult {
   spo2: number;
   
   // Heart rate in BPM
-  heartRate?: number;
+  heartRate: number;
   
   // Blood pressure in format "systolic/diastolic"
   pressure: string;
