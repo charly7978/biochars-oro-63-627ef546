@@ -32,7 +32,7 @@ export class BloodPressureProcessor {
     this.analyzer = new BloodPressureAnalyzer(userProfile, settings);
   }
 
-  public calculateBloodPressure(values: number[]): { systolic: number; diastolic: number } | null {
+  public calculateBloodPressure(values: number[]): { systolic: number; diastolic: number; quality?: number } | null {
     if (!values || values.length < this.MIN_SAMPLES) {
       return null;
     }
@@ -93,7 +93,8 @@ export class BloodPressureProcessor {
     // Calcular presión instantánea
     const instantResult = {
       systolic: Math.round((prediction[0] + result.systolic) / 2),
-      diastolic: Math.round((prediction[1] + result.diastolic) / 2)
+      diastolic: Math.round((prediction[1] + result.diastolic) / 2),
+      quality: Math.min(100, Math.max(0, currentAmplitude * 100))
     };
 
     // Actualizar buffers
@@ -109,7 +110,7 @@ export class BloodPressureProcessor {
     }
 
     // Retornar null mientras la medición está en curso
-    return null;
+    return instantResult;
   }
 
   private calculateFinalResult(): { systolic: number; diastolic: number } {

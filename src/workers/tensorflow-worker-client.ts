@@ -1,4 +1,3 @@
-
 /**
  * Cliente para comunicación con el worker de TensorFlow
  * Gestiona la comunicación, carga de modelos y predicciones en tiempo real
@@ -262,20 +261,25 @@ export class TensorFlowWorkerClient {
       return cachedResult.result;
     }
     
-    // Enviar mensaje para predecir
-    const result = await this.sendMessage('predict', { modelType, input });
-    
-    // Almacenar en caché
-    this.predictionCache.set(inputHash, {
-      timestamp: now,
-      input: inputHash,
-      result
-    });
-    
-    // Limpiar caché antigua
-    this.cleanupCache();
-    
-    return result;
+    try {
+      // Enviar mensaje para predecir
+      const result = await this.sendMessage('predict', { modelType, input });
+      
+      // Almacenar en caché
+      this.predictionCache.set(inputHash, {
+        timestamp: now,
+        input: inputHash,
+        result
+      });
+      
+      // Limpiar caché antigua
+      this.cleanupCache();
+      
+      return result;
+    } catch (error) {
+      console.error(`Error predicting with model ${modelType}:`, error);
+      return []; // Return empty array on error
+    }
   }
   
   /**

@@ -110,6 +110,7 @@ export const useHeartBeatProcessor = () => {
       try {
         // Procesar con el procesador tradicional primero
         const result = processorRef.current.processSignal(value);
+        let finalResult = { ...result };
         
         // Si TensorFlow está listo, mejorar el resultado con redes neuronales
         if (isModelReady && tfWorkerClient) {
@@ -134,7 +135,7 @@ export const useHeartBeatProcessor = () => {
                 }
                 
                 // Agregar el resultado de la predicción neural
-                result.isArrhythmia = newIsArrhythmia;
+                finalResult.isArrhythmia = newIsArrhythmia;
               } catch (err) {
                 console.error("Error en predicción de arritmia:", err);
               }
@@ -143,13 +144,13 @@ export const useHeartBeatProcessor = () => {
         }
 
         // Actualizar el estado con los resultados del procesamiento
-        setHeartBeatResult(result);
+        setHeartBeatResult(finalResult);
 
         // Actualizar datos adicionales de análisis
-        updateAnalysisData(value, result);
+        updateAnalysisData(value, finalResult);
 
         // Devolver los resultados
-        return result;
+        return finalResult;
       } catch (error) {
         console.error("Error en procesamiento de señal:", error);
         return null;

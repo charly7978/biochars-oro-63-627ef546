@@ -1,3 +1,4 @@
+
 export interface SignalChannelConfig {
   bufferSize?: number;
   sampleRate?: number;
@@ -21,7 +22,10 @@ export interface SignalFeedback {
     };
     gainAdjustment?: number;
     baselineCorrection?: number;
+    neuralGainSuggestion?: number;
+    correlations?: Record<string, number>;
   };
+  neuralConfidence?: number;
 }
 
 export interface ChannelMetadata {
