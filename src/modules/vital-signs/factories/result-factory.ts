@@ -16,6 +16,7 @@ export class ResultFactory {
     lipids: { totalCholesterol: number; triglycerides: number },
     hemoglobin: number,
     hydration: number,
+    heartRate: number = 0,
     glucoseConfidence?: number,
     lipidsConfidence?: number,
     overallConfidence?: number,
@@ -29,6 +30,7 @@ export class ResultFactory {
       lipids,
       hemoglobin,
       hydration,
+      heartRate,
       glucoseConfidence,
       lipidsConfidence,
       overallConfidence,
@@ -50,7 +52,8 @@ export class ResultFactory {
         triglycerides: 0
       },
       hemoglobin: 0,
-      hydration: 0
+      hydration: 0,
+      heartRate: 0
     };
   }
 }

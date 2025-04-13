@@ -1,7 +1,6 @@
 import { UserProfile } from '../types';
 import { AnalysisSettings } from '../config/AnalysisSettings';
 import { SignalAnalyzer } from './SignalAnalyzer';
-import { TensorFlowWorkerClient } from '../../workers/tensorflow-worker-client';
 
 interface PPGFeatures {
   amplitude: number;
@@ -12,12 +11,8 @@ interface PPGFeatures {
   quality: number;
 }
 
-// Cliente singleton para TensorFlow
-let tfWorkerClient: TensorFlowWorkerClient | null = null;
-
 /**
  * Analyzer for blood pressure estimation from PPG signal
- * Enhanced with real neural network processing
  */
 export class BloodPressureAnalyzer extends SignalAnalyzer {
   private readonly MEASUREMENT_DURATION = 30; // seconds
@@ -29,38 +24,11 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
   private qualityBuffer: number[] = [];
-  private ppgBuffer: number[] = [];
   private lastValidMeasurement: { systolic: number; diastolic: number } | null = null;
-  private isModelReady: boolean = false;
-  private modelLoadAttempted: boolean = false;
   
   constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
     super(userProfile, settings);
     this.startMeasurement();
-    this.initializeTensorFlow();
-  }
-  
-  /**
-   * Initialize TensorFlow for real neural network processing
-   */
-  private async initializeTensorFlow(): Promise<void> {
-    try {
-      if (!tfWorkerClient) {
-        console.log("BloodPressureAnalyzer: Inicializando TensorFlow Worker");
-        tfWorkerClient = new TensorFlowWorkerClient();
-        await tfWorkerClient.initialize();
-      }
-      
-      // Load blood pressure model
-      await tfWorkerClient.loadModel('bloodPressure');
-      this.isModelReady = true;
-      console.log("BloodPressureAnalyzer: Modelo TensorFlow cargado exitosamente");
-    } catch (error) {
-      console.error("BloodPressureAnalyzer: Error inicializando TensorFlow:", error);
-      this.isModelReady = false;
-    } finally {
-      this.modelLoadAttempted = true;
-    }
   }
   
   /**
@@ -71,27 +39,14 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
     this.qualityBuffer = [];
-    this.ppgBuffer = [];
-    
-    // Try initializing TensorFlow if not ready
-    if (!this.isModelReady && !this.modelLoadAttempted) {
-      this.initializeTensorFlow();
-    }
   }
   
   /**
    * Analyze blood pressure from PPG signal
-   * with real neural network processing if available
    */
-  public async analyze(ppgValues: number[]): Promise<{ systolic: number; diastolic: number; quality: number } | null> {
+  public analyze(ppgValues: number[]): { systolic: number; diastolic: number; quality: number } | null {
     if (ppgValues.length < 30) {
       return this.lastValidMeasurement ? { ...this.lastValidMeasurement, quality: 0 } : null;
-    }
-    
-    // Store values in buffer for neural processing
-    this.ppgBuffer = [...this.ppgBuffer, ...ppgValues];
-    if (this.ppgBuffer.length > 300) {
-      this.ppgBuffer = this.ppgBuffer.slice(-300);
     }
     
     // Extract features from the PPG signal
@@ -100,41 +55,8 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
       return this.lastValidMeasurement ? { ...this.lastValidMeasurement, quality: 0 } : null;
     }
     
-    let systolic: number, diastolic: number;
-    
-    // Try neural network processing if available
-    if (this.isModelReady && tfWorkerClient && this.ppgBuffer.length >= 200) {
-      try {
-        const predictionInput = this.ppgBuffer.slice(-200);
-        const normalizedInput = this.normalizeSignal(predictionInput);
-        
-        console.log("BloodPressureAnalyzer: Utilizando predicción neural en tiempo real");
-        const prediction = await tfWorkerClient.predict('bloodPressure', normalizedInput);
-        
-        // Neural model returns [systolic, diastolic]
-        systolic = Math.round(prediction[0]);
-        diastolic = Math.round(prediction[1]);
-        
-        // Validate physiological ranges
-        if (systolic < 70 || systolic > 200 || diastolic < 40 || diastolic > 120 || systolic <= diastolic) {
-          console.log("BloodPressureAnalyzer: Predicción neural fuera de rango, usando modelo tradicional");
-          const traditionalBP = this.calculatePressureFromFeatures(features);
-          systolic = traditionalBP.systolic;
-          diastolic = traditionalBP.diastolic;
-        }
-      } catch (error) {
-        console.error("BloodPressureAnalyzer: Error en predicción neural:", error);
-        // Fallback to traditional method
-        const traditionalBP = this.calculatePressureFromFeatures(features);
-        systolic = traditionalBP.systolic;
-        diastolic = traditionalBP.diastolic;
-      }
-    } else {
-      // Use traditional method if neural network not available
-      const traditionalBP = this.calculatePressureFromFeatures(features);
-      systolic = traditionalBP.systolic;
-      diastolic = traditionalBP.diastolic;
-    }
+    // Calculate instantaneous blood pressure estimates
+    const { systolic, diastolic } = this.calculatePressureFromFeatures(features);
     
     // Add to buffers
     this.systolicBuffer.push(systolic);
@@ -153,24 +75,6 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
       diastolic,
       quality: features.quality
     };
-  }
-  
-  /**
-   * Normalize signal for neural network input
-   */
-  private normalizeSignal(signal: number[]): number[] {
-    if (signal.length === 0) return [];
-    
-    // Find min and max for normalization
-    const min = Math.min(...signal);
-    const max = Math.max(...signal);
-    const range = max - min;
-    
-    // Avoid division by zero
-    if (range === 0) return signal.map(() => 0.5);
-    
-    // Normalize to [0,1] range
-    return signal.map(val => (val - min) / range);
   }
   
   /**
@@ -246,7 +150,6 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
   
   /**
    * Calculate blood pressure from PPG features
-   * Traditional method as fallback
    */
   private calculatePressureFromFeatures(features: PPGFeatures): { systolic: number; diastolic: number } {
     // Base estimates
@@ -329,14 +232,6 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
     this.calibrationFactor = 1.0;
     this.startMeasurement();
     this.lastValidMeasurement = null;
-    this.ppgBuffer = [];
-  }
-  
-  /**
-   * Get buffer for external processing
-   */
-  public getBuffer(): number[] {
-    return this.ppgBuffer;
   }
   
   // Helper methods for signal processing
