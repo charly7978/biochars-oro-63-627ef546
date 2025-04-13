@@ -21,7 +21,6 @@ const Index = () => {
   const [isArrhythmia, setIsArrhythmia] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const measurementTimer = useRef<NodeJS.Timeout | null>(null);
-  const arrhythmiaTimer = useRef<NodeJS.Timeout | null>(null);
   const bpmCache = useRef<number[]>([]);
   const lastSignalRef = useRef<any>(null);
 
@@ -93,28 +92,11 @@ const Index = () => {
                   typeof vitals.arrhythmiaStatus === 'string') {
                   
                 if (vitals.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
-                  console.log("Index: Arrhythmia detected", vitals.arrhythmiaStatus, vitals.lastArrhythmiaData);
+                  // Update instantly based on the current result
                   setIsArrhythmia(true);
-                  
-                  if (arrhythmiaTimer.current) {
-                    clearTimeout(arrhythmiaTimer.current);
-                  }
-                  
-                  arrhythmiaTimer.current = setTimeout(() => {
-                    setIsArrhythmia(false);
-                  }, 8000);
-                } 
-                else if (heartBeatIsArrhythmia) {
-                  console.log("Index: Arrhythmia detected from heart beat processor");
-                  setIsArrhythmia(true);
-                  
-                  if (arrhythmiaTimer.current) {
-                    clearTimeout(arrhythmiaTimer.current);
-                  }
-                  
-                  arrhythmiaTimer.current = setTimeout(() => {
-                    setIsArrhythmia(false);
-                  }, 8000);
+                } else {
+                  // If the current status is not arrhythmia, set it to false
+                  setIsArrhythmia(false);
                 }
               }
             }
@@ -183,10 +165,6 @@ const Index = () => {
       clearTimeout(measurementTimer.current);
       measurementTimer.current = null;
     }
-    if (arrhythmiaTimer.current) {
-      clearTimeout(arrhythmiaTimer.current);
-      arrhythmiaTimer.current = null;
-    }
   };
 
   const handleReset = () => {
@@ -199,7 +177,6 @@ const Index = () => {
     setIsArrhythmia(false);
     setShowResults(false);
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
-    if (arrhythmiaTimer.current) clearTimeout(arrhythmiaTimer.current);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
