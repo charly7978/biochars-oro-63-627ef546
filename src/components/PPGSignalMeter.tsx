@@ -404,11 +404,7 @@ const PPGSignalMeter = memo(({
   }, [isPointInArrhythmiaSegment, MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY]);
 
   const updateArrhythmiaSegments = useCallback((isCurrentArrhythmia: boolean, now: number) => {
-    if (isArrhythmia && !lastArrhythmiaStateRef.current) {
-      isCurrentArrhythmia = true;
-    }
-    
-    if (isCurrentArrhythmia && !lastArrhythmiaStateRef.current) {
+    if (isCurrentArrhythmia) {
       arrhythmiaSegmentsRef.current.push({
         startTime: now,
         endTime: now
@@ -417,12 +413,10 @@ const PPGSignalMeter = memo(({
       console.log("PPGSignalMeter: Single arrhythmia beat registered at", new Date(now).toISOString());
     }
     
-    lastArrhythmiaStateRef.current = isCurrentArrhythmia;
-    
     arrhythmiaSegmentsRef.current = arrhythmiaSegmentsRef.current.filter(
       segment => now - segment.startTime < WINDOW_WIDTH_MS
     );
-  }, [WINDOW_WIDTH_MS, isArrhythmia]);
+  }, [WINDOW_WIDTH_MS]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {

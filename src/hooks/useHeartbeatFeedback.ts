@@ -63,12 +63,20 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       } catch (error) {
         console.error('Error al activar vibración:', error);
       }
+    } else {
+      console.log('API de vibración no disponible en este dispositivo');
     }
 
     // Generar un bip con características según el tipo
     if (audioCtxRef.current) {
       try {
         const ctx = audioCtxRef.current;
+        
+        // Forzar reanudar el contexto de audio (importante para navegadores móviles)
+        if (ctx.state !== 'running') {
+          ctx.resume();
+        }
+        
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
