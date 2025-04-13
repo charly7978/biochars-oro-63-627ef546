@@ -93,12 +93,25 @@ const PPGSignalMeter = memo(({
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
     if (rawArrhythmiaData && 
-        Math.abs(pointTime - rawArrhythmiaData.timestamp) < 100) {
+        Math.abs(pointTime - rawArrhythmiaData.timestamp) < 150) {
+      console.log("PPGSignalMeter: Punto coincide con arritmia reciente", {
+        pointTime,
+        arrhythmiaTime: rawArrhythmiaData.timestamp,
+        diff: Math.abs(pointTime - rawArrhythmiaData.timestamp)
+      });
       return true;
     }
     
     return arrhythmiaSegmentsRef.current.some(segment => {
-      return Math.abs(pointTime - segment.startTime) < 100;
+      const isInSegment = Math.abs(pointTime - segment.startTime) < 150;
+      if (isInSegment) {
+        console.log("PPGSignalMeter: Punto coincide con segmento de arritmia previo", {
+          pointTime,
+          segmentStart: segment.startTime,
+          diff: Math.abs(pointTime - segment.startTime)
+        });
+      }
+      return isInSegment;
     });
   }, [rawArrhythmiaData]);
 
@@ -143,7 +156,7 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal', volume);
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -500,6 +513,7 @@ const PPGSignalMeter = memo(({
     detectPeaks(points, now);
     
     let shouldBeep = false;
+    let latestPeakIntensity = 0.7;
     
     if (points.length > 1) {
       for (let i = 1; i < points.length; i++) {
@@ -555,9 +569,13 @@ const PPGSignalMeter = memo(({
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
           
-          if (!peak.beepPlayed) {
+          const peakMagnitude = Math.abs(peak.value / verticalScale);
+          const normalizedMagnitude = Math.min(1, Math.max(0.3, peakMagnitude / 2));
+          
+          if (!peak.beepPlayed && peak === peaksRef.current[peaksRef.current.length - 1]) {
             shouldBeep = true;
             peak.beepPlayed = true;
+            latestPeakIntensity = normalizedMagnitude;
           }
         }
       });
@@ -577,11 +595,12 @@ const PPGSignalMeter = memo(({
       
       console.log("PPGSignalMeter: Beep triggered", {
         isPeakArrhythmia,
+        intensity: latestPeakIntensity,
         isArrhythmia: isArrhythmia,
         arrhythmiaStatus: arrhythmiaStatus || "N/A"
       });
       
-      playBeep(1.0, isPeakArrhythmia);
+      playBeep(latestPeakIntensity, isPeakArrhythmia);
     }
     
     lastRenderTimeRef.current = currentTime;
