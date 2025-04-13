@@ -48,15 +48,17 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     
     lastTriggerTimeRef.current = now;
 
-    // Patrones de vibración
+    // Patrones de vibración claramente diferenciados
     if ('vibrate' in navigator) {
       try {
         if (type === 'normal') {
           // Vibración simple para latido normal
           navigator.vibrate(50);
+          console.log('Vibración normal activada');
         } else if (type === 'arrhythmia') {
-          // Patrón de vibración distintivo para arritmia (pulso doble)
-          navigator.vibrate([50, 100, 100]);
+          // Patrón de vibración distintivo para arritmia (pulso doble más fuerte)
+          navigator.vibrate([60, 70, 120]);
+          console.log('Vibración de arritmia activada');
         }
       } catch (error) {
         console.error('Error al activar vibración:', error);

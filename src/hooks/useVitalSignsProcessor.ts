@@ -95,12 +95,13 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Check for arrhythmia and visualize it
+      // Verificar y manejar eventos de arritmia más precisamente
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
+        
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
@@ -113,8 +114,14 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
         
-        // Add visualization window
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+        // Add visualization window - solo para el latido exacto
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/4, arrhythmiaTime + windowWidth/4);
+        
+        console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
+          time: new Date(arrhythmiaTime).toISOString(),
+          windowWidth,
+          status: result.arrhythmiaStatus
+        });
         
         // Trigger feedback for arrhythmia
         if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
@@ -137,7 +144,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error that include hydration
+      // Return safe fallback values on error that include heartRate
       return {
         spo2: 0,
         heartRate: 0,
