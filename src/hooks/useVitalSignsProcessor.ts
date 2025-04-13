@@ -81,7 +81,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     rrData?: { intervals: number[], lastPeakTime: number | null }, 
     externalWeakSignal: boolean = false
   ): VitalSignsResult => {
-    // Enhanced weak signal detection
+    // Enhanced weak signal detection with more precise tracking
     const { 
       isWeakSignal: detectedWeakSignal, 
       updatedWeakSignalsCount 
@@ -97,75 +97,57 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     const isWeakSignal = detectedWeakSignal || externalWeakSignal;
     weakSignalsCountRef.current = updatedWeakSignalsCount;
 
-    // Process signal directly - no simulation
     try {
       const result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Identificar cada latido arrítmico individualmente de forma más precisa
+      // Improved arrhythmia detection with more precise windowing
       if (result && 
           result.arrhythmiaStatus && 
-          typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
         
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Ventana más precisa para cada latido arrítmico individual
-        let windowWidth = 350; // Ancho predeterminado más pequeño
+        // Dynamic window calculation based on real RR intervals
+        let windowWidth = 350; 
         
-        // Ajustar ventana basada en intervalos RR reales si están disponibles
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(250, Math.min(600, avgInterval * 1.2)); // Ventana más acotada
+          windowWidth = Math.max(250, Math.min(600, avgInterval * 1.2));
         }
         
-        // Registrar solo una ventana específica y precisa para cada arritmia
         const startWindow = arrhythmiaTime - windowWidth/3;
         const endWindow = arrhythmiaTime + windowWidth/3;
         
-        // Añadir ventana de arritmia para visualización
         addArrhythmiaWindow(startWindow, endWindow);
         
-        console.log("useVitalSignsProcessor: Arritmia detectada con precisión", {
+        console.log("Precise Arrhythmia Detection", {
           time: new Date(arrhythmiaTime).toISOString(),
           windowStart: new Date(startWindow).toISOString(),
-          windowEnd: new Date(endWindow).toISOString(),
-          windowWidth,
-          status: result.arrhythmiaStatus,
-          arrhythmiaCount: getArrhythmiaCounter()
+          windowEnd: new Date(endWindow).toISOString()
         });
         
-        // Activar feedback solo para latidos arrítmicos específicos con intervalo mínimo para evitar exceso de notificaciones
+        // Centralized arrhythmia notification with controlled intervals
         if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
           lastArrhythmiaTriggeredRef.current = currentTime;
           const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
           
-          // Usar la función centralizada para notificar arritmias
           FeedbackService.signalArrhythmia(count);
-          
-          console.log("useVitalSignsProcessor: Notificación de arritmia activada", {
-            count,
-            timeSinceLastNotification: currentTime - lastArrhythmiaTriggeredRef.current
-          });
         }
       }
       
-      // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Save valid results
       if (result && result.heartRate > 0) {
         setLastValidResults(result);
       }
       
-      // Return processed result
       return result;
     } catch (error) {
-      console.error("Error processing vital signs:", error);
+      console.error("Signal Processing Error:", error);
       
-      // Return safe fallback values on error that include heartRate
       return {
         spo2: 0,
         heartRate: 0,
