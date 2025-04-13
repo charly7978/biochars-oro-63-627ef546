@@ -13,11 +13,12 @@ export type HeartbeatFeedbackType = 'normal' | 'arrhythmia';
  */
 export function useHeartbeatFeedback(enabled: boolean = true) {
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const oscillatorRef = useRef<OscillatorNode | null>(null);
   const lastTriggerTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled) return;
+    
+    // Inicializar contexto de audio
     if (!audioCtxRef.current) {
       try {
         audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -45,7 +46,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     if (!enabled) return;
     
     const now = Date.now();
-    const MIN_TRIGGER_INTERVAL = 150; // Reduced to improve responsiveness
+    const MIN_TRIGGER_INTERVAL = 150; // Milliseconds between triggers
     
     if (now - lastTriggerTimeRef.current < MIN_TRIGGER_INTERVAL) {
       return; // Evitar vibraciones demasiado frecuentes
@@ -53,15 +54,15 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     
     lastTriggerTimeRef.current = now;
 
-    // Patrones de vibración más potentes
+    // Activar vibración con patrones específicos según el tipo
     if ('vibrate' in navigator) {
       try {
         if (type === 'normal') {
-          // Vibración simple para latido normal - más fuerte
+          // Vibración simple para latido normal
           navigator.vibrate(60);
           console.log('Vibración normal activada');
         } else if (type === 'arrhythmia') {
-          // Patrón de vibración distintivo para arritmia (pulso doble más fuerte)
+          // Patrón de vibración distintivo para arritmia
           navigator.vibrate([70, 50, 140]);
           console.log('Vibración de arritmia activada');
         }
@@ -72,7 +73,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       console.log('Vibración no soportada en este dispositivo');
     }
 
-    // Generar un bip con características según el tipo - mejor calidad de audio
+    // Generar beep audible
     if (audioCtxRef.current) {
       try {
         const ctx = audioCtxRef.current;
@@ -80,18 +81,18 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
         const gain = ctx.createGain();
 
         if (type === 'normal') {
-          // Tono normal para latido regular - más claro
+          // Tono normal para latido regular
           osc.type = 'sine';
           osc.frequency.setValueAtTime(880, ctx.currentTime);
-          gain.gain.setValueAtTime(0.08, ctx.currentTime); // Volumen más alto
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
         } else if (type === 'arrhythmia') {
-          // Tono más grave y duradero para arritmia
+          // Tono más grave para arritmia
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(440, ctx.currentTime);
-          gain.gain.setValueAtTime(0.12, ctx.currentTime); // Volumen más alto
+          gain.gain.setValueAtTime(0.12, ctx.currentTime);
         }
 
-        // Mejor curva de ataque/relajo para un sonido más claro
+        // Configurar curva de ataque/relajo para sonido claro
         gain.gain.linearRampToValueAtTime(type === 'normal' ? 0.08 : 0.12, ctx.currentTime + 0.01);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (type === 'normal' ? 0.1 : 0.2));
 
@@ -99,7 +100,6 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
         gain.connect(ctx.destination);
 
         osc.start();
-        // Mayor duración para arritmias
         osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.25 : 0.12));
         
         console.log(`Beep de ${type} reproducido exitosamente`);

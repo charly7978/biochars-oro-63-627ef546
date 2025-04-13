@@ -25,7 +25,7 @@ const loadSound = (url: string): HTMLAudioElement => {
 };
 
 export const FeedbackService = {
-  // Retroalimentación háptica con patrones fuertes y distintivos
+  // Retroalimentación háptica
   vibrate: (pattern: number | number[] = 200) => {
     if ('vibrate' in navigator) {
       try {
@@ -39,11 +39,11 @@ export const FeedbackService = {
     }
   },
 
-  // Retroalimentación háptica específica para arritmias - patrón muy distintivo
+  // Retroalimentación háptica específica para arritmias
   vibrateArrhythmia: () => {
     if ('vibrate' in navigator) {
       try {
-        // Patrón más distintivo para arritmias (triple pulso con pausa)
+        // Patrón distintivo para arritmias (triple pulso con pausa)
         const pattern = [100, 50, 100, 50, 100, 300, 100];
         navigator.vibrate(pattern);
         console.log('Vibración de arritmia activada:', pattern);
@@ -121,7 +121,7 @@ export const FeedbackService = {
     FeedbackService.showToast('Error', message, 'error');
   },
 
-  // Retroalimentación para arritmia detectada - más fuerte y distintiva
+  // Retroalimentación para arritmia detectada
   signalArrhythmia: (count: number) => {
     FeedbackService.vibrateArrhythmia();
     FeedbackService.playSound('heartbeat');
@@ -135,7 +135,7 @@ export const FeedbackService = {
     } else {
       FeedbackService.showToast(
         'Arritmia detectada', 
-        `Se ha detectado ${count} posibles arritmias`, 
+        `Se han detectado ${count} posibles arritmias`, 
         'warning',
         6000
       );

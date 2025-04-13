@@ -17,7 +17,7 @@ export function useArrhythmiaDetector() {
   const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
   
   // Arrhythmia detection constants
-  const DETECTION_THRESHOLD = 0.20; // Reduced threshold for better sensitivity
+  const DETECTION_THRESHOLD = 0.2; // 20% threshold for HRV variation
   const MIN_INTERVAL = 300; // 300ms minimum (200 BPM max)
   const MAX_INTERVAL = 2000; // 2000ms maximum (30 BPM min)
   
